@@ -1831,7 +1831,35 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             Result.bind constrain_target (fun params ->
                 infer_expected TKeyword params key)
-        | None -> infer_form params key)
+        | None ->
+            let value_ty =
+              match expected_ty with
+              | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+              | ty -> ty
+            in
+            (match
+               Option.bind
+                 (string_assoc_opt target params)
+                 Types.dynamic_map_types
+             with
+            | Some (key_ty, existing_value_ty) ->
+                let value_ty = refine_type existing_value_ty value_ty in
+                Result.bind
+                  (constrain_symbol
+                     (Types.dynamic_map key_ty value_ty)
+                     params target)
+                  (fun params -> infer_expected key_ty params key)
+            | None ->
+                let key_ty =
+                  match inferred_form_type params key with
+                  | TUnknown -> fresh_type_variable "map_key"
+                  | ty -> ty
+                in
+                Result.bind
+                  (constrain_symbol
+                     (Types.dynamic_map key_ty value_ty)
+                     params target)
+                  (fun params -> infer_expected key_ty params key)))
     | FList [ FSymbol "get"; target; key ] ->
         let target_ty = inferred_form_type params target in
         if match target_ty with TVector _ -> true | _ -> false then
@@ -1840,7 +1868,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             (fun params -> infer_expected TInt params key)
         else
           let key_ty =
-            inferred_form_type params key |> materialize_dynamic_unknown
+            match inferred_form_type params key with
+            | TUnknown -> fresh_type_variable "map_key"
+            | ty -> ty
           in
           let value_ty =
             match expected_ty with
@@ -4388,7 +4418,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           match collection with
           | FList [ FKeyword keyword; FSymbol name ] ->
               add_record_field_constraint name keyword
-                (Types.dynamic_constraint TUnknown)
+                (Types.seqable_constraint element_ty)
                 params
           | form -> infer_sequence_form element_ty params form
         in

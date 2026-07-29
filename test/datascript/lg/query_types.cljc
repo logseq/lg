@@ -1341,6 +1341,9 @@
       (Stdlib.invalid_arg
        (str "Unsupported query source: " source-name)))))
 
+(signature datascript.lg.query-types/resolve-source-pattern
+  :fn<datascript.db/database-view;map<string;source>;string;datascript.parser/query-source;relation;relation;vector<datascript.parser/pattern-element>;relation>)
+
 (defn resolve-source-pattern
   [database sources implicit-source-name query-source
    input-relation constants pattern]

@@ -17,12 +17,12 @@
 
 (type-alias data-value :Datascript_runtime.Data_value.t)
 
-(defn ^:option<vector<Datascript_runtime.Data_value.t>> data-value-items
-  [^:Datascript_runtime.Data_value.t form]
+(defn  data-value-items
+  [ form]
   (Datascript_runtime.Data_value.sequential_items form))
 
-(defn ^boolean of-size?
-  [^:Datascript_runtime.Data_value.t form ^:int size]
+(defn  of-size?
+  [ form  size]
   (if-some [items (data-value-items form)]
     (= (count items) size)
     false))
@@ -91,15 +91,15 @@
 (deftrecord Constant    [^:Datascript_runtime.Data_value.t value])
 (deftrecord PlainSymbol [^:symbol symbol])
 
-(defn ^:option<datascript.parser/Placeholder> parse-placeholder
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-placeholder
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (= value "_") (Some (Placeholder.)) None)
     _ None))
 
-(defn ^:option<datascript.parser/Variable> parse-variable
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-variable
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (= (String.get value 0) \?)
@@ -107,19 +107,19 @@
       None)
     _ None))
 
-(defn ^datascript.parser/Variable parse-var-required
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-var-required
+  [ form]
   (if-some [variable (parse-variable form)]
     variable
     (util/raise "Cannot parse var, expected symbol starting with ?"
       {:error :parser/rule-var})))
 
-(defn ^:vector<datascript.parser/Variable> parse-required-variables
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-required-variables
+  [ items]
   (mapv parse-var-required items))
 
-(defn ^:option<datascript.parser/SrcVar> parse-src-var
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-src-var
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (= (String.get value 0) \$)
@@ -127,21 +127,21 @@
       None)
     _ None))
 
-(defn ^:option<datascript.parser/RulesVar> parse-rules-var
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-rules-var
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (= value "%") (Some (RulesVar.)) None)
     _ None))
 
-(defn ^:option<Datascript_runtime.Data_value.t> parse-constant
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-constant
+  [ form]
   (if-some [_ (parse-variable form)]
     None
     (Some form)))
 
-(defn ^:option<datascript.parser/PlainSymbol> parse-plain-symbol
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-plain-symbol
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (and (not= (String.get value 0) \?)
@@ -152,8 +152,8 @@
       None)
     _ None))
 
-(defn ^:option<datascript.parser/Variable> parse-plain-variable
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-plain-variable
+  [ form]
   (if-some [symbol (parse-plain-symbol form)]
     (Some (Variable. (:symbol symbol)))
     None))
@@ -167,8 +167,8 @@
   (FnArgSource :datascript.parser/SrcVar)
   (FnArgConstant :data-value))
 
-(defn ^:option<datascript.parser/fn-arg> parse-fn-arg
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-fn-arg
+  [ form]
   (if-some [value (parse-variable form)]
     (Some (FnArgVariable value))
     (if-some [value (parse-src-var form)]
@@ -177,8 +177,8 @@
         (Some (FnArgConstant value))
         None))))
 
-(defn ^:option<vector<datascript.parser/fn-arg>> parse-fn-args
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-fn-args
+  [ items]
   (parse-items parse-fn-arg items))
 
 ;; rule-vars = [ variable+ | ([ variable+ ] variable*) ]
@@ -187,12 +187,12 @@
   [^:option<vector<datascript.parser/Variable>> required
    ^:vector<datascript.parser/Variable> free])
 
-(defn ^boolean variables-distinct?
-  [^:vector<datascript.parser/Variable> variables]
+(defn  variables-distinct?
+  [ variables]
   (distinct? variables))
 
-(defn ^datascript.parser/RuleVars parse-rule-var-items
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-rule-var-items
+  [ items]
   (if-some [first-item (first items)]
     (let [required-items (data-value-items first-item)
           required* (match required-items
@@ -218,15 +218,15 @@
       "Cannot parse rule-vars, expected [ variable+ | ([ variable+ ] variable*) ]"
       {:error :parser/rule-vars})))
 
-(defn ^datascript.parser/RuleVars parse-rule-vars
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-rule-vars
+  [ form]
   (if-some [items (data-value-items form)]
     (parse-rule-var-items items)
     (util/raise "Cannot parse rule-vars, expected [ variable+ | ([ variable+ ] variable*) ]"
       {:error :parser/rule-vars})))
 
-(defn ^:vector<symbol> flatten-rule-vars
-  [^datascript.parser/RuleVars rule-vars]
+(defn  flatten-rule-vars
+  [ ^datascript.parser/RuleVars rule-vars]
   (vec
    (concat
     (match (:required rule-vars)
@@ -234,40 +234,40 @@
       (Some values) (mapv :symbol values))
     (mapv :symbol (:free rule-vars)))))
 
-(defn ^:tuple<int;int> rule-vars-arity
-  [^datascript.parser/RuleVars rule-vars]
+(defn  rule-vars-arity
+  [ ^datascript.parser/RuleVars rule-vars]
   (tuple
    (match (:required rule-vars)
      None 0
      (Some values) (count values))
    (count (:free rule-vars))))
 
-(defn ^:string join-rule-variable-names
-  [^:vector<string> names]
+(defn  join-rule-variable-names
+  [ ^:vector<string> names]
   (if-some [first-name (first names)]
     (reduce
-     (fn [^:string joined ^:string name]
+     (fn [ joined  name]
        (str joined " " name))
      first-name
      (subvec names 1))
     ""))
 
-(defn ^:string rule-vars-display
-  [^datascript.parser/RuleVars rule-vars]
+(defn  rule-vars-display
+  [ ^datascript.parser/RuleVars rule-vars]
   (let [required-parts
         (if-some [required (.-required rule-vars)]
           [(str
             "["
             (join-rule-variable-names
              (mapv
-              (fn [^datascript.parser/Variable variable]
+              (fn [ variable]
                 (str (.-symbol variable)))
               required))
             "]")]
           [])
         free-parts
         (mapv
-         (fn [^datascript.parser/Variable variable]
+         (fn [ variable]
            (str (.-symbol variable)))
          (.-free rule-vars))]
     (str
@@ -289,21 +289,21 @@
   (BindTuple :vector<binding>)
   (BindColl :binding))
 
-(defn ^:option<binding> parse-bind-ignore
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-bind-ignore
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Symbol value)
     (if (= value "_") (Some BindIgnore) None)
     _ None))
 
-(defn ^:option<binding> parse-bind-scalar
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-bind-scalar
+  [ form]
   (if-some [variable (parse-variable form)]
     (Some (BindScalar variable))
     None))
 
-(defn ^:option<binding> parse-bind-coll
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-bind-coll
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 2)
       (if-some [item (first items)]
@@ -319,14 +319,14 @@
       None)
     None))
 
-(defn ^:option<binding> parse-tuple-el
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-tuple-el
+  [ form]
   (if-some [binding (parse-bind-ignore form)]
     (Some binding)
     (Some (parse-binding form))))
 
-(defn ^:option<vector<binding>> parse-tuple-elements
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-tuple-elements
+  [ items]
   (loop [remaining items
          parsed []]
     (if (empty? remaining)
@@ -337,8 +337,8 @@
           None)
         None))))
 
-(defn ^:option<binding> parse-bind-tuple
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-bind-tuple
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [sub-bindings (parse-tuple-elements items)]
     (if-not (empty? sub-bindings)
@@ -348,8 +348,8 @@
     None)
     None))
 
-(defn ^:option<binding> parse-bind-rel
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-bind-rel
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 1)
       (if-some [item (first items)]
@@ -362,8 +362,8 @@
       None)
     None))
 
-(defn ^:binding parse-binding
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-binding
+  [ form]
   (if-some [binding (parse-bind-coll form)]
     binding
     (if-some [binding (parse-bind-rel form)]
@@ -424,7 +424,7 @@
   (FindSingle :datascript.parser/FindScalar)
   (FindTupleResult :datascript.parser/FindTuple))
 
-(defn fn-arg-vars [^:fn-arg arg]
+(defn fn-arg-vars [ arg]
   (match arg
     (FnArgVariable variable) [(:symbol variable)]
     (FnArgSource _) []
@@ -492,16 +492,16 @@
 (signature datascript.parser/parse-find
   :fn<Datascript_runtime.Data_value.t;datascript.parser/find-spec>)
 
-(defn- ^datascript.parser/Aggregate invalid-custom-aggregate []
+(defn-  invalid-custom-aggregate []
   (Stdlib.invalid_arg
    "Cannot parse custom aggregate call, expect ['aggregate' variable fn-arg+]"))
 
-(defn- ^datascript.parser/Pull invalid-pull-expression []
+(defn-  invalid-pull-expression []
   (Stdlib.invalid_arg
    "Cannot parse pull expression, expect ['pull' src-var? variable (constant | variable | plain-symbol)]"))
 
-(defn- ^:option<pull-pattern> parse-pull-pattern
-  [^:Datascript_runtime.Data_value.t form]
+(defn-  parse-pull-pattern
+  [ form]
   (if-some [variable (parse-variable form)]
     (Some (PullVariable variable))
     (if-some [variable (parse-plain-variable form)]
@@ -510,8 +510,8 @@
         (Some (PullConstant constant))
         None))))
 
-(defn ^:option<datascript.parser/Aggregate> parse-aggregate
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-aggregate
+  [ form]
   (if-some [items (data-value-items form)]
     (if (>= (count items) 2)
       (if-some [function-form (first items)]
@@ -527,8 +527,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/Aggregate> parse-aggregate-custom
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-aggregate-custom
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
       (match head
@@ -551,8 +551,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/Pull> parse-pull-expr
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-pull-expr
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
       (match head
@@ -581,8 +581,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/find-element> parse-find-elem
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find-elem
+  [ form]
   (if-some [variable (parse-variable form)]
     (Some (FindVariable variable))
     (if-some [pull (parse-pull-expr form)]
@@ -593,8 +593,8 @@
           (Some (FindAggregate aggregate))
           None)))))
 
-(defn ^:option<vector<find-element>> parse-find-elements
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-find-elements
+  [ items]
   (loop [remaining items
          elements []]
     (if-some [item (first remaining)]
@@ -603,16 +603,16 @@
         None)
       (Some elements))))
 
-(defn ^:option<datascript.parser/find-spec> parse-find-rel
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find-rel
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [elements (parse-find-elements items)]
       (Some (FindRelation (FindRel. elements)))
       None)
     None))
 
-(defn ^:option<datascript.parser/find-spec> parse-find-coll
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find-coll
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 1)
       (if-some [inner-form (first items)]
@@ -636,8 +636,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/find-spec> parse-find-scalar
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find-scalar
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 2)
       (if-some [marker (nth items 1)]
@@ -655,8 +655,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/find-spec> parse-find-tuple
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find-tuple
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 1)
       (if-some [inner-form (first items)]
@@ -669,8 +669,8 @@
       None)
     None))
 
-(defn ^:find-spec parse-find
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-find
+  [ form]
   (if-some [find (parse-find-rel form)]
     find
     (if-some [find (parse-find-coll form)]
@@ -683,28 +683,28 @@
            "Cannot parse :find, expected: (find-rel | find-coll | find-tuple | find-scalar)"
            {:error :parser/find}))))))
 
-(defn find-element-vars [^:find-element element]
+(defn find-element-vars [ element]
   (match element
     (FindVariable variable) (-find-vars variable)
     (FindPullElement pull) (-find-vars pull)
     (FindAggregate aggregate) (-find-vars aggregate)))
 
-(defn ^:vector<find-element> find-spec-elements [^:find-spec find]
+(defn  find-spec-elements [ find]
   (match find
     (FindRelation relation) (find-elements relation)
     (FindCollection collection) (find-elements collection)
     (FindSingle scalar) (find-elements scalar)
     (FindTupleResult tuple-result) (find-elements tuple-result)))
 
-(defn find-vars [^:find-spec find]
+(defn find-vars [ find]
   (mapcat find-element-vars (find-spec-elements find)))
 
-(defn aggregate? [^:find-element element]
+(defn aggregate? [ element]
   (match element
     (FindAggregate _) true
     _ false))
 
-(defn pull? [^:find-element element]
+(defn pull? [ element]
   (match element
     (FindPullElement _) true
     _ false))
@@ -719,61 +719,61 @@
   (ReturnSyms :vector<symbol>)
   (ReturnStrs :vector<string>))
 
-(defn ^:keyword return-map-type
-  [^:return-map return-map]
+(defn  return-map-type
+  [ return-map]
   (match return-map
     (ReturnKeys _) :keys
     (ReturnSyms _) :syms
     (ReturnStrs _) :strs))
 
-(defn ^:int return-map-count
-  [^:return-map return-map]
+(defn  return-map-count
+  [ return-map]
   (match return-map
     (ReturnKeys symbols) (count symbols)
     (ReturnSyms symbols) (count symbols)
     (ReturnStrs symbols) (count symbols)))
 
-(defn ^:option<vector<string>> return-map-key-names
-  [^:return-map return-map]
+(defn  return-map-key-names
+  [ return-map]
   (match return-map
     (ReturnKeys keys) (Some (mapv str keys))
     _ None))
 
-(defn ^:option<vector<string>> return-map-symbol-names
-  [^:return-map return-map]
+(defn  return-map-symbol-names
+  [ return-map]
   (match return-map
     (ReturnSyms keys) (Some (mapv str keys))
     _ None))
 
-(defn ^:option<vector<string>> return-map-string-names
-  [^:return-map return-map]
+(defn  return-map-string-names
+  [ return-map]
   (match return-map
     (ReturnStrs keys) (Some keys)
     _ None))
 
-(defn ^:option<vector<symbol>> return-map-symbols
-  [^:Datascript_runtime.Data_value.t form]
+(defn  return-map-symbols
+  [ form]
   (if-some [items (data-value-items form)]
     (reduce
-     (fn [^:option<vector<symbol>> result
-          ^:Datascript_runtime.Data_value.t item]
+     (fn [ result
+           item]
        (match result
          None None
          (Some symbols)
          (match item
            (Datascript_runtime.Data_value.Symbol symbol)
-           (let [^:symbol symbol symbol]
+           (let [ symbol symbol]
              (Some (conj symbols symbol)))
            _ None)))
      (Some [])
      items)
     None))
 
-(defn ^:keyword return-map-keyword [^:symbol symbol]
+(defn ^:keyword return-map-keyword [ ^:symbol symbol]
   (str ":" symbol))
 
-(defn ^:option<datascript.parser/return-map> parse-return-map
-  [^:keyword type ^:Datascript_runtime.Data_value.t form]
+(defn  parse-return-map
+  [ type  form]
   (if-some [symbols (return-map-symbols form)]
     (when (not (empty? symbols))
       (case type
@@ -787,8 +787,8 @@
 
 (declare parse-variables)
 
-(defn ^:vector<datascript.parser/Variable> parse-with
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-with
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [variables (parse-variables items)]
       variables
@@ -810,16 +810,16 @@
   StaticRulesInput
   (StaticValueInput :binding))
 
-(defn- ^:input-binding parse-in-binding
-  [^:Datascript_runtime.Data_value.t form]
+(defn-  parse-in-binding
+  [ form]
   (if-some [source (parse-src-var form)]
     (InputSource source)
     (if-some [rules (parse-rules-var form)]
       (InputRules rules)
       (InputValueBinding (parse-binding form)))))
 
-(defn ^:vector<input-binding> parse-in
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-in
+  [ form]
   (if-some [items (data-value-items form)]
     (mapv parse-in-binding items)
     (util/raise
@@ -884,8 +884,8 @@
   :fn<vector<Datascript_runtime.Data_value.t>;option<vector<datascript.parser/clause>>>)
 (declare parse-clause parse-and)
 
-(defn ^:option<pattern-element> parse-pattern-el
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-pattern-el
+  [ form]
   (if-some [_ (parse-placeholder form)]
     (Some PatternPlaceholder)
     (if-some [value (parse-variable form)]
@@ -894,8 +894,8 @@
         (Some (PatternConstant value))
         None))))
 
-(defn ^:option<vector<pattern-element>> parse-pattern-elements
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-pattern-elements
+  [ items]
   (loop [remaining items
          parsed []]
     (if (empty? remaining)
@@ -906,9 +906,9 @@
           None)
         None))))
 
-(defn ^:option<tuple<query-source;vector<Datascript_runtime.Data_value.t>>>
+(defn
   take-source
-  [^:Datascript_runtime.Data_value.t form]
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
       (if-some [source (parse-src-var head)]
@@ -917,8 +917,8 @@
       (Some (tuple DefaultSource items)))
     None))
       
-(defn ^:option<datascript.parser/clause> parse-pattern
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-pattern
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           next-form (tuple-get source-and-form 1)]
@@ -930,8 +930,8 @@
         None))
     None))
 
-(defn ^:option<tuple<query-callable;vector<fn-arg>>> parse-call
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-call
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [fn-form (first items)]
       (let [callable
@@ -948,8 +948,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/clause> parse-pred
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-pred
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 1)
       (if-some [call-form (first items)]
@@ -963,8 +963,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/clause> parse-fn
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-fn
+  [ form]
   (if-some [items (data-value-items form)]
     (if (= (count items) 2)
       (if-some [call-form (first items)]
@@ -981,8 +981,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/clause> parse-rule-expr
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-rule-expr
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           items (tuple-get source-and-form 1)]
@@ -1003,15 +1003,15 @@
 (signature datascript.parser/fn-arg-variable-records
   :fn<datascript.parser/fn-arg;vector<datascript.parser/Variable>>)
 
-(defn ^:vector<datascript.parser/Variable> fn-arg-variable-records
-  [^:fn-arg arg]
+(defn  fn-arg-variable-records
+  [ arg]
   (match arg
     (FnArgVariable variable) [variable]
     (FnArgSource _) []
     (FnArgConstant _) []))
 
-(defn ^:vector<datascript.parser/SrcVar> fn-arg-source-records
-  [^:fn-arg arg]
+(defn  fn-arg-source-records
+  [ arg]
   (match arg
     (FnArgSource source) [source]
     _ []))
@@ -1019,8 +1019,8 @@
 (signature datascript.parser/binding-vars
   :fn<datascript.parser/binding;vector<datascript.parser/Variable>>)
 
-(defn ^:vector<datascript.parser/Variable> binding-vars
-  [^:binding binding]
+(defn  binding-vars
+  [ binding]
   (match binding
     BindIgnore []
     (BindScalar variable) [variable]
@@ -1032,15 +1032,15 @@
 (signature datascript.parser/pattern-element-variable-symbol
   :fn<datascript.parser/pattern-element;option<symbol>>)
 
-(defn ^:vector<datascript.parser/Variable> pattern-element-vars
-  [^:pattern-element element]
+(defn  pattern-element-vars
+  [ element]
   (match element
     PatternPlaceholder []
     (PatternVariable variable) [variable]
     (PatternConstant _) []))
 
-(defn ^:option<symbol> pattern-element-variable-symbol
-  [^:pattern-element element]
+(defn  pattern-element-variable-symbol
+  [ element]
   (match element
     (PatternVariable variable) (Some (:symbol variable))
     _ None))
@@ -1048,8 +1048,8 @@
 (signature datascript.parser/callable-vars
   :fn<datascript.parser/query-callable;vector<datascript.parser/Variable>>)
 
-(defn ^:vector<datascript.parser/Variable> callable-vars
-  [^:query-callable callable]
+(defn  callable-vars
+  [ callable]
   (match callable
     (StaticCallable _) []
     (VariableCallable variable) [variable]))
@@ -1057,8 +1057,8 @@
 (signature datascript.parser/rule-vars-values
   :fn<datascript.parser/RuleVars;vector<datascript.parser/Variable>>)
 
-(defn ^:vector<datascript.parser/Variable> rule-vars-values
-  [^datascript.parser/RuleVars vars]
+(defn  rule-vars-values
+  [ vars]
   (vec
    (concat
     (if-some [required (:required vars)] required [])
@@ -1067,8 +1067,8 @@
 (signature datascript.parser/clause-vars
   :fn<datascript.parser/clause;vector<datascript.parser/Variable>>)
 
-(defn ^:vector<datascript.parser/Variable> clause-vars
-  [^:datascript.parser/clause clause]
+(defn  clause-vars
+  [ clause]
   (match clause
     (PatternClause _ pattern)
     (vec (mapcat pattern-element-vars pattern))
@@ -1088,17 +1088,17 @@
     (AndClause clauses) (vec (mapcat clause-vars clauses))))
 
 (defn collect-vars-distinct
-  [^:vector<datascript.parser/clause> clauses]
+  [ clauses]
   (vec (distinct (mapcat clause-vars clauses))))
 
 (defn- ^:string auto-rule-variable
-  [^:string variable ^:int seqid]
+  [ ^:string variable  ^:int seqid]
   (str variable "__auto__" seqid))
 
 (defn- ^datascript.parser/Variable substitute-rule-variable
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^datascript.parser/Variable variable]
+  [ ^:map<string;pattern-element> replacements
+    ^:int seqid
+    ^datascript.parser/Variable variable]
   (let [name (str (.-symbol variable))]
     (if-some [replacement (get replacements name)]
       (match replacement
@@ -1112,10 +1112,10 @@
           " must remain a variable in this position")))
       (Variable. (auto-rule-variable name seqid)))))
 
-(defn- ^pattern-element substitute-rule-pattern-element
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^pattern-element element]
+(defn-  substitute-rule-pattern-element
+  [ ^:map<string;pattern-element> replacements
+    seqid
+    element]
   (match element
     (PatternVariable variable)
     (let [name (str (.-symbol variable))]
@@ -1125,10 +1125,10 @@
          (Variable. (auto-rule-variable name seqid)))))
     _ element))
 
-(defn- ^fn-arg substitute-rule-fn-arg
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^fn-arg argument]
+(defn-  substitute-rule-fn-arg
+  [ ^:map<string;pattern-element> replacements
+    seqid
+    argument]
   (match argument
     (FnArgVariable variable)
     (let [name (str (.-symbol variable))]
@@ -1148,10 +1148,10 @@
          (Variable. (auto-rule-variable name seqid)))))
     _ argument))
 
-(defn- ^query-callable substitute-rule-callable
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^query-callable callable]
+(defn-  substitute-rule-callable
+  [ replacements
+    seqid
+    callable]
   (match callable
     (VariableCallable variable)
     (VariableCallable
@@ -1162,10 +1162,10 @@
          substitute-rule-clause
          substitute-rule-clauses)
 
-(defn- ^binding substitute-rule-binding
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^binding binding]
+(defn-  substitute-rule-binding
+  [ replacements
+    seqid
+    binding]
   (match binding
     BindIgnore BindIgnore
     (BindScalar variable)
@@ -1174,42 +1174,42 @@
     (BindTuple bindings)
     (BindTuple
      (mapv
-      (fn [^binding binding]
+      (fn [ binding]
         (substitute-rule-binding replacements seqid binding))
       bindings))
     (BindColl binding)
     (BindColl
      (substitute-rule-binding replacements seqid binding))))
 
-(defn- ^datascript.parser/RuleVars substitute-rule-vars
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^datascript.parser/RuleVars variables]
+(defn-  substitute-rule-vars
+  [ replacements
+    seqid
+    ^datascript.parser/RuleVars variables]
   (RuleVars.
    (match (.-required variables)
      None None
      (Some required)
      (Some
       (mapv
-       (fn [^datascript.parser/Variable variable]
+       (fn [ variable]
          (substitute-rule-variable
           replacements seqid variable))
        required)))
    (mapv
-    (fn [^datascript.parser/Variable variable]
+    (fn [ variable]
       (substitute-rule-variable replacements seqid variable))
     (.-free variables))))
 
-(defn- ^clause substitute-rule-clause
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^clause clause]
+(defn-  substitute-rule-clause
+  [ replacements
+    seqid
+    clause]
   (match clause
     (PatternClause source pattern)
     (PatternClause
      source
      (mapv
-      (fn [^pattern-element element]
+      (fn [ element]
         (substitute-rule-pattern-element
          replacements seqid element))
       pattern))
@@ -1217,7 +1217,7 @@
     (PredicateClause
      (substitute-rule-callable replacements seqid callable)
      (mapv
-      (fn [^fn-arg argument]
+      (fn [ argument]
         (substitute-rule-fn-arg
          replacements seqid argument))
       arguments))
@@ -1225,7 +1225,7 @@
     (FunctionClause
      (substitute-rule-callable replacements seqid callable)
      (mapv
-      (fn [^fn-arg argument]
+      (fn [ argument]
         (substitute-rule-fn-arg
          replacements seqid argument))
       arguments)
@@ -1235,7 +1235,7 @@
      source
      name
      (mapv
-      (fn [^pattern-element argument]
+      (fn [ argument]
         (substitute-rule-pattern-element
          replacements seqid argument))
       arguments))
@@ -1243,7 +1243,7 @@
     (NotClause
      source
      (mapv
-      (fn [^datascript.parser/Variable variable]
+      (fn [ variable]
         (substitute-rule-variable
          replacements seqid variable))
       variables)
@@ -1261,22 +1261,22 @@
      (substitute-rule-clauses replacements seqid clauses))))
 
 (defn ^:private ^:vector<clause> substitute-rule-clauses
-  [^:map<string;pattern-element> replacements
-   ^:int seqid
-   ^:vector<clause> clauses]
+  [ replacements
+    seqid
+    clauses]
   (mapv
-   (fn [^clause clause]
+   (fn [ clause]
      (substitute-rule-clause replacements seqid clause))
    clauses))
 
 (defn ^:option<vector<datascript.parser/clause>> parse-clauses
-  [^:vector<Datascript_runtime.Data_value.t> clauses]
+  [ clauses]
   (parse-items
-   (fn [^data-value form]
+   (fn [ form]
      (Some (parse-clause form)))
    clauses))
 
-(defn- validate-not [^:datascript.parser/clause clause]
+(defn- validate-not [ clause]
   (match clause
     (NotClause _ vars _ _)
     (do
@@ -1286,8 +1286,8 @@
       clause)
     _ clause))
 
-(defn ^:option<datascript.parser/clause> parse-not
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-not
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           items (tuple-get source-and-form 1)]
@@ -1313,12 +1313,12 @@
         None))
     None))
 
-(defn ^:option<vector<datascript.parser/Variable>> parse-variables
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn  parse-variables
+  [ items]
   (parse-items parse-variable items))
 
-(defn ^:option<datascript.parser/clause> parse-not-join
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-not-join
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           items (tuple-get source-and-form 1)]
@@ -1354,8 +1354,8 @@
     None))
 
 (defn validate-or
-  [^:datascript.parser/clause clause
-   ^:Datascript_runtime.Data_value.t _form]
+  [ clause
+    _form]
   (match clause
     (OrClause _ _ vars _ _)
     (do
@@ -1369,9 +1369,9 @@
       clause)
     _ clause))
 
-(defn ^:option<vector<datascript.parser/clause>>
+(defn
   parse-disjunction-clauses
-  [^:vector<Datascript_runtime.Data_value.t> items]
+  [ items]
   (loop [remaining items
          parsed []]
     (if (empty? remaining)
@@ -1383,8 +1383,8 @@
           (recur (subvec remaining 1) (conj parsed clause)))
         None))))
 
-(defn ^:option<datascript.parser/clause> parse-and
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-and
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
       (match head
@@ -1401,8 +1401,8 @@
       None)
     None))
 
-(defn ^:option<datascript.parser/clause> parse-or
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-or
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           items (tuple-get source-and-form 1)]
@@ -1431,8 +1431,8 @@
         None))
     None))
 
-(defn ^:option<datascript.parser/clause> parse-or-join
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-or-join
+  [ form]
   (if-some [source-and-form (take-source form)]
     (let [source (tuple-get source-and-form 0)
           items (tuple-get source-and-form 1)]
@@ -1494,7 +1494,7 @@
                     " are not bound in clause " (source not)))))))))
 
 (defn ^:datascript.parser/clause parse-clause
-  [^:Datascript_runtime.Data_value.t form]
+  [ form]
   (if-some [clause (parse-not form)]
     clause
     (if-some [clause (parse-not-join form)]
@@ -1516,7 +1516,7 @@
                    {:error :parser/where}))))))))))
 
 (defn ^:vector<datascript.parser/clause> parse-where
-  [^:Datascript_runtime.Data_value.t form]
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [clauses (parse-clauses items)]
       clauses
@@ -1539,7 +1539,7 @@
    ^:vector<datascript.parser/RuleBranch> branches])
 
 (defn ^datascript.parser/RuleBranch parse-rule
-  [^:Datascript_runtime.Data_value.t form]
+  [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
       (if-some [head-items (data-value-items head)]
@@ -1566,8 +1566,8 @@
       {:error :parser/rule})))
 
 (defn validate-arity
-  [^datascript.parser/PlainSymbol name
-   ^:vector<datascript.parser/RuleBranch> branches]
+  [ ^datascript.parser/PlainSymbol name
+    ^:vector<datascript.parser/RuleBranch> branches]
   (if-some [first-branch (first branches)]
     (let [vars0 (:vars first-branch)
           arity0 (rule-vars-arity vars0)]
@@ -1585,11 +1585,11 @@
     (util/raise "Rule must contain at least one branch"
       {:error :parser/rule})))
 
-(defn ^:vector<datascript.parser/Rule> add-rule-branch
-  [^:vector<datascript.parser/Rule> rules
-   ^datascript.parser/RuleBranch branch]
+(defn  add-rule-branch
+  [ ^:vector<datascript.parser/Rule> rules
+    ^datascript.parser/RuleBranch branch]
   (loop [remaining rules
-         ^:vector<datascript.parser/Rule> result []
+          ^:vector<datascript.parser/Rule> result []
          found false]
     (if (empty? remaining)
       (if found
@@ -1607,12 +1607,12 @@
                  found))
         result))))
 
-(defn ^:vector<datascript.parser/Rule> parse-rules
-  [^:Datascript_runtime.Data_value.t form]
+(defn  parse-rules
+  [ form]
   (if-some [items (data-value-items form)]
     (reduce
-     (fn [^:vector<datascript.parser/Rule> rules
-          ^:Datascript_runtime.Data_value.t rule-form]
+     (fn [ rules
+           rule-form]
        (add-rule-branch rules (parse-rule rule-form)))
      []
      items)
@@ -1655,46 +1655,46 @@
   (TraversalRule :datascript.parser/Rule)
   (TraversalQuery :datascript.parser/Query))
 
-(defn ^traversable variable-traversable [^:string name]
+(defn  variable-traversable [ name]
   (TraversalVariable (Variable. name)))
 
-(defn ^traversable binding-traversable [^binding binding]
+(defn  binding-traversable [ binding]
   (TraversalBinding binding))
 
-(defn ^traversable find-traversable [^find-spec find]
+(defn  find-traversable [ find]
   (TraversalFind find))
 
-(defn ^traversable clause-traversable [^clause clause]
+(defn  clause-traversable [ clause]
   (TraversalClause clause))
 
-(defn ^traversable rule-traversable [^datascript.parser/Rule rule]
+(defn  rule-traversable [ rule]
   (TraversalRule rule))
 
-(defn ^traversable query-traversable [^datascript.parser/Query query]
+(defn  query-traversable [ query]
   (TraversalQuery query))
 
-(defn ^traversable data-traversable [^data-value value]
+(defn  data-traversable [ value]
   (TraversalData value))
 
-(defn ^traversable string-traversable [^:string value]
+(defn  string-traversable [ value]
   (TraversalString value))
 
-(defn ^:option<string> traversable-variable-name [^traversable node]
+(defn  traversable-variable-name [ node]
   (match node
     (TraversalVariable variable) (Some (str (.-symbol variable)))
     _ None))
 
-(defn ^boolean traversable-clause? [^traversable node]
+(defn  traversable-clause? [ node]
   (match node
     (TraversalClause _) true
     _ false))
 
-(defn ^:option<clause> traversable-clause-value [^traversable node]
+(defn  traversable-clause-value [ node]
   (match node
     (TraversalClause clause) (Some clause)
     _ None))
 
-(defn ^:string traversable-kind [^traversable node]
+(defn  traversable-kind [ node]
   (match node
     TraversalAbsent "absent"
     (TraversalVector _) "vector"
@@ -1720,190 +1720,190 @@
     (TraversalRule _) "rule"
     (TraversalQuery _) "query"))
 
-(defn- ^traversable query-source-traversable [^query-source source]
+(defn-  query-source-traversable [ source]
   (match source
     DefaultSource (TraversalDefaultSource (DefaultSrc.))
     (ExplicitSource source) (TraversalSource source)))
 
-(defn- ^traversable pattern-element-traversable
-  [^pattern-element element]
+(defn-  pattern-element-traversable
+  [ element]
   (match element
     PatternPlaceholder (TraversalPlaceholder (Placeholder.))
     (PatternVariable variable) (TraversalVariable variable)
     (PatternConstant value) (TraversalData value)))
 
-(defn- ^traversable fn-arg-traversable [^fn-arg argument]
+(defn-  fn-arg-traversable [ argument]
   (match argument
     (FnArgVariable variable) (TraversalVariable variable)
     (FnArgSource source) (TraversalSource source)
     (FnArgConstant value) (TraversalData value)))
 
-(defn- ^traversable query-callable-traversable
-  [^query-callable callable]
+(defn-  query-callable-traversable
+  [ callable]
   (match callable
     (StaticCallable function-name)
     (TraversalPlainSymbol function-name)
     (VariableCallable variable)
     (TraversalVariable variable)))
 
-(defn- ^traversable aggregate-function-traversable
-  [^aggregate-function function]
+(defn-  aggregate-function-traversable
+  [ function]
   (match function
     (AggregatePlain function-name)
     (TraversalPlainSymbol function-name)
     (AggregateCustom variable)
     (TraversalVariable variable)))
 
-(defn- ^traversable pull-pattern-traversable [^pull-pattern pattern]
+(defn-  pull-pattern-traversable [ pattern]
   (match pattern
     (PullVariable variable) (TraversalVariable variable)
     (PullConstant value) (TraversalData value)))
 
-(defn- ^traversable find-element-traversable [^find-element element]
+(defn-  find-element-traversable [ element]
   (match element
     (FindVariable variable) (TraversalVariable variable)
     (FindPullElement pull) (TraversalPull pull)
     (FindAggregate aggregate) (TraversalAggregate aggregate)))
 
-(defn- ^traversable input-binding-traversable [^input-binding input]
+(defn-  input-binding-traversable [ input]
   (match input
     (InputSource source) (TraversalSource source)
     (InputRules rules) (TraversalRules rules)
     (InputValueBinding binding) (TraversalBinding binding)))
 
-(defn- ^datascript.parser/Variable traversable-variable-exn
-  [^traversable node]
+(defn-  traversable-variable-exn
+  [ node]
   (match node
     (TraversalVariable variable) variable
     _ (Stdlib.invalid_arg "Expected variable traversal node")))
 
-(defn- ^datascript.parser/SrcVar traversable-source-exn
-  [^traversable node]
+(defn-  traversable-source-exn
+  [ node]
   (match node
     (TraversalSource source) source
     _ (Stdlib.invalid_arg "Expected source traversal node")))
 
-(defn- ^datascript.parser/PlainSymbol traversable-plain-symbol-exn
-  [^traversable node]
+(defn-  traversable-plain-symbol-exn
+  [ node]
   (match node
     (TraversalPlainSymbol symbol) symbol
     _ (Stdlib.invalid_arg "Expected plain-symbol traversal node")))
 
-(defn- ^data-value traversable-data-exn [^traversable node]
+(defn-  traversable-data-exn [ node]
   (match node
     (TraversalData value) value
     (TraversalConstant constant) (.-value constant)
     _ (Stdlib.invalid_arg "Expected data traversal node")))
 
-(defn- ^:symbol traversable-symbol-exn [^traversable node]
+(defn-  traversable-symbol-exn [ node]
   (match node
     (TraversalSymbol symbol) symbol
     _ (Stdlib.invalid_arg "Expected symbol traversal node")))
 
-(defn- ^:keyword traversable-keyword-exn [^traversable node]
+(defn-  traversable-keyword-exn [ node]
   (match node
     (TraversalKeyword keyword) keyword
     _ (Stdlib.invalid_arg "Expected keyword traversal node")))
 
-(defn- ^:string traversable-string-exn [^traversable node]
+(defn-  traversable-string-exn [ node]
   (match node
     (TraversalString value) value
     _ (Stdlib.invalid_arg "Expected string traversal node")))
 
-(defn- ^:vector<traversable> traversable-vector-exn
-  [^traversable node]
+(defn-  traversable-vector-exn
+  [ node]
   (match node
     (TraversalVector values) values
     _ (Stdlib.invalid_arg "Expected vector traversal node")))
 
-(defn- ^binding traversable-binding-exn [^traversable node]
+(defn-  traversable-binding-exn [ node]
   (match node
     (TraversalBinding binding) binding
     _ (Stdlib.invalid_arg "Expected binding traversal node")))
 
-(defn- ^clause traversable-clause-exn [^traversable node]
+(defn-  traversable-clause-exn [ node]
   (match node
     (TraversalClause clause) clause
     _ (Stdlib.invalid_arg "Expected clause traversal node")))
 
-(defn- ^datascript.parser/RuleVars traversable-rule-vars-exn
-  [^traversable node]
+(defn-  traversable-rule-vars-exn
+  [ node]
   (match node
     (TraversalRuleVars variables) variables
     _ (Stdlib.invalid_arg "Expected rule-vars traversal node")))
 
-(defn- ^datascript.parser/RuleBranch traversable-rule-branch-exn
-  [^traversable node]
+(defn-  traversable-rule-branch-exn
+  [ node]
   (match node
     (TraversalRuleBranch branch) branch
     _ (Stdlib.invalid_arg "Expected rule-branch traversal node")))
 
-(defn- ^find-spec traversable-find-exn [^traversable node]
+(defn-  traversable-find-exn [ node]
   (match node
     (TraversalFind find) find
     _ (Stdlib.invalid_arg "Expected find traversal node")))
 
-(defn- ^return-map traversable-return-map-exn [^traversable node]
+(defn-  traversable-return-map-exn [ node]
   (match node
     (TraversalReturnMap return-map) return-map
     _ (Stdlib.invalid_arg "Expected return-map traversal node")))
 
-(defn- ^traversable variables-traversable
-  [^:vector<datascript.parser/Variable> variables]
+(defn-  variables-traversable
+  [ variables]
   (TraversalVector
    (mapv
-    (fn [^datascript.parser/Variable variable]
+    (fn [ variable]
       (TraversalVariable variable))
     variables)))
 
-(defn- ^traversable bindings-traversable
-  [^:vector<binding> bindings]
+(defn-  bindings-traversable
+  [ bindings]
   (TraversalVector
    (mapv
-    (fn [^binding binding]
+    (fn [ binding]
       (TraversalBinding binding))
     bindings)))
 
-(defn- ^traversable fn-args-traversable
-  [^:vector<fn-arg> arguments]
+(defn-  fn-args-traversable
+  [ arguments]
   (TraversalVector (mapv fn-arg-traversable arguments)))
 
-(defn- ^traversable pattern-elements-traversable
-  [^:vector<pattern-element> elements]
+(defn-  pattern-elements-traversable
+  [ elements]
   (TraversalVector (mapv pattern-element-traversable elements)))
 
-(defn- ^traversable find-elements-traversable
-  [^:vector<find-element> elements]
+(defn-  find-elements-traversable
+  [ elements]
   (TraversalVector (mapv find-element-traversable elements)))
 
-(defn- ^traversable clauses-traversable
-  [^:vector<clause> clauses]
+(defn-  clauses-traversable
+  [ clauses]
   (TraversalVector
    (mapv
-    (fn [^clause clause]
+    (fn [ clause]
       (TraversalClause clause))
     clauses)))
 
-(defn- ^traversable rule-branches-traversable
-  [^:vector<datascript.parser/RuleBranch> branches]
+(defn-  rule-branches-traversable
+  [ branches]
   (TraversalVector
    (mapv
-    (fn [^datascript.parser/RuleBranch branch]
+    (fn [ branch]
       (TraversalRuleBranch branch))
     branches)))
 
-(defn- ^traversable inputs-traversable
-  [^:vector<input-binding> inputs]
+(defn-  inputs-traversable
+  [ inputs]
   (TraversalVector (mapv input-binding-traversable inputs)))
 
-(defn- ^query-source traversable-query-source-exn [^traversable node]
+(defn-  traversable-query-source-exn [ node]
   (match node
     (TraversalDefaultSource _) DefaultSource
     (TraversalSource source) (ExplicitSource source)
     _ (Stdlib.invalid_arg "Expected query-source traversal node")))
 
-(defn- ^pattern-element traversable-pattern-element-exn
-  [^traversable node]
+(defn-  traversable-pattern-element-exn
+  [ node]
   (match node
     (TraversalPlaceholder _) PatternPlaceholder
     (TraversalVariable variable) (PatternVariable variable)
@@ -1911,7 +1911,7 @@
     (TraversalConstant constant) (PatternConstant (.-value constant))
     _ (Stdlib.invalid_arg "Expected pattern-element traversal node")))
 
-(defn- ^fn-arg traversable-fn-arg-exn [^traversable node]
+(defn-  traversable-fn-arg-exn [ node]
   (match node
     (TraversalVariable variable) (FnArgVariable variable)
     (TraversalSource source) (FnArgSource source)
@@ -1919,99 +1919,99 @@
     (TraversalConstant constant) (FnArgConstant (.-value constant))
     _ (Stdlib.invalid_arg "Expected function-argument traversal node")))
 
-(defn- ^query-callable traversable-query-callable-exn
-  [^traversable node]
+(defn-  traversable-query-callable-exn
+  [ node]
   (match node
     (TraversalPlainSymbol function-name) (StaticCallable function-name)
     (TraversalVariable variable) (VariableCallable variable)
     _ (Stdlib.invalid_arg "Expected callable traversal node")))
 
-(defn- ^aggregate-function traversable-aggregate-function-exn
-  [^traversable node]
+(defn-  traversable-aggregate-function-exn
+  [ node]
   (match node
     (TraversalPlainSymbol function-name) (AggregatePlain function-name)
     (TraversalVariable variable) (AggregateCustom variable)
     _ (Stdlib.invalid_arg "Expected aggregate-function traversal node")))
 
-(defn- ^pull-pattern traversable-pull-pattern-exn [^traversable node]
+(defn-  traversable-pull-pattern-exn [ node]
   (match node
     (TraversalVariable variable) (PullVariable variable)
     (TraversalData value) (PullConstant value)
     (TraversalConstant constant) (PullConstant (.-value constant))
     _ (Stdlib.invalid_arg "Expected pull-pattern traversal node")))
 
-(defn- ^find-element traversable-find-element-exn [^traversable node]
+(defn-  traversable-find-element-exn [ node]
   (match node
     (TraversalVariable variable) (FindVariable variable)
     (TraversalPull pull) (FindPullElement pull)
     (TraversalAggregate aggregate) (FindAggregate aggregate)
     _ (Stdlib.invalid_arg "Expected find-element traversal node")))
 
-(defn- ^input-binding traversable-input-binding-exn [^traversable node]
+(defn-  traversable-input-binding-exn [ node]
   (match node
     (TraversalSource source) (InputSource source)
     (TraversalRules rules) (InputRules rules)
     (TraversalBinding binding) (InputValueBinding binding)
     _ (Stdlib.invalid_arg "Expected input traversal node")))
 
-(defn- ^:vector<datascript.parser/Variable> traversable-variables-exn
-  [^traversable node]
+(defn-  traversable-variables-exn
+  [ node]
   (mapv traversable-variable-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<binding> traversable-bindings-exn [^traversable node]
+(defn-  traversable-bindings-exn [ node]
   (mapv traversable-binding-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<fn-arg> traversable-fn-args-exn [^traversable node]
+(defn-  traversable-fn-args-exn [ node]
   (mapv traversable-fn-arg-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<pattern-element> traversable-pattern-elements-exn
-  [^traversable node]
+(defn-  traversable-pattern-elements-exn
+  [ node]
   (mapv traversable-pattern-element-exn
         (traversable-vector-exn node)))
 
-(defn- ^:vector<find-element> traversable-find-elements-exn
-  [^traversable node]
+(defn-  traversable-find-elements-exn
+  [ node]
   (mapv traversable-find-element-exn
         (traversable-vector-exn node)))
 
-(defn- ^:vector<clause> traversable-clauses-exn [^traversable node]
+(defn-  traversable-clauses-exn [ node]
   (mapv traversable-clause-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<datascript.parser/RuleBranch>
+(defn-
   traversable-rule-branches-exn
-  [^traversable node]
+  [ node]
   (mapv traversable-rule-branch-exn
         (traversable-vector-exn node)))
 
-(defn- ^:vector<input-binding> traversable-inputs-exn
-  [^traversable node]
+(defn-  traversable-inputs-exn
+  [ node]
   (mapv traversable-input-binding-exn
         (traversable-vector-exn node)))
 
-(defn- ^:vector<traversable> data-values-traversable
-  [^:list<data-value> values]
+(defn-  data-values-traversable
+  [ ^:list<data-value> values]
   (Rrbvec.of_list
    (List.map
-    (fn [^data-value value]
+    (fn [ value]
       (TraversalData value))
     values)))
 
-(defn- ^:vector<traversable> data-map-entries-traversable
-  [^:list<tuple<data-value;data-value>> entries]
+(defn-  data-map-entries-traversable
+  [ ^:list<tuple<data-value;data-value>> entries]
   (Rrbvec.of_list
    (List.map
-    (fn [^:tuple<data-value;data-value> entry]
+    (fn [ ^:tuple<data-value;data-value> entry]
       (TraversalVector
        [(TraversalData (tuple-get entry 0))
         (TraversalData (tuple-get entry 1))]))
     entries)))
 
-(defn- ^:vector<traversable> optional-data-values-traversable
-  [^:list<option<data-value>> values]
-  (let [^:vector<option<data-value>> values
+(defn-  optional-data-values-traversable
+  [ ^:list<option<data-value>> values]
+  (let [ values
         (Rrbvec.of_list values)]
-    (loop [^:int idx 0
-           ^:vector<traversable> result []]
+    (loop [ idx 0
+            result []]
       (if (< idx (count values))
         (recur
          (inc idx)
@@ -2024,7 +2024,7 @@
             (TraversalData value))))
         result))))
 
-(defn- ^:vector<traversable> data-value-children [^data-value value]
+(defn-  data-value-children [ value]
   (match value
     (Datascript_runtime.Data_value.List values)
     (data-values-traversable values)
@@ -2038,7 +2038,7 @@
     (optional-data-values-traversable values)
     _ []))
 
-(defn- ^:vector<traversable> traversable-children [^traversable node]
+(defn-  traversable-children [ node]
   (match node
     TraversalAbsent []
     (TraversalVector values) values
@@ -2091,19 +2091,19 @@
       [(TraversalKeyword :keys)
        (TraversalVector
         (mapv
-         (fn [^:keyword key] (TraversalKeyword key))
+         (fn [ key] (TraversalKeyword key))
          keys))]
       (ReturnSyms symbols)
       [(TraversalKeyword :syms)
        (TraversalVector
         (mapv
-         (fn [^:symbol symbol] (TraversalSymbol symbol))
+         (fn [ symbol] (TraversalSymbol symbol))
          symbols))]
       (ReturnStrs strings)
       [(TraversalKeyword :strs)
        (TraversalVector
         (mapv
-         (fn [^:string value] (TraversalString value))
+         (fn [ value] (TraversalString value))
          strings))])
     (TraversalClause clause)
     (match clause
@@ -2149,22 +2149,22 @@
      (inputs-traversable (.-qin query))
      (clauses-traversable (.-qwhere query))]))
 
-(defn- ^:vector<keyword> traversable-keywords-exn [^traversable node]
+(defn-  traversable-keywords-exn [ node]
   (mapv traversable-keyword-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<symbol> traversable-symbols-exn [^traversable node]
+(defn-  traversable-symbols-exn [ node]
   (mapv traversable-symbol-exn (traversable-vector-exn node)))
 
-(defn- ^:vector<string> traversable-strings-exn [^traversable node]
+(defn-  traversable-strings-exn [ node]
   (mapv traversable-string-exn (traversable-vector-exn node)))
 
-(defn- ^:list<option<data-value>> postwalk-optional-data-values
-  [^:list<option<data-value>> values
-   ^:fn<traversable;traversable> walk]
-  (let [^:vector<option<data-value>> values
+(defn-  postwalk-optional-data-values
+  [ ^:list<option<data-value>> values
+    walk]
+  (let [ values
         (Rrbvec.of_list values)]
-    (loop [^:int idx 0
-           ^:vector<option<data-value>> result []]
+    (loop [ idx 0
+            result []]
       (if (< idx (count values))
         (let [value
               (match (Rrbvec.nth values idx)
@@ -2180,18 +2180,18 @@
           (recur (inc idx) (conj result transformed)))
         (Rrbvec.to_list result)))))
 
-(defn- ^:list<data-value> postwalk-data-values
-  [^:list<data-value> values
-   ^:fn<traversable;traversable> walk]
+(defn-  postwalk-data-values
+  [ ^:list<data-value> values
+    walk]
   (List.map
-   (fn [^data-value value]
+   (fn [ value]
      (traversable-data-exn
       (walk (TraversalData value))))
    values))
 
-(defn- ^data-value postwalk-data-value
-  [^data-value value
-   ^:fn<traversable;traversable> walk]
+(defn-  postwalk-data-value
+  [ value
+    walk]
   (match value
     (Datascript_runtime.Data_value.List values)
     (Datascript_runtime.Data_value.List
@@ -2202,7 +2202,7 @@
     (Datascript_runtime.Data_value.Map entries)
     (Datascript_runtime.Data_value.Map
      (List.map
-      (fn [^:tuple<data-value;data-value> entry]
+      (fn [ ^:tuple<data-value;data-value> entry]
         (tuple
          (tuple-get entry 0)
          (traversable-data-exn
@@ -2218,12 +2218,12 @@
      (postwalk-optional-data-values values walk))
     _ value))
 
-(defn- ^traversable traversable-postwalk
-  [^traversable node
-   ^:fn<traversable;traversable> f
-   ^boolean apply-root?]
+(defn-  traversable-postwalk
+  [ node
+    f
+    apply-root?]
   (let [walk
-        (fn [^traversable child]
+        (fn [ child]
           (traversable-postwalk child f true))
         rebuilt
         (match node
@@ -2359,7 +2359,7 @@
                    (walk
                     (TraversalVector
                      (mapv
-                      (fn [^:keyword key]
+                      (fn [ key]
                         (TraversalKeyword key))
                       keys)))))
                  (Stdlib.invalid_arg
@@ -2374,7 +2374,7 @@
                    (walk
                     (TraversalVector
                      (mapv
-                      (fn [^:symbol symbol]
+                      (fn [ symbol]
                         (TraversalSymbol symbol))
                       symbols)))))
                  (Stdlib.invalid_arg
@@ -2389,7 +2389,7 @@
                    (walk
                     (TraversalVector
                      (mapv
-                      (fn [^:string value]
+                      (fn [ value]
                         (TraversalString value))
                       strings)))))
                  (Stdlib.invalid_arg
@@ -2511,21 +2511,21 @@
       (f rebuilt)
       rebuilt)))
 
-(defn- ^:vector<traversable> collect-traversable
-  [^:fn<traversable;bool> pred
-   ^traversable node
-   ^:vector<traversable> acc]
+(defn-  collect-traversable
+  [ pred
+    node
+    acc]
   (if (pred node)
     (conj acc node)
     (reduce
-     (fn [^:vector<traversable> result ^traversable child]
+     (fn [ result  child]
        (collect-traversable pred child result))
      acc
      (traversable-children node))))
 
-(defn- ^:vector<datascript.parser/Variable> collect-vars-traversable
-  [^:vector<datascript.parser/Variable> acc
-   ^traversable node]
+(defn-  collect-vars-traversable
+  [ acc
+    node]
   (match node
     (TraversalVariable variable) (conj acc variable)
     (TraversalClause clause)
@@ -2545,51 +2545,51 @@
 (defprotocol ITraversable
   (-collect
    [this
-    ^:fn<traversable;bool> pred
-    ^:vector<traversable> acc]
+     pred
+     acc]
    :vector<traversable>)
   (-collect-vars
-   [this ^:vector<datascript.parser/Variable> acc]
+   [this  acc]
    :vector<datascript.parser/Variable>)
   (-postwalk
-   [this ^:fn<traversable;traversable> f]
+   [this  f]
    :traversable))
 
 (extend-type datascript.parser/traversable
   ITraversable
   (-collect
-    [^traversable node
-     ^:fn<traversable;bool> pred
-     ^:vector<traversable> acc]
+    [ node
+      pred
+      acc]
     (reduce
-     (fn [^:vector<traversable> result ^traversable child]
+     (fn [ result  child]
        (collect-traversable pred child result))
      acc
      (traversable-children node)))
   (-collect-vars
-    [^traversable node
-     ^:vector<datascript.parser/Variable> acc]
+    [ node
+      acc]
     (reduce collect-vars-traversable
             acc
             (traversable-children node)))
   (-postwalk
-    [^traversable node
-     ^:fn<traversable;traversable> f]
+    [ node
+      f]
     (traversable-postwalk node f false)))
 
 (defn collect
-  ([^:fn<traversable;bool> pred ^traversable form]
+  ([ ^:fn<traversable;bool> pred  ^traversable form]
    (collect pred form []))
-  ([^:fn<traversable;bool> pred
-    ^traversable form
-    ^:vector<traversable> acc]
+  ([ ^:fn<traversable;bool> pred
+     ^traversable form
+     ^:vector<traversable> acc]
    (if (pred form)
      (conj acc form)
      (-collect form pred acc))))
 
-(defn ^traversable postwalk
-  [^traversable form
-   ^:fn<traversable;traversable> f]
+(defn  postwalk
+  [ form
+    f]
   (f (-postwalk form f)))
 
 (signature datascript.parser/relation-find
@@ -2813,188 +2813,188 @@
 (signature datascript.parser/single-find?
   :fn<datascript.parser/find-spec;bool>)
 
-(defn ^:find-element variable-find-element [^:string variable]
+(defn  variable-find-element [ variable]
   (FindVariable (Variable. variable)))
 
-(defn ^:pattern-element pattern-variable [^:string variable]
+(defn  pattern-variable [ variable]
   (PatternVariable (Variable. variable)))
 
-(defn ^:pattern-element pattern-constant
-  [^:Datascript_runtime.Data_value.t value]
+(defn  pattern-constant
+  [ value]
   (PatternConstant value))
 
-(defn ^:option<Datascript_runtime.Data_value.t> pattern-element-constant
-  [^:pattern-element element]
+(defn  pattern-element-constant
+  [ element]
   (match element
     (PatternConstant value) (Some value)
     _ None))
 
-(defn ^:pattern-element pattern-attribute [^:keyword attr]
+(defn  pattern-attribute [ attr]
   (pattern-constant
    (Datascript_runtime.Data_value.Keyword (str attr))))
 
-(defn ^:clause pattern-clause
-  [^:vector<pattern-element> pattern]
+(defn  pattern-clause
+  [ pattern]
   (PatternClause DefaultSource pattern))
 
-(defn ^:clause explicit-pattern-clause
-  [^:string source ^:vector<pattern-element> pattern]
+(defn  explicit-pattern-clause
+  [ source  pattern]
   (PatternClause (ExplicitSource (SrcVar. source)) pattern))
 
-(defn ^:option<string> query-source-name [^:query-source source]
+(defn  query-source-name [ source]
   (match source
     DefaultSource None
     (ExplicitSource source) (Some (str (.-symbol source)))))
 
-(defn ^:fn-arg variable-argument [^:string variable]
+(defn  variable-argument [ variable]
   (FnArgVariable (Variable. variable)))
 
-(defn ^:fn-arg source-argument [^:string source]
+(defn  source-argument [ source]
   (FnArgSource (SrcVar. source)))
 
-(defn ^:fn-arg constant-argument
-  [^:Datascript_runtime.Data_value.t value]
+(defn  constant-argument
+  [ value]
   (FnArgConstant value))
 
-(defn ^:pattern-element pattern-placeholder []
+(defn  pattern-placeholder []
   PatternPlaceholder)
 
-(defn ^:option<string> argument-variable-name [^:fn-arg argument]
+(defn  argument-variable-name [ argument]
   (match argument
     (FnArgVariable variable) (Some (str (.-symbol variable)))
     _ None))
 
-(defn ^:option<Datascript_runtime.Data_value.t> argument-constant
-  [^:fn-arg argument]
+(defn  argument-constant
+  [ argument]
   (match argument
     (FnArgConstant value) (Some value)
     _ None))
 
-(defn ^:option<string> argument-source-name [^:fn-arg argument]
+(defn  argument-source-name [ argument]
   (match argument
     (FnArgSource source) (Some (str (.-symbol source)))
     _ None))
 
-(defn ^:option<string> static-callable-name
-  [^:query-callable callable]
+(defn  static-callable-name
+  [ callable]
   (match callable
     (StaticCallable name) (Some (str (.-symbol name)))
     (VariableCallable _) None))
 
-(defn ^:option<string> variable-callable-name
-  [^:query-callable callable]
+(defn  variable-callable-name
+  [ callable]
   (match callable
     (StaticCallable _) None
     (VariableCallable variable) (Some (str (.-symbol variable)))))
 
-(defn ^:clause greater-than-clause
-  [^:fn-arg left ^:fn-arg right]
+(defn  greater-than-clause
+  [ left  right]
   (static-predicate-clause ">" [left right]))
 
-(defn ^:clause static-predicate-clause
-  [^:string function-name ^:vector<fn-arg> arguments]
+(defn  static-predicate-clause
+  [ function-name  arguments]
   (PredicateClause
    (StaticCallable (PlainSymbol. function-name))
    arguments))
 
-(defn ^:clause static-function-clause
-  [^:string function-name
-   ^:vector<fn-arg> arguments
-   ^:binding binding]
+(defn  static-function-clause
+  [ function-name
+    arguments
+    binding]
   (FunctionClause
    (StaticCallable (PlainSymbol. function-name))
    arguments
    binding))
 
-(defn ^:clause variable-function-clause
-  [^:string variable
-   ^:vector<fn-arg> arguments
-   ^:binding binding]
+(defn  variable-function-clause
+  [ variable
+    arguments
+    binding]
   (FunctionClause
    (VariableCallable (Variable. variable))
    arguments
    binding))
 
-(defn ^:clause variable-predicate-clause
-  [^:string variable ^:vector<fn-arg> arguments]
+(defn  variable-predicate-clause
+  [ variable  arguments]
   (PredicateClause
    (VariableCallable (Variable. variable))
    arguments))
 
-(defn ^:clause static-not-clause
-  [^:vector<clause> clauses ^:string display]
+(defn  static-not-clause
+  [ clauses  display]
   (NotClause
    DefaultSource
    (collect-vars-distinct clauses)
    clauses
    display))
 
-(defn ^:clause static-source-not-clause
-  [^:string source ^:vector<clause> clauses ^:string display]
+(defn  static-source-not-clause
+  [ source  clauses  display]
   (NotClause
    (ExplicitSource (SrcVar. source))
    (collect-vars-distinct clauses)
    clauses
    display))
 
-(defn ^:clause static-not-join-clause
-  [^:vector<string> variables
-   ^:vector<clause> clauses
-   ^:string display]
+(defn  static-not-join-clause
+  [ variables
+    clauses
+    display]
   (NotClause
    DefaultSource
    (mapv
-    (fn [^:string variable]
+    (fn [ variable]
       (Variable. variable))
     variables)
    clauses
    display))
 
-(defn ^:clause static-source-not-join-clause
-  [^:string source
-   ^:vector<string> variables
-   ^:vector<clause> clauses
-   ^:string display]
+(defn  static-source-not-join-clause
+  [ source
+    variables
+    clauses
+    display]
   (NotClause
    (ExplicitSource (SrcVar. source))
    (mapv
-    (fn [^:string variable]
+    (fn [ variable]
       (Variable. variable))
     variables)
    clauses
    display))
 
-(defn ^:clause static-and-clause
-  [^:vector<clause> clauses]
+(defn  static-and-clause
+  [ clauses]
   (if (empty? clauses)
     (Stdlib.invalid_arg "Cannot create an empty and clause")
     (AndClause clauses)))
 
-(defn ^:option<vector<clause>> and-clause-clauses
-  [^clause clause]
+(defn  and-clause-clauses
+  [ clause]
   (match clause
     (AndClause clauses) (Some clauses)
     _ None))
 
-(defn ^:vector<string> rule-vars-names
-  [^datascript.parser/RuleVars variables]
+(defn  rule-vars-names
+  [ ^datascript.parser/RuleVars variables]
   (mapv
-   (fn [^datascript.parser/Variable variable]
+   (fn [ variable]
      (str (.-symbol variable)))
    (rule-vars-values variables)))
 
-(defn ^:vector<string> rule-vars-required-names
-  [^datascript.parser/RuleVars variables]
+(defn  rule-vars-required-names
+  [ ^datascript.parser/RuleVars variables]
   (if-some [required (.-required variables)]
     (mapv
-     (fn [^datascript.parser/Variable variable]
+     (fn [ variable]
        (str (.-symbol variable)))
      required)
     []))
 
-(defn ^:option<tuple<vector<string>;vector<string>;vector<clause>>>
+(defn
   or-clause-parts
-  [^clause clause]
+  [ clause]
   (match clause
     (OrClause _ _ variables branches _)
     (Some
@@ -3004,29 +3004,29 @@
       branches))
     _ None))
 
-(defn ^:option<string> or-clause-source-name
-  [^clause clause]
+(defn  or-clause-source-name
+  [ clause]
   (match clause
     (OrClause source _ _ _ _) (query-source-name source)
     _ None))
 
-(defn ^:option<string> or-clause-display
-  [^clause clause]
+(defn  or-clause-display
+  [ clause]
   (match clause
     (OrClause _ _ _ _ display) (Some display)
     _ None))
 
-(defn ^boolean or-clause-join?
-  [^clause clause]
+(defn  or-clause-join?
+  [ clause]
   (match clause
     (OrClause _ PlainDisjunction _ _ _) false
     (OrClause _ JoinDisjunction _ _ _) true
     _ false))
 
-(defn ^:clause static-or-clause-for-source
-  [^query-source source
-   ^:vector<clause> branches
-   ^:string display]
+(defn  static-or-clause-for-source
+  [ source
+    branches
+    display]
   (if-some [first-branch (first branches)]
     (OrClause
      source
@@ -3038,25 +3038,25 @@
      display)
     (Stdlib.invalid_arg "Cannot create an empty or clause")))
 
-(defn ^:clause static-or-clause
-  [^:vector<clause> branches ^:string display]
+(defn  static-or-clause
+  [ branches  display]
   (static-or-clause-for-source DefaultSource branches display))
 
-(defn ^:clause static-source-or-clause
-  [^:string source
-   ^:vector<clause> branches
-   ^:string display]
+(defn  static-source-or-clause
+  [ source
+    branches
+    display]
   (static-or-clause-for-source
    (ExplicitSource (SrcVar. source))
    branches
    display))
 
-(defn ^:clause static-or-join-clause-for-source
-  [^query-source source
-   ^:vector<string> required
-   ^:vector<string> free
-   ^:vector<clause> branches
-   ^:string display]
+(defn  static-or-join-clause-for-source
+  [ source
+    required
+    free
+    branches
+    display]
   (let [all-variables (vec (concat required free))]
     (if (empty? all-variables)
       (Stdlib.invalid_arg "Join variables should not be empty")
@@ -3073,30 +3073,30 @@
               None
               (Some
                (mapv
-                (fn [^:string variable]
+                (fn [ variable]
                   (Variable. variable))
                 required)))
             (mapv
-             (fn [^:string variable]
+             (fn [ variable]
                (Variable. variable))
              free))
            branches
            display))))))
 
-(defn ^:clause static-or-join-clause
-  [^:vector<string> required
-   ^:vector<string> free
-   ^:vector<clause> branches
-   ^:string display]
+(defn  static-or-join-clause
+  [ required
+    free
+    branches
+    display]
   (static-or-join-clause-for-source
    DefaultSource required free branches display))
 
-(defn ^:clause static-source-or-join-clause
-  [^:string source
-   ^:vector<string> required
-   ^:vector<string> free
-   ^:vector<clause> branches
-   ^:string display]
+(defn  static-source-or-join-clause
+  [ source
+    required
+    free
+    branches
+    display]
   (static-or-join-clause-for-source
    (ExplicitSource (SrcVar. source))
    required
@@ -3104,24 +3104,24 @@
    branches
    display))
 
-(defn ^:clause static-rule-clause
-  [^:string rule-name ^:vector<pattern-element> arguments]
+(defn  static-rule-clause
+  [ rule-name  arguments]
   (RuleClause
    DefaultSource
    (PlainSymbol. rule-name)
    arguments))
 
-(defn ^:clause static-source-rule-clause
-  [^:string source
-   ^:string rule-name
-   ^:vector<pattern-element> arguments]
+(defn  static-source-rule-clause
+  [ source
+    rule-name
+    arguments]
   (RuleClause
    (ExplicitSource (SrcVar. source))
    (PlainSymbol. rule-name)
    arguments))
 
-(defn ^datascript.parser/Variable static-rule-variable
-  [^:string parameter]
+(defn  static-rule-variable
+  [ parameter]
   (if
    (and
     (not (= parameter ""))
@@ -3132,10 +3132,10 @@
       "Cannot parse var, expected symbol starting with ?, got: "
       parameter))))
 
-(defn ^datascript.parser/RuleBranch static-rule-branch
-  [^:string rule-name
-   ^:vector<string> parameters
-   ^:vector<clause> clauses]
+(defn  static-rule-branch
+  [ rule-name
+    parameters
+    ^:vector<clause> clauses]
   (if (empty? clauses)
     (Stdlib.invalid_arg "Rule branch should have clauses")
     (RuleBranch.
@@ -3147,11 +3147,11 @@
        parameters))
      clauses)))
 
-(defn ^datascript.parser/RuleBranch static-rule-branch-with-vars
-  [^:string rule-name
-   ^:vector<string> required
-   ^:vector<string> free
-   ^:vector<clause> clauses]
+(defn  static-rule-branch-with-vars
+  [ rule-name
+    required
+    free
+    ^:vector<clause> clauses]
   (if (empty? clauses)
     (Stdlib.invalid_arg "Rule branch should have clauses")
     (RuleBranch.
@@ -3168,21 +3168,21 @@
        free))
      clauses)))
 
-(defn ^:vector<datascript.parser/Rule> static-rules
-  [^:vector<datascript.parser/RuleBranch> branches]
+(defn  static-rules
+  [ branches]
   (reduce add-rule-branch [] branches))
 
-(defn ^:vector<clause> expand-rule-branch
-  [^datascript.parser/RuleBranch branch
-   ^:vector<pattern-element> arguments
-   ^:int seqid]
+(defn  expand-rule-branch
+  [ branch
+    arguments
+    seqid]
   (let [parameters (rule-vars-names (.-vars branch))]
     (if (= (count parameters) (count arguments))
       (let [replacements
             (reduce-kv
-             (fn [^:map<string;pattern-element> replacements
-                  ^:int index
-                  ^:string parameter]
+             (fn [ replacements
+                   index
+                   parameter]
                (assoc replacements parameter (nth arguments index)))
              {}
              parameters)]
@@ -3190,60 +3190,60 @@
          replacements seqid (.-clauses branch)))
       (Stdlib.invalid_arg "Rule arity mismatch"))))
 
-(defn ^:option<tuple<string;vector<pattern-element>>> rule-clause-parts
-  [^clause clause]
+(defn  rule-clause-parts
+  [ clause]
   (match clause
     (RuleClause _ name arguments)
     (Some (tuple (str (.-symbol name)) arguments))
     _ None))
 
-(defn ^:option<string> rule-clause-source-name
-  [^clause clause]
+(defn  rule-clause-source-name
+  [ clause]
   (match clause
     (RuleClause source _ _) (query-source-name source)
     _ None))
 
-(defn ^:option<vector<datascript.parser/RuleBranch>> rule-branches
-  [^:vector<datascript.parser/Rule> rules ^:string rule-name]
+(defn  rule-branches
+  [ rules  rule-name]
   (if-some [rule
             (first
              (filter
-              (fn [^datascript.parser/Rule rule]
+              (fn [ rule]
                 (= rule-name (str (.-symbol (.-name rule)))))
               rules))]
     (Some (.-branches rule))
     None))
 
-(defn ^:vector<string> rule-branch-parameter-names
-  [^datascript.parser/RuleBranch branch]
+(defn  rule-branch-parameter-names
+  [ branch]
   (rule-vars-names (.-vars branch)))
 
-(defn ^:vector<string> rule-branch-required-parameter-names
-  [^datascript.parser/RuleBranch branch]
+(defn  rule-branch-required-parameter-names
+  [ branch]
   (rule-vars-required-names (.-vars branch)))
 
-(defn ^:vector<clause> rule-branch-clauses
-  [^datascript.parser/RuleBranch branch]
+(defn  rule-branch-clauses
+  [ branch]
   (.-clauses branch))
 
-(defn ^:find-spec relation-find [^:vector<string> variables]
+(defn  relation-find [ variables]
   (FindRelation
    (FindRel. (mapv variable-find-element variables))))
 
-(defn ^:find-spec relation-find-elements
-  [^:vector<datascript.parser/find-element> elements]
+(defn  relation-find-elements
+  [ elements]
   (FindRelation (FindRel. elements)))
 
-(defn ^:find-element aggregate-find-element
-  [^:string function-name
-   ^:vector<datascript.parser/fn-arg> arguments]
+(defn  aggregate-find-element
+  [ function-name
+    arguments]
   (FindAggregate
    (Aggregate.
     (AggregatePlain (PlainSymbol. function-name))
     arguments)))
 
-(defn ^:find-element custom-aggregate-find-element
-  [^:string variable ^:vector<fn-arg> arguments]
+(defn  custom-aggregate-find-element
+  [ variable  arguments]
   (FindAggregate
    (Aggregate.
     (AggregateCustom (Variable. variable))
@@ -3253,76 +3253,76 @@
  pull-source-find-element
  pull-source-variable-find-element)
 
-(defn ^:find-element pull-find-element
-  [^:string variable
-   ^:Datascript_runtime.Data_value.t pattern]
+(defn  pull-find-element
+  [ variable
+    pattern]
   (pull-source-find-element "$" variable pattern))
 
-(defn ^:find-element pull-source-find-element
-  [^:string source
-   ^:string variable
-   ^:Datascript_runtime.Data_value.t pattern]
+(defn  pull-source-find-element
+  [ source
+    variable
+    pattern]
   (FindPullElement
    (Pull.
     (SrcVar. source)
     (Variable. variable)
     (PullConstant pattern))))
 
-(defn ^:find-element pull-variable-find-element
-  [^:string variable ^:string pattern-variable]
+(defn  pull-variable-find-element
+  [ variable  pattern-variable]
   (pull-source-variable-find-element
    "$" variable pattern-variable))
 
-(defn ^:find-element pull-source-variable-find-element
-  [^:string source
-   ^:string variable
-   ^:string pattern-variable]
+(defn  pull-source-variable-find-element
+  [ source
+    variable
+    pattern-variable]
   (FindPullElement
    (Pull.
     (SrcVar. source)
     (Variable. variable)
     (PullVariable (Variable. pattern-variable)))))
 
-(defn ^:find-spec collection-find [^:string variable]
+(defn  collection-find [ variable]
   (collection-find-element
    (variable-find-element variable)))
 
-(defn ^:find-spec collection-find-element
-  [^datascript.parser/find-element element]
+(defn  collection-find-element
+  [ element]
   (FindCollection (FindColl. element)))
 
-(defn ^:find-spec single-find [^:string variable]
+(defn  single-find [ variable]
   (single-find-element
    (variable-find-element variable)))
 
-(defn ^:find-spec single-find-element
-  [^datascript.parser/find-element element]
+(defn  single-find-element
+  [ element]
   (FindSingle (FindScalar. element)))
 
-(defn ^:find-spec tuple-find [^:vector<string> variables]
+(defn  tuple-find [ variables]
   (tuple-find-elements
    (mapv variable-find-element variables)))
 
-(defn ^:find-spec tuple-find-elements
-  [^:vector<datascript.parser/find-element> elements]
+(defn  tuple-find-elements
+  [ elements]
   (FindTupleResult (FindTuple. elements)))
 
-(defn ^datascript.parser/Query static-query
-  [^:find-spec find
-   ^:vector<vector<datascript.parser/pattern-element>> patterns]
+(defn  static-query
+  [ find
+    patterns]
   (Query.
    find
    None
    None
    []
    (mapv
-    (fn [^:vector<datascript.parser/pattern-element> pattern]
+    (fn [ pattern]
       (PatternClause DefaultSource pattern))
     patterns)))
 
-(defn ^datascript.parser/Query static-db-query
-  [^:find-spec find
-   ^:vector<vector<datascript.parser/pattern-element>> patterns]
+(defn  static-db-query
+  [ find
+    patterns]
   (let [query (static-query find patterns)]
     (Query.
      (.-qfind query)
@@ -3331,8 +3331,8 @@
      [(InputSource (SrcVar. "$"))]
      (.-qwhere query))))
 
-(defn ^datascript.parser/Query static-db-query-clauses
-  [^:find-spec find ^:vector<clause> clauses]
+(defn  static-db-query-clauses
+  [ find  clauses]
   (Query.
    find
    None
@@ -3340,22 +3340,22 @@
    [(InputSource (SrcVar. "$"))]
    clauses))
 
-(defn ^:binding scalar-input [^:string variable]
+(defn  scalar-input [ variable]
   (BindScalar (Variable. variable)))
 
-(defn ^:binding ignore-input []
+(defn  ignore-input []
   BindIgnore)
 
-(defn ^:binding tuple-input [^:vector<binding> bindings]
+(defn  tuple-input [ bindings]
   (BindTuple bindings))
 
-(defn ^:binding collection-input [^:binding binding]
+(defn  collection-input [ binding]
   (BindColl binding))
 
-(defn ^datascript.parser/Query static-db-query-with-bindings
-  [^:find-spec find
-   ^:vector<vector<datascript.parser/pattern-element>> patterns
-   ^:vector<binding> bindings]
+(defn  static-db-query-with-bindings
+  [ find
+    patterns
+    bindings]
   (let [query (static-db-query find patterns)]
     (Query.
      (.-qfind query)
@@ -3365,30 +3365,30 @@
       (concat
        (.-qin query)
        (mapv
-        (fn [^:binding binding]
+        (fn [ binding]
           (InputValueBinding binding))
         bindings)))
      (.-qwhere query))))
 
-(defn ^datascript.parser/Query static-query-with-bindings
-  [^:find-spec find
-   ^:vector<vector<datascript.parser/pattern-element>> patterns
-   ^:vector<binding> bindings]
+(defn  static-query-with-bindings
+  [ find
+    patterns
+    bindings]
   (let [query (static-query find patterns)]
     (Query.
      (.-qfind query)
      (.-qwith query)
      (.-qreturn-map query)
      (mapv
-      (fn [^:binding binding]
+      (fn [ binding]
         (InputValueBinding binding))
       bindings)
      (.-qwhere query))))
 
-(defn ^datascript.parser/Query static-db-query-clauses-with-bindings
-  [^:find-spec find
-   ^:vector<clause> clauses
-   ^:vector<binding> bindings]
+(defn  static-db-query-clauses-with-bindings
+  [ find
+    clauses
+    bindings]
   (Query.
    find
    None
@@ -3397,45 +3397,45 @@
     (concat
      [(InputSource (SrcVar. "$"))]
      (mapv
-      (fn [^:binding binding]
+      (fn [ binding]
         (InputValueBinding binding))
       bindings)))
    clauses))
 
-(defn ^datascript.parser/Query static-query-clauses-with-bindings
-  [^:find-spec find
-   ^:vector<clause> clauses
-   ^:vector<binding> bindings]
+(defn  static-query-clauses-with-bindings
+  [ find
+    clauses
+    bindings]
   (Query.
    find
    None
    None
    (mapv
-    (fn [^:binding binding]
+    (fn [ binding]
       (InputValueBinding binding))
     bindings)
    clauses))
 
-(defn ^static-query-input make-static-rules-input []
+(defn  make-static-rules-input []
   StaticRulesInput)
 
-(defn ^static-query-input make-static-source-input [^:string source]
+(defn  make-static-source-input [ source]
   (StaticSourceInput (SrcVar. source)))
 
-(defn ^static-query-input make-static-value-input [^binding binding]
+(defn  make-static-value-input [ binding]
   (StaticValueInput binding))
 
-(defn ^datascript.parser/input-binding static-input-binding-form
-  [^static-query-input input]
+(defn  static-input-binding-form
+  [ input]
   (match input
     (StaticSourceInput source) (InputSource source)
     StaticRulesInput (InputRules (RulesVar.))
     (StaticValueInput binding) (InputValueBinding binding)))
 
-(defn ^datascript.parser/Query static-db-query-clauses-with-inputs
-  [^:find-spec find
-   ^:vector<clause> clauses
-   ^:vector<static-query-input> inputs]
+(defn  static-db-query-clauses-with-inputs
+  [ find
+    clauses
+    inputs]
   (Query.
    find
    None
@@ -3446,10 +3446,10 @@
      (mapv static-input-binding-form inputs)))
    clauses))
 
-(defn ^datascript.parser/Query static-query-clauses-with-inputs
-  [^:find-spec find
-   ^:vector<clause> clauses
-   ^:vector<static-query-input> inputs]
+(defn  static-query-clauses-with-inputs
+  [ find
+    clauses
+    inputs]
   (Query.
    find
    None
@@ -3457,14 +3457,14 @@
    (mapv static-input-binding-form inputs)
    clauses))
 
-(defn ^:option<binding> query-input-value-binding
-  [^input-binding input]
+(defn  query-input-value-binding
+  [ input]
   (match input
     (InputValueBinding binding) (Some binding)
     _ None))
 
-(defn ^:option<vector<static-query-input>> static-query-inputs
-  [^datascript.parser/Query query]
+(defn  static-query-inputs
+  [ query]
   (loop [remaining (.-qin query)
          inputs []]
     (if-some [input (first remaining)]
@@ -3489,25 +3489,25 @@
           None))
       (Some inputs))))
 
-(defn ^boolean static-input-rules? [^static-query-input input]
+(defn  static-input-rules? [ input]
   (match input
     StaticRulesInput true
     _ false))
 
-(defn ^:option<string> static-input-source-name
-  [^static-query-input input]
+(defn  static-input-source-name
+  [ input]
   (match input
     (StaticSourceInput source) (Some (str (.-symbol source)))
     _ None))
 
-(defn ^:option<binding> static-input-binding
-  [^static-query-input input]
+(defn  static-input-binding
+  [ input]
   (match input
     (StaticValueInput binding) (Some binding)
     _ None))
 
-(defn ^datascript.parser/Query query-with
-  [^datascript.parser/Query query ^:vector<string> variables]
+(defn  query-with
+  [ query  variables]
   (let [find-variables
         (if-some [variables
                   (find-variable-names (.-qfind query))]
@@ -3519,7 +3519,7 @@
       (Stdlib.invalid_arg "Vars used in :with should be distinct")
 
       (some
-       (fn [^:string variable]
+       (fn [ variable]
          (contains? find-variable-set variable))
        variables)
       (Stdlib.invalid_arg
@@ -3530,15 +3530,15 @@
        (.-qfind query)
        (Some
         (mapv
-         (fn [^:string variable]
+         (fn [ variable]
            (Variable. variable))
          variables))
        (.-qreturn-map query)
        (.-qin query)
        (.-qwhere query)))))
 
-(defn ^datascript.parser/Query query-return-map
-  [^datascript.parser/Query query ^:return-map return-map]
+(defn  query-return-map
+  [ query  return-map]
   (let [type (str (return-map-type return-map))
         find (.-qfind query)]
     (cond
@@ -3568,35 +3568,35 @@
        (.-qin query)
        (.-qwhere query)))))
 
-(defn ^datascript.parser/Query query-return-keys
-  [^datascript.parser/Query query ^:vector<string> keys]
+(defn  query-return-keys
+  [ query  keys]
   (query-return-map
    query
    (ReturnKeys
-    (mapv (fn [^:string key] (keyword key)) keys))))
+    (mapv (fn [ key] (keyword key)) keys))))
 
-(defn ^datascript.parser/Query query-return-symbols
-  [^datascript.parser/Query query ^:vector<string> keys]
+(defn  query-return-symbols
+  [ query  keys]
   (query-return-map
    query
    (ReturnSyms
-    (mapv (fn [^:string key] (symbol key)) keys))))
+    (mapv (fn [ key] (symbol key)) keys))))
 
-(defn ^datascript.parser/Query query-return-strings
-  [^datascript.parser/Query query ^:vector<string> keys]
+(defn  query-return-strings
+  [ query  keys]
   (query-return-map query (ReturnStrs keys)))
 
-(defn ^datascript.parser/Query static-db-query-with-scalars
-  [^:find-spec find
-   ^:vector<vector<datascript.parser/pattern-element>> patterns
-   ^:vector<string> variables]
+(defn  static-db-query-with-scalars
+  [ find
+    patterns
+    variables]
   (static-db-query-with-bindings
    find patterns (mapv scalar-input variables)))
 
-(defn ^datascript.parser/Query static-db-query-clauses-with-scalars
-  [^:find-spec find
-   ^:vector<clause> clauses
-   ^:vector<string> variables]
+(defn  static-db-query-clauses-with-scalars
+  [ find
+    clauses
+    variables]
   (let [query (static-db-query-clauses find clauses)]
     (Query.
      (.-qfind query)
@@ -3606,19 +3606,19 @@
       (concat
        (.-qin query)
        (mapv
-        (fn [^:string variable]
+        (fn [ variable]
           (InputValueBinding (scalar-input variable)))
         variables)))
      (.-qwhere query))))
 
-(defn ^:option<binding> static-value-input-binding
-  [^:input-binding input]
+(defn  static-value-input-binding
+  [ input]
   (match input
     (InputValueBinding binding) (Some binding)
     _ None))
 
-(defn ^:option<vector<binding>> static-query-value-bindings
-  [^datascript.parser/Query query]
+(defn  static-query-value-bindings
+  [ query]
   (let [inputs (.-qin query)
         remaining
         (if-some [first-input (first inputs)]
@@ -3637,49 +3637,49 @@
         (Some bindings)))))
 
 (defn static-query-has-source?
-  [^datascript.parser/Query query]
+  [ query]
   (if-some [input (first (.-qin query))]
     (match input
       (InputSource _) true
       _ false)
     false))
 
-(defn binding-ignore? [^:binding binding]
+(defn binding-ignore? [ binding]
   (match binding
     BindIgnore true
     _ false))
 
-(defn ^:option<string> binding-scalar-variable [^:binding binding]
+(defn  binding-scalar-variable [ binding]
   (match binding
     (BindScalar variable) (Some (str (.-symbol variable)))
     _ None))
 
-(defn ^:option<vector<binding>> binding-tuple-items [^:binding binding]
+(defn  binding-tuple-items [ binding]
   (match binding
     (BindTuple bindings) (Some bindings)
     _ None))
 
-(defn ^:option<binding> binding-collection-item [^:binding binding]
+(defn  binding-collection-item [ binding]
   (match binding
     (BindColl item) (Some item)
     _ None))
 
-(defn ^:vector<string> binding-variable-names [^:binding binding]
+(defn  binding-variable-names [ binding]
   (mapv
-   (fn [^datascript.parser/Variable variable]
+   (fn [ variable]
      (str (.-symbol variable)))
    (binding-vars binding)))
 
-(defn ^:option<vector<datascript.parser/pattern-element>>
+(defn
   default-pattern
-  [^:clause clause]
+  [ clause]
   (match clause
     (PatternClause DefaultSource pattern) (Some pattern)
     _ None))
 
-(defn ^:option<vector<vector<datascript.parser/pattern-element>>>
+(defn
   static-query-patterns
-  [^datascript.parser/Query query]
+  [ query]
   (loop [remaining (.-qwhere query)
          patterns []]
     (if-some [clause (first remaining)]
@@ -3688,12 +3688,12 @@
         None)
       (Some patterns))))
 
-(defn ^:option<string> find-variable-name [^:find-element element]
+(defn  find-variable-name [ element]
   (match element
     (FindVariable variable) (Some (str (.-symbol variable)))
     _ None))
 
-(defn ^:option<vector<string>> find-variable-names [^:find-spec find]
+(defn  find-variable-names [ find]
   (loop [remaining (find-spec-elements find)
          variables []]
     (if-some [element (first remaining)]
@@ -3702,8 +3702,8 @@
         None)
       (Some variables))))
 
-(defn ^:option<vector<string>> find-projection-variable-names
-  [^:find-spec find]
+(defn  find-projection-variable-names
+  [ find]
   (loop [remaining (find-spec-elements find)
          variables []]
     (if-some [element (first remaining)]
@@ -3724,29 +3724,29 @@
             None)))
       (Some variables))))
 
-(defn ^:option<datascript.parser/Aggregate> find-element-aggregate
-  [^:find-element element]
+(defn  find-element-aggregate
+  [ element]
   (match element
     (FindAggregate aggregate) (Some aggregate)
     _ None))
 
-(defn ^:option<string> aggregate-function-name
-  [^datascript.parser/Aggregate aggregate]
+(defn  aggregate-function-name
+  [ aggregate]
   (match (.-fn aggregate)
     (AggregatePlain function-name)
     (Some (str (.-symbol function-name)))
     _ None))
 
-(defn ^:option<string> aggregate-custom-variable-name
-  [^datascript.parser/Aggregate aggregate]
+(defn  aggregate-custom-variable-name
+  [ aggregate]
   (match (.-fn aggregate)
     (AggregateCustom variable)
     (Some (str (.-symbol variable)))
     _ None))
 
-(defn ^:option<vector<Datascript_runtime.Data_value.t>>
+(defn
   aggregate-constant-arguments
-  [^datascript.parser/Aggregate aggregate]
+  [ aggregate]
   (let [arguments (.-args aggregate)
         parameter-count (dec (count arguments))]
     (if (< parameter-count 0)
@@ -3762,48 +3762,48 @@
             None)
           (Some values))))))
 
-(defn ^:option<datascript.parser/Pull> find-element-pull
-  [^:find-element element]
+(defn  find-element-pull
+  [ element]
   (match element
     (FindPullElement pull) (Some pull)
     _ None))
 
-(defn ^:string pull-variable-name [^datascript.parser/Pull pull]
+(defn  pull-variable-name [ pull]
   (str (.-symbol (.-variable pull))))
 
-(defn ^:string pull-source-name [^datascript.parser/Pull pull]
+(defn  pull-source-name [ pull]
   (str (.-symbol (.-source pull))))
 
-(defn ^:option<Datascript_runtime.Data_value.t> pull-pattern-value
-  [^datascript.parser/Pull pull]
+(defn  pull-pattern-value
+  [ pull]
   (match (.-pattern pull)
     (PullConstant pattern) (Some pattern)
     _ None))
 
-(defn ^:option<string> pull-pattern-variable-name
-  [^datascript.parser/Pull pull]
+(defn  pull-pattern-variable-name
+  [ pull]
   (match (.-pattern pull)
     (PullVariable variable) (Some (str (.-symbol variable)))
     _ None))
 
-(defn relation-find? [^:find-spec find]
+(defn relation-find? [ find]
   (match find
     (FindRelation _) true
     _ false))
 
-(defn collection-find? [^:find-spec find]
+(defn collection-find? [ find]
   (match find
     (FindCollection _) true
     _ false))
 
-(defn single-find? [^:find-spec find]
+(defn single-find? [ find]
   (match find
     (FindSingle _) true
     _ false))
 
-(defn ^:option<query-source> explicit-input [^clause clause]
+(defn  explicit-input [ clause]
   (let [explicit-source
-        (fn [^query-source source]
+        (fn [ source]
           (match source
             DefaultSource None
             (ExplicitSource _) (Some source)))]
@@ -3818,14 +3818,14 @@
   :fn<datascript.parser/clause;bool>)
 (declare clause-has-input?)
 
-(defn ^boolean clauses-have-input?
-  [^:vector<datascript.parser/clause> clauses]
+(defn  clauses-have-input?
+  [ clauses]
   (match (some clause-has-input? clauses)
     None false
     (Some _) true))
 
-(defn ^boolean clause-has-input?
-  [^:datascript.parser/clause clause]
+(defn  clause-has-input?
+  [ clause]
   (match clause
     (NotClause _ _ clauses _)
     (or
@@ -3838,26 +3838,26 @@
     (AndClause clauses) (clauses-have-input? clauses)
     _ (some? (explicit-input clause))))
 
-(defn ^:vector<input-binding> default-in
-  [^:vector<datascript.parser/clause> qwhere]
+(defn  default-in
+  [ qwhere]
   (if (clauses-have-input? qwhere)
     [(InputSource (SrcVar. "$"))]
     []))
 
-(defn ^:vector<datascript.parser/Variable> input-binding-vars
-  [^:input-binding input]
+(defn  input-binding-vars
+  [ input]
   (match input
     (InputSource _) []
     (InputRules _) []
     (InputValueBinding binding) (binding-vars binding)))
 
-(defn ^:vector<datascript.parser/SrcVar> input-binding-sources
-  [^:input-binding input]
+(defn  input-binding-sources
+  [ input]
   (match input
     (InputSource source) [source]
     _ []))
 
-(defn input-binding-rules? [^:input-binding input]
+(defn input-binding-rules? [ input]
   (match input
     (InputRules _) true
     _ false))
@@ -3865,8 +3865,8 @@
 (signature datascript.parser/source-values
   :fn<datascript.parser/query-source;vector<datascript.parser/SrcVar>>)
 
-(defn ^:vector<datascript.parser/SrcVar> source-values
-  [^:query-source source]
+(defn  source-values
+  [ source]
   (match source
     DefaultSource []
     (ExplicitSource source) [source]))
@@ -3874,8 +3874,8 @@
 (signature datascript.parser/clause-sources
   :fn<datascript.parser/clause;vector<datascript.parser/SrcVar>>)
 
-(defn ^:vector<datascript.parser/SrcVar> clause-sources
-  [^:datascript.parser/clause clause]
+(defn  clause-sources
+  [ clause]
   (match clause
       (PatternClause source _) (source-values source)
       (PredicateClause _ args)
@@ -3898,11 +3898,11 @@
 (signature datascript.parser/validate-static-query-sources
   :fn<datascript.parser/Query;unit>)
 
-(defn validate-static-query-sources [^datascript.parser/Query query]
+(defn validate-static-query-sources [ query]
   (let [known
         (if-some [inputs (static-query-inputs query)]
           (reduce
-           (fn [^:vector<string> names ^static-query-input input]
+           (fn [ names  input]
              (if-some [name (static-input-source-name input)]
                (conj names name)
                names))
@@ -3911,12 +3911,12 @@
           [])
         unknown
         (reduce
-         (fn [^:vector<string> names ^datascript.parser/SrcVar source]
+         (fn [ names  source]
            (let [name (str (.-symbol source))]
              (if
               (or
-               (some (fn [^:string known-name] (= known-name name)) known)
-               (some (fn [^:string unknown-name] (= unknown-name name)) names))
+               (some (fn [ known-name] (= known-name name)) known)
+               (some (fn [ unknown-name] (= unknown-name name)) names))
                names
                (conj names name))))
          []
@@ -3927,7 +3927,7 @@
        (str
         "Where uses unknown source vars: ["
         (reduce
-         (fn [^:string result ^:string name]
+         (fn [ result  name]
            (if (= result "") name (str result " " name)))
          ""
          unknown)
@@ -3937,14 +3937,14 @@
   :fn<datascript.parser/clause;bool>)
 (declare clause-has-rule?)
 
-(defn ^boolean clauses-have-rule?
-  [^:vector<datascript.parser/clause> clauses]
+(defn  clauses-have-rule?
+  [ clauses]
   (match (some clause-has-rule? clauses)
     None false
     (Some _) true))
 
-(defn ^boolean clause-has-rule?
-  [^:datascript.parser/clause clause]
+(defn  clause-has-rule?
+  [ clause]
   (match clause
     (RuleClause _ _ _) true
     (NotClause _ _ clauses _) (clauses-have-rule? clauses)
@@ -3952,24 +3952,24 @@
     (AndClause clauses) (clauses-have-rule? clauses)
     _ false))
 
-(defn- ^:Datascript_runtime.Data_value.t query-section-form
-  [^:vector<Datascript_runtime.Data_value.t> items]
+(defn-  query-section-form
+  [ items]
   (Datascript_runtime.Data_value.vector_of_vector items))
 
-(defn- ^:option<keyword> query-keyword
-  [^:Datascript_runtime.Data_value.t form]
+(defn-  query-keyword
+  [ form]
   (match form
     (Datascript_runtime.Data_value.Keyword keyword)
-    (let [^:keyword keyword keyword]
+    (let [ keyword keyword]
       (Some keyword))
     _ None))
 
 (defn ^:map<keyword;vector<Datascript_runtime.Data_value.t>> query->map
-  [^:Datascript_runtime.Data_value.t query]
+  [ query]
   (if-some [items (data-value-items query)]
     (loop [remaining items
            parsed {}
-           ^:option<keyword> section None]
+            section None]
       (if-some [item (first remaining)]
         (if-some [keyword (query-keyword item)]
           (recur (subvec remaining 1) parsed (Some keyword))
@@ -3986,34 +3986,34 @@
     (util/raise "Query should be a vector or a map"
       {:error :parser/query, :form query})))
 
-(defn- ^:vector<string> variable-names
-  [^:vector<datascript.parser/Variable> variables]
+(defn-  variable-names
+  [ ^:vector<datascript.parser/Variable> variables]
   (mapv
-   (fn [^datascript.parser/Variable variable]
+   (fn [ variable]
      (str (.-symbol variable)))
    variables))
 
-(defn- ^boolean name-present?
-  [^:vector<string> names ^:string name]
+(defn-  name-present?
+  [ names  name]
   (match
-   (some (fn [^:string candidate] (= candidate name)) names)
+   (some (fn [ candidate] (= candidate name)) names)
    None false
    (Some _) true))
 
-(defn- ^:vector<string> distinct-names
-  [^:vector<string> names]
+(defn-  distinct-names
+  [ names]
   (reduce
-   (fn [^:vector<string> result ^:string name]
+   (fn [ result  name]
      (if (name-present? result name)
        result
        (conj result name)))
    []
    names))
 
-(defn- ^:vector<string> names-difference
-  [^:vector<string> names ^:vector<string> excluded]
+(defn-  names-difference
+  [ names  excluded]
   (reduce
-   (fn [^:vector<string> result ^:string name]
+   (fn [ result  name]
      (if (or
           (name-present? excluded name)
           (name-present? result name))
@@ -4022,42 +4022,42 @@
    []
    names))
 
-(defn- ^:string names-display [^:vector<string> names]
+(defn-  names-display [ names]
   (str "[" (join-rule-variable-names names) "]"))
 
 (defn- ^:vector<string> query-find-vars
-  [^:find-spec find]
+  [ find]
   (vec (mapcat find-element-vars (find-spec-elements find))))
 
 (defn- ^:vector<string> query-with-vars
-  [^:option<vector<datascript.parser/Variable>> with]
+  [ with]
   (if-some [variables with]
     (variable-names variables)
     []))
 
 (defn- ^:vector<string> query-input-vars
-  [^:vector<input-binding> inputs]
+  [ inputs]
   (vec (mapcat variable-names (mapv input-binding-vars inputs))))
 
 (defn- ^:vector<string> query-where-vars
-  [^:vector<datascript.parser/clause> clauses]
+  [ clauses]
   (vec (mapcat variable-names (mapv clause-vars clauses))))
 
 (defn- ^:vector<string> query-input-source-names
-  [^:vector<input-binding> inputs]
+  [ inputs]
   (mapv
-   (fn [^datascript.parser/SrcVar source]
+   (fn [ source]
      (str (.-symbol source)))
    (vec (mapcat input-binding-sources inputs))))
 
-(defn- ^:int query-rules-input-count
-  [^:vector<input-binding> inputs]
+(defn-  query-rules-input-count
+  [ inputs]
   (count (filter input-binding-rules? inputs)))
 
 (defn validate-query
-  [^datascript.parser/Query query
-   ^:Datascript_runtime.Data_value.t _form
-   ^:map<keyword;vector<Datascript_runtime.Data_value.t>> form-map]
+  [ ^datascript.parser/Query query
+    _form
+    form-map]
   (let [find-vars (query-find-vars (.-qfind query))
         with-vars (query-with-vars (.-qwith query))
         input-vars (query-input-vars (.-qin query))
@@ -4102,7 +4102,7 @@
   (let [return-map-count
         (count
          (filter
-          (fn [^:keyword key] (contains? form-map key))
+          (fn [ key] (contains? form-map key))
           [:keys :syms :strs]))]
     (when (< 1 return-map-count)
       (Stdlib.invalid_arg
@@ -4134,8 +4134,8 @@
        (= 0 (query-rules-input-count (.-qin query))))
     (Stdlib.invalid_arg "Missing rules var '%' in :in")))
 
-(defn ^datascript.parser/Query parse-query
-  [^Datascript_runtime.Data_value.t query]
+(defn  parse-query
+  [ query]
   (let [form-map (query->map query)
         where
         (parse-where

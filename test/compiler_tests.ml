@@ -19472,6 +19472,27 @@ let test_map_accepts_callable_map_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_get_infers_unknown_key_from_known_map () =
+  let source =
+    {|
+(ns app.known-map)
+(signature app.known-map/attrs
+  :fn<unit;map<string;int>>)
+(defn attrs [] {"x" 0})
+(defn indexes [variables]
+  (let [attrs (attrs)]
+    (mapv
+      (fn [variable]
+        (if-some [index (get attrs variable)]
+          index
+          -1))
+      variables)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "known map key evidence must keep get statically typed"
+
 let test_ffirst_is_first_class_and_empty_safe () =
   let source =
     {|
@@ -28328,6 +28349,42 @@ let test_match_infers_target_type_from_patterns () =
 |}
   |> expect_error_contains "describe called with incompatible arguments"
 
+let test_match_infers_variant_target_type_from_patterns () =
+  let source =
+    {|
+(type-variant item
+  (NumberItem :int)
+  (TextItem :string))
+(defn item-size [item]
+  (match item
+    (NumberItem value) value
+    (TextItem value) (String.length value)))
+(println (str (item-size (NumberItem 3)) ":" (item-size (TextItem "four"))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "match_infers_variant_target_type_from_patterns" "3:4\n"
+    ocaml_source
+
+let test_if_some_propagates_variant_match_type_to_map_lookup () =
+  let source =
+    {|
+(type-variant item
+  (NumberItem :int)
+  (TextItem :string))
+(defn stored-item-size [items]
+  (if-some [item (get items :item)]
+    (match item
+      (NumberItem value) value
+      (TextItem value) (String.length value))
+    0))
+(println (stored-item-size {:item (TextItem "four")}))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_some_propagates_variant_match_type_to_map_lookup"
+    "4\n" ocaml_source
+
 let test_match_supports_ocaml_constructor_patterns () =
   let source =
     {|
@@ -33356,6 +33413,8 @@ let tests =
     ( "zipmap stops at shortest and preserves dynamic boundaries",
       test_zipmap_stops_at_shortest_and_preserves_dynamic_boundaries );
     ("map accepts callable map values", test_map_accepts_callable_map_values);
+    ( "get infers unknown keys from known maps",
+      test_get_infers_unknown_key_from_known_map );
     ( "ffirst is first class and empty safe",
       test_ffirst_is_first_class_and_empty_safe );
     ( "group-by infers generic seqable collections",
@@ -34324,6 +34383,10 @@ let tests =
       test_match_rejects_pattern_type_mismatch );
     ( "match infers target type from patterns",
       test_match_infers_target_type_from_patterns );
+    ( "match infers variant target type from patterns",
+      test_match_infers_variant_target_type_from_patterns );
+    ( "if-some propagates variant match type to map lookup",
+      test_if_some_propagates_variant_match_type_to_map_lookup );
     ( "match supports OCaml constructor patterns",
       test_match_supports_ocaml_constructor_patterns );
     ( "compile diagnostics capture OCaml match warnings",
