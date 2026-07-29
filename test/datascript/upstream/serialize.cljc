@@ -156,9 +156,7 @@
   dtx      :: tx - tx0
   aevt     :: [<index in eavt> ...]
   avet     :: [<index in eavt> ...]"
-  [^datascript.db/DB db
-   ^codec freeze-codec
-   ^keyword-freezer keyword-freezer]
+  [^datascript.db/DB db freeze-codec keyword-freezer]
   (when-some [_database-storage (storage/storage db)]
     (Stdlib.invalid_arg
      "serializable doesn't work with databases that have :storage"))

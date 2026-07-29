@@ -173,6 +173,10 @@ expect_no_hints_between \
   test/datascript/upstream/serialize.cljc \
   serialized-ref-type serializable-impl \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "serialization implementation infers its closed codec parameters" \
+  test/datascript/upstream/serialize.cljc \
+  '^[[:space:]]*\[\^datascript\.db/DB db freeze-codec keyword-freezer\]$'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'
