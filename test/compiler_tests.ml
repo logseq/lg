@@ -27229,6 +27229,8 @@ let test_reduce_infers_seqable_record_fields () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "concrete record fields must remain static through reduce";
   assert_ocaml_runs "reduce_infers_seqable_record_fields" "6\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)

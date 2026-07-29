@@ -10367,17 +10367,6 @@ let create ~compile_expr =
                           when Types.is_dynamic argument.ty ->
                             dynamic_row_argument env type_name fields argument
                         | Some type_name, TRecord fields ->
-                            let fields =
-                              List.map
-                                (fun (field : field) ->
-                                  {
-                                    field with
-                                    ty =
-                                      Type_inference.materialize_dynamic_unknown
-                                        field.ty;
-                                  })
-                                fields
-                            in
                             typed_row_argument env type_name fields argument
                         | _,
                           (TNullable (TNamed_record record)
@@ -11124,17 +11113,6 @@ let create ~compile_expr =
                               when Types.is_dynamic arg.ty ->
                                 dynamic_row_argument env type_name fields arg
                             | Some type_name, TRecord fields ->
-                                let fields =
-                                  List.map
-                                    (fun (field : field) ->
-                                      {
-                                        field with
-                                        ty =
-                                          Type_inference
-                                          .materialize_dynamic_unknown field.ty;
-                                      })
-                                    fields
-                                in
                                 typed_row_argument env type_name fields arg
                             | _,
                               (TNullable (TNamed_record record)
