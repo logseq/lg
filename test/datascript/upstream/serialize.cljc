@@ -93,18 +93,14 @@
      entity attribute value tx)))
 
 (defn- freeze-attrs
-  [^keyword-freezer keyword-freezer
-   ^:vector<keyword> attrs]
+  [keyword-freezer attrs]
   (mapv
    (fn [attr]
      (freeze-keyword-value keyword-freezer attr))
    attrs))
 
 (defn- serialize-eavt
-  [^datascript.db/DB db
-   ^:Datascript_runtime.Serialization_value.encoder encoder
-   ^codec freeze-codec
-   ^:vector<string> attrs]
+  [^datascript.db/DB db encoder freeze-codec attrs]
   (let [datoms (:eavt db)]
     (if-some [first-datom (first datoms)]
       (let [result
@@ -137,7 +133,7 @@
     result))
 
 (defn- serialized-ref-type
-  [^:Lg_runtime.Runtime_ref_type.t ref-type]
+  [ref-type]
   (match ref-type
     (Lg_runtime.Runtime_ref_type.Strong)
     (Datascript_runtime.Storage_value.Strong)

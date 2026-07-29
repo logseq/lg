@@ -151,6 +151,28 @@ expect_no_hints_between \
   test/datascript/upstream/serialize.cljc \
   freeze-keyword-value serialize-datom \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "serialization EAVT keeps its required nominal database boundary" \
+  test/datascript/upstream/serialize.cljc \
+  '^\(defn- serialize-eavt$'
+expect_text \
+  "serialization EAVT database receiver remains concrete" \
+  test/datascript/upstream/serialize.cljc \
+  '^[[:space:]]*\[\^datascript\.db/DB db encoder freeze-codec attrs\]$'
+expect_no_hints_between \
+  "serialization attribute freezer contains no local type hints" \
+  test/datascript/upstream/serialize.cljc \
+  freeze-attrs serialize-eavt \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "serialization datom index keeps its required concrete PSS boundary" \
+  test/datascript/upstream/serialize.cljc \
+  '^[[:space:]]*\[\^:set/btset<datascript\.db/Datom;.*> datoms\]$'
+expect_no_hints_between \
+  "serialization reference policy helper contains no local type hints" \
+  test/datascript/upstream/serialize.cljc \
+  serialized-ref-type serializable-impl \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'
