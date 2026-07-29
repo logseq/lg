@@ -146,6 +146,11 @@ expect_no_text "serialization callbacks contain no local type hints" \
 expect_no_text "serialization closed helper returns remain inferred" \
   test/datascript/upstream/serialize.cljc \
   '^\(defn- \^[^ ]+ (freeze-keyword-value|thaw-keyword-value|freeze-attrs|serialize-eavt|datom-indexes|serialized-ref-type)$'
+expect_no_hints_between \
+  "serialization keyword codec helpers contain no local type hints" \
+  test/datascript/upstream/serialize.cljc \
+  freeze-keyword-value serialize-datom \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'

@@ -59,13 +59,13 @@
      s)))
 
 (defn- freeze-keyword-value
-  [^keyword-freezer freezer ^:keyword value]
+  [freezer value]
   (match freezer
     (CustomKeywordFreezer freeze-keyword) (freeze-keyword value)
     DefaultKeywordFreezer (freeze-kw value)))
 
 (defn- thaw-keyword-value
-  [^keyword-thawer thawer ^:string value]
+  [thawer value]
   (match thawer
     (CustomKeywordThawer thaw-keyword) (thaw-keyword value)
     DefaultKeywordThawer (thaw-kw value)))
