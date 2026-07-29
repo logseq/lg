@@ -55,7 +55,7 @@
      (list
       'datascript.query-v3/concatv-closed
       (vec xs)))}
-  [& ^:list<vector<Datascript_runtime.Data_value.t>> xs]
+  [&  xs]
   (concatv-closed (vec xs)))
 
 (signature datascript.query-v3/zip-pair
@@ -234,7 +234,7 @@
 
 (defprotocol IClause
   (-resolve-clause
-   [clause ^datascript.query-v3/query-context-v3 context]
+   [clause  context]
    :datascript.query-v3/query-context-v3))
 
 (defn ^query-context-v3 context-v3
@@ -382,9 +382,9 @@
    [relation ^datascript.query-v3/relation-v3 other]
    :datascript.query-v3/relation-v3))
 
-(defn- ^:vector<string> selected-symbols
-  [^:map<string;int> offset-map
-   ^:vector<string> symbols]
+(defn- selected-symbols
+  [offset-map
+    symbols]
   (reduce
    (fn [selected symbol]
      (if (contains? offset-map symbol)
@@ -393,9 +393,9 @@
    []
    symbols))
 
-(defn- ^:map<string;int> selected-offsets
-  [^:map<string;int> offset-map
-   ^:vector<string> symbols]
+(defn- selected-offsets
+  [offset-map
+    symbols]
   (reduce
    (fn [selected symbol]
      (if-some [index (get offset-map symbol)]
@@ -404,10 +404,10 @@
    {}
    symbols))
 
-(defn- ^:map<string;datascript.db/database-view>
+(defn-
   selected-lookup-databases
-  [^:map<string;datascript.db/database-view> lookup-databases
-   ^:vector<string> symbols]
+  [lookup-databases
+    symbols]
   (reduce
    (fn [selected symbol]
      (if-some [database (get lookup-databases symbol)]
@@ -456,7 +456,7 @@
   (relation-rows-closed relation))
 
 (defn- database-view-print-string-v3
-  [database]
+  [^datascript.db/database-view database]
   (match database
     (db/DatabaseView unfiltered)
     (db/database-print-string unfiltered)
@@ -464,7 +464,7 @@
     (db/filtered-database-print-string filtered)))
 
 (defn- result-print-string-v3
-  [result]
+  [^datascript.lg.query-types/result result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Stdlib.string_of_int entity)
@@ -493,13 +493,13 @@
    ")"))
 
 (defn- relation-kind-print-string-v3
-  [relation]
+  [^relation-v3 relation]
   (match relation
     (ArrayRelationV3 _) "ArrayRelation"
     (CollRelationV3 _) "CollRelation"))
 
 (defn- relation-print-string-v3
-  [relation]
+  [^relation-v3 relation]
   (str
    "#"
    (relation-kind-print-string-v3 relation)
@@ -521,13 +521,15 @@
   writer)
 
 (defn- context-constants-print-string-v3
-  [constants]
+  [^:map<string;datascript.lg.query-types/result> constants]
   (str
    "{"
    (string/join
     ", "
     (reduce-kv
-     (fn [entries symbol value]
+     (fn [^:vector<string> entries
+          ^:string symbol
+          ^datascript.lg.query-types/result value]
        (conj
         entries
         (str
@@ -597,8 +599,8 @@
     (make-coll-relation
      symbols offset-map rows lookup-databases)))
 
-(defn- ^:bool same-relation-kind?
-  [^relation-v3 left ^relation-v3 right]
+(defn- same-relation-kind?
+  [left  right]
   (match left
     (ArrayRelationV3 _)
     (match right
@@ -774,27 +776,27 @@
   [^:vector<relation-v3> relations]
   (reduce product relations))
 
-(defn ^relation-v3 bind
-  [^datascript.parser/binding binding
-   ^datascript.lg.query-types/binding-value value]
+(defn bind
+  [binding
+    value]
   (let [relation
         (query-types/binding-relation binding value)]
     (array-rel
      (parser/binding-variable-names binding)
      (query-types/relation-rows relation))))
 
-(defn- ^datascript.lg.query-types/binding-value
+(defn-
   require-v3-binding-input
-  [^datascript.lg.query-types/input input]
+  [input]
   (if-some [value (query-types/input-binding input)]
     value
     (Stdlib.invalid_arg
      "Query value input requires a Binding_input")))
 
-(defn- ^query-context-v3 resolve-value-input
-  [^query-context-v3 context
-   ^datascript.parser/binding binding
-   ^datascript.lg.query-types/input input]
+(defn- resolve-value-input
+  [context
+    binding
+    input]
   (let [relation
         (bind binding (require-v3-binding-input input))]
     (if (= 1 (-size relation))
@@ -809,10 +811,10 @@
         (context-relations context)
         relation)))))
 
-(defn- ^query-context-v3 resolve-source-input
-  [^query-context-v3 context
-   ^:string source-name
-   ^datascript.lg.query-types/input input]
+(defn- resolve-source-input
+  [context
+    source-name
+    input]
   (if-some [source (query-types/input-source input)]
     (context-with-sources
      context
@@ -852,10 +854,10 @@
    (string/join " " (mapv static-input-source inputs))
    "]"))
 
-(defn ^query-context-v3 resolve-ins
-  [^query-context-v3 context
-   ^:vector<datascript.parser/static-query-input> descriptors
-   ^:vector<datascript.lg.query-types/input> inputs]
+(defn resolve-ins
+  [context
+    descriptors
+    inputs]
   (if (not (= (count descriptors) (count inputs)))
     (Stdlib.invalid_arg
      (str
@@ -900,13 +902,13 @@
           (Stdlib.invalid_arg "Missing query input"))
         resolved))))
 
-(defn ^relation-hash-v3 hash-map-rel
-  [^relation-v3 relation ^:vector<string> symbols]
+(defn hash-map-rel
+  [relation  symbols]
   (Datascript_runtime.Query_value.row_hash
    (relation-tuples relation)
    (-indexes relation symbols)))
 
-(defn- ^:vector<string> symbols-not-in
+(defn- symbols-not-in
   [^:vector<string> excluded ^:vector<string> symbols]
   (let [excluded (set excluded)]
     (reduce
@@ -917,11 +919,11 @@
      []
      symbols)))
 
-(defn ^relation-v3 hash-join
-  [^relation-v3 left
-   ^relation-hash-v3 left-hash
-   ^:vector<string> join-symbols
-   ^relation-v3 right]
+(defn hash-join
+  [left
+    left-hash
+    join-symbols
+    right]
   (let [left-symbols (-symbols left)
         right-symbols (-symbols right)
         keep-right-symbols
@@ -957,8 +959,8 @@
       (relation-lookup-databases-v3 left)
       (relation-lookup-databases-v3 right)))))
 
-(defn- ^:bool relation-has-lookup-database?
-  [^relation-v3 relation ^:vector<string> symbols]
+(defn- relation-has-lookup-database?
+  [relation  symbols]
   (let [lookup-databases
         (relation-lookup-databases-v3 relation)]
     (some?
@@ -967,19 +969,19 @@
         (contains? lookup-databases symbol))
       symbols))))
 
-(defn- ^datascript.lg.query-types/relation
+(defn-
   relation-runtime-v3
-  [^relation-v3 relation]
+  [relation]
   (query-types/relation
    (relation-offset-map relation)
    (relation-tuples relation)
    (relation-lookup-databases-v3 relation)))
 
-(defn- ^:array<datascript.lg.query-types/result>
+(defn-
   project-runtime-relation-row-v3
-  [^datascript.lg.query-types/relation relation
-   ^:vector<string> symbols
-   ^:array<datascript.lg.query-types/result> row]
+  [relation
+    symbols
+    row]
   (to-array
    (mapv
     (fn [symbol]
@@ -991,8 +993,8 @@
          (str "Missing joined relation symbol " symbol))))
     symbols)))
 
-(defn- ^relation-v3 hash-join-with-lookups-v3
-  [^relation-v3 left ^relation-v3 right]
+(defn- hash-join-with-lookups-v3
+  [left  right]
   (let [symbols
         (into
          (-symbols left)
@@ -1012,7 +1014,7 @@
 
 (defn- ^:map<string;datascript.lg.query-types/result>
   relation-constants
-  [^relation-v3 relation]
+  [relation]
   (if-some [row (first (relation-tuples relation))]
     (reduce
      (fn [constants symbol]
@@ -1021,8 +1023,8 @@
      (-symbols relation))
     {}))
 
-(defn- ^:bool relation-shares-symbols?
-  [^relation-v3 relation ^:set<string> symbols]
+(defn- relation-shares-symbols?
+  [relation  symbols]
   (some?
    (some
     (fn [symbol]
@@ -1058,8 +1060,8 @@
            (not (relation-shares-symbols? relation symbols)))
          (context-relations context)))))))
 
-(defn ^query-context-v3 join-unrelated
-  [^query-context-v3 context ^relation-v3 relation]
+(defn join-unrelated
+  [context  relation]
   (if (context-empty? context)
     EmptyContextV3
     (case (-size relation)
@@ -1074,7 +1076,7 @@
        context
        (conj (context-relations context) relation)))))
 
-(defn- ^:vector<string> shared-symbols
+(defn- shared-symbols
   [^:vector<string> left ^:vector<string> right]
   (let [right (set right)]
     (filterv
@@ -1082,8 +1084,8 @@
        (contains? right symbol))
      left)))
 
-(defn ^query-context-v3 hash-join-rel
-  [^query-context-v3 context ^relation-v3 relation]
+(defn hash-join-rel
+  [context  relation]
   (if (or (context-empty? context)
           (= 0 (-size relation)))
     EmptyContextV3
@@ -1161,18 +1163,18 @@
        (:rules state)
        (:default-source-symbol state)))))
 
-(defn- ^:tuple<datascript.parser/query-source;vector<datascript.parser/pattern-element>>
+(defn-
   pattern-clause-parts
-  [^datascript.parser/clause clause]
+  [clause]
   (match clause
     (parser/PatternClause source pattern)
     (tuple source pattern)
     _
     (Stdlib.invalid_arg "Expected a DataScript pattern clause")))
 
-(defn ^datascript.lg.query-types/source get-source
-  [^query-context-v3 context
-   ^datascript.parser/query-source query-source]
+(defn get-source
+  [context
+    query-source]
   (let [source-name
         (if-some [source-name
                   (parser/query-source-name query-source)]
@@ -1183,15 +1185,15 @@
       (Stdlib.invalid_arg
        (str "Source " source-name " is not defined")))))
 
-(defn- ^relation-v3 empty-pattern-relation
-  [^:vector<datascript.parser/pattern-element> pattern
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn- empty-pattern-relation
+  [pattern
+    lookup-databases]
   (coll-rel-with-lookups pattern [] lookup-databases))
 
-(defn- ^:map<string;datascript.db/database-view>
+(defn-
   pattern-lookup-databases-v3
-  [^datascript.db/database-view database
-   ^:vector<datascript.parser/pattern-element> pattern]
+  [database
+    pattern]
   (match
    (query-types/pattern-attr-constraint
     (query-types/pattern-element-at pattern 1))
@@ -1202,8 +1204,8 @@
     (query-types/pattern-lookup-databases
      database pattern None)))
 
-(defn- ^relation-v3 resolve-pattern-db-closed
-  [^datascript.db/database-view database
+(defn- resolve-pattern-db-closed
+  [database
    ^:vector<datascript.parser/pattern-element> pattern]
   (if (or (empty? pattern) (> (count pattern) 5))
     (Stdlib.invalid_arg
@@ -1257,16 +1259,16 @@
         (empty-pattern-relation
          pattern lookup-databases)))))
 
-(defn ^relation-v3 resolve-pattern-db
-  [^datascript.db/database-view database
-   ^datascript.parser/clause clause]
+(defn resolve-pattern-db
+  [database
+    clause]
   (resolve-pattern-db-closed
    database
    (tuple-get (pattern-clause-parts clause) 1)))
 
-(defn- ^:bool pattern-result-equals?
-  [^datascript.lg.query-types/result result
-   ^:Datascript_runtime.Data_value.t constant]
+(defn- pattern-result-equals?
+  [result
+    constant]
   (let [value
         (match result
           (Datascript_runtime.Query_value.Entity entity)
@@ -1318,24 +1320,24 @@
     (Stdlib.invalid_arg
      "Cannot match a DataScript database source as a collection")))
 
-(defn ^relation-v3 resolve-pattern-coll
-  [^datascript.lg.query-types/source source
-   ^datascript.parser/clause clause]
+(defn resolve-pattern-coll
+  [source
+    clause]
   (resolve-pattern-coll-closed
    source
    (tuple-get (pattern-clause-parts clause) 1)))
 
-(defn ^:set<string> clause-syms
-  [^datascript.parser/clause clause]
+(defn clause-syms
+  [clause]
   (reduce
    (fn [symbols variable]
      (conj symbols (str (.-symbol variable))))
    (set-of :string)
    (parser/clause-vars clause)))
 
-(defn- ^datascript.parser/traversable substitute-constant-node
-  [^:map<string;datascript.lg.query-types/result> constants
-   ^datascript.parser/traversable node]
+(defn- substitute-constant-node
+  [constants
+    node]
   (if-some [symbol
             (parser/traversable-variable-name node)]
     (if-some [value (get constants symbol)]
@@ -1344,9 +1346,9 @@
       node)
     node))
 
-(defn ^datascript.parser/clause substitute-constants
-  [^datascript.parser/clause clause
-   ^query-context-v3 context]
+(defn substitute-constants
+  [clause
+    context]
   (let [constants (context-constants context)]
     (if
      (some
@@ -1366,8 +1368,8 @@
            "Constant substitution did not return a clause")))
       clause)))
 
-(defn ^query-context-v3 resolve-pattern
-  [^query-context-v3 context ^datascript.parser/clause clause]
+(defn resolve-pattern
+  [context  clause]
   (let [substituted (substitute-constants clause context)
         parts (pattern-clause-parts substituted)
         query-source (tuple-get parts 0)
@@ -1379,20 +1381,18 @@
           (resolve-pattern-coll-closed source pattern))]
     (hash-join-rel context relation)))
 
-(defn-
-  ^:tuple<datascript.parser/query-callable;vector<datascript.parser/fn-arg>>
-  predicate-clause-parts
-  [^datascript.parser/clause clause]
+(defn- predicate-clause-parts
+  [clause]
   (match clause
     (parser/PredicateClause callable arguments)
     (tuple callable arguments)
     _
     (Stdlib.invalid_arg "Expected a DataScript predicate clause")))
 
-(defn ^predicate-function-v3 get-f
-  [^query-context-v3 context
-   ^datascript.parser/query-callable callable
-   ^:string _form]
+(defn get-f
+  [context
+    callable
+    _form]
   (if-some [name (parser/static-callable-name callable)]
     (if-some [function (built-ins/pure-function name)]
       (PurePredicateV3 name function)
@@ -1410,8 +1410,8 @@
          (str "Unknown function " variable)))
       (Stdlib.invalid_arg "Predicate function is missing"))))
 
-(defn- ^datascript.lg.query-types/result predicate-source-result
-  [^query-context-v3 context ^:string source-name]
+(defn- predicate-source-result
+  [context  source-name]
   (if-some [source (get (context-sources context) source-name)]
     (if-some [database (query-types/source-database source)]
       (query-types/database-result database)
@@ -1457,8 +1457,8 @@
    []
    arguments))
 
-(defn- ^:bool context-symbol-bound?
-  [^query-context-v3 context ^:string symbol]
+(defn- context-symbol-bound?
+  [context  symbol]
   (or
    (contains? (context-constants context) symbol)
    (contains? (context-sources context) symbol)
@@ -1514,9 +1514,9 @@
   [^query-context-v3 context ^:vector<string> variables]
   (check-bound context variables ""))
 
-(defn- ^:vector<datascript.lg.query-types/result>
+(defn-
   collected-predicate-arguments
-  [^:array<option<datascript.lg.query-types/result>> arguments]
+  [arguments]
   (mapv
    (fn [argument]
      (match argument
@@ -1525,24 +1525,24 @@
        (Stdlib.invalid_arg "Predicate argument is not bound")))
    arguments))
 
-(defn- ^:bool data-value-truthy?
-  [^:Datascript_runtime.Data_value.t value]
+(defn- data-value-truthy?
+  [value]
   (if (Datascript_runtime.Data_value.is_nil value)
     false
     (match (Datascript_runtime.Data_value.bool_value value)
       (Some value) value
       None true)))
 
-(defn- ^:bool query-result-truthy-v3?
-  [^datascript.lg.query-types/result result]
+(defn- query-result-truthy-v3?
+  [result]
   (if-some [value (query-types/result-value result)]
     (data-value-truthy? value)
     true))
 
-(defn- ^:option<datascript.lg.query-types/result>
+(defn-
   pure-function-result-v3
-  [^datascript.built-ins/query-function function
-   ^:vector<datascript.lg.query-types/result> arguments]
+  [function
+    arguments]
   (if (built-ins/complement-function? function)
     (Some (query-types/complement-result arguments))
     (if (built-ins/metadata-function? function)
@@ -1561,9 +1561,9 @@
               (Some (query-types/value-result value))
               None)))))))
 
-(defn- ^:bool invoke-predicate
-  [^predicate-function-v3 function
-   ^:vector<datascript.lg.query-types/result> arguments]
+(defn- invoke-predicate
+  [function
+    arguments]
   (match function
     (ComparisonPredicateV3 name function)
     (if (built-ins/missing-function? function)
@@ -1662,10 +1662,10 @@
                relation function bindings target)]
           (join-unrelated remaining-context filtered))))))
 
-(defn- ^:option<datascript.lg.query-types/result>
+(defn-
   invoke-function
-  [^predicate-function-v3 function
-   ^:vector<datascript.lg.query-types/result> arguments]
+  [function
+    arguments]
   (match function
     (ComparisonPredicateV3 name function)
     (if (built-ins/missing-function? function)
@@ -1857,8 +1857,8 @@
     (Stdlib.invalid_arg
      "Expected a DataScript function clause")))
 
-(defn- ^query-context-v3 context-with-default-source
-  [^query-context-v3 context ^:string source-name]
+(defn- context-with-default-source
+  [context  source-name]
   (match context
     EmptyContextV3 EmptyContextV3
     (QueryContextV3 state)
@@ -1869,8 +1869,8 @@
      (:rules state)
      source-name)))
 
-(defn- ^:option<datascript.parser/query-source> clause-query-source
-  [^datascript.parser/clause clause]
+(defn- clause-query-source
+  [clause]
   (match clause
     (parser/PatternClause source _) (Some source)
     (parser/RuleClause source _ _) (Some source)
@@ -1878,17 +1878,17 @@
     (parser/OrClause source _ _ _ _) (Some source)
     _ None))
 
-(defn ^query-context-v3 upd-default-source
-  [^query-context-v3 context ^datascript.parser/clause clause]
+(defn upd-default-source
+  [context  clause]
   (if-some [source (clause-query-source clause)]
     (if-some [source-name (parser/query-source-name source)]
       (context-with-default-source context source-name)
       context)
     context))
 
-(defn- ^:bool result-vectors-equal?
-  [^:vector<datascript.lg.query-types/result> left
-   ^:vector<datascript.lg.query-types/result> right]
+(defn- result-vectors-equal?
+  [left
+    right]
   (if (= (count left) (count right))
     (loop [index 0]
       (if (= index (count left))
@@ -1901,8 +1901,8 @@
           false)))
     false))
 
-(defn- ^:bool collected-keys-equal?
-  [^collected-key-v3 left ^collected-key-v3 right]
+(defn- collected-keys-equal?
+  [left  right]
   (match left
     (SingleCollectedKeyV3 left)
     (match right
@@ -1915,22 +1915,22 @@
       (result-vectors-equal? left right)
       _ false)))
 
-(defn- ^:bool collected-key-member?
-  [^:vector<collected-key-v3> keys ^collected-key-v3 key]
+(defn- collected-key-member?
+  [keys  key]
   (some?
    (some
     (fn [candidate]
       (collected-keys-equal? candidate key))
     keys)))
 
-(defn- ^:vector<collected-key-v3> add-collected-key
-  [^:vector<collected-key-v3> keys ^collected-key-v3 key]
+(defn- add-collected-key
+  [^:vector<collected-key-v3> keys key]
   (if (collected-key-member? keys key)
     keys
     (conj keys key)))
 
-(defn- ^:vector<collected-key-v3> collect-single-key
-  [^query-context-v3 context ^:string symbol]
+(defn- collect-single-key
+  [context  symbol]
   (if-some [constant (get (context-constants context) symbol)]
     [(SingleCollectedKeyV3 constant)]
     (if-some [relation (first (related-rels context [symbol]))]
@@ -1944,10 +1944,8 @@
          []))
       [])))
 
-(defn-
-  ^:array<option<datascript.lg.query-types/result>>
-  collect-constant-specimen
-  [^query-context-v3 context ^:vector<string> symbols]
+(defn- collect-constant-specimen
+  [context ^:vector<string> symbols]
   (to-array
    (mapv
     (fn [symbol]
@@ -1957,10 +1955,10 @@
     symbols)))
 
 (defn- fill-collect-specimen!
-  [^relation-v3 relation
-   ^:array<datascript.lg.query-types/result> row
+  [relation
+   row
    ^:vector<string> symbols
-   ^:array<option<datascript.lg.query-types/result>> specimen]
+   specimen]
   (reduce-kv
    (fn [_ index symbol]
      (if-some [relation-index
@@ -1980,12 +1978,12 @@
   (reduce
    (fn
      [^:vector<array<option<datascript.lg.query-types/result>>> expanded
-      ^:array<option<datascript.lg.query-types/result>> specimen]
+       specimen]
      (-fold
       relation
       (fn
         [^:vector<array<option<datascript.lg.query-types/result>>> expanded
-         ^:array<datascript.lg.query-types/result> row]
+          row]
         (let [copy (da/aclone specimen)
               _ (fill-collect-specimen!
                  relation row symbols copy)]
@@ -2012,8 +2010,8 @@
    (Some [])
    specimen))
 
-(defn ^:vector<collected-key-v3> collect-opt
-  [^query-context-v3 context ^:vector<string> symbols]
+(defn collect-opt
+  [context  symbols]
   (let [_ (check-bound context symbols "collect-opt")]
     (if (= 1 (count symbols))
       (collect-single-key context (nth symbols 0))
@@ -2102,15 +2100,15 @@
  resolve-or
  resolve-rule-request-v3)
 
-(defn ^query-context-v3 resolve-not
-  [^query-context-v3 context ^datascript.parser/clause clause]
+(defn resolve-not
+  [context  clause]
   (if (context-empty? context)
     EmptyContextV3
     (match clause
       (parser/NotClause _source variables clauses display)
       (let [symbols
             (mapv
-             (fn [^datascript.parser/Variable variable]
+             (fn [variable]
                (str (.-symbol variable)))
              variables)
             _ (check-bound context symbols display)
@@ -2141,7 +2139,8 @@
            [(collect-constant-specimen context symbols)]
            (related-rels context symbols))]
       (reduce
-       (fn [rows specimen]
+       (fn [^:vector<array<datascript.lg.query-types/result>> rows
+            ^collect-specimen-v3 specimen]
          (match (collect-specimen-results specimen)
            None rows
            (Some values)
@@ -2171,8 +2170,8 @@
      (rows []))
    branches))
 
-(defn ^query-context-v3 resolve-or
-  [^query-context-v3 context ^datascript.parser/clause clause]
+(defn resolve-or
+  [context  clause]
   (if (context-empty? context)
     EmptyContextV3
     (if-some [parts (parser/or-clause-parts clause)]
@@ -2211,8 +2210,8 @@
       (Stdlib.invalid_arg
        "Expected a DataScript or clause"))))
 
-(defn- ^query-context-v3 resolve-clause-closed
-  [^query-context-v3 context ^datascript.parser/clause clause]
+(defn- resolve-clause-closed
+  [context  clause]
   (match clause
     (parser/PatternClause _ _) (resolve-pattern context clause)
     (parser/PredicateClause _ _) (resolve-predicate context clause)
@@ -2235,8 +2234,8 @@
   (-resolve-clause [clause context]
     (resolve-clause-closed context clause)))
 
-(defn- ^query-context-v3 resolve-clauses-state-v3
-  [^clause-resolution-request-v3 request]
+(defn- resolve-clauses-state-v3
+  [request]
   (loop [resolved (:context request)
          remaining (:clauses request)]
     (if (context-empty? resolved)
@@ -2247,9 +2246,9 @@
          (subvec remaining 1))
         resolved))))
 
-(defn ^query-context-v3 resolve-clauses
-  [^query-context-v3 context
-   ^:vector<datascript.parser/clause> clauses]
+(defn resolve-clauses
+  [context
+    clauses]
   (resolve-clauses-state-v3
    (record clause-resolution-request-v3
      (context context)
@@ -2359,15 +2358,13 @@
    []
    clauses))
 
-(defn-
-  ^:tuple<vector<datascript.parser/clause>;vector<datascript.parser/clause>>
-  split-rule-guards-v3
-  [^:vector<datascript.parser/clause> clauses
-   ^:vector<datascript.parser/clause> guards]
+(defn- split-rule-guards-v3
+  [clauses
+    guards]
   (let [bound-symbols (set (clause-variable-symbols clauses))]
     (reduce
      (fn [split guard]
-       (let [active? 
+       (let [active?
              (every?
               (fn [variable]
                 (contains?
@@ -2384,8 +2381,8 @@
      (tuple [] [])
      guards)))
 
-(defn- ^:bool trivial-rule-guard?
-  [^datascript.parser/clause clause]
+(defn- trivial-rule-guard?
+  [clause]
   (match clause
     (parser/PredicateClause callable arguments)
     (and
@@ -2395,8 +2392,8 @@
        None false))
     _ false))
 
-(defn- ^rule-clause-split-v3 split-first-rule-clause
-  [^:vector<datascript.parser/clause> clauses]
+(defn- split-first-rule-clause
+  [clauses]
   (loop [prefix []
          remaining clauses]
     (if-some [clause (first remaining)]
@@ -2436,7 +2433,8 @@
     None
     (some? (parser/pattern-element-constant argument))))
 
-(defn- ^:vector<datascript.parser/RuleBranch> rule-branches-for-call
+(defn- ^:vector<datascript.parser/RuleBranch>
+  rule-branches-for-call
   [^query-context-v3 context
    ^:string rule-name
    ^:vector<datascript.parser/pattern-element> arguments]
@@ -2608,8 +2606,8 @@
      [initial-frame]
      (array-rel final-symbols []))))
 
-(defn- ^query-context-v3 resolve-rule-request-v3
-  [^rule-resolution-request-v3 request]
+(defn- resolve-rule-request-v3
+  [request]
   (let [context
         (upd-default-source
          (:context request) (:clause request))
@@ -2619,8 +2617,8 @@
 
 (defn collect-consts
   [^:vector<tuple<string;int>> symbols-indexed
-   ^collect-specimen-v3 specimen
-   ^:map<string;datascript.lg.query-types/result> constants]
+   specimen
+   constants]
   (reduce
    (fn [_ symbol-index]
      (let [symbol (tuple-get symbol-index 0)
@@ -2632,9 +2630,9 @@
    (Stdlib.ignore 0)
    symbols-indexed))
 
-(defn- ^:vector<tuple<int;int>> collect-copy-indexes
+(defn- collect-copy-indexes
   [^:vector<tuple<string;int>> symbols-indexed
-   ^:map<string;int> offsets]
+   offsets]
   (reduce
    (fn [indexes symbol-index]
      (let [symbol (tuple-get symbol-index 0)
@@ -2761,9 +2759,9 @@
   [^query-context-v3 context]
   (aggregate-state-relation
    (reduce-kv
-    (fn [^aggregate-context-state-v3 state
-         ^:string variable
-         ^datascript.lg.query-types/result value]
+    (fn [state
+          variable
+          value]
       (add-aggregate-context-value
        state variable (Some value)))
     (empty-aggregate-context-state)
@@ -2774,13 +2772,13 @@
   [^query-context-v3 context]
   (aggregate-state-relation
    (reduce
-    (fn [^aggregate-context-state-v3 state
-         ^relation-v3 relation]
+    (fn [state
+          relation]
       (let [first-row (first (relation-tuples relation))]
         (reduce-kv
-         (fn [^aggregate-context-state-v3 state
-              ^:string variable
-              ^:int index]
+         (fn [state
+               variable
+               index]
            (if (contains? (:seen state) variable)
              state
              (add-aggregate-context-value
@@ -2818,7 +2816,7 @@
 (defn collect-to
   ([^query-context-v3 context
     ^:vector<string> symbols
-   ^:vector<array<datascript.lg.query-types/result>> acc]
+    ^:vector<array<datascript.lg.query-types/result>> acc]
    (collect-to
     context symbols acc (empty-collect-transforms)
     (empty-collect-specimen (count symbols))))
