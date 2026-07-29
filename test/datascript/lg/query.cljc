@@ -478,7 +478,7 @@
       (= left-attrs right-attrs)
       (query-types/relation
        left-attrs
-       (vec (concat left-rows right-rows))
+       (into left-rows right-rows)
        (query-types/merge-lookup-databases
         (query-types/relation-lookup-databases left)
         (query-types/relation-lookup-databases right)))

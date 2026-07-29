@@ -3,6 +3,7 @@
     [clojure.test :as t :refer [is deftest testing]]
     [datascript.core :as d]
     [datascript.db :as db]
+    [datascript.lg.query :as query]
     [datascript.lg.query-types :as query-types]
     [datascript.test.core :as tdc]))
 
@@ -326,6 +327,42 @@
 (defn ^:float now-ms []
   #?(:clj (* (Unix/gettimeofday) 1000.0)
      :cljs (js/performance.now)))
+
+(defn ^query-types/relation append-single-row-relations
+  [^:int row-count]
+  (let [attrs {"?value" 0}]
+    (loop [index 0
+           relation
+           (query-types/empty-relation
+            attrs
+            (query-types/empty-lookup-databases))]
+      (if (< index row-count)
+        (recur
+         (inc index)
+         (query/sum-rel
+          relation
+          (query-types/relation
+           attrs
+           [(array
+             (query-types/value-result
+              (Datascript_runtime.Data_value.Int index)))]
+           (query-types/empty-lookup-databases))))
+        relation))))
+
+(defn ^:float append-single-row-relations-time
+  [^:int row-count]
+  (let [start (now-ms)
+        relation (append-single-row-relations row-count)
+        elapsed (- (now-ms) start)]
+    (is (= row-count
+           (count (query-types/relation-rows relation))))
+    elapsed))
+
+(deftest test-rule-result-union-scales-linearly
+  (append-single-row-relations-time 500)
+  (let [small-time (append-single-row-relations-time 4000)
+        large-time (append-single-row-relations-time 8000)]
+    (is (<= large-time (* 3.0 small-time)))))
 
 (defn ^:vector<datascript.db/tx-entry> performance-transactions []
   (loop [x 1
