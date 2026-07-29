@@ -2058,14 +2058,10 @@
 
 (declare resolve-static-clauses ensure-empty-relation-variables)
 
-(defn ^boolean rows-match-on-variables?
-  [^relation left
-   ^:array<result> left-row
-   ^relation right
-   ^:array<result> right-row
-   ^:vector<string> variables]
+(defn rows-match-on-variables?
+  [left left-row right right-row ^:vector<string> variables]
   (every?
-   (fn [^:string variable]
+   (fn [variable]
      (if-some [left-value
                (relation-result left variable left-row)]
        (if-some [right-value
@@ -2076,12 +2072,12 @@
        false))
    variables))
 
-(defn ^relation project-relation-variables
-  [^relation source-relation ^:vector<string> variables]
+(defn project-relation-variables
+  [source-relation ^:vector<string> variables]
   (let [attrs (relation-attrs source-relation)
         indexes
         (mapv
-         (fn [^:string variable]
+         (fn [variable]
            (if-some [index (get attrs variable)]
              index
              (Stdlib.invalid_arg
@@ -2090,8 +2086,7 @@
          variables)
         lookup-databases
         (reduce
-         (fn [^:map<string;datascript.db/database-view> databases
-              ^:string variable]
+         (fn [databases variable]
            (if-some [database
                      (get
                       (relation-lookup-databases source-relation)
@@ -2104,12 +2099,12 @@
     (relation
      (index-attrs variables)
      (mapv
-      (fn [^:array<result> row]
+      (fn [row]
         (project-row row index-array))
       (relation-rows source-relation))
      lookup-databases)))
 
-(defn ^:string variable-set-display
+(defn variable-set-display
   [^:vector<datascript.parser/Variable> variables]
   (str
    "#{"
@@ -2139,7 +2134,7 @@
   (let [bound-variables
         (vec
          (filter
-          (fn [^datascript.parser/Variable variable]
+          (fn [variable]
             (contains?
              (relation-attrs relation)
              (str (.-symbol variable))))
@@ -2153,7 +2148,7 @@
         display))
       (let [bound-names
             (mapv
-             (fn [^datascript.parser/Variable variable]
+             (fn [variable]
                (str (.-symbol variable)))
              bound-variables)
             joined
@@ -2165,10 +2160,10 @@
         (relation-with-rows
          relation
          (filterv
-          (fn [^:array<result> row]
+          (fn [row]
             (not
              (some
-              (fn [^:array<result> matched-row]
+              (fn [matched-row]
                 (rows-match-on-variables?
                  relation row matched matched-row bound-names))
               (relation-rows matched))))
@@ -2191,37 +2186,33 @@
      database sources implicit-source-name
      relation constants rules rule-path [branch])))
 
-(defn ^boolean query-variable-bound?
-  [^relation relation ^relation constants ^:string variable]
+(defn query-variable-bound?
+  [relation constants variable]
   (or
    (contains? (relation-attrs relation) variable)
    (contains? (relation-attrs constants) variable)))
 
-(defn ^:vector<string> clause-free-variable-names
-  [^relation relation
-   ^relation constants
-   ^datascript.parser/clause clause]
+(defn clause-free-variable-names
+  [relation constants clause]
   (vec
    (distinct
     (filter
-     (fn [^:string variable]
+     (fn [variable]
        (not (query-variable-bound? relation constants variable)))
      (mapv
-      (fn [^datascript.parser/Variable variable]
+      (fn [variable]
         (str (.-symbol variable)))
       (parser/clause-vars clause))))))
 
-(defn ^:vector<vector<string>> branch-free-variable-names
-  [^relation relation
-   ^relation constants
-   ^:vector<datascript.parser/clause> branches]
+(defn branch-free-variable-names
+  [relation constants branches]
   (mapv
-   (fn [^datascript.parser/clause branch]
+   (fn [branch]
      (clause-free-variable-names relation constants branch))
    branches))
 
-(defn ^:string variable-sets-description
-  [^:vector<vector<string>> variable-sets]
+(defn variable-sets-description
+  [variable-sets]
   (str
    "["
    (join-query-parts
@@ -2243,7 +2234,7 @@
    ^:string display]
   (let [missing-required
         (filterv
-         (fn [^:string variable]
+         (fn [variable]
            (not (query-variable-bound?
                  relation constants variable)))
          required-variable-names)
@@ -2262,7 +2253,7 @@
         (if-some [expected (first free-variable-names)]
           (not
            (every?
-            (fn [^:vector<string> variables]
+            (fn [variables]
               (= (set expected) (set variables)))
             (subvec free-variable-names 1)))
           false))
@@ -2274,7 +2265,7 @@
           display))
         (let [resolved-variable-names
               (filterv
-               (fn [^:string variable]
+               (fn [variable]
                  (not
                   (contains?
                    (relation-attrs constants)
@@ -2282,7 +2273,7 @@
                branch-variable-names)
               bound-join-variable-names
               (filterv
-               (fn [^:string variable]
+               (fn [variable]
                  (contains? (relation-attrs relation) variable))
                resolved-variable-names)
               branch-input
@@ -2296,7 +2287,7 @@
                    (distinct-rows (relation-rows projected)))))
               resolved
               (mapv
-               (fn [^datascript.parser/clause branch]
+               (fn [branch]
                  (project-relation-variables
                   (ensure-empty-relation-variables
                    (resolve-or-branch
