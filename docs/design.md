@@ -323,6 +323,15 @@ The currently accepted measured representation optimizations are narrow:
   so storage callbacks occur in the same order as upstream. On the tracked
   300,000-element `next` workload this reduced Native and Melange to
   2.90 ms and 4.20 ms respectively, versus 6.05 ms for upstream ClojureScript.
+- JSON database thaw keeps the input text in a closed `Json_source` constructor
+  until `from-serializable` consumes it. The target JSON parser then converts
+  database fields directly into named prepared records: entity, attribute, and
+  transaction fields remain `int`, while only the encoded datom value stays in
+  the closed EDN domain required by custom codecs. This preserves the JSON
+  format and upstream restoration order without retaining a second generic EDN
+  tree. On the 300,000-person benchmark it allows Melange thaw to complete
+  under the default Node heap; the complete single-run benchmark measured
+  Native at 2.42 seconds and Melange at 9.31 seconds.
 
 With 20,000 people, 2 seconds of warmup, five 1-second samples, and batch size
 10, these optimizations made all 11 tracked workloads faster than the upstream

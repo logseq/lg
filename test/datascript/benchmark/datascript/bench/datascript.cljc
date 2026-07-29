@@ -1433,7 +1433,7 @@
   (runtime-edn/write-json-string value))
 
 (defn json-read [^:string source]
-  (runtime-edn/read-json-string source))
+  (runtime-edn/read-json-source source))
 
 (defn benchmark-frozen-db []
   (json-write (benchmark-serialized-db)))

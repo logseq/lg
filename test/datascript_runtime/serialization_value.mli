@@ -103,6 +103,28 @@ val avet_array : t -> int array option
 val branching_factor : t -> int
 val ref_type : t -> Storage_value.ref_type
 
+type prepared
+type prepared_datom
+
+val prepare : t -> prepared
+val prepared_count : prepared -> int
+val prepared_tx0 : prepared -> int
+val prepared_max_eid : prepared -> int
+val prepared_max_tx : prepared -> int
+val prepared_schema_value : prepared -> t
+val prepared_schema_source : prepared -> string
+val prepared_attrs : prepared -> string Rrbvec.t
+val prepared_keywords : prepared -> string Rrbvec.t
+val prepared_datoms_array : prepared -> prepared_datom array
+val prepared_aevt_array : prepared -> int array option
+val prepared_avet_array : prepared -> int array option
+val prepared_branching_factor : prepared -> int
+val prepared_ref_type : prepared -> Storage_value.ref_type
+val prepared_datom_entity : prepared_datom -> int
+val prepared_datom_attribute : prepared_datom -> int
+val prepared_datom_value : prepared_datom -> t
+val prepared_datom_tx : prepared_datom -> int
+
 val schema_to_string :
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
   option ->

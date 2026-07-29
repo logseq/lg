@@ -673,6 +673,33 @@ let test_serialization_uses_a_closed_typed_facade () =
       ":user/age"
     = 1)
 
+let test_serialized_json_prepares_concrete_database_fields () =
+  let source =
+    {|{"count":1,"tx0":536870912,"max-eid":42,"max-tx":7,"schema":"nil","attrs":[":user/name"],"keywords":[],"eavt":[[42,0,"Ada",7]],"aevt":[0],"avet":[0],"branching-factor":32,"ref-type":"weak"}|}
+  in
+  let prepared =
+    source
+    |> Lg_runtime.Runtime_edn.read_json_source
+    |> Serialization_value.prepare
+  in
+  let datoms = Serialization_value.prepared_datoms_array prepared in
+  assert (Serialization_value.prepared_count prepared = 1);
+  assert (Serialization_value.prepared_tx0 prepared = 536870912);
+  assert (Serialization_value.prepared_max_eid prepared = 42);
+  assert (Serialization_value.prepared_max_tx prepared = 7);
+  assert (
+    Serialization_value.prepared_attrs prepared
+    = Rrbvec.of_list [ ":user/name" ]);
+  assert (Array.length datoms = 1);
+  assert (Serialization_value.prepared_datom_entity datoms.(0) = 42);
+  assert (Serialization_value.prepared_datom_attribute datoms.(0) = 0);
+  assert (
+    Serialization_value.prepared_datom_value datoms.(0)
+    = Lg_edn_backend.String "Ada");
+  assert (Serialization_value.prepared_datom_tx datoms.(0) = 7);
+  assert (
+    Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
+
 let () =
   test_closed_values_compare_without_dynamic_boxing ();
   test_wide_integers_remain_closed_numeric_values ();
@@ -688,6 +715,7 @@ let () =
   test_boolean_payload_is_extracted_statically ();
   test_collection_items_preserve_collection_kind ();
   test_entity_refs_are_extracted_from_closed_values ();
+  test_serialized_json_prepares_concrete_database_fields ();
   test_lookup_refs_are_extracted_from_closed_vectors ();
   test_ref_values_are_extracted_statically ();
   test_tuple_refs_are_resolved_statically ();

@@ -18,6 +18,9 @@ type t =
   | Map of (t * t) array
   | Set of t array
   | Tagged of string * t
+  | Json_source of string
+
+type json = Js.Json.t
 
 let rec of_edn (Melange_edn.Any value) =
   match value with
@@ -66,6 +69,7 @@ let rec to_edn = function
   | Set values ->
       Melange_edn.any (Melange_edn.set (Array.to_list (Array.map to_edn values)))
   | Tagged (tag, value) -> Melange_edn.any (Melange_edn.tagged tag (to_edn value))
+  | Json_source source -> Melange_edn.of_edn_string source
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
@@ -96,6 +100,41 @@ let rec of_json json =
            (Js.Dict.entries entries))
 
 let of_json_string source = source |> Js.Json.parseExn |> of_json
+let of_json_source source = Json_source source
+let json_of_string = Js.Json.parseExn
+
+let json_field json name =
+  match Js.Json.classify json with
+  | JSONObject fields -> (
+      match Js.Dict.get fields name with
+      | Some value -> value
+      | None -> invalid_arg ("missing JSON field " ^ name))
+  | _ -> invalid_arg "expected JSON object"
+
+let json_field_opt json name =
+  match Js.Json.classify json with
+  | JSONObject fields -> Js.Dict.get fields name
+  | _ -> invalid_arg "expected JSON object"
+
+let json_array json =
+  match Js.Json.classify json with
+  | JSONArray values -> values
+  | _ -> invalid_arg "expected JSON array"
+
+let json_int json =
+  match Js.Json.classify json with
+  | JSONNumber value when Float.is_integer value -> int_of_float value
+  | _ -> invalid_arg "expected JSON integer"
+
+let json_string json =
+  match Js.Json.classify json with
+  | JSONString value -> value
+  | _ -> invalid_arg "expected JSON string"
+
+let json_is_null json =
+  match Js.Json.classify json with JSONNull -> true | _ -> false
+
+let json_to_edn = of_json
 
 let json_key = function
   | String value | Symbol value | Keyword value -> value
@@ -179,6 +218,7 @@ let rec add_json_value writer = function
       add_json_token writer ",\"value\":";
       add_json_value writer value;
       add_json_token writer "}"
+  | Json_source source -> add_json_token writer source
 
 let to_json_string value =
   let writer = { tokens = [||]; chunks = [||] } in

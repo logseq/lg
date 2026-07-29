@@ -10,6 +10,12 @@
 (type-alias serialized-value
   :Lg_edn_backend.t)
 
+(type-alias prepared-serialized-value
+  :Datascript_runtime.Serialization_value.prepared)
+
+(type-alias prepared-serialized-datom
+  :Datascript_runtime.Serialization_value.prepared_datom)
+
 (type-alias codec-function
   :fn<serialized-value;serialized-value>)
 
@@ -225,23 +231,27 @@
    ^:vector<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
-   ^serialized-value datom]
-  (let [entity    (Datascript_runtime.Serialization_value.datom_entity datom)
+   ^prepared-serialized-datom datom]
+  (let [entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
+                   datom)
         attribute (nth attrs
-                       (Datascript_runtime.Serialization_value.datom_attribute
+                       (Datascript_runtime.Serialization_value.prepared_datom_attribute
                         datom))
         value     (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.decode_value_with
                      thaw-fn
                      keywords
-                     (Datascript_runtime.Serialization_value.datom_value datom))
+                     (Datascript_runtime.Serialization_value.prepared_datom_value
+                      datom))
                     DefaultCodec
                     (Datascript_runtime.Serialization_value.decode_value
                      keywords
-                     (Datascript_runtime.Serialization_value.datom_value datom)))
+                     (Datascript_runtime.Serialization_value.prepared_datom_value
+                      datom)))
         tx        (+ tx0
-                     (Datascript_runtime.Serialization_value.datom_tx datom))]
+                     (Datascript_runtime.Serialization_value.prepared_datom_tx
+                      datom))]
     (db/datom entity attribute value tx)))
 
 (defn- ^:array<datascript.db/Datom> deserialize-datoms
@@ -249,9 +259,9 @@
    ^:vector<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
-   ^:array<serialized-value> datoms]
+   ^:array<prepared-serialized-datom> datoms]
   (arrays/amap
-   (fn [^serialized-value datom]
+   (fn [^prepared-serialized-datom datom]
      (deserialize-datom tx0 attrs keywords thaw-codec datom))
    datoms))
 
@@ -271,38 +281,47 @@
    ^codec thaw-codec
    ^keyword-thawer keyword-thawer
    ^restore-ref-type restore-ref-type]
-  (let [tx0      (Datascript_runtime.Serialization_value.tx0 from)
+  (let [prepared (Datascript_runtime.Serialization_value.prepare from)
+        tx0      (Datascript_runtime.Serialization_value.prepared_tx0 prepared)
          schema   (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.schema_of_value
                      (thaw-fn
-                      (Datascript_runtime.Serialization_value.schema_value from)))
+                      (Datascript_runtime.Serialization_value.prepared_schema_value
+                       prepared)))
                     DefaultCodec
                     (Datascript_runtime.Serialization_value.schema_of_string
-                     (Datascript_runtime.Serialization_value.schema_source from)))
+                     (Datascript_runtime.Serialization_value.prepared_schema_source
+                      prepared)))
          _        (when-some [schema-map schema]
                     (db/validate-schema schema-map))
-         attrs    (->> (Datascript_runtime.Serialization_value.attrs from)
+         attrs    (->> (Datascript_runtime.Serialization_value.prepared_attrs
+                        prepared)
                        (mapv
                         (fn [^:string value]
                           (thaw-keyword-value keyword-thawer value))))
-         keywords (->> (Datascript_runtime.Serialization_value.keywords from)
+         keywords (->> (Datascript_runtime.Serialization_value.prepared_keywords
+                        prepared)
                        (mapv
                         (fn [^:string value]
                           (str
                            (thaw-keyword-value keyword-thawer value)))))
          eavt     (deserialize-datoms
                    tx0 attrs keywords thaw-codec
-                   (Datascript_runtime.Serialization_value.datoms_array from))
+                   (Datascript_runtime.Serialization_value.prepared_datoms_array
+                    prepared))
          aevt     (reorder-datoms
                    eavt
-                   (Datascript_runtime.Serialization_value.aevt_array from))
+                   (Datascript_runtime.Serialization_value.prepared_aevt_array
+                    prepared))
          avet     (reorder-datoms
                    eavt
-                   (Datascript_runtime.Serialization_value.avet_array from))
-         _        (Datascript_runtime.Serialization_value.branching_factor from)
+                   (Datascript_runtime.Serialization_value.prepared_avet_array
+                    prepared))
+         _        (Datascript_runtime.Serialization_value.prepared_branching_factor
+                   prepared)
          serialized-ref-type
-         (Datascript_runtime.Serialization_value.ref_type from)
+         (Datascript_runtime.Serialization_value.prepared_ref_type prepared)
          ref-type (match restore-ref-type
                     (OverrideRefType ref-type) ref-type
                     SerializedRefType serialized-ref-type)]
@@ -315,8 +334,8 @@
        (arrays/alength aevt) None ref-type)
       (set/from-sorted-array db/cmp-datoms-avet avet
        (arrays/alength avet) None ref-type)
-      (Datascript_runtime.Serialization_value.max_eid from)
-      (Datascript_runtime.Serialization_value.max_tx from)))))
+      (Datascript_runtime.Serialization_value.prepared_max_eid prepared)
+      (Datascript_runtime.Serialization_value.prepared_max_tx prepared)))))
 
 (defn ^datascript.db/DB from-serializable
   ([^serialized-value from]

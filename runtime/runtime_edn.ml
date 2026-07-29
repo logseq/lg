@@ -26,6 +26,8 @@ let rec apply_tag_parsers value =
         ~none:(Tagged (tag, value))
         ~some:(fun parser -> parser value)
         (List.assoc_opt tag !tag_parsers)
+  | Json_source source ->
+      source |> Lg_edn_backend.of_json_string |> apply_tag_parsers
   | ( Nil | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Int _
     | Bigint _ | Float _ | Decimal _ | Ratio _ | Regex _ ) as value ->
       value
@@ -35,6 +37,7 @@ let read_string source =
 
 let write_string = Lg_edn_backend.to_edn_string
 let read_json_string = Lg_edn_backend.of_json_string
+let read_json_source = Lg_edn_backend.of_json_source
 let write_json_string = Lg_edn_backend.to_json_string
 
 let map_entries = function

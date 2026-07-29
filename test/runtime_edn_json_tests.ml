@@ -43,6 +43,11 @@ let () =
   assert (Runtime_edn.read_json_string encoded = value)
 
 let () =
+  let source = {|{"name":"Ada","values":[1,2,3]}|} in
+  let value = Runtime_edn.read_json_source source in
+  assert (String.equal source (Runtime_edn.write_json_string value))
+
+let () =
   let count = 20_000 in
   let value =
     Edn.Map

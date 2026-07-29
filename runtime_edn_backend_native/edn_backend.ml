@@ -18,6 +18,9 @@ type t =
   | Map of (t * t) array
   | Set of t array
   | Tagged of string * t
+  | Json_source of string
+
+type json = Yojson.Safe.t
 
 let rec of_edn (Melange_edn.Any value) =
   match value with
@@ -66,6 +69,7 @@ let rec to_edn = function
   | Set values ->
       Melange_edn.any (Melange_edn.set (Array.to_list (Array.map to_edn values)))
   | Tagged (tag, value) -> Melange_edn.any (Melange_edn.tagged tag (to_edn value))
+  | Json_source source -> Melange_edn.of_edn_string source
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
@@ -97,6 +101,38 @@ let rec of_json = function
               entries))
 
 let of_json_string source = source |> Yojson.Safe.from_string |> of_json
+let of_json_source source = Json_source source
+let json_of_string source = Yojson.Safe.from_string source
+
+let json_field json name =
+  match json with
+  | `Assoc fields -> (
+      match List.assoc_opt name fields with
+      | Some value -> value
+      | None -> invalid_arg ("missing JSON field " ^ name))
+  | _ -> invalid_arg "expected JSON object"
+
+let json_field_opt json name =
+  match json with
+  | `Assoc fields -> List.assoc_opt name fields
+  | _ -> invalid_arg "expected JSON object"
+
+let json_array = function
+  | `List values -> Array.of_list values
+  | _ -> invalid_arg "expected JSON array"
+
+let json_int = function
+  | `Int value -> value
+  | `Intlit value -> int_of_string value
+  | `Float value when Float.is_integer value -> int_of_float value
+  | _ -> invalid_arg "expected JSON integer"
+
+let json_string = function
+  | `String value -> value
+  | _ -> invalid_arg "expected JSON string"
+
+let json_is_null = function `Null -> true | _ -> false
+let json_to_edn = of_json
 
 let add_json_string buffer value =
   Yojson.Safe.write_string buffer value
@@ -150,6 +186,7 @@ let rec add_json_value buffer = function
       Buffer.add_string buffer ",\"value\":";
       add_json_value buffer value;
       Buffer.add_char buffer '}'
+  | Json_source source -> Buffer.add_string buffer source
 
 and add_json_array buffer values =
   Buffer.add_char buffer '[';

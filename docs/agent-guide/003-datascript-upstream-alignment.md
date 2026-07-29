@@ -72,8 +72,8 @@ Local callback parameters, reducer accumulators, loop variables, direct record r
 ## Testing Plan
 
 Testing will compare observable behavior rather than internal type structures.
-Implementation work will not use a test-first red-green-refactor loop, as explicitly requested.
-Each implementation batch will be followed by focused compiler checks, differential DataScript execution, generated-code inspection, and relevant performance measurements.
+Implementation work uses a test-first red-green-refactor loop.
+Each implementation batch starts with a focused failing behavior or performance regression, then runs focused compiler checks, differential DataScript execution, generated-code inspection, and relevant performance measurements after the minimal implementation change.
 
 Create a differential runner under `test/datascript/differential/` that executes the same behavior cases against pinned upstream ClojureScript, LG Native, and LG Melange.
 Assert that LG relation outputs contain no duplicate tuples before normalizing upstream set order for comparison.
