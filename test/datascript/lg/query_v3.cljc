@@ -2620,10 +2620,6 @@
     (RelationCollectTransformV3
      relation copy-indexes)))
 
-(defn- ^collect-specimen-v3 empty-collect-specimen
-  [^:int size]
-  (da/make-array size None))
-
 (defn- ^:array<datascript.lg.query-types/result>
   require-collect-row
   [^:vector<string> symbols
@@ -2648,9 +2644,6 @@
     (RelationCollectTransformV3 relation copy-indexes)
     (expand-output-specimens
      relation copy-indexes specimens)))
-
-(defn- ^:vector<collect-transform-v3> empty-collect-transforms []
-  [])
 
 (defn- add-aggregate-context-value
   [state variable value]
@@ -2743,15 +2736,15 @@
     ^:vector<string> symbols
     ^:vector<array<datascript.lg.query-types/result>> acc]
    (collect-to
-    context symbols acc (empty-collect-transforms)
-    (empty-collect-specimen (count symbols))))
+    context symbols acc []
+    (da/make-array (count symbols) None)))
   ([^query-context-v3 context
     ^:vector<string> symbols
     ^:vector<array<datascript.lg.query-types/result>> acc
     ^:vector<collect-transform-v3> transforms]
    (collect-to
     context symbols acc transforms
-    (empty-collect-specimen (count symbols))))
+    (da/make-array (count symbols) None)))
   ([^query-context-v3 context
     ^:vector<string> symbols
     ^:vector<array<datascript.lg.query-types/result>> acc

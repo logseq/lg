@@ -16,7 +16,8 @@ if [ "$query_hint_count" -gt "$query_hint_limit" ]; then
   exit 1
 fi
 
-if rg -q '^\(defn- (concat-two|concatv-closed|zip-pair|zip-append)\b' \
+query_v3_adapter_pattern='^\(defn- (\^[^[:space:]]+[[:space:]]+)?(concat-two|concatv-closed|zip-pair|zip-append|empty-collect-transforms|empty-collect-specimen)\b'
+if rg -q "$query_v3_adapter_pattern" \
   test/datascript/lg/query_v3.cljc; then
   echo "DataScript query-v3 must not retain redundant collection adapter helpers" >&2
   exit 1
