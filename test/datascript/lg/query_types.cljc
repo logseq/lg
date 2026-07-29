@@ -465,10 +465,7 @@
     (Stdlib.invalid_arg
      "Aggregate function is not implemented yet")))
 
-(defn ^:option<callable> aggregate-callable
-  [^:string variable
-   ^relation constants
-   ^relation parameter-relation]
+(defn aggregate-callable [variable constants parameter-relation]
   (if-some [value (constant-relation-result constants variable)]
     (result-callable value)
     (if-some [value
@@ -476,12 +473,8 @@
       (result-callable value)
       None)))
 
-(defn ^result apply-custom-aggregate
-  [^:string variable
-   ^relation constants
-   ^relation parameter-relation
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-custom-aggregate
+  [variable constants parameter-relation rows index]
   (if-some [callable
             (aggregate-callable
              variable constants parameter-relation)]
@@ -489,7 +482,7 @@
               (invoke-callable
                callable
                (mapv
-                (fn [^:array<result> row]
+                (fn [row]
                   (require-row-result row index))
                 rows))]
       (value-result value)
@@ -497,12 +490,8 @@
     (Stdlib.invalid_arg
      (str "Custom aggregate callable is not bound: " variable))))
 
-(defn ^result apply-find-aggregate
-  [^datascript.parser/Aggregate aggregate
-   ^relation constants
-   ^relation parameter-relation
-   ^:vector<array<result>> rows
-   ^:int index]
+(defn apply-find-aggregate
+  [aggregate constants parameter-relation rows index]
   (if-some [function-name
             (parser/aggregate-function-name aggregate)]
     (let [arguments (.-args aggregate)
@@ -548,8 +537,7 @@
       (Stdlib.invalid_arg
        "Custom aggregate function is missing"))))
 
-(defn ^:vector<int> aggregate-group-indexes
-  [^:vector<datascript.parser/find-element> elements]
+(defn aggregate-group-indexes [elements]
   (loop [remaining elements
          index 0
          indexes []]
@@ -562,16 +550,12 @@
          (conj indexes index)))
       indexes)))
 
-(defn ^:array<result> aggregate-group-row
-  [^:vector<datascript.parser/find-element> elements
-   ^relation constants
-   ^relation parameter-relation
-   ^:vector<array<result>> rows]
+(defn aggregate-group-row
+  [elements constants parameter-relation rows]
   (if-some [first-row (first rows)]
     (to-array
      (mapv
-      (fn [^datascript.parser/find-element element
-           ^:int index]
+      (fn [element index]
         (if-some [aggregate
                   (parser/find-element-aggregate element)]
           (apply-find-aggregate
@@ -581,13 +565,9 @@
       (range (count elements))))
     (empty-row)))
 
-(defn ^:vector<array<result>> aggregate-rows
-  [^:vector<datascript.parser/find-element> elements
-   ^relation constants
-   ^relation parameter-relation
-   ^:vector<array<result>> rows]
+(defn aggregate-rows [elements constants parameter-relation rows]
   (mapv
-   (fn [^:vector<array<result>> group]
+   (fn [group]
      (aggregate-group-row
       elements constants parameter-relation group))
    (group-rows
