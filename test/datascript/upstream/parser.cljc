@@ -3898,6 +3898,10 @@
 (signature datascript.parser/validate-static-query-sources
   :fn<datascript.parser/Query;unit>)
 
+(signature datascript.parser/name-present?
+  :fn<vector<string>;string;bool>)
+(declare name-present?)
+
 (defn validate-static-query-sources [ query]
   (let [known
         (if-some [inputs (static-query-inputs query)]
@@ -3914,9 +3918,9 @@
          (fn [ names  source]
            (let [name (str (.-symbol source))]
              (if
-              (or
-               (some (fn [ known-name] (= known-name name)) known)
-               (some (fn [ unknown-name] (= unknown-name name)) names))
+             (or
+               (name-present? known name)
+               (name-present? names name))
                names
                (conj names name))))
          []
