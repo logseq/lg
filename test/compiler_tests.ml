@@ -17595,21 +17595,22 @@ let test_vals_return_homogeneous_values () =
   assert_ocaml_runs "vals_return_homogeneous_values" "[1 2]:[1 2 3]:[10 20]\n"
     ocaml_source
 
-let test_vals_accept_dynamic_maps () =
+let test_vals_accept_statically_typed_record_maps () =
   let source =
     {|
-(defrecord Box [values])
+(defrecord Box [^:map<string;int> values])
 (def static-values
-  (vals (persistent! (transient (hash-map "a" 1 "b" 2)))))
-(def dynamic-values
+  (vals (hash-map "a" 1 "b" 2)))
+(def record-values
   (vals (:values (Box. (hash-map "a" 1 "b" 2)))))
 (println
   (str (= (count static-values) 2) ":"
-       (= (count dynamic-values) 2)))
+       (= (count record-values) 2)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "vals_accept_dynamic_maps" "true:true\n" ocaml_source;
+  assert_ocaml_runs "vals_accept_statically_typed_record_maps" "true:true\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
@@ -17619,11 +17620,9 @@ let test_vals_rejects_heterogeneous_values () =
   Lg.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
   |> expect_error_contains "define a sum type"
 
-let test_vectors_support_mixed_keyword_and_string_elements () =
-  let source = {|(println (pr-str [:name "name"]))|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "vectors_support_mixed_keyword_and_string_elements"
-    "[:name \"name\"]\n" ocaml_source
+let test_vectors_require_closed_sums_for_mixed_keyword_and_string_elements () =
+  Lg.Compiler.compile_string {|(println (pr-str [:name "name"]))|}
+  |> expect_error_contains "heterogeneous vector"
 
 let test_arithmetic_rejects_non_int_arguments () =
   Lg.Compiler.compile_string {|(def x (+ 1 "two"))|}
@@ -25342,7 +25341,7 @@ let test_annotated_returns_concretize_phantom_record_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_dynamic_predicates_do_not_erase_concrete_array_elements () =
+let test_typed_predicates_preserve_concrete_array_elements () =
   let source =
     {|
 (defprotocol Combine
@@ -25350,46 +25349,44 @@ let test_dynamic_predicates_do_not_erase_concrete_array_elements () =
 (deftype Item [^int id]
   Combine
   (combine [_ ^Item other] other))
-(defn item? [value] (instance? Item value))
+(defn item? [^Item value] (instance? Item value))
 (defn compare-items [^Item left ^Item right]
   (compare (.-id left) (.-id right)))
-(defn prepare [items]
-  (when-some [invalid (first (drop-while item? items))]
-    (throw (ex-info "invalid item" {:value invalid})))
-  (let [arr (into-array items)
+(defn prepare [^:vector<Item> items]
+  (let [arr (into-array (filterv item? items))
         _   (asort! compare-items arr)]
     (.-id (unsafe-aget arr 0))))
 (println (prepare [(Item. 2) (Item. 1)]))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_predicates_do_not_erase_concrete_array_elements"
+  assert_ocaml_runs "typed_predicates_preserve_concrete_array_elements"
     "1\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_dynamic_arrays_preserve_array_identity_and_array_seq () =
+let test_array_classification_uses_a_closed_sum () =
   let source =
     {|
-(defn classify [value]
-  (cond
-    (int? value) value
-    (array? value) (first (array-seq value))
-    (seq? value) -1
-    :else -2))
-(println (classify (array 42)))
+(type-variant classifiable
+  (ClassifiedInt :int)
+  (ClassifiedArray :array<int>)
+  (ClassifiedSeq :vector<int>))
+(defn classify [^classifiable value]
+  (match value
+    (ClassifiedInt value) value
+    (ClassifiedArray value) (first (array-seq value))
+    (ClassifiedSeq _) -1))
+(println (classify (ClassifiedArray (array 42))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_arrays_preserve_array_identity_and_array_seq"
-    "42\n" ocaml_source;
+  assert_ocaml_runs "array_classification_uses_a_closed_sum" "42\n"
+    ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
-    |> expect_ok)
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_dynamic_recursive_array_seq_is_packed_at_the_self_call () =
   let source =
@@ -26426,7 +26423,7 @@ let test_apply_distinct_accepts_generic_seqable_values () =
   assert_ocaml_runs "apply_distinct_accepts_generic_seqable_values"
     "true\nfalse\n" ocaml_source
 
-let test_apply_distinct_handles_dynamic_protocol_values () =
+let test_apply_distinct_handles_statically_typed_protocol_values () =
   let source =
     {|
 (defprotocol IValue
@@ -26434,7 +26431,7 @@ let test_apply_distinct_handles_dynamic_protocol_values () =
 (defrecord Box [^int value]
   IValue
   (-value [source] (.-value source)))
-(defrecord Holder [values])
+(defrecord Holder [^:vector<Box> values])
 (defn all-distinct? [^Holder holder]
   (apply clojure.core/distinct? (.-values holder)))
 (println (all-distinct? (Holder. [(Box. 1) (Box. 2)])))
@@ -26442,7 +26439,7 @@ let test_apply_distinct_handles_dynamic_protocol_values () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "apply_distinct_handles_dynamic_protocol_values"
+  assert_ocaml_runs "apply_distinct_handles_statically_typed_protocol_values"
     "true\nfalse\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -26500,11 +26497,11 @@ let test_apply_packs_protocol_constraints_for_fixed_arguments () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_apply_calls_dynamic_runtime_functions () =
+let test_apply_calls_statically_typed_record_functions () =
   let source =
     {|
-(defrecord Holder [function])
-(defn call-runtime [holder initial arguments]
+(defrecord Holder [^:fn<int;int;int;int> function])
+(defn call-runtime [^Holder holder ^int initial ^:vector<int> arguments]
   (let [function (:function holder)]
     (apply function initial arguments)))
 (def result
@@ -26516,27 +26513,28 @@ let test_apply_calls_dynamic_runtime_functions () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "apply_calls_dynamic_runtime_functions" "6\n" ocaml_source;
+  assert_ocaml_runs "apply_calls_statically_typed_record_functions" "6\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_dynamic_named_records_preserve_mutable_field_identity () =
+let test_typed_named_records_preserve_mutable_field_identity () =
   let source =
     {|
 (defprotocol Searchable
   (search-values [value]))
 (type-record mutable
   (value :ref<int>))
-(deftype Store [values]
+(deftype Store [^:vector<mutable> values]
   Searchable
   (search-values [_] values))
 (defn ^mutable first-mutable [store]
   (first (search-values store)))
 (defn replace-static! [^mutable mutable-value]
   (reset! (:value mutable-value) 42))
-(defn replace-first! [values]
+(defn replace-first! [^:vector<mutable> values]
   (if-some [value (first-mutable (Store. values))]
     (replace-static! value)
     0))
@@ -26546,7 +26544,7 @@ let test_dynamic_named_records_preserve_mutable_field_identity () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_named_records_preserve_mutable_field_identity"
+  assert_ocaml_runs "typed_named_records_preserve_mutable_field_identity"
     "42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
@@ -26707,16 +26705,13 @@ let test_anonymous_records_parameterize_nil_fields () =
   assert_ocaml_runs "anonymous_records_parameterize_nil_fields" "1\n"
     ocaml_source
 
-let test_dynamic_vectors_compile_callbacks_with_dynamic_parameters () =
-  let source =
+let test_mixed_callback_vectors_require_a_closed_sum () =
+  Lg.Compiler.compile_string
     {|
 (def values [:name :xform (fn [value] (:name value))])
 (println (count values))
 |}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_vectors_compile_callbacks_with_dynamic_parameters"
-    "3\n" ocaml_source
+  |> expect_error_contains "heterogeneous vector"
 
 let test_calls_wrap_records_for_nullable_destructured_parameters () =
   let state, impl_ocaml =
@@ -33252,7 +33247,8 @@ let tests =
     ( "keys support generic and dynamic maps",
       test_keys_support_generic_and_dynamic_maps );
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
-    ("vals accept dynamic maps", test_vals_accept_dynamic_maps);
+    ( "vals accept statically typed record maps",
+      test_vals_accept_statically_typed_record_maps );
     ( "vals support generic dynamic and empty maps",
       test_vals_support_generic_dynamic_and_empty_maps );
     ( "zipmap stops at shortest and preserves dynamic boundaries",
@@ -33269,8 +33265,8 @@ let tests =
     ( "vec realizes for over dynamic map entries",
       test_vec_realizes_for_over_dynamic_map_entries );
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);
-    ( "vectors support mixed keyword and string elements",
-      test_vectors_support_mixed_keyword_and_string_elements );
+    ( "vectors require closed sums for mixed keyword and string elements",
+      test_vectors_require_closed_sums_for_mixed_keyword_and_string_elements );
     ( "arithmetic rejects non-int arguments",
       test_arithmetic_rejects_non_int_arguments );
     ("arithmetic core arities work", test_arithmetic_core_arities);
@@ -33937,10 +33933,10 @@ let tests =
       test_unresolved_defrecord_fields_become_static_type_parameters );
     ( "annotated returns concretize phantom record parameters",
       test_annotated_returns_concretize_phantom_record_parameters );
-    ( "dynamic predicates do not erase concrete array elements",
-      test_dynamic_predicates_do_not_erase_concrete_array_elements );
-    ( "dynamic arrays preserve array identity and array-seq",
-      test_dynamic_arrays_preserve_array_identity_and_array_seq );
+    ( "typed predicates preserve concrete array elements",
+      test_typed_predicates_preserve_concrete_array_elements );
+    ( "array classification uses a closed sum",
+      test_array_classification_uses_a_closed_sum );
     ( "dynamic recursive array-seq is packed at the self call",
       test_dynamic_recursive_array_seq_is_packed_at_the_self_call );
     ( "nested callback record constraints do not emit fake types",
@@ -34032,16 +34028,16 @@ let tests =
       test_common_higher_order_helpers_reject_compare_type_mismatch );
     ( "apply distinct accepts generic seqable values",
       test_apply_distinct_accepts_generic_seqable_values );
-    ( "apply distinct handles dynamic protocol values",
-      test_apply_distinct_handles_dynamic_protocol_values );
+    ( "apply distinct handles statically typed protocol values",
+      test_apply_distinct_handles_statically_typed_protocol_values );
     ( "apply calls overloaded functions with dynamic arguments",
       test_apply_calls_overloaded_functions_with_dynamic_arguments );
     ( "apply packs protocol constraints for fixed arguments",
       test_apply_packs_protocol_constraints_for_fixed_arguments );
-    ( "apply calls dynamic runtime functions",
-      test_apply_calls_dynamic_runtime_functions );
-    ( "dynamic named records preserve mutable field identity",
-      test_dynamic_named_records_preserve_mutable_field_identity );
+    ( "apply calls statically typed record functions",
+      test_apply_calls_statically_typed_record_functions );
+    ( "typed named records preserve mutable field identity",
+      test_typed_named_records_preserve_mutable_field_identity );
     ( "record constructors preserve explicit ref fields",
       test_record_constructors_preserve_explicit_ref_fields );
     ( "nil and sequential guards preserve seqability",
@@ -34061,8 +34057,8 @@ let tests =
       test_into_requires_a_sum_for_distinct_record_types );
     ( "anonymous records parameterize nil fields",
       test_anonymous_records_parameterize_nil_fields );
-    ( "dynamic vectors compile callbacks with dynamic parameters",
-      test_dynamic_vectors_compile_callbacks_with_dynamic_parameters );
+    ( "mixed callback vectors require a closed sum",
+      test_mixed_callback_vectors_require_a_closed_sum );
     ( "calls wrap records for nullable destructured parameters",
       test_calls_wrap_records_for_nullable_destructured_parameters );
     ( "local variadic functions preserve dynamic parameter constraints",
