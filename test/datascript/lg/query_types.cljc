@@ -1419,24 +1419,16 @@
          (query-source-database database sources source-name))
         (Stdlib.invalid_arg "Invalid typed callable argument")))))
 
-(defn ^:vector<result> callable-arguments
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^:array<result> row
-   ^:vector<datascript.parser/fn-arg> arguments]
+(defn callable-arguments
+  [database sources relation constants row arguments]
   (mapv
-   (fn [^:datascript.parser/fn-arg argument]
+   (fn [argument]
      (callable-argument-result
       database sources relation constants row argument))
    arguments))
 
-(defn ^callable row-callable
-  [^relation relation
-   ^relation constants
-   ^:array<result> row
-   ^:string variable]
+(defn row-callable
+  [relation constants row variable]
   (if-some [value (relation-result relation variable row)]
     (if-some [callable (result-callable value)]
       callable
