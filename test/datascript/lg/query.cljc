@@ -1523,12 +1523,15 @@
 
 (defn- ^datascript.lg.query-types/relation join-context-relations
   [^datascript.lg.query-types/context context]
-  (reduce
-   (fn [^datascript.lg.query-types/relation relation
-        ^datascript.lg.query-types/relation next-relation]
-     (query-types/hash-join relation next-relation))
-   (query-types/identity-relation)
-   (query-types/context-relations context)))
+  (let [relations (query-types/context-relations context)]
+    (if-some [first-relation (first relations)]
+      (reduce
+       (fn [^datascript.lg.query-types/relation relation
+            ^datascript.lg.query-types/relation next-relation]
+         (query-types/hash-join relation next-relation))
+       first-relation
+       (subvec relations 1))
+      (query-types/identity-relation))))
 
 (defn- ^:tuple<vector<datascript.parser/clause>;vector<datascript.parser/clause>>
   split-leading-non-rules

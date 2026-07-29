@@ -32,6 +32,32 @@ run_melange_once() {
       '$1 == benchmark_name { print $2 }'
 }
 
+run_native_rule() {
+  local benchmark_name=$1
+  LG_BENCHMARK="$benchmark_name" \
+    LG_BENCH_PEOPLE=20000 \
+    LG_BENCH_WARMUP_MS=200 \
+    LG_BENCH_SAMPLE_MS=200 \
+    LG_BENCH_BATCH=1 \
+    LG_BENCH_SEED=42 \
+    "$native_executable" |
+    awk -F: -v benchmark_name="$benchmark_name" \
+      '$1 == benchmark_name { print $2 }'
+}
+
+run_melange_rule() {
+  local benchmark_name=$1
+  LG_BENCHMARK="$benchmark_name" \
+    LG_BENCH_PEOPLE=20000 \
+    LG_BENCH_WARMUP_MS=200 \
+    LG_BENCH_SAMPLE_MS=200 \
+    LG_BENCH_BATCH=1 \
+    LG_BENCH_SEED=42 \
+    node "$melange_javascript" |
+    awk -F: -v benchmark_name="$benchmark_name" \
+      '$1 == benchmark_name { print $2 }'
+}
+
 run_native_serialization_once() {
   local benchmark_name=$1
   local people_count=$2
@@ -84,13 +110,15 @@ check_rule_scaling() {
   local runtime_name=$1
   local wide_5_ms=$2
   local wide_7_ms=$3
+  local wide_7_limit_ms=$4
   awk \
     -v runtime_name="$runtime_name" \
     -v wide_5_ms="$wide_5_ms" \
-    -v wide_7_ms="$wide_7_ms" '
+    -v wide_7_ms="$wide_7_ms" \
+    -v wide_7_limit_ms="$wide_7_limit_ms" '
     BEGIN {
       ratio = wide_7_ms / wide_5_ms
-      if (ratio >= 25.0) {
+      if (ratio >= 25.0 || wide_7_ms >= wide_7_limit_ms) {
         printf "%s rule expansion scales unlike upstream: wide-5x3=%sms wide-7x3=%sms ratio=%.2f\n",
           runtime_name, wide_5_ms, wide_7_ms, ratio
         exit 1
@@ -101,15 +129,15 @@ check_rule_scaling() {
   '
 }
 
-native_wide_5_ms=$(run_native_once rules-wide-5x3)
-native_wide_7_ms=$(run_native_once rules-wide-7x3)
-melange_wide_5_ms=$(run_melange_once rules-wide-5x3)
-melange_wide_7_ms=$(run_melange_once rules-wide-7x3)
+native_wide_5_ms=$(run_native_rule rules-wide-5x3)
+native_wide_7_ms=$(run_native_rule rules-wide-7x3)
+melange_wide_5_ms=$(run_melange_rule rules-wide-5x3)
+melange_wide_7_ms=$(run_melange_rule rules-wide-7x3)
 
-if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms"; then
+if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms" 60.0; then
   failures=1
 fi
-if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms"; then
+if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms" 100.0; then
   failures=1
 fi
 
