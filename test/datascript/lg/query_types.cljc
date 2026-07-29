@@ -1365,10 +1365,8 @@
    initial-relation
    patterns))
 
-(defn ^predicate-operand compile-predicate-argument
-  [^relation relation
-   ^relation constants
-   ^:datascript.parser/fn-arg argument]
+(defn compile-predicate-argument
+  [relation constants argument]
   (if-some [variable (parser/argument-variable-name argument)]
     (let [attrs (relation-attrs relation)]
       (if (contains? attrs variable)
@@ -1384,8 +1382,7 @@
       (Stdlib.invalid_arg
        "Static predicates do not accept a database source argument"))))
 
-(defn ^result predicate-operand-result
-  [^:array<result> row ^predicate-operand operand]
+(defn predicate-operand-result [row operand]
   (match operand
     (PredicateColumn index)
     (if-some [result (row-get row index)]
@@ -1394,10 +1391,8 @@
        "Predicate column is outside the relation row"))
     (PredicateResult result) result))
 
-(defn ^datascript.db/database-view query-source-database
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string source-name]
+(defn query-source-database
+  [database sources ^:string source-name]
   (if-some [source (get sources source-name)]
     (if-some [source-database (source-database source)]
       source-database
@@ -1408,13 +1403,8 @@
       (Stdlib.invalid_arg
        (str "Query source is not bound: " source-name)))))
 
-(defn ^result callable-argument-result
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^:array<result> row
-   ^:datascript.parser/fn-arg argument]
+(defn callable-argument-result
+  [database sources relation constants row argument]
   (if-some [variable (parser/argument-variable-name argument)]
     (if-some [value (relation-result relation variable row)]
       value
