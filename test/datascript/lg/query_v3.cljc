@@ -527,9 +527,7 @@
    (string/join
     ", "
     (reduce-kv
-     (fn [^:vector<string> entries
-          ^:string symbol
-          ^datascript.lg.query-types/result value]
+     (fn [entries symbol value]
        (conj
         entries
         (str
@@ -1618,7 +1616,7 @@
    relation
    (fn [^:vector<array<datascript.lg.query-types/result>> rows]
      (filterv
-      (fn [^:array<datascript.lg.query-types/result> row]
+      (fn [row]
         (let [_ (fill-predicate-row!
                  relation row bindings target)]
           (invoke-predicate
@@ -1790,7 +1788,7 @@
      relation
      (fn [^:vector<array<datascript.lg.query-types/result>> rows]
        (filterv
-        (fn [^:array<datascript.lg.query-types/result> row]
+        (fn [row]
           (function-row-matches-constants?
            constants relation row))
         rows)))))
@@ -1997,9 +1995,7 @@
   collect-specimen-results
   [^:array<option<datascript.lg.query-types/result>> specimen]
   (reduce
-   (fn
-     [^:option<vector<datascript.lg.query-types/result>> collected
-      ^:option<datascript.lg.query-types/result> item]
+   (fn [collected item]
      (match collected
        None None
        (Some values)
@@ -2054,7 +2050,7 @@
    relation
    (fn [^:vector<array<datascript.lg.query-types/result>> rows]
      (filterv
-      (fn [^:array<datascript.lg.query-types/result> row]
+      (fn [row]
         (not
          (collected-key-member?
           excluded
@@ -2139,8 +2135,7 @@
            [(collect-constant-specimen context symbols)]
            (related-rels context symbols))]
       (reduce
-       (fn [^:vector<array<datascript.lg.query-types/result>> rows
-            ^collect-specimen-v3 specimen]
+       (fn [rows specimen]
          (match (collect-specimen-results specimen)
            None rows
            (Some values)
@@ -2153,8 +2148,7 @@
    ^:vector<datascript.parser/clause> branches
    ^:vector<string> symbols]
   (reduce
-   (fn [^or-resolution-v3 resolution
-        ^datascript.parser/clause branch]
+   (fn [resolution branch]
      (let [resolved
            (resolve-clause-closed branch-context branch)]
        (if (context-empty? resolved)
