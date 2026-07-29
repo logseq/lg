@@ -18394,6 +18394,24 @@ let test_inline_update_infers_threaded_record_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_update_conj_infers_field_and_element_types () =
+  let source =
+    {|
+(deftype Datom [value])
+(defn append-datom [report ^Datom datom]
+  (update report :tx-data conj datom))
+(def report (append-datom {:tx-data []} (Datom. 1)))
+(println (count (:tx-data report)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "update_conj_infers_field_and_element_types" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_inline_update_refines_protocol_collection_elements () =
   let source =
     {|
@@ -33429,6 +33447,8 @@ let tests =
       test_update_missing_structural_field_passes_nil_to_updater );
     ( "inline update infers threaded record fields",
       test_inline_update_infers_threaded_record_fields );
+    ( "update conj infers field and element types",
+      test_update_conj_infers_field_and_element_types );
     ( "inline update refines protocol collection elements",
       test_inline_update_refines_protocol_collection_elements );
     ( "inline update infers transient collection boundaries",

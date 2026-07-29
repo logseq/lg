@@ -3877,7 +3877,38 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         :: FKeyword keyword
         :: FSymbol updater
         :: extra_arguments) -> (
-        let signature = update_signature updater (List.length extra_arguments) in
+        let signature =
+          match (updater, extra_arguments) with
+          | ("conj" | "clojure.core/conj"), _ :: _ ->
+              let element_ty =
+                extra_arguments
+                |> List.map (inferred_form_type params)
+                |> List.fold_left refine_type TUnknown
+                |> stored_value_type
+              in
+              let collection_ty =
+                match
+                  string_assoc_opt target params
+                  |> fun target_ty ->
+                  Option.bind target_ty (fun target_ty ->
+                         match Types.constraint_value_type target_ty with
+                         | TRecord fields | TNamed_record { fields; _ } ->
+                             Option.map
+                               (fun (field : field) -> field.ty)
+                               (Types.find_field keyword fields)
+                         | _ -> None)
+                with
+                | Some (TList _) -> TList element_ty
+                | Some (TSeq _) -> TSeq element_ty
+                | Some (TSet _) -> TSet element_ty
+                | Some (TVector _) | Some _ | None -> TVector element_ty
+              in
+              Some
+                ( collection_ty,
+                  List.map (fun _ -> element_ty) extra_arguments,
+                  collection_ty )
+          | _ -> update_signature updater (List.length extra_arguments)
+        in
         match signature with
         | None -> infer_all params extra_arguments
         | Some (field_ty, extra_tys, return_ty) -> (
@@ -4973,6 +5004,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | TFn ([ predicate_arg ], TBool) ->
               TSet (refine_type element_ty predicate_arg)
           | TVector _ -> TVector element_ty
+          | TNil -> TList element_ty
+          | TUnknown | TMeta _ | TVar _ -> TVector element_ty
           | _ -> Types.dynamic_constraint TUnknown
         in
         match infer_expected collection_ty params target with
