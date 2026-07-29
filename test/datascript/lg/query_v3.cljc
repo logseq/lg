@@ -2218,9 +2218,8 @@
 
 (def rule-seqid (atom 0))
 
-(defn- ^:bool rule-pattern-elements-equal?
-  [^datascript.parser/pattern-element left
-   ^datascript.parser/pattern-element right]
+(defn- rule-pattern-elements-equal?
+  [left right]
   (match (parser/pattern-element-variable-symbol left)
     (Some left-variable)
     (match (parser/pattern-element-variable-symbol right)
@@ -2244,9 +2243,7 @@
         (some?
          (parser/pattern-element-constant right)))))))
 
-(defn-
-  ^:tuple<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>>
-  remove-rule-argument-pairs
+(defn- remove-rule-argument-pairs
   [^:vector<datascript.parser/pattern-element> left
    ^:vector<datascript.parser/pattern-element> right]
   (if (not (= (count left) (count right)))
@@ -2264,8 +2261,8 @@
      (tuple [] [])
      left)))
 
-(defn- ^datascript.parser/fn-arg rule-argument-fn-arg
-  [^datascript.parser/pattern-element argument]
+(defn- rule-argument-fn-arg
+  [argument]
   (match (parser/pattern-element-variable-symbol argument)
     (Some variable)
     (parser/variable-argument (str variable))
@@ -2277,9 +2274,8 @@
       (parser/constant-argument
        (Datascript_runtime.Data_value.Symbol "_")))))
 
-(defn- ^datascript.parser/clause rule-guard-clause
-  [^:vector<datascript.parser/pattern-element> current
-   ^:vector<datascript.parser/pattern-element> previous]
+(defn- rule-guard-clause
+  [current previous]
   (let [different (remove-rule-argument-pairs current previous)
         arguments
         (into
@@ -2289,9 +2285,8 @@
      "-differ?"
      (mapv rule-argument-fn-arg arguments))))
 
-(defn- ^:vector<datascript.parser/clause> rule-gen-guards-v3
-  [^datascript.parser/clause clause
-   ^used-rule-arguments-v3 used-arguments]
+(defn- rule-gen-guards-v3
+  [clause used-arguments]
   (if-some [parts (parser/rule-clause-parts clause)]
     (let [rule-name (tuple-get parts 0)
           arguments (tuple-get parts 1)
@@ -2306,7 +2301,7 @@
     (Stdlib.invalid_arg "Expected a DataScript rule clause")))
 
 (defn- ^:vector<string> clause-variable-symbols
-  [^:vector<datascript.parser/clause> clauses]
+  [clauses]
   (reduce
    (fn [symbols clause]
      (reduce
@@ -2370,8 +2365,8 @@
         (rule None)
         (suffix [])))))
 
-(defn- ^:vector<string> rule-output-symbols
-  [^datascript.parser/clause clause]
+(defn- rule-output-symbols
+  [clause]
   (if-some [parts (parser/rule-clause-parts clause)]
     (reduce
      (fn [symbols argument]
@@ -2386,20 +2381,16 @@
      (tuple-get parts 1))
     (Stdlib.invalid_arg "Expected a DataScript rule clause")))
 
-(defn- ^:bool rule-argument-bound-v3?
-  [^query-context-v3 context
-   ^datascript.parser/pattern-element argument]
+(defn- rule-argument-bound-v3?
+  [context argument]
   (match (parser/pattern-element-variable-symbol argument)
     (Some variable)
     (context-symbol-bound? context (str variable))
     None
     (some? (parser/pattern-element-constant argument))))
 
-(defn- ^:vector<datascript.parser/RuleBranch>
-  rule-branches-for-call
-  [^query-context-v3 context
-   ^:string rule-name
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn- rule-branches-for-call
+  [context rule-name arguments]
   (if-some [branches
             (parser/rule-branches
              (context-rules context) rule-name)]
@@ -2430,8 +2421,8 @@
       (query-types/rule-call-description
        rule-name arguments)))))
 
-(defn- ^:bool context-dead?
-  [^query-context-v3 context]
+(defn- context-dead?
+  [context]
   (or
    (context-empty? context)
    (some?
@@ -2440,8 +2431,7 @@
        (= 0 (-size relation)))
      (context-relations context)))))
 
-(defn- ^:vector<datascript.parser/clause>
-  concat-rule-clauses-v3
+(defn- concat-rule-clauses-v3
   [^:vector<datascript.parser/clause> left
    ^:vector<datascript.parser/clause> right]
   (reduce
