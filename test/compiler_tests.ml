@@ -4537,6 +4537,78 @@ let test_current_datascript_chain_compiles_for_native_and_melange () =
   ignore (current_datascript_baseline Lg.Target.Native);
   ignore (current_datascript_baseline Lg.Target.Melange)
 
+let test_protocol_calls_contextualize_anonymous_callbacks () =
+  let source =
+    {|
+(ns app.protocol-callback)
+
+(type-variant relation
+  (Relation :vector<array<int>>))
+
+(type-alias rows-transform
+  :fn<vector<array<int>>;vector<array<int>>>)
+
+(defprotocol IRelation
+  (-alter
+    [relation ^rows-transform transform]
+    :relation))
+
+(extend-type relation
+  IRelation
+  (-alter [relation transform]
+    (match relation
+      (Relation rows) (Relation (transform rows)))))
+
+(defn keep-positive [^relation relation]
+  (-alter
+    relation
+    (fn [rows]
+      (filterv
+        (fn [row] (> (aget row 0) 0))
+        rows))))
+
+(match (keep-positive
+         (Relation [(to-array [1]) (to-array [-1])]))
+  (Relation rows) (println (count rows)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocol_calls_contextualize_anonymous_callbacks" "1\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_calls_reject_contextual_callback_return_mismatches () =
+  let source =
+    {|
+(ns app.protocol-callback-mismatch)
+
+(type-variant relation
+  (Relation :vector<array<int>>))
+
+(type-alias rows-transform
+  :fn<vector<array<int>>;vector<array<int>>>)
+
+(defprotocol IRelation
+  (-alter
+    [relation ^rows-transform transform]
+    :relation))
+
+(extend-type relation
+  IRelation
+  (-alter [relation transform]
+    (match relation
+      (Relation rows) (Relation (transform rows)))))
+
+(defn replace-rows [^relation relation]
+  (-alter relation (fn [_rows] [1])))
+|}
+  in
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "array";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  |> expect_error_contains "array"
+
 let test_current_datascript_filter_protocol_accepts_nominal_callback () =
   let source =
     {|
@@ -23479,7 +23551,7 @@ let test_dynamic_generic_nominals_are_consumed_inside_existential_scope () =
   if string_contains_substring node_fold_source "Obj.magic" then
     failwith "node-fold must call fixed-arity callbacks without unsafe casts"
 
-let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
+let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
   let pss_sources =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
@@ -23496,8 +23568,8 @@ let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
 (defrecord Database [^set/btset avet])
 (defn compare-datoms [^Datom left ^Datom right]
   (compare (.-e left) (.-e right)))
-(defn hold-dynamic [^:dynamic value] value)
-(defn slice-database [^:dynamic database]
+(defn hold-set [^set/btset value] value)
+(defn slice-database [^Database database]
   (set/slice
     (.-avet ^Database database)
     (Datom. 1)
@@ -23508,10 +23580,10 @@ let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
     [(Datom. 1) (Datom. 2) (Datom. 3)]))
 (def sliced
   (set/slice
-    (hold-dynamic datoms)
+    (hold-set datoms)
     (Datom. 1)
     (Datom. 3)))
-(def database (hold-dynamic (Database. datoms)))
+(def database (Database. datoms))
 (def sliced-from-database
   (slice-database database))
 (println (str (count sliced) ":" (count sliced-from-database)))
@@ -23534,7 +23606,7 @@ let test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments () =
   in
   let ocaml_source = compile Lg.Target.Native in
   assert_ocaml_runs
-    "overloaded_generic_bounds_specialize_dynamic_nominal_arguments" "3:3\n"
+    "overloaded_generic_bounds_preserve_static_nominal_arguments" "3:3\n"
     ocaml_source;
   ignore (compile Lg.Target.Melange)
 
@@ -24295,7 +24367,7 @@ let test_update_in_rejects_computed_paths () =
   |> expect_error_contains
        "update-in requires a statically known vector path"
 
-let test_dynamic_callable_type_variables_propagate_to_arguments () =
+let test_source_dynamic_callable_constraints_are_rejected () =
   let source =
     {|
 (defn lookup-two [lookup first-key second-key]
@@ -24308,11 +24380,12 @@ let test_dynamic_callable_type_variables_propagate_to_arguments () =
 (def lookup-result (use-lookup lookup-map))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "dynamic is not a source type";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  |> expect_error_contains "dynamic is not a source type"
 
-let test_dynamic_record_packing_is_shared_across_call_sites () =
+let test_source_dynamic_record_packing_is_rejected () =
   let source call_count =
     let calls =
       List.init call_count (fun index ->
@@ -24331,26 +24404,10 @@ let test_dynamic_record_packing_is_shared_across_call_sites () =
     ^ {|]))
 |}
   in
-  let single_source = Lg.Compiler.compile_string (source 1) |> expect_ok in
-  let repeated_source = Lg.Compiler.compile_string (source 8) |> expect_ok in
-  let registration_count =
-    count_substring repeated_source "register_record_packer"
-  in
-  if registration_count <> 1 then
-    failwith
-      (Printf.sprintf "expected one record packer registration, got %d"
-         registration_count);
-  let added_size = String.length repeated_source - String.length single_source in
-  if added_size > 20_000 then
-    failwith
-      (Printf.sprintf
-         "repeated dynamic record packing expanded generated code by %d bytes"
-         added_size);
-  assert_ocaml_runs "dynamic_record_packing_is_shared_across_call_sites"
-    "8\n" repeated_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange (source 8)
-    |> expect_ok)
+  Lg.Compiler.compile_string (source 1)
+  |> expect_error_contains "dynamic is not a source type";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange (source 1)
+  |> expect_error_contains "dynamic is not a source type"
 
 let test_protocol_witnesses_are_shared_across_call_sites () =
   let source call_count =
@@ -24429,7 +24486,7 @@ let test_dynamic_function_boundaries_are_rejected () =
   |> expect_error_contains
        "dynamic is not a source type; define a closed sum type"
 
-let test_dynamic_protocol_methods_use_runtime_arity_adapters () =
+let test_source_dynamic_protocol_receivers_are_rejected () =
   let source =
     {|
 (defprotocol Lookup
@@ -24442,18 +24499,12 @@ let test_dynamic_protocol_methods_use_runtime_arity_adapters () =
 (println (lookup (erase (Store. 42)) :answer nil))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if
-    not
-      (string_contains_substring ocaml_source
-         "Lg_dyn.protocol_method_2")
-  then failwith "dynamic protocol methods should use a shared arity adapter";
-  assert_ocaml_runs "dynamic_protocol_methods_use_runtime_arity_adapters"
-    "42\n" ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "dynamic is not a source type";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  |> expect_error_contains "dynamic is not a source type"
 
-let test_generic_calls_unpack_dynamic_nominal_arguments () =
+let test_source_dynamic_nominal_arguments_are_rejected () =
   let source =
     {|
 (deftype Entry [^int value])
@@ -24491,11 +24542,10 @@ let test_generic_calls_unpack_dynamic_nominal_arguments () =
      (.-value ^Entry (:sample removed))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "generic_calls_unpack_dynamic_nominal_arguments"
-    "49\n" ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "dynamic is not a source type";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  |> expect_error_contains "dynamic is not a source type"
 
 let test_additional_sequence_helpers_reject_bad_counts () =
   Lg.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
@@ -27396,7 +27446,7 @@ let test_assoc_accepts_nullable_static_maps () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_nullable_dynamic_arguments_unpack_to_nominal_parameters () =
+let test_source_nullable_dynamic_arguments_are_rejected () =
   let provider =
     {|
 (ns app.provider)
@@ -27404,30 +27454,12 @@ let test_nullable_dynamic_arguments_unpack_to_nominal_parameters () =
   (when true value))
 |}
   in
-  let consumer =
-    {|
-(ns app.consumer
-  (:require [app.provider :refer [maybe-first]]))
-(defrecord Relation [value])
-(defn relation-value [^Relation relation]
-  (.-value relation))
-(println (relation-value (maybe-first (Relation. 42))))
-|}
-  in
   let compile target =
-    let state, provider_source =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
-      |> expect_ok
-    in
-    let _, consumer_source =
-      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
-    in
-    provider_source ^ "\n" ^ consumer_source
+    Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+    |> expect_error_contains "dynamic is not a source type"
   in
-  let native_source = compile Lg.Target.Native in
-  assert_ocaml_runs "nullable_dynamic_arguments_unpack_to_nominal_parameters"
-    "42\n" native_source;
-  ignore (compile Lg.Target.Melange)
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
 
 let test_reduce_kv_accepts_dynamic_maps () =
   let source =
@@ -27467,7 +27499,7 @@ let test_reduce_kv_preserves_captured_value_bindings () =
   assert_ocaml_runs "reduce_kv_preserves_captured_value_bindings"
     "11\n" ocaml_source
 
-let test_nominal_calls_unpack_capability_storage () =
+let test_source_dynamic_capability_storage_is_rejected () =
   let source =
     {|
 (deftype Item [^int value])
@@ -27481,14 +27513,10 @@ let test_nominal_calls_unpack_capability_storage () =
 (println (consume-dynamic (Item. 12)))
 |}
   in
-  let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
-  in
-  assert_ocaml_runs
-    "nominal_calls_unpack_capability_storage" "12\n"
-    native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "named records cannot cross a dynamic boundary";
+  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  |> expect_error_contains "named records cannot cross a dynamic boundary"
 
 let test_reduce_packs_nominal_protocol_accumulators () =
   let provider =
@@ -27541,10 +27569,10 @@ let test_higher_order_mapv_wrappers_preserve_nominal_element_types () =
   (value :int))
 (defn map-values [f values]
   (mapv f values))
-(defn pass-dynamic [^:dynamic value]
+(defn pass-record [value]
   value)
-(def dynamic-values
-  (map-values pass-dynamic [{:value 1}]))
+(def record-values
+  (map-values pass-record [{:value 1}]))
 (def ^:dynamic dynamic-input [42])
 (def items
   (array-from
@@ -32278,6 +32306,10 @@ let tests =
       test_dotimes_evaluates_bounds_once_and_returns_nil );
     ( "current DataScript chain compiles for Native and Melange",
       test_current_datascript_chain_compiles_for_native_and_melange );
+    ( "protocol calls contextualize anonymous callbacks",
+      test_protocol_calls_contextualize_anonymous_callbacks );
+    ( "protocol calls reject contextual callback return mismatches",
+      test_protocol_calls_reject_contextual_callback_return_mismatches );
     ( "current DataScript filter protocol accepts nominal callback",
       test_current_datascript_filter_protocol_accepts_nominal_callback );
     ( "DataScript make-array one arity behaves on Native and Melange",
@@ -33741,8 +33773,8 @@ let tests =
       test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call );
     ( "dynamic generic nominals are consumed inside existential scope",
       test_dynamic_generic_nominals_are_consumed_inside_existential_scope );
-    ( "overloaded generic bounds specialize dynamic nominal arguments",
-      test_overloaded_generic_bounds_specialize_dynamic_nominal_arguments );
+    ( "overloaded generic bounds preserve static nominal arguments",
+      test_overloaded_generic_bounds_preserve_static_nominal_arguments );
     ( "map->record unpacks dynamic named fields",
       test_map_to_record_unpacks_dynamic_named_fields );
     ( "map->record preserves generic fields from map literals",
@@ -33813,20 +33845,20 @@ let tests =
       test_nullable_cond_rejects_dynamic_parameter_types );
     ( "update-in rejects computed paths",
       test_update_in_rejects_computed_paths );
-    ( "dynamic callable type variables propagate to arguments",
-      test_dynamic_callable_type_variables_propagate_to_arguments );
-    ( "dynamic record packing is shared across call sites",
-      test_dynamic_record_packing_is_shared_across_call_sites );
+    ( "source dynamic callable constraints are rejected",
+      test_source_dynamic_callable_constraints_are_rejected );
+    ( "source dynamic record packing is rejected",
+      test_source_dynamic_record_packing_is_rejected );
     ( "protocol witnesses are shared across call sites",
       test_protocol_witnesses_are_shared_across_call_sites );
     ( "protocol constraint patterns annotate only the stored value",
       test_protocol_constraint_patterns_annotate_only_the_stored_value );
     ( "dynamic function boundaries are rejected",
       test_dynamic_function_boundaries_are_rejected );
-    ( "dynamic protocol methods use runtime arity adapters",
-      test_dynamic_protocol_methods_use_runtime_arity_adapters );
-    ( "generic calls unpack dynamic nominal arguments",
-      test_generic_calls_unpack_dynamic_nominal_arguments );
+    ( "source dynamic protocol receivers are rejected",
+      test_source_dynamic_protocol_receivers_are_rejected );
+    ( "source dynamic nominal arguments are rejected",
+      test_source_dynamic_nominal_arguments_are_rejected );
     ( "additional sequence helpers reject bad counts",
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",
@@ -34115,13 +34147,13 @@ let tests =
       test_assoc_rejects_untyped_nullable_maps );
     ( "assoc accepts nullable static maps",
       test_assoc_accepts_nullable_static_maps );
-    ( "nullable dynamic arguments unpack to nominal parameters",
-      test_nullable_dynamic_arguments_unpack_to_nominal_parameters );
+    ( "source nullable dynamic arguments are rejected",
+      test_source_nullable_dynamic_arguments_are_rejected );
     ("reduce-kv accepts dynamic maps", test_reduce_kv_accepts_dynamic_maps);
     ( "reduce-kv preserves captured value bindings",
       test_reduce_kv_preserves_captured_value_bindings );
-    ( "nominal calls unpack capability storage",
-      test_nominal_calls_unpack_capability_storage );
+    ( "source dynamic capability storage is rejected",
+      test_source_dynamic_capability_storage_is_rejected );
     ( "reduce packs nominal protocol accumulators",
       test_reduce_packs_nominal_protocol_accumulators );
     ( "higher-order mapv wrappers preserve nominal element types",

@@ -358,7 +358,7 @@
    :datascript.query-v3/relation-v3)
   (-alter-coll
    [relation
-    ^datascript.query-v3/relation-transform
+    ^relation-transform
     transform]
    :datascript.query-v3/relation-v3)
   (-symbols [relation] :vector<string>)
@@ -1614,7 +1614,7 @@
    ^:array<option<datascript.lg.query-types/result>> target]
   (-alter-coll
    relation
-   (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+   (fn [rows]
      (filterv
       (fn [row]
         (let [_ (fill-predicate-row!
@@ -1786,7 +1786,7 @@
   (let [constants (context-constants context)]
     (-alter-coll
      relation
-     (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+     (fn [rows]
        (filterv
         (fn [row]
           (function-row-matches-constants?
@@ -2048,7 +2048,7 @@
    ^:vector<collected-key-v3> excluded]
   (-alter-coll
    relation
-   (fn [^:vector<array<datascript.lg.query-types/result>> rows]
+   (fn [rows]
      (filterv
       (fn [row]
         (not

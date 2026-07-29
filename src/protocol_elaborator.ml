@@ -8,6 +8,17 @@ let define ?location scope env protocol_name method_forms =
   match Protocol.defprotocol scope protocol_name method_forms with
   | Error _ as err -> err
   | Ok (protocol_id, signatures) ->
+      let resolve_type = Function_elaborator.infer_named_record scope env in
+      let signatures =
+        List.map
+          (fun (signature : Protocol_registry.method_signature) ->
+            {
+              signature with
+              param_tys = List.map resolve_type signature.param_tys;
+              return_ty = resolve_type signature.return_ty;
+            })
+          signatures
+      in
       let method_locations =
         List.filter_map
           (function

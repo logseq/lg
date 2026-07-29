@@ -11706,7 +11706,31 @@ let create ~compile_expr =
       | None -> Error.error ("unknown function " ^ name)
       | Some marker -> (
           let argument_env = Env.with_expected_type None env in
-          match compile_args_for scope argument_env arg_forms with
+          let expected_params =
+            match marker.ty with
+            | TFn (param_tys, _) when List.length param_tys = List.length arg_forms
+              ->
+                param_tys
+            | _ -> List.map (fun _ -> TUnknown) arg_forms
+          in
+          let rec compile_protocol_args compiled expected_params forms =
+            match (expected_params, forms) with
+            | [], [] -> Ok (List.rev compiled)
+            | expected_ty :: expected_rest, form :: form_rest ->
+                let contextual_env =
+                  match expected_ty with
+                  | TFn _ ->
+                      Env.with_expected_type (Some expected_ty) argument_env
+                  | _ -> argument_env
+                in
+                Result.bind
+                  (compile_expr scope contextual_env form)
+                  (fun argument ->
+                    compile_protocol_args (argument :: compiled) expected_rest
+                      form_rest)
+            | _ -> Error.error (name ^ " called with incompatible arguments")
+          in
+          match compile_protocol_args [] expected_params arg_forms with
           | Error _ as err -> err
           | Ok args -> (
               let normalized_args =

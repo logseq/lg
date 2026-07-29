@@ -350,7 +350,7 @@ let parse_params = function
       let rec loop acc = function
         | [] -> Ok (List.rev acc)
         | FSymbol annotation :: FSymbol name :: rest
-          when String.starts_with ~prefix:"^:" annotation -> (
+          when String.starts_with ~prefix:"^" annotation -> (
             match of_param_annotation annotation with
             | Error _ as err -> err
             | Ok ty -> loop ((name, ty) :: acc) rest)
