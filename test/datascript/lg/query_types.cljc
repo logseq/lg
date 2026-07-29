@@ -1834,9 +1834,8 @@
     (data-value-truthy? value)
     true))
 
-(defn- ^:bool differ-predicate-matches?
-  [^:array<result> row
-   ^:vector<predicate-operand> operands]
+(defn- differ-predicate-matches?
+  [row operands]
   (let [operand-count (count operands)
         middle (quot operand-count 2)]
     (if (= operand-count (* middle 2))
@@ -1863,7 +1862,7 @@
    ^relation relation
    ^relation constants
    ^:datascript.parser/query-callable callable
-  ^:vector<datascript.parser/fn-arg> arguments]
+   ^:vector<datascript.parser/fn-arg> arguments]
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments None)]
@@ -1877,7 +1876,7 @@
          database sources relation constants arguments)
         (let [operands
               (mapv
-               (fn [^:datascript.parser/fn-arg argument]
+               (fn [argument]
                  (compile-predicate-argument
                   relation constants argument))
                arguments)
@@ -1889,7 +1888,7 @@
           (relation-with-rows
            relation
            (reduce
-            (fn [^:vector<array<result>> rows ^:array<result> row]
+            (fn [rows row]
               (let [matches?
                     (if differ?
                       (Some
@@ -1897,7 +1896,7 @@
                         row operands))
                       (let [results
                             (mapv
-                             (fn [^predicate-operand operand]
+                             (fn [operand]
                                (predicate-operand-result
                                 row operand))
                              operands)
@@ -1930,7 +1929,7 @@
       (relation-with-rows
        relation
        (reduce
-        (fn [^:vector<array<result>> rows ^:array<result> row]
+        (fn [rows row]
           (let [callable (row-callable relation constants row variable)
                 arguments
                 (callable-arguments
@@ -1974,16 +1973,16 @@
          arguments binding)
         (let [operands
               (mapv
-               (fn [^:datascript.parser/fn-arg argument]
+               (fn [argument]
                  (compile-predicate-argument
                   relation constants argument))
                arguments)
               resolved
               (reduce
-               (fn [^:option<relation> output ^:array<result> row]
+               (fn [output row]
                  (let [results
                        (mapv
-                        (fn [^predicate-operand operand]
+                        (fn [operand]
                           (predicate-operand-result row operand))
                         operands)
                        invocation
@@ -2025,7 +2024,7 @@
     (if-some [variable (parser/variable-callable-name callable)]
       (let [resolved
             (reduce
-             (fn [^:option<relation> output ^:array<result> row]
+             (fn [output row]
                (let [callable
                      (row-callable relation constants row variable)
                      arguments
