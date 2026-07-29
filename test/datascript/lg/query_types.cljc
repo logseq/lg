@@ -201,7 +201,7 @@
  binding-relation
  query-source-database)
 
-(defn ^:map<string;datascript.db/database-view> empty-lookup-databases []
+(defn empty-lookup-databases []
   {})
 (defn entity-result [entity]
   (Datascript_runtime.Query_value.entity entity))
