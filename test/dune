@@ -449,6 +449,21 @@
    (run sh script/check_datascript_upstream_coverage.sh))))
 
 (rule
+ (alias datascript-annotation-audit)
+ (deps
+  datascript/annotation_audit.sh
+  (source_tree datascript/lg)
+  (source_tree ../datascript))
+ (action
+  (chdir
+   %{workspace_root}
+   (run sh test/datascript/annotation_audit.sh))))
+
+(alias
+ (name runtest)
+ (deps (alias datascript-annotation-audit)))
+
+(rule
  (alias runtest)
  (deps
   no_typed_expr_source_code.sh

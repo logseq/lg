@@ -203,34 +203,33 @@
 
 (defn ^:map<string;datascript.db/database-view> empty-lookup-databases []
   {})
-(defn ^result entity-result [^:int entity]
+(defn entity-result [entity]
   (Datascript_runtime.Query_value.entity entity))
 
-(defn ^result attr-result [^:keyword attr]
+(defn attr-result [attr]
   (Datascript_runtime.Query_value.attr (str attr)))
 
-(defn ^result value-result [^:Datascript_runtime.Data_value.t value]
+(defn value-result [value]
   (Datascript_runtime.Query_value.value value))
 
-(defn ^result metadata-result
-  [^:Datascript_runtime.Data_value.t value
-   ^:Datascript_runtime.Data_value.t metadata]
+(defn metadata-result
+  [value metadata]
   (Datascript_runtime.Query_value.metadata value metadata))
 
-(defn ^:option<Datascript_runtime.Data_value.t> result-value [^result result]
+(defn result-value [result]
   (Datascript_runtime.Query_value.result_value result))
 
-(defn ^:option<Datascript_runtime.Data_value.t> result-metadata
-  [^result result]
+(defn result-metadata
+  [result]
   (Datascript_runtime.Query_value.result_metadata result))
 
-(defn ^result database-result [^datascript.db/database-view database]
+(defn database-result [database]
   (Datascript_runtime.Query_value.database database))
 
-(defn ^result pull-result [^:Datascript_runtime.Data_value.t value]
+(defn pull-result [value]
   (Datascript_runtime.Query_value.pull value))
 
-(defn ^result added-result [^:bool added]
+(defn added-result [added]
   (Datascript_runtime.Query_value.added added))
 
 (defn ^callable callable
