@@ -4362,6 +4362,22 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        fresh_type_variable "unary_map_result" ))
                   params name
             | form -> infer_form params form)
+    | FList [ FSymbol "mapcat"; fn; collection ] ->
+        let inferred_element_ty = inferred_unary_function_param params fn in
+        let element_ty =
+          match inferred_element_ty with
+          | TUnknown | TMeta _ | TVar _ ->
+              fresh_type_variable "mapcat_item"
+          | ty -> ty
+        in
+        Result.bind (infer_sequence_form element_ty params collection)
+          (fun params ->
+            infer_expected
+              (TFn
+                 ( [ element_ty ],
+                   Types.seqable_constraint
+                     (fresh_type_variable "mapcat_result") ))
+              params fn)
     | FList [ FSymbol "map-indexed"; fn; FSymbol collection ] ->
         let inferred_item_ty = inferred_map_indexed_item params fn in
         let item_ty =

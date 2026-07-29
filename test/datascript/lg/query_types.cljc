@@ -574,9 +574,7 @@
     rows
     (to-array (aggregate-group-indexes elements)))))
 
-(defn ^:option<vector<datascript.pull-parser/pull-source-item>>
-  pull-source-items
-  [^:Datascript_runtime.Data_value.t pattern]
+(defn pull-source-items [pattern]
   (if-some [items
             (Datascript_runtime.Data_value.sequential_items pattern)]
     (loop [remaining items
@@ -596,9 +594,7 @@
         (Some source)))
     None))
 
-(defn ^:option<Datascript_runtime.Data_value.entity_ref>
-  query-entity-ref
-  [^:Datascript_runtime.Data_value.t value]
+(defn query-entity-ref [value]
   (if-some [entity-ref
             (Datascript_runtime.Data_value.entity_ref_value value)]
     (Some entity-ref)
@@ -613,9 +609,7 @@
         (Some (Datascript_runtime.Data_value.Ident ident))
         None))))
 
-(defn ^:option<Datascript_runtime.Data_value.entity_ref>
-  result-entity-ref
-  [^result result]
+(defn result-entity-ref [result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Some (Datascript_runtime.Data_value.Entity_id entity))
@@ -625,11 +619,10 @@
     (query-entity-ref value)
     _ None))
 
-(defn ^:vector<string> pull-pattern-variable-names
-  [^:vector<datascript.parser/find-element> elements]
+(defn pull-pattern-variable-names [elements]
   (vec
    (mapcat
-    (fn [^datascript.parser/find-element element]
+    (fn [element]
       (if-some [pull (parser/find-element-pull element)]
         (if-some [variable
                   (parser/pull-pattern-variable-name pull)]
@@ -638,18 +631,14 @@
         []))
     elements)))
 
-(defn ^:option<Datascript_runtime.Data_value.t>
-  relation-variable-first-value
-  [^relation relation ^:string variable]
+(defn relation-variable-first-value [relation variable]
   (if-some [row (first (relation-rows relation))]
     (if-some [result (relation-result relation variable row)]
       (result-value result)
       None)
     None))
 
-(defn ^:option<Datascript_runtime.Data_value.t>
-  resolve-pull-pattern
-  [^datascript.parser/Pull pull ^relation relation]
+(defn resolve-pull-pattern [pull relation]
   (if-some [pattern (parser/pull-pattern-value pull)]
     (Some pattern)
     (if-some [variable
@@ -657,21 +646,15 @@
       (relation-variable-first-value relation variable)
       None)))
 
-(defn ^:vector<option<Datascript_runtime.Data_value.t>>
-  resolve-pull-patterns
-  [^:vector<datascript.parser/find-element> elements
-   ^relation relation]
+(defn resolve-pull-patterns [elements relation]
   (mapv
-   (fn [^datascript.parser/find-element element]
+   (fn [element]
      (if-some [pull (parser/find-element-pull element)]
        (resolve-pull-pattern pull relation)
        None))
    elements))
 
-(defn ^result apply-find-pull
-  [^datascript.db/database-view database
-   ^:Datascript_runtime.Data_value.t pattern
-   ^result entity]
+(defn apply-find-pull [database pattern entity]
   (if-some [source (pull-source-items pattern)]
     (if-some [entity-ref (result-entity-ref entity)]
       (if-some
@@ -686,17 +669,10 @@
     (Stdlib.invalid_arg
      "Pull find pattern must contain attributes or wildcard")))
 
-(defn ^:array<result> pull-row
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:vector<datascript.parser/find-element> elements
-   ^:vector<option<Datascript_runtime.Data_value.t>> patterns
-   ^:array<result> row]
+(defn pull-row [database sources elements patterns row]
   (to-array
    (mapv
-    (fn [^datascript.parser/find-element element
-         ^:option<Datascript_runtime.Data_value.t> pattern
-         ^:int index]
+    (fn [element pattern index]
       (if-some [pull (parser/find-element-pull element)]
         (if-some [pattern pattern]
           (apply-find-pull
@@ -711,14 +687,9 @@
     patterns
     (range (count elements)))))
 
-(defn ^:vector<array<result>> pull-rows
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:vector<datascript.parser/find-element> elements
-   ^:vector<option<Datascript_runtime.Data_value.t>> patterns
-   ^:vector<array<result>> rows]
+(defn pull-rows [database sources elements patterns rows]
   (mapv
-   (fn [^:array<result> row]
+   (fn [row]
      (pull-row database sources elements patterns row))
    rows))
 

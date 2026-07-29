@@ -26238,6 +26238,22 @@ let test_common_higher_order_helpers () =
      11]:15:10:true:false:-1:1:4:1:(:normal :a/a :a/z :db/id)\n"
     ocaml_source
 
+let test_mapcat_infers_unannotated_collection_parameters () =
+  let source =
+    {|
+(defn flatten-values [values]
+  (vec (mapcat (fn [value] [value]) values)))
+(println (count (flatten-values [1 2 3])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "mapcat collection parameters must remain statically typed";
+  assert_ocaml_runs "mapcat_infers_unannotated_collection_parameters" "3\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_sort_by_preserves_static_record_element_types () =
   let source =
     {|
@@ -33964,6 +33980,8 @@ let tests =
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
     ("common higher-order helpers work", test_common_higher_order_helpers);
+    ( "mapcat infers unannotated collection parameters",
+      test_mapcat_infers_unannotated_collection_parameters );
     ( "sort-by preserves static record element types",
       test_sort_by_preserves_static_record_element_types );
     ( "sort-by preserves named record lists",
