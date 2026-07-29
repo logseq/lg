@@ -268,66 +268,65 @@
 (defn binding-items [binding]
   (Datascript_runtime.Query_value.binding_items binding))
 
-(defn ^input source-input [^source source]
+(defn source-input [source]
   (Datascript_runtime.Query_value.source_input source))
 
-(defn ^input rules-input [^rules rules]
+(defn rules-input [rules]
   (Datascript_runtime.Query_value.rules_input rules))
 
-(defn ^input binding-input [^binding-value binding]
+(defn binding-input [binding]
   (Datascript_runtime.Query_value.binding_input binding))
 
-(defn ^input invalid-input [^:string message]
+(defn invalid-input [message]
   (Stdlib.invalid_arg message))
 
-(defn ^output invalid-query-output [^:string message]
+(defn invalid-query-output [message]
   (Stdlib.invalid_arg message))
 
-(defn ^output invalid-query-output-after-validation
-  [^datascript.parser/Query query ^:string message]
+(defn invalid-query-output-after-validation [query message]
   (parser/validate-static-query-sources query)
   (Stdlib.invalid_arg message))
 
-(defn ^binding-value invalid-binding [^:string message]
+(defn invalid-binding [message]
   (Stdlib.invalid_arg message))
 
-(defn ^:option<source> input-source [^input input]
+(defn input-source [input]
   (Datascript_runtime.Query_value.input_source input))
 
-(defn ^:option<rules> input-rules [^input input]
+(defn input-rules [input]
   (Datascript_runtime.Query_value.input_rules input))
 
-(defn ^:option<binding-value> input-binding [^input input]
+(defn input-binding [input]
   (Datascript_runtime.Query_value.input_binding input))
 
-(defn ^:option<vector<array<result>>> output-relation [^output output]
+(defn output-relation [output]
   (Datascript_runtime.Query_value.output_relation output))
 
-(defn ^:option<vector<result>> output-collection [^output output]
+(defn output-collection [output]
   (Datascript_runtime.Query_value.output_collection output))
 
-(defn ^:option<option<result>> output-scalar [^output output]
+(defn output-scalar [output]
   (Datascript_runtime.Query_value.output_scalar output))
 
-(defn ^:option<option<array<result>>> output-tuple [^output output]
+(defn output-tuple [output]
   (Datascript_runtime.Query_value.output_tuple output))
 
-(defn output-keyword-relation [^output output]
+(defn output-keyword-relation [output]
   (Datascript_runtime.Query_value.output_keyword_relation output))
 
-(defn output-symbol-relation [^output output]
+(defn output-symbol-relation [output]
   (Datascript_runtime.Query_value.output_symbol_relation output))
 
-(defn output-string-relation [^output output]
+(defn output-string-relation [output]
   (Datascript_runtime.Query_value.output_string_relation output))
 
-(defn output-keyword-tuple [^output output]
+(defn output-keyword-tuple [output]
   (Datascript_runtime.Query_value.output_keyword_tuple output))
 
-(defn output-symbol-tuple [^output output]
+(defn output-symbol-tuple [output]
   (Datascript_runtime.Query_value.output_symbol_tuple output))
 
-(defn output-string-tuple [^output output]
+(defn output-string-tuple [output]
   (Datascript_runtime.Query_value.output_string_tuple output))
 
 (defn row-get [row index]
