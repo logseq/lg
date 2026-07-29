@@ -2674,10 +2674,8 @@
 (defn- ^:vector<collect-transform-v3> empty-collect-transforms []
   [])
 
-(defn- ^aggregate-context-state-v3 add-aggregate-context-value
-  [^aggregate-context-state-v3 state
-   ^:string variable
-   ^:option<datascript.lg.query-types/result> value]
+(defn- add-aggregate-context-value
+  [state variable value]
   (let [seen (assoc (:seen state) variable true)]
     (if-some [value value]
       (record aggregate-context-state-v3
@@ -2693,22 +2691,21 @@
         (attrs (:attrs state))
         (values (:values state))))))
 
-(defn- ^datascript.lg.query-types/relation aggregate-state-relation
+(defn- aggregate-state-relation
   [^aggregate-context-state-v3 state]
   (query-types/relation
    (:attrs state)
    [(to-array (:values state))]
    {}))
 
-(defn- ^aggregate-context-state-v3 empty-aggregate-context-state []
+(defn- empty-aggregate-context-state []
   (record aggregate-context-state-v3
     (seen {})
     (attrs {})
     (values [])))
 
-(defn- ^datascript.lg.query-types/relation
-  aggregate-constants-relation
-  [^query-context-v3 context]
+(defn- aggregate-constants-relation
+  [context]
   (aggregate-state-relation
    (reduce-kv
     (fn [state
@@ -2719,9 +2716,8 @@
     (empty-aggregate-context-state)
     (context-constants context))))
 
-(defn- ^datascript.lg.query-types/relation
-  aggregate-context-relation
-  [^query-context-v3 context]
+(defn- aggregate-context-relation
+  [context]
   (aggregate-state-relation
    (reduce
     (fn [state
@@ -2744,9 +2740,8 @@
     (empty-aggregate-context-state)
     (context-relations context))))
 
-(defn- ^datascript.db/database-view pull-database
-  [^query-context-v3 context
-   ^:vector<datascript.parser/find-element> elements]
+(defn- pull-database
+  [context elements]
   (loop [remaining elements]
     (if-some [element (first remaining)]
       (if-some [pull (parser/find-element-pull element)]
