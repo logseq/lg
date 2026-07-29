@@ -1249,12 +1249,8 @@
         matches
         (hash-join input-relation matches)))))
 
-(defn ^:option<tuple<map<string;result>;vector<result>>>
-  relation-pattern-step
-  [^:map<string;result> bindings
-   ^:vector<result> projected
-   ^datascript.parser/pattern-element element
-   ^result value]
+(defn relation-pattern-step
+  [^:map<string;result> bindings ^:vector<result> projected element value]
   (match element
     PatternPlaceholder
     (Some (tuple bindings projected))
@@ -1279,14 +1275,12 @@
           (conj projected value))))
       None)))
 
-(defn ^:option<array<result>> relation-pattern-row
-  [^:vector<datascript.parser/pattern-element> pattern
-   ^:array<result> row]
+(defn relation-pattern-row [pattern row]
   (if (<= (count pattern) (alength row))
     (loop [remaining pattern
            index 0
-           ^:map<string;result> bindings {}
-           ^:vector<result> projected []]
+           bindings {}
+           projected []]
       (if-some [element (first remaining)]
         (if-some [value (row-get row index)]
           (if-some [state
@@ -1302,13 +1296,11 @@
         (Some (to-array projected))))
     None))
 
-(defn ^:vector<string> relation-pattern-variables
-  [^:vector<datascript.parser/pattern-element> pattern]
+(defn relation-pattern-variables [pattern]
   (reduce
-   (fn [^:vector<string> variables
-        ^datascript.parser/pattern-element element]
+   (fn [variables element]
      (if-some [variable (pattern-variable-name element)]
-       (if (some (fn [^:string current] (= current variable))
+       (if (some (fn [current] (= current variable))
                  variables)
          variables
          (conj variables variable))
@@ -1316,17 +1308,13 @@
    []
    pattern))
 
-(defn ^relation resolve-relation-pattern
-  [^:vector<array<result>> rows
-   ^relation input-relation
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn resolve-relation-pattern [rows input-relation pattern]
   (let [variables (relation-pattern-variables pattern)
         matched
         (relation
          (index-attrs variables)
          (reduce
-          (fn [^:vector<array<result>> matched
-               ^:array<result> row]
+          (fn [matched row]
             (if-some [projected
                       (relation-pattern-row pattern row)]
               (conj matched projected)
