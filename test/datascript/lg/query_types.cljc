@@ -1551,8 +1551,7 @@
     []
     (relation-rows relation))))
 
-(defn ^binding-value data-value-binding
-  [^:Datascript_runtime.Data_value.t value]
+(defn data-value-binding [value]
   (if-some [items
             (Datascript_runtime.Data_value.sequential_items value)]
     (collection-binding (mapv data-value-binding items))
@@ -1560,7 +1559,7 @@
               (Datascript_runtime.Data_value.tuple_items value)]
       (collection-binding
        (mapv
-        (fn [^:option<Datascript_runtime.Data_value.t> item]
+        (fn [item]
           (match item
             (Some tuple-value) (data-value-binding tuple-value)
             None (scalar-binding (value-result
@@ -1568,8 +1567,7 @@
         items))
       (scalar-binding (value-result value)))))
 
-(defn ^binding-value function-binding-result
-  [^datascript.parser/binding binding ^result result]
+(defn function-binding-result [binding result]
   (if
    (or
     (parser/binding-ignore? binding)
@@ -1580,15 +1578,13 @@
       (Stdlib.invalid_arg
        "A callable query function result requires a scalar binding"))))
 
-(defn ^binding-value function-binding-value
-  [^datascript.parser/binding binding
-   ^:Datascript_runtime.Data_value.t value]
+(defn function-binding-value
+  [binding value]
   (function-binding-result binding (value-result value)))
 
-(defn ^:map<string;int> function-result-attrs
-  [^relation relation ^datascript.parser/binding binding]
+(defn function-result-attrs [relation binding]
   (reduce
-   (fn [^:map<string;int> attrs ^:string variable]
+   (fn [attrs variable]
      (if (contains? attrs variable)
        attrs
        (assoc attrs variable (count attrs))))
