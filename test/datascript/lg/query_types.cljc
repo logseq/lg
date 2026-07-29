@@ -2946,9 +2946,8 @@
     (Stdlib.invalid_arg
      "Query value input requires a Binding_input")))
 
-(defn ^relation tuple-binding-relation
-  [^:vector<datascript.parser/binding> bindings
-   ^:vector<binding-value> values]
+(defn tuple-binding-relation
+  [bindings values]
   (if (>= (count values) (count bindings))
     (loop [remaining-bindings bindings
            remaining-values values
@@ -2966,9 +2965,8 @@
     (Stdlib.invalid_arg
      "Tuple query input has too few values")))
 
-(defn ^relation collection-binding-relation
-  [^datascript.parser/binding binding
-   ^:vector<binding-value> values]
+(defn collection-binding-relation
+  [binding values]
   (if (empty? values)
     (empty-relation
      (index-attrs
@@ -2976,7 +2974,7 @@
      (empty-lookup-databases))
     (let [relations
           (mapv
-           (fn [^binding-value value]
+           (fn [value]
              (binding-relation binding value))
            values)]
       (if-some [first-relation (first relations)]
@@ -2987,8 +2985,8 @@
         (Stdlib.invalid_arg
          "Collection binding relation is unexpectedly empty")))))
 
-(defn ^relation binding-relation
-  [^datascript.parser/binding binding ^binding-value value]
+(defn binding-relation
+  [binding value]
   (cond
     (parser/binding-ignore? binding)
     (identity-relation)
@@ -3020,9 +3018,8 @@
          "Collection query input requires a Collection_binding"))
       (Stdlib.invalid_arg "Unsupported static query binding"))))
 
-(defn ^relation binding-input-relations
-  [^:vector<datascript.parser/binding> bindings
-   ^:vector<input> inputs]
+(defn binding-input-relations
+  [bindings inputs]
   (loop [remaining-bindings bindings
          remaining-inputs inputs
          relation (identity-relation)]
@@ -3041,14 +3038,13 @@
         (Stdlib.invalid_arg "Missing query binding input"))
       relation)))
 
-(defn ^context bind-static-query-inputs
-  [^:vector<datascript.parser/static-query-input> descriptors
-   ^:vector<input> inputs]
+(defn bind-static-query-inputs
+  [descriptors inputs]
   (loop [remaining-descriptors descriptors
          remaining-inputs inputs
          relation (identity-relation)
-         ^:map<string;source> sources {}
-         ^rules rules []]
+         sources {}
+         rules []]
     (if-some [descriptor (first remaining-descriptors)]
       (if-some [input (first remaining-inputs)]
         (if (parser/static-input-rules? descriptor)
@@ -3091,8 +3087,8 @@
         (Stdlib.invalid_arg "Missing static query input"))
       (context [relation] sources rules))))
 
-(defn ^datascript.db/database-view query-default-database
-  [^:map<string;source> sources]
+(defn query-default-database
+  [sources]
   (if-some [source (get sources "$")]
     (if-some [database (source-database source)]
       database
@@ -3101,9 +3097,7 @@
         None
         (datascript.db/default-options))))
     (reduce-kv
-     (fn [^datascript.db/database-view database
-          ^:string _
-          ^source source]
+     (fn [database _ source]
        (if-some [source-database (source-database source)]
          source-database
          database))
@@ -3113,8 +3107,8 @@
        (datascript.db/default-options)))
      sources)))
 
-(defn ^output execute-query
-  [^datascript.parser/Query query ^:vector<input> inputs]
+(defn execute-query
+  [query inputs]
   (parser/validate-static-query-sources query)
   (if-some [descriptors (parser/static-query-inputs query)]
     (let [expected-input-count (count descriptors)]
@@ -3139,22 +3133,20 @@
     (Stdlib.invalid_arg
      "Static query contains unsupported input bindings")))
 
-(defn ^:option<datascript.db/database-view> relation-lookup-database
-  [^relation relation ^:string variable]
+(defn relation-lookup-database
+  [relation variable]
   (Datascript_runtime.Query_value.relation_lookup_database
    relation variable))
 
 (defn context
-  [^:vector<relation> relations
-   ^:map<string;source> sources
-   ^rules rules]
+  [relations sources rules]
   (Datascript_runtime.Query_value.context relations sources rules))
 
-(defn ^:vector<relation> context-relations [^context context]
+(defn context-relations [context]
   (Datascript_runtime.Query_value.context_relations context))
 
-(defn ^:map<string;source> context-sources [^context context]
+(defn context-sources [context]
   (Datascript_runtime.Query_value.context_sources context))
 
-(defn ^rules context-rules [^context context]
+(defn context-rules [context]
   (Datascript_runtime.Query_value.context_rules context))
