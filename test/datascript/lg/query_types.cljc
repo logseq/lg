@@ -2693,25 +2693,24 @@
    initial-relation
    clauses))
 
-(defn ^boolean single-row-constant-relation?
-  [^relation relation]
+(defn single-row-constant-relation?
+  [relation]
   (and
    (= 1 (count (relation-rows relation)))
    (every?
-    (fn [^:string variable]
+    (fn [variable]
       (some? (constant-relation-result relation variable)))
     (keys (relation-attrs relation)))))
 
-(defn ^boolean relation-variables-used?
-  [^relation relation ^:vector<string> variables]
+(defn relation-variables-used?
+  [relation variables]
   (some
-   (fn [^:string variable]
+   (fn [variable]
      (contains? (relation-attrs relation) variable))
    variables))
 
-(defn ^relation lookup-db-patterns
-  [^datascript.db/database-view database
-   ^:vector<vector<datascript.parser/pattern-element>> patterns]
+(defn lookup-db-patterns
+  [database patterns]
   (resolve-db-patterns database (identity-relation) patterns))
 
 (defn require-relation-result
@@ -2721,22 +2720,20 @@
     (Stdlib.invalid_arg
      (str "Query find variable is not bound: " variable))))
 
-(defn ^:array<result> project-find-row
-  [^relation relation
-   ^:vector<string> variables
-   ^:array<result> row]
+(defn project-find-row
+  [relation variables row]
   (to-array
    (mapv
-    (fn [^:string variable]
+    (fn [variable]
       (require-relation-result relation row variable))
     variables)))
 
-(defn ^:vector<array<result>> project-find-rows
-  [^relation relation ^:vector<string> variables]
+(defn project-find-rows
+  [relation variables]
   (let [attrs (relation-attrs relation)
-        ^:vector<int> indexes
+        indexes
         (mapv
-         (fn [^:string variable]
+         (fn [variable]
            (if-some [index (get attrs variable)]
              index
              (Stdlib.invalid_arg
@@ -2756,7 +2753,7 @@
       (relation-rows relation)
       (let [indexes (to-array indexes)]
         (mapv
-         (fn [^:array<result> row]
+         (fn [row]
            (project-row row indexes))
          (relation-rows relation))))))
 
@@ -2765,12 +2762,12 @@
     result
     (Stdlib.invalid_arg "Find shape requires one projected value")))
 
-(defn ^:map<string;result> return-map-row
-  [^:vector<string> keys ^:array<result> row]
+(defn return-map-row
+  [keys row]
   (if (= (count keys) (alength row))
     (loop [remaining keys
            index 0
-           ^:map<string;result> result-map {}]
+           result-map {}]
       (if-some [key (first remaining)]
         (if-some [value (row-get row index)]
           (recur
@@ -2783,18 +2780,16 @@
     (Stdlib.invalid_arg
      "Return-map key count must match result row arity")))
 
-(defn ^:vector<map<string;result>> return-map-rows
-  [^:vector<string> keys ^:vector<array<result>> rows]
+(defn return-map-rows
+  [keys rows]
   (Datascript_runtime.Query_value.distinct_result_maps
    (mapv
-    (fn [^:array<result> row]
+    (fn [row]
       (return-map-row keys row))
     rows)))
 
-(defn ^output mapped-find-output
-  [^datascript.parser/find-spec find
-   ^datascript.parser/return-map return-map
-   ^:vector<array<result>> rows]
+(defn mapped-find-output
+  [find return-map rows]
   (let [relation? (parser/relation-find? find)]
     (if-some [keys (parser/return-map-key-names return-map)]
       (let [mapped (return-map-rows keys rows)]
@@ -2816,10 +2811,8 @@
                (first mapped))))
           (Stdlib.invalid_arg "Unsupported query return-map type"))))))
 
-(defn ^output find-output
-  [^datascript.parser/find-spec find
-   ^:option<datascript.parser/return-map> return-map
-   ^:vector<array<result>> rows]
+(defn find-output
+  [find return-map rows]
   (if-some [return-map return-map]
     (mapped-find-output find return-map rows)
     (cond
@@ -2840,12 +2833,8 @@
       (Datascript_runtime.Query_value.tuple_output
        (first rows)))))
 
-(defn ^output execute-resolved-query
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^datascript.parser/Query query
-   ^relation constants
-   ^relation resolved-relation]
+(defn execute-resolved-query
+  [database sources query constants resolved-relation]
   (if-some [variables
             (parser/find-projection-variable-names
              (.-qfind query))]
@@ -2874,7 +2863,7 @@
             (let [indexes
                   (to-array (range (count variables)))]
               (mapv
-               (fn [^:array<result> row]
+               (fn [row]
                  (project-row row indexes))
                collected-rows)))
           aggregated-rows
@@ -2891,12 +2880,8 @@
     (Stdlib.invalid_arg
      "Static query find supports variables only")))
 
-(defn ^output execute-db-query-with-rules
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^datascript.parser/Query query
-   ^relation input-relation
-   ^rules rules]
+(defn execute-db-query-with-rules
+  [database sources query input-relation rules]
   (let [variables
         (if-some [variables
                   (parser/find-projection-variable-names
@@ -2934,21 +2919,19 @@
     (execute-resolved-query
      database sources query constants resolved-relation)))
 
-(defn ^output execute-db-query-with-relation
-  [^datascript.db/database-view database
-   ^datascript.parser/Query query
-   ^relation input-relation]
+(defn execute-db-query-with-relation
+  [database query input-relation]
   (execute-db-query-with-rules
    database
    {"$" (database-source database)}
    query input-relation []))
 
-(defn ^output execute-db-query
-  [^datascript.db/database-view database ^datascript.parser/Query query]
+(defn execute-db-query
+  [database query]
   (execute-db-query-with-relation
    database query (identity-relation)))
 
-(defn ^datascript.db/database-view require-database-input [^input input]
+(defn require-database-input [input]
   (if-some [source (input-source input)]
     (if-some [database (source-database source)]
       database
@@ -2957,7 +2940,7 @@
     (Stdlib.invalid_arg
      "Static DB query input must be a Source_input")))
 
-(defn ^binding-value require-binding-input [^input input]
+(defn require-binding-input [input]
   (if-some [binding (input-binding input)]
     binding
     (Stdlib.invalid_arg
