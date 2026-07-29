@@ -1442,8 +1442,7 @@
       (Stdlib.invalid_arg
        (str "Query callable variable is not bound: " variable)))))
 
-(defn ^Datascript_runtime.Data_value.entity_ref query-entity-reference
-  [^result result]
+(defn query-entity-reference [result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Datascript_runtime.Data_value.Entity_id entity)
@@ -1454,17 +1453,15 @@
     _
     (Stdlib.invalid_arg "Expected a query entity reference")))
 
-(defn ^:keyword query-attribute [^result result]
+(defn query-attribute [result]
   (if-some [attribute
             (Datascript_runtime.Data_value.keyword_value
              (result-pattern-value result))]
     (keyword attribute)
     (Stdlib.invalid_arg "Expected a query attribute")))
 
-(defn ^:option<datascript.db/Datom> query-datom
-  [^datascript.db/database-view database
-   ^result entity-result
-   ^result attribute-result]
+(defn query-datom
+  [database entity-result attribute-result]
   (if-some [entity
             (datascript.db/database-view-entid
              database
@@ -1478,10 +1475,8 @@
       None))
     None))
 
-(defn ^boolean query-missing?
-  [^datascript.db/database-view database
-   ^result entity-result
-   ^result attribute-result]
+(defn query-missing?
+  [database entity-result attribute-result]
   (if-some [entity
             (datascript.db/database-view-entid
              database
@@ -1500,7 +1495,7 @@
           database (Some entity) (Some attribute) None None))))
     true))
 
-(defn ^datascript.db/database-view query-database-result [^result result]
+(defn query-database-result [result]
   (match result
     (Datascript_runtime.Query_value.Database database) database
     _ (Stdlib.invalid_arg "Expected a database query argument")))
