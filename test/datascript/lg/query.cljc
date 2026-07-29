@@ -1013,13 +1013,6 @@
      None
      tuples)))
 
-(defn-
-  first-tuple-only
-  [tuples]
-  (if-some [tuple (first tuples)]
-    [tuple]
-    []))
-
 (extend-type datascript.parser/FindTuple
   IPostProcess
   (-post-process [find return-map tuples]
@@ -1027,7 +1020,9 @@
      (datascript.parser/tuple-find-elements
       (.-elements find))
      return-map
-     (first-tuple-only tuples))))
+     (if-some [tuple (first tuples)]
+       [tuple]
+       []))))
 
 (defn ^:vector<Datascript_runtime.Data_value.t>
   normalize-pattern-clause
