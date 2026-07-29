@@ -740,44 +740,74 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                  [ Semantic_ir.Int count; sequence ] );
            ] ))
   in
-  match target.ty with
-  | TTuple element_tys -> (
-      match parse_sequence_pattern forms with
-      | Error _ as err -> err
-      | Ok pattern ->
-          if Option.is_some pattern.rest_name then
-            Error.error "tuple destructuring does not support & rest"
-          else if List.length pattern.item_patterns > List.length element_tys
-          then
-            Error.error "tuple destructuring has too many elements"
-          else
-            let tuple_item_at index =
-              let ty = List.nth element_tys index in
-              let value_name = "__lg_tuple_item_" ^ string_of_int index in
-              let patterns =
-                List.mapi
-                  (fun element_index _ ->
-                    if element_index = index then
-                      Semantic_ir.PVar value_name
-                    else Semantic_ir.PAny)
-                  element_tys
+  let bind_tuple element_tys nullable =
+    match parse_sequence_pattern forms with
+    | Error _ as err -> err
+    | Ok pattern ->
+        if Option.is_some pattern.rest_name then
+          Error.error "tuple destructuring does not support & rest"
+        else if List.length pattern.item_patterns > List.length element_tys then
+          Error.error "tuple destructuring has too many elements"
+        else
+          let tuple_item_at index =
+            let element_ty = List.nth element_tys index in
+            let value_name = "__lg_tuple_item_" ^ string_of_int index in
+            let patterns =
+              List.mapi
+                (fun element_index _ ->
+                  if element_index = index then Semantic_ir.PVar value_name
+                  else Semantic_ir.PAny)
+                element_tys
+            in
+            if nullable then
+              let ty, some_value, none_value =
+                match element_ty with
+                | ty when Types.is_dynamic ty ->
+                    ( ty,
+                      Semantic_ir.Ident value_name,
+                      Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil" )
+                | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                    ( element_ty,
+                      Semantic_ir.Ident value_name,
+                      Semantic_ir.Constructor ("None", None) )
+                | ty ->
+                    ( TNullable ty,
+                      Semantic_ir.Constructor
+                        ("Some", Some (Semantic_ir.Ident value_name)),
+                      Semantic_ir.Constructor ("None", None) )
               in
               typed_ir ty
+                (Semantic_ir.Match
+                   ( target.semantic_expr,
+                     [
+                       (Semantic_ir.PConstructor ("None", None), none_value);
+                       ( Semantic_ir.PConstructor
+                           ("Some", Some (Semantic_ir.PTuple patterns)),
+                         some_value );
+                     ] ))
+            else
+              typed_ir element_ty
                 (Semantic_ir.Match
                    ( target.semantic_expr,
                      [
                        ( Semantic_ir.PTuple patterns,
                          Semantic_ir.Ident value_name );
                      ] ))
-            in
-            Result.map
-              (fun bindings ->
-                match pattern.sequence_as_name with
-                | None -> bindings
-                | Some name ->
-                    bindings
-                    @ [ local_binding name target.ty target.semantic_expr ])
-              (bind_items tuple_item_at 0 [] pattern.item_patterns))
+          in
+          Result.map
+            (fun bindings ->
+              match pattern.sequence_as_name with
+              | None -> bindings
+              | Some name ->
+                  bindings
+                  @ [ local_binding name target.ty target.semantic_expr ])
+            (bind_items tuple_item_at 0 [] pattern.item_patterns)
+  in
+  match target.ty with
+  | TTuple element_tys -> bind_tuple element_tys false
+  | TNullable (TTuple element_tys)
+  | TOcaml_app ("option", [ TTuple element_tys ]) ->
+      bind_tuple element_tys true
   | TList inner | TVector inner -> (
       match parse_sequence_pattern forms with
       | Error _ as err -> err

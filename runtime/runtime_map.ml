@@ -353,7 +353,7 @@ let to_seq map =
   in
   next 0
 
-let first_exn map =
+let first_opt map =
   match to_seq map () with
-  | Seq.Cons (entry, _) -> entry
-  | Seq.Nil -> invalid_arg "first called on an empty map"
+  | Seq.Cons (entry, _) -> Some entry
+  | Seq.Nil -> None

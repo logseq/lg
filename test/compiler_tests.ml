@@ -480,6 +480,20 @@ let test_dissoc_nil_is_nil () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_dissoc_accepts_nullable_keys () =
+  let source =
+    {|
+(def maybe-key (if false :answer nil))
+(def answer-key :answer)
+(def values (hash-map answer-key 42))
+(println (get (dissoc values maybe-key) :answer))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "dissoc_accepts_nullable_keys" "42\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_anonymous_maps_reuse_equal_shapes () =
   let source =
     {|
@@ -21472,12 +21486,14 @@ let test_first_returns_nil_for_empty_collections () =
 (println (nil? (first (seq []))))
 (println (nil? (first (array-of :int))))
 (println (nil? (first "")))
+(println (nil? (first (dissoc (hash-map 'answer 42) 'answer))))
+(println (some? (first (hash-map 'answer 42))))
 (println (+ (first (list 3 2 1)) 0))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "first_returns_nil_for_empty_collections"
-    "true\ntrue\ntrue\ntrue\ntrue\n3\n" ocaml_source;
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n3\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -24096,16 +24112,26 @@ let test_reduce_branch_merges_with_typed_optional_fallback () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_nested_reducers_keep_entity_keyword_lookup_as_map_access () =
+let test_nested_reducers_preserve_closed_entity_lookups () =
   let source =
     {|
+(type-record upsert-entry
+  (attribute :keyword)
+  (value :string))
+(type-record entity-input
+  (db-id :option<int>))
 (defn entity-id-after-upserts [entity upserts]
   (let [upsert-ids
         (reduce-kv
           (fn [result attribute values-to-entities]
             (reduce-kv
               (fn [result value entity-id]
-                (assoc result entity-id [attribute value]))
+                (assoc
+                  result
+                  entity-id
+                  (record upsert-entry
+                    (attribute attribute)
+                    (value value))))
               result
               values-to-entities))
           {}
@@ -24113,25 +24139,34 @@ let test_nested_reducers_keep_entity_keyword_lookup_as_map_access () =
         upsert-count (count upsert-ids)]
     (if (<= 2 upsert-count)
       nil
-      (let [[upsert-id [attribute value]] (first upsert-ids)
-            entity-id (:db/id entity)]
-        (if entity-id true false)))))
+      (let [[upsert-id upsert] (first upsert-ids)
+            entity-id (:db-id entity)]
+        (match entity-id
+          (Some _) true
+          None false)))))
 (def present-result
-  (entity-id-after-upserts {:db/id 7} {:name {"Ada" 1}}))
+  (entity-id-after-upserts
+    (record entity-input (db-id (Some 7)))
+    {:name {"Ada" 1}}))
 (def missing-result
-  (entity-id-after-upserts {} {:name {"Ada" 1}}))
+  (entity-id-after-upserts
+    (record entity-input (db-id None))
+    {:name {"Ada" 1}}))
 (def empty-result
-  (entity-id-after-upserts {:db/id 9} {}))
+  (entity-id-after-upserts
+    (record entity-input (db-id (Some 9)))
+    {}))
 (def conflict-result
-  (entity-id-after-upserts {:db/id 9}
+  (entity-id-after-upserts
+    (record entity-input (db-id (Some 9)))
     {:name {"Ada" 1} :email {"ada@example.com" 2}}))
 (println
   (str present-result ":" missing-result ":" empty-result ":"
        (nil? conflict-result)))
-|}
+  |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "nested_reducers_keep_entity_keyword_lookup_as_map_access"
+  assert_ocaml_runs "nested_reducers_preserve_closed_entity_lookups"
     "true:false:true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -31971,6 +32006,7 @@ let tests =
       test_assoc_rejects_type_changes );
     ("dissoc missing fields is a no-op", test_dissoc_missing_fields_is_noop);
     ("dissoc nil is nil", test_dissoc_nil_is_nil);
+    ("dissoc accepts nullable keys", test_dissoc_accepts_nullable_keys);
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
     ( "hash-map constructs structural maps",
       test_hash_map_constructs_structural_maps );
@@ -33866,8 +33902,8 @@ let tests =
       test_random_collection_operations_preserve_element_types );
     ( "reduce branch merges with typed optional fallback",
       test_reduce_branch_merges_with_typed_optional_fallback );
-    ( "nested reducers keep entity keyword lookup as map access",
-      test_nested_reducers_keep_entity_keyword_lookup_as_map_access );
+    ( "nested reducers preserve closed entity lookups",
+      test_nested_reducers_preserve_closed_entity_lookups );
     ( "get uses dynamic lookup for dynamic targets",
       test_get_uses_dynamic_lookup_for_dynamic_targets );
     ( "dynamic record keys preserve common generic field types",

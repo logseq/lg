@@ -98,6 +98,27 @@ let runtime_map_key_type declared actual =
     Types.dynamic_constraint TUnknown
   else declared
 
+let dissoc_map_key declared_ty map (key : typed_expr) =
+  let dissoc key_ty key_expr =
+    apply
+      (runtime_map_operation
+         (runtime_map_key_type declared_ty key_ty)
+         "dissoc")
+      [ map; key_expr ]
+  in
+  match key.ty with
+  | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
+      let key_name = "__lg_dissoc_key" in
+      Semantic_ir.Match
+        ( key.semantic_expr,
+          [
+            (Semantic_ir.PConstructor ("None", None), map);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar key_name)),
+              dissoc payload_ty (Semantic_ir.Ident key_name) );
+          ] )
+  | key_ty -> dissoc key_ty key.semantic_expr
+
 let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let compile_args_for = compile_args_for compile_expr in
   let pack_dynamic_scalar env value =
@@ -2215,13 +2236,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     Result.map
                       (fun keys ->
                         typed_ir target.ty
-                          (List.fold_left
-                             (fun map key ->
-                               apply
-                                 (runtime_map_operation
-                                    (runtime_map_key_type key_ty key.ty)
-                                    "dissoc")
-                                 [ map; key.semantic_expr ])
+                          (List.fold_left (dissoc_map_key key_ty)
                              target.semantic_expr keys))
                       (prepare_keys [] keys))
               | TNil ->
