@@ -274,7 +274,8 @@
   [^serialized-value from
    ^codec thaw-codec
    ^keyword-thawer keyword-thawer
-   ^restore-ref-type restore-ref-type]
+   ^restore-ref-type restore-ref-type
+   branching-factor-override]
   (let [prepared (Datascript_runtime.Serialization_value.prepare from)
         tx0      (Datascript_runtime.Serialization_value.prepared_tx0 prepared)
          schema   (match thaw-codec
@@ -312,8 +313,13 @@
                    eavt
                    (Datascript_runtime.Serialization_value.prepared_avet_array
                     prepared))
-         _        (Datascript_runtime.Serialization_value.prepared_branching_factor
-                   prepared)
+         serialized-branching-factor
+         (Datascript_runtime.Serialization_value.prepared_branching_factor
+          prepared)
+         branching-factor
+         (if-some [branching-factor branching-factor-override]
+           branching-factor
+           serialized-branching-factor)
          serialized-ref-type
          (Datascript_runtime.Serialization_value.prepared_ref_type prepared)
          ref-type (match restore-ref-type
@@ -322,20 +328,27 @@
     (db/restore-db
      (db/make-db-snapshot
       schema
-      (set/from-sorted-array db/cmp-datoms-eavt eavt
-       (arrays/alength eavt) None ref-type)
-      (set/from-sorted-array db/cmp-datoms-aevt aevt
-       (arrays/alength aevt) None ref-type)
-      (set/from-sorted-array db/cmp-datoms-avet avet
-       (arrays/alength avet) None ref-type)
+      (set/with-branching-factor
+       (set/from-sorted-array db/cmp-datoms-eavt eavt
+        (arrays/alength eavt) None ref-type)
+       branching-factor)
+      (set/with-branching-factor
+       (set/from-sorted-array db/cmp-datoms-aevt aevt
+        (arrays/alength aevt) None ref-type)
+       branching-factor)
+      (set/with-branching-factor
+       (set/from-sorted-array db/cmp-datoms-avet avet
+        (arrays/alength avet) None ref-type)
+       branching-factor)
       (Datascript_runtime.Serialization_value.prepared_max_eid prepared)
       (Datascript_runtime.Serialization_value.prepared_max_tx prepared)))))
 
 (defn ^datascript.db/DB from-serializable
   ([^serialized-value from]
    (from-serializable-impl
-    from DefaultCodec DefaultKeywordThawer SerializedRefType))
-  ([^serialized-value from {:keys [thaw-fn thaw-kw ref-type]}]
+    from DefaultCodec DefaultKeywordThawer SerializedRefType None))
+  ([^serialized-value from
+    {:keys [thaw-fn thaw-kw ref-type branching-factor]}]
    (let [thaw-codec
          (if-some [thaw-fn thaw-fn]
            (CustomCodec thaw-fn)
@@ -349,4 +362,4 @@
            (OverrideRefType ref-type)
            SerializedRefType)]
      (from-serializable-impl
-      from thaw-codec thaw-keyword restore-ref-type))))
+      from thaw-codec thaw-keyword restore-ref-type branching-factor))))

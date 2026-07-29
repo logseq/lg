@@ -279,6 +279,45 @@
     #?(:cljs
        (is (= db (-> db d/serializable melange-json-write melange-json-read d/from-serializable))))))
 
+(deftest serialization-preserves-and-overrides-tree-settings
+  (let [source-options
+        (db/options-with-branching-factor
+         (db/options-with-ref-type
+          (db/default-options)
+          (Lg_runtime.Runtime_ref_type.Strong))
+         7)
+        database (d/init-db data schema source-options)
+        frozen (d/serializable database)
+        restored (d/from-serializable frozen)
+        branching-override
+        (d/from-serializable frozen {:branching-factor 11})
+        ref-override
+        (d/from-serializable
+         frozen
+         {:ref-type (Lg_runtime.Runtime_ref_type.Weak)})]
+    (is (= 7 (:branching-factor (d/settings restored))))
+    (is (= (Lg_runtime.Runtime_ref_type.Strong)
+           (:ref-type (d/settings restored))))
+    (is (= 11
+           (:branching-factor (d/settings branching-override))))
+    (is (= (Lg_runtime.Runtime_ref_type.Strong)
+           (:ref-type (d/settings branching-override))))
+    (is (= 7 (:branching-factor (d/settings ref-override))))
+    (is (= (Lg_runtime.Runtime_ref_type.Weak)
+           (:ref-type (d/settings ref-override))))))
+
+(deftest serialization-preserves-empty-database-tree-settings
+  (let [source-options
+        (db/options-with-branching-factor
+         (db/default-options)
+         9)
+        restored
+        (->
+         (d/empty-db None source-options)
+         d/serializable
+         d/from-serializable)]
+    (is (= 9 (:branching-factor (d/settings restored))))))
+
 (deftest test-nan
   (let [db (d/db-with
              (d/empty-db schema)

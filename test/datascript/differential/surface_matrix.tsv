@@ -63,7 +63,7 @@ serialization	options	option-map	parity	test/datascript/upstream_tests/datascrip
 serialization	schema	schema-payload	representation-only	test/datascript/upstream_tests/datascript/test/serialize.cljc
 serialization	datom-order	ordered-datoms	representation-only	test/datascript/upstream_tests/datascript/test/serialize.cljc
 serialization	index-reuse	stored-indexes	measured-optimization	test/datascript/upstream/storage.cljc
-serialization	branching	branching-factor-options	representation-only	test/datascript/upstream/storage.cljc
+serialization	branching	branching-factor-options	parity	test/datascript/upstream_tests/datascript/test/serialize.cljc
 serialization	reference-policy	Strong-or-Weak	representation-only	test/compiler_tests.ml
 serialization	storage-rejection	attached-storage	parity	test/compiler_tests.ml
 serialization	old-format	versioned-payload	parity	test/datascript/upstream_tests/datascript/test/serialize.cljc
