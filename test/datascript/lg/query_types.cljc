@@ -1678,19 +1678,16 @@
           (str "[" (query-binding-description item) " ...]")
           "")))))
 
-(defn ^:vector<string> missing-query-arguments
-  [^relation relation
-   ^relation constants
-   ^:vector<datascript.parser/fn-arg> arguments]
+(defn missing-query-arguments
+  [relation constants arguments]
   (reduce
-   (fn [^:vector<string> missing
-        ^datascript.parser/fn-arg argument]
+   (fn [missing argument]
      (if-some [variable (parser/argument-variable-name argument)]
        (if
         (or
          (contains? (relation-attrs relation) variable)
          (some? (constant-relation-result constants variable))
-         (some (fn [^:string name] (= name variable)) missing))
+         (some (fn [name] (= name variable)) missing))
          missing
          (conj missing variable))
        missing))
@@ -1701,11 +1698,7 @@
   (str "#{" (join-query-parts variables) "}"))
 
 (defn validate-static-call-bindings
-  [^relation relation
-   ^relation constants
-   ^:string name
-   ^:vector<datascript.parser/fn-arg> arguments
-   ^:option<datascript.parser/binding> binding]
+  [relation constants name arguments binding]
   (let [missing (missing-query-arguments relation constants arguments)]
     (if (empty? missing)
       nil
