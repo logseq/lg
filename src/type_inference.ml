@@ -3297,7 +3297,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 (constrain_symbol (TSeq element_ty) branch_params binding)
                 (fun branch_params ->
                   infer_expected_all element_ty branch_params values)
-          | _ -> infer_form branch_params then_form
+          | _ -> (
+              match inferred_form_type params else_form with
+              | ty
+                when Types.is_dynamic ty
+                     || match ty with
+                        | TUnknown | TMeta _ | TVar _ -> true
+                        | _ -> false ->
+                  infer_form branch_params then_form
+              | expected_ty ->
+                  infer_expected expected_ty branch_params then_form)
         in
         match infer_then_branch with
         | Error _ as error -> error

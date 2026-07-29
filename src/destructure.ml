@@ -371,9 +371,11 @@ let rec infer_map_type pattern lookup_local_ty =
                  | _ -> ty
                in
                let ty =
-                 match default_form with
-                 | Some _ -> TNullable ty
-                 | None -> ty
+                 match (default_form, ty) with
+                 | Some _, ty -> Types.normalize_nullable (TNullable ty)
+                 | None, (TUnknown | TMeta _ | TVar _) ->
+                     TNullable ty
+                 | None, ty -> ty
                in
                make_field keyword ty)
       in

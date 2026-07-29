@@ -246,6 +246,16 @@ let allocate_multi_arity_local_records env next_type
         let env, next_type, clause_items, parts =
           allocate_function_local_records env next_type clause.parts
         in
+        let param_bindings =
+          List.map2
+            (fun row_param_type (original, materialized) ->
+              match row_param_type with
+              | Some _ -> original
+              | None -> materialized)
+            clause.row_param_types
+            (List.combine clause.parts.param_bindings parts.param_bindings)
+        in
+        let parts = { parts with param_bindings } in
         ( env,
           next_type,
           items @ clause_items,

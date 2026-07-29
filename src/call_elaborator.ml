@@ -2810,6 +2810,13 @@ let typed_row_argument_unshared env type_name expected_fields argument =
   let actual_fields =
     match argument.record_values with
     | Some values -> Some (List.map fst values)
+    | None
+      when Option.is_some (Types.dynamic_map_types argument.ty)
+           &&
+           (match Semantic_ir.unlocated argument.semantic_expr with
+           | Semantic_ir.Ident "Lg_runtime.Runtime_map.empty" -> true
+           | _ -> false) ->
+        Some []
     | None -> (
         match argument.ty with
         | TRecord fields | TNamed_record { fields; _ } -> Some fields

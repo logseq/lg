@@ -1335,9 +1335,15 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                          (List.map (fun c -> c.target_name) clauses));
                 }
         | clause :: rest, target_name :: rest_targets -> (
+            let overload_row_param_types =
+              List.map2
+                (fun target arity ->
+                  row_param_type_names target arity.fixed_params)
+                all_targets arities
+            in
             let self_binding =
-              Types.binding ~overload_targets:all_targets ocaml_name
-                (TOverloaded_fn arities)
+              Types.binding ~overload_targets:all_targets
+                ~overload_row_param_types ocaml_name (TOverloaded_fn arities)
             in
             let clause_env =
               Env.add (Names.scoped_key scope source_name) self_binding env
