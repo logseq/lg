@@ -20224,23 +20224,28 @@ let test_metadata_map_values_constrain_function_parameters () =
   assert_ocaml_runs "metadata_map_values_constrain_function_parameters"
     "[1 2]\n" ocaml_source
 
-let test_logical_or_preserves_nullable_dynamic_results () =
+let test_logical_or_preserves_nullable_closed_sum_results () =
   let source =
     {|
 (type-record left-value (value :int))
 (type-record right-value (value :string))
+(type-variant either-value
+  (LeftValue :left-value)
+  (RightValue :right-value))
 (defn parse-left [pick-left?]
-  (when pick-left? (record left-value (value 1))))
+  (when pick-left?
+    (LeftValue (record left-value (value 1)))))
 (defn parse-right [pick-left?]
-  (when (not pick-left?) (record right-value (value "right"))))
+  (when (not pick-left?)
+    (RightValue (record right-value (value "right")))))
 (defn parse-either [pick-left?]
   (or (parse-left pick-left?) (parse-right pick-left?)))
 (println (some? (parse-either true)))
 (println (some? (parse-either false)))
-|}
+  |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "logical_or_preserves_nullable_dynamic_results"
+  assert_ocaml_runs "logical_or_preserves_nullable_closed_sum_results"
     "true\ntrue\n" ocaml_source
 
 let test_match_coerces_nullable_branches () =
@@ -23243,19 +23248,22 @@ let test_static_higher_order_parameters_accept_nominal_callbacks () =
   assert_ocaml_runs "static_higher_order_parameters_accept_nominal_callbacks"
     "-1\n" ocaml_source
 
-let test_dynamic_maps_preserve_nominal_function_parameters () =
+let test_typed_option_records_preserve_nominal_function_parameters () =
   let source =
     {|
 (deftype Entry [^int value])
+(type-record entry-options
+  (cmp :fn<Entry;Entry;int>))
 (defn compare-entries [^Entry left ^Entry right]
   (compare (.-value left) (.-value right)))
-(def opts (assoc {} :cmp compare-entries))
-(println ((get opts :cmp) (Entry. 1) (Entry. 2)))
+(def opts
+  (record entry-options (cmp compare-entries)))
+(println ((:cmp opts) (Entry. 1) (Entry. 2)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_maps_preserve_nominal_function_parameters" "-1\n"
-    ocaml_source
+  assert_ocaml_runs "typed_option_records_preserve_nominal_function_parameters"
+    "-1\n" ocaml_source
 
 let test_static_functions_preserve_ocaml_parameters () =
   let source =
@@ -23286,38 +23294,45 @@ let test_static_functions_preserve_ocaml_parameters () =
   assert_ocaml_runs "static_functions_preserve_ocaml_parameters" "ok\n"
     ocaml_source
 
-let test_dynamic_maps_preserve_propagated_nominal_function_parameters () =
+let test_typed_option_records_preserve_propagated_nominal_function_parameters ()
+    =
   let source =
     {|
 (deftype Entry [^int value])
+(type-record entry-options
+  (cmp :fn<Entry;Entry;int>))
 (defn compare-entries [^Entry left ^Entry right]
   (compare (.-value left) (.-value right)))
-(defn with-comparator [opts comparator]
-  (assoc opts :cmp comparator))
-(def opts (with-comparator {} compare-entries))
-(println ((get opts :cmp) (Entry. 2) (Entry. 2)))
+(defn with-comparator
+  [^:fn<Entry;Entry;int> comparator]
+  (record entry-options (cmp comparator)))
+(def opts (with-comparator compare-entries))
+(println ((:cmp opts) (Entry. 2) (Entry. 2)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
-    "dynamic_maps_preserve_propagated_nominal_function_parameters" "0\n"
+    "typed_option_records_preserve_propagated_nominal_function_parameters" "0\n"
     ocaml_source
 
-let test_dynamic_map_parameters_preserve_nominal_function_values () =
+let test_typed_option_record_constructors_preserve_nominal_function_values () =
   let source =
     {|
 (deftype Entry [^int value])
+(type-record entry-options
+  (cmp :fn<Entry;Entry;int>))
 (defn compare-entries [^Entry left ^Entry right]
   (compare (.-value left) (.-value right)))
-(defn with-entry-comparator [opts]
-  (assoc opts :cmp compare-entries))
-(def opts (with-entry-comparator {}))
-(println ((get opts :cmp) (Entry. 3) (Entry. 2)))
+(defn ^entry-options with-entry-comparator []
+  (record entry-options (cmp compare-entries)))
+(def opts (with-entry-comparator))
+(println ((:cmp opts) (Entry. 3) (Entry. 2)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_map_parameters_preserve_nominal_function_values"
-    "1\n" ocaml_source
+  assert_ocaml_runs
+    "typed_option_record_constructors_preserve_nominal_function_values" "1\n"
+    ocaml_source
 
 let test_dynamic_maps_instantiate_generic_record_function_fields () =
   let source =
@@ -23609,17 +23624,17 @@ let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
     ocaml_source;
   ignore (compile Lg.Target.Melange)
 
-let test_map_to_record_unpacks_dynamic_named_fields () =
+let test_map_to_record_unpacks_named_fields_from_map_literals () =
   let source =
     {|
 (deftype Entry [^int value])
 (defrecord Holder [^Entry entry])
-(def holder (map->Holder (assoc {} :entry (Entry. 7))))
+(def holder (map->Holder {:entry (Entry. 7)}))
 (println (.-value (.-entry holder)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "map_to_record_unpacks_dynamic_named_fields" "7\n"
+  assert_ocaml_runs "map_to_record_unpacks_named_fields_from_map_literals" "7\n"
     ocaml_source
 
 let test_map_to_record_preserves_generic_fields_from_map_literals () =
@@ -25388,7 +25403,7 @@ let test_array_classification_uses_a_closed_sum () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_dynamic_recursive_array_seq_is_packed_at_the_self_call () =
+let test_recursive_array_seq_uses_a_closed_sum_at_the_self_call () =
   let source =
     {|
 (defprotocol LookupStore
@@ -25398,17 +25413,20 @@ let test_dynamic_recursive_array_seq_is_packed_at_the_self_call () =
   LookupStore
   (-lookup-value [db _] (.-value db))
   (-seek-value [db _ _ _] (.-value db)))
-(defn classify [db value]
-  (cond
-    (int? value) (-lookup-value db :value)
-    (array? value) (recur db (array-seq value))
-    (sequential? value) (+ (count value) (-seek-value db :value nil nil))
-    :else -1))
-(println (classify (DB. 40) (array 40 41)))
+(type-variant lookup-input
+  (LookupInt :int)
+  (LookupArray :array<int>)
+  (LookupSeq :seq<int>))
+(defn classify [^DB db ^lookup-input value]
+  (match value
+    (LookupInt _) (-lookup-value db :value)
+    (LookupArray values) (classify db (LookupSeq (array-seq values)))
+    (LookupSeq values) (+ (count values) (-seek-value db :value nil nil))))
+(println (classify (DB. 40) (LookupArray (array 40 41))))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_recursive_array_seq_is_packed_at_the_self_call"
+  assert_ocaml_runs "recursive_array_seq_uses_a_closed_sum_at_the_self_call"
     "42\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -25523,21 +25541,25 @@ let test_later_nominal_use_recovers_structurally_inferred_record () =
   assert_ocaml_runs "later_nominal_use_recovers_structurally_inferred_record"
     "42\n" ocaml_source
 
-let test_macro_slots_preserve_dynamic_seqable_values () =
+let test_macro_slots_preserve_closed_seqable_alternatives () =
   let source =
     {|
-(defn first-through-slot [value]
-  (let [slot (volatile! nil)]
+(type-variant string-source
+  (StringVector :vector<string>)
+  (StringList :list<string>))
+(defn first-through-slot [^string-source value]
+  (let [slot (volatile! value)]
     (vreset! slot value)
-    (let [[first-value] (deref slot)]
-      first-value)))
+    (match (deref slot)
+      (StringVector values) (first values)
+      (StringList values) (first values))))
 (println
-  (str (first-through-slot ["vector"]) ":"
-       (first-through-slot (list "list"))))
+  (str (first-through-slot (StringVector ["vector"])) ":"
+       (first-through-slot (StringList (list "list")))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "macro_slots_preserve_dynamic_seqable_values"
+  assert_ocaml_runs "macro_slots_preserve_closed_seqable_alternatives"
     "vector:list\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -27242,22 +27264,26 @@ let test_into_applies_composed_transducers () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_into_transducers_build_dynamic_sets () =
+let test_into_transducers_build_typed_sets () =
   let source =
     {|
-(defrecord Datom [value])
+(defrecord Datom [^int value])
+(type-record retract-op
+  (value :int))
 (defn retract [datoms]
   (into #{}
     (comp
       (filter (fn [^Datom datom] (> (.-value datom) 1)))
-      (map (fn [^Datom datom] [:retract (.-value datom)])))
+      (map
+       (fn [^Datom datom]
+         (record retract-op (value (.-value datom))))))
     datoms))
 (def result (retract [(Datom. 1) (Datom. 2) (Datom. 3)]))
 (println (count result))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "into_transducers_build_dynamic_sets" "2\n" ocaml_source;
+  assert_ocaml_runs "into_transducers_build_typed_sets" "2\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
@@ -33522,8 +33548,8 @@ let tests =
     ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
     ( "metadata map values constrain function parameters",
       test_metadata_map_values_constrain_function_parameters );
-    ( "logical or preserves nullable dynamic results",
-      test_logical_or_preserves_nullable_dynamic_results );
+    ( "logical or preserves nullable closed sum results",
+      test_logical_or_preserves_nullable_closed_sum_results );
     ("match coerces nullable branches", test_match_coerces_nullable_branches);
     ( "lazy map defers incrementally and memoizes realized values",
       test_lazy_map_defers_incrementally_and_memoizes_realized_values );
@@ -33753,14 +33779,15 @@ let tests =
       test_loop_normalizes_seqable_parameters_to_sequences );
     ( "static higher-order parameters accept nominal callbacks",
       test_static_higher_order_parameters_accept_nominal_callbacks );
-    ( "dynamic maps preserve nominal function parameters",
-      test_dynamic_maps_preserve_nominal_function_parameters );
+    ( "typed option records preserve nominal function parameters",
+      test_typed_option_records_preserve_nominal_function_parameters );
     ( "static functions preserve OCaml parameters",
       test_static_functions_preserve_ocaml_parameters );
-    ( "dynamic maps preserve propagated nominal function parameters",
-      test_dynamic_maps_preserve_propagated_nominal_function_parameters );
-    ( "dynamic map parameters preserve nominal function values",
-      test_dynamic_map_parameters_preserve_nominal_function_values );
+    ( "typed option records preserve propagated nominal function parameters",
+      test_typed_option_records_preserve_propagated_nominal_function_parameters
+    );
+    ( "typed option record constructors preserve nominal function values",
+      test_typed_option_record_constructors_preserve_nominal_function_values );
     ( "dynamic maps instantiate generic record function fields",
       test_dynamic_maps_instantiate_generic_record_function_fields );
     ( "dynamic protocols instantiate generic record receivers",
@@ -33771,8 +33798,8 @@ let tests =
       test_dynamic_generic_nominals_are_consumed_inside_existential_scope );
     ( "overloaded generic bounds preserve static nominal arguments",
       test_overloaded_generic_bounds_preserve_static_nominal_arguments );
-    ( "map->record unpacks dynamic named fields",
-      test_map_to_record_unpacks_dynamic_named_fields );
+    ( "map->record unpacks named fields from map literals",
+      test_map_to_record_unpacks_named_fields_from_map_literals );
     ( "map->record preserves generic fields from map literals",
       test_map_to_record_preserves_generic_fields_from_map_literals );
     ( "map->record evaluates source once",
@@ -33937,16 +33964,16 @@ let tests =
       test_typed_predicates_preserve_concrete_array_elements );
     ( "array classification uses a closed sum",
       test_array_classification_uses_a_closed_sum );
-    ( "dynamic recursive array-seq is packed at the self call",
-      test_dynamic_recursive_array_seq_is_packed_at_the_self_call );
+    ( "recursive array-seq uses a closed sum at the self call",
+      test_recursive_array_seq_uses_a_closed_sum_at_the_self_call );
     ( "nested callback record constraints do not emit fake types",
       test_nested_callback_record_constraints_do_not_emit_fake_types );
     ( "cross namespace named records project to callback rows",
       test_cross_namespace_named_records_project_to_callback_rows );
     ( "later nominal use recovers structurally inferred record",
       test_later_nominal_use_recovers_structurally_inferred_record );
-    ( "macro slots preserve dynamic seqable values",
-      test_macro_slots_preserve_dynamic_seqable_values );
+    ( "macro slots preserve closed seqable alternatives",
+      test_macro_slots_preserve_closed_seqable_alternatives );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
     ( "local field access accepts wider named records",
@@ -34117,8 +34144,8 @@ let tests =
       test_take_while_transducers_compile_and_truncate_sequences );
     ( "into applies composed transducers",
       test_into_applies_composed_transducers );
-    ( "into transducers build dynamic sets",
-      test_into_transducers_build_dynamic_sets );
+    ( "into transducers build typed sets",
+      test_into_transducers_build_typed_sets );
     ( "filter accepts dynamic callable record fields",
       test_filter_accepts_dynamic_callable_record_fields );
     ( "sequence operations accept host optional collections",
