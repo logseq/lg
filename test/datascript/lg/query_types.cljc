@@ -1713,15 +1713,14 @@
           (Some binding)
           (str " " (query-binding-description binding) "]")))))))
 
-(defn- ^:bool data-value-truthy?
-  [^:Datascript_runtime.Data_value.t value]
+(defn- data-value-truthy? [value]
   (if (Datascript_runtime.Data_value.is_nil value)
     false
     (match (Datascript_runtime.Data_value.bool_value value)
       (Some boolean-value) boolean-value
       None true)))
 
-(defn ^:bool result-nil? [^result result]
+(defn result-nil? [result]
   (if-some [value (result-value result)]
     (Datascript_runtime.Data_value.is_nil value)
     false))
@@ -1752,14 +1751,14 @@
           (Stdlib.invalid_arg
            "Cannot read properties of undefined (reading 'cljs$core$IFn$_invoke$arity$1')")))))))
 
-(defn ^result metadata-function-result [^:vector<result> arguments]
+(defn metadata-function-result [arguments]
   (if-some [argument (first arguments)]
     (if-some [metadata (result-metadata argument)]
       (value-result metadata)
       (value-result (Datascript_runtime.Data_value.Nil)))
     (value-result (Datascript_runtime.Data_value.Nil))))
 
-(defn ^result value-type-function-result [^:vector<result> arguments]
+(defn value-type-function-result [arguments]
   (if-some [argument (first arguments)]
     (let [value
           (match argument
@@ -1830,7 +1829,7 @@
                 (Some (value-result value))
                 None))))))))
 
-(defn- ^:bool query-result-truthy? [^result result]
+(defn- query-result-truthy? [result]
   (if-some [value (result-value result)]
     (data-value-truthy? value)
     true))
