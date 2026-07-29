@@ -19670,20 +19670,20 @@ let test_forwarded_parameters_deduplicate_protocol_constraints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_references_preserve_state_across_dynamic_fields () =
+let test_references_preserve_state_across_typed_fields () =
   let source =
     {|
-(defrecord State [counter])
+(defrecord State [^:ref<int> counter])
 (def state (State. (atom 0)))
-(println (deref (.-counter state)))
-(println (zero? (deref (.-counter state))))
-(reset! (.-counter state) 4)
-(println (swap! (.-counter state) inc))
-(println (deref (.-counter state)))
+(println (deref (:counter state)))
+(println (zero? (deref (:counter state))))
+(reset! (:counter state) 4)
+(println (swap! (:counter state) inc))
+(println (deref (:counter state)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "references_preserve_state_across_dynamic_fields"
+  assert_ocaml_runs "references_preserve_state_across_typed_fields"
     "0\ntrue\n5\n5\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -20118,20 +20118,24 @@ let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_
   Lg.Compiler.compile_string {|(def x (namespace 1))|}
   |> expect_error "namespace expects keyword or symbol"
 
-let test_namespace_accepts_guarded_dynamic_identifiers () =
+let test_namespace_accepts_closed_identifier_alternatives () =
   let source =
     {|
-(defn namespace-if-keyword [value]
-  (if (keyword? value)
+(type-variant identifier-input
+  (KeywordInput :keyword)
+  (StringInput :string))
+(defn namespace-if-keyword [^identifier-input value]
+  (match value
+    (KeywordInput value)
     (if-let [ns (namespace value)] (= ns "user") false)
-    false))
+    (StringInput _) false))
 (println
-  (str (namespace-if-keyword :user/name) ":"
-       (namespace-if-keyword "user/name")))
+  (str (namespace-if-keyword (KeywordInput :user/name)) ":"
+       (namespace-if-keyword (StringInput "user/name"))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "namespace_accepts_guarded_dynamic_identifiers"
+  assert_ocaml_runs "namespace_accepts_closed_identifier_alternatives"
     "true:false\n" ocaml_source
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
@@ -24012,19 +24016,26 @@ let test_heterogeneous_function_maps_require_a_closed_sum () =
   Lg.Compiler.compile_string source
   |> expect_error_contains "heterogeneous map values"
 
-let test_sort_accepts_dynamic_seqable_function_parameters () =
+let test_sort_accepts_typed_query_function_parameters () =
   let source =
     {|
-(defn ordered [coll] (sort coll))
-(defn ordered-by [coll] (sort compare coll))
-(def query-fns {'ordered ordered, 'ordered-by ordered-by})
+(type-record query-functions
+  (ordered :fn<vector<int>;list<int>>)
+  (ordered-by :fn<vector<int>;list<int>>))
+(defn compare-ints [^int left ^int right] (compare left right))
+(defn ordered [^:vector<int> coll] (sort coll))
+(defn ordered-by [^:vector<int> coll] (sort compare-ints coll))
+(def query-fns
+  (record query-functions
+    (ordered ordered)
+    (ordered-by ordered-by)))
 (println
-  (str (= '(1 2 3) ((get query-fns 'ordered) [3 1 2])) ":"
-       (= '(1 2 3) ((get query-fns 'ordered-by) [3 1 2]))))
+  (str (= '(1 2 3) ((:ordered query-fns) [3 1 2])) ":"
+       (= '(1 2 3) ((:ordered-by query-fns) [3 1 2]))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sort_accepts_dynamic_seqable_function_parameters"
+  assert_ocaml_runs "sort_accepts_typed_query_function_parameters"
     "true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -24047,31 +24058,40 @@ let test_random_collection_operations_preserve_element_types () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_dynamic_reduce_branch_merges_with_nullable_vector_fallback () =
+let test_reduce_branch_merges_with_typed_optional_fallback () =
   let source =
     {|
-(defn resolve-result [found entity]
+(type-record resolve-output
+  (entity :map<keyword;int>)
+  (upserts :option<map<keyword;int>>))
+(defn resolve-result [found ^:map<keyword;int> entity]
   (if-some [idents (if found (Some #{:id}) None)]
     (reduce-kv
-      (fn [[entity' upserts] key value]
-        [(assoc entity' key value) upserts])
-      [{} {}]
+      (fn [^resolve-output output key value]
+        (record resolve-output
+          (entity (assoc (:entity output) key value))
+          (upserts (:upserts output))))
+      (record resolve-output
+        (entity {})
+        (upserts (Some {})))
       entity)
-    [entity nil]))
+    (record resolve-output
+      (entity entity)
+      (upserts None))))
 (def resolved (resolve-result true {:a 1}))
 (def fallback (resolve-result false {:a 1}))
 (def empty-resolved (resolve-result true {}))
 (println
-  (str (= {:a 1} (nth resolved 0)) ":"
-       (= {} (nth resolved 1)) ":"
-       (= {:a 1} (nth fallback 0)) ":"
-       (nil? (nth fallback 1)) ":"
-       (= {} (nth empty-resolved 0)) ":"
-       (= {} (nth empty-resolved 1))))
+  (str (= {:a 1} (:entity resolved)) ":"
+       (= (Some {}) (:upserts resolved)) ":"
+       (= {:a 1} (:entity fallback)) ":"
+       (= None (:upserts fallback)) ":"
+       (= {} (:entity empty-resolved)) ":"
+       (= (Some {}) (:upserts empty-resolved))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dynamic_reduce_branch_merges_with_nullable_vector_fallback"
+  assert_ocaml_runs "reduce_branch_merges_with_typed_optional_fallback"
     "true:true:true:true:true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -25577,14 +25597,14 @@ let test_destructuring_preserves_row_polymorphic_function_calls () =
   assert_ocaml_runs "destructuring_preserves_row_polymorphic_function_calls"
     "hi Ada\n" ocaml_source
 
-let test_local_field_access_accepts_wider_named_records () =
+let test_local_field_access_accepts_typed_named_records () =
   let state, records_ocaml =
     Lg.Compiler.compile_chunk Lg.Compiler.empty_state
       {|
 (ns records)
-(defrecord DB [value])
-(defrecord TxReport [^DB db-after tempids])
-(defn consume [^:dynamic value] value)
+(defrecord DB [^int value])
+(defrecord TxReport [^DB db-after ^:map<string;int> tempids])
+(defn consume [^DB value] value)
 (defn make-report [] (TxReport. (DB. 42) {}))
 |}
     |> expect_ok
@@ -25593,14 +25613,16 @@ let test_local_field_access_accepts_wider_named_records () =
     Lg.Compiler.compile_chunk state
       {|
 (ns app (:require [records :as records]))
-(let [read-db (fn [report] (records/consume (:db-after report)))
+(let [read-db
+      (fn [^records/TxReport report]
+        (records/consume (.-db-after report)))
       report (records/make-report)]
   (read-db report)
   (println "ok"))
 |}
     |> expect_ok
   in
-  assert_ocaml_runs "local_field_access_accepts_wider_named_records" "ok\n"
+  assert_ocaml_runs "local_field_access_accepts_typed_named_records" "ok\n"
     (String.concat "\n" [ records_ocaml; app_ocaml ])
 
 let test_local_dissoc_preserves_named_record_fields () =
@@ -27482,22 +27504,22 @@ let test_source_nullable_dynamic_arguments_are_rejected () =
   compile Lg.Target.Native;
   compile Lg.Target.Melange
 
-let test_reduce_kv_accepts_dynamic_maps () =
+let test_reduce_kv_accepts_typed_record_maps () =
   let source =
     {|
-(defrecord Holder [value])
-(defn copy-map [holder]
+(defrecord Holder [^:map<keyword;int> value])
+(defn ^:map<keyword;int> copy-map [^Holder holder]
   (reduce-kv
     (fn [result key value]
       (assoc result key value))
     {}
     (.-value ^Holder holder)))
 (def copied (copy-map (Holder. {:answer 42})))
-(println (get copied :answer))
+(println (get copied :answer 0))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "reduce_kv_accepts_dynamic_maps" "42\n" ocaml_source;
+  assert_ocaml_runs "reduce_kv_accepts_typed_record_maps" "42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -33486,8 +33508,8 @@ let tests =
       test_parameters_preserve_multiple_protocol_constraints );
     ( "forwarded parameters deduplicate protocol constraints",
       test_forwarded_parameters_deduplicate_protocol_constraints );
-    ( "references preserve state across dynamic fields",
-      test_references_preserve_state_across_dynamic_fields );
+    ( "references preserve state across typed fields",
+      test_references_preserve_state_across_typed_fields );
     ( "truthy guards preserve static optional numeric parameters",
       test_truthy_guards_preserve_static_optional_numeric_parameters );
     ( "and truthy guard narrows nullable ints",
@@ -33537,8 +33559,8 @@ let tests =
     ( "batched identifier/constructor core functions reject bad namespace args",
       test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args
     );
-    ( "namespace accepts guarded dynamic identifiers",
-      test_namespace_accepts_guarded_dynamic_identifiers );
+    ( "namespace accepts closed identifier alternatives",
+      test_namespace_accepts_closed_identifier_alternatives );
     ( "batched identifier/constructor core functions reject bad list* tail",
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     );
@@ -33838,12 +33860,12 @@ let tests =
       test_function_maps_require_a_closed_sum_for_type_predicates );
     ( "heterogeneous function maps require a closed sum",
       test_heterogeneous_function_maps_require_a_closed_sum );
-    ( "sort accepts dynamic seqable function parameters",
-      test_sort_accepts_dynamic_seqable_function_parameters );
+    ( "sort accepts typed query function parameters",
+      test_sort_accepts_typed_query_function_parameters );
     ( "random collection operations preserve element types",
       test_random_collection_operations_preserve_element_types );
-    ( "dynamic reduce branch merges with nullable vector fallback",
-      test_dynamic_reduce_branch_merges_with_nullable_vector_fallback );
+    ( "reduce branch merges with typed optional fallback",
+      test_reduce_branch_merges_with_typed_optional_fallback );
     ( "nested reducers keep entity keyword lookup as map access",
       test_nested_reducers_keep_entity_keyword_lookup_as_map_access );
     ( "get uses dynamic lookup for dynamic targets",
@@ -33976,8 +33998,8 @@ let tests =
       test_macro_slots_preserve_closed_seqable_alternatives );
     ( "destructuring preserves row polymorphic function calls",
       test_destructuring_preserves_row_polymorphic_function_calls );
-    ( "local field access accepts wider named records",
-      test_local_field_access_accepts_wider_named_records );
+    ( "local field access accepts typed named records",
+      test_local_field_access_accepts_typed_named_records );
     ( "local dissoc preserves named record fields",
       test_local_dissoc_preserves_named_record_fields );
     ( "map destructuring as preserves open map access",
@@ -34172,7 +34194,8 @@ let tests =
       test_assoc_accepts_nullable_static_maps );
     ( "source nullable dynamic arguments are rejected",
       test_source_nullable_dynamic_arguments_are_rejected );
-    ("reduce-kv accepts dynamic maps", test_reduce_kv_accepts_dynamic_maps);
+    ( "reduce-kv accepts typed record maps",
+      test_reduce_kv_accepts_typed_record_maps );
     ( "reduce-kv preserves captured value bindings",
       test_reduce_kv_preserves_captured_value_bindings );
     ( "source dynamic capability storage is rejected",
