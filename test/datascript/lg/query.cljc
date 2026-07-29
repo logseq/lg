@@ -1214,21 +1214,6 @@
 
 (def rule-seqid (atom 0))
 
-(defn- ^:map<string;datascript.parser/pattern-element>
-  rule-argument-replacements
-  [^:vector<string> parameters
-   ^:vector<datascript.parser/pattern-element> arguments]
-  (let [limit (min (count parameters) (count arguments))]
-    (reduce
-     (fn [^:map<string;datascript.parser/pattern-element> replacements
-          ^:int index]
-       (assoc
-        replacements
-        (nth parameters index)
-        (nth arguments index)))
-     {}
-     (range limit))))
-
 (defn- ^:vector<vector<datascript.parser/clause>>
   expand-rule-branches
   [^datascript.parser/clause clause
@@ -1243,13 +1228,8 @@
                  rule-name)]
         (mapv
          (fn [^datascript.parser/RuleBranch branch]
-           (datascript.parser/substitute-rule-clauses
-            (rule-argument-replacements
-             (datascript.parser/rule-branch-parameter-names
-              branch)
-             arguments)
-            seqid
-            (datascript.parser/rule-branch-clauses branch)))
+           (datascript.parser/expand-rule-branch
+            branch arguments seqid))
         branches)
         (Stdlib.invalid_arg
          (str

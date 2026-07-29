@@ -316,6 +316,9 @@ The currently accepted measured representation optimizations are narrow:
   benchmark this reduced Native from 45.03 ms to 34.79 ms and Melange from
   about 85 ms to 52.41 ms while the recursive-cycle and false-argument
   upstream tests remained unchanged.
+- Rule expansion uses the parser's closed typed branch expander. Calls must
+  match the declared rule arity and report `Rule arity mismatch` instead of
+  silently dropping extra arguments.
 - Pull result maps use a persistent, insertion-ordered small-string-key path
   before conversion to the closed `Data_value` representation. Duplicate keys
   still replace their existing value and ordinary maps retain the HAMT path.

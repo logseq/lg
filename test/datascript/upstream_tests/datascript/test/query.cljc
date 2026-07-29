@@ -6292,7 +6292,16 @@
         (is (= 0
                (count (query-types/relation-rows relation))))
         (is false)))
-    (is (= 3 @query/rule-seqid))))
+    (is (= 3 @query/rule-seqid))
+    (let [wrong-arity-call
+          (parser/static-rule-clause
+           "adult"
+           [(parser/pattern-variable "?person")
+            (parser/pattern-variable "?extra")])]
+      (is
+       (thrown-msg?
+        "Rule arity mismatch"
+        (query/expand-rule wrong-arity-call context {}))))))
 
 (deftest test-public-aggregation
   (let [color
