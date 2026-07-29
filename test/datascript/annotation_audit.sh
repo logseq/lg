@@ -9,7 +9,7 @@ count_inline_hints() {
   } | wc -l | tr -d ' '
 }
 
-query_hint_limit=1555
+query_hint_limit=1522
 query_hint_count=$(count_inline_hints test/datascript/lg)
 if [ "$query_hint_count" -gt "$query_hint_limit" ]; then
   echo "DataScript query inline hints increased: $query_hint_count > $query_hint_limit" >&2

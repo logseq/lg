@@ -693,19 +693,14 @@
      (pull-row database sources elements patterns row))
    rows))
 
-(defn ^:array<result> join-rows
-  [^:array<result> left
-   ^:array<int> left-indexes
-   ^:array<result> right
-   ^:array<int> right-indexes]
+(defn join-rows [left left-indexes right right-indexes]
   (Datascript_runtime.Query_value.join_rows
    left left-indexes right right-indexes))
 
-(defn ^:array<result> concat-rows
-  [^:array<result> left ^:array<result> right]
+(defn concat-rows [left right]
   (Datascript_runtime.Query_value.concat_rows left right))
 
-(defn ^:array<result> datom-row [^datascript.db/Datom datom]
+(defn datom-row [datom]
   (array
    (entity-result (.-e datom))
    (attr-result (.-a datom))
@@ -713,8 +708,7 @@
    (entity-result (datascript.db/datom-tx datom))
    (added-result (datascript.db/datom-added datom))))
 
-(defn ^result datom-result-at
-  [^datascript.db/Datom datom ^:int index]
+(defn datom-result-at [datom index]
   (case index
     0 (entity-result (.-e datom))
     1 (attr-result (.-a datom))
@@ -723,8 +717,7 @@
     4 (added-result (datascript.db/datom-added datom))
     (Stdlib.invalid_arg "Datom projection index is out of bounds")))
 
-(defn ^:array<result> project-datom-row
-  [^datascript.db/Datom datom ^:array<int> indexes]
+(defn project-datom-row [datom indexes]
   (case (alength indexes)
     0 (empty-row)
     1 (array
@@ -737,37 +730,26 @@
        (datom-result-at datom (aget indexes 1))
        (datom-result-at datom (aget indexes 2)))
     (Array.map
-     (fn [^:int index]
+     (fn [index]
        (datom-result-at datom index))
      indexes)))
 
-(defn relation
-  [^:map<string;int> attrs
-   ^:vector<array<result>> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn relation [attrs rows lookup-databases]
   (Datascript_runtime.Query_value.relation attrs rows lookup-databases))
 
-(defn ^relation datom-relation
-  [^:map<string;int> attrs
-   ^:array<int> indexes
-   ^:vector<datascript.db/Datom> datoms
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn datom-relation [attrs indexes datoms lookup-databases]
   (relation
    attrs
    (mapv
-    (fn [^datascript.db/Datom datom]
+    (fn [datom]
       (project-datom-row datom indexes))
    datoms)
    lookup-databases))
 
-(defn ^:map<string;int> index-attrs [^:vector<string> variables]
+(defn index-attrs [variables]
   (Datascript_runtime.Query_value.index_attrs variables))
 
-(defn ^relation pattern-relation
-  [^:vector<string> variables
-   ^:array<int> indexes
-   ^:vector<datascript.db/Datom> datoms
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn pattern-relation [variables indexes datoms lookup-databases]
   (if (= (count variables) (alength indexes))
     (datom-relation
      (index-attrs variables)
