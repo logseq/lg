@@ -58,13 +58,13 @@
      (subs s 1)
      s)))
 
-(defn- ^:string freeze-keyword-value
+(defn- freeze-keyword-value
   [^keyword-freezer freezer ^:keyword value]
   (match freezer
     (CustomKeywordFreezer freeze-keyword) (freeze-keyword value)
     DefaultKeywordFreezer (freeze-kw value)))
 
-(defn- ^:keyword thaw-keyword-value
+(defn- thaw-keyword-value
   [^keyword-thawer thawer ^:string value]
   (match thawer
     (CustomKeywordThawer thaw-keyword) (thaw-keyword value)
@@ -92,7 +92,7 @@
     (Datascript_runtime.Serialization_value.datom
      entity attribute value tx)))
 
-(defn- ^:vector<string> freeze-attrs
+(defn- freeze-attrs
   [^keyword-freezer keyword-freezer
    ^:vector<keyword> attrs]
   (mapv
@@ -100,7 +100,7 @@
      (freeze-keyword-value keyword-freezer attr))
    attrs))
 
-(defn- ^:array<serialized-value> serialize-eavt
+(defn- serialize-eavt
   [^datascript.db/DB db
    ^:Datascript_runtime.Serialization_value.encoder encoder
    ^codec freeze-codec
@@ -125,7 +125,7 @@
         result)
       (arrays/empty-array))))
 
-(defn- ^:array<int> datom-indexes
+(defn- datom-indexes
   [^:set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datoms]
   (let [result (arrays/make-array (count datoms) 0)]
     (reduce
@@ -136,7 +136,7 @@
      datoms)
     result))
 
-(defn- ^:Datascript_runtime.Storage_value.ref_type serialized-ref-type
+(defn- serialized-ref-type
   [^:Lg_runtime.Runtime_ref_type.t ref-type]
   (match ref-type
     (Lg_runtime.Runtime_ref_type.Strong)
