@@ -335,41 +335,35 @@
 (defn empty-row []
   (Datascript_runtime.Query_value.empty_row (Stdlib.ignore 0)))
 
-(defn ^:array<result> project-row
-  [^:array<result> row ^:array<int> indexes]
+(defn project-row [row indexes]
   (Datascript_runtime.Query_value.project_row row indexes))
 
-(defn ^:vector<array<result>> distinct-rows
-  [^:vector<array<result>> rows]
+(defn distinct-rows [rows]
   (Datascript_runtime.Query_value.distinct_rows rows))
 
-(defn ^:vector<string> query-with-variable-names
-  [^datascript.parser/Query query]
+(defn query-with-variable-names [query]
   (if-some [variables (.-qwith query)]
     (mapv
-     (fn [^datascript.parser/Variable variable]
+     (fn [variable]
        (str (.-symbol variable)))
      variables)
     []))
 
-(defn ^:vector<vector<array<result>>> group-rows
-  [^:vector<array<result>> rows ^:array<int> indexes]
+(defn group-rows [rows indexes]
   (Datascript_runtime.Query_value.group_rows rows indexes))
 
-(defn ^result require-row-result
-  [^:array<result> row ^:int index]
+(defn require-row-result [row index]
   (if-some [result (row-get row index)]
     result
     (Stdlib.invalid_arg "Aggregate row index is out of bounds")))
 
-(defn ^result count-distinct-aggregate
-  [^:vector<array<result>> rows ^:int index]
+(defn count-distinct-aggregate [rows index]
   (value-result
    (Datascript_runtime.Data_value.Int
     (count
      (distinct-rows
       (mapv
-       (fn [^:array<result> row]
+       (fn [row]
          (array (require-row-result row index)))
        rows))))))
 
