@@ -2317,21 +2317,16 @@
             (Stdlib.invalid_arg
              "Cannot resolve an empty or clause")))))))
 
-(defn ^boolean rule-argument-bound?
-  [^relation relation
-   ^relation constants
-   ^datascript.parser/pattern-element argument]
+(defn rule-argument-bound?
+  [relation constants argument]
   (if-some [variable (pattern-variable-name argument)]
     (if (contains? (relation-attrs relation) variable)
       true
       (some? (constant-relation-result constants variable)))
     (some? (parser/pattern-element-constant argument))))
 
-(defn ^result rule-argument-result
-  [^relation relation
-   ^relation constants
-   ^:array<result> row
-   ^datascript.parser/pattern-element argument]
+(defn rule-argument-result
+  [relation constants row argument]
   (if-some [variable (pattern-variable-name argument)]
     (if-some [value (relation-result relation variable row)]
       value
@@ -2345,20 +2340,17 @@
       (Stdlib.invalid_arg
        "Rule arguments cannot contain placeholders"))))
 
-(defn ^relation rule-branch-input
-  [^relation outer-relation
-   ^relation constants
-   ^:vector<string> parameters
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn rule-branch-input
+  [outer-relation constants parameters arguments]
   (let [bound-indexes
         (filterv
-         (fn [^:int index]
+         (fn [index]
            (rule-argument-bound?
             outer-relation constants (nth arguments index)))
          (range (count arguments)))
         bound-parameters
         (mapv
-         (fn [^:int index] (nth parameters index))
+         (fn [index] (nth parameters index))
          bound-indexes)]
     (if (empty? (relation-rows outer-relation))
       (empty-relation
@@ -2370,10 +2362,10 @@
               (relation
                (index-attrs bound-parameters)
                (mapv
-                (fn [^:array<result> row]
+                (fn [row]
                   (to-array
                    (mapv
-                    (fn [^:int index]
+                    (fn [index]
                       (rule-argument-result
                        outer-relation
                        constants
@@ -2386,19 +2378,16 @@
            input
            (distinct-rows (relation-rows input))))))))
 
-(defn ^relation rule-branch-output
-  [^relation outer-relation
-   ^relation branch-result
-   ^:vector<string> parameters
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn rule-branch-output
+  [outer-relation branch-result parameters arguments]
   (let [variable-indexes
         (filterv
-         (fn [^:int index]
+         (fn [index]
            (some? (pattern-variable-name (nth arguments index))))
          (range (count arguments)))
         output-variables
         (mapv
-         (fn [^:int index]
+         (fn [index]
            (if-some [variable
                      (pattern-variable-name
                       (nth arguments index))]
@@ -2408,7 +2397,7 @@
          variable-indexes)
         output-parameters
         (mapv
-         (fn [^:int index] (nth parameters index))
+         (fn [index] (nth parameters index))
          variable-indexes)
         projected
         (project-relation-variables
@@ -2420,12 +2409,12 @@
          (empty-lookup-databases))]
     (hash-join outer-relation renamed)))
 
-(defn ^relation ensure-empty-relation-variables
-  [^relation relation ^:vector<string> variables]
+(defn ensure-empty-relation-variables
+  [relation variables]
   (if (empty? (relation-rows relation))
     (empty-relation
      (reduce
-      (fn [^:map<string;int> attrs ^:string variable]
+      (fn [attrs variable]
         (if (contains? attrs variable)
           attrs
           (assoc attrs variable (count attrs))))
@@ -2449,17 +2438,15 @@
    []
    values))
 
-(defn ^rule-call-argument rule-call-argument
-  [^relation relation
-   ^relation constants
-   ^datascript.parser/pattern-element argument]
+(defn rule-call-argument
+  [relation constants argument]
   (if-some [variable (pattern-variable-name argument)]
     (RuleCallVariable
      variable
      (if (contains? (relation-attrs relation) variable)
        (distinct-results
         (mapv
-         (fn [^:array<result> row]
+         (fn [row]
            (if-some [value
                      (relation-result relation variable row)]
              value
@@ -2475,15 +2462,12 @@
       (Stdlib.invalid_arg
        "Rule call arguments cannot contain placeholders"))))
 
-(defn ^rule-call make-rule-call
-  [^:string rule-name
-   ^relation relation
-   ^relation constants
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn make-rule-call
+  [rule-name relation constants arguments]
   (RuleCall
    rule-name
    (mapv
-    (fn [^datascript.parser/pattern-element argument]
+    (fn [argument]
       (rule-call-argument relation constants argument))
     arguments)))
 
@@ -2655,7 +2639,7 @@
    ^rule-path rule-path
    ^:vector<datascript.parser/clause> clauses]
   (reduce
-   (fn [^relation relation ^:datascript.parser/clause clause]
+   (fn [relation clause]
      (if (empty? (relation-rows relation))
        relation
        (if-some [rule-parts (parser/rule-clause-parts clause)]
