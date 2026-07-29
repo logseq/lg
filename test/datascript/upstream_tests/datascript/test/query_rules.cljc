@@ -358,10 +358,20 @@
            (count (query-types/relation-rows relation))))
     elapsed))
 
+(defn ^:float append-single-row-relations-total-time
+  [^:int row-count ^:int repetitions]
+  (loop [remaining repetitions
+         elapsed 0.0]
+    (if (> remaining 0)
+      (recur
+       (dec remaining)
+       (+ elapsed (append-single-row-relations-time row-count)))
+      elapsed)))
+
 (deftest test-rule-result-union-scales-linearly
-  (append-single-row-relations-time 500)
-  (let [small-time (append-single-row-relations-time 4000)
-        large-time (append-single-row-relations-time 8000)]
+  (append-single-row-relations-time 2000)
+  (let [small-time (append-single-row-relations-total-time 8000 5)
+        large-time (append-single-row-relations-total-time 16000 5)]
     (is (<= large-time (* 3.0 small-time)))))
 
 (defn ^:vector<datascript.db/tx-entry> performance-transactions []

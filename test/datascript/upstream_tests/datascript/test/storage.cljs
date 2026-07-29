@@ -101,7 +101,7 @@
 
 (deftest test-basics
   (testing "empty db"
-    (let [database (d/empty-db)
+    (let [database (support/empty-database 32 strong)
           memory (support/make-storage)]
       (d/store database (support/backend memory))
       (is (= 5 (count @(:writes memory))))
