@@ -1648,17 +1648,15 @@
          (cons name (mapv query-argument-description arguments)))]
     (str "(" (join-query-parts parts) ")")))
 
-(defn ^:string rule-argument-description
-  [^datascript.parser/pattern-element argument]
+(defn rule-argument-description [argument]
   (if-some [variable (pattern-variable-name argument)]
     variable
     (if-some [value (parser/pattern-element-constant argument)]
       (Datascript_runtime.Data_value.to_edn_string value)
       "_")))
 
-(defn ^:string rule-call-description
-  [^:string name
-   ^:vector<datascript.parser/pattern-element> arguments]
+(defn rule-call-description
+  [name arguments]
   (str
    "("
    (join-query-parts
@@ -1666,8 +1664,7 @@
      (cons name (mapv rule-argument-description arguments))))
    ")"))
 
-(defn ^:string query-binding-description
-  [^datascript.parser/binding binding]
+(defn ^:string query-binding-description [binding]
   (if (parser/binding-ignore? binding)
     "_"
     (if-some [variable (parser/binding-scalar-variable binding)]
@@ -1700,8 +1697,7 @@
    []
    arguments))
 
-(defn ^:string query-variable-set-description
-  [^:vector<string> variables]
+(defn query-variable-set-description [variables]
   (str "#{" (join-query-parts variables) "}"))
 
 (defn validate-static-call-bindings
