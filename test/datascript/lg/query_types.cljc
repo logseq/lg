@@ -2434,13 +2434,13 @@
      (relation-lookup-databases relation))
     relation))
 
-(defn ^:vector<result> distinct-results
-  [^:vector<result> values]
+(defn distinct-results
+  [values]
   (reduce
-   (fn [^:vector<result> distinct ^result value]
+   (fn [distinct value]
      (if
       (some
-       (fn [^result candidate]
+       (fn [candidate]
          (Datascript_runtime.Query_value.equal_result
           candidate value))
        distinct)
@@ -2487,11 +2487,11 @@
       (rule-call-argument relation constants argument))
     arguments)))
 
-(defn ^boolean result-vectors-equal?
-  [^:vector<result> left ^:vector<result> right]
+(defn result-vectors-equal?
+  [left right]
   (if (= (count left) (count right))
     (every?
-     (fn [^:int index]
+     (fn [index]
        (Datascript_runtime.Query_value.equal_result
         (nth left index)
         (nth right index)))
@@ -2743,10 +2743,8 @@
    ^:vector<vector<datascript.parser/pattern-element>> patterns]
   (resolve-db-patterns database (identity-relation) patterns))
 
-(defn ^result require-relation-result
-  [^relation relation
-   ^:array<result> row
-   ^:string variable]
+(defn require-relation-result
+  [relation row variable]
   (if-some [result (relation-result relation variable row)]
     result
     (Stdlib.invalid_arg
@@ -2791,7 +2789,7 @@
            (project-row row indexes))
          (relation-rows relation))))))
 
-(defn ^result first-row-result [^:array<result> row]
+(defn first-row-result [row]
   (if-some [result (row-get row 0)]
     result
     (Stdlib.invalid_arg "Find shape requires one projected value")))
