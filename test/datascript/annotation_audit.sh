@@ -16,9 +16,9 @@ if [ "$query_hint_count" -gt "$query_hint_limit" ]; then
   exit 1
 fi
 
-if rg -q '^\(defn- (concat-two|concatv-closed)\b' \
+if rg -q '^\(defn- (concat-two|concatv-closed|zip-pair|zip-append)\b' \
   test/datascript/lg/query_v3.cljc; then
-  echo "DataScript query-v3 must use the upstream concatv implementation directly" >&2
+  echo "DataScript query-v3 must not retain redundant collection adapter helpers" >&2
   exit 1
 fi
 

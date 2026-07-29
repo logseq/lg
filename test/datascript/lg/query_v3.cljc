@@ -48,23 +48,11 @@
   [& ^:list<vector<Datascript_runtime.Data_value.t>> xs]
   (into [] cat xs))
 
-(signature datascript.query-v3/zip-pair
-  :fn<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;vector<Datascript_runtime.Data_value.t>>)
-
-(defn- zip-pair [left right]
-  [left right])
-
-(signature datascript.query-v3/zip-append
-  :fn<vector<Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;vector<Datascript_runtime.Data_value.t>>)
-
-(defn- zip-append [row value]
-  (conj row value))
-
 (signature datascript.query-v3/zip-two
   :fn<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>;seq<vector<Datascript_runtime.Data_value.t>>>)
 
 (defn- zip-two [left right]
-  (map zip-pair left right))
+  (map (fn [left right] (conj [left] right)) left right))
 
 (signature datascript.query-v3/zip-many
   :fn<vector<vector<Datascript_runtime.Data_value.t>>;seq<vector<Datascript_runtime.Data_value.t>>>)
@@ -77,7 +65,7 @@
          remaining (drop 2 collections)]
     (if-some [values (first remaining)]
       (recur
-       (map zip-append rows values)
+       (map (fn [row value] (conj row value)) rows values)
        (next remaining))
       rows)))
 
