@@ -934,57 +934,49 @@
       _
       (empty-relation {} (empty-lookup-databases)))))
 
-(defn ^relation empty-relation
-  [^:map<string;int> attrs
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn empty-relation [attrs lookup-databases]
   (relation attrs [] lookup-databases))
 
-(defn ^relation identity-relation []
+(defn identity-relation []
   (relation
    {}
    [(empty-row)]
    (empty-lookup-databases)))
 
-(defn ^:option<result> relation-result
-  [^relation relation ^:string variable ^:array<result> row]
+(defn relation-result [relation variable row]
   (Datascript_runtime.Query_value.relation_result
    relation variable row))
 
-(defn ^:map<string;int> relation-attrs [^relation relation]
+(defn relation-attrs [relation]
   (Datascript_runtime.Query_value.relation_attrs relation))
 
-(defn ^:vector<array<result>> relation-rows [^relation relation]
+(defn relation-rows [relation]
   (Datascript_runtime.Query_value.relation_rows relation))
 
-(defn ^:map<string;datascript.db/database-view> relation-lookup-databases
-  [^relation relation]
+(defn relation-lookup-databases [relation]
   (Datascript_runtime.Query_value.relation_lookup_databases relation))
 
-(defn ^relation relation-with-rows
-  [^relation relation ^:vector<array<result>> rows]
+(defn relation-with-rows [relation rows]
   (Datascript_runtime.Query_value.relation_with_rows relation rows))
 
-(defn ^relation sum-relation [^relation left ^relation right]
+(defn sum-relation [left right]
   (if (= (relation-attrs left) (relation-attrs right))
     (Datascript_runtime.Query_value.relation_append_rows left right)
     (Stdlib.invalid_arg "Cannot sum relations with different attrs")))
 
-(defn ^:map<string;int> product-attrs
-  [^:map<string;int> left ^:map<string;int> right]
+(defn product-attrs [left right]
   (reduce
-   (fn [^:map<string;int> attrs ^:string variable]
+   (fn [attrs variable]
      (if (contains? attrs variable)
        (Stdlib.invalid_arg "Cannot multiply relations with common attrs")
        (assoc attrs variable (count attrs))))
    left
    (keys right)))
 
-(defn ^:map<string;datascript.db/database-view> merge-lookup-databases
-  [^:map<string;datascript.db/database-view> left
-   ^:map<string;datascript.db/database-view> right]
+(defn merge-lookup-databases [left right]
   (merge left right))
 
-(defn ^relation product-relation [^relation left ^relation right]
+(defn product-relation [left right]
   (relation
    (product-attrs (relation-attrs left) (relation-attrs right))
    (Datascript_runtime.Query_value.product_rows
