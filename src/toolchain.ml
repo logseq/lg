@@ -600,30 +600,81 @@ module Lg_frontend : FRONTEND = struct
                   |> split_deftype_methods
                 in
                 let rec form_locations acc located =
-                      let location =
-                        location filename line_starts located.Ast.span
-                      in
+                  let location =
+                    location filename line_starts located.Ast.span
+                  in
                   List.fold_left form_locations
                     ((located.Ast.form, location) :: acc)
                     located.Ast.children
+                in
+                let ast =
+                  List.map (fun located -> located.Ast.form) located_ast
+                in
+                let form_locations =
+                  List.fold_left form_locations
+                    (List.fold_left form_locations [] original_located_ast)
+                    located_ast
+                in
+                let normalized_form_locations =
+                  let candidates = Hashtbl.create 128 in
+                  List.iter
+                    (fun (form, location) ->
+                      let locations =
+                        Hashtbl.find_opt candidates form
+                        |> Option.value ~default:[]
+                      in
+                      Hashtbl.replace candidates form (location :: locations))
+                    form_locations;
+                  let compare_location left right =
+                    let by_start =
+                      Int.compare left.Location.loc_start.Lexing.pos_cnum
+                        right.Location.loc_start.Lexing.pos_cnum
+                    in
+                    if by_start <> 0 then by_start
+                    else
+                      Int.compare left.Location.loc_end.Lexing.pos_cnum
+                        right.Location.loc_end.Lexing.pos_cnum
+                  in
+                  Hashtbl.filter_map_inplace
+                    (fun _ locations ->
+                      Some (List.sort_uniq compare_location locations))
+                    candidates;
+                  let rec bind_form bindings form =
+                    let bindings =
+                      match Hashtbl.find_opt candidates form with
+                      | Some (location :: remaining) ->
+                          Hashtbl.replace candidates form remaining;
+                          (form, location) :: bindings
+                      | Some [] | None -> bindings
+                    in
+                    match form with
+                    | Ast.FList forms | Ast.FVector forms ->
+                        List.fold_left bind_form bindings forms
+                    | Ast.FMap entries ->
+                        List.fold_left
+                          (fun bindings (key, value) ->
+                            bind_form (bind_form bindings key) value)
+                          bindings entries
+                    | Ast.FSymbol _ | Ast.FCoreSymbol _ | Ast.FKeyword _
+                    | Ast.FString _ | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _
+                    | Ast.FChar _ | Ast.FBool _ ->
+                        bindings
+                  in
+                  List.fold_left bind_form [] ast
                 in
                 Ok
                   {
                     target;
                     source_unit =
                       "source_" ^ Digest.to_hex (Digest.string source);
-                        ast =
-                          List.map (fun located -> located.Ast.form) located_ast;
+                    ast;
                     locations =
                       List.map
-                            (fun located ->
-                              location filename line_starts located.Ast.span)
+                        (fun located ->
+                          location filename line_starts located.Ast.span)
                         located_ast;
                     form_locations =
-                      List.fold_left form_locations
-                            (List.fold_left form_locations []
-                               original_located_ast)
-                        located_ast;
+                      normalized_form_locations @ form_locations;
                     parsed_as = `Lg;
                   })))
 end
