@@ -1158,7 +1158,7 @@
                 indexes (to-array (tuple-get projection 1))
                 rows
                 (reduce
-                 (fn [^:vector<array<result>> rows row]
+                 (fn [rows row]
                    (if-some
                      [entity-result
                       (row-get row entity-index)]
@@ -1186,7 +1186,7 @@
                                  None)
                                None)
                              append-datom
-                             (fn [^:vector<array<result>> rows datom]
+                             (fn [rows datom]
                                (if
                                  (if-some [expected added]
                                    (= expected

@@ -88,7 +88,7 @@
 (defn ^:set<string> intersect-keys
   [^:map<string;int> left ^:map<string;int> right]
   (reduce
-   (fn [^:set<string> shared ^:string key]
+   (fn [^:set<string> shared key]
      (if (contains? right key)
        (conj shared key)
        shared))
@@ -142,7 +142,7 @@
   (reduce
    (fn [^:set<string> bound relation]
      (reduce
-      (fn [^:set<string> bound ^:string variable]
+      (fn [bound variable]
         (conj bound variable))
       bound
       (keys (query-types/relation-attrs relation))))
@@ -1309,8 +1309,7 @@
 (defn ^:set<string> collect-vars
   [^:Datascript_runtime.Data_value.t form]
   (reduce
-   (fn [^:set<string> variables
-        ^:Datascript_runtime.Data_value.t value]
+   (fn [^:set<string> variables value]
      (conj
       variables
       (Datascript_runtime.Data_value.to_edn_string value)))
