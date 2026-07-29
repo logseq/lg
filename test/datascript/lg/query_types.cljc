@@ -232,44 +232,40 @@
 (defn added-result [added]
   (Datascript_runtime.Query_value.added added))
 
-(defn ^callable callable
-  [^:fn<vector<result>;option<Datascript_runtime.Data_value.t>> invoke]
+(defn callable [invoke]
   (Datascript_runtime.Query_value.callable invoke))
 
-(defn ^result callable-result [^callable callable]
+(defn callable-result [callable]
   (Datascript_runtime.Query_value.callable_result callable))
 
-(defn ^:option<callable> result-callable [^result result]
+(defn result-callable [result]
   (Datascript_runtime.Query_value.result_callable result))
 
-(defn ^:option<Datascript_runtime.Data_value.t> invoke-callable
-  [^callable callable ^:vector<result> arguments]
+(defn invoke-callable [callable arguments]
   (Datascript_runtime.Query_value.invoke_callable callable arguments))
 
-(defn ^source database-source [^datascript.db/database-view database]
+(defn database-source [database]
   (Datascript_runtime.Query_value.database_source database))
 
-(defn ^source relation-source [^:vector<array<result>> rows]
+(defn relation-source [rows]
   (Datascript_runtime.Query_value.relation_source rows))
 
-(defn ^:option<datascript.db/database-view> source-database [^source source]
+(defn source-database [source]
   (Datascript_runtime.Query_value.source_database source))
 
-(defn ^:option<vector<array<result>>> source-rows [^source source]
+(defn source-rows [source]
   (Datascript_runtime.Query_value.source_rows source))
 
-(defn ^binding-value scalar-binding [^result result]
+(defn scalar-binding [result]
   (Datascript_runtime.Query_value.scalar_binding result))
 
-(defn ^binding-value collection-binding
-  [^:vector<binding-value> values]
+(defn collection-binding [values]
   (Datascript_runtime.Query_value.collection_binding values))
 
-(defn ^:option<result> binding-result [^binding-value binding]
+(defn binding-result [binding]
   (Datascript_runtime.Query_value.binding_result binding))
 
-(defn ^:option<vector<binding-value>> binding-items
-  [^binding-value binding]
+(defn binding-items [binding]
   (Datascript_runtime.Query_value.binding_items binding))
 
 (defn ^input source-input [^source source]
@@ -334,11 +330,10 @@
 (defn output-string-tuple [^output output]
   (Datascript_runtime.Query_value.output_string_tuple output))
 
-(defn ^:option<result> row-get
-  [^:array<result> row ^:int index]
+(defn row-get [row index]
   (Datascript_runtime.Query_value.row_get row index))
 
-(defn ^:array<result> empty-row []
+(defn empty-row []
   (Datascript_runtime.Query_value.empty_row (Stdlib.ignore 0)))
 
 (defn ^:array<result> project-row
