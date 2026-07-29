@@ -1500,9 +1500,8 @@
     (Datascript_runtime.Query_value.Database database) database
     _ (Stdlib.invalid_arg "Expected a database query argument")))
 
-(defn ^:option<Datascript_runtime.Data_value.t> database-function-value
-  [^datascript.built-ins/query-function function
-   ^:vector<result> arguments]
+(defn database-function-value
+  [function arguments]
   (if (built-ins/get-else-function? function)
     (if (= 4 (count arguments))
       (let [database (query-database-result (nth arguments 0))
@@ -1533,16 +1532,12 @@
       None)
       None)))
 
-(defn ^relation resolve-database-predicate
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^:vector<datascript.parser/fn-arg> arguments]
+(defn resolve-database-predicate
+  [database sources relation constants arguments]
   (relation-with-rows
    relation
    (reduce
-    (fn [^:vector<array<result>> rows ^:array<result> row]
+    (fn [rows row]
       (let [values
             (callable-arguments
              database sources relation constants row arguments)]
