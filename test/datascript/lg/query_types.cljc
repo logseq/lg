@@ -1078,8 +1078,7 @@
        element))
    pattern))
 
-(defn ^:option<int> result-entity-id
-  [^datascript.db/database-view database ^result value]
+(defn result-entity-id [database ^result value]
   (match value
     (Datascript_runtime.Query_value.Entity eid) (Some eid)
     (Datascript_runtime.Query_value.Value value)
@@ -1094,10 +1093,7 @@
       None)
     _ None))
 
-(defn ^:option<Datascript_runtime.Data_value.t> pattern-row-value
-  [^relation relation
-   ^:array<result> row
-   ^:option<datascript.parser/pattern-element> element]
+(defn pattern-row-value [relation row element]
   (match element
     None None
     (Some PatternPlaceholder) None
@@ -1111,14 +1107,12 @@
         None)
       None)))
 
-(defn ^:tuple<vector<string>;vector<int>> unbound-pattern-projection
-  [^relation relation
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn unbound-pattern-projection [relation pattern]
   (let [attrs (relation-attrs relation)]
     (loop [remaining pattern
            index 0
-           ^:vector<string> variables []
-           ^:vector<int> indexes []]
+           variables []
+           indexes []]
       (if-some [element (first remaining)]
         (if-some [variable (pattern-variable-name element)]
           (if (contains? attrs variable)
