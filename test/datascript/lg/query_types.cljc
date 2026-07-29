@@ -2053,6 +2053,29 @@
     (data-value-truthy? value)
     true))
 
+(defn- ^:bool differ-predicate-matches?
+  [^:array<result> row
+   ^:vector<predicate-operand> operands]
+  (let [operand-count (count operands)
+        middle (quot operand-count 2)]
+    (if (= operand-count (* middle 2))
+      (loop [index 0]
+        (if (< index middle)
+          (let [left
+                (predicate-operand-result
+                 row (nth operands index))
+                right
+                (predicate-operand-result
+                 row (nth operands (+ middle index)))]
+            (if
+             (Datascript_runtime.Data_value.equal
+              (result-pattern-value left)
+              (result-pattern-value right))
+              (recur (inc index))
+              true))
+          false))
+      true)))
+
 (defn ^relation resolve-predicate
   [^datascript.db/database-view database
    ^:map<string;source> sources
@@ -2076,29 +2099,43 @@
                (fn [^:datascript.parser/fn-arg argument]
                  (compile-predicate-argument
                   relation constants argument))
-               arguments)]
+               arguments)
+              differ?
+              (match function
+                (PureStaticPredicate pure)
+                (built-ins/differ-function? pure)
+                (ComparisonStaticPredicate _) false)]
           (relation-with-rows
            relation
            (reduce
             (fn [^:vector<array<result>> rows ^:array<result> row]
-              (let [results
-                    (mapv
-                     (fn [^predicate-operand operand]
-                       (predicate-operand-result row operand))
-                     operands)
-                    invocation
-                    (static-function-result function results)
-                    matches?
-                    (match invocation
-                      (Some result)
-                      (Some (query-result-truthy? result))
-                      None None)]
+              (let [matches?
+                    (if differ?
+                      (Some
+                       (differ-predicate-matches?
+                        row operands))
+                      (let [results
+                            (mapv
+                             (fn [^predicate-operand operand]
+                               (predicate-operand-result
+                                row operand))
+                             operands)
+                            invocation
+                            (static-function-result
+                             function results)]
+                        (match invocation
+                          (Some result)
+                          (Some
+                           (query-result-truthy? result))
+                          None None)))]
                 (if-some [matches? matches?]
                   (if matches?
                     (conj rows row)
                     rows)
                   (Stdlib.invalid_arg
-                   (str "Unsupported static query predicate: " name)))))
+                   (str
+                    "Unsupported static query predicate: "
+                    name)))))
             []
             (relation-rows relation)))))
       (Stdlib.invalid_arg

@@ -134,10 +134,10 @@ native_wide_7_ms=$(run_native_rule rules-wide-7x3)
 melange_wide_5_ms=$(run_melange_rule rules-wide-5x3)
 melange_wide_7_ms=$(run_melange_rule rules-wide-7x3)
 
-if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms" 60.0; then
+if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms" 40.0; then
   failures=1
 fi
-if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms" 100.0; then
+if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms" 85.0; then
   failures=1
 fi
 

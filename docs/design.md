@@ -309,6 +309,13 @@ The currently accepted measured representation optimizations are narrow:
   be substituted into patterns and predicates. Multi-row relations are never
   elided, even when all rows happen to contain equal values, because their
   multiplicity can affect query semantics.
+- Recursive rule cycle guards retain upstream generation, activation, row,
+  operand-pair, and branch order. The closed `-differ?` predicate compares its
+  already compiled operand pairs directly instead of constructing temporary
+  result and value vectors for the general callable path. On the wide-7x3
+  benchmark this reduced Native from 45.03 ms to 34.79 ms and Melange from
+  about 85 ms to 52.41 ms while the recursive-cycle and false-argument
+  upstream tests remained unchanged.
 - Pull result maps use a persistent, insertion-ordered small-string-key path
   before conversion to the closed `Data_value` representation. Duplicate keys
   still replace their existing value and ordinary maps retain the HAMT path.
