@@ -140,6 +140,9 @@ expect_no_text "built-in algorithms contain no inline type hints" \
 expect_no_text "PSS algorithms contain no inline type hints" \
   datascript/me/tonsky/persistent_sorted_set.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
+expect_no_text "serialization callbacks contain no local type hints" \
+  test/datascript/upstream/serialize.cljc \
+  '\(fn \[\^'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'

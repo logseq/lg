@@ -46,7 +46,7 @@
   [^datascript.db/DB db]
   (vec
    (distinct
-    (map (fn [^datascript.db/Datom datom] (.-a datom))
+    (map (fn [datom] (.-a datom))
          (:aevt db)))))
 
 (defn ^:string freeze-kw [^:keyword kw]
@@ -96,7 +96,7 @@
   [^keyword-freezer keyword-freezer
    ^:vector<keyword> attrs]
   (mapv
-   (fn [^:keyword attr]
+   (fn [attr]
      (freeze-keyword-value keyword-freezer attr))
    attrs))
 
@@ -113,7 +113,7 @@
              (serialize-datom
               encoder freeze-codec attrs 0 first-datom))]
         (reduce
-         (fn [^:int index ^datascript.db/Datom datom]
+         (fn [index datom]
            (if (> index 0)
              (arrays/aset
               result index
@@ -129,7 +129,7 @@
   [^:set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datoms]
   (let [result (arrays/make-array (count datoms) 0)]
     (reduce
-     (fn [^:int index ^datascript.db/Datom datom]
+     (fn [index datom]
        (arrays/aset result index (db/datom-get-idx datom))
        (inc index))
      0
@@ -174,7 +174,7 @@
         avet        (datom-indexes (:avet db))
         settings    (set/settings (:eavt db))
         kws         (mapv
-                     (fn [^:string keyword-source]
+                     (fn [keyword-source]
                        (freeze-keyword-value
                         keyword-freezer (keyword keyword-source)))
                      (Datascript_runtime.Serialization_value.encoder_keywords
@@ -261,7 +261,7 @@
    ^codec thaw-codec
    ^:array<prepared-serialized-datom> datoms]
   (arrays/amap
-   (fn [^prepared-serialized-datom datom]
+   (fn [datom]
      (deserialize-datom tx0 attrs keywords thaw-codec datom))
    datoms))
 
@@ -271,7 +271,7 @@
   (match indexes
     (Some indexes)
     (arrays/amap
-     (fn [^:int index]
+     (fn [index]
        (arrays/aget datoms index))
      indexes)
     None datoms))
@@ -298,12 +298,12 @@
          attrs    (->> (Datascript_runtime.Serialization_value.prepared_attrs
                         prepared)
                        (mapv
-                        (fn [^:string value]
+                        (fn [value]
                           (thaw-keyword-value keyword-thawer value))))
          keywords (->> (Datascript_runtime.Serialization_value.prepared_keywords
                         prepared)
                        (mapv
-                        (fn [^:string value]
+                        (fn [value]
                           (str
                            (thaw-keyword-value keyword-thawer value)))))
          eavt     (deserialize-datoms
