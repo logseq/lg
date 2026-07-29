@@ -1326,12 +1326,10 @@
       matched
       (hash-join input-relation matched))))
 
-(defn ^relation resolve-bound-source-pattern
-  [^source source
-   ^relation input-relation
-   ^relation constants
+(defn resolve-bound-source-pattern
+  [source input-relation constants
    ^:vector<datascript.parser/pattern-element> pattern
-   ^:string source-name]
+   source-name]
   (if-some [source-database (source-database source)]
     (resolve-db-pattern
      source-database input-relation
@@ -1343,14 +1341,9 @@
       (Stdlib.invalid_arg
        (str "Unsupported query source: " source-name)))))
 
-(defn ^relation resolve-source-pattern
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^datascript.parser/query-source query-source
-   ^relation input-relation
-   ^relation constants
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn resolve-source-pattern
+  [database sources implicit-source-name query-source
+   input-relation constants pattern]
   (if-some [source-name (parser/query-source-name query-source)]
     (if-some [source (get sources source-name)]
       (resolve-bound-source-pattern
@@ -1364,13 +1357,10 @@
        database input-relation
        (substitute-pattern-constants constants pattern)))))
 
-(defn ^relation resolve-db-patterns
-  [^datascript.db/database-view database
-   ^relation initial-relation
-   ^:vector<vector<datascript.parser/pattern-element>> patterns]
+(defn resolve-db-patterns
+  [database initial-relation patterns]
   (reduce
-   (fn [^relation relation
-        ^:vector<datascript.parser/pattern-element> pattern]
+   (fn [relation pattern]
      (resolve-db-pattern database relation pattern))
    initial-relation
    patterns))
