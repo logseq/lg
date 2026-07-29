@@ -401,47 +401,44 @@
    {}
    symbols))
 
-(defn- ^:vector<string> relation-symbols
-  [^relation-v3 relation]
+(defn- relation-symbols
+  [relation]
   (match relation
     (ArrayRelationV3 state)
     (:symbols state)
     (CollRelationV3 state)
     (:symbols state)))
 
-(defn- ^:map<string;int> relation-offset-map
-  [^relation-v3 relation]
+(defn- relation-offset-map
+  [relation]
   (match relation
     (ArrayRelationV3 state)
     (:offset-map state)
     (CollRelationV3 state)
     (:offset-map state)))
 
-(defn- ^:vector<array<datascript.lg.query-types/result>>
-  relation-rows-closed
-  [^relation-v3 relation]
+(defn- relation-rows-closed
+  [relation]
   (match relation
     (ArrayRelationV3 state)
     (:rows state)
     (CollRelationV3 state)
     (:rows state)))
 
-(defn- ^:map<string;datascript.db/database-view>
-  relation-lookup-databases-v3
-  [^relation-v3 relation]
+(defn- relation-lookup-databases-v3
+  [relation]
   (match relation
     (ArrayRelationV3 state)
     (:lookup-databases state)
     (CollRelationV3 state)
     (:lookup-databases state)))
 
-(defn- ^:vector<array<datascript.lg.query-types/result>>
-  relation-tuples
-  [^relation-v3 relation]
+(defn- relation-tuples
+  [relation]
   (relation-rows-closed relation))
 
 (defn- database-view-print-string-v3
-  [^datascript.db/database-view database]
+  [database]
   (match database
     (db/DatabaseView unfiltered)
     (db/database-print-string unfiltered)
@@ -449,7 +446,7 @@
     (db/filtered-database-print-string filtered)))
 
 (defn- result-print-string-v3
-  [^datascript.lg.query-types/result result]
+  [result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Stdlib.string_of_int entity)
@@ -478,13 +475,13 @@
    ")"))
 
 (defn- relation-kind-print-string-v3
-  [^relation-v3 relation]
+  [relation]
   (match relation
     (ArrayRelationV3 _) "ArrayRelation"
     (CollRelationV3 _) "CollRelation"))
 
 (defn- relation-print-string-v3
-  [^relation-v3 relation]
+  [relation]
   (str
    "#"
    (relation-kind-print-string-v3 relation)
@@ -506,7 +503,7 @@
   writer)
 
 (defn- context-constants-print-string-v3
-  [^:map<string;datascript.lg.query-types/result> constants]
+  [constants]
   (str
    "{"
    (string/join
@@ -544,11 +541,8 @@
 (defn println-context [context]
   (print (context-print-string-v3 context)))
 
-(defn- ^relation-v3 make-array-relation
-  [^:vector<string> symbols
-   ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn- make-array-relation
+  [symbols offset-map rows lookup-databases]
   (ArrayRelationV3
    (record relation-state
      (symbols symbols)
@@ -556,11 +550,8 @@
      (rows rows)
      (lookup-databases lookup-databases))))
 
-(defn- ^relation-v3 make-coll-relation
-  [^:vector<string> symbols
-   ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn- make-coll-relation
+  [symbols offset-map rows lookup-databases]
   (CollRelationV3
    (record relation-state
      (symbols symbols)
@@ -568,12 +559,8 @@
      (rows rows)
      (lookup-databases lookup-databases))))
 
-(defn- ^relation-v3 make-relation-like
-  [^relation-v3 relation
-   ^:vector<string> symbols
-   ^:map<string;int> offset-map
-   ^:vector<array<datascript.lg.query-types/result>> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn- make-relation-like
+  [relation symbols offset-map rows lookup-databases]
   (match relation
     (ArrayRelationV3 _)
     (make-array-relation
@@ -672,10 +659,8 @@
       (Stdlib.invalid_arg
        "Cannot union relations with different kinds"))))
 
-(defn- ^relation-v3 array-rel-with-lookups
-  [^:vector<string> symbols
-   ^:vector<array<datascript.lg.query-types/result>> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+(defn- array-rel-with-lookups
+  [symbols rows lookup-databases]
   (make-array-relation
    symbols
    (reduce-kv
@@ -686,21 +671,20 @@
    rows
    lookup-databases))
 
-(defn ^relation-v3 array-rel
-  [^:vector<string> symbols
-   ^:vector<array<datascript.lg.query-types/result>> rows]
+(defn array-rel
+  [symbols rows]
   (array-rel-with-lookups symbols rows {}))
 
-(defn- ^:array<datascript.lg.query-types/result> coll-row-array
-  [^coll-relation-row-v3 row]
+(defn- coll-row-array
+  [row]
   (match row
     (CollQueryRowV3 values) values
     (CollDatomRowV3 datom) (query-types/datom-row datom)))
 
-(defn- ^relation-v3 coll-rel-with-lookups
+(defn- coll-rel-with-lookups
   [^:vector<datascript.parser/pattern-element> pattern
-   ^:vector<coll-relation-row-v3> rows
-   ^:map<string;datascript.db/database-view> lookup-databases]
+   rows
+   lookup-databases]
   (let [offset-map
         (reduce-kv
          (fn [offsets index element]
@@ -716,12 +700,11 @@
      (mapv coll-row-array rows)
      lookup-databases)))
 
-(defn ^relation-v3 coll-rel
-  [^:vector<datascript.parser/pattern-element> pattern
-   ^:vector<coll-relation-row-v3> rows]
+(defn coll-rel
+  [pattern rows]
   (coll-rel-with-lookups pattern rows {}))
 
-(defn ^relation-v3 singleton-rel []
+(defn singleton-rel []
   (array-rel [] [(to-array [])]))
 
 (defn ^relation-v3 product
