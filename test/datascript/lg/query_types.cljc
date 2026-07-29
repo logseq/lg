@@ -986,8 +986,7 @@
     (relation-lookup-databases left)
     (relation-lookup-databases right))))
 
-(defn ^result resolve-lookup-result
-  [^datascript.db/database-view database ^result result]
+(defn resolve-lookup-result [database result]
   (match result
     (Datascript_runtime.Query_value.Value value)
     (match (query-entity-ref value)
@@ -1005,12 +1004,11 @@
       None result)
     _ result))
 
-(defn ^relation hash-join [^relation left ^relation right]
+(defn hash-join [left right]
   (Datascript_runtime.Query_value.hash_join
    resolve-lookup-result left right))
 
-(defn ^:Datascript_runtime.Data_value.t result-pattern-value
-  [^result result]
+(defn result-pattern-value [result]
   (match result
     (Datascript_runtime.Query_value.Entity entity)
     (Datascript_runtime.Data_value.Int entity)
@@ -1029,27 +1027,20 @@
     (Stdlib.invalid_arg
      "A callable query result cannot bind a pattern component")))
 
-(defn ^datascript.parser/pattern-element bind-pattern-element
-  [^relation relation
-   ^:array<result> row
-   ^datascript.parser/pattern-element element]
+(defn bind-pattern-element [relation row element]
   (if-some [variable (pattern-variable-name element)]
     (if-some [bound (relation-result relation variable row)]
       (parser/pattern-constant (result-pattern-value bound))
       element)
     element))
 
-(defn ^:vector<datascript.parser/pattern-element> bind-pattern
-  [^relation relation
-   ^:array<result> row
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn bind-pattern [relation row pattern]
   (mapv
-   (fn [^datascript.parser/pattern-element element]
+   (fn [element]
      (bind-pattern-element relation row element))
    pattern))
 
-(defn ^boolean identity-relation?
-  [^relation relation]
+(defn identity-relation? [relation]
   (let [rows (relation-rows relation)]
     (and
      (empty? (relation-attrs relation))
@@ -1058,14 +1049,13 @@
        (= 0 (alength row))
        false))))
 
-(defn ^:option<result> constant-relation-result
-  [^relation relation ^:string variable]
+(defn constant-relation-result [relation ^:string variable]
   (if-some [index (get (relation-attrs relation) variable)]
     (if-some [first-row (first (relation-rows relation))]
       (if-some [first-value (row-get first-row index)]
         (if
           (every?
-           (fn [^:array<result> row]
+           (fn [row]
              (if-some [value (row-get row index)]
                (Datascript_runtime.Query_value.equal_result
                 first-value value)
@@ -1077,12 +1067,9 @@
       None)
     None))
 
-(defn ^:vector<datascript.parser/pattern-element>
-  substitute-pattern-constants
-  [^relation relation
-   ^:vector<datascript.parser/pattern-element> pattern]
+(defn substitute-pattern-constants [relation pattern]
   (mapv
-   (fn [^datascript.parser/pattern-element element]
+   (fn [element]
      (if-some [variable (pattern-variable-name element)]
        (if-some [value
                  (constant-relation-result relation variable)]
