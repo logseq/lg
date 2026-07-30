@@ -267,3 +267,29 @@ affected query. Melange `q1` improved from 1.589 ms to a 1.533 ms median,
 3.5 percent faster. `q2` and `q3` remained within measurement noise at 4.455
 ms and 6.275 ms, while `q4` measured 9.094 ms. The optimization therefore does
 not close the remaining `q2` or `qpred2` acceptance gaps.
+
+## Unified closed-query executor rerun
+
+The closed `q` entry point now delegates to the same typed executor used by the
+rest of the static query API. This removes a second context pipeline that
+carried an otherwise elidable scalar input through every relation row. The
+executor also compares exactly two closed equality or ordering operands
+directly; empty, unary, and variadic comparisons keep the general upstream
+path.
+
+The `qpred2` performance gate was written first and failed with an 11.239 ms
+median against the 9.7 ms upstream threshold. After the implementation, the
+same three-isolated-process gate passed at 6.722 ms. The other affected queries
+were also run in three isolated processes with the standard protocol.
+
+| Workload | Upstream JS | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: |
+| `q1` | 1.8 | 1.561 | -13.3% |
+| `q2` | 4.3 | 4.460 | +3.7% |
+| `q3` | 6.9 | 6.103 | -11.6% |
+| `q4` | 9.8 | 9.145 | -6.7% |
+| `qpred1` | 8.1 | 6.131 | -24.3% |
+| `qpred2` | 9.7 | 6.722 | -30.7% |
+
+Melange is now faster than the recorded upstream matrix on 25 of 28 workloads.
+The remaining failures are `q2`, `pull-one`, and `pull-many`.

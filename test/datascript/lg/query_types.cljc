@@ -1892,7 +1892,11 @@
               (match function
                 (PureStaticPredicate pure)
                 (built-ins/differ-function? pure)
-                (ComparisonStaticPredicate _) false)]
+                (ComparisonStaticPredicate _) false)
+              binary-operands
+              (if (= 2 (count operands))
+                (Some (tuple (nth operands 0) (nth operands 1)))
+                None)]
           (relation-with-rows
            relation
            (filterv
@@ -1904,12 +1908,25 @@
                         row operands))
                       (match function
                         (ComparisonStaticPredicate comparison)
-                        (built-ins/apply-comparison
-                         comparison
-                         (mapv
-                          (fn [operand]
-                            (predicate-operand-value row operand))
-                          operands))
+                        (let [binary-result
+                              (match binary-operands
+                                (Some pair)
+                                (built-ins/binary-comparison
+                                 comparison
+                                 (predicate-operand-value
+                                  row (tuple-get pair 0))
+                                 (predicate-operand-value
+                                  row (tuple-get pair 1)))
+                                None None)]
+                          (match binary-result
+                            (Some matches?) (Some matches?)
+                            None
+                            (built-ins/apply-comparison
+                             comparison
+                             (mapv
+                              (fn [operand]
+                                (predicate-operand-value row operand))
+                              operands))))
                         (PureStaticPredicate _)
                         (let [results
                               (mapv

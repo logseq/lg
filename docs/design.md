@@ -317,6 +317,13 @@ The currently accepted measured representation optimizations are narrow:
   be substituted into patterns and predicates. Multi-row relations are never
   elided, even when all rows happen to contain equal values, because their
   multiplicity can affect query semantics.
+- The closed `q` entry point delegates to the same typed executor used by the
+  rest of the static query API. It does not retain a second context pipeline
+  that carries an elidable scalar input through every relation row. Exactly
+  two ordered or equality operands are compared directly through their closed
+  values; empty, unary, and variadic calls retain the general upstream path.
+  On Melange this reduced `qpred1` from 7.371 ms to 6.131 ms and `qpred2` from
+  11.619 ms to 6.722 ms.
 - Recursive rule cycle guards retain upstream generation, activation, row,
   operand-pair, and branch order. The closed `-differ?` predicate compares its
   already compiled operand pairs directly instead of constructing temporary

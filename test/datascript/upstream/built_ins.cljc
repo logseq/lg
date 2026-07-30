@@ -416,6 +416,23 @@
       ": "
       (Datascript_runtime.Data_value.to_edn_string value)))))
 
+(defn- binary-comparison
+  [function left right]
+  (match function
+    Equal
+    (Some (Datascript_runtime.Data_value.equal left right))
+    NotEqual
+    (Some (not (Datascript_runtime.Data_value.equal left right)))
+    Less
+    (Some (neg? (Datascript_runtime.Data_value.compare left right)))
+    Greater
+    (Some (pos? (Datascript_runtime.Data_value.compare left right)))
+    LessEqual
+    (Some (not (pos? (Datascript_runtime.Data_value.compare left right))))
+    GreaterEqual
+    (Some (not (neg? (Datascript_runtime.Data_value.compare left right))))
+    _ None))
+
 (defn apply-comparison
   [function
     values]
