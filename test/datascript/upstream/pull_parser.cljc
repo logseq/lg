@@ -8,6 +8,7 @@
 
 (type-record PullAttrData
   (alias :Datascript_runtime.Data_value.t)
+  (alias-hash :int)
   (recursion-key :int)
   (default :option<Datascript_runtime.Data_value.t>)
   (limit :option<int>)
@@ -258,6 +259,9 @@
    (record PullAttrData
     (alias
      (Datascript_runtime.Data_value.Keyword ":db/id"))
+    (alias-hash
+     (Datascript_runtime.Data_value.static_map_hash
+      (Datascript_runtime.Data_value.Keyword ":db/id")))
     (recursion-key 0)
     (default None)
     (limit None)
@@ -292,15 +296,18 @@
         name (if reverse (db/reverse-ref source-attr) source-attr)
         ref (db/database-view-ref? database name)
         component (db/database-view-component? database name)
-        multival (db/database-view-multival? database name)]
+        multival (db/database-view-multival? database name)
+        alias
+        (Datascript_runtime.Data_value.Keyword
+         (str source-attr))]
     (when (and reverse (not ref))
       (Stdlib.invalid_arg
        "Reverse pull attribute requires :db.type/ref"))
     (let [data
           (record PullAttrData
-            (alias
-             (Datascript_runtime.Data_value.Keyword
-              (str source-attr)))
+            (alias alias)
+            (alias-hash
+             (Datascript_runtime.Data_value.static_map_hash alias))
             (recursion-key (next-attr-key))
             (default None)
             (limit (if multival (Some 1000) None))
@@ -402,7 +409,10 @@
   [attr alias]
   (replace-attr-data
    attr
-   (assoc (attr-data attr) :alias alias)))
+   (assoc
+    (assoc (attr-data attr) :alias alias)
+    :alias-hash
+    (Datascript_runtime.Data_value.static_map_hash alias))))
 
 (defn with-alias
   {:inline
@@ -478,6 +488,7 @@
     (PullAttribute
      (record PullAttrData
       (alias (.-alias data))
+      (alias-hash (.-alias-hash data))
       (recursion-key (.-recursion-key data))
       (default (.-default data))
       (limit (.-limit data))

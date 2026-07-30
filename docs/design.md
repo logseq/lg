@@ -297,10 +297,13 @@ The currently accepted measured representation optimizations are narrow:
   one array allocation. Multi-key joins retain the general closed-array key
   path.
 - A statically typed single-vector `mapv` maps the RRB vector directly.
-  Native retains the RRB structure; Melange maps a flat array and rebuilds the
-  vector so later query joins do not repeatedly traverse fragmented trees.
-  Other seqable inputs and multi-collection `mapv` keep their existing
-  sequence semantics.
+  Native and Melange both retain the RRB structure. Other seqable inputs and
+  multi-collection `mapv` keep their existing sequence semantics.
+- A relation product with a singleton side maps the other RRB row vector
+  directly instead of converting it to an array and rebuilding the same RRB
+  vector. Cartesian-product row order and row concatenation are unchanged.
+  The 100,000-row allocation regression dropped below 5.5 MB from 5.73 MB,
+  and Melange `qpred2` improved from 12.072 ms to 11.619 ms.
 - Bound-entity query clauses reduce the same upstream EAVT slice directly into
   result rows when no transaction constraint is present. The slice bounds,
   comparator, datom order, added filtering, and projected columns are
@@ -319,11 +322,11 @@ The currently accepted measured representation optimizations are narrow:
 - Rule expansion uses the parser's closed typed branch expander. Calls must
   match the declared rule arity and report `Rule arity mismatch` instead of
   silently dropping extra arguments.
-- Pull result maps use a persistent, insertion-ordered small-string-key path
-  before conversion to the closed `Data_value` representation. Duplicate keys
-  still replace their existing value and ordinary maps retain the HAMT path.
-  Direct ordered traversal avoids a second higher-order fold over the small
-  result map.
+- Parsed pull attributes cache the generic static hash of their closed alias
+  value. Pull result insertion reuses that validated hash while retaining the
+  same persistent map, key equality, insertion order, duplicate replacement,
+  and frame transitions. On Melange this reduced pull-one from 1.396 ms to
+  1.339 ms and pull-many from 2.510 ms to 2.151 ms.
 - DataScript identifier comparison checks namespace and name slices in place
   instead of allocating substrings. Separator handling and lexical ordering
   remain identical.

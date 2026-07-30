@@ -142,8 +142,7 @@ let find_position operations map key =
   | Empty | Leaf _ | Branch _ ->
       find_position_in operations map.index key
 
-let assoc_by operations map key value =
-  let key_hash = operations.hash key in
+let assoc_by_hash operations map key key_hash value =
   let existing_position =
     match map.index with
     | Empty when map.size > 0 ->
@@ -169,7 +168,13 @@ let assoc_by operations map key value =
         size = map.size + 1;
       }
 
+let assoc_by operations map key value =
+  assoc_by_hash operations map key (operations.hash key) value
+
 let assoc map key value = assoc_by generic_operations map key value
+let assoc_hashed map key key_hash value =
+  assoc_by_hash generic_operations map key key_hash value
+
 let assoc_dynamic map key value = assoc_by dynamic_operations map key value
 
 let assoc_small_string map key value =

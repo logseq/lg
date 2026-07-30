@@ -655,6 +655,11 @@ let map_of_data_map_with convert values =
     (Lg_runtime.Runtime_map.to_list values
     |> List.map (fun (key, value) -> (key, convert value)))
 
+let static_map_hash value = Lg_runtime.Runtime_static_value.hash value
+
+let map_assoc_hashed values key key_hash value =
+  Lg_runtime.Runtime_map.assoc_hashed values key key_hash value
+
 let as_array_map = function
   | Map entries | Hash_map entries -> Map entries
   | _ -> invalid_arg "Expected a map value"

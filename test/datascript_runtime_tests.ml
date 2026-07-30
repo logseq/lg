@@ -407,6 +407,37 @@ let test_query_rows_use_static_integer_indexes () =
   assert (Rrbvec.length products = 2);
   assert (Rrbvec.nth products 0 = Query_value.concat_rows left right)
 
+let test_query_product_rows_singleton_avoids_array_roundtrip () =
+  let row_count = 100_000 in
+  let left_rows =
+    Array.init row_count (fun entity ->
+        [|
+          Query_value.Entity entity;
+          Query_value.Value (Value.Int entity);
+        |])
+    |> Rrbvec.of_array
+  in
+  let right = [| Query_value.Attr ":benchmark/tag" |] in
+  let right_rows = Rrbvec.of_list [ right ] in
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let products = Query_value.product_rows left_rows right_rows in
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  assert (Rrbvec.length products = row_count);
+  assert (
+    Rrbvec.nth products 0
+    = Query_value.concat_rows (Rrbvec.nth left_rows 0) right);
+  assert (
+    Rrbvec.nth products (row_count - 1)
+    = Query_value.concat_rows
+        (Rrbvec.nth left_rows (row_count - 1))
+        right);
+  if allocated_bytes >= 5_500_000. then
+    failwith
+      (Printf.sprintf
+         "query singleton product allocated an intermediate array: %.0f bytes"
+         allocated_bytes)
+
 let test_query_distinct_entity_rows_avoid_boxed_hash_keys () =
   let row_count = 100_000 in
   let rows =
@@ -443,6 +474,19 @@ let test_static_map_assoc_hashes_each_key_once () =
   assert (!hash_calls = 3);
   assert (Runtime_map.get_option_by operations updated "first" = Some 3);
   assert (!hash_calls = 4)
+
+let test_static_map_assoc_uses_a_precomputed_hash () =
+  let first_hash = Hashtbl.hash "first" in
+  let second_hash = Hashtbl.hash "second" in
+  let map =
+    Runtime_map.empty
+    |> fun map -> Runtime_map.assoc_hashed map "first" first_hash 1
+    |> fun map -> Runtime_map.assoc_hashed map "second" second_hash 2
+    |> fun map -> Runtime_map.assoc_hashed map "first" first_hash 3
+  in
+  assert (Runtime_map.count map = 2);
+  assert (Runtime_map.get_option map "first" = Some 3);
+  assert (Runtime_map.get_option map "second" = Some 2)
 
 let test_query_hash_join_uses_closed_result_keys () =
   let empty_databases = Lg_runtime.Lg_map.empty in
@@ -776,8 +820,10 @@ let () =
   test_query_sources_and_results_are_closed_sum_types ();
   test_query_relations_and_contexts_keep_static_fields ();
   test_query_rows_use_static_integer_indexes ();
+  test_query_product_rows_singleton_avoids_array_roundtrip ();
   test_query_distinct_entity_rows_avoid_boxed_hash_keys ();
   test_static_map_assoc_hashes_each_key_once ();
+  test_static_map_assoc_uses_a_precomputed_hash ();
   test_query_hash_join_uses_closed_result_keys ();
   test_query_inputs_use_closed_recursive_binding_values ();
   test_storage_payloads_keep_integer_addresses_and_closed_values ();

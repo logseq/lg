@@ -93,6 +93,13 @@ val map_of_keyword_map_with :
 val map_of_data_map : (t, t) Lg_runtime.Runtime_map.t -> t
 val map_of_data_map_with :
   ('value -> t) -> (t, 'value) Lg_runtime.Runtime_map.t -> t
+val static_map_hash : t -> int
+val map_assoc_hashed :
+  (t, 'value) Lg_runtime.Runtime_map.t ->
+  t ->
+  int ->
+  'value ->
+  (t, 'value) Lg_runtime.Runtime_map.t
 val as_array_map : t -> t
 val as_hash_map : t -> t
 val map_get : t -> t -> t option

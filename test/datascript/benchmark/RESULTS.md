@@ -228,3 +228,29 @@ Against the recorded pinned-upstream matrix, Melange is now faster on 24 of
 `pull-many`. A same-host rerun of the pinned upstream runner measured medians
 of 3.7, 7.7, 1.0, and 1.6 ms respectively, confirming that all four remain
 real optimization gaps rather than rounded-baseline noise.
+
+## Singleton relation and pull alias-hash rerun
+
+Singleton relation products now map the existing RRB row vector directly
+instead of converting it to an array and rebuilding the same vector. Parsed
+pull attributes cache the generic static hash of their closed alias value, and
+pull result insertion reuses that hash. Both changes retain the existing
+upstream-shaped control flow and closed static representations.
+
+The final release bundle was rebuilt before measuring. Each workload below ran
+in three isolated processes with the standard 20,000-person protocol; the
+reported LG value is the median.
+
+| Workload | Upstream JS | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: |
+| `q2` | 4.3 | 4.437 | +3.2% |
+| `qpred2` | 9.7 | 11.619 | +19.8% |
+| `pull-one` | 1.1 | 1.339 | +21.7% |
+| `pull-many` | 1.9 | 2.151 | +13.2% |
+| `pull-wildcard` | 4.6 | 3.864 | -16.0% |
+
+The singleton product reduced a 100,000-row allocation check from 5,732,080
+bytes to less than 5,500,000 bytes. The pull alias-hash cache also improved the
+wildcard regression sentinel rather than trading the focused pull gains for a
+broader pull slowdown. The four previously identified acceptance failures
+remain failures and require further optimization.

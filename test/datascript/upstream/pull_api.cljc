@@ -111,6 +111,14 @@
   [values key value]
   (assoc values key value))
 
+(signature datascript.pull-api/assoc-pulled-value-hashed
+  :fn<map<Datascript_runtime.Data_value.t;pulled-value>;Datascript_runtime.Data_value.t;int;pulled-value;map<Datascript_runtime.Data_value.t;pulled-value>>)
+
+(defn assoc-pulled-value-hashed
+  [values key key-hash value]
+  (Datascript_runtime.Data_value.map_assoc_hashed
+   values key key-hash value))
+
 (signature datascript.pull-api/assoc-pulled-data
   :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
 
@@ -505,11 +513,15 @@
 
 (defn merge-attr-value
   [values attr value]
-  (match (apply-attr-xform attr value)
-    None values
-    (Some value)
-    (assoc-pulled-value
-     values (.-alias (dpp/attr-data attr)) value)))
+  (let [data (dpp/attr-data attr)]
+    (match (apply-attr-xform attr value)
+      None values
+      (Some value)
+      (assoc-pulled-value-hashed
+       values
+       (.-alias data)
+       (.-alias-hash data)
+       value))))
 
 (defn merge-attrs-result
   [state result]
@@ -704,9 +716,10 @@
     (match (.-default data)
       None values
       (Some value)
-      (assoc-pulled-value
+      (assoc-pulled-value-hashed
        values
        (.-alias data)
+       (.-alias-hash data)
        (PulledScalar value)))))
 
 (defn add-missing-value
@@ -714,9 +727,10 @@
   (let [data (dpp/attr-data attr)]
     (match (.-default data)
       (Some value)
-      (assoc-pulled-value
+      (assoc-pulled-value-hashed
        values
        (.-alias data)
+       (.-alias-hash data)
        (PulledScalar value))
       None
       (merge-attr-value values attr None))))
