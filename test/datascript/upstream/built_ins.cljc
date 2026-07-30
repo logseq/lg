@@ -224,6 +224,8 @@
   :fn<string;option<datascript.built-ins/query-function>>)
 (signature datascript.built-ins/apply-comparison
   :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;option<bool>>)
+(signature datascript.built-ins/ordered-values?
+  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;bool>)
 (signature datascript.built-ins/pure-function
   :fn<string;option<datascript.built-ins/query-function>>)
 (signature datascript.built-ins/apply-pure-function

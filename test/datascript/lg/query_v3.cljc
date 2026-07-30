@@ -1537,26 +1537,21 @@
       false)))
 
 (defn- fill-predicate-row!
-  [^relation-v3 relation
-   ^:array<datascript.lg.query-types/result> row
-   ^:vector<tuple<string;int>> bindings
+  [^:array<datascript.lg.query-types/result> row
+   ^:array<int> indexes
+   ^:array<int> target-indexes
    ^:array<option<datascript.lg.query-types/result>> target]
-  (reduce
-   (fn [_ binding]
-     (let [variable (tuple-get binding 0)
-           index (tuple-get binding 1)]
-       (aset
-        target
-        index
-        (Some ((-getter relation variable) row))))
-     (Stdlib.ignore 0))
-   (Stdlib.ignore 0)
-   bindings))
+  (dotimes [index (alength indexes)]
+    (aset
+     target
+     (aget target-indexes index)
+     (Some (aget row (aget indexes index))))))
 
 (defn- ^relation-v3 filter-predicate-relation
   [^relation-v3 relation
    ^predicate-function-v3 function
-   ^:vector<tuple<string;int>> bindings
+   ^:array<int> indexes
+   ^:array<int> target-indexes
    ^:array<option<datascript.lg.query-types/result>> target]
   (-alter-coll
    relation
@@ -1564,7 +1559,7 @@
      (filterv
       (fn [row]
         (let [_ (fill-predicate-row!
-                 relation row bindings target)]
+                 row indexes target-indexes target)]
           (invoke-predicate
            function
            (collected-predicate-arguments target))))
@@ -1585,6 +1580,9 @@
         _ (collect-args! context arguments target form)
         bindings (predicate-row-bindings context arguments)
         variables (mapv (fn [binding] (tuple-get binding 0)) bindings)
+        target-indexes
+        (to-array
+         (mapv (fn [binding] (tuple-get binding 1)) bindings))
         _ (check-predicate-bindings context variables)]
     (if (empty? variables)
       (if
@@ -1601,9 +1599,10 @@
               (if (= 1 (count relations))
                 (nth relations 0)
                 (product-all relations))
+              indexes (-indexes relation variables)
               filtered
               (filter-predicate-relation
-               relation function bindings target)]
+               relation function indexes target-indexes target)]
           (join-unrelated remaining-context filtered))))))
 
 (defn-
@@ -1758,17 +1757,24 @@
            (fn [binding]
              (tuple-get binding 0))
            bindings)
+          target-indexes
+          (to-array
+           (mapv
+            (fn [binding]
+              (tuple-get binding 1))
+            bindings))
           _ (check-bound context variables form)
           production-parts
           (function-production context variables)
           remaining-context (tuple-get production-parts 0)
           production (tuple-get production-parts 1)
+          indexes (-indexes production variables)
           output
           (reduce
            (fn [output row]
              (let [row-target (da/aclone target)
                    _ (fill-predicate-row!
-                      production row bindings row-target)
+                      row indexes target-indexes row-target)
                    invocation
                    (invoke-function
                     function

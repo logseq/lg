@@ -53,3 +53,16 @@ Melange is faster on 4 workloads and slower on 24. The highest-priority shared
 regressions are serialization, `init`, predicate queries, and `pull-many`.
 Melange additionally has broad query, pull, and recursive-rule overhead.
 
+## Predicate alignment rerun
+
+After restoring upstream-shaped predicate filtering and preserving the closed
+vector boundary through ordered comparisons, `qpred1` and `qpred2` were rerun
+with the same protocol as the baseline:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `qpred1` | 8.1 | 5.656 | -30.2% | 11.365 | +40.3% |
+| `qpred2` | 9.7 | 7.435 | -23.4% | 16.069 | +65.7% |
+
+Relative to the initial LG baseline, Native improved by 55.0% on `qpred1` and
+50.0% on `qpred2`; Melange improved by 65.3% and 58.5%, respectively.

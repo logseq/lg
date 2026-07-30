@@ -137,6 +137,10 @@ expect_text "the full pinned commit is recorded" "$upstream_doc" \
 expect_no_text "built-in algorithms contain no inline type hints" \
   test/datascript/upstream/built_ins.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
+expect_text \
+  "ordered comparisons keep their closed vector boundary" \
+  test/datascript/upstream/built_ins.cljc \
+  '^\(signature datascript\.built-ins/ordered-values\?'
 expect_no_text "PSS algorithms contain no inline type hints" \
   datascript/me/tonsky/persistent_sorted_set.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
@@ -204,6 +208,22 @@ expect_no_text \
   "init-db does not copy every datom before sorting" \
   test/datascript/upstream/db.cljc \
   '^[[:space:]]*\(arrays/amap$'
+expect_text \
+  "predicate filtering precomputes relation indexes like upstream" \
+  test/datascript/lg/query_v3.cljc \
+  '\(-indexes relation variables\)'
+expect_no_text \
+  "predicate filtering does not resolve symbol getters per row" \
+  test/datascript/lg/query_v3.cljc \
+  '\(\(-getter relation variable\) row\)'
+expect_text \
+  "static predicate comparisons avoid an intermediate result vector" \
+  test/datascript/lg/query_types.cljc \
+  '\(predicate-operand-value row operand\)'
+expect_no_text \
+  "predicate filtering uses upstream filterv instead of persistent row appends" \
+  test/datascript/lg/query_types.cljc \
+  '\(conj rows row\)'
 expect_no_hints_between \
   "pull option constructors contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \

@@ -1394,6 +1394,10 @@
        "Predicate column is outside the relation row"))
     (PredicateResult result) result))
 
+(defn predicate-operand-value [row operand]
+  (result-pattern-value
+   (predicate-operand-result row operand)))
+
 (defn query-source-database
   [database sources ^:string source-name]
   (if-some [source (get sources source-name)]
@@ -1539,19 +1543,17 @@
   [database sources relation constants arguments]
   (relation-with-rows
    relation
-   (reduce
-    (fn [rows row]
+   (filterv
+    (fn [row]
       (let [values
             (callable-arguments
              database sources relation constants row arguments)]
         (if (= 3 (count values))
           (let [source (query-database-result (nth values 0))]
-            (if (query-missing? source (nth values 1) (nth values 2))
-              (conj rows row)
-              rows))
+            (query-missing?
+             source (nth values 1) (nth values 2)))
           (Stdlib.invalid_arg
            "Invalid arguments for query predicate: missing?"))))
-    []
     (relation-rows relation))))
 
 (defn data-value-binding [value]
@@ -1890,36 +1892,42 @@
                 (ComparisonStaticPredicate _) false)]
           (relation-with-rows
            relation
-           (reduce
-            (fn [rows row]
+           (filterv
+            (fn [row]
               (let [matches?
                     (if differ?
                       (Some
                        (differ-predicate-matches?
                         row operands))
-                      (let [results
-                            (mapv
-                             (fn [operand]
-                               (predicate-operand-result
-                                row operand))
-                             operands)
-                            invocation
-                            (static-function-result
-                             function results)]
-                        (match invocation
-                          (Some result)
-                          (Some
-                           (query-result-truthy? result))
-                          None None)))]
+                      (match function
+                        (ComparisonStaticPredicate comparison)
+                        (built-ins/apply-comparison
+                         comparison
+                         (mapv
+                          (fn [operand]
+                            (predicate-operand-value row operand))
+                          operands))
+                        (PureStaticPredicate _)
+                        (let [results
+                              (mapv
+                               (fn [operand]
+                                 (predicate-operand-result
+                                  row operand))
+                               operands)
+                              invocation
+                              (static-function-result
+                               function results)]
+                          (match invocation
+                            (Some result)
+                            (Some
+                             (query-result-truthy? result))
+                            None None))))]
                 (if-some [matches? matches?]
-                  (if matches?
-                    (conj rows row)
-                    rows)
+                  matches?
                   (Stdlib.invalid_arg
                    (str
                     "Unsupported static query predicate: "
                     name)))))
-            []
             (relation-rows relation)))))
       (Stdlib.invalid_arg
        (str
@@ -1931,22 +1939,19 @@
     (if-some [variable (parser/variable-callable-name callable)]
       (relation-with-rows
        relation
-       (reduce
-        (fn [rows row]
+       (filterv
+        (fn [row]
           (let [callable (row-callable relation constants row variable)
                 arguments
                 (callable-arguments
                  database sources relation constants row arguments)]
             (if-some [value (invoke-callable callable arguments)]
-              (if
+              (not
                (or
                 (Datascript_runtime.Data_value.is_nil value)
                 (= (Datascript_runtime.Data_value.bool_value value)
-                   (Some false)))
-                rows
-                (conj rows row))
-              rows)))
-        []
+                   (Some false))))
+              false)))
         (relation-rows relation)))
       (Stdlib.invalid_arg
        "Variable query predicate name is missing"))))
