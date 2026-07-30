@@ -196,6 +196,14 @@ expect_text \
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "init-db reuses the upstream input array" \
+  test/datascript/upstream/db.cljc \
+  '^[[:space:]]*arr[[:space:]]+datoms$'
+expect_no_text \
+  "init-db does not copy every datom before sorting" \
+  test/datascript/upstream/db.cljc \
+  '^[[:space:]]*\(arrays/amap$'
 expect_no_hints_between \
   "pull option constructors contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \

@@ -1540,11 +1540,16 @@
   (validate-schema schema)
   (let [rschema     (rschema (merge-schema implicit-schema schema))
         indexed     (:indexed-attrs rschema)
-        arr
-        (arrays/amap
-         (fn [^Datom datom]
-           (normalize-init-datom rschema datom))
-         datoms)
+        arr         datoms
+        _           (loop [index 0]
+                      (if (< index (arrays/alength arr))
+                        (let [source (arrays/aget arr index)
+                              normalized
+                              (normalize-init-datom rschema source)]
+                          (when-not (identical? source normalized)
+                            (arrays/aset arr index normalized))
+                          (recur (inc index)))
+                        (Stdlib.ignore 0)))
         _           (arrays/asort arr cmp-datoms-eavt-quick)
         eavt        (datom-set-from-sorted-array
                      cmp-datoms-eavt arr (arrays/alength arr) opts)
