@@ -10552,6 +10552,24 @@ let create ~compile_expr =
                          | _ -> false)
                     param_tys actual_tys
                 in
+                let unify_argument substitutions template actual =
+                  match
+                    ( Types.seqable_constraint_info template,
+                      Types.seqable_constraint_info actual,
+                      Collection_capability.element_type_of_ty env actual )
+                  with
+                  | ( Some (`Required, expected_element, expected_value),
+                      None,
+                      Some actual_element ) ->
+                      (match
+                         Type_solver.unify substitutions expected_element
+                           actual_element
+                       with
+                      | Error _ as error -> error
+                      | Ok substitutions ->
+                          Type_solver.unify substitutions expected_value actual)
+                  | _ -> Type_solver.unify substitutions template actual
+                in
                 let rec infer_arguments substitutions templates actuals =
                   match (templates, actuals) with
                   | [], [] -> Ok substitutions
@@ -10565,9 +10583,7 @@ let create ~compile_expr =
                       if Types.equal evidence TUnknown then
                         infer_arguments substitutions templates actuals
                       else
-                        (match
-                           Type_solver.unify substitutions template evidence
-                         with
+                        (match unify_argument substitutions template evidence with
                         | Ok substitutions ->
                             infer_arguments substitutions templates actuals
                         | Error _ when dynamic_callable ->
