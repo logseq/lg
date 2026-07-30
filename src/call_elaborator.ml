@@ -10177,7 +10177,28 @@ let create ~compile_expr =
               List.map2 contextual_callback_form parameter_tys arg_forms
           | None -> arg_forms
         in
-        match compile_args_for scope env arg_forms with
+        let compile_arguments =
+          match contextual_parameter_tys with
+          | None -> compile_args_for scope env arg_forms
+          | Some parameter_tys ->
+              let rec compile acc parameter_tys forms =
+                match (parameter_tys, forms) with
+                | [], [] -> Ok (List.rev acc)
+                | expected :: parameter_tys, form :: forms ->
+                    let argument_env =
+                      match (expected, form) with
+                      | TFn _, FList (FSymbol "fn" :: _) ->
+                          Env.with_expected_type (Some expected) env
+                      | _ -> env
+                    in
+                    Result.bind (compile_expr scope argument_env form)
+                      (fun argument ->
+                        compile (argument :: acc) parameter_tys forms)
+                | _ -> assert false
+              in
+              compile [] parameter_tys arg_forms
+        in
+        match compile_arguments with
         | Error _ as err -> err
         | Ok args -> (
             let callable =

@@ -12646,6 +12646,42 @@ let test_nested_reduce_kv_infers_map_value_collections () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_cross_chunk_callbacks_receive_declared_collection_types () =
+  let provider =
+    {|
+(ns storage.provider)
+(defn make-backend
+  [^:fn<vector<tuple<int;string>>;vector<int>;unit> store-fn]
+  (store-fn [(tuple 7 "value")] [8]))
+|}
+  in
+  let consumer =
+    {|
+(ns storage.consumer
+  (:require [storage.provider :as provider]))
+(provider/make-backend
+  (fn [address-data delete-addresses]
+    (println
+      (+
+        (tuple-get (nth address-data 0) 0)
+        (nth delete-addresses 0)))))
+|}
+  in
+  let compile target =
+    let state, provider_source =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      |> expect_ok
+    in
+    let _, consumer_source =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider_source ^ "\n" ^ consumer_source
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "cross_chunk_callbacks_receive_declared_collection_types"
+    "15\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_weak_references_reject_invalid_calls () =
   Lg.Compiler.compile_string {|(weak-ref)|}
   |> expect_error_contains "weak-ref expects 1 argument";
@@ -33082,6 +33118,8 @@ let tests =
       test_module_empty_vector_refs_use_static_boundary );
     ( "nested reduce-kv infers map value collections",
       test_nested_reduce_kv_infers_map_value_collections );
+    ( "cross-chunk callbacks receive declared collection types",
+      test_cross_chunk_callbacks_receive_declared_collection_types );
     ( "weak references reject invalid calls",
       test_weak_references_reject_invalid_calls );
     ( "volatile nil uses contextual option reference type",

@@ -57,7 +57,8 @@ fi
 db_callback_hint_pattern='\(fn[[:space:]]*\[[^]]*\^[A-Za-z_:]'
 if rg -U -q "$db_callback_hint_pattern" \
   test/datascript/upstream/db.cljc \
-  test/datascript/upstream/storage.cljc; then
+  test/datascript/upstream/storage.cljc \
+  test/datascript/upstream/storage_file.cljc; then
   echo "DataScript DB and storage callbacks must infer ordinary parameters" >&2
   exit 1
 fi

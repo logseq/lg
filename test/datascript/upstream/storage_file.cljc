@@ -114,8 +114,7 @@
                    (address-to-filename address-to-filename)
                    (filename-to-address filename-to-address))]
        (storage/make-backend
-        (fn [^:vector<tuple<int;Datascript_runtime.Storage_value.t>> address-data
-             ^:vector<int> delete-addresses]
+        (fn [address-data delete-addresses]
           (doseq [entry address-data]
             (write-file
              backend
@@ -124,13 +123,13 @@
           (doseq [address delete-addresses]
             (delete-file backend address))
           (Stdlib.ignore 0))
-        (fn [^:int address]
+        (fn [address]
           (read-file backend address))
-        (fn [^:unit _ignored]
+        (fn [_ignored]
           (mapv
            (:filename-to-address backend)
            (array-seq (Sys.readdir (:directory backend)))))
-        (fn [^:vector<int> addresses]
+        (fn [addresses]
           (doseq [address addresses]
             (delete-file backend address))
           (Stdlib.ignore 0)))))))
