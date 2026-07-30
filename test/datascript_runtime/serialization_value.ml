@@ -400,12 +400,9 @@ let ref_type value =
       | "weak" -> Storage_value.Weak
       | value -> invalid_arg ("unsupported reference type " ^ value))
 
-type prepared_datom = {
-  prepared_entity : int;
-  prepared_attribute : int;
-  prepared_value : t;
-  prepared_tx : int;
-}
+type prepared_datoms =
+  | Prepared_edn_datoms of t array
+  | Prepared_json_datoms of Lg_edn_backend.json array
 
 type prepared = {
   prepared_database_count : int;
@@ -415,20 +412,12 @@ type prepared = {
   prepared_database_schema : t;
   prepared_database_attrs : string Rrbvec.t;
   prepared_database_keywords : string Rrbvec.t;
-  prepared_database_datoms : prepared_datom array;
+  prepared_database_datoms : prepared_datoms;
   prepared_database_aevt : int array option;
   prepared_database_avet : int array option;
   prepared_database_branching_factor : int;
   prepared_database_ref_type : Storage_value.ref_type;
 }
-
-let prepare_datom value =
-  {
-    prepared_entity = datom_entity value;
-    prepared_attribute = datom_attribute value;
-    prepared_value = datom_value value;
-    prepared_tx = datom_tx value;
-  }
 
 let prepare_edn value =
   {
@@ -439,7 +428,7 @@ let prepare_edn value =
     prepared_database_schema = schema_value value;
     prepared_database_attrs = attrs value;
     prepared_database_keywords = keywords value;
-    prepared_database_datoms = Array.map prepare_datom (datoms_array value);
+    prepared_database_datoms = Prepared_edn_datoms (datoms_array value);
     prepared_database_aevt = aevt_array value;
     prepared_database_avet = avet_array value;
     prepared_database_branching_factor = branching_factor value;
@@ -457,16 +446,6 @@ let json_optional_int_array json =
     Some
       (json |> Lg_edn_backend.json_array
       |> Array.map Lg_edn_backend.json_int)
-
-let prepare_json_datom json =
-  let fields = Lg_edn_backend.json_array json in
-  if Array.length fields <> 4 then invalid_arg "invalid serialized datom";
-  {
-    prepared_entity = Lg_edn_backend.json_int fields.(0);
-    prepared_attribute = Lg_edn_backend.json_int fields.(1);
-    prepared_value = Lg_edn_backend.json_to_edn fields.(2);
-    prepared_tx = Lg_edn_backend.json_int fields.(3);
-  }
 
 let json_ref_type json =
   match Lg_edn_backend.json_string json with
@@ -503,9 +482,9 @@ let prepare_json source =
     prepared_database_keywords =
       Lg_edn_backend.json_field json "keywords" |> json_string_vector;
     prepared_database_datoms =
-      Lg_edn_backend.json_field json "eavt"
-      |> Lg_edn_backend.json_array
-      |> Array.map prepare_json_datom;
+      Prepared_json_datoms
+        (Lg_edn_backend.json_field json "eavt"
+        |> Lg_edn_backend.json_array);
     prepared_database_aevt =
       Lg_edn_backend.json_field json "aevt" |> json_optional_int_array;
     prepared_database_avet =
@@ -526,7 +505,6 @@ let prepared_schema_value value = value.prepared_database_schema
 let prepared_schema_source value = string_value value.prepared_database_schema
 let prepared_attrs value = value.prepared_database_attrs
 let prepared_keywords value = value.prepared_database_keywords
-let prepared_datoms_array value = value.prepared_database_datoms
 let prepared_aevt_array value = value.prepared_database_aevt
 let prepared_avet_array value = value.prepared_database_avet
 
@@ -534,10 +512,40 @@ let prepared_branching_factor value =
   value.prepared_database_branching_factor
 
 let prepared_ref_type value = value.prepared_database_ref_type
-let prepared_datom_entity value = value.prepared_entity
-let prepared_datom_attribute value = value.prepared_attribute
-let prepared_datom_value value = value.prepared_value
-let prepared_datom_tx value = value.prepared_tx
+
+let prepared_datom_count value =
+  match value.prepared_database_datoms with
+  | Prepared_edn_datoms values -> Array.length values
+  | Prepared_json_datoms values -> Array.length values
+
+let prepared_json_datom_fields values index =
+  let fields = Lg_edn_backend.json_array values.(index) in
+  if Array.length fields <> 4 then invalid_arg "invalid serialized datom";
+  fields
+
+let prepared_datom_int_field value index field_index =
+  match value.prepared_database_datoms with
+  | Prepared_edn_datoms values ->
+      values.(index) |> datom_field field_index |> int_value
+  | Prepared_json_datoms values ->
+      prepared_json_datom_fields values index
+      |> fun fields -> Lg_edn_backend.json_int fields.(field_index)
+
+let prepared_datom_entity value index =
+  prepared_datom_int_field value index 0
+
+let prepared_datom_attribute value index =
+  prepared_datom_int_field value index 1
+
+let prepared_datom_value value index =
+  match value.prepared_database_datoms with
+  | Prepared_edn_datoms values -> datom_value values.(index)
+  | Prepared_json_datoms values ->
+      prepared_json_datom_fields values index
+      |> fun fields -> Lg_edn_backend.json_to_edn fields.(2)
+
+let prepared_datom_tx value index =
+  prepared_datom_int_field value index 3
 
 let schema_to_edn = function
   | None -> Lg_edn_backend.Nil

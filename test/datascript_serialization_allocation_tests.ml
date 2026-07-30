@@ -1,6 +1,19 @@
 module Serialization_value = Datascript_runtime.Serialization_value
 module Storage_value = Datascript_runtime.Storage_value
 
+let serialized_json count =
+  let buffer = Buffer.create (count * 24) in
+  Printf.bprintf buffer
+    {|{"count":%d,"tx0":536870912,"max-eid":0,"max-tx":536870912,"schema":"nil","attrs":[":value"],"keywords":[],"eavt":[|}
+    count;
+  for index = 0 to count - 1 do
+    if index > 0 then Buffer.add_char buffer ',';
+    Printf.bprintf buffer "[%d,0,%d,0]" index index
+  done;
+  Buffer.add_string buffer
+    {|],"aevt":null,"avet":null,"branching-factor":32,"ref-type":"strong"}|};
+  Buffer.contents buffer
+
 let () =
   let count = 100_000 in
   let value = Serialization_value.encode_non_keyword (Datascript_runtime.Data_value.Int 1) in
@@ -45,4 +58,19 @@ let () =
     failwith
       (Printf.sprintf
          "serialized datom access copied fields through lists: %.0f bytes"
+         allocated_bytes);
+  let json_datom_count = 50_000 in
+  let source = serialized_json json_datom_count in
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let prepared =
+    Serialization_value.prepare (Lg_edn_backend.Json_source source)
+  in
+  if Serialization_value.prepared_count prepared <> json_datom_count then
+    failwith "prepared JSON count changed";
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 23_000_000. then
+    failwith
+      (Printf.sprintf
+         "JSON preparation materialized one record per datom: %.0f bytes"
          allocated_bytes)

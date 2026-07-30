@@ -13,9 +13,6 @@
 (type-alias prepared-serialized-value
   :Datascript_runtime.Serialization_value.prepared)
 
-(type-alias prepared-serialized-datom
-  :Datascript_runtime.Serialization_value.prepared_datom)
-
 (type-alias codec-function
   :fn<serialized-value;serialized-value>)
 
@@ -246,27 +243,28 @@
    ^:vector<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
-   ^prepared-serialized-datom datom]
+   ^prepared-serialized-value prepared
+   ^:int index]
   (let [entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
-                   datom)
+                   prepared index)
         attribute (nth attrs
                        (Datascript_runtime.Serialization_value.prepared_datom_attribute
-                        datom))
+                        prepared index))
         value     (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.decode_value_with
                      thaw-fn
                      keywords
                      (Datascript_runtime.Serialization_value.prepared_datom_value
-                      datom))
+                      prepared index))
                     DefaultCodec
                     (Datascript_runtime.Serialization_value.decode_value
                      keywords
                      (Datascript_runtime.Serialization_value.prepared_datom_value
-                      datom)))
+                      prepared index)))
         tx        (+ tx0
                      (Datascript_runtime.Serialization_value.prepared_datom_tx
-                      datom))]
+                      prepared index))]
     (db/datom entity attribute value tx)))
 
 (defn- ^:array<datascript.db/Datom> deserialize-datoms
@@ -274,11 +272,24 @@
    ^:vector<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
-   ^:array<prepared-serialized-datom> datoms]
-  (arrays/amap
-   (fn [datom]
-     (deserialize-datom tx0 attrs keywords thaw-codec datom))
-   datoms))
+   ^prepared-serialized-value prepared]
+  (let [datom-count
+        (Datascript_runtime.Serialization_value.prepared_datom_count prepared)]
+    (if (zero? datom-count)
+      (arrays/empty-array)
+      (let [result
+            (arrays/make-array
+             datom-count
+             (deserialize-datom tx0 attrs keywords thaw-codec prepared 0))]
+        (loop [index 1]
+          (if (< index datom-count)
+            (do
+              (arrays/aset
+               result index
+               (deserialize-datom
+                tx0 attrs keywords thaw-codec prepared index))
+              (recur (inc index)))
+            result))))))
 
 (defn- ^:array<datascript.db/Datom> reorder-datoms
   [^:array<datascript.db/Datom> datoms
@@ -323,9 +334,7 @@
                           (str
                            (thaw-keyword-value keyword-thawer value)))))
          eavt     (deserialize-datoms
-                   tx0 attrs keywords thaw-codec
-                   (Datascript_runtime.Serialization_value.prepared_datoms_array
-                    prepared))
+                   tx0 attrs keywords thaw-codec prepared)
          aevt     (reorder-datoms
                    eavt
                    (Datascript_runtime.Serialization_value.prepared_aevt_array

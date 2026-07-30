@@ -682,7 +682,6 @@ let test_serialized_json_prepares_concrete_database_fields () =
     |> Lg_runtime.Runtime_edn.read_json_source
     |> Serialization_value.prepare
   in
-  let datoms = Serialization_value.prepared_datoms_array prepared in
   assert (Serialization_value.prepared_count prepared = 1);
   assert (Serialization_value.prepared_tx0 prepared = 536870912);
   assert (Serialization_value.prepared_max_eid prepared = 42);
@@ -690,13 +689,13 @@ let test_serialized_json_prepares_concrete_database_fields () =
   assert (
     Serialization_value.prepared_attrs prepared
     = Rrbvec.of_list [ ":user/name" ]);
-  assert (Array.length datoms = 1);
-  assert (Serialization_value.prepared_datom_entity datoms.(0) = 42);
-  assert (Serialization_value.prepared_datom_attribute datoms.(0) = 0);
+  assert (Serialization_value.prepared_datom_count prepared = 1);
+  assert (Serialization_value.prepared_datom_entity prepared 0 = 42);
+  assert (Serialization_value.prepared_datom_attribute prepared 0 = 0);
   assert (
-    Serialization_value.prepared_datom_value datoms.(0)
+    Serialization_value.prepared_datom_value prepared 0
     = Lg_edn_backend.String "Ada");
-  assert (Serialization_value.prepared_datom_tx datoms.(0) = 7);
+  assert (Serialization_value.prepared_datom_tx prepared 0 = 7);
   assert (
     Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
 
