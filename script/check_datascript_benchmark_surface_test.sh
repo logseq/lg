@@ -39,6 +39,18 @@ expected_workloads=(
 )
 
 benchmark_source="$repo_root/test/datascript/benchmark/datascript/bench/datascript.cljc"
+melange_edn_backend="$repo_root/runtime_edn_backend_melange/edn_backend.ml"
+if awk '
+  /^let add_json_int / { in_writer = 1 }
+  /^let rec add_json_value / { in_writer = 0 }
+  in_writer && /Js\.Json\.stringify/ { found = 1 }
+  END { exit !found }
+' "$melange_edn_backend"
+then
+  echo "Melange JSON writer calls JSON.stringify for every safe integer" >&2
+  exit 1
+fi
+
 thaw_restore_calls="$(
   awk '
     /^\(defn bench-thaw/ { in_thaw = 1; next }

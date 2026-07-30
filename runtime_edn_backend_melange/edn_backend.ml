@@ -179,8 +179,7 @@ let add_json_int writer value =
   let min_safe_json_integer = -9007199254740991L in
   let max_safe_json_integer = 9007199254740991L in
   if value >= min_safe_json_integer && value <= max_safe_json_integer then
-    add_json_token writer
-      (Js.Json.stringify (Js.Json.number (Int64.to_float value)))
+    add_json_token writer (Int64.to_string value)
   else add_json_string writer (Int64.to_string value)
 
 let rec add_json_value writer = function
