@@ -105,6 +105,16 @@ let truthy_constraint_info = function
       Some value_ty
   | _ -> None
 
+let nil_predicate_constraint_name = "__lg_nil_predicate_constraint"
+let nil_predicate_constraint value_ty =
+  TOcaml_app (nil_predicate_constraint_name, [ value_ty ])
+
+let nil_predicate_constraint_info = function
+  | TOcaml_app (name, [ value_ty ])
+    when name = nil_predicate_constraint_name ->
+      Some value_ty
+  | _ -> None
+
 let printable_constraint_name = "__lg_printable_constraint"
 let printable_constraint value_ty =
   TOcaml_app (printable_constraint_name, [ value_ty ])
@@ -285,6 +295,9 @@ let rec constraint_value_type ty =
         when name = contains_constraint_name ->
           constraint_value_type value_ty
       | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+          constraint_value_type value_ty
+      | TOcaml_app (name, [ value_ty ])
+        when name = nil_predicate_constraint_name ->
           constraint_value_type value_ty
       | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
           constraint_value_type value_ty
@@ -573,6 +586,9 @@ let rec source_name = function
       "dynamic<" ^ source_name capability ^ ">"
   | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
       "truthy<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ])
+    when name = nil_predicate_constraint_name ->
+      "nil-predicate<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
       "printable<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ])
@@ -666,6 +682,9 @@ let rec ocaml_name = function
   | TOcaml_app (name, [ _capability ]) when name = dynamic_constraint_name ->
       "Lg_runtime.Runtime_dynamic.t"
   | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ])
+    when name = nil_predicate_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"

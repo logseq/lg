@@ -582,6 +582,7 @@ let has_static_capability ty =
   Option.is_some (Types.protocol_constraint_info ty)
   || Option.is_some (Types.seqable_constraint_info ty)
   || Option.is_some (Types.truthy_constraint_info ty)
+  || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
 

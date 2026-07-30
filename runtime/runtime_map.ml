@@ -295,6 +295,14 @@ let get_option_default_dynamic map key default =
 let mem map key = Option.is_some (get_option map key)
 let mem_dynamic map key = Option.is_some (get_option_dynamic map key)
 
+let group_by key_fn sequence =
+  Seq.fold_left
+    (fun groups item ->
+      let key = key_fn item in
+      let items = get_default groups key Rrbvec.empty in
+      assoc groups key (Rrbvec.push_back items item))
+    empty sequence
+
 let with_record_metadata map key metadata =
   if Runtime_dynamic.is_nil metadata then dissoc map key
   else assoc map key metadata

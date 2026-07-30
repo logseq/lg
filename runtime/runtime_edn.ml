@@ -44,6 +44,22 @@ let map_entries = function
   | Lg_edn_backend.Map entries -> Array.to_seq entries
   | _ -> invalid_arg "expected an EDN map"
 
+let rec to_seq value =
+  let open Lg_edn_backend in
+  match value with
+  | Nil -> Seq.empty
+  | List values | Vector values | Set values -> Array.to_seq values
+  | Map entries ->
+      entries |> Array.to_seq
+      |> Seq.map (fun (key, value) -> Vector [| key; value |])
+  | String value ->
+      value |> String.to_seq
+      |> Seq.map (fun value -> Char (Uchar.of_char value))
+  | Json_source source -> source |> of_json_string |> to_seq
+  | Bool _ | Char _ | Symbol _ | Keyword _ | Int _ | Bigint _ | Float _
+  | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
+      invalid_arg "EDN value is not seqable"
+
 let find_keyword keyword = function
   | Lg_edn_backend.Map entries ->
       let keyword =
@@ -62,3 +78,5 @@ let find_keyword keyword = function
 let bool_value = function
   | Lg_edn_backend.Bool value -> value
   | _ -> invalid_arg "expected an EDN boolean"
+
+let is_nil = function Lg_edn_backend.Nil -> true | _ -> false

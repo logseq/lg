@@ -251,6 +251,8 @@ let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
   else if Option.is_some (Types.protocol_constraint_info expected) then true
   else if Option.is_some (Types.truthy_constraint_info expected) then true
+  else if Option.is_some (Types.nil_predicate_constraint_info expected) then
+    true
   else if Option.is_some (Types.printable_constraint_info expected) then true
   else if Option.is_some (Types.symbol_predicate_constraint_info expected) then
     true
@@ -382,6 +384,7 @@ let has_capability_constraint ty =
   Types.is_dynamic ty
   || Option.is_some (Types.protocol_constraint_info ty)
   || Option.is_some (Types.truthy_constraint_info ty)
+  || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
@@ -426,6 +429,14 @@ let constrained_identifier_expression name ty =
                     build value_ty;
                   ]
             | None -> (
+                match Types.nil_predicate_constraint_info ty with
+                | Some value_ty ->
+                    Semantic_ir.Tuple
+                      [
+                        Semantic_ir.Ident (name ^ "__nil");
+                        build value_ty;
+                      ]
+                | None -> (
                 match Types.printable_constraint_info ty with
                 | Some value_ty ->
                     Semantic_ir.Tuple
@@ -464,7 +475,7 @@ let constrained_identifier_expression name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.Ident name))))))
+            | _ -> Semantic_ir.Ident name)))))))
   in
   build ty
 
@@ -489,6 +500,14 @@ let constrained_identifier_pattern name ty =
                     build value_ty;
                   ]
             | None -> (
+                match Types.nil_predicate_constraint_info ty with
+                | Some value_ty ->
+                    Semantic_ir.PTuple
+                      [
+                        Semantic_ir.PVar (name ^ "__nil");
+                        build value_ty;
+                      ]
+                | None -> (
                 match Types.printable_constraint_info ty with
                 | Some value_ty ->
                     Semantic_ir.PTuple
@@ -527,7 +546,7 @@ let constrained_identifier_pattern name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.PVar name))))))
+            | _ -> Semantic_ir.PVar name)))))))
   in
   build ty
 
@@ -549,6 +568,11 @@ let rec constrained_value_expression ty expression =
           constrained_value_expression value_ty
             (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
       | None -> (
+          match Types.nil_predicate_constraint_info ty with
+          | Some value_ty ->
+              constrained_value_expression value_ty
+                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+          | None -> (
           match Types.printable_constraint_info ty with
           | Some value_ty ->
               constrained_value_expression value_ty
@@ -572,7 +596,7 @@ let rec constrained_value_expression ty expression =
              || constraint_name = Types.optional_sequential_constraint_name ->
           constrained_value_expression value_ty
             (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
-      | _ -> expression)))))
+      | _ -> expression))))))
 
 let constrained_argument_value argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -917,6 +941,32 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
             Expression_support.truthiness_expression witness_value_ty value )
+      in
+      Result.map
+        (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+        (pack_constrained_value env value_ty argument)
+  | expected, actual
+    when Option.is_some (Types.nil_predicate_constraint_info expected)
+         && Option.is_some (Types.nil_predicate_constraint_info actual) ->
+      Ok (constrained_argument_expression argument)
+  | expected, _
+    when Option.is_some (Types.nil_predicate_constraint_info expected) ->
+      let value_ty =
+        Types.nil_predicate_constraint_info expected |> Option.get
+      in
+      let witness_value_ty =
+        match value_ty with
+        | TUnknown | TMeta _ | TVar _ ->
+            Types.constraint_value_type argument.ty
+        | ty -> ty
+      in
+      let value_name = "__lg_nil_predicate_value" in
+      let value = Semantic_ir.Ident value_name in
+      let witness =
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar value_name ],
+            Expression_support.nil_predicate_expression witness_value_ty value
+          )
       in
       Result.map
         (fun packed -> Semantic_ir.Tuple [ witness; packed ])
@@ -9847,16 +9897,13 @@ let create ~compile_expr =
                       | TUnknown | TMeta _ | TVar _ -> parameter_ty
                       | ty -> ty
                     in
-                    let item =
-                      typed_ir item_ty (Semantic_ir.Ident item_name)
-                    in
-                    let key_name = "__lg_group_by_key" in
-                    let key = typed_ir key_ty (Semantic_ir.Ident key_name) in
-                    let dynamic_ty = Types.dynamic_constraint TUnknown in
                     let adapted_key_function =
                       if Types.is_dynamic parameter_ty
                          && not (Types.is_dynamic item_ty)
                       then
+                        let item =
+                          typed_ir item_ty (Semantic_ir.Ident item_name)
+                        in
                         Result.map
                           (fun packed_item ->
                             Semantic_ir.Fun
@@ -9868,30 +9915,16 @@ let create ~compile_expr =
                           (pack_dynamic_value env parameter_ty item)
                       else Ok key_function.semantic_expr
                     in
-                    match
-                       ( adapted_key_function,
-                         pack_dynamic_value env dynamic_ty key,
-                         pack_dynamic_value env dynamic_ty item )
-                     with
-                    | (Error _ as error), _, _ -> error
-                    | _, (Error _ as error), _ -> error
-                    | _, _, (Error _ as error) -> error
-                    | Ok adapted_key_function, Ok packed_key, Ok packed_item ->
+                    match adapted_key_function with
+                    | Error _ as error -> error
+                    | Ok adapted_key_function ->
                         Ok
-                          (typed_ir dynamic_ty
+                          (typed_ir
+                             (Types.dynamic_map key_ty (TVector item_ty))
                              (Semantic_ir.Apply
                                 ( Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_dynamic.group_by",
-                                  [
-                                    adapted_key_function;
-                                    Semantic_ir.Fun
-                                      ([ Semantic_ir.PVar key_name ], packed_key);
-                                    Semantic_ir.Fun
-                                      ( [ constrained_identifier_pattern
-                                            item_name item_ty ],
-                                        packed_item );
-                                    sequence;
-                                  ] ))))
+                                    "Lg_runtime.Runtime_map.group_by",
+                                  [ adapted_key_function; sequence ] ))))
                 | Ok { ty = TFn _; _ } ->
                     Error.error
                       "group-by function type does not match collection"

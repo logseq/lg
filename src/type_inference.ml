@@ -3823,8 +3823,22 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (add_record_field_constraint name keyword (TRef value_ty)
                      params)
                   (fun params -> infer_form params value)))
-    | FList [ FSymbol ("nil?" | "some?"); FSymbol value ] ->
-        constrain_symbol (TOcaml_app ("option", [ TUnknown ])) params value
+    | FList [ FSymbol ("nil?" | "some?"); value ] ->
+        let inferred_ty = inferred_form_type params value in
+        let expected_ty =
+          match inferred_ty with
+          | TNullable ((TUnknown | TMeta _ | TVar _) as payload_ty) ->
+              TNullable (Types.nil_predicate_constraint payload_ty)
+          | TOcaml_app
+              ("option", [ (TUnknown | TMeta _ | TVar _) as payload_ty ]) ->
+              TOcaml_app
+                ("option", [ Types.nil_predicate_constraint payload_ty ])
+          | TUnknown -> Types.nil_predicate_constraint (Type_solver.fresh ())
+          | (TMeta _ | TVar _) as value_ty ->
+              Types.nil_predicate_constraint value_ty
+          | ty -> ty
+        in
+        infer_expected expected_ty params value
     | FList [ FSymbol "count"; collection ] -> (
         match collection with
         | FSymbol name -> constrain_seqable TUnknown params name

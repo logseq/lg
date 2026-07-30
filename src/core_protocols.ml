@@ -71,6 +71,17 @@ let add_seqable receiver ocaml_name registry =
     registry
   |> add_or_fail
 
+let add_edn_seqable registry =
+  let value_ty = TOcaml "Lg_edn_backend.t" in
+  let binding =
+    Types.binding ~protocol_id:seqable_id "Lg_runtime.Runtime_edn.to_seq"
+      (TFn ([ value_ty ], TSeq value_ty))
+  in
+  Protocol_registry.add_implementation seqable_id seq_method_id
+    (Receiver_id.Host_receiver "Lg_edn_backend.t")
+    binding registry
+  |> add_or_fail
+
 let declare_reducible registry =
   Protocol_registry.declare reducible_id
     [
@@ -312,6 +323,7 @@ let initial_registry =
        "Lg_runtime.Runtime_seq.of_host_seq"
   |> add_seqable (Receiver_id.Host_receiver "Seq")
        "Lg_runtime.Runtime_seq.of_host_seq_alias"
+  |> add_edn_seqable
   |> declare_reducible
   |> add_reducible Receiver_id.List_receiver "Lg.Core_protocols.reduce_list"
   |> add_reducible Receiver_id.Vector_receiver "Lg.Core_protocols.reduce_vector"

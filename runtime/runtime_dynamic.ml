@@ -1025,20 +1025,6 @@ let count_value value =
 let hash_unordered_coll value =
   value |> to_seq |> Seq.map hash |> Runtime_hash.hash_unordered
 
-let group_by key_fn pack_key pack_item sequence =
-  Seq.fold_left
-    (fun groups item ->
-      let key = pack_key (key_fn item) in
-      let item = pack_item item in
-      let values =
-        match get groups key with
-        | { payload = Nil; _ } -> Rrbvec.empty
-        | { payload = Vector values; _ } -> values
-        | _ -> invalid_arg "group-by value is not a vector"
-      in
-      assoc groups key (vector (Rrbvec.push_back values item)))
-    (map []) sequence
-
 let as_transient value =
   match value.payload with
   | Vector _ | Set _ | Map _ -> value

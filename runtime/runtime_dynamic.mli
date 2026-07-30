@@ -167,7 +167,6 @@ val identical : t -> t -> bool
 val count_value : t -> int
 val hash : t -> int
 val hash_unordered_coll : t -> int
-val group_by : ('a -> 'b) -> ('b -> t) -> ('a -> t) -> 'a Seq.t -> t
 val as_transient : t -> t
 val persistent : t -> t
 val conj_bang : t -> t -> t

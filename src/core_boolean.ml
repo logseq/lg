@@ -111,71 +111,11 @@ let compile_nil_predicate name args expected_nil =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
+      let is_nil =
+        Expression_support.nil_predicate_expression arg.ty arg.semantic_expr
+      in
       let expression =
-        match arg.ty with
-        | TNil ->
-            Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool expected_nil ]
-        | TNullable _ ->
-            Semantic_ir.Match
-              ( arg.semantic_expr,
-                [ ( Semantic_ir.PConstructor ("None", None),
-                    Semantic_ir.Bool expected_nil );
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some Semantic_ir.PAny),
-                    Semantic_ir.Bool (not expected_nil) );
-                ] )
-        | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
-            Semantic_ir.Match
-              ( arg.semantic_expr,
-                [ ( Semantic_ir.PConstructor ("None", None),
-                    Semantic_ir.Bool expected_nil );
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some Semantic_ir.PAny),
-                    Semantic_ir.Bool (not expected_nil) );
-                ] )
-        | ty
-          when (match Types.seqable_constraint_info ty with
-               | Some
-                   ( (`Optional | `Optional_sequential),
-                     _,
-                     (TNullable _ | TOcaml_app ("option", [ _ ])) ) ->
-                   true
-               | _ -> false) ->
-            let stored_value =
-              match Semantic_ir.unlocated arg.semantic_expr with
-              | Semantic_ir.Ident _ -> arg.semantic_expr
-              | _ ->
-                  Semantic_ir.Apply
-                    (Semantic_ir.Ident "snd", [ arg.semantic_expr ])
-            in
-            Semantic_ir.Match
-              ( stored_value,
-                [
-                  ( Semantic_ir.PConstructor ("None", None),
-                    Semantic_ir.Bool expected_nil );
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some Semantic_ir.PAny),
-                    Semantic_ir.Bool (not expected_nil) );
-                ] )
-        | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
-            let is_empty =
-              Semantic_ir.Apply
-                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
-                  [ arg.semantic_expr ] )
-            in
-            if expected_nil then is_empty
-            else Semantic_ir.Prefix ("not", is_empty)
-        | ty when Types.is_dynamic ty ->
-            let is_nil =
-              Semantic_ir.Apply
-                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.is_nil",
-                  [ arg.semantic_expr ] )
-            in
-            if expected_nil then is_nil
-            else Semantic_ir.Prefix ("not", is_nil)
-        | _ ->
-            Semantic_ir.Sequence
-              [ arg.semantic_expr; Semantic_ir.Bool (not expected_nil) ]
+        if expected_nil then is_nil else Semantic_ir.Prefix ("not", is_nil)
       in
       Ok (typed_ir TBool expression)
 

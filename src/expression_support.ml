@@ -95,6 +95,64 @@ let rec truthiness_expression ty expression =
           ] )
   | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
 
+let rec nil_predicate_expression ty expression =
+  match Types.nil_predicate_constraint_info ty with
+  | Some _ -> (
+      match Semantic_ir.unlocated expression with
+      | Semantic_ir.Ident name ->
+          Semantic_ir.Apply
+            (Semantic_ir.Ident (name ^ "__nil"), [ expression ])
+      | _ ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Apply
+                (Semantic_ir.Ident "fst", [ expression ]),
+              [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]) ] ))
+  | None -> (
+      match Types.seqable_constraint_info ty with
+      | Some ((`Optional | `Optional_sequential), _, value_ty) ->
+          let value =
+            match Semantic_ir.unlocated expression with
+            | Semantic_ir.Ident _ -> expression
+            | _ ->
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "snd", [ expression ])
+          in
+          nil_predicate_expression value_ty value
+      | Some (`Required, _, _) | None -> (
+      match ty with
+      | ty when Types.is_dynamic ty ->
+          Semantic_ir.Apply
+            (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.is_nil", [ expression ])
+      | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
+      | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
+          let value_name = "__lg_optional_nil_value" in
+          let value = Semantic_ir.Ident value_name in
+          let payload_is_nil =
+            match Types.nil_predicate_constraint_info payload_ty with
+            | Some _ ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Apply
+                      (Semantic_ir.Ident "fst", [ value ]),
+                    [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ value ]) ] )
+            | None -> nil_predicate_expression payload_ty value
+          in
+          Semantic_ir.Match
+            ( expression,
+              [
+                (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar value_name)),
+                  payload_is_nil );
+              ] )
+      | TOcaml "Lg_edn_backend.t" ->
+          Semantic_ir.Apply
+            (Semantic_ir.Ident "Lg_runtime.Runtime_edn.is_nil", [ expression ])
+      | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+              [ expression ] )
+      | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]))
+
 let condition_expression expr =
   Ok (truthiness_expression expr.ty expr.semantic_expr)
 

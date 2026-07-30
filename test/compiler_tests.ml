@@ -19524,6 +19524,10 @@ let test_group_by_infers_generic_seqable_collections () =
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    string_contains_substring native_source
+      "Lg_runtime.Runtime_dynamic.group_by"
+  then failwith "group-by must preserve static key and item types";
   assert_ocaml_runs "group_by_infers_generic_seqable_collections" "true\n"
     native_source;
   ignore
