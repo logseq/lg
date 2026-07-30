@@ -81,3 +81,16 @@ same protocol:
 Relative to the initial LG baseline, Native improved by 27.7% on `pull-one`
 and 58.0% on `pull-many`; Melange improved by 36.3% and 64.8%,
 respectively.
+
+## Init AVET extraction rerun
+
+After replacing the intermediate generic sequence used for AVET extraction
+with an order-preserving closed-array filter, `init` was rerun with the same
+protocol:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `init` | 57.0 | 86.502 | +51.8% | 104.131 | +82.7% |
+
+Relative to the initial LG baseline, Native improved by 22.3% and Melange
+improved by 41.6%.

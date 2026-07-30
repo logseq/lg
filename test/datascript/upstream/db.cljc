@@ -1529,6 +1529,33 @@
       _ source)
     source))
 
+(defn- indexed-datoms-array
+  [indexed datoms]
+  (let [length (arrays/alength datoms)]
+    (if (= length 0)
+      (arrays/empty-array)
+      (let [output
+            (arrays/make-array
+             length
+             (arrays/aget datoms 0))]
+        (loop [source-index 0
+               target-index 0]
+          (if (< source-index length)
+            (let [datom (arrays/aget datoms source-index)]
+              (if
+               (Lg_runtime.Core_set.String_set.mem
+                (datom-attr datom)
+                indexed)
+                (do
+                  (arrays/aset output target-index datom)
+                  (recur
+                   (inc source-index)
+                   (inc target-index)))
+                (recur (inc source-index) target-index)))
+            (if (= target-index length)
+              output
+              (arrays/aslice output 0 target-index))))))))
+
 (defn ^datascript.db/DB init-db-with-schema-option
   ([^:array<Datom> datoms
     ^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema]
@@ -1556,12 +1583,7 @@
         _           (arrays/asort arr cmp-datoms-aevt-quick)
         aevt        (datom-set-from-sorted-array
                      cmp-datoms-aevt arr (arrays/alength arr) opts)
-        avet-datoms (filter (fn [^Datom d]
-                           (Lg_runtime.Core_set.String_set.mem
-                              (datom-attr d)
-                              indexed))
-                           arr)
-        avet-arr    (to-array avet-datoms)
+        avet-arr    (indexed-datoms-array indexed arr)
         _           (arrays/asort avet-arr cmp-datoms-avet-quick)
         avet        (datom-set-from-sorted-array
                      cmp-datoms-avet avet-arr (arrays/alength avet-arr) opts)

@@ -209,6 +209,14 @@ expect_no_text \
   test/datascript/upstream/db.cljc \
   '^[[:space:]]*\(arrays/amap$'
 expect_text \
+  "init-db filters AVET datoms directly from the closed array" \
+  test/datascript/upstream/db.cljc \
+  '\(indexed-datoms-array indexed arr\)'
+expect_no_text \
+  "init-db does not route AVET extraction through a generic sequence" \
+  test/datascript/upstream/db.cljc \
+  'avet-datoms[[:space:]]+\(filter'
+expect_text \
   "predicate filtering precomputes relation indexes like upstream" \
   test/datascript/lg/query_v3.cljc \
   '\(-indexes relation variables\)'
