@@ -146,6 +146,22 @@ expect_no_text "serialization callbacks contain no local type hints" \
 expect_no_text "serialization closed helper returns remain inferred" \
   test/datascript/upstream/serialize.cljc \
   '^\(defn- \^[^ ]+ (freeze-keyword-value|thaw-keyword-value|freeze-attrs|serialize-eavt|datom-indexes|serialized-ref-type)$'
+expect_text \
+  "serialization attribute discovery follows the upstream AEVT slice" \
+  test/datascript/upstream/serialize.cljc \
+  '\(set/slice aevt '
+expect_no_text \
+  "serialization attribute discovery does not scan every AEVT datom" \
+  test/datascript/upstream/serialize.cljc \
+  '\(distinct'
+expect_text \
+  "serialization indexes attributes once like upstream" \
+  test/datascript/upstream/serialize.cljc \
+  'attrs-map'
+expect_no_text \
+  "serialization does not linearly search attributes per datom" \
+  test/datascript/upstream/serialize.cljc \
+  'Serialization_value\.attribute_index'
 expect_no_hints_between \
   "serialization keyword codec helpers contain no local type hints" \
   test/datascript/upstream/serialize.cljc \
@@ -158,7 +174,7 @@ expect_text \
 expect_text \
   "serialization EAVT database receiver remains concrete" \
   test/datascript/upstream/serialize.cljc \
-  '^[[:space:]]*\[\^datascript\.db/DB db encoder freeze-codec attrs\]$'
+  '^[[:space:]]*\[\^datascript\.db/DB db encoder freeze-codec attrs-map\]$'
 expect_no_hints_between \
   "serialization attribute freezer contains no local type hints" \
   test/datascript/upstream/serialize.cljc \

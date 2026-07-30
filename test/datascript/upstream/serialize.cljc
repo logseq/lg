@@ -41,13 +41,35 @@
 (defn- amap-indexed [f xs]
   (vec (map-indexed f xs)))
 
+(defn- attr-comparator
+  "Looks for a datom with an attribute exactly bigger than the given one."
+  [left right]
+  (let [left-attr (db/datom-attr left)
+        right-attr (db/datom-attr right)]
+    (cond
+      (= right-attr (keyword "")) -1
+      (<= (compare left-attr right-attr) 0) -1
+      :else 1)))
+
 (defn- all-attrs
   "All attrs in a DB, distinct, sorted"
   [^datascript.db/DB db]
-  (vec
-   (distinct
-    (map (fn [datom] (.-a datom))
-         (:aevt db)))))
+  (let [aevt (:aevt db)]
+    (if (empty? aevt)
+      []
+      (loop [attrs [(db/datom-attr (first aevt))]]
+        (let [attr (nth attrs (dec (count attrs)))
+              left (db/datom-bound
+                    None (Some attr) None None db/e0 db/tx0)
+              right (db/datom-bound
+                     None None None None db/emax db/txmax)
+              next-attr
+              (some->
+               (first (set/slice aevt left right attr-comparator))
+               db/datom-attr)]
+          (if-some [next-attr next-attr]
+            (recur (conj attrs next-attr))
+            attrs))))))
 
 (defn ^:string freeze-kw [^:keyword kw]
   (str kw))
@@ -73,14 +95,12 @@
 (defn- ^serialized-value serialize-datom
   [^:Datascript_runtime.Serialization_value.encoder encoder
    ^codec freeze-codec
-   ^:vector<string> attrs
+   attrs-map
    ^:int idx
    ^datascript.db/Datom datom]
   (db/datom-set-idx datom idx)
   (let [entity    (.-e datom)
-        attribute (Datascript_runtime.Serialization_value.attribute_index
-                   attrs
-                   (freeze-kw (.-a datom)))
+        attribute (get attrs-map (.-a datom) -1)
         value     (match freeze-codec
                     (CustomCodec freeze-fn)
                     (Datascript_runtime.Serialization_value.encode_value_with
@@ -100,20 +120,20 @@
    attrs))
 
 (defn- serialize-eavt
-  [^datascript.db/DB db encoder freeze-codec attrs]
+  [^datascript.db/DB db encoder freeze-codec attrs-map]
   (let [datoms (:eavt db)]
     (if-some [first-datom (first datoms)]
       (let [result
             (arrays/make-array
              (count datoms)
              (serialize-datom
-              encoder freeze-codec attrs 0 first-datom))]
+              encoder freeze-codec attrs-map 0 first-datom))]
         (reduce
          (fn [index datom]
            (if (> index 0)
              (arrays/aset
               result index
-              (serialize-datom encoder freeze-codec attrs index datom))
+              (serialize-datom encoder freeze-codec attrs-map index datom))
              (Stdlib.ignore 0))
            (inc index))
          0
@@ -161,9 +181,10 @@
     (Stdlib.invalid_arg
      "serializable doesn't work with databases that have :storage"))
   (let [attrs       (all-attrs db)
+        attrs-map   (zipmap attrs (range (count attrs)))
         frozen-attrs (freeze-attrs keyword-freezer attrs)
         encoder     (Datascript_runtime.Serialization_value.create_encoder)
-        eavt        (serialize-eavt db encoder freeze-codec frozen-attrs)
+        eavt        (serialize-eavt db encoder freeze-codec attrs-map)
         aevt        (datom-indexes (:aevt db))
         avet        (datom-indexes (:avet db))
         settings    (set/settings (:eavt db))
