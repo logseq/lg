@@ -245,26 +245,28 @@
    ^codec thaw-codec
    ^prepared-serialized-value prepared
    ^:int index]
-  (let [entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
+  (let [datom     (Datascript_runtime.Serialization_value.prepared_datom
                    prepared index)
+        entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
+                   datom)
         attribute (nth attrs
                        (Datascript_runtime.Serialization_value.prepared_datom_attribute
-                        prepared index))
+                        datom))
         value     (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.decode_value_with
                      thaw-fn
                      keywords
                      (Datascript_runtime.Serialization_value.prepared_datom_value
-                      prepared index))
+                      datom))
                     DefaultCodec
                     (Datascript_runtime.Serialization_value.decode_value
                      keywords
                      (Datascript_runtime.Serialization_value.prepared_datom_value
-                      prepared index)))
+                      datom)))
         tx        (+ tx0
                      (Datascript_runtime.Serialization_value.prepared_datom_tx
-                      prepared index))]
+                      datom))]
     (db/datom entity attribute value tx)))
 
 (defn- ^:array<datascript.db/Datom> deserialize-datoms

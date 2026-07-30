@@ -73,4 +73,19 @@ let () =
     failwith
       (Printf.sprintf
          "JSON preparation materialized one record per datom: %.0f bytes"
+         allocated_bytes);
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  for index = 0 to json_datom_count - 1 do
+    let datom = Serialization_value.prepared_datom prepared index in
+    ignore (Serialization_value.prepared_datom_entity datom);
+    ignore (Serialization_value.prepared_datom_attribute datom);
+    ignore (Serialization_value.prepared_datom_value datom);
+    ignore (Serialization_value.prepared_datom_tx datom)
+  done;
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 8_000_000. then
+    failwith
+      (Printf.sprintf
+         "prepared JSON datoms unpacked the same row repeatedly: %.0f bytes"
          allocated_bytes)

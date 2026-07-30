@@ -121,6 +121,12 @@ let json_array json =
   | JSONArray values -> values
   | _ -> invalid_arg "expected JSON array"
 
+let with_json_array4 json f =
+  match Js.Json.classify json with
+  | JSONArray values when Array.length values = 4 ->
+      f values.(0) values.(1) values.(2) values.(3)
+  | _ -> invalid_arg "expected JSON array of length 4"
+
 let json_int json =
   match Js.Json.classify json with
   | JSONNumber value when Float.is_integer value -> int_of_float value

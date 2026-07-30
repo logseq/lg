@@ -31,6 +31,7 @@ val json_of_string : string -> json
 val json_field : json -> string -> json
 val json_field_opt : json -> string -> json option
 val json_array : json -> json array
+val with_json_array4 : json -> (json -> json -> json -> json -> 'a) -> 'a
 val json_int : json -> int
 val json_string : json -> string
 val json_is_null : json -> bool

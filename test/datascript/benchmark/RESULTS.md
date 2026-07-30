@@ -94,3 +94,27 @@ protocol:
 
 Relative to the initial LG baseline, Native improved by 22.3% and Melange
 improved by 41.6%.
+
+## Prepared datom row rerun
+
+After extracting each prepared datom into one closed record, deserialization
+validates and unwraps each JSON row once instead of repeating the work for its
+entity, attribute, value, and transaction fields.
+
+At the full 300,000-person serialization population, the before and after
+runs used zero-duration warmup and sample windows with batch size 1. The
+benchmark harness still performs one warmup operation and five measured
+operations, reporting their median:
+
+| Runtime | Before thaw | After thaw | Change |
+| --- | ---: | ---: | ---: |
+| LG Native | 2742.932 | 2395.522 | -12.7% |
+| LG Melange | 7190.629 | 3783.929 | -47.4% |
+
+At 20,000 people, the standard 2-second warmup, five 1-second samples, and
+batch size 10 produced:
+
+| Workload | LG Native | LG Melange |
+| --- | ---: | ---: |
+| `freeze` | 111.056 | 172.646 |
+| `thaw` | 135.655 | 76.941 |

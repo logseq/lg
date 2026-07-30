@@ -121,6 +121,12 @@ let json_array = function
   | `List values -> Array.of_list values
   | _ -> invalid_arg "expected JSON array"
 
+let with_json_array4 json f =
+  match json with
+  | `List [ first; second; third; fourth ] ->
+      f first second third fourth
+  | _ -> invalid_arg "expected JSON array of length 4"
+
 let json_int = function
   | `Int value -> value
   | `Intlit value -> int_of_string value

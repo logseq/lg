@@ -690,14 +690,28 @@ let test_serialized_json_prepares_concrete_database_fields () =
     Serialization_value.prepared_attrs prepared
     = Rrbvec.of_list [ ":user/name" ]);
   assert (Serialization_value.prepared_datom_count prepared = 1);
-  assert (Serialization_value.prepared_datom_entity prepared 0 = 42);
-  assert (Serialization_value.prepared_datom_attribute prepared 0 = 0);
+  let datom = Serialization_value.prepared_datom prepared 0 in
+  assert (Serialization_value.prepared_datom_entity datom = 42);
+  assert (Serialization_value.prepared_datom_attribute datom = 0);
   assert (
-    Serialization_value.prepared_datom_value prepared 0
+    Serialization_value.prepared_datom_value datom
     = Lg_edn_backend.String "Ada");
-  assert (Serialization_value.prepared_datom_tx prepared 0 = 7);
+  assert (Serialization_value.prepared_datom_tx datom = 7);
   assert (
     Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
+
+let test_prepared_json_rejects_invalid_datom () =
+  let source =
+    {|{"count":1,"tx0":536870912,"max-eid":42,"max-tx":7,"schema":"nil","attrs":[":user/name"],"keywords":[],"eavt":[[42,0,"Ada"]],"aevt":[0],"avet":[0],"branching-factor":32,"ref-type":"weak"}|}
+  in
+  let prepared =
+    source
+    |> Lg_runtime.Runtime_edn.read_json_source
+    |> Serialization_value.prepare
+  in
+  match Serialization_value.prepared_datom prepared 0 with
+  | _ -> failwith "invalid prepared JSON datom was accepted"
+  | exception Invalid_argument _ -> ()
 
 let () =
   test_closed_values_compare_without_dynamic_boxing ();
@@ -715,6 +729,7 @@ let () =
   test_collection_items_preserve_collection_kind ();
   test_entity_refs_are_extracted_from_closed_values ();
   test_serialized_json_prepares_concrete_database_fields ();
+  test_prepared_json_rejects_invalid_datom ();
   test_lookup_refs_are_extracted_from_closed_vectors ();
   test_ref_values_are_extracted_statically ();
   test_tuple_refs_are_resolved_statically ();

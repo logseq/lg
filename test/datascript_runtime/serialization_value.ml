@@ -404,6 +404,13 @@ type prepared_datoms =
   | Prepared_edn_datoms of t array
   | Prepared_json_datoms of Lg_edn_backend.json array
 
+type prepared_datom = {
+  prepared_entity : int;
+  prepared_attribute : int;
+  prepared_value : t;
+  prepared_tx : int;
+}
+
 type prepared = {
   prepared_database_count : int;
   prepared_database_tx0 : int;
@@ -518,34 +525,33 @@ let prepared_datom_count value =
   | Prepared_edn_datoms values -> Array.length values
   | Prepared_json_datoms values -> Array.length values
 
-let prepared_json_datom_fields values index =
-  let fields = Lg_edn_backend.json_array values.(index) in
-  if Array.length fields <> 4 then invalid_arg "invalid serialized datom";
-  fields
+let prepared_json_datom entity attribute value tx =
+  {
+    prepared_entity = Lg_edn_backend.json_int entity;
+    prepared_attribute = Lg_edn_backend.json_int attribute;
+    prepared_value = Lg_edn_backend.json_to_edn value;
+    prepared_tx = Lg_edn_backend.json_int tx;
+  }
 
-let prepared_datom_int_field value index field_index =
+let prepared_datom value index =
   match value.prepared_database_datoms with
-  | Prepared_edn_datoms values ->
-      values.(index) |> datom_field field_index |> int_value
+  | Prepared_edn_datoms values -> (
+      match values.(index) with
+      | Lg_edn_backend.Vector fields when Array.length fields = 4 ->
+          {
+            prepared_entity = int_value fields.(0);
+            prepared_attribute = int_value fields.(1);
+            prepared_value = fields.(2);
+            prepared_tx = int_value fields.(3);
+          }
+      | _ -> invalid_arg "invalid serialized datom")
   | Prepared_json_datoms values ->
-      prepared_json_datom_fields values index
-      |> fun fields -> Lg_edn_backend.json_int fields.(field_index)
+      Lg_edn_backend.with_json_array4 values.(index) prepared_json_datom
 
-let prepared_datom_entity value index =
-  prepared_datom_int_field value index 0
-
-let prepared_datom_attribute value index =
-  prepared_datom_int_field value index 1
-
-let prepared_datom_value value index =
-  match value.prepared_database_datoms with
-  | Prepared_edn_datoms values -> datom_value values.(index)
-  | Prepared_json_datoms values ->
-      prepared_json_datom_fields values index
-      |> fun fields -> Lg_edn_backend.json_to_edn fields.(2)
-
-let prepared_datom_tx value index =
-  prepared_datom_int_field value index 3
+let prepared_datom_entity value = value.prepared_entity
+let prepared_datom_attribute value = value.prepared_attribute
+let prepared_datom_value value = value.prepared_value
+let prepared_datom_tx value = value.prepared_tx
 
 let schema_to_edn = function
   | None -> Lg_edn_backend.Nil
