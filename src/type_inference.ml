@@ -1360,6 +1360,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
+  let lookup_loop_initializer_type =
+    let lookup = lookup_function_ty in
+    fun name ->
+      match lookup name with
+      | Ok _ as result -> result
+      | Error _ as error when String.ends_with ~suffix:"." name ->
+          let type_name = String.sub name 0 (String.length name - 1) in
+          (match
+             resolve_named_record (TOcaml ("__lg_record:" ^ type_name))
+           with
+          | TNamed_record record ->
+              Ok
+                (TFn
+                   ( List.map
+                       (fun (field : field) -> field.ty)
+                       (Types.record_constructor_fields record.fields),
+                     TNamed_record record ))
+          | _ -> error)
+      | Error _ as error -> error
+  in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
   let with_branch inference =
@@ -5383,10 +5403,18 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind
               (infer_all params (List.map snd bindings))
               (fun params ->
+            let initializer_type value =
+              match inferred_form_type params value with
+              | TUnknown ->
+                  inferred_call_return_type
+                    ~lookup_function_ty:lookup_loop_initializer_type params
+                    value
+              | ty -> ty
+            in
             let local_params =
               bindings
               |> List.map (fun (local, value) ->
-                     let ty = inferred_form_type params value in
+                     let ty = initializer_type value in
                      let ty =
                        if Types.equal ty TUnknown then
                          fresh_type_variable
@@ -5512,6 +5540,28 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      (fun result (local, value) ->
                        match (result, value) with
                        | (Error _ as error), _ -> error
+                       | ( Ok params,
+                           FList
+                             [
+                               FSymbol field_access;
+                               FSymbol receiver;
+                             ] )
+                         when String.starts_with ~prefix:".-" field_access
+                              && string_mem_assoc receiver params ->
+                           let expected =
+                             string_assoc_opt local inferred
+                             |> Option.value ~default:TUnknown
+                           in
+                           let keyword =
+                             ":"
+                             ^ String.sub field_access 2
+                                 (String.length field_access - 2)
+                           in
+                           (match expected with
+                           | TUnknown | TMeta _ | TVar _ -> Ok params
+                           | _ ->
+                               add_record_field_constraint receiver keyword
+                                 expected params)
                        | Ok params, FSymbol source
                          when string_mem_assoc source params ->
                            let local_ty =
