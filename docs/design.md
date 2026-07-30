@@ -313,6 +313,12 @@ The currently accepted measured representation optimizations are narrow:
   result rows when no transaction constraint is present. The slice bounds,
   comparator, datom order, added filtering, and projected columns are
   unchanged; this only avoids allocating an intermediate datom vector.
+- Bound-entity query clauses classify value and transaction pattern positions
+  once before reducing input rows. An unbound variable or missing position
+  cannot constrain a slice, so it does not repeat relation-attribute lookups for
+  every row. Constants and already-bound variables retain the same lookup and
+  reference-resolution path. This reduced the Melange `q2` median from
+  4.401 ms to 4.275 ms against the 4.3 ms upstream gate.
 - A single-row scalar query input that is not part of the requested result may
   be substituted into patterns and predicates. Multi-row relations are never
   elided, even when all rows happen to contain equal values, because their

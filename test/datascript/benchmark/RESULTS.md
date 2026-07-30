@@ -293,3 +293,22 @@ were also run in three isolated processes with the standard protocol.
 
 Melange is now faster than the recorded upstream matrix on 25 of 28 workloads.
 The remaining failures are `q2`, `pull-one`, and `pull-many`.
+
+## Bound-pattern constraint classification rerun
+
+The `q2` performance gate was added before the implementation and failed at a
+4.401 ms median against the recorded 4.3 ms upstream threshold. A first
+single-allocation row-construction attempt regressed to 4.962 ms and was
+removed.
+
+The retained implementation classifies value and transaction pattern positions
+once before reducing the bound-entity input rows. Unbound variables and missing
+positions no longer repeat relation-attribute lookups that can only return no
+constraint. Constants and already-bound variables retain the same resolution
+path, and the EAVT slice bounds, comparator, datom order, projected columns, and
+multiplicity are unchanged.
+
+The same three-isolated-process gate passed with a 4.275 ms `q2` median.
+`qpred2` remained below its gate at 7.719 ms. Melange is now faster than the
+recorded upstream matrix on 26 of 28 workloads; the remaining failures are
+`pull-one` and `pull-many`.

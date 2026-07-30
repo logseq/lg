@@ -1107,6 +1107,17 @@
         None)
       None)))
 
+(defn- pattern-row-value-present? [relation element]
+  (match element
+    (Some (PatternConstant _)) true
+    (Some (PatternVariable _))
+    (if-some [pattern-element element]
+      (if-some [variable (pattern-variable-name pattern-element)]
+        (contains? (relation-attrs relation) variable)
+        false)
+      false)
+    _ false))
+
 (defn unbound-pattern-projection [relation pattern]
   (let [attrs (relation-attrs relation)]
     (loop [remaining pattern
@@ -1145,6 +1156,12 @@
                  0)
                 value-element (pattern-element-at pattern 2)
                 tx-element (pattern-element-at pattern 3)
+                value-present?
+                (pattern-row-value-present?
+                 input-relation value-element)
+                tx-present?
+                (pattern-row-value-present?
+                 input-relation tx-element)
                 added
                 (match
                  (pattern-added-constraint
@@ -1170,11 +1187,15 @@
                              (resolve-pattern-value-constraint
                               database
                               (Some attr)
-                              (pattern-row-value
-                               input-relation row value-element))
+                              (if value-present?
+                                (pattern-row-value
+                                 input-relation row value-element)
+                                None))
                              tx-value
-                             (pattern-row-value
-                              input-relation row tx-element)
+                             (if tx-present?
+                               (pattern-row-value
+                                input-relation row tx-element)
+                               None)
                              tx
                              (if-some [value tx-value]
                                (if-some
