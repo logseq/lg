@@ -1839,6 +1839,9 @@
     (data-value-truthy? value)
     true))
 
+(signature datascript.lg.query-types/differ-predicate-matches?
+  :fn<array<result>;vector<predicate-operand>;bool>)
+
 (defn- differ-predicate-matches?
   [row operands]
   (let [operand-count (count operands)

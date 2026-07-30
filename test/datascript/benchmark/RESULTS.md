@@ -118,3 +118,18 @@ batch size 10 produced:
 | --- | ---: | ---: |
 | `freeze` | 111.056 | 172.646 |
 | `thaw` | 135.655 | 76.941 |
+
+## Recursive rule guard rerun
+
+After preserving the closed predicate-operand vector while checking recursive
+rule guards, the wide recursive rule workloads were rerun with the baseline
+protocol:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `rules-wide-5x3` | 4.5 | 2.210 | -50.9% | 3.402 | -24.4% |
+| `rules-wide-7x3` | 61.3 | 33.661 | -45.1% | 51.560 | -15.9% |
+
+Relative to the initial LG baseline, Native improved by 37.2% on
+`rules-wide-5x3` and 39.1% on `rules-wide-7x3`; Melange improved by 51.4% and
+54.1%, respectively.
