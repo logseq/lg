@@ -1254,13 +1254,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       | _ -> Error.error "map-indexed expects function and collection"
     and compile_filterv scope env arg_forms =
       match arg_forms with
-    | [ fn_form; collection_form ] -> (
-        match compile_expr scope env collection_form with
-        | Error _ as error -> error
-        | Ok collection -> (
-            match collection_to_list_expr env collection with
-            | Error _ -> Error.error "filterv expects a collection"
-            | Ok (inner, list_expr) -> (
+      | [ fn_form; collection_form ] -> (
+          match compile_expr scope env collection_form with
+          | Error _ as error -> error
+          | Ok collection ->
+              let compile_predicate inner build_result =
                 match
                   compile_function_arg_for_collection scope env inner fn_form
                 with
@@ -1278,12 +1276,24 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                              ~expected:param_ty ~actual:inner ->
                         Ok
                           (typed_ir (TVector inner)
-                             (apply "Rrbvec.of_list"
-                                [ apply "List.filter" [ semantic_expr; list_expr ] ]))
+                             (build_result semantic_expr))
                     | Ok { ty = TFn _; _ } ->
                         Error.error
                           "filterv expects a predicate matching collection elements"
-                    | Ok _ -> Error.error "filterv expects a function"))))
+                    | Ok _ -> Error.error "filterv expects a function")
+              in
+              (match collection.ty with
+              | TVector inner ->
+                  compile_predicate inner (fun predicate ->
+                      apply "Rrbvec.filter"
+                        [ predicate; collection.semantic_expr ])
+              | _ -> (
+                  match collection_to_list_expr env collection with
+                  | Error _ -> Error.error "filterv expects a collection"
+                  | Ok (inner, list_expr) ->
+                      compile_predicate inner (fun predicate ->
+                          apply "Rrbvec.of_list"
+                            [ apply "List.filter" [ predicate; list_expr ] ]))))
       | _ -> Error.error "filterv expects function and collection"
   and compile_multi_map scope env ~vector fn_form collection_forms =
     let rec compile_collections compiled = function
@@ -1421,21 +1431,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                             when Types.assignable ~policy:Host_boundary
                                    ~expected:param_ty ~actual:inner ->
                               let mapped =
-                                match
-                                  (collection.ty, Env.target env)
-                                with
-                                | TVector _, Target.Melange ->
-                                    apply "Rrbvec.of_array"
-                                      [
-                                        apply "Array.map"
-                                          [
-                                            fn.semantic_expr;
-                                            apply "Rrbvec.to_array"
-                                              [ collection.semantic_expr ];
-                                          ];
-                                      ]
-                                | TVector _, (Target.Native | Target.Js_of_ocaml)
-                                  ->
+                                match collection.ty with
+                                | TVector _ ->
                                     apply "Rrbvec.map"
                                       [ fn.semantic_expr; collection.semantic_expr ]
                                 | _ ->

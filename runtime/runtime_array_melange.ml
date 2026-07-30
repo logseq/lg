@@ -9,7 +9,7 @@ external sort_raw : 'a array -> ('a -> 'a -> int) -> 'a array = "sort"
   [@@mel.send]
 
 let sort values compare =
-  ignore (sort_raw values (fun left right -> call2 compare 0 left right))
+  ignore (sort_raw values (fun left right -> compare left right))
 
 external reduce_raw :
   'a array -> ('b -> 'a -> int -> 'a array -> 'b) -> 'b -> 'b = "reduce"

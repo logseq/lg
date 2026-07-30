@@ -3,6 +3,7 @@ module Query_value = Datascript_runtime.Query_value
 module Serialization_value = Datascript_runtime.Serialization_value
 module Storage_backend = Datascript_runtime.Storage_backend
 module Storage_value = Datascript_runtime.Storage_value
+module Runtime_map = Lg_runtime.Runtime_map
 
 let test_closed_values_compare_without_dynamic_boxing () =
   assert (Value.compare (Value.Int 42) (Value.Float 42.) = 0);
@@ -406,6 +407,43 @@ let test_query_rows_use_static_integer_indexes () =
   assert (Rrbvec.length products = 2);
   assert (Rrbvec.nth products 0 = Query_value.concat_rows left right)
 
+let test_query_distinct_entity_rows_avoid_boxed_hash_keys () =
+  let row_count = 100_000 in
+  let rows =
+    Array.init row_count (fun entity -> [| Query_value.entity entity |])
+    |> Array.to_list |> Rrbvec.of_list
+  in
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let distinct = Query_value.distinct_rows rows in
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  assert (Rrbvec.length distinct = row_count);
+  if allocated_bytes >= 33_500_000. then
+    failwith
+      (Printf.sprintf
+         "query distinct rows allocated boxed hash keys: %.0f bytes"
+         allocated_bytes)
+
+let test_static_map_assoc_hashes_each_key_once () =
+  let hash_calls = ref 0 in
+  let operations : string Runtime_map.operations =
+    {
+      hash =
+        (fun value ->
+          incr hash_calls;
+          Hashtbl.hash value);
+      equal = String.equal;
+    }
+  in
+  let first = Runtime_map.assoc_by operations Runtime_map.empty "first" 1 in
+  assert (!hash_calls = 1);
+  let second = Runtime_map.assoc_by operations first "second" 2 in
+  assert (!hash_calls = 2);
+  let updated = Runtime_map.assoc_by operations second "first" 3 in
+  assert (!hash_calls = 3);
+  assert (Runtime_map.get_option_by operations updated "first" = Some 3);
+  assert (!hash_calls = 4)
+
 let test_query_hash_join_uses_closed_result_keys () =
   let empty_databases = Lg_runtime.Lg_map.empty in
   let left =
@@ -738,6 +776,8 @@ let () =
   test_query_sources_and_results_are_closed_sum_types ();
   test_query_relations_and_contexts_keep_static_fields ();
   test_query_rows_use_static_integer_indexes ();
+  test_query_distinct_entity_rows_avoid_boxed_hash_keys ();
+  test_static_map_assoc_hashes_each_key_once ();
   test_query_hash_join_uses_closed_result_keys ();
   test_query_inputs_use_closed_recursive_binding_values ();
   test_storage_payloads_keep_integer_addresses_and_closed_values ();

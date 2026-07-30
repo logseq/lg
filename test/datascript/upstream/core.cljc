@@ -271,6 +271,16 @@
        :doc "Returns `true` if the given value is a datom, `false` otherwise."}
   datom? db/datom?)
 
+(defn- ^datascript.db/DB init-db-array-with-options
+  [^:array<datascript.db/Datom> datoms
+   ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
+   ^datascript.db/database-options opts]
+  (let [opts (storage/maybe-adapt-storage opts)
+        database (db/init-db datoms schema opts)]
+    (when-some [backend (db/options-storage opts)]
+      (Stdlib.ignore (storage/store database backend)))
+    database))
+
 (defn ^datascript.db/DB init-db-closed
   "Low-level fn for creating database quickly from a trusted sequence of datoms.
    Does no validation on inputs, so `datoms` must be well-formed and match schema.
@@ -284,11 +294,7 @@
   ([^:seqable<datascript.db/Datom> datoms
     ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
     ^datascript.db/database-options opts]
-   (let [opts (storage/maybe-adapt-storage opts)
-         database (db/init-db (to-array datoms) schema opts)]
-     (when-some [backend (db/options-storage opts)]
-       (Stdlib.ignore (storage/store database backend)))
-     database)))
+   (init-db-array-with-options (to-array datoms) schema opts)))
 
 (defn ^datascript.db/DB init-db-invalid [^:string message]
   (Stdlib.invalid_arg message))
@@ -359,14 +365,20 @@
           'datascript.core/init-db-invalid
           (str "init-db expects list of Datoms, got " datoms))
          (if (empty? rest)
-           (list 'datascript.core/init-db-closed datoms)
-           (cons
-            'datascript.core/init-db-closed
-            (cons
-             datoms
-             (cons
+           (list
+            'datascript.db/init-db-with-schema-option
+            (list 'to-array datoms)
+            'None)
+           (if (empty? (next rest))
+             (list
+              'datascript.db/init-db
+              (list 'to-array datoms)
+              (schema-form (first rest)))
+             (list
+              'datascript.core/init-db-array-with-options
+              (list 'to-array datoms)
               (schema-form (first rest))
-              (next rest))))))))}
+              (second rest)))))))}
   ([^:seqable<datascript.db/Datom> datoms]
    (init-db-closed datoms))
   ([^:seqable<datascript.db/Datom> datoms

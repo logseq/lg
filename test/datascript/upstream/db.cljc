@@ -1523,10 +1523,16 @@
 
 (defn- indexed-datoms-array
   [indexed datoms]
-  (let [length (arrays/alength datoms)]
-    (if (= length 0)
+  (let [length (arrays/alength datoms)
+        indexed-count
+        (Lg_runtime.Core_set.String_set.cardinal indexed)]
+    (if (or (= length 0) (= indexed-count 0))
       (arrays/empty-array)
-      (let [output
+      (let [single-indexed
+            (if (= indexed-count 1)
+              (Some (Lg_runtime.Core_set.String_set.min_elt indexed))
+              None)
+            output
             (arrays/make-array
              length
              (arrays/aget datoms 0))]
@@ -1535,9 +1541,12 @@
           (if (< source-index length)
             (let [datom (arrays/aget datoms source-index)]
               (if
-               (Lg_runtime.Core_set.String_set.mem
-                (datom-attr datom)
-                indexed)
+               (match single-indexed
+                 (Some attr) (= (datom-attr datom) attr)
+                 None
+                 (Lg_runtime.Core_set.String_set.mem
+                  (datom-attr datom)
+                  indexed))
                 (do
                   (arrays/aset output target-index datom)
                   (recur
@@ -1560,15 +1569,19 @@
   (let [rschema     (rschema (merge-schema implicit-schema schema))
         indexed     (:indexed-attrs rschema)
         arr         datoms
-        _           (loop [index 0]
-                      (if (< index (arrays/alength arr))
-                        (let [source (arrays/aget arr index)
-                              normalized
-                              (normalize-init-datom rschema source)]
-                          (when-not (identical? source normalized)
-                            (arrays/aset arr index normalized))
-                          (recur (inc index)))
-                        (Stdlib.ignore 0)))
+        _           (if
+                      (Lg_runtime.Core_set.String_set.is_empty
+                       (:ref-attrs rschema))
+                      (Stdlib.ignore 0)
+                      (loop [index 0]
+                        (if (< index (arrays/alength arr))
+                          (let [source (arrays/aget arr index)
+                                normalized
+                                (normalize-init-datom rschema source)]
+                            (when-not (identical? source normalized)
+                              (arrays/aset arr index normalized))
+                            (recur (inc index)))
+                          (Stdlib.ignore 0))))
         _           (arrays/asort arr cmp-datoms-eavt-quick)
         eavt        (datom-set-from-sorted-array
                      cmp-datoms-eavt arr (arrays/alength arr) opts)

@@ -49,8 +49,7 @@ let replace_position equal key position positions =
   in
   replace [] positions
 
-let find_position_in operations index key =
-  let key_hash = operations.hash key in
+let find_position_in_hash operations index key key_hash =
   let rec find shift = function
     | Empty -> None
     | Leaf (existing_hash, positions) ->
@@ -67,8 +66,10 @@ let find_position_in operations index key =
   in
   find 0 index
 
-let insert_position operations index key position =
-  let key_hash = operations.hash key in
+let find_position_in operations index key =
+  find_position_in_hash operations index key (operations.hash key)
+
+let insert_position_hash operations index key key_hash position =
   let rec insert shift = function
     | Empty -> Leaf (key_hash, [ (key, position) ])
     | Leaf (existing_hash, positions) as unchanged ->
@@ -107,6 +108,9 @@ let insert_position operations index key position =
   in
   insert 0 index
 
+let insert_position operations index key position =
+  insert_position_hash operations index key (operations.hash key) position
+
 let find_position_in_entries operations entries key =
   let length = Rrbvec.length entries in
   let rec find index =
@@ -139,7 +143,15 @@ let find_position operations map key =
       find_position_in operations map.index key
 
 let assoc_by operations map key value =
-  match find_position operations map key with
+  let key_hash = operations.hash key in
+  let existing_position =
+    match map.index with
+    | Empty when map.size > 0 ->
+        find_position_in_entries operations map.entries key
+    | Empty | Leaf _ | Branch _ ->
+        find_position_in_hash operations map.index key key_hash
+  in
+  match existing_position with
   | Some position ->
       { map with entries = Rrbvec.set map.entries position (Some (key, value)) }
   | None ->
@@ -147,12 +159,12 @@ let assoc_by operations map key value =
       let entries = Rrbvec.push_back map.entries (Some (key, value)) in
       {
         index =
-          insert_position operations
+          insert_position_hash operations
             (match map.index with
             | Empty when map.size > 0 ->
                 index_entries operations map.entries
             | Empty | Leaf _ | Branch _ -> map.index)
-            key position;
+            key key_hash position;
         entries;
         size = map.size + 1;
       }

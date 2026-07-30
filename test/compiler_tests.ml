@@ -12239,6 +12239,70 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_to_array_copies_static_vectors_directly () =
+  let source =
+    {|
+(def values [1 2 3])
+(def copied (to-array values))
+(aset copied 0 9)
+(println (str (first values) ":" (aget copied 0)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "to_array_copies_static_vectors_directly" "1:9\n"
+    native_source;
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Array.of_seq" then
+    failwith "to-array must copy a static vector without a sequence round trip"
+
+let test_reducer_collection_types_keep_static_stringification () =
+  let source =
+    {|
+(type-record source (source-name :symbol))
+(defn source-values [source] [source])
+(signature user/name-present? :fn<vector<string>;string;bool>)
+(declare name-present?)
+(defn collect-source-names [sources]
+  (let [known ["$known"]
+        names
+    (reduce
+          (fn [names source]
+            (let [name (str (:source-name source))]
+              (if
+                (or
+                  (name-present? known name)
+                  (name-present? names name))
+                names
+                (conj names name))))
+          []
+          (mapcat source-values sources))]
+    (reduce
+      (fn [result name]
+        (if (= result "") name (str result " " name)))
+      ""
+      names)))
+(defn name-present? [names name]
+  (some? (some (fn [item] (= item name)) names)))
+(println
+  (collect-source-names
+    [(record source (source-name '$one))
+     (record source (source-name '$two))]))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reducer_collection_types_keep_static_stringification"
+    "$one $two\n" native_source;
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic.polymorphic_str"
+  then
+    failwith
+      "reducer collection elements must remain statically typed through \
+       stringification"
+
 let test_to_array_rejects_untyped_first_class_use () =
   let source =
     {|
@@ -19719,6 +19783,47 @@ let test_filterv_contextualizes_generic_seqable_items () =
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_filterv_filters_static_vectors_directly () =
+  let source =
+    {|
+(def values [1 2 3 4])
+(def filtered (filterv (fn [value] (odd? value)) values))
+(println (str (= values [1 2 3 4]) ":" (= filtered [1 3])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "filterv_filters_static_vectors_directly" "true:true\n"
+    native_source;
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if
+    (not (string_contains_substring melange_source "V.filter"))
+    || string_contains_substring melange_source "List.filter"
+  then
+    failwith
+      "filterv must filter a static vector without a list representation"
+
+let test_mapv_maps_static_vectors_directly () =
+  let source =
+    {|
+(def values [1 2 3 4])
+(def mapped (mapv (fn [value] (inc value)) values))
+(println (str (= values [1 2 3 4]) ":" (= mapped [2 3 4 5])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "mapv_maps_static_vectors_directly" "true:true\n"
+    native_source;
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if
+    (not (string_contains_substring melange_source "V.map"))
+    || string_contains_substring melange_source "Array.map"
+  then
+    failwith "mapv must map a static vector without an array representation"
 
 let test_vec_realizes_for_over_dynamic_map_entries () =
   let source =
@@ -33081,6 +33186,10 @@ let tests =
       test_ocaml_arrays_support_construction_read_and_mutation );
     ( "OCaml array primitives support polymorphic helpers",
       test_ocaml_array_primitives_support_polymorphic_helpers );
+    ( "to-array copies static vectors directly",
+      test_to_array_copies_static_vectors_directly );
+    ( "reducer collection types keep static stringification",
+      test_reducer_collection_types_keep_static_stringification );
     ( "to-array rejects untyped first-class use",
       test_to_array_rejects_untyped_first_class_use );
     ( "array arguments adapt nullable elements",
@@ -33632,6 +33741,10 @@ let tests =
       test_group_by_unpacks_generic_seqable_items );
     ( "filterv contextualizes generic seqable items",
       test_filterv_contextualizes_generic_seqable_items );
+    ( "filterv filters static vectors directly",
+      test_filterv_filters_static_vectors_directly );
+    ( "mapv maps static vectors directly",
+      test_mapv_maps_static_vectors_directly );
     ( "vec realizes for over dynamic map entries",
       test_vec_realizes_for_over_dynamic_map_entries );
     ("vals rejects heterogeneous values", test_vals_rejects_heterogeneous_values);

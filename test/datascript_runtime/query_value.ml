@@ -271,15 +271,17 @@ let equal_result left right =
   | Callable left, Callable right -> left == right
   | _ -> false
 
+let tagged_hash tag hash = ((hash lsl 5) - hash) lxor tag
+
 let hash_result = function
-  | Entity entity -> Hashtbl.hash (0, entity)
-  | Attr attribute -> Hashtbl.hash (1, attribute)
-  | Value value -> Hashtbl.hash (2, Data_value.hash value)
-  | Metadata (value, _) -> Hashtbl.hash (2, Data_value.hash value)
-  | Database database -> Hashtbl.hash (3, database)
-  | Pull value -> Hashtbl.hash (4, Data_value.hash value)
-  | Added added -> Hashtbl.hash (5, added)
-  | Callable callable -> Hashtbl.hash (6, callable)
+  | Entity entity -> tagged_hash 0 entity
+  | Attr attribute -> tagged_hash 1 (Hashtbl.hash attribute)
+  | Value value -> tagged_hash 2 (Data_value.hash value)
+  | Metadata (value, _) -> tagged_hash 2 (Data_value.hash value)
+  | Database database -> tagged_hash 3 (Hashtbl.hash database)
+  | Pull value -> tagged_hash 4 (Data_value.hash value)
+  | Added added -> tagged_hash 5 (if added then 1 else 0)
+  | Callable callable -> tagged_hash 6 (Hashtbl.hash callable)
 
 let equal_result_map left right =
   Lg_runtime.Lg_map.count left = Lg_runtime.Lg_map.count right

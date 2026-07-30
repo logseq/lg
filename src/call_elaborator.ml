@@ -6261,6 +6261,28 @@ let create ~compile_expr =
                           array with
                           semantic_expr = apply "Array.copy" [ semantic_expr ];
                         }
+        | Ok
+            [
+              ({
+                 ty = TVector element_ty;
+                 semantic_expr;
+                 _;
+               } as vector);
+            ]
+          when
+            (match Env.expected_type env with
+            | Some
+                (TArray expected_element_ty
+                | TOcaml_app ("array", [ expected_element_ty ]))
+              when not (Types.equal expected_element_ty TUnknown) ->
+                Types.equal expected_element_ty element_ty
+            | Some _ | None -> true) ->
+            Ok
+              {
+                vector with
+                ty = TArray element_ty;
+                semantic_expr = apply "Rrbvec.to_array" [ semantic_expr ];
+              }
         | Ok [ collection ] -> (
                       match
                         Collection_capability.to_seq_expr env collection
@@ -6738,7 +6760,7 @@ let create ~compile_expr =
                                 ( "Lg_runtime.Runtime_array_melange.sort",
                                   [ array; host_cmp ] )
                             | Target.Native | Target.Js_of_ocaml ->
-                                ("Array.sort", [ host_cmp; array ])
+                                ("Array.fast_sort", [ host_cmp; array ])
                           in
                           Ok
                             (typed_ir TUnit

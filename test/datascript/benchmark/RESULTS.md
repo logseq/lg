@@ -133,3 +133,98 @@ protocol:
 Relative to the initial LG baseline, Native improved by 37.2% on
 `rules-wide-5x3` and 39.1% on `rules-wide-7x3`; Melange improved by 51.4% and
 54.1%, respectively.
+
+## Complete alignment rerun
+
+The complete matrix was rerun after the static vector-to-array `init-db` path,
+Melange comparator bridge cleanup, closed-array schema filtering, prepared
+serialization records, predicate alignment, pull indexing, and recursive-rule
+guard changes. The protocol remained 20,000 people, a 2-second warmup, five
+1-second samples, batch size 10, seed 42, and one isolated process per
+workload.
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add-1` | 570.2 | 266.030 | -53.3% | 481.293 | -15.6% |
+| `add-5` | 1390.2 | 616.557 | -55.6% | 1339.648 | -3.6% |
+| `add-all` | 1805.9 | 672.352 | -62.8% | 1426.711 | -21.0% |
+| `init` | 57.0 | 44.207 | -22.4% | 40.343 | -29.2% |
+| `find-datoms` | 2.2 | 1.147 | -47.8% | 1.688 | -23.3% |
+| `find-datom` | 2.8 | 0.755 | -73.0% | 1.064 | -62.0% |
+| `retract-5` | 3283.6 | 652.667 | -80.1% | 1031.351 | -68.6% |
+| `q1` | 1.8 | 0.699 | -61.1% | 2.002 | +11.2% |
+| `q2` | 4.3 | 2.183 | -49.2% | 5.450 | +26.8% |
+| `q3` | 6.9 | 3.276 | -52.5% | 7.577 | +9.8% |
+| `q4` | 9.8 | 4.719 | -51.8% | 12.072 | +23.2% |
+| `q5-shortcircuit` | 1.1 | 0.199 | -81.9% | 1.002 | -9.0% |
+| `qpred1` | 8.1 | 5.379 | -33.6% | 13.860 | +71.1% |
+| `qpred2` | 9.7 | 6.909 | -28.8% | 18.611 | +91.9% |
+| `pull-one-entities` | 2.3 | 1.559 | -32.2% | 2.746 | +19.4% |
+| `pull-one` | 1.1 | 0.771 | -29.9% | 1.710 | +55.5% |
+| `pull-many-entities` | 6.7 | 4.157 | -37.9% | 7.378 | +10.1% |
+| `pull-many` | 1.9 | 1.601 | -15.7% | 3.402 | +79.1% |
+| `pull-wildcard` | 4.6 | 2.337 | -49.2% | 5.443 | +18.3% |
+| `rules-wide-3x3` | 0.499 | 0.173 | -65.3% | 0.375 | -24.8% |
+| `rules-wide-5x3` | 4.5 | 2.360 | -47.6% | 3.765 | -16.3% |
+| `rules-wide-7x3` | 61.3 | 37.383 | -39.0% | 65.536 | +6.9% |
+| `rules-wide-4x6` | 14.1 | 9.194 | -34.8% | 14.673 | +4.1% |
+| `rules-long-10x3` | 1.7 | 0.472 | -72.2% | 1.111 | -34.7% |
+| `rules-long-30x3` | 16.7 | 3.701 | -77.8% | 8.682 | -48.0% |
+| `rules-long-30x5` | 21.2 | 5.036 | -76.2% | 11.246 | -47.0% |
+| `freeze` | 854.6 | 130.824 | -84.7% | 206.503 | -75.8% |
+| `thaw` | 1217.7 | 152.317 | -87.5% | 102.098 | -91.6% |
+
+The first Melange `add-5` measurement was 1424.049 ms, within 3% of
+upstream. Five additional isolated runs measured 1236.189, 1357.726,
+1313.478, 1339.648, and 1340.776 ms. Their 1339.648 ms median is 3.6% faster
+than upstream and is used in the table.
+
+Native is faster than upstream on all 28 tracked workloads. Melange is faster
+on 15 and slower on 13. The remaining acceptance failures are `q1` through
+`q4`, both predicate queries, all five pull workloads, and
+`rules-wide-7x3`/`rules-wide-4x6`.
+
+## Direct static vector and closed-hash rerun
+
+Static `filterv` now filters an RRB vector directly, and static `mapv` uses
+`Rrbvec.map` on both Native and Melange instead of a Melange-only
+vector-to-array round trip. Query result hashing now combines closed-sum tags
+with their already-computed payload hashes, and persistent-map insertion
+hashes a new key once instead of repeating the hash during insertion.
+
+The close and previously failing Melange workloads were rerun in isolated
+processes with the same 20,000-person protocol. Three independent query and
+pull runs were used for the medians below.
+
+| Workload | Upstream JS | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: |
+| `q1` | 1.8 | 1.589 | -11.7% |
+| `q2` | 4.3 | 4.468 | +3.9% |
+| `q3` | 6.9 | 6.217 | -9.9% |
+| `q4` | 9.8 | 9.284 | -5.3% |
+| `qpred1` | 8.1 | 7.479 | -7.7% |
+| `qpred2` | 9.7 | 12.072 | +24.5% |
+| `pull-one-entities` | 2.3 | 2.207 | -4.0% |
+| `pull-one` | 1.1 | 1.396 | +26.9% |
+| `pull-many-entities` | 6.7 | 5.969 | -10.9% |
+| `pull-many` | 1.9 | 2.510 | +32.1% |
+| `pull-wildcard` | 4.6 | 3.972 | -13.7% |
+| `rules-wide-3x3` | 0.499 | 0.338 | -32.3% |
+| `rules-wide-5x3` | 4.5 | 3.413 | -24.2% |
+| `rules-wide-7x3` | 61.3 | 52.383 | -14.5% |
+| `rules-wide-4x6` | 14.1 | 12.519 | -11.2% |
+| `rules-long-10x3` | 1.7 | 1.005 | -40.9% |
+| `rules-long-30x3` | 16.7 | 8.599 | -48.5% |
+| `rules-long-30x5` | 21.2 | 10.036 | -52.7% |
+| `freeze` | 854.6 | 166.127 | -80.6% |
+| `thaw` | 1217.7 | 74.242 | -93.9% |
+
+The serialization rows use `LG_BENCH_SERIALIZE_PEOPLE=20000`, matching the
+20,000-person matrix protocol. A diagnostic run without that override used
+the runner's intentional 300,000-person default and is not included here.
+
+Against the recorded pinned-upstream matrix, Melange is now faster on 24 of
+28 workloads. The remaining failures are `q2`, `qpred2`, `pull-one`, and
+`pull-many`. A same-host rerun of the pinned upstream runner measured medians
+of 3.7, 7.7, 1.0, and 1.6 ms respectively, confirming that all four remain
+real optimization gaps rather than rounded-baseline noise.

@@ -982,6 +982,7 @@ let rec inferred_form_type params = function
           TFn (parameter_tys, TOcaml "int")
       | _ -> TUnknown)
   | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
+  | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
   | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
@@ -2612,14 +2613,44 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (FSymbol "fn"
         :: FVector [ FSymbol accumulator; FSymbol item ]
         :: body_forms) -> (
+        let rec reducer_returned_vector_type params = function
+          | FList
+              (FSymbol ("let" | "let*") :: FVector bindings :: body_forms) ->
+              let rec infer_bindings params = function
+                | FSymbol name :: value :: rest ->
+                    let ty = inferred_form_type params value in
+                    infer_bindings
+                      ((name, ty) :: string_remove_assoc name params)
+                      rest
+                | _ :: _ :: rest -> infer_bindings params rest
+                | _ -> params
+              in
+              let body_params = infer_bindings params bindings in
+              (match List.rev body_forms with
+              | result :: _ -> reducer_returned_vector_type body_params result
+              | [] -> None)
+          | form -> returned_vector_type params form
+        in
         match
           infer_all
             [ (accumulator, accumulator_ty); (item, TUnknown) ]
             body_forms
          with
         | Ok inferred ->
-            ( string_assoc_opt accumulator inferred
-              |> Option.value ~default:accumulator_ty,
+            let inferred_accumulator_ty =
+              string_assoc_opt accumulator inferred
+              |> Option.value ~default:accumulator_ty
+            in
+            let inferred_accumulator_ty =
+              match List.rev body_forms with
+              | result :: _ -> (
+                  match reducer_returned_vector_type inferred result with
+                  | Some returned_ty ->
+                      refine_type inferred_accumulator_ty returned_ty
+                  | None -> inferred_accumulator_ty)
+              | [] -> inferred_accumulator_ty
+            in
+            ( inferred_accumulator_ty,
               string_assoc_opt item inferred |> Option.value ~default:TUnknown
             )
         | Error _ -> (accumulator_ty, TUnknown))
@@ -2736,7 +2767,21 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _ -> TUnknown
         in
         let inferred_initializer_type scope_params value =
-          match inferred_form_type scope_params value with
+          let inferred_ty =
+            match value with
+            | FList [ FSymbol "reduce"; reducer; init; _collection ] ->
+                let accumulator_ty =
+                  returned_vector_type scope_params init
+                  |> Option.value
+                       ~default:(inferred_form_type scope_params init)
+                in
+                let inferred_accumulator_ty, _ =
+                  inferred_reducer_types accumulator_ty reducer
+                in
+                refine_type accumulator_ty inferred_accumulator_ty
+            | _ -> inferred_form_type scope_params value
+          in
+          match inferred_ty with
           | TUnknown -> (
               match value with
               | FList (FSymbol function_name :: arguments) -> (
