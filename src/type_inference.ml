@@ -1009,6 +1009,13 @@ let rec inferred_form_type params = function
         when List.for_all (fun ty -> Types.equal first ty) rest ->
           TList first
       | _ -> TList (Types.dynamic_constraint TUnknown))
+  | FList (FSymbol "hash-set" :: values) -> (
+      match List.map (inferred_form_type params) values with
+      | [] -> TSet TUnknown
+      | first :: rest
+        when List.for_all (fun ty -> Types.equal first ty) rest ->
+          TSet first
+      | _ -> TSet (Types.dynamic_constraint TUnknown))
   | FList [ FSymbol operation; _ ]
     when String.equal operation "Array.length"
          || has_source_name operation "alength" ->
@@ -1123,6 +1130,24 @@ let rec inferred_form_type params = function
       | TSet element_ty -> TSet (refine_element element_ty)
       | TSeq element_ty -> TSeq (refine_element element_ty)
       | target_ty -> target_ty)
+  | FList
+      [
+        FSymbol ("if-some" | "if-let");
+        FVector [ FSymbol binding; option_form ];
+        then_form;
+        else_form;
+      ] ->
+      let payload_ty =
+        match inferred_form_type params option_form with
+        | TNullable payload | TOcaml_app ("option", [ payload ]) -> payload
+        | _ -> TUnknown
+      in
+      let branch_params =
+        (binding, payload_ty) :: string_remove_assoc binding params
+      in
+      refine_type
+        (inferred_form_type branch_params then_form)
+        (inferred_form_type params else_form)
   | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
@@ -3374,6 +3399,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 (constrain_symbol (TSeq element_ty) branch_params binding)
                 (fun branch_params ->
                   infer_expected_all element_ty branch_params values)
+          | ( FList (FSymbol "conj" :: FSymbol target :: values),
+              ((TVector element_ty | TSet element_ty) as collection_ty) )
+            when String.equal target binding ->
+              Result.bind
+                (constrain_symbol collection_ty branch_params binding)
+                (fun branch_params ->
+                  infer_expected_all element_ty branch_params values)
           | _ -> (
               match inferred_form_type params else_form with
               | ty
@@ -4020,12 +4052,50 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         :: key
         :: updater
         :: extra_arguments) ->
+        let infer_inline_updater_return = function
+          | FList
+              (FSymbol "fn" :: FVector parameter_forms :: body_forms) -> (
+              let parameter_names =
+                List.filter_map
+                  (function FSymbol name -> Some name | _ -> None)
+                  parameter_forms
+              in
+              if List.length parameter_names <> List.length parameter_forms then
+                TUnknown
+              else
+                let function_params =
+                  List.map
+                    (fun name -> (name, Type_solver.fresh ()))
+                    parameter_names
+                  @ params
+                in
+                match infer_all function_params body_forms with
+                | Error _ -> TUnknown
+                | Ok inferred ->
+                    (match List.rev body_forms with
+                    | result :: _ -> inferred_form_type inferred result
+                    | [] -> TNil))
+          | _ -> TUnknown
+        in
         let target_ty, key_ty =
           match string_assoc_opt target params with
           | Some (TVector _ as ty) -> (ty, TInt)
-          | _ ->
-              let dynamic = Types.dynamic_constraint TUnknown in
-              (dynamic, dynamic)
+          | _ -> (
+              match infer_inline_updater_return updater with
+              | return_ty
+                when not
+                       (match return_ty with
+                       | TUnknown | TMeta _ | TVar _ -> true
+                       | _ -> false) ->
+                  let key_ty =
+                    match inferred_form_type params key with
+                    | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+                    | ty -> ty
+                  in
+                  (Types.dynamic_map key_ty return_ty, key_ty)
+              | _ ->
+                  let dynamic = Types.dynamic_constraint TUnknown in
+                  (dynamic, dynamic))
         in
         Result.bind (constrain_symbol target_ty params target) (fun params ->
             Result.bind (infer_expected key_ty params key) (fun params ->

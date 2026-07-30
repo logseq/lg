@@ -19888,6 +19888,34 @@ let test_nullable_field_reads_do_not_widen_nominal_record_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_nested_update_reducers_infer_optional_set_values () =
+  let source =
+    {|
+(defn add-properties [result attr properties]
+  (reduce
+    (fn [result property]
+      (update
+        result
+        property
+        (fn [attrs]
+          (if-some [attrs attrs]
+            (conj attrs attr)
+            #{attr}))))
+    result
+    properties))
+(println
+  (count
+    (get
+      (add-properties {} :name [:indexed])
+      :indexed)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_update_reducers_infer_optional_set_values" "1\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_loop_recur_unpacks_dynamic_protocol_results_to_static_records () =
   let source =
     {|
@@ -33666,6 +33694,8 @@ let tests =
       test_loop_parameters_widen_for_nullable_generic_recur_values );
     ( "nullable field reads do not widen nominal record fields",
       test_nullable_field_reads_do_not_widen_nominal_record_fields );
+    ( "nested update reducers infer optional set values",
+      test_nested_update_reducers_infer_optional_set_values );
     ( "loop recur unpacks dynamic protocol results to static records",
       test_loop_recur_unpacks_dynamic_protocol_results_to_static_records );
     ( "loop recur analysis respects nested let shadowing",

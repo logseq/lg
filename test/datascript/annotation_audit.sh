@@ -54,6 +54,12 @@ if rg -q "$datom_callback_hint_pattern" test/datascript/upstream/db.cljc; then
   exit 1
 fi
 
+db_callback_hint_pattern='\(fn \[[^]]*\^[A-Za-z_:]'
+if rg -q "$db_callback_hint_pattern" test/datascript/upstream/db.cljc; then
+  echo "DataScript DB callbacks must infer ordinary parameters" >&2
+  exit 1
+fi
+
 datom_function_hint_pattern='^\(defn[^\n]*(\n[[:space:]]*)?\[[^]]*\^Datom'
 if rg -U -q "$datom_function_hint_pattern" test/datascript/upstream/db.cljc; then
   echo "DataScript functions must infer ordinary Datom parameters" >&2

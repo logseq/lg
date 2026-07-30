@@ -274,6 +274,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     | FSymbol name -> lookup_function scope env name
     | form -> compile_expr scope env form
   in
+  let updater_value_type target value_ty =
+    match Types.dynamic_map_types target.ty with
+    | Some _ -> TNullable value_ty
+    | None -> value_ty
+  in
   let compile_function_arg_for_value scope env value_ty extra_tys form =
     let parameter_tys = value_ty :: extra_tys in
     let compile_contextual_call () =
@@ -2622,7 +2627,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     in
                     Result.map
                       (fun fn -> (target, fn, extra_args))
-                      (compile_function_arg_for_value scope env value_ty
+                      (compile_function_arg_for_value scope env
+                         (updater_value_type target value_ty)
                          (List.map (fun argument -> argument.ty) extra_args)
                          fn_form
                       |> with_context
@@ -2816,7 +2822,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     in
                     Result.map
                       (fun fn -> (target, fn, extra_args))
-                      (compile_function_arg_for_value scope env value_ty
+                      (compile_function_arg_for_value scope env
+                         (updater_value_type target value_ty)
                          (List.map (fun argument -> argument.ty) extra_args)
                          fn_form)))
           in
