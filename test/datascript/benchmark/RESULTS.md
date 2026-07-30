@@ -1,0 +1,55 @@
+# DataScript benchmark results
+
+Baseline captured on 2026-07-30 against pinned upstream DataScript commit
+`3f141af`.
+
+Each workload ran in an isolated process with 20,000 people, a 2-second
+warmup, five 1-second samples, and batch size 10. Times are median
+milliseconds per operation. Negative deltas are faster than upstream.
+Upstream prints rounded values, so its deltas are approximate.
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add-1` | 570.2 | 272.6 | -52.2% | 592.5 | +3.9% |
+| `add-5` | 1390.2 | 715.0 | -48.6% | 1495.3 | +7.6% |
+| `add-all` | 1805.9 | 785.3 | -56.5% | 1542.0 | -14.6% |
+| `init` | 57.0 | 111.3 | +95.3% | 178.2 | +212.7% |
+| `find-datoms` | 2.2 | 1.310 | -40.4% | 1.873 | -14.9% |
+| `find-datom` | 2.8 | 0.874 | -68.8% | 1.142 | -59.2% |
+| `retract-5` | 3283.6 | 764.8 | -76.7% | 1098.8 | -66.5% |
+| `q1` | 1.8 | 0.881 | -51.1% | 2.267 | +25.9% |
+| `q2` | 4.3 | 2.718 | -36.8% | 6.738 | +56.7% |
+| `q3` | 6.9 | 4.088 | -40.8% | 8.999 | +30.4% |
+| `q4` | 9.8 | 5.819 | -40.6% | 12.734 | +29.9% |
+| `q5-shortcircuit` | 1.1 | 0.256 | -76.7% | 1.116 | +1.5% |
+| `qpred1` | 8.1 | 12.565 | +55.1% | 32.788 | +304.8% |
+| `qpred2` | 9.7 | 14.861 | +53.2% | 38.733 | +299.3% |
+| `pull-one-entities` | 2.3 | 1.792 | -22.1% | 3.008 | +30.8% |
+| `pull-one` | 1.1 | 1.108 | +0.7% | 2.400 | +118.2% |
+| `pull-many-entities` | 6.7 | 4.727 | -29.4% | 8.156 | +21.7% |
+| `pull-many` | 1.9 | 3.614 | +90.2% | 9.174 | +382.9% |
+| `pull-wildcard` | 4.6 | 2.744 | -40.4% | 6.440 | +40.0% |
+| `rules-wide-3x3` | 0.499 | 0.224 | -55.0% | 0.532 | +6.6% |
+| `rules-wide-5x3` | 4.5 | 3.521 | -21.7% | 7.006 | +55.7% |
+| `rules-wide-7x3` | 61.3 | 55.302 | -9.8% | 112.355 | +83.3% |
+| `rules-wide-4x6` | 14.1 | 12.484 | -11.5% | 24.253 | +72.0% |
+| `rules-long-10x3` | 1.7 | 0.624 | -63.3% | 1.653 | -2.8% |
+| `rules-long-30x3` | 16.7 | 7.356 | -56.0% | 18.428 | +10.3% |
+| `rules-long-30x5` | 21.2 | 10.551 | -50.2% | 26.703 | +26.0% |
+| `freeze` | 854.6 | 2528.0 | +195.8% | 6589.4 | +671.0% |
+| `thaw` | 1217.7 | 3289.9 | +170.2% | 11553.9 | +848.8% |
+
+The first pass put three comparisons inside a 3% margin. Three additional
+isolated runs changed all three to regressions:
+
+| Workload | Upstream median | LG median | Delta |
+| --- | ---: | ---: | ---: |
+| Native `pull-one` | 1.000 | 1.087 | +8.7% |
+| Melange `q5-shortcircuit` | 0.950 | 1.119 | +17.8% |
+| Melange `rules-long-10x3` | 1.500 | 1.760 | +17.4% |
+
+After margin reruns, Native is faster on 21 workloads and slower on 7.
+Melange is faster on 4 workloads and slower on 24. The highest-priority shared
+regressions are serialization, `init`, predicate queries, and `pull-many`.
+Melange additionally has broad query, pull, and recursive-rule overhead.
+

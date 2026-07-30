@@ -339,16 +339,17 @@ The currently accepted measured representation optimizations are narrow:
   transaction fields remain `int`, while only the encoded datom value stays in
   the closed EDN domain required by custom codecs. This preserves the JSON
   format and upstream restoration order without retaining a second generic EDN
-  tree. On the 300,000-person benchmark it allows Melange thaw to complete
-  under the default Node heap; the complete single-run benchmark measured
-  Native at 2.42 seconds and Melange at 9.31 seconds.
+  tree. It allows Melange thaw to complete under the default Node heap, but the
+  full 300,000-person benchmark still shows substantial serialization overhead.
 
-With 20,000 people, 2 seconds of warmup, five 1-second samples, and batch size
-10, these optimizations made all 11 tracked workloads faster than the upstream
-JavaScript benchmark on both Native and Melange. The narrowest measured margin
-was Melange `pull-many`: a five-run median of 1.911 ms/op versus an upstream
-three-run median of 1.921 ms/op. This small margin should be treated as a
-regression-sensitive boundary, not as permission to change pull control flow.
+The complete 2026-07-30 benchmark baseline uses 20,000 people, a 2-second
+warmup, five 1-second samples, batch size 10, and an isolated process for each
+workload. Native is faster than pinned upstream JavaScript on 21 of 28
+workloads and slower on 7. Melange is faster on 4 and slower on 24. The
+remaining regressions are real acceptance failures, not accepted representation
+differences. Serialization, `init`, predicate queries, and `pull-many` are the
+highest-priority shared failures. Full results and margin reruns are recorded
+in `test/datascript/benchmark/RESULTS.md`.
 
 When an upstream API accepts several known shapes, LG represents those shapes
 with a closed sum, record, option, or static protocol. It does not make the API
