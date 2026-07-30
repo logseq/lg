@@ -248,6 +248,10 @@ expect_no_hints_between \
   test/datascript/upstream/pull_api.cljc \
   ref-datom-id attr-at-index \
   '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_text \
+  "pull attribute indexing keeps its closed vector boundary" \
+  test/datascript/upstream/pull_api.cljc \
+  '^\(signature datascript\.pull-api/attr-at-index'
 expect_no_hints_between \
   "pull result merging algorithms contain no local type hints" \
   test/datascript/upstream/pull_api.cljc \

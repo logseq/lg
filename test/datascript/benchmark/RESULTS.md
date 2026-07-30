@@ -66,3 +66,18 @@ with the same protocol as the baseline:
 
 Relative to the initial LG baseline, Native improved by 55.0% on `qpred1` and
 50.0% on `qpred2`; Melange improved by 65.3% and 58.5%, respectively.
+
+## Pull attribute indexing rerun
+
+After preserving the closed vector boundary while advancing pull attributes,
+the single-attribute and multi-attribute recursive pulls were rerun with the
+same protocol:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `pull-one` | 1.1 | 0.802 | -27.1% | 1.530 | +39.1% |
+| `pull-many` | 1.9 | 1.518 | -20.1% | 3.228 | +69.9% |
+
+Relative to the initial LG baseline, Native improved by 27.7% on `pull-one`
+and 58.0% on `pull-many`; Melange improved by 36.3% and 64.8%,
+respectively.

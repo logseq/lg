@@ -469,6 +469,9 @@
                 (.-attr state)
                 id)])))))))
 
+(signature datascript.pull-api/attr-at-index
+  :fn<vector<datascript.pull-parser/pull-attr>;int;option<datascript.pull-parser/pull-attr>>)
+
 (defn attr-at-index
   [attrs index]
   (if (< index (count attrs))
