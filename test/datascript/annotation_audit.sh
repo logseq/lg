@@ -36,6 +36,18 @@ if [ "$parser_hint_count" -gt "$parser_hint_limit" ]; then
   exit 1
 fi
 
+datom_receiver_hint_pattern='^\(defn (\^[^ ]+ )?(datom-attr|datom-print-string|equiv-datom) \[\^Datom'
+if rg -q "$datom_receiver_hint_pattern" test/datascript/upstream/db.cljc; then
+  echo "DataScript datom field helpers must infer their Datom receivers" >&2
+  exit 1
+fi
+
+datom_comparator_hint_pattern='^\(defn cmp-datoms-[^ ]+ \^long \[\^Datom'
+if rg -q "$datom_comparator_hint_pattern" test/datascript/upstream/db.cljc; then
+  echo "DataScript datom comparators must infer record arguments and int results" >&2
+  exit 1
+fi
+
 pss_hint_count=$(count_inline_hints datascript)
 if [ "$pss_hint_count" -ne 0 ]; then
   echo "Persistent sorted set must remain free of inline hints: $pss_hint_count" >&2

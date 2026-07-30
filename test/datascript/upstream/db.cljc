@@ -181,10 +181,10 @@
         value)
       cached-hash)))
 
-(defn ^:keyword datom-attr [^Datom datom]
+(defn datom-attr [datom]
   (.-a datom))
 
-(defn ^:string datom-print-string [^Datom datom]
+(defn datom-print-string [datom]
   (str
    "#datascript/Datom ["
    (.-e datom)
@@ -296,7 +296,7 @@
    (if-some [value v] value value-wildcard)
    (if-some [value tx] value default-tx)))
 
-(defn ^:private equiv-datom [^Datom d ^Datom o]
+(defn ^:private equiv-datom [d o]
   (and (== (.-e d) (.-e o))
        (= (.-a d) (.-a o))
        (Datascript_runtime.Data_value.equal (.-v d) (.-v o))))
@@ -406,21 +406,21 @@
 ;; Slower cmp-* fns allows for datom fields to be nil.
 ;; Such datoms come from slice method where they are used as boundary markers.
 
-(defn cmp-datoms-eavt ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-eavt [d1 d2]
   (combine-cmp
    (int-compare (.-e d1) (.-e d2))
    (cmp (.-a d1) (.-a d2))
    (value-cmp (.-v d1) (.-v d2))
    (int-compare (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-aevt ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-aevt [d1 d2]
   (combine-cmp
    (cmp (.-a d1) (.-a d2))
    (int-compare (.-e d1) (.-e d2))
    (value-cmp (.-v d1) (.-v d2))
    (int-compare (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-avet ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-avet [d1 d2]
   (combine-cmp
    (cmp (.-a d1) (.-a d2))
    (value-cmp (.-v d1) (.-v d2))
@@ -432,27 +432,27 @@
 (defn- cmp-attr-quick ^long [^:keyword a1 ^:keyword a2]
   (compare a1 a2))
 
-(defn cmp-datoms-eav-quick ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-eav-quick [d1 d2]
   (combine-cmp
    (int-compare (.-e d1) (.-e d2))
    (cmp-attr-quick (.-a d1) (.-a d2))
    (value-compare (.-v d1) (.-v d2))))
 
-(defn cmp-datoms-eavt-quick ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-eavt-quick [d1 d2]
   (combine-cmp
    (int-compare (.-e d1) (.-e d2))
    (cmp-attr-quick (.-a d1) (.-a d2))
    (value-compare (.-v d1) (.-v d2))
    (int-compare (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-aevt-quick ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-aevt-quick [d1 d2]
   (combine-cmp
    (cmp-attr-quick (.-a d1) (.-a d2))
    (int-compare (.-e d1) (.-e d2))
    (value-compare (.-v d1) (.-v d2))
    (int-compare (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-avet-quick ^long [^Datom d1, ^Datom d2]
+(defn cmp-datoms-avet-quick [d1 d2]
   (combine-cmp
    (cmp-attr-quick (.-a d1) (.-a d2))
    (value-compare (.-v d1) (.-v d2))
