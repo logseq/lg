@@ -193,10 +193,12 @@ let concat_rows = Array.append
 let product_rows left_rows right_rows =
   if Rrbvec.length left_rows = 1 then
     let left = Rrbvec.nth left_rows 0 in
-    Rrbvec.map (concat_rows left) right_rows
+    if Array.length left = 0 then right_rows
+    else Rrbvec.map (concat_rows left) right_rows
   else if Rrbvec.length right_rows = 1 then
     let right = Rrbvec.nth right_rows 0 in
-    Rrbvec.map (fun left -> concat_rows left right) left_rows
+    if Array.length right = 0 then left_rows
+    else Rrbvec.map (fun left -> concat_rows left right) left_rows
   else
     Rrbvec.fold_left
       (fun rows left ->

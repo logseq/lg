@@ -438,6 +438,34 @@ let test_query_product_rows_singleton_avoids_array_roundtrip () =
          "query singleton product allocated an intermediate array: %.0f bytes"
          allocated_bytes)
 
+let test_query_product_rows_treats_an_empty_tuple_as_identity () =
+  let row_count = 100_000 in
+  let rows =
+    Array.init row_count (fun entity ->
+        [|
+          Query_value.Entity entity;
+          Query_value.Value (Value.Int entity);
+        |])
+    |> Rrbvec.of_array
+  in
+  let empty_tuple = Rrbvec.of_list [ Query_value.empty_row () ] in
+  let assert_identity_product left right =
+    Gc.compact ();
+    let allocated_before = Gc.allocated_bytes () in
+    let products = Query_value.product_rows left right in
+    let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+    assert (Rrbvec.length products = row_count);
+    assert (Rrbvec.nth products 0 = Rrbvec.nth rows 0);
+    assert (Rrbvec.nth products (row_count - 1) = Rrbvec.nth rows (row_count - 1));
+    if allocated_bytes >= 2_048. then
+      failwith
+        (Printf.sprintf
+           "query empty-tuple product copied identity rows: %.0f bytes"
+           allocated_bytes)
+  in
+  assert_identity_product empty_tuple rows;
+  assert_identity_product rows empty_tuple
+
 let test_query_distinct_entity_rows_avoid_boxed_hash_keys () =
   let row_count = 100_000 in
   let rows =
@@ -821,6 +849,7 @@ let () =
   test_query_relations_and_contexts_keep_static_fields ();
   test_query_rows_use_static_integer_indexes ();
   test_query_product_rows_singleton_avoids_array_roundtrip ();
+  test_query_product_rows_treats_an_empty_tuple_as_identity ();
   test_query_distinct_entity_rows_avoid_boxed_hash_keys ();
   test_static_map_assoc_hashes_each_key_once ();
   test_static_map_assoc_uses_a_precomputed_hash ();

@@ -304,6 +304,11 @@ The currently accepted measured representation optimizations are narrow:
   vector. Cartesian-product row order and row concatenation are unchanged.
   The 100,000-row allocation regression dropped below 5.5 MB from 5.73 MB,
   and Melange `qpred2` improved from 12.072 ms to 11.619 ms.
+- The single empty tuple is the identity element of a relation product. The
+  product reuses the other RRB relation directly instead of copying every row
+  through an empty array append. Empty-relation behavior, row order, and row
+  contents are unchanged. The 100,000-row allocation check dropped below
+  2 KB from 3.31 MB, and Melange `q1` improved from 1.589 ms to 1.533 ms.
 - Bound-entity query clauses reduce the same upstream EAVT slice directly into
   result rows when no transaction constraint is present. The slice bounds,
   comparator, datom order, added filtering, and projected columns are

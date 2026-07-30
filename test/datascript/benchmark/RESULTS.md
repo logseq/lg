@@ -254,3 +254,16 @@ bytes to less than 5,500,000 bytes. The pull alias-hash cache also improved the
 wildcard regression sentinel rather than trading the focused pull gains for a
 broader pull slowdown. The four previously identified acceptance failures
 remain failures and require further optimization.
+
+## Empty-tuple relation identity rerun
+
+A relation containing the single empty tuple is the identity element of a
+Cartesian product. LG now reuses the other RRB relation directly instead of
+copying every row through an empty array append. The 100,000-row allocation
+regression fell from 3,310,056 bytes to less than 2,048 bytes.
+
+The final release bundle was rebuilt before three isolated runs of each
+affected query. Melange `q1` improved from 1.589 ms to a 1.533 ms median,
+3.5 percent faster. `q2` and `q3` remained within measurement noise at 4.455
+ms and 6.275 ms, while `q4` measured 9.094 ms. The optimization therefore does
+not close the remaining `q2` or `qpred2` acceptance gaps.
