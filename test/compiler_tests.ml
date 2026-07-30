@@ -19865,6 +19865,29 @@ let test_loop_parameters_widen_for_nullable_generic_recur_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_nullable_field_reads_do_not_widen_nominal_record_fields () =
+  let source =
+    {|
+(deftype Datom [^:keyword v])
+(defrecord Report [^:vector<Datom> datoms])
+(defn keep-option [^:option<keyword> value] value)
+(defn append-datom [^Report report datom include?]
+  (let [value (if include? (.-v datom) nil)]
+    (do
+      (keep-option value)
+      (assoc report :datoms (conj (.-datoms report) datom)))))
+(println
+  (count
+    (.-datoms
+      (append-datom (Report. []) (Datom. :name) true))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nullable_field_reads_do_not_widen_nominal_record_fields"
+    "1\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_loop_recur_unpacks_dynamic_protocol_results_to_static_records () =
   let source =
     {|
@@ -33641,6 +33664,8 @@ let tests =
       test_or_nil_guard_narrows_hinted_dynamic_sequence_elements );
     ( "loop parameters widen for nullable generic recur values",
       test_loop_parameters_widen_for_nullable_generic_recur_values );
+    ( "nullable field reads do not widen nominal record fields",
+      test_nullable_field_reads_do_not_widen_nominal_record_fields );
     ( "loop recur unpacks dynamic protocol results to static records",
       test_loop_recur_unpacks_dynamic_protocol_results_to_static_records );
     ( "loop recur analysis respects nested let shadowing",

@@ -1479,6 +1479,18 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     in
     Type_solver.apply substitutions ty
   in
+  let branch_expected_type params expected branch other =
+    let branch_is_nullable =
+      match inferred_form_type params branch with
+      | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+      | _ -> false
+    in
+    match (other, expected) with
+    | FSymbol "nil", (TNullable payload | TOcaml_app ("option", [ payload ]))
+      when not branch_is_nullable ->
+        payload
+    | _ -> expected
+  in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
     | FList (FSymbol "conj" :: target :: values) -> (
@@ -1553,38 +1565,53 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "if"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
             let previous_hints = !branch_hint_symbols in
+            let then_expected =
+              branch_expected_type params expected_ty then_form else_form
+            in
             Result.bind
               (with_branch (fun () ->
-                   infer_expected expected_ty params then_form))
+                   infer_expected then_expected params then_form))
               (fun inferred ->
+                let else_expected =
+                  branch_expected_type inferred expected_ty else_form then_form
+                in
                 Result.map
                   (fun inferred ->
                     restore_branch_evidence params inferred previous_hints
                       condition)
                   (with_branch (fun () ->
-                       infer_expected expected_ty inferred else_form))))
+                       infer_expected else_expected inferred else_form))))
     | FList [ FSymbol "if"; condition; then_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
             let previous_hints = !branch_hint_symbols in
+            let then_expected =
+              branch_expected_type params expected_ty then_form (FSymbol "nil")
+            in
             Result.map
               (fun inferred ->
                 restore_branch_evidence params inferred previous_hints
                   condition)
               (with_branch (fun () ->
-                   infer_expected expected_ty params then_form)))
+                   infer_expected then_expected params then_form)))
     | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
             let previous_hints = !branch_hint_symbols in
+            let then_expected =
+              branch_expected_type params expected_ty then_form else_form
+            in
             Result.bind
               (with_branch (fun () ->
-                   infer_expected expected_ty params then_form))
+                   infer_expected then_expected params then_form))
               (fun inferred ->
+                let else_expected =
+                  branch_expected_type inferred expected_ty else_form then_form
+                in
                 Result.map
                   (fun inferred ->
                     restore_branch_evidence params inferred previous_hints
                       condition)
                   (with_branch (fun () ->
-                       infer_expected expected_ty inferred else_form))))
+                       infer_expected else_expected inferred else_form))))
     | ( FList
           [
             FSymbol ("if-some" | "if-let");

@@ -48,6 +48,18 @@ if rg -q "$datom_comparator_hint_pattern" test/datascript/upstream/db.cljc; then
   exit 1
 fi
 
+datom_callback_hint_pattern='\(fn \[[^]]*\^Datom'
+if rg -q "$datom_callback_hint_pattern" test/datascript/upstream/db.cljc; then
+  echo "DataScript collection callbacks must infer Datom parameters" >&2
+  exit 1
+fi
+
+datom_function_hint_pattern='^\(defn[^\n]*(\n[[:space:]]*)?\[[^]]*\^Datom'
+if rg -U -q "$datom_function_hint_pattern" test/datascript/upstream/db.cljc; then
+  echo "DataScript functions must infer ordinary Datom parameters" >&2
+  exit 1
+fi
+
 pss_hint_count=$(count_inline_hints datascript)
 if [ "$pss_hint_count" -ne 0 ]; then
   echo "Persistent sorted set must remain free of inline hints: $pss_hint_count" >&2

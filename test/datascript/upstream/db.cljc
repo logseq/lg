@@ -678,33 +678,33 @@
                         [(set/slice eavt (datom-bound e a v tx e0 tx0) (datom-bound e a v tx e0 tx0)) ;; e a v tx
                          (set/slice eavt (datom-bound e a v nil e0 tx0) (datom-bound e a v nil e0 txmax)) ;; e a v _
                          (->> (set/slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ tx
-                              (->Eduction (filter (fn [^Datom d] (= tx (datom-tx d))))))
+                              (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
                          (set/slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ _
                          (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v tx
-                              (->Eduction (filter (fn [^Datom d] (and (pred (.-v d))
+                              (->Eduction (filter (fn [d] (and (pred (.-v d))
                                                                       (= tx (datom-tx d)))))))
                          (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v _
-                              (->Eduction (filter (fn [^Datom d] (pred (.-v d))))))
+                              (->Eduction (filter (fn [d] (pred (.-v d))))))
                          (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ tx
-                              (->Eduction (filter (fn [^Datom d] (= tx (datom-tx d))))))
+                              (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
                          (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ _
                          (if (if-some [attr a] (contains? (-attrs-by db :db/index) attr) false) ;; _ a v tx
                            (->> (set/slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
-                                (->Eduction (filter (fn [^Datom d] (= tx (datom-tx d))))))
+                                (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
                            (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
-                                (->Eduction (filter (fn [^Datom d] (and (pred (.-v d))
+                                (->Eduction (filter (fn [d] (and (pred (.-v d))
                                                                         (= tx (datom-tx d))))))))
                          (if (if-some [attr a] (contains? (-attrs-by db :db/index) attr) false) ;; _ a v _
                            (set/slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
                            (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
-                                (->Eduction (filter (fn [^Datom d] (pred (.-v d)))))))
+                                (->Eduction (filter (fn [d] (pred (.-v d)))))))
                          (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ tx
-                              (->Eduction (filter (fn [^Datom d] (= tx (datom-tx d))))))
+                              (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
                          (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ _
-                         (filter (fn [^Datom d] (and (pred (.-v d))
+                         (filter (fn [d] (and (pred (.-v d))
                                                      (= tx (datom-tx d)))) (set/set-seq eavt))  ;; _ _ v tx
-                         (filter (fn [^Datom d] (pred (.-v d))) (set/set-seq eavt))             ;; _ _ v
-                         (filter (fn [^Datom d] (= tx (datom-tx d))) (set/set-seq eavt))        ;; _ _ _ tx
+                         (filter (fn [d] (pred (.-v d))) (set/set-seq eavt))             ;; _ _ v
+                         (filter (fn [d] (= tx (datom-tx d))) (set/set-seq eavt))        ;; _ _ _ tx
                          (set/set-seq eavt)])))                                                 ;; _ _ _ _
 
   IIndexAccess
@@ -902,7 +902,7 @@
   (-index-range [db attr start end]
                 (filter (.-pred db) (-index-range (.-unfiltered-db db) attr start end))))
 
-(defn ^:string database-datom-print-string [^Datom datom]
+(defn ^:string database-datom-print-string [datom]
   (str
    "["
    (.-e datom)
@@ -926,7 +926,7 @@
       schema))
    ", :datoms ["
    (reduce
-    (fn [^:string result ^Datom datom]
+    (fn [^:string result datom]
       (let [printed (database-datom-print-string datom)]
         (if (empty? result)
           printed
@@ -1039,7 +1039,7 @@
     (vec (set/set-seq (.-eavt left)))
     (vec (set/set-seq (.-eavt right))))))
 
-(defn ^:int datom-hash [^Datom datom]
+(defn ^:int datom-hash [datom]
   (Hashtbl.hash
    (tuple
     (.-e datom)
@@ -1062,7 +1062,7 @@
     (if (zero? cached)
       (let [value
             (reduce
-             (fn [^:int value ^Datom datom]
+             (fn [^:int value datom]
                (Hashtbl.hash (tuple value (datom-hash datom))))
              (schema-hash (effective-schema (:schema database)))
              (set/set-seq (.-eavt database)))]
@@ -1092,7 +1092,7 @@
     (if (zero? cached)
       (let [value
             (reduce
-             (fn [^:int value ^Datom datom]
+             (fn [^:int value datom]
                (Hashtbl.hash (tuple value (datom-hash datom))))
              (schema-hash (effective-schema (-schema database)))
              (filtered-db-datoms database))]
@@ -1513,7 +1513,7 @@
    (options-branching-factor opts)))
 
 (defn ^Datom normalize-init-datom
-  [^ReverseSchema reverse-schema ^Datom source]
+  [^ReverseSchema reverse-schema source]
   (if
     (Lg_runtime.Core_set.String_set.mem
      (datom-attr source)
@@ -1714,15 +1714,15 @@
 
 (defn- ^:vector<Datom> datom-slice-vector
   [^:set/btset<Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datom-set
-   ^Datom from
-   ^Datom to
+   from
+   to
    ^:fn<Datom;bool> include?]
   (set/set-slice-reduce-with
    datom-set
    from
    to
    (set/comparator datom-set)
-   (fn [^:vector<Datom> datoms ^Datom datom]
+   (fn [^:vector<Datom> datoms datom]
      (if (include? datom)
        (conj datoms datom)
        datoms))
@@ -1759,7 +1759,7 @@
     (tuple (Some entity) (Some attr) value None)
     (reduce-eavt-slice
      db entity attr value
-     (fn [^:vector<Datom> datoms ^Datom datom]
+     (fn [^:vector<Datom> datoms datom]
        (conj datoms datom))
      [])
 
@@ -1774,7 +1774,7 @@
        (.-aevt db)
        (datom-bound None (Some attr) None None e0 tx0)
        (datom-bound None (Some attr) None None emax txmax)
-       (fn [^Datom datom]
+       (fn [datom]
          (Datascript_runtime.Data_value.equal (.-v datom) value))))
 
     _
@@ -1974,7 +1974,7 @@
    ^:Datascript_runtime.Data_value.t new-value]
   (TxCas operation entity attr old-value new-value))
 
-(defn ^tx-entry datom->tx-entry [^Datom datom]
+(defn ^tx-entry datom->tx-entry [datom]
   (let [entity-ref
         (Datascript_runtime.Data_value.Entity_id (.-e datom))
         attr (datom-attr datom)
@@ -1983,7 +1983,7 @@
       (TxAdd entity-ref attr value (Some (datom-tx datom)))
       (TxRetract entity-ref attr (Some value)))))
 
-(defn ^tx-entry tx-datom [^Datom datom]
+(defn ^tx-entry tx-datom [datom]
   (datom->tx-entry datom))
 
 (defn ^tx-entry tx-retract
@@ -2696,7 +2696,7 @@
 
 ;;;;;;;;;; Transacting
 
-(defn validate-datom [^datascript.db/DB db ^Datom datom]
+(defn validate-datom [^datascript.db/DB db datom]
   (when (and (datom-added datom)
              (is-attr? db (.-a datom) :db/unique))
     (when-some
@@ -2739,7 +2739,7 @@
     _ (raise (Invalid_argument
               "Schema :db/ident must be a keyword"))))
 
-(defn remove-schema [^datascript.db/DB db ^Datom datom]
+(defn remove-schema [^datascript.db/DB db datom]
   (let [schema        (effective-schema (:schema db))
         schema-idents (:schema-idents db)
         schema-drafts (:schema-drafts db)
@@ -2775,7 +2775,7 @@
   [^datascript.db/DB db]
   (effective-schema (:schema db)))
 
-(defn update-schema [^datascript.db/DB db ^Datom datom]
+(defn update-schema [^datascript.db/DB db datom]
   (let [schema        (effective-schema (:schema db))
         schema-idents (:schema-idents db)
         schema-drafts (:schema-drafts db)
@@ -2805,7 +2805,7 @@
 ;; In context of `with-datom` we can use faster comparators which
 ;; do not check for nil (~10-15% performance gain in `transact`)
 
-(defn ^datascript.db/DB with-datom [^datascript.db/DB db ^Datom datom]
+(defn ^datascript.db/DB with-datom [^datascript.db/DB db datom]
   (validate-datom db datom)
   (let [attr (datom-attr datom)
         indexing? (Lg_runtime.Core_set.String_set.mem
@@ -2879,17 +2879,17 @@
    queue
    tuples))
 
-(defn- ^datascript.db/TxReport transact-report [^datascript.db/TxReport report ^Datom datom]
+(defn- ^datascript.db/TxReport transact-report [^datascript.db/TxReport report datom]
   (let [db      (:db-after report)
-        a       (:a datom)
+        a       (.-a datom)
         report'
         (assoc
          (assoc report :db-after (with-datom db datom))
          :tx-data
          (conj (.-tx-data report) datom))]
     (if (tuple-source? db a)
-      (let [e      (:e datom)
-            v      (if (datom-added datom) (:v datom) nil)
+      (let [e      (.-e datom)
+            v      (if (datom-added datom) (.-v datom) nil)
             queue  (or (-> report' :queued-tuples (get e))
                        (empty-queued-tuples))
             tuples
@@ -3441,12 +3441,12 @@
           (transact-report new-datom)))))
 
 (defn- ^datascript.db/TxReport transact-retract-datom
-  [^datascript.db/TxReport report ^Datom d]
+  [^datascript.db/TxReport report d]
   (let [tx (current-tx report)]
     (transact-report report (datom (.-e d) (.-a d) (.-v d) tx false))))
 
 (defn- ^:option<tx-entry> component-retraction
-  [^datascript.db/DB db ^Datom datom]
+  [^datascript.db/DB db datom]
   (if (component? db (.-a datom))
     (if-some [eid (Datascript_runtime.Data_value.ref_value
                    (.-v datom))]
@@ -3460,7 +3460,7 @@
   [^datascript.db/DB db ^:vector<Datom> datoms]
   (Rrbvec.of_list
    (List.filter_map
-    (fn [^Datom datom]
+    (fn [datom]
       (component-retraction db datom))
     (Rrbvec.to_list datoms))))
 
@@ -3815,7 +3815,7 @@
   [^:vector<Datom> datoms]
   (data-values-description
    (mapv
-    (fn [^Datom datom]
+    (fn [datom]
       (.-v datom))
     datoms)))
 
