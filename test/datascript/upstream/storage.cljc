@@ -137,7 +137,10 @@
 (def ^:private root-addr 0)
 (def ^:private tail-addr 1)
 (defonce ^:private next-address (volatile! 1000000))
-(defonce ^:private stored-databases (volatile! []))
+;; The mutable module registry has no element evidence at initialization.
+(defonce ^:private
+  ^:ref<vector<weak<datascript.db/DB>>> stored-databases
+  (volatile! []))
 
 (defn- generate-address []
   (vswap! next-address inc))
@@ -159,8 +162,8 @@
 
 (defn- ^:vector<serialized-datom> serialize-datoms
   [^:vector<datascript.db/Datom> datoms]
-  (loop [^:int idx 0
-         ^:vector<serialized-datom> result []]
+  (loop [idx 0
+         result []]
     (if (< idx (count datoms))
       (recur
        (inc idx)
@@ -179,8 +182,8 @@
   [^:set/tree<datascript.db/Datom> node]
   (let [node-keys (set/node-keys node)
         keys
-        (loop [^:int idx 0
-               ^:vector<serialized-datom> result []]
+        (loop [idx 0
+               result []]
           (if (< idx (arrays/alength node-keys))
             (recur
              (inc idx)
@@ -261,9 +264,9 @@
 
 (defn addresses [^:vector<datascript.db/DB> databases]
   (reduce
-   (fn [^:set<int> used ^datascript.db/DB database]
+   (fn [used database]
      (reduce
-      (fn [^:set<int> used ^:int address]
+      (fn [used address]
         (conj used address))
       used
       (concat
@@ -278,8 +281,7 @@
         (volatile! [])
         references
         (reduce
-         (fn [^:vector<weak<datascript.db/DB>> alive
-              ^:weak<datascript.db/DB> reference]
+         (fn [alive reference]
            (if-some [database (weak-deref reference)]
              (do
                (vswap! databases conj database)
@@ -293,8 +295,7 @@
 (defn- ^:vector<datascript.db/DB> databases-for-storage
   [^storage-backend backend]
   (reduce
-   (fn [^:vector<datascript.db/DB> databases
-        ^datascript.db/DB database]
+   (fn [databases database]
      (if-some [database-backend (storage database)]
        (if (same-backend? backend database-backend)
          (conj databases database)
@@ -316,16 +317,12 @@
   serialize-schema
   [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
   (reduce-kv
-   (fn [^:map<string;map<string;Datascript_runtime.Data_value.t>> result
-        ^:keyword attr
-        ^:map<keyword;Datascript_runtime.Data_value.t> properties]
+   (fn [result attr properties]
      (assoc
       result
       (str attr)
       (reduce-kv
-       (fn [^:map<string;Datascript_runtime.Data_value.t> serialized
-            ^:keyword property
-            ^:Datascript_runtime.Data_value.t value]
+       (fn [serialized property value]
          (assoc serialized (str property) value))
        {}
        properties)))
@@ -336,16 +333,12 @@
   restore-schema
   [^:map<string;map<string;Datascript_runtime.Data_value.t>> schema]
   (reduce-kv
-   (fn [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> result
-        ^:string attr
-        ^:map<string;Datascript_runtime.Data_value.t> properties]
+   (fn [result attr properties]
      (assoc
       result
       (keyword attr)
       (reduce-kv
-       (fn [^:map<keyword;Datascript_runtime.Data_value.t> restored
-            ^:string property
-            ^:Datascript_runtime.Data_value.t value]
+       (fn [restored property value]
          (assoc restored (keyword property) value))
        {}
        properties)))
@@ -360,7 +353,7 @@
         eavt-address (set/store (:eavt database) adapter)
         aevt-address (set/store (:aevt database) adapter)
         avet-address (set/store (:avet database) adapter)
-        ^:vector<tuple<int;stored_value>> entries
+        entries
         (set/storage-drain-writes adapter)
         pending-ref (set/storage-pending-deletes adapter)
         settings (set/settings (:eavt database))
@@ -528,8 +521,7 @@
   [^datascript.db/DB database
    ^:vector<vector<datascript.db/Datom>> tail]
   (reduce
-   (fn [^datascript.db/DB current
-        ^:vector<datascript.db/Datom> datoms]
+   (fn [current datoms]
      (if (empty? datoms)
        current
        (assoc
@@ -555,7 +547,7 @@
         used (addresses databases)
         unused
         (reduce
-         (fn [^:vector<int> result ^:int address]
+         (fn [result address]
            (if (contains? used address)
              result
              (conj result address)))

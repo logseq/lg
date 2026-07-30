@@ -787,15 +787,15 @@
 
 (defn ^database-diff diff-databases
   [^datascript.db/DB left ^datascript.db/DB right]
-  (let [^:vector<Datom> left-datoms
+  (let [left-datoms
         (vec (set/set-seq (.-eavt left)))
-        ^:vector<Datom> right-datoms
+        right-datoms
         (vec (set/set-seq (.-eavt right)))]
     (loop [left-index 0
            right-index 0
-           ^:vector<Datom> only-left []
-           ^:vector<Datom> only-right []
-           ^:vector<Datom> both []]
+           only-left []
+           only-right []
+           both []]
       (cond
         (= left-index (count left-datoms))
         (record database-diff
@@ -1170,7 +1170,7 @@
    ^:map<keyword;set<keyword>> rschema]
   (reduce
    (fn [m tuple-attr] ;; e.g. :reg/semester+course+student
-     (let [^:vector<keyword> attrs
+     (let [attrs
            (if-some
             [attrs
              (Datascript_runtime.Data_value.keyword_items
@@ -2662,17 +2662,17 @@
   (let [value
         (Datascript_runtime.Data_value.tuple_of_vector
          (data-value-tuple-items value))
-        ^:vector<string> attrs (schema-tuple-attrs db tuple-attr)
-        ^:vector<string> ref-attrs
+        attrs (schema-tuple-attrs db tuple-attr)
+        ref-attrs
         (Rrbvec.of_list
          (Lg_runtime.Lg_set.String_set.elements
           (-attrs-by db :db.type/ref)))
-        ^:vector<Datascript_runtime.Data_value.entity_ref> entity-refs
+        entity-refs
         (Datascript_runtime.Data_value.tuple_entity_refs
          attrs ref-attrs value)
-        ^:vector<int> eids
-        (loop [^:int idx 0
-               ^:vector<int> eids empty-entity-ids]
+        eids
+        (loop [idx 0
+               eids empty-entity-ids]
           (if (< idx (count entity-refs))
             (recur
              (inc idx)
@@ -2941,9 +2941,7 @@
              (tuple [] (empty-value-eids)) vs))]
       (reduce-kv
        (fn
-         [^:tuple<map<keyword;Datascript_runtime.Data_value.t>;map<keyword;map<Datascript_runtime.Data_value.t;int>>> acc
-          ^:keyword a
-          ^:Datascript_runtime.Data_value.t v]
+         [acc a v]
          (let [entity' (tuple-get acc 0)
                upserts (tuple-get acc 1)]
            (validate-attr a entity)
@@ -3868,9 +3866,7 @@
   [^:map<Datascript_runtime.Data_value.t;int> tempids]
   (reduce-kv
    (fn
-     [^:map<Datascript_runtime.Data_value.t;int> retained
-      ^:Datascript_runtime.Data_value.t key
-      ^:int eid]
+     [retained key eid]
      (if-some
        [entity-ref
         (Datascript_runtime.Data_value.entity_ref_value key)]
@@ -3886,9 +3882,7 @@
   (let [unused-tempids
         (reduce-kv
          (fn
-           [^:map<int;Datascript_runtime.Data_value.t> unused
-            ^:int eid
-            ^boolean _used]
+           [unused eid _used]
            (dissoc unused eid))
          (:value-tempids report)
          (:used-tempid-eids report))]
@@ -4065,9 +4059,7 @@
   [^datascript.db/TxReport report ^:int eid]
   (reduce-kv
    (fn
-     [^:option<Datascript_runtime.Data_value.entity_ref> found
-      ^:Datascript_runtime.Data_value.t key
-      ^:int resolved-eid]
+     [found key resolved-eid]
      (match found
        (Some _) found
        None
@@ -4172,7 +4164,7 @@
   (if (< entry-index (count entries))
       (let [entry (nth entries entry-index)
             next-index (inc entry-index)
-            ^tx-step-result step
+            step
             (match entry
               TxNil
               (TxStep

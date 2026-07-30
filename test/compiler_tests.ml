@@ -12536,6 +12536,116 @@ let test_weak_references_store_nominal_values_without_protocol_witnesses () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_mutating_empty_vector_refs_infers_values_from_vswap () =
+  let source =
+    {|
+(type-record database (id :int))
+(defn alive-databases [references]
+  (let [databases (volatile! [])
+        retained
+        (reduce
+          (fn [alive reference]
+            (if-some [database (weak-deref reference)]
+              (do
+                (vswap! databases conj database)
+                (conj alive reference))
+              alive))
+          []
+          references)
+        _retained-count (count retained)]
+    @databases))
+(def database-value (record database (id 42)))
+(def references [(weak-ref database-value)])
+(println
+  (str
+    (count (alive-databases references))
+    ":"
+    (count (alive-databases []))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "mutating_empty_vector_refs_infers_values_from_vswap" "1:0\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_module_empty_vector_refs_use_static_boundary () =
+  let source =
+    {|
+(type-record database (id :int))
+(defonce ^:private
+  ^:ref<vector<weak<database>>> stored-databases
+  (volatile! []))
+(defn remember-database [^database database]
+  (vswap! stored-databases conj (weak-ref database))
+  nil)
+(defn alive-databases []
+  (let [^:ref<vector<database>> databases (volatile! [])
+        references
+        (reduce
+          (fn [alive reference]
+            (if-some [database (weak-deref reference)]
+              (do
+                (vswap! databases conj database)
+                (conj alive reference))
+              alive))
+          []
+          @stored-databases)
+        _updated (vreset! stored-databases references)]
+    @databases))
+(def database-value (record database (id 42)))
+(remember-database database-value)
+(println (:id (nth (alive-databases) 0)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "module_empty_vector_refs_use_static_boundary"
+    "42\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_reduce_kv_infers_map_value_collections () =
+  let source =
+    {|
+(defn ^:map<string;map<string;int>> serialize-schema
+  [^:map<keyword;map<keyword;int>> schema]
+  (reduce-kv
+    (fn [result attr properties]
+      (assoc
+        result
+        (str attr)
+        (reduce-kv
+          (fn [serialized property value]
+            (assoc serialized (str property) value))
+          {}
+          properties)))
+    {}
+    schema))
+(defn ^:map<keyword;map<keyword;int>> restore-schema
+  [^:map<string;map<string;int>> schema]
+  (reduce-kv
+    (fn [result attr properties]
+      (assoc
+        result
+        (keyword attr)
+        (reduce-kv
+          (fn [restored property value]
+            (assoc restored (keyword property) value))
+          {}
+          properties)))
+    {}
+    schema))
+(def ^:map<keyword;map<keyword;int>> schema
+  {:person/name {:db/index 1}})
+(println (count (serialize-schema schema)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "nested_reduce_kv_infers_map_value_collections" "1\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_weak_references_reject_invalid_calls () =
   Lg.Compiler.compile_string {|(weak-ref)|}
   |> expect_error_contains "weak-ref expects 1 argument";
@@ -32966,6 +33076,12 @@ let tests =
       test_weak_references_support_typed_cache_values );
     ( "weak references store nominal values without protocol witnesses",
       test_weak_references_store_nominal_values_without_protocol_witnesses );
+    ( "mutating empty vector refs infers values from vswap",
+      test_mutating_empty_vector_refs_infers_values_from_vswap );
+    ( "module empty vector refs use a static boundary",
+      test_module_empty_vector_refs_use_static_boundary );
+    ( "nested reduce-kv infers map value collections",
+      test_nested_reduce_kv_infers_map_value_collections );
     ( "weak references reject invalid calls",
       test_weak_references_reject_invalid_calls );
     ( "volatile nil uses contextual option reference type",

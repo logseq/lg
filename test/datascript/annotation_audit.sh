@@ -54,9 +54,27 @@ if rg -q "$datom_callback_hint_pattern" test/datascript/upstream/db.cljc; then
   exit 1
 fi
 
-db_callback_hint_pattern='\(fn \[[^]]*\^[A-Za-z_:]'
-if rg -q "$db_callback_hint_pattern" test/datascript/upstream/db.cljc; then
-  echo "DataScript DB callbacks must infer ordinary parameters" >&2
+db_callback_hint_pattern='\(fn[[:space:]]*\[[^]]*\^[A-Za-z_:]'
+if rg -U -q "$db_callback_hint_pattern" \
+  test/datascript/upstream/db.cljc \
+  test/datascript/upstream/storage.cljc; then
+  echo "DataScript DB and storage callbacks must infer ordinary parameters" >&2
+  exit 1
+fi
+
+loop_binding_hint_pattern='\(loop \[[^]]*\^[A-Za-z_:]'
+if rg -U -q "$loop_binding_hint_pattern" \
+  test/datascript/upstream/db.cljc \
+  test/datascript/upstream/storage.cljc; then
+  echo "DataScript loop bindings must infer from initializers and recur values" >&2
+  exit 1
+fi
+
+initializer_let_hint_pattern='\(let \[[^]]*\^[^[:space:]]+[[:space:]]+(left-datoms|right-datoms|attrs|ref-attrs|entity-refs|eids|step|entries)\b'
+if rg -U -q "$initializer_let_hint_pattern" \
+  test/datascript/upstream/db.cljc \
+  test/datascript/upstream/storage.cljc; then
+  echo "DataScript let bindings must infer concrete initializer result types" >&2
   exit 1
 fi
 

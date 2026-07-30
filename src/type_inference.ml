@@ -3729,7 +3729,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         ] -> (
         let element_ty =
           match inferred_form_type params value with
-          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown -> Type_solver.fresh ()
           | ty -> ty
         in
         let collection_ty =

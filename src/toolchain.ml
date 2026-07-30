@@ -215,6 +215,21 @@ module Lg_frontend : FRONTEND = struct
                     normalize_metadata value;
                   ];
               ]
+        | Ast.FSymbol metadata
+          :: Ast.FSymbol annotation
+          :: name :: [ value ]
+          when metadata_symbol metadata && definition_type_hint annotation ->
+            Ast.FList
+              [
+                Ast.FSymbol head;
+                normalize_metadata name;
+                Ast.FList
+                  [
+                    Ast.FSymbol "__type-hint";
+                    Ast.FSymbol annotation;
+                    normalize_metadata value;
+                  ];
+              ]
         | Ast.FSymbol annotation :: name :: [ value ]
           when definition_type_hint annotation ->
             Ast.FList

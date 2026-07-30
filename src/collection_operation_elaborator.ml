@@ -1861,6 +1861,23 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | _ ->
               Error.error "assoc expects collection followed by key/value pairs"
         in
+        let rec compile_map_pairs key_ty value_ty acc = function
+          | [] -> Ok (List.rev acc)
+          | key_form :: value_form :: rest -> (
+              match
+                ( compile_expr scope
+                    (Env.with_expected_type (Some key_ty) env)
+                    key_form,
+                  compile_expr scope
+                    (Env.with_expected_type (Some value_ty) env)
+                    value_form )
+              with
+              | (Error _ as error), _ | _, (Error _ as error) -> error
+              | Ok key, Ok value ->
+                  compile_map_pairs key_ty value_ty ((key, value) :: acc) rest)
+          | _ ->
+              Error.error "assoc expects collection followed by key/value pairs"
+        in
         match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
@@ -2122,21 +2139,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     "assoc requires an optional value with a concrete static \
                      map or record type"
                 | target_ty -> (
-                    let dynamic_target =
-                      Option.is_some (Types.dynamic_map_types target_ty)
-                    in
-                    if not dynamic_target then
-                    Error.error
-                      ("assoc expects a map or vector, got "
-                      ^ Types.source_name target_ty)
-                    else
-                      match compile_vector_pairs [] pair_forms with
+                    match Types.dynamic_map_types target_ty with
+                    | None ->
+                        Error.error
+                          ("assoc expects a map or vector, got "
+                          ^ Types.source_name target_ty)
+                    | Some (declared_key_ty, declared_value_ty) -> (
+                      match
+                        compile_map_pairs declared_key_ty declared_value_ty []
+                          pair_forms
+                      with
                       | Error _ as err -> err
                       | Ok [] -> assert false
                       | Ok pairs ->
-                          let declared_key_ty, declared_value_ty =
-                            Option.get (Types.dynamic_map_types target_ty)
-                          in
                           let unresolved_component ty =
                             Type_solver.is_open ty
                             ||
@@ -2202,7 +2217,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                         (Types.dynamic_map key_ty value_ty)
                                         expression)
                                     (validate pairs)))
-                          )))
+                          ))))
       | _ -> Error.error "assoc expects collection followed by key/value pairs"
     and compile_dissoc scope env arg_forms =
       match arg_forms with
