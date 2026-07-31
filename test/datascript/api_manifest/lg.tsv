@@ -719,8 +719,8 @@ arity	datascript.pull-api/add-scalar-datom	3	fixed
 arity	datascript.pull-api/advance-attrs-state	3	fixed
 arity	datascript.pull-api/advance-reverse-state	2	fixed
 arity	datascript.pull-api/apply-attr-xform	2	fixed
-arity	datascript.pull-api/assoc-pulled-data	3	fixed
 arity	datascript.pull-api/assoc-pulled-value	3	fixed
+arity	datascript.pull-api/assoc-pulled-value-hashed	4	fixed
 arity	datascript.pull-api/attr-at-index	2	fixed
 arity	datascript.pull-api/attr-in-range?	3	fixed
 arity	datascript.pull-api/attr-pattern	1	fixed
@@ -728,7 +728,6 @@ arity	datascript.pull-api/attrs-frame	5	fixed
 arity	datascript.pull-api/attrs-state	5	fixed
 arity	datascript.pull-api/attrs-state-with	6	fixed
 arity	datascript.pull-api/auto-expanding?	1	fixed
-arity	datascript.pull-api/compact-child-result	1	fixed
 arity	datascript.pull-api/cursor-datom	1	fixed
 arity	datascript.pull-api/cursor-datom-exn	1	fixed
 arity	datascript.pull-api/cursor-from-datoms	1	fixed
@@ -769,7 +768,6 @@ arity	datascript.pull-api/pull-parsed	3	fixed
 arity	datascript.pull-api/pull-parsed-with-options	4	fixed
 arity	datascript.pull-api/pull-source	3	fixed
 arity	datascript.pull-api/pull-source-with-options	4	fixed
-arity	datascript.pull-api/pulled-map-to-data	1	fixed
 arity	datascript.pull-api/pulled-to-data	1	fixed
 arity	datascript.pull-api/push-frame	2	fixed
 arity	datascript.pull-api/ref-datom-id	2	fixed
@@ -1774,8 +1772,8 @@ var	datascript.pull-api/add-scalar-datom
 var	datascript.pull-api/advance-attrs-state
 var	datascript.pull-api/advance-reverse-state
 var	datascript.pull-api/apply-attr-xform
-var	datascript.pull-api/assoc-pulled-data
 var	datascript.pull-api/assoc-pulled-value
+var	datascript.pull-api/assoc-pulled-value-hashed
 var	datascript.pull-api/attr-at-index
 var	datascript.pull-api/attr-in-range?
 var	datascript.pull-api/attr-pattern
@@ -1783,7 +1781,6 @@ var	datascript.pull-api/attrs-frame
 var	datascript.pull-api/attrs-state
 var	datascript.pull-api/attrs-state-with
 var	datascript.pull-api/auto-expanding?
-var	datascript.pull-api/compact-child-result
 var	datascript.pull-api/cursor-datom
 var	datascript.pull-api/cursor-datom-exn
 var	datascript.pull-api/cursor-from-datoms
@@ -1821,7 +1818,6 @@ var	datascript.pull-api/pull-parsed
 var	datascript.pull-api/pull-parsed-with-options
 var	datascript.pull-api/pull-source
 var	datascript.pull-api/pull-source-with-options
-var	datascript.pull-api/pulled-map-to-data
 var	datascript.pull-api/pulled-to-data
 var	datascript.pull-api/push-frame
 var	datascript.pull-api/ref-datom-id

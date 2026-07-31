@@ -7,6 +7,7 @@ type t =
   | Char of Uchar.t
   | Symbol of string
   | Keyword of string
+  | Small_int of int
   | Int of int64
   | Bigint of string
   | Float of float
@@ -15,12 +16,19 @@ type t =
   | Regex of string
   | List of t array
   | Vector of t array
+  | Int4_vector of int * int * t * int
+  | Int_vector of int array
   | Map of (t * t) array
   | Set of t array
   | Tagged of string * t
   | Json_source of string
 
 type json = Js.Json.t
+
+let integer value =
+  let narrowed = Int64.to_int value in
+  if Int64.equal (Int64.of_int narrowed) value then Small_int narrowed
+  else Int value
 
 let rec of_edn (Melange_edn.Any value) =
   match value with
@@ -30,7 +38,7 @@ let rec of_edn (Melange_edn.Any value) =
   | Melange_edn.Char value -> Char value
   | Melange_edn.Symbol value -> Symbol value
   | Melange_edn.Keyword value -> Keyword (Melange_edn.keyword_to_string value)
-  | Melange_edn.Int value -> Int value
+  | Melange_edn.Int value -> integer value
   | Melange_edn.Bigint value -> Bigint value
   | Melange_edn.Float value -> Float value
   | Melange_edn.Decimal value -> Decimal value
@@ -50,6 +58,7 @@ let rec to_edn = function
   | Char value -> Melange_edn.any (Melange_edn.char value)
   | Symbol value -> Melange_edn.any (Melange_edn.symbol value)
   | Keyword value -> Melange_edn.any (Melange_edn.keyword value)
+  | Small_int value -> Melange_edn.any (Melange_edn.int (Int64.of_int value))
   | Int value -> Melange_edn.any (Melange_edn.int value)
   | Bigint value -> Melange_edn.any (Melange_edn.bigint value)
   | Float value -> Melange_edn.any (Melange_edn.float value)
@@ -61,6 +70,22 @@ let rec to_edn = function
   | Vector values ->
       Melange_edn.any
         (Melange_edn.vector (Array.to_list (Array.map to_edn values)))
+  | Int4_vector (first, second, third, fourth) ->
+      Melange_edn.any
+        (Melange_edn.vector
+           [
+             Melange_edn.any (Melange_edn.int (Int64.of_int first));
+             Melange_edn.any (Melange_edn.int (Int64.of_int second));
+             to_edn third;
+             Melange_edn.any (Melange_edn.int (Int64.of_int fourth));
+           ])
+  | Int_vector values ->
+      Melange_edn.any
+        (Melange_edn.vector
+           (values
+           |> Array.map (fun value ->
+                  Melange_edn.any (Melange_edn.int (Int64.of_int value)))
+           |> Array.to_list))
   | Map entries ->
       Melange_edn.any
         (Melange_edn.map
@@ -82,63 +107,92 @@ let json_number value =
     value >= min_safe_json_integer
     && value <= max_safe_json_integer
     && Float.is_integer value
-  then Int (Int64.of_float value)
+  then integer (Int64.of_float value)
   else Float value
 
 let rec of_json json =
-  match Js.Json.classify json with
-  | JSONNull -> Nil
-  | JSONFalse -> Bool false
-  | JSONTrue -> Bool true
-  | JSONString value -> String value
-  | JSONNumber value -> json_number value
-  | JSONArray values -> Vector (Array.map of_json values)
-  | JSONObject entries ->
-      Map
-        (Array.map
-           (fun (key, value) -> (String key, of_json value))
-           (Js.Dict.entries entries))
+  match Js.Json.decodeString json with
+  | Some value -> String value
+  | None -> (
+      match Js.Json.decodeNumber json with
+      | Some value -> json_number value
+      | None -> (
+          match Js.Json.decodeArray json with
+          | Some values -> Vector (Array.map of_json values)
+          | None -> (
+              match Js.Json.decodeObject json with
+              | Some entries ->
+                  Map
+                    (Array.map
+                       (fun (key, value) -> (String key, of_json value))
+                       (Js.Dict.entries entries))
+              | None -> (
+                  match Js.Json.classify json with
+                  | JSONNull -> Nil
+                  | JSONFalse -> Bool false
+                  | JSONTrue -> Bool true
+                  | JSONString _ | JSONNumber _ | JSONArray _ | JSONObject _ ->
+                      assert false))))
 
 let of_json_string source = source |> Js.Json.parseExn |> of_json
 let of_json_source source = Json_source source
 let json_of_string = Js.Json.parseExn
 
 let json_field json name =
-  match Js.Json.classify json with
-  | JSONObject fields -> (
+  match Js.Json.decodeObject json with
+  | Some fields -> (
       match Js.Dict.get fields name with
       | Some value -> value
       | None -> invalid_arg ("missing JSON field " ^ name))
-  | _ -> invalid_arg "expected JSON object"
+  | None -> invalid_arg "expected JSON object"
 
 let json_field_opt json name =
-  match Js.Json.classify json with
-  | JSONObject fields -> Js.Dict.get fields name
-  | _ -> invalid_arg "expected JSON object"
+  match Js.Json.decodeObject json with
+  | Some fields -> Js.Dict.get fields name
+  | None -> invalid_arg "expected JSON object"
 
 let json_array json =
-  match Js.Json.classify json with
-  | JSONArray values -> values
-  | _ -> invalid_arg "expected JSON array"
+  match Js.Json.decodeArray json with
+  | Some values -> values
+  | None -> invalid_arg "expected JSON array"
 
 let with_json_array4 json f =
-  match Js.Json.classify json with
-  | JSONArray values when Array.length values = 4 ->
+  match Js.Json.decodeArray json with
+  | Some values when Array.length values = 4 ->
       f values.(0) values.(1) values.(2) values.(3)
   | _ -> invalid_arg "expected JSON array of length 4"
 
 let json_int json =
-  match Js.Json.classify json with
-  | JSONNumber value when Float.is_integer value -> int_of_float value
+  match Js.Json.decodeNumber json with
+  | Some value when Float.is_integer value -> int_of_float value
   | _ -> invalid_arg "expected JSON integer"
 
 let json_string json =
-  match Js.Json.classify json with
-  | JSONString value -> value
+  match Js.Json.decodeString json with
+  | Some value -> value
   | _ -> invalid_arg "expected JSON string"
 
-let json_is_null json =
-  match Js.Json.classify json with JSONNull -> true | _ -> false
+let json_int_opt json =
+  match Js.Json.decodeNumber json with
+  | Some value when Float.is_integer value -> Some (int_of_float value)
+  | _ -> None
+
+let json_float_opt json =
+  match Js.Json.decodeNumber json with
+  | Some value when not (Float.is_integer value) -> Some value
+  | _ -> None
+
+let json_string_opt = Js.Json.decodeString
+
+let json_bool_opt json =
+  match Js.Json.classify json with
+  | JSONFalse -> Some false
+  | JSONTrue -> Some true
+  | _ -> None
+
+let json_array_opt = Js.Json.decodeArray
+
+let json_is_null json = Js.Json.test json Null
 
 let json_to_edn = of_json
 
@@ -188,6 +242,47 @@ let add_json_int writer value =
     add_json_token writer (Int64.to_string value)
   else add_json_string writer (Int64.to_string value)
 
+let json_string_token value = Js.Json.stringify (Js.Json.string value)
+
+let json_int_token value =
+  let min_safe_json_integer = -9007199254740991L in
+  let max_safe_json_integer = 9007199254740991L in
+  if value >= min_safe_json_integer && value <= max_safe_json_integer then
+    Int64.to_string value
+  else json_string_token (Int64.to_string value)
+
+let json_float_token value =
+  match classify_float value with
+  | FP_nan -> json_string_token "NaN"
+  | FP_infinite when value > 0. -> json_string_token "Infinity"
+  | FP_infinite -> json_string_token "-Infinity"
+  | FP_normal | FP_subnormal | FP_zero ->
+      Js.Json.stringify (Js.Json.number value)
+
+let rec compact_json_value = function
+  | Nil -> Some "null"
+  | Bool true -> Some "true"
+  | Bool false -> Some "false"
+  | String value | Symbol value | Bigint value | Decimal value | Ratio value
+  | Regex value ->
+      Some (json_string_token value)
+  | Keyword value -> Some (json_string_token (":" ^ value))
+  | Small_int value -> Some (string_of_int value)
+  | Int value -> Some (json_int_token value)
+  | Float value -> Some (json_float_token value)
+  | Vector values when Array.length values = 1 ->
+      compact_json_value values.(0)
+      |> Option.map (fun value -> "[" ^ value ^ "]")
+  | Vector values when Array.length values = 2 -> (
+      match
+        (compact_json_value values.(0), compact_json_value values.(1))
+      with
+      | Some first, Some second -> Some ("[" ^ first ^ "," ^ second ^ "]")
+      | _ -> None)
+  | Char _ | List _ | Vector _ | Int4_vector _ | Int_vector _ | Map _
+  | Set _ | Tagged _ | Json_source _ ->
+      None
+
 let rec add_json_value writer = function
   | Nil -> add_json_token writer "null"
   | Bool true -> add_json_token writer "true"
@@ -197,6 +292,7 @@ let rec add_json_value writer = function
       add_json_string writer value
   | Char value -> add_json_char writer value
   | Keyword value -> add_json_string writer (":" ^ value)
+  | Small_int value -> add_json_token writer (string_of_int value)
   | Int value -> add_json_int writer value
   | Float value -> add_json_float writer value
   | List values | Vector values | Set values ->
@@ -205,6 +301,30 @@ let rec add_json_value writer = function
         (fun index value ->
           if index > 0 then add_json_token writer ",";
           add_json_value writer value)
+        values;
+      add_json_token writer "]"
+  | Int4_vector (first, second, third, fourth) ->
+      (match compact_json_value third with
+      | Some third ->
+          add_json_token writer
+            ("[" ^ string_of_int first ^ "," ^ string_of_int second ^ ","
+           ^ third ^ "," ^ string_of_int fourth ^ "]")
+      | None ->
+          add_json_token writer "[";
+          add_json_token writer (string_of_int first);
+          add_json_token writer ",";
+          add_json_token writer (string_of_int second);
+          add_json_token writer ",";
+          add_json_value writer third;
+          add_json_token writer ",";
+          add_json_token writer (string_of_int fourth);
+          add_json_token writer "]")
+  | Int_vector values ->
+      add_json_token writer "[";
+      Array.iteri
+        (fun index value ->
+          if index > 0 then add_json_token writer ",";
+          add_json_token writer (string_of_int value))
         values;
       add_json_token writer "]"
   | Map entries ->

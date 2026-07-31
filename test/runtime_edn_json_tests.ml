@@ -11,7 +11,7 @@ let () =
     (Edn.Vector
        [|
          Edn.String "value";
-         Edn.Int 42L;
+         Edn.Small_int 42;
          Edn.Float 1.5;
          Edn.Float nan;
          Edn.Float infinity;
@@ -26,7 +26,10 @@ let () =
          (Edn.String "tagged", Edn.Tagged ("uuid", Edn.String "id"));
        |]);
   assert_json {|["9007199254740992"]|}
-    (Edn.List [| Edn.Int 9007199254740992L |])
+    (Edn.List [| Edn.Int 9007199254740992L |]);
+  assert_json {|[1,2,"value",3]|}
+    (Edn.Int4_vector (1, 2, Edn.String "value", 3));
+  assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |])
 
 let () =
   let value =
@@ -52,7 +55,8 @@ let () =
   let value =
     Edn.Map
       [|
-        (Edn.String "values", Edn.Vector (Array.init count (fun value -> Edn.Int (Int64.of_int value))));
+        ( Edn.String "values",
+          Edn.Vector (Array.init count (fun value -> Edn.Small_int value)) );
         (Edn.String "name", Edn.String "benchmark");
       |]
   in
@@ -67,6 +71,6 @@ let () =
       let count = int_of_string source in
       let value =
         Edn.Vector
-          (Array.init count (fun value -> Edn.Int (Int64.of_int value)))
+          (Array.init count (fun value -> Edn.Small_int value))
       in
       ignore (Runtime_edn.write_json_string value)

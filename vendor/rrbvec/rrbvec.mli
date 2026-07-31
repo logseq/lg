@@ -72,6 +72,9 @@ val prepend_array : 'a t -> 'a array -> 'a t
 (** Fold over values from front to back. *)
 val fold_left : ('acc -> 'a -> 'acc) -> 'acc -> 'a t -> 'acc
 
+(** Prepend values from front to back, matching a left fold with list cons. *)
+val prepend_to_list : 'a t -> 'a list -> 'a list
+
 (** Fold over values from back to front. *)
 val fold_right : ('a -> 'acc -> 'acc) -> 'a t -> 'acc -> 'acc
 

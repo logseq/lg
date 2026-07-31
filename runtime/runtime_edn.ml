@@ -13,6 +13,9 @@ let rec apply_tag_parsers value =
   match value with
   | List values -> List (Array.map apply_tag_parsers values)
   | Vector values -> Vector (Array.map apply_tag_parsers values)
+  | Int4_vector (first, second, third, fourth) ->
+      Int4_vector (first, second, apply_tag_parsers third, fourth)
+  | Int_vector _ as value -> value
   | Map entries ->
       Map
         (Array.map
@@ -28,8 +31,8 @@ let rec apply_tag_parsers value =
         (List.assoc_opt tag !tag_parsers)
   | Json_source source ->
       source |> Lg_edn_backend.of_json_string |> apply_tag_parsers
-  | ( Nil | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Int _
-    | Bigint _ | Float _ | Decimal _ | Ratio _ | Regex _ ) as value ->
+  | ( Nil | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Small_int _
+    | Int _ | Bigint _ | Float _ | Decimal _ | Ratio _ | Regex _ ) as value ->
       value
 
 let read_string source =
@@ -49,6 +52,16 @@ let rec to_seq value =
   match value with
   | Nil -> Seq.empty
   | List values | Vector values | Set values -> Array.to_seq values
+  | Int4_vector (first, second, third, fourth) ->
+      [|
+        Small_int first;
+        Small_int second;
+        third;
+        Small_int fourth;
+      |]
+      |> Array.to_seq
+  | Int_vector values ->
+      values |> Array.to_seq |> Seq.map (fun value -> Small_int value)
   | Map entries ->
       entries |> Array.to_seq
       |> Seq.map (fun (key, value) -> Vector [| key; value |])
@@ -56,8 +69,8 @@ let rec to_seq value =
       value |> String.to_seq
       |> Seq.map (fun value -> Char (Uchar.of_char value))
   | Json_source source -> source |> of_json_string |> to_seq
-  | Bool _ | Char _ | Symbol _ | Keyword _ | Int _ | Bigint _ | Float _
-  | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
+  | Bool _ | Char _ | Symbol _ | Keyword _ | Small_int _ | Int _ | Bigint _
+  | Float _ | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
       invalid_arg "EDN value is not seqable"
 
 let find_keyword keyword = function

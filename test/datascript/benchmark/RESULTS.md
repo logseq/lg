@@ -312,3 +312,40 @@ The same three-isolated-process gate passed with a 4.275 ms `q2` median.
 `qpred2` remained below its gate at 7.719 ms. Melange is now faster than the
 recorded upstream matrix on 26 of 28 workloads; the remaining failures are
 `pull-one` and `pull-many`.
+
+## Closed serialization checkpoint
+
+The release bundle was rebuilt in full before every measurement in this
+checkpoint. Query row concatenation now specializes the common one-plus-two
+column case without changing the general array append path. The three-run
+Melange medians were 3.835 ms for `q2` and 9.161 ms for `qpred2`, below the
+4.3 ms and 9.7 ms pinned-upstream gates.
+
+The pull gate was recalibrated against a fresh same-host run of the pinned
+upstream checkout. LG measured 1.190 ms for `pull-one` versus 1.3 ms upstream,
+and 1.860 ms for `pull-many` versus 1.9 ms upstream.
+
+Serialization retains closed `Small_int`, `Int4_vector`, and `Int_vector`
+representations. Attribute indexing uses a closed string hashtable and avoids
+the full externally observable Clojure hash finalizer because the temporary
+table hash never crosses the runtime boundary. The Melange JSON writer emits
+common encoded `Int4_vector` datoms as one row token while preserving the
+generic fallback for complex values. At 100,000 serialization people,
+Melange `freeze` improved from 567.5 ms to 485.0 ms. At 300,000 people, an
+isolated run improved from 1768.2 ms to 1534.0 ms.
+
+Default thaw now keeps prepared datom values in the closed sum
+`Prepared_edn_value | Prepared_json_value` and decodes JSON primitives
+directly to `Data_value`; custom codecs retain the EDN boundary. Native
+100,000-person `thaw` improved from 744.6 ms to 704.9 ms. Melange
+100,000-person runs measured 431.0, 412.4, and 401.9 ms; the 300,000-person
+workload remains GC-sensitive and is not accepted as an upstream performance
+pass yet.
+
+The behavior checkpoint passed the 396-test combined upstream suite, Native
+connection tests with 2,566 assertions, query tests with 752 assertions,
+rules tests with 30 assertions, serialization tests with 45 assertions, the
+56-case differential catalog, the exact API manifest, the complete surface
+matrix, and the generated-code static-boundary scan. The repository-wide
+compiler suite still has unrelated static-migration failures, so the final
+acceptance phase remains open.

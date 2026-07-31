@@ -188,7 +188,22 @@ let join_rows left left_indexes right right_indexes =
       if index < left_length then left.(left_indexes.(index))
       else right.(right_indexes.(index - left_length)))
 
-let concat_rows = Array.append
+let concat_rows left right =
+  match (Array.length left, Array.length right) with
+  | 1, 1 -> [| Array.unsafe_get left 0; Array.unsafe_get right 0 |]
+  | 1, 2 ->
+      [|
+        Array.unsafe_get left 0;
+        Array.unsafe_get right 0;
+        Array.unsafe_get right 1;
+      |]
+  | 2, 1 ->
+      [|
+        Array.unsafe_get left 0;
+        Array.unsafe_get left 1;
+        Array.unsafe_get right 0;
+      |]
+  | _ -> Array.append left right
 
 let product_rows left_rows right_rows =
   if Rrbvec.length left_rows = 1 then

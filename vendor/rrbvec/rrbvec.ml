@@ -753,7 +753,15 @@ let rec set_node node index value =
 
 let push_back_impl v value =
   match v with
-  | Empty_vector -> make_with_edges [||] Empty [| value |]
+  | Empty_vector ->
+      Vector
+        {
+          count = 1;
+          root = Empty;
+          tail = [| value |];
+          tailoff = 0;
+          head = [||];
+        }
   | Vector v ->
       let tail_length = Array.length v.tail in
       if tail_length < width then
@@ -845,6 +853,34 @@ let fold_left f acc v =
       let acc = fold_array_range f acc v.head 0 (Array.length v.head) in
       let acc = fold_left_node f acc v.root in
       fold_array_range f acc v.tail 0 (Array.length v.tail)
+
+let prepend_array_to_list values acc =
+  let acc = ref acc in
+  for index = 0 to Array.length values - 1 do
+    acc := Array.unsafe_get values index :: !acc
+  done;
+  !acc
+
+let rec prepend_node_to_list node acc =
+  match node with
+  | Empty -> acc
+  | Leaf values -> prepend_array_to_list values acc
+  | Branch branch ->
+      let acc = ref acc in
+      for index = 0 to Array.length branch.children - 1 do
+        acc := prepend_node_to_list (Array.unsafe_get branch.children index) !acc
+      done;
+      !acc
+
+let prepend_to_list v acc =
+  match v with
+  | Empty_vector -> acc
+  | Vector { head; root = Empty; tail; _ } when Array.length head = 0 ->
+      prepend_array_to_list tail acc
+  | Vector v ->
+      let acc = prepend_array_to_list v.head acc in
+      let acc = prepend_node_to_list v.root acc in
+      prepend_array_to_list v.tail acc
 
 let rec fold_right_node f node acc =
   match node with
@@ -1030,6 +1066,24 @@ let root_of_full_chunks_rev chunks_rev =
 let of_list values =
   match values with
   | [] -> empty
+  | [ first ] ->
+      Vector
+        {
+          count = 1;
+          root = Empty;
+          tail = [| first |];
+          tailoff = 0;
+          head = [||];
+        }
+  | [ first; second ] ->
+      Vector
+        {
+          count = 2;
+          root = Empty;
+          tail = [| first; second |];
+          tailoff = 0;
+          head = [||];
+        }
   | first :: rest ->
       let first_chunk = Array.make width first in
       let rec loop chunks_rev chunk chunk_length = function

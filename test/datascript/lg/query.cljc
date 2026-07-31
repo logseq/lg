@@ -1800,7 +1800,29 @@
 (defn q-closed
   [query
     inputs]
-  (query-types/execute-query query inputs))
+  (datascript.parser/validate-static-query-sources query)
+  (if-some [descriptors
+            (datascript.parser/static-query-inputs query)]
+    (if (= (count descriptors) (count inputs))
+      (let [bound
+            (query-types/bind-static-query-inputs
+             descriptors inputs)
+            sources (query-types/context-sources bound)
+            database
+            (query-types/query-default-database sources)
+            resolved
+            (-q bound (.-qwhere query))
+            relation (join-context-relations resolved)]
+        (query-types/execute-resolved-query
+         database
+         sources
+         query
+         (query-types/identity-relation)
+         relation))
+      (Stdlib.invalid_arg
+       "Static query input count does not match parsed :in"))
+    (Stdlib.invalid_arg
+     "Static query contains unsupported input bindings")))
 
 (defn q-db
   [query database]

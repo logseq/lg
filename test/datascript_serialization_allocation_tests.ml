@@ -18,6 +18,18 @@ let () =
   let count = 100_000 in
   let value = Serialization_value.encode_non_keyword (Datascript_runtime.Data_value.Int 1) in
   let datom = Serialization_value.datom 1 0 value 1 in
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let _distinct_datoms =
+    Array.init count (fun index ->
+        Serialization_value.datom index 0 value index)
+  in
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 16_000_000. then
+    failwith
+      (Printf.sprintf
+         "serialized datom structural integers remain wide-boxed: %.0f bytes"
+         allocated_bytes);
   let datoms = Rrbvec.of_array (Array.make count datom) in
   let indexes = Rrbvec.of_array (Array.init count Fun.id) in
   Gc.compact ();

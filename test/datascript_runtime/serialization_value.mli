@@ -20,6 +20,11 @@ val encode_value_with : encoder -> (t -> t) -> Data_value.t -> t
 val encoder_keywords : encoder -> string Rrbvec.t
 val attribute_index : string Rrbvec.t -> string -> int
 
+type attribute_indexes
+
+val create_attribute_indexes : string Rrbvec.t -> attribute_indexes
+val find_attribute_index : attribute_indexes -> string -> int
+
 val datom : int -> int -> t -> int -> t
 val datom_entity : t -> int
 val datom_attribute : t -> int
@@ -124,6 +129,8 @@ val prepared_datom : prepared -> int -> prepared_datom
 val prepared_datom_entity : prepared_datom -> int
 val prepared_datom_attribute : prepared_datom -> int
 val prepared_datom_value : prepared_datom -> t
+val decode_prepared_datom_value :
+  string Rrbvec.t -> prepared_datom -> Data_value.t
 val prepared_datom_tx : prepared_datom -> int
 
 val schema_to_string :

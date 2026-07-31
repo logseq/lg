@@ -5,6 +5,7 @@ type t =
   | Char of Uchar.t
   | Symbol of string
   | Keyword of string
+  | Small_int of int
   | Int of int64
   | Bigint of string
   | Float of float
@@ -13,6 +14,8 @@ type t =
   | Regex of string
   | List of t array
   | Vector of t array
+  | Int4_vector of int * int * t * int
+  | Int_vector of int array
   | Map of (t * t) array
   | Set of t array
   | Tagged of string * t
@@ -34,6 +37,11 @@ val json_array : json -> json array
 val with_json_array4 : json -> (json -> json -> json -> json -> 'a) -> 'a
 val json_int : json -> int
 val json_string : json -> string
+val json_int_opt : json -> int option
+val json_float_opt : json -> float option
+val json_string_opt : json -> string option
+val json_bool_opt : json -> bool option
+val json_array_opt : json -> json array option
 val json_is_null : json -> bool
 val json_to_edn : json -> t
 val regex_valid : string -> bool

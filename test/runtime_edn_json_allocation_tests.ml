@@ -9,7 +9,7 @@ let () =
         ( Edn.String "values",
           Edn.Vector
             (Array.init count (fun value ->
-                 Edn.Int (Int64.of_int value))) );
+                 Edn.Small_int value)) );
         (Edn.String "name", Edn.String "benchmark");
       |]
   in

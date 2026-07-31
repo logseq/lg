@@ -7,6 +7,7 @@ type t =
   | Char of Uchar.t
   | Symbol of string
   | Keyword of string
+  | Small_int of int
   | Int of int64
   | Bigint of string
   | Float of float
@@ -15,12 +16,19 @@ type t =
   | Regex of string
   | List of t array
   | Vector of t array
+  | Int4_vector of int * int * t * int
+  | Int_vector of int array
   | Map of (t * t) array
   | Set of t array
   | Tagged of string * t
   | Json_source of string
 
 type json = Yojson.Safe.t
+
+let integer value =
+  let narrowed = Int64.to_int value in
+  if Int64.equal (Int64.of_int narrowed) value then Small_int narrowed
+  else Int value
 
 let rec of_edn (Melange_edn.Any value) =
   match value with
@@ -30,7 +38,7 @@ let rec of_edn (Melange_edn.Any value) =
   | Melange_edn.Char value -> Char value
   | Melange_edn.Symbol value -> Symbol value
   | Melange_edn.Keyword value -> Keyword (Melange_edn.keyword_to_string value)
-  | Melange_edn.Int value -> Int value
+  | Melange_edn.Int value -> integer value
   | Melange_edn.Bigint value -> Bigint value
   | Melange_edn.Float value -> Float value
   | Melange_edn.Decimal value -> Decimal value
@@ -50,6 +58,7 @@ let rec to_edn = function
   | Char value -> Melange_edn.any (Melange_edn.char value)
   | Symbol value -> Melange_edn.any (Melange_edn.symbol value)
   | Keyword value -> Melange_edn.any (Melange_edn.keyword value)
+  | Small_int value -> Melange_edn.any (Melange_edn.int (Int64.of_int value))
   | Int value -> Melange_edn.any (Melange_edn.int value)
   | Bigint value -> Melange_edn.any (Melange_edn.bigint value)
   | Float value -> Melange_edn.any (Melange_edn.float value)
@@ -61,6 +70,22 @@ let rec to_edn = function
   | Vector values ->
       Melange_edn.any
         (Melange_edn.vector (Array.to_list (Array.map to_edn values)))
+  | Int4_vector (first, second, third, fourth) ->
+      Melange_edn.any
+        (Melange_edn.vector
+           [
+             Melange_edn.any (Melange_edn.int (Int64.of_int first));
+             Melange_edn.any (Melange_edn.int (Int64.of_int second));
+             to_edn third;
+             Melange_edn.any (Melange_edn.int (Int64.of_int fourth));
+           ])
+  | Int_vector values ->
+      Melange_edn.any
+        (Melange_edn.vector
+           (values
+           |> Array.map (fun value ->
+                  Melange_edn.any (Melange_edn.int (Int64.of_int value)))
+           |> Array.to_list))
   | Map entries ->
       Melange_edn.any
         (Melange_edn.map
@@ -82,14 +107,14 @@ let json_number value =
     value >= min_safe_json_integer
     && value <= max_safe_json_integer
     && Float.is_integer value
-  then Int (Int64.of_float value)
+  then integer (Int64.of_float value)
   else Float value
 
 let rec of_json = function
   | `Null -> Nil
   | `Bool value -> Bool value
   | `String value -> String value
-  | `Int value -> Int (Int64.of_int value)
+  | `Int value -> Small_int value
   | `Intlit value -> Bigint value
   | `Float value -> json_number value
   | `List values -> Vector (Array.of_list (List.map of_json values))
@@ -137,6 +162,23 @@ let json_string = function
   | `String value -> value
   | _ -> invalid_arg "expected JSON string"
 
+let json_int_opt = function
+  | `Int value -> Some value
+  | `Intlit value -> int_of_string_opt value
+  | `Float value when Float.is_integer value -> Some (int_of_float value)
+  | _ -> None
+
+let json_float_opt = function
+  | `Float value when not (Float.is_integer value) -> Some value
+  | _ -> None
+
+let json_string_opt = function `String value -> Some value | _ -> None
+let json_bool_opt = function `Bool value -> Some value | _ -> None
+
+let json_array_opt = function
+  | `List values -> Some (Array.of_list values)
+  | _ -> None
+
 let json_is_null = function `Null -> true | _ -> false
 let json_to_edn = of_json
 
@@ -181,10 +223,29 @@ let rec add_json_value buffer = function
       add_json_string buffer value
   | Char value -> add_json_char buffer value
   | Keyword value -> add_json_string buffer (":" ^ value)
+  | Small_int value -> Buffer.add_string buffer (string_of_int value)
   | Int value -> add_json_int buffer value
   | Float value -> add_json_float buffer value
   | List values | Vector values | Set values ->
       add_json_array buffer values
+  | Int4_vector (first, second, third, fourth) ->
+      Buffer.add_char buffer '[';
+      Buffer.add_string buffer (string_of_int first);
+      Buffer.add_char buffer ',';
+      Buffer.add_string buffer (string_of_int second);
+      Buffer.add_char buffer ',';
+      add_json_value buffer third;
+      Buffer.add_char buffer ',';
+      Buffer.add_string buffer (string_of_int fourth);
+      Buffer.add_char buffer ']'
+  | Int_vector values ->
+      Buffer.add_char buffer '[';
+      Array.iteri
+        (fun index value ->
+          if index > 0 then Buffer.add_char buffer ',';
+          Buffer.add_string buffer (string_of_int value))
+        values;
+      Buffer.add_char buffer ']'
   | Map entries -> add_json_object buffer entries
   | Tagged (tag, value) ->
       Buffer.add_string buffer "{\"tag\":";

@@ -1132,6 +1132,53 @@
               idx-int #?(:melange (int idx) :default idx)]
           (recur
            (node-child node idx-int storage)
+            (path-set current-path level idx-int)
+            (dec level)))))))
+
+#?(:native
+   (signature me.tonsky.persistent-sorted-set/slice-bounds-with-keys
+     [value owner write]
+     :fn<tree<value>;value;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;option<tuple<int;int;array<value>>>>)
+   :cljs
+   (signature me.tonsky.persistent-sorted-set/slice-bounds-with-keys
+     [value owner write]
+     :fn<tree<value>;value;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;option<tuple<float;float;array<value>>>>))
+
+(defn slice-bounds-with-keys [root key-from key-to cmp shift storage]
+  (loop [node root
+         current-path empty-path
+         level shift]
+    (let [keys (node-keys node)
+          keys-length (arrays/alength keys)]
+      (if (= 0 level)
+        (let [left-idx (binary-search-l cmp keys (dec keys-length) key-from)]
+          (if (= left-idx keys-length)
+            nil
+            (let [left
+                  (path-set
+                   current-path 0
+                   #?(:melange (int left-idx) :default left-idx))
+                  right
+                  (if (pos?
+                       (uncurried-compare
+                        cmp key-to (arrays/aget keys (dec keys-length))))
+                    (rseek-path root key-to cmp shift storage)
+                    (path-set
+                     current-path 0
+                     #?(:melange
+                        (int
+                         (binary-search-r
+                          cmp keys (dec keys-length) key-to))
+                        :default
+                        (binary-search-r
+                         cmp keys (dec keys-length) key-to))))]
+              (if (path-lt left right)
+                (Some (tuple left right keys))
+                nil))))
+        (let [idx (binary-search-l cmp keys (- keys-length 2) key-from)
+              idx-int #?(:melange (int idx) :default idx)]
+          (recur
+           (node-child node idx-int storage)
            (path-set current-path level idx-int)
            (dec level)))))))
 
@@ -1533,21 +1580,19 @@
     nil))
 
 (defn set-slice-with [set key-from key-to cmp]
-  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
-    (match bounds
-      (tuple left right)
-      (Some
-       (iterator-seq
-        (make-iterator
-         (set-root set)
-         (set-shift set)
-         left
-         right
-         (node-keys-at-path
-          (set-root set) left (set-shift set) (set-storage set))
-         (path-get left 0)
-         (set-storage set)))))
-    nil))
+  (let [root (set-root set)
+        shift (set-shift set)
+        storage (set-storage set)]
+    (if-some [bounds
+              (slice-bounds-with-keys
+               root key-from key-to cmp shift storage)]
+      (match bounds
+        (tuple left right keys)
+        (Some
+         (iterator-seq
+          (make-iterator
+           root shift left right keys (path-get left 0) storage))))
+      nil)))
 
 (defn set-slice [set key-from key-to]
   (set-slice-with set key-from key-to (set-comparator set)))
@@ -1558,14 +1603,16 @@
 
 (defn set-slice-reduce-with
   [set key-from key-to cmp f initial]
-  (if-some [bounds (set-slice-bounds set key-from key-to cmp)]
-    (match bounds
-      (tuple left right)
-      (let [root (set-root set)
-            shift (set-shift set)
-            storage (set-storage set)]
+  (let [root (set-root set)
+        shift (set-shift set)
+        storage (set-storage set)]
+    (if-some [bounds
+              (slice-bounds-with-keys
+               root key-from key-to cmp shift storage)]
+      (match bounds
+        (tuple left right first-keys)
         (loop [left left
-               keys (node-keys-at-path root left shift storage)
+               keys first-keys
                index (path-get left 0)
                result initial]
           (if (path-lt left right)
@@ -1587,8 +1634,8 @@
                      (path-get next-left 0)
                      result)
                     result))))
-            result))))
-    initial))
+            result)))
+      initial)))
 
 (defn set-rslice-with [set key-from key-to cmp]
   (if-some [bounds (set-slice-bounds set key-to key-from cmp)]

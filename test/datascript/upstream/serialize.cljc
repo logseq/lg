@@ -97,7 +97,9 @@
    ^datascript.db/Datom datom]
   (db/datom-set-idx datom idx)
   (let [entity    (.-e datom)
-        attribute (get attrs-map (.-a datom) -1)
+        attribute
+        (Datascript_runtime.Serialization_value.find_attribute_index
+         attrs-map (str (.-a datom)))
         value     (match freeze-codec
                     (CustomCodec freeze-fn)
                     (Datascript_runtime.Serialization_value.encode_value_with
@@ -178,7 +180,9 @@
     (Stdlib.invalid_arg
      "serializable doesn't work with databases that have :storage"))
   (let [attrs       (all-attrs db)
-        attrs-map   (zipmap attrs (range (count attrs)))
+        attrs-map
+        (Datascript_runtime.Serialization_value.create_attribute_indexes
+         (mapv str attrs))
         frozen-attrs (freeze-attrs keyword-freezer attrs)
         encoder     (Datascript_runtime.Serialization_value.create_encoder)
         eavt        (serialize-eavt db encoder freeze-codec attrs-map)
@@ -260,10 +264,8 @@
                      (Datascript_runtime.Serialization_value.prepared_datom_value
                       datom))
                     DefaultCodec
-                    (Datascript_runtime.Serialization_value.decode_value
-                     keywords
-                     (Datascript_runtime.Serialization_value.prepared_datom_value
-                      datom)))
+                    (Datascript_runtime.Serialization_value.decode_prepared_datom_value
+                     keywords datom))
         tx        (+ tx0
                      (Datascript_runtime.Serialization_value.prepared_datom_tx
                       datom))]

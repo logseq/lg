@@ -10,6 +10,12 @@ let test_closed_values_compare_without_dynamic_boxing () =
   assert (Value.compare (Value.Ref 42) (Value.Int 42) = 0);
   assert (Value.compare (Value.Keyword ":user/name") (Value.String "Ada") < 0)
 
+let test_equal_numeric_values_share_a_hash () =
+  let expected = Value.hash (Value.Int 42) in
+  assert (Value.hash (Value.Float 42.) = expected);
+  assert (Value.hash (Value.Ref 42) = expected);
+  assert (Value.hash (Value.Wide_int 42L) = expected)
+
 let test_wide_integers_remain_closed_numeric_values () =
   let wide = Value.Wide_int 3_735_928_559L in
   let native_int = Value.Int 3_735_928_559 in
@@ -400,6 +406,15 @@ let test_query_rows_use_static_integer_indexes () =
         Query_value.Attr ":user/name";
         Query_value.Value (Value.Int 7);
       |]);
+  assert (
+    Query_value.concat_rows
+      [| Query_value.Value (Value.Int 50_000) |]
+      [| Query_value.Entity 42; Query_value.Value (Value.Int 60_000) |]
+    = [|
+        Query_value.Value (Value.Int 50_000);
+        Query_value.Entity 42;
+        Query_value.Value (Value.Int 60_000);
+      |]);
   let products =
     Query_value.product_rows (Rrbvec.of_list [ left ])
       (Rrbvec.of_list [ right; right ])
@@ -783,6 +798,18 @@ let test_serialization_uses_a_closed_typed_facade () =
       ":user/age"
     = 1)
 
+let test_serialization_attribute_indexes_preserve_attribute_order () =
+  let indexes =
+    Serialization_value.create_attribute_indexes
+      (Rrbvec.of_list [ ":user/name"; ":user/age"; ":user/email" ])
+  in
+  assert (
+    Serialization_value.find_attribute_index indexes ":user/name" = 0);
+  assert (
+    Serialization_value.find_attribute_index indexes ":user/email" = 2);
+  assert (
+    Serialization_value.find_attribute_index indexes ":user/missing" = -1)
+
 let test_serialized_json_prepares_concrete_database_fields () =
   let source =
     {|{"count":1,"tx0":536870912,"max-eid":42,"max-tx":7,"schema":"nil","attrs":[":user/name"],"keywords":[],"eavt":[[42,0,"Ada",7]],"aevt":[0],"avet":[0],"branching-factor":32,"ref-type":"weak"}|}
@@ -806,6 +833,9 @@ let test_serialized_json_prepares_concrete_database_fields () =
   assert (
     Serialization_value.prepared_datom_value datom
     = Lg_edn_backend.String "Ada");
+  assert (
+    Serialization_value.decode_prepared_datom_value Rrbvec.empty datom
+    = Datascript_runtime.Data_value.String "Ada");
   assert (Serialization_value.prepared_datom_tx datom = 7);
   assert (
     Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
@@ -825,6 +855,7 @@ let test_prepared_json_rejects_invalid_datom () =
 
 let () =
   test_closed_values_compare_without_dynamic_boxing ();
+  test_equal_numeric_values_share_a_hash ();
   test_wide_integers_remain_closed_numeric_values ();
   test_nil_wildcards_are_checked_without_general_value_equality ();
   test_sequential_values_share_datascript_equality ();
@@ -857,4 +888,5 @@ let () =
   test_query_inputs_use_closed_recursive_binding_values ();
   test_storage_payloads_keep_integer_addresses_and_closed_values ();
   test_storage_backend_has_a_static_payload_boundary ();
-  test_serialization_uses_a_closed_typed_facade ()
+  test_serialization_uses_a_closed_typed_facade ();
+  test_serialization_attribute_indexes_preserve_attribute_order ()

@@ -8,8 +8,8 @@
 (type-variant pulled-value
   (PulledScalar :Datascript_runtime.Data_value.t)
   (PulledEntity
-   :map<Datascript_runtime.Data_value.t;pulled-value>)
-  (PulledMany :vector<pulled-value>))
+   :map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
+  (PulledMany :vector<Datascript_runtime.Data_value.t>))
 
 (type-alias pull-visitor
   :fn<keyword;option<int>;option<keyword>;option<int>;unit>)
@@ -43,14 +43,14 @@
   (datoms :option<DatomCursor>))
 
 (type-record MultivalAttrState
-  (values :vector<pulled-value>)
+  (values :vector<Datascript_runtime.Data_value.t>)
   (attr :datascript.pull-parser/pull-attr)
   (datoms :DatomCursor))
 
 (type-record MultivalRefAttrState
   (seen :set<int>)
   (recursion-limits :map<int;int>)
-  (values :vector<pulled-value>)
+  (values :vector<Datascript_runtime.Data_value.t>)
   (pattern :datascript.pull-parser/PullPattern)
   (attr :datascript.pull-parser/pull-attr)
   (datoms :DatomCursor))
@@ -58,7 +58,8 @@
 (type-record ReverseAttrsState
   (seen :set<int>)
   (recursion-limits :map<int;int>)
-  (values :map<Datascript_runtime.Data_value.t;pulled-value>)
+  (values
+   :map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
   (pattern :datascript.pull-parser/PullPattern)
   (attr :option<datascript.pull-parser/pull-attr>)
   (attrs :vector<datascript.pull-parser/pull-attr>)
@@ -68,7 +69,8 @@
 (type-record AttrsState
   (seen :set<int>)
   (recursion-limits :map<int;int>)
-  (values :map<Datascript_runtime.Data_value.t;pulled-value>)
+  (values
+   :map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
   (pattern :datascript.pull-parser/PullPattern)
   (attr :option<datascript.pull-parser/pull-attr>)
   (resume-attr :option<datascript.pull-parser/pull-attr>)
@@ -96,35 +98,24 @@
   (match value
     (PulledScalar value) value
     (PulledMany values)
-    (Datascript_runtime.Data_value.vector_of_vector_with
-     pulled-to-data
-     values)
+    (Datascript_runtime.Data_value.vector_of_vector values)
     (PulledEntity values)
-    (Datascript_runtime.Data_value.map_of_data_map_with
-     pulled-to-data
-     values)))
+    (Datascript_runtime.Data_value.map_of_data_map values)))
 
 (signature datascript.pull-api/assoc-pulled-value
-  :fn<map<Datascript_runtime.Data_value.t;pulled-value>;Datascript_runtime.Data_value.t;pulled-value;map<Datascript_runtime.Data_value.t;pulled-value>>)
+  :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
 
 (defn assoc-pulled-value
   [values key value]
   (assoc values key value))
 
 (signature datascript.pull-api/assoc-pulled-value-hashed
-  :fn<map<Datascript_runtime.Data_value.t;pulled-value>;Datascript_runtime.Data_value.t;int;pulled-value;map<Datascript_runtime.Data_value.t;pulled-value>>)
+  :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;int;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
 
 (defn assoc-pulled-value-hashed
   [values key key-hash value]
   (Datascript_runtime.Data_value.map_assoc_hashed
    values key key-hash value))
-
-(signature datascript.pull-api/assoc-pulled-data
-  :fn<map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>>)
-
-(defn assoc-pulled-data
-  [values key value]
-  (assoc values key value))
 
 (defn cursor-datom
   [cursor]
@@ -205,7 +196,7 @@
           (if limit-reached
             (skip-multival-attr values data cursor)
             (recur
-             (conj values (PulledScalar (.-v datom)))
+             (conj values (.-v datom))
              (next-cursor cursor))))))))
 
 (defn run-multival-attr-frame [state]
@@ -351,10 +342,9 @@
   (let [values {}]
     (PulledEntity
      (assoc-pulled-value
-      values
-      (Datascript_runtime.Data_value.Keyword ":db/id")
-      (PulledScalar
-       (Datascript_runtime.Data_value.Int id))))))
+     values
+     (Datascript_runtime.Data_value.Keyword ":db/id")
+      (Datascript_runtime.Data_value.Int id)))))
 
 (defn expanding-ref-frame
   [context seen recursion-limits pattern attr id]
@@ -521,7 +511,7 @@
        values
        (.-alias data)
        (.-alias-hash data)
-       value))))
+       (pulled-to-data value)))))
 
 (defn merge-attrs-result
   [state result]
@@ -546,7 +536,7 @@
          (seen (.-seen state))
          (recursion-limits (.-recursion-limits state))
          (values
-          (merge-attr-value
+         (merge-attr-value
            (.-values state)
            attr
            (.-value result)))
@@ -573,7 +563,8 @@
      (values
       (match (.-value result)
         None (.-values state)
-        (Some value) (conj (.-values state) value)))
+        (Some value)
+        (conj (.-values state) (pulled-to-data value))))
      (pattern (.-pattern state))
      (attr (.-attr state))
      (datoms (next-cursor (.-datoms state))))))
@@ -592,7 +583,7 @@
          (seen (.-seen state))
          (recursion-limits (.-recursion-limits state))
          (values
-          (merge-attr-value
+         (merge-attr-value
            (.-values state)
            attr
            (.-value result)))
@@ -720,7 +711,7 @@
        values
        (.-alias data)
        (.-alias-hash data)
-       (PulledScalar value)))))
+       value))))
 
 (defn add-missing-value
   [values attr]
@@ -731,7 +722,7 @@
        values
        (.-alias data)
        (.-alias-hash data)
-       (PulledScalar value))
+       value)
       None
       (merge-attr-value values attr None))))
 
@@ -900,7 +891,7 @@
     None
     [(ResultFrame
       (frame-result
-       (if (empty? (.-values state))
+       (if (zero? (count (.-values state)))
          None
          (Some (PulledEntity (.-values state))))
        None))]
@@ -914,7 +905,7 @@
             None
             (Some (.-name data))
             (Some
-             (Datascript_runtime.Data_value.Ref
+            (Datascript_runtime.Data_value.Ref
               (.-id state)))
             None))]
       (visit
@@ -1052,16 +1043,6 @@
   (-str [current]
     (frame-string current)))
 
-(defn pulled-map-to-data
-  [values]
-  (reduce-kv
-   (fn
-     [result key value]
-     (assoc-pulled-data
-      result key (pulled-to-data value)))
-   {}
-   values))
-
 (signature datascript.pull-api/first-frame
   :fn<list<frame>;frame>)
 
@@ -1078,17 +1059,6 @@
   (match current
     (ResultFrame result) (Some result)
     _ None))
-
-(defn compact-child-result [result]
-  (record ResultState
-    (value
-     (match (.-value result)
-       None None
-       (Some (PulledScalar value))
-       (Some (PulledScalar value))
-       (Some value)
-       (Some (PulledScalar (pulled-to-data value)))))
-    (datoms (.-datoms result))))
 
 (signature datascript.pull-api/push-frame
   :fn<list<frame>;frame;list<frame>>)
@@ -1116,15 +1086,14 @@
             stack-before-parent
             (merge-frame
              parent
-             (compact-child-result result))))))
+             result)))))
 
       None
       (run-stack
        context
-       (reduce
-        push-frame
-        stack-before-current
-        (run-frame context current))))))
+       (Rrbvec.prepend_to_list
+        (run-frame context current)
+        stack-before-current)))))
 
 (defn pull-parsed-with-options
   [database pattern entity-ref options]
@@ -1143,7 +1112,7 @@
       (match (run-stack context (list root))
         None None
         (Some (PulledEntity values))
-        (Some (pulled-map-to-data values))
+        (Some values)
         (Some _)
         (Stdlib.invalid_arg
          "Root pull result is not an entity")))
