@@ -426,6 +426,29 @@ upstream suite passed 396 tests, and the Native connection suite passed 394
 tests containing 2,566 assertions. Full serialization acceptance remains open
 because the 300,000-person freeze median is still slower than pinned upstream.
 
+## Compact integer-vector separator checkpoint
+
+The two serialized secondary indexes are closed `Int_vector` values. Their
+writer path previously pushed a comma token and an integer token separately
+for every element after the first. The retained path prefixes each integer
+token with its separator, preserving the exact JSON text while halving token
+array growth for these indexes.
+
+The direct-loop path was RED at a 297.196 ms five-process median against the
+295 ms Melange gate. The final compact-separator path measured 285.908 ms, an
+approximately 3.8 percent improvement. Exact tests cover empty, odd-length,
+even-length, zero, and negative integer vectors. The 500,000-value writer
+stress test passed with a 112 MB Node heap, and Melange thaw remained green at
+370.532 ms.
+
+At 300,000 people, the prior direct-loop median was 1121.379 ms and the compact
+separator median was 1114.146 ms. This is within measurement noise, so it is
+recorded only as no observed scale regression rather than as a full-scale
+performance win. A chunked `slice`/`join` experiment improved freeze further
+but made the subsequent thaw workload retain enough allocation pressure to
+miss its gate, and a paired-integer string experiment also regressed freeze;
+both were removed. Full serialization acceptance remains open.
+
 The behavior checkpoint passed the 396-test combined upstream suite, Native
 connection tests with 2,566 assertions, query tests with 752 assertions,
 rules tests with 30 assertions, serialization tests with 45 assertions, the

@@ -44,7 +44,8 @@ let () =
          Edn.Small_int 7;
        |]);
   assert_json "[]" (Edn.Int_vector [||]);
-  assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |])
+  assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |]);
+  assert_json {|[-1,0,42,7]|} (Edn.Int_vector [| -1; 0; 42; 7 |])
 
 let () =
   let value =

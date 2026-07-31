@@ -342,8 +342,8 @@ let rec add_json_value writer = function
   | Int_vector values ->
       add_json_token writer "[";
       for index = 0 to Array.length values - 1 do
-        if index > 0 then add_json_token writer ",";
-        add_json_token writer (string_of_int values.(index))
+        let prefix = if index > 0 then "," else "" in
+        add_json_token writer (prefix ^ string_of_int values.(index))
       done;
       add_json_token writer "]"
   | Map entries ->

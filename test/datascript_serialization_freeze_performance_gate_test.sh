@@ -76,7 +76,7 @@ if ! assert_performance Native 390 run_native_freeze; then
   failures=1
 fi
 
-if ! assert_performance Melange 310 run_melange_freeze; then
+if ! assert_performance Melange 295 run_melange_freeze; then
   failures=1
 fi
 
