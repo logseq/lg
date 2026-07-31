@@ -578,9 +578,24 @@ let prepared_max_tx value = value.prepared_database_max_tx
 let prepared_schema_value value = value.prepared_database_schema
 let prepared_schema_source value = string_value value.prepared_database_schema
 let prepared_attrs value = value.prepared_database_attrs
+let prepared_attrs_array value =
+  Rrbvec.to_array value.prepared_database_attrs
+
 let prepared_keywords value = value.prepared_database_keywords
 let prepared_aevt_array value = value.prepared_database_aevt
 let prepared_avet_array value = value.prepared_database_avet
+
+let reorder_array values = function
+  | None -> values
+  | Some indexes ->
+      let count = Array.length indexes in
+      if count = 0 then [||]
+      else
+        let result = Array.make count values.(indexes.(0)) in
+        for index = 1 to count - 1 do
+          result.(index) <- values.(indexes.(index))
+        done;
+        result
 
 let prepared_branching_factor value =
   value.prepared_database_branching_factor

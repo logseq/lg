@@ -826,6 +826,9 @@ let test_serialized_json_prepares_concrete_database_fields () =
   assert (
     Serialization_value.prepared_attrs prepared
     = Rrbvec.of_list [ ":user/name" ]);
+  assert (
+    Serialization_value.prepared_attrs_array prepared
+    = [| ":user/name" |]);
   assert (Serialization_value.prepared_datom_count prepared = 1);
   let datom = Serialization_value.prepared_datom prepared 0 in
   assert (Serialization_value.prepared_datom_entity datom = 42);
@@ -839,6 +842,15 @@ let test_serialized_json_prepares_concrete_database_fields () =
   assert (Serialization_value.prepared_datom_tx datom = 7);
   assert (
     Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
+
+let test_serialization_reorders_arrays_without_changing_identity_order () =
+  let values = [| "first"; "second"; "third" |] in
+  assert (Serialization_value.reorder_array values None == values);
+  assert (
+    Serialization_value.reorder_array values (Some [| 2; 0; 1 |])
+    = [| "third"; "first"; "second" |]);
+  assert (
+    Serialization_value.reorder_array values (Some [||]) = [||])
 
 let test_prepared_json_rejects_invalid_datom () =
   let source =
@@ -870,6 +882,7 @@ let () =
   test_collection_items_preserve_collection_kind ();
   test_entity_refs_are_extracted_from_closed_values ();
   test_serialized_json_prepares_concrete_database_fields ();
+  test_serialization_reorders_arrays_without_changing_identity_order ();
   test_prepared_json_rejects_invalid_datom ();
   test_lookup_refs_are_extracted_from_closed_vectors ();
   test_ref_values_are_extracted_statically ();

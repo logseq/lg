@@ -119,10 +119,12 @@ val prepared_max_tx : prepared -> int
 val prepared_schema_value : prepared -> t
 val prepared_schema_source : prepared -> string
 val prepared_attrs : prepared -> string Rrbvec.t
+val prepared_attrs_array : prepared -> string array
 val prepared_keywords : prepared -> string Rrbvec.t
 val prepared_datom_count : prepared -> int
 val prepared_aevt_array : prepared -> int array option
 val prepared_avet_array : prepared -> int array option
+val reorder_array : 'a array -> int array option -> 'a array
 val prepared_branching_factor : prepared -> int
 val prepared_ref_type : prepared -> Storage_value.ref_type
 val prepared_datom : prepared -> int -> prepared_datom

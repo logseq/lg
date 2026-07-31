@@ -342,6 +342,21 @@ directly to `Data_value`; custom codecs retain the EDN boundary. Native
 workload remains GC-sensitive and is not accepted as an upstream performance
 pass yet.
 
+Attribute thaw now converts the closed attribute vector to one array before
+the datom loop, and index restoration uses one typed loop instead of a
+callback per restored datom. The TDD performance gate uses three isolated
+100,000-person runs. Before this change, Melange `thaw` had a 402.369 ms
+median and failed the 400 ms limit; afterward, Native measured 669.771 ms
+against its 690 ms limit and Melange measured 388.236 ms against its 400 ms
+limit.
+
+At the full 300,000-person population with zero-duration timing windows and
+batch size 1, the same release bundle measured 1213.183 ms Native `freeze`,
+2393.918 ms Native `thaw`, 1391.709 ms Melange `freeze`, and 2732.450 ms
+Melange `thaw`. These results remain slower than the fresh pinned-upstream
+669.8 ms `freeze` and 1117.5 ms `thaw` measurements, so full serialization
+acceptance remains open.
+
 The behavior checkpoint passed the 396-test combined upstream suite, Native
 connection tests with 2,566 assertions, query tests with 752 assertions,
 rules tests with 30 assertions, serialization tests with 45 assertions, the

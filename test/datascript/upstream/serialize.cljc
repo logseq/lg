@@ -244,7 +244,7 @@
 
 (defn- ^datascript.db/Datom deserialize-datom
   [^:int tx0
-   ^:vector<keyword> attrs
+   ^:array<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
    ^prepared-serialized-value prepared
@@ -253,9 +253,10 @@
                    prepared index)
         entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
                    datom)
-        attribute (nth attrs
-                       (Datascript_runtime.Serialization_value.prepared_datom_attribute
-                        datom))
+        attribute (arrays/aget
+                   attrs
+                   (Datascript_runtime.Serialization_value.prepared_datom_attribute
+                    datom))
         value     (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.decode_value_with
@@ -273,7 +274,7 @@
 
 (defn- ^:array<datascript.db/Datom> deserialize-datoms
   [^:int tx0
-   ^:vector<keyword> attrs
+   ^:array<keyword> attrs
    ^:vector<string> keywords
    ^codec thaw-codec
    ^prepared-serialized-value prepared]
@@ -298,13 +299,7 @@
 (defn- ^:array<datascript.db/Datom> reorder-datoms
   [^:array<datascript.db/Datom> datoms
    ^:option<array<int>> indexes]
-  (match indexes
-    (Some indexes)
-    (arrays/amap
-     (fn [index]
-       (arrays/aget datoms index))
-     indexes)
-    None datoms))
+  (Datascript_runtime.Serialization_value.reorder_array datoms indexes))
 
 (defn- ^datascript.db/DB from-serializable-impl
   [^serialized-value from
@@ -326,11 +321,11 @@
                       prepared)))
          _        (when-some [schema-map schema]
                     (db/validate-schema schema-map))
-         attrs    (->> (Datascript_runtime.Serialization_value.prepared_attrs
-                        prepared)
-                       (mapv
-                        (fn [value]
-                          (thaw-keyword-value keyword-thawer value))))
+         attrs    (arrays/amap
+                   (fn [value]
+                     (thaw-keyword-value keyword-thawer value))
+                   (Datascript_runtime.Serialization_value.prepared_attrs_array
+                    prepared))
          keywords (->> (Datascript_runtime.Serialization_value.prepared_keywords
                         prepared)
                        (mapv

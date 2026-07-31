@@ -362,6 +362,10 @@ The currently accepted measured representation optimizations are narrow:
   format and upstream restoration order without retaining a second generic EDN
   tree. It allows Melange thaw to complete under the default Node heap, but the
   full 300,000-person benchmark still shows substantial serialization overhead.
+  Attribute lookup now converts the closed attribute vector once before the
+  datom loop, and index restoration uses a typed array loop without callback
+  allocation. This passes the focused 100,000-person Native and Melange thaw
+  gates, but the full 300,000-person workload remains an acceptance failure.
 
 The complete 2026-07-30 benchmark baseline uses 20,000 people, a 2-second
 warmup, five 1-second samples, batch size 10, and an isolated process for each
