@@ -357,6 +357,32 @@ Melange `thaw`. These results remain slower than the fresh pinned-upstream
 669.8 ms `freeze` and 1117.5 ms `thaw` measurements, so full serialization
 acceptance remains open.
 
+## Attribute serialization lookup checkpoint
+
+A V8 profile of the 100,000-person freeze workload attributed 356 of 379
+samples in the datom encoding subtree to `find_attribute_index`. The temporary
+attribute index used Clojure string hashing and an OCaml hashtable for every
+datom even though the benchmark schema has only a few attributes.
+
+The retained implementation uses one closed dispatch:
+
+- up to eight attributes use a reverse string-array scan;
+- larger schemas use a typed string hashtable;
+- both branches preserve upstream's last-index result for duplicate
+  attributes.
+
+The three-process 100,000-person freeze gate was RED at a 475.431 ms Melange
+median. After the change, release medians were 365.102 ms Native and
+340.956 ms Melange. The corresponding 300,000-person isolated measurements
+were 1177.524 ms Native and 1059.947 ms Melange, versus 1213.183 ms and
+1391.709 ms at the preceding checkpoint. Thaw remained inside its focused
+gate at 674.613 ms Native and 370.289 ms Melange.
+
+This removes the dominant common-schema lookup cost without making large
+schemas quadratic. Full 300,000-person freeze is still slower than the fresh
+669.8 ms pinned-upstream measurement, so serialization acceptance remains
+open.
+
 The behavior checkpoint passed the 396-test combined upstream suite, Native
 connection tests with 2,566 assertions, query tests with 752 assertions,
 rules tests with 30 assertions, serialization tests with 45 assertions, the

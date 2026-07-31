@@ -260,23 +260,37 @@ module Attribute_indexes = Hashtbl.Make (struct
   type t = string
 
   let equal = String.equal
-  let hash value =
-    value
-    |> Lg_runtime.Runtime_hash.clojure_string_hash
-    |> Int32.to_int
+  let hash = Hashtbl.hash
 end)
 
-type attribute_indexes = int Attribute_indexes.t
+type attribute_indexes =
+  | Small_attribute_indexes of string array
+  | Large_attribute_indexes of int Attribute_indexes.t
 
 let create_attribute_indexes attributes =
-  let indexes = Attribute_indexes.create (Rrbvec.length attributes) in
-  Rrbvec.iteri
-    (fun index attribute -> Attribute_indexes.add indexes attribute index)
-    attributes;
-  indexes
+  let attributes = Rrbvec.to_array attributes in
+  if Array.length attributes <= 8 then
+    Small_attribute_indexes attributes
+  else
+    let indexes = Attribute_indexes.create (Array.length attributes) in
+    Array.iteri
+      (fun index attribute ->
+        Attribute_indexes.replace indexes attribute index)
+      attributes;
+    Large_attribute_indexes indexes
 
 let find_attribute_index indexes target =
-  Attribute_indexes.find_opt indexes target |> Option.value ~default:(-1)
+  match indexes with
+  | Small_attribute_indexes attributes ->
+      let rec find index =
+        if index < 0 then -1
+        else if String.equal attributes.(index) target then index
+        else find (index - 1)
+      in
+      find (Array.length attributes - 1)
+  | Large_attribute_indexes indexes ->
+      Attribute_indexes.find_opt indexes target
+      |> Option.value ~default:(-1)
 
 let datom entity attribute value tx =
   Lg_edn_backend.Int4_vector (entity, attribute, value, tx)

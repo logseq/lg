@@ -366,6 +366,11 @@ The currently accepted measured representation optimizations are narrow:
   datom loop, and index restoration uses a typed array loop without callback
   allocation. This passes the focused 100,000-person Native and Melange thaw
   gates, but the full 300,000-person workload remains an acceptance failure.
+- Serialization attribute indexing uses one closed size dispatch. Schemas with
+  at most eight attributes use a reverse string-array scan; larger schemas use
+  a typed string hashtable. Both retain the upstream last-index result for
+  duplicate attributes. This removes repeated Clojure string hashing from the
+  common freeze path while preserving bounded lookup for large schemas.
 
 The complete 2026-07-30 benchmark baseline uses 20,000 people, a 2-second
 warmup, five 1-second samples, batch size 10, and an isolated process for each

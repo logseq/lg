@@ -808,7 +808,30 @@ let test_serialization_attribute_indexes_preserve_attribute_order () =
   assert (
     Serialization_value.find_attribute_index indexes ":user/email" = 2);
   assert (
-    Serialization_value.find_attribute_index indexes ":user/missing" = -1)
+    Serialization_value.find_attribute_index indexes ":user/missing" = -1);
+  let duplicate_indexes =
+    Serialization_value.create_attribute_indexes
+      (Rrbvec.of_list [ ":user/name"; ":user/age"; ":user/name" ])
+  in
+  assert (
+    Serialization_value.find_attribute_index duplicate_indexes
+      ":user/name"
+    = 2);
+  let large_attributes =
+    List.init 20 (fun index -> Printf.sprintf ":attribute/%d" index)
+  in
+  let large_indexes =
+    Serialization_value.create_attribute_indexes
+      (Rrbvec.of_list (large_attributes @ [ ":attribute/0" ]))
+  in
+  assert (
+    Serialization_value.find_attribute_index large_indexes
+      ":attribute/0"
+    = 20);
+  assert (
+    Serialization_value.find_attribute_index large_indexes
+      ":attribute/19"
+    = 19)
 
 let test_serialized_json_prepares_concrete_database_fields () =
   let source =
