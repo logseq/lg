@@ -404,6 +404,28 @@ while halving token pushes for the compact EAVT case. Full serialization
 acceptance remains open because the 300,000-person freeze median is still
 slower than pinned upstream.
 
+## Uncurried JSON array iteration checkpoint
+
+The repeated-freeze CPU profile showed that Melange's generic
+`Array.iteri` callback dispatch remained one of the largest non-GC costs in
+the JSON writer. The retained implementation uses direct indexed loops for
+the closed `Vector` and `Int_vector` cases. Element order, separator placement,
+compact `Int4_vector` handling, and the generic fallback branch are unchanged.
+
+The five-process 100,000-person gate was RED at a 322.519 ms Melange median
+against the 310 ms limit. The final GREEN rerun measured 301.075 ms, an
+approximately 6.6 percent improvement. Native remained green at 361.512 ms.
+At 300,000 people, five isolated old-path samples had a 1259.821 ms median;
+the direct-loop path measured 1121.379 ms, an approximately 11.0 percent
+improvement. The 500,000-value writer stress test passed with a 112 MB Node
+heap, and Melange thaw remained green at 370.335 ms.
+
+Exact JSON coverage includes an empty integer vector and a vector that mixes
+compact datoms, generic tagged-value datoms, and scalar values. The combined
+upstream suite passed 396 tests, and the Native connection suite passed 394
+tests containing 2,566 assertions. Full serialization acceptance remains open
+because the 300,000-person freeze median is still slower than pinned upstream.
+
 The behavior checkpoint passed the 396-test combined upstream suite, Native
 connection tests with 2,566 assertions, query tests with 752 assertions,
 rules tests with 30 assertions, serialization tests with 45 assertions, the

@@ -305,24 +305,23 @@ let rec add_json_value writer = function
       add_json_token writer "]"
   | Vector values ->
       add_json_token writer "[";
-      Array.iteri
-        (fun index value ->
-          match value with
-          | Int4_vector (first, second, third, fourth) -> (
-              match compact_json_value third with
-              | Some third ->
-                  let prefix = if index > 0 then ",[" else "[" in
-                  add_json_token writer
-                    (prefix ^ string_of_int first ^ ","
-                   ^ string_of_int second ^ "," ^ third ^ ","
-                   ^ string_of_int fourth ^ "]")
-              | None ->
-                  if index > 0 then add_json_token writer ",";
-                  add_json_value writer value)
-          | value ->
-              if index > 0 then add_json_token writer ",";
-              add_json_value writer value)
-        values;
+      for index = 0 to Array.length values - 1 do
+        let value = values.(index) in
+        match value with
+        | Int4_vector (first, second, third, fourth) -> (
+            match compact_json_value third with
+            | Some third ->
+                let prefix = if index > 0 then ",[" else "[" in
+                add_json_token writer
+                  (prefix ^ string_of_int first ^ "," ^ string_of_int second
+                 ^ "," ^ third ^ "," ^ string_of_int fourth ^ "]")
+            | None ->
+                if index > 0 then add_json_token writer ",";
+                add_json_value writer value)
+        | value ->
+            if index > 0 then add_json_token writer ",";
+            add_json_value writer value
+      done;
       add_json_token writer "]"
   | Int4_vector (first, second, third, fourth) ->
       (match compact_json_value third with
@@ -342,11 +341,10 @@ let rec add_json_value writer = function
           add_json_token writer "]")
   | Int_vector values ->
       add_json_token writer "[";
-      Array.iteri
-        (fun index value ->
-          if index > 0 then add_json_token writer ",";
-          add_json_token writer (string_of_int value))
-        values;
+      for index = 0 to Array.length values - 1 do
+        if index > 0 then add_json_token writer ",";
+        add_json_token writer (string_of_int values.(index))
+      done;
       add_json_token writer "]"
   | Map entries ->
       add_json_token writer "{";

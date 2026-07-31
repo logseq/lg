@@ -35,6 +35,15 @@ let () =
          Edn.Int4_vector (1, 2, Edn.String "first", 3);
          Edn.Int4_vector (4, 5, Edn.String "second", 6);
        |]);
+  assert_json
+    {|[[1,2,"first",3],[4,5,{"tag":"tag","value":"value"},6],7]|}
+    (Edn.Vector
+       [|
+         Edn.Int4_vector (1, 2, Edn.String "first", 3);
+         Edn.Int4_vector (4, 5, Edn.Tagged ("tag", Edn.String "value"), 6);
+         Edn.Small_int 7;
+       |]);
+  assert_json "[]" (Edn.Int_vector [||]);
   assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |])
 
 let () =
