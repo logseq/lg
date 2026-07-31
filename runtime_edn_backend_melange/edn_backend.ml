@@ -295,12 +295,33 @@ let rec add_json_value writer = function
   | Small_int value -> add_json_token writer (string_of_int value)
   | Int value -> add_json_int writer value
   | Float value -> add_json_float writer value
-  | List values | Vector values | Set values ->
+  | List values | Set values ->
       add_json_token writer "[";
       Array.iteri
         (fun index value ->
           if index > 0 then add_json_token writer ",";
           add_json_value writer value)
+        values;
+      add_json_token writer "]"
+  | Vector values ->
+      add_json_token writer "[";
+      Array.iteri
+        (fun index value ->
+          match value with
+          | Int4_vector (first, second, third, fourth) -> (
+              match compact_json_value third with
+              | Some third ->
+                  let prefix = if index > 0 then ",[" else "[" in
+                  add_json_token writer
+                    (prefix ^ string_of_int first ^ ","
+                   ^ string_of_int second ^ "," ^ third ^ ","
+                   ^ string_of_int fourth ^ "]")
+              | None ->
+                  if index > 0 then add_json_token writer ",";
+                  add_json_value writer value)
+          | value ->
+              if index > 0 then add_json_token writer ",";
+              add_json_value writer value)
         values;
       add_json_token writer "]"
   | Int4_vector (first, second, third, fourth) ->

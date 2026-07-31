@@ -383,6 +383,27 @@ schemas quadratic. Full 300,000-person freeze is still slower than the fresh
 669.8 ms pinned-upstream measurement, so serialization acceptance remains
 open.
 
+## Compact Int4 vector checkpoint
+
+The Melange JSON writer already emits a compact `Int4_vector` row as one
+token, but the enclosing vector still emitted every separator as a second
+token. The retained path combines the separator with a compact Int4 row while
+leaving mixed vectors and rows with non-compact values on the generic writer
+path.
+
+The focused 100,000-person gate was RED at a 335.930 ms Melange median.
+Afterward, the release median was 319.336 ms against the 330 ms gate; Native
+remained green at 362.204 ms. The three 300,000-person Melange samples were
+1196.435, 1014.501, and 1023.118 ms, for a 1023.118 ms median. The full
+500,000-value JSON writer stress test also passed with a 112 MB Node heap.
+Native and Melange thaw stayed inside their existing gates at 675.912 ms and
+368.342 ms.
+
+This optimization preserves vector order and the exact row JSON representation
+while halving token pushes for the compact EAVT case. Full serialization
+acceptance remains open because the 300,000-person freeze median is still
+slower than pinned upstream.
+
 The behavior checkpoint passed the 396-test combined upstream suite, Native
 connection tests with 2,566 assertions, query tests with 752 assertions,
 rules tests with 30 assertions, serialization tests with 45 assertions, the

@@ -371,6 +371,10 @@ The currently accepted measured representation optimizations are narrow:
   a typed string hashtable. Both retain the upstream last-index result for
   duplicate attributes. This removes repeated Clojure string hashing from the
   common freeze path while preserving bounded lookup for large schemas.
+- The Melange JSON writer combines an enclosing vector separator with a
+  compact `Int4_vector` row. Mixed vectors and rows whose value requires the
+  generic writer retain the original recursive path. This preserves exact JSON
+  order and values while reducing token pressure on serialized EAVT arrays.
 
 The complete 2026-07-30 benchmark baseline uses 20,000 people, a 2-second
 warmup, five 1-second samples, batch size 10, and an isolated process for each

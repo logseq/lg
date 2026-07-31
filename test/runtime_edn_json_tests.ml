@@ -29,6 +29,12 @@ let () =
     (Edn.List [| Edn.Int 9007199254740992L |]);
   assert_json {|[1,2,"value",3]|}
     (Edn.Int4_vector (1, 2, Edn.String "value", 3));
+  assert_json {|[[1,2,"first",3],[4,5,"second",6]]|}
+    (Edn.Vector
+       [|
+         Edn.Int4_vector (1, 2, Edn.String "first", 3);
+         Edn.Int4_vector (4, 5, Edn.String "second", 6);
+       |]);
   assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |])
 
 let () =
