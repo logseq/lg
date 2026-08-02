@@ -55,11 +55,19 @@ assert_upstream_performance() {
 
 failures=0
 
-if ! assert_upstream_performance pull-one 1.3; then
+if ! assert_upstream_performance pull-one-entities 1.8; then
   failures=1
 fi
 
-if ! assert_upstream_performance pull-many 1.9; then
+if ! assert_upstream_performance pull-many-entities 4.9; then
+  failures=1
+fi
+
+if ! assert_upstream_performance pull-one 1.1; then
+  failures=1
+fi
+
+if ! assert_upstream_performance pull-many 2.1; then
   failures=1
 fi
 

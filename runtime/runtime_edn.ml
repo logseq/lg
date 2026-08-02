@@ -15,6 +15,9 @@ let rec apply_tag_parsers value =
   | Vector values -> Vector (Array.map apply_tag_parsers values)
   | Int4_vector (first, second, third, fourth) ->
       Int4_vector (first, second, apply_tag_parsers third, fourth)
+  | Int4_array (entities, attributes, values, txs) ->
+      Int4_array
+        (entities, attributes, Array.map apply_tag_parsers values, txs)
   | Int_vector _ as value -> value
   | Map entries ->
       Map
@@ -59,6 +62,13 @@ let rec to_seq value =
         third;
         Small_int fourth;
       |]
+      |> Array.to_seq
+  | Int4_array (entities, attributes, values, txs) ->
+      Array.mapi
+        (fun index value ->
+          Int4_vector
+            (entities.(index), attributes.(index), value, txs.(index)))
+        values
       |> Array.to_seq
   | Int_vector values ->
       values |> Array.to_seq |> Seq.map (fun value -> Small_int value)

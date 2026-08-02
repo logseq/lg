@@ -26,10 +26,10 @@ run_melange_thaw() {
     awk -F: '$1 == "thaw" { print $2 }'
 }
 
-median_of_three() {
-  printf '%s\n' "$1" "$2" "$3" |
+median_of_five() {
+  printf '%s\n' "$1" "$2" "$3" "$4" "$5" |
     sort -n |
-    sed -n '2p'
+    sed -n '3p'
 }
 
 assert_performance() {
@@ -39,18 +39,24 @@ assert_performance() {
   local first_ms
   local second_ms
   local third_ms
+  local fourth_ms
+  local fifth_ms
   local median_ms
 
   first_ms=$("$runner")
   second_ms=$("$runner")
   third_ms=$("$runner")
+  fourth_ms=$("$runner")
+  fifth_ms=$("$runner")
 
-  if [[ -z "$first_ms" || -z "$second_ms" || -z "$third_ms" ]]; then
+  if [[ -z "$first_ms" || -z "$second_ms" || -z "$third_ms" || \
+        -z "$fourth_ms" || -z "$fifth_ms" ]]; then
     printf '%s thaw performance gate produced no sample\n' "$runtime"
     return 1
   fi
 
-  median_ms=$(median_of_three "$first_ms" "$second_ms" "$third_ms")
+  median_ms=$(median_of_five "$first_ms" "$second_ms" "$third_ms" \
+    "$fourth_ms" "$fifth_ms")
   awk -v runtime="$runtime" -v median_ms="$median_ms" -v limit_ms="$limit_ms" '
     BEGIN {
       if (median_ms > limit_ms) {
@@ -66,7 +72,7 @@ assert_performance() {
 
 failures=0
 
-if ! assert_performance Native 690 run_native_thaw; then
+if ! assert_performance Native 380 run_native_thaw; then
   failures=1
 fi
 

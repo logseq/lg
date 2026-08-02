@@ -680,18 +680,18 @@
   (Datascript_runtime.Data_value.to_edn_string fragment))
 
 (defn check
-  [^boolean condition
-   ^:string expected
-   ^:Datascript_runtime.Data_value.t fragment]
+  [condition
+   expected
+   fragment]
   :unit
-  (when-not condition
+  (if condition
+    (Stdlib.ignore 0)
     (Stdlib.invalid_arg
      (str
       "Expected "
       expected
       ", got: "
-      (source-fragment-string fragment))))
-  (Stdlib.ignore 0))
+      (source-fragment-string fragment)))))
 
 (type-variant source-operation-kind
   SourceLimit
@@ -909,7 +909,7 @@
   (Stdlib.ignore 0))
 
 (defn parse-pattern-items
-  [database ^:vector<pull-source-item> items index attrs wildcard]
+  [database items index attrs wildcard]
   (if (= index (count items))
     (pattern attrs wildcard)
     (match (nth items index)

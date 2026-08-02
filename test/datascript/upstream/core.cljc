@@ -122,8 +122,7 @@
               (list
                'Datascript_runtime.Data_value.Entity_id
                source-ref)))))))}
-  [^datascript.db/database-view database
-   ^:Datascript_runtime.Data_value.entity_ref entity-ref]
+  [database entity-ref]
   (entity-closed database entity-ref))
 
 (def ^{:arglists '([db eid])
@@ -132,9 +131,9 @@
              If entity does not exist, returns `nil`."}
   entid db/entid)
 
-(defn ^datascript.db/database-view entity-db
+(defn entity-db
   "Returns a db that entity was created from."
-  [^datascript.impl.entity/Entity entity]
+  [entity]
   {:pre [(de/entity? entity)]}
   (de/entity-database-view entity))
 
@@ -198,7 +197,7 @@
 
 ; Creating DB
 
-(defn ^datascript.db/DB empty-db-closed
+(defn empty-db-closed
   "Creates an empty database with an optional schema.
 
    Usage:
@@ -220,10 +219,9 @@
   :storage          <IStorage>. Will be used to store this db later with `(d/store db)`"
   ([]
    (db/empty-db None (db/default-options)))
-  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([schema]
    (db/empty-db (Some schema) (db/default-options)))
-  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
-    ^datascript.db/database-options opts]
+  ([schema opts]
    (let [opts (storage/maybe-adapt-storage opts)
          database (db/empty-db schema opts)]
      (when-some [backend (db/options-storage opts)]
@@ -248,10 +246,9 @@
           (second arguments))))}
   ([]
    (empty-db-closed))
-  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([schema]
    (empty-db-closed schema))
-  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
-    ^datascript.db/database-options opts]
+  ([schema opts]
    (empty-db-closed schema opts)))
 
 (def ^{:arglists '([x])
@@ -271,32 +268,27 @@
        :doc "Returns `true` if the given value is a datom, `false` otherwise."}
   datom? db/datom?)
 
-(defn- ^datascript.db/DB init-db-array-with-options
-  [^:array<datascript.db/Datom> datoms
-   ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
-   ^datascript.db/database-options opts]
+(defn- init-db-array-with-options
+  [datoms schema opts]
   (let [opts (storage/maybe-adapt-storage opts)
         database (db/init-db datoms schema opts)]
     (when-some [backend (db/options-storage opts)]
       (Stdlib.ignore (storage/store database backend)))
     database))
 
-(defn ^datascript.db/DB init-db-closed
+(defn init-db-closed
   "Low-level fn for creating database quickly from a trusted sequence of datoms.
    Does no validation on inputs, so `datoms` must be well-formed and match schema.
    Used internally in db (de)serialization. See also [[datom]].
    For options, see [[empty-db]]"
-  ([^:seqable<datascript.db/Datom> datoms]
+  ([datoms]
    (db/init-db-with-schema-option (to-array datoms) None))
-  ([^:seqable<datascript.db/Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([datoms schema]
    (db/init-db (to-array datoms) schema))
-  ([^:seqable<datascript.db/Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
-    ^datascript.db/database-options opts]
+  ([datoms schema opts]
    (init-db-array-with-options (to-array datoms) schema opts)))
 
-(defn ^datascript.db/DB init-db-invalid [^:string message]
+(defn init-db-invalid [message]
   (Stdlib.invalid_arg message))
 
 (defn init-db
@@ -379,14 +371,11 @@
               (list 'to-array datoms)
               (schema-form (first rest))
               (second rest)))))))}
-  ([^:seqable<datascript.db/Datom> datoms]
+  ([datoms]
    (init-db-closed datoms))
-  ([^:seqable<datascript.db/Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([datoms schema]
    (init-db-closed datoms schema))
-  ([^:seqable<datascript.db/Datom> datoms
-    ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema
-    ^datascript.db/database-options opts]
+  ([datoms schema opts]
    (init-db-closed datoms schema opts)))
 
 (def ^{:arglists '([db] [db opts])
@@ -419,7 +408,7 @@
 
 (defn schema
   "Returns a schema of a database."
-  [^datascript.db/DB database]
+  [database]
   (db/-schema database))
 
 
@@ -439,8 +428,7 @@
    - Not cached. You pay filter penalty every time.
    - Supports entities, pull, queries, index access.
    - Does not support [[with]] and [[db-with]]."
-  [database
-   ^:fn<datascript.db/DB;datascript.db/Datom;bool> pred]
+  [database pred]
   (db/-filter-view database pred))
 
 
@@ -456,7 +444,7 @@
    (conn/with database tx-data))
   ([database
     tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+    tx-meta]
    (conn/with database tx-data tx-meta)))
 
 (defn db-with
@@ -464,18 +452,17 @@
   {:inline
    (fn [database tx-data]
      (list 'datascript.conn/db-with database tx-data))}
-  [^datascript.db/DB database
-   ^:vector<datascript.db/tx-entry> tx-data]
+  [database tx-data]
   (conn/db-with database tx-data))
 
-(defn ^datascript.db/DB with-schema
+(defn with-schema
   "Warning! No validation or conversion. Only change schema in a compatible way"
   [db schema]
   (db/with-schema db schema))
 
 ; Index lookups
 
-(defn ^:seq<datascript.db/Datom> datoms-closed
+(defn datoms-closed
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`.
@@ -588,7 +575,7 @@
                             'Datascript_runtime.Data_value.Int
                             value)))))))))]
        (value-form value)))}
-  [^:Datascript_runtime.Data_value.t value]
+  [value]
   value)
 
 (defn datoms
@@ -612,7 +599,7 @@
   ([db index c0 c1 c2 c3]
    (datoms-closed db index c0 c1 c2 c3)))
 
-(defn ^datascript.db/Datom find-datom-closed
+(defn find-datom-closed
   "Same as [[datoms]], but only returns single datom. Faster than `(first (datoms ...))`"
   ([db index]             {:pre [(db/db? db)]} (db/find-datom db index nil nil nil nil))
   ([db index c0]          {:pre [(db/db? db)]} (db/find-datom db index c0  nil nil nil))
@@ -641,7 +628,7 @@
   ([db index c0 c1 c2 c3]
    (find-datom-closed db index c0 c1 c2 c3)))
 
-(defn- ^:seq<datascript.db/Datom> seek-datoms*
+(defn- seek-datoms*
   [db index c0 c1 c2 c3]
   (db/-seek-datoms db index c0 c1 c2 c3))
 
@@ -703,7 +690,7 @@
   ([db index c0 c1 c2 c3]
    (seek-datoms-closed db index c0 c1 c2 c3)))
 
-(defn- ^:seq<datascript.db/Datom> rseek-datoms*
+(defn- rseek-datoms*
   [db index c0 c1 c2 c3]
   (db/-rseek-datoms db index c0 c1 c2 c3))
 
@@ -736,7 +723,7 @@
   ([db index c0 c1 c2 c3]
    (rseek-datoms-closed db index c0 c1 c2 c3)))
 
-(defn- ^:seq<datascript.db/Datom> index-range*
+(defn- index-range*
   [db attr start end]
   (db/-index-range db attr start end))
 
@@ -936,12 +923,9 @@
           (if (empty? tx-meta)
             tx-meta
             (list (metadata-form (first tx-meta)))))))))}
-  ([^datascript.conn/Conn connection
-    ^:vector<datascript.db/tx-entry> tx-data]
+  ([connection tx-data]
    (conn/transact! connection tx-data))
-  ([^datascript.conn/Conn connection
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:map<keyword;Datascript_runtime.Data_value.t> tx-meta]
+  ([connection tx-data tx-meta]
    (conn/transact! connection tx-data (Some tx-meta))))
 
 (defn reset-conn!
@@ -987,15 +971,13 @@
           connection
           database
           (metadata-form (first metadata))))))}
-  ([^datascript.conn/Conn connection ^datascript.db/DB database]
+  ([connection database]
    (conn/reset-conn! connection database))
-  ([^datascript.conn/Conn connection
-    ^datascript.db/DB database
-    ^:Datascript_runtime.Data_value.t tx-meta]
+  ([connection database tx-meta]
    (conn/reset-conn! connection database tx-meta)))
 
-(defn ^datascript.db/DB reset-schema!
-  [^datascript.conn/Conn connection schema]
+(defn reset-schema!
+  [connection schema]
   (conn/reset-schema! connection schema))
 
 (def ^{:arglists '([conn callback] [conn key callback])} listen!
@@ -1028,16 +1010,16 @@
 
 (def ^:private last-tempid (atom -1000000))
 
-(defn ^:Datascript_runtime.Data_value.entity_ref tempid
+(defn tempid
   "Allocates and returns an unique temporary id (a negative integer). Ignores `part`. Returns `x` if it is specified.
 
    Exists for Datomic API compatibility. Prefer using negative integers directly if possible."
-  ([^:keyword part]
+  ([part]
    (if (= part :db.part/tx)
      (Datascript_runtime.Data_value.Current_tx)
      (Datascript_runtime.Data_value.Entity_id
       (swap! last-tempid dec))))
-  ([^:keyword part ^:Datascript_runtime.Data_value.entity_ref x]
+  ([part x]
    (if (= part :db.part/tx)
      (Datascript_runtime.Data_value.Current_tx)
      x)))
@@ -1049,11 +1031,11 @@
   [_db tempids tempid]
   (get tempids tempid))
 
-(defn ^datascript.db/DB db
+(defn db
   "Returns the underlying immutable database value from a connection.
 
    Exists for Datomic API compatibility. Prefer using `@conn` directly if possible."
-  [^datascript.conn/Conn connection]
+  [connection]
   {:pre [(conn? connection)]}
   (conn/current-db connection))
 
@@ -1062,9 +1044,7 @@
 
    Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
   ([conn tx-data] (transact conn tx-data nil))
-  ([^datascript.conn/Conn conn
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
    (let [res (transact! conn tx-data tx-meta)]
      (future-call (fn [] res)))))
@@ -1074,9 +1054,7 @@
 
    In CLJS, just calls [[transact!]] and returns a realized future."
   ([conn tx-data] (transact-async conn tx-data nil))
-  ([^datascript.conn/Conn conn
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
    (future-call #(transact! conn tx-data tx-meta))))
 

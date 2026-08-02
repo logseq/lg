@@ -41,13 +41,17 @@ expected_workloads=(
 benchmark_source="$repo_root/test/datascript/benchmark/datascript/bench/datascript.cljc"
 melange_edn_backend="$repo_root/runtime_edn_backend_melange/edn_backend.ml"
 if awk '
-  /^let add_json_int / { in_writer = 1 }
-  /^let rec add_json_value / { in_writer = 0 }
-  in_writer && /Js\.Json\.stringify/ { found = 1 }
-  END { exit !found }
+  /^let (add_json_int|json_int_token) / {
+    in_integer_writer = 1
+    integer_writers++
+    next
+  }
+  in_integer_writer && /^let / { in_integer_writer = 0 }
+  in_integer_writer && /Js\.Json\.stringify/ { found = 1 }
+  END { exit !(integer_writers != 2 || found) }
 ' "$melange_edn_backend"
 then
-  echo "Melange JSON writer calls JSON.stringify for every safe integer" >&2
+  echo "Melange JSON integer writers are missing or call JSON.stringify" >&2
   exit 1
 fi
 
@@ -61,6 +65,19 @@ thaw_restore_calls="$(
 )"
 if [ "$thaw_restore_calls" -ne 1 ]; then
   echo "bench-thaw must preserve upstream single-restore control flow: found $thaw_restore_calls calls" >&2
+  exit 1
+fi
+
+if ! awk '
+  /^\(def \*serialize-db/ { in_serialize_db = 1; next }
+  in_serialize_db && /^\(defn / { exit !found }
+  in_serialize_db && /^[[:space:]]*empty-db[[:space:]]*$/ {
+    found = 1
+  }
+  END { exit !found }
+' "$benchmark_source"
+then
+  echo "serialization benchmark must reuse the pinned upstream schema database" >&2
   exit 1
 fi
 

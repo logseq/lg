@@ -77,6 +77,9 @@
 (signature datascript.impl.entity/entity
   :fn<datascript.db/database-view;Datascript_runtime.Data_value.entity_ref;option<datascript.impl.entity/Entity>>)
 
+(signature datascript.impl.entity/datoms->cache
+  :fn<datascript.db/database-view;seq<datascript.db/Datom>;map<keyword;datascript.impl.entity/EntityValue>>)
+
 (signature datascript.impl.entity/touch-entity
   :fn<datascript.impl.entity/Entity;datascript.impl.entity/Entity>)
 
@@ -284,37 +287,36 @@
 
 (defn lookup-entity
   [entity attr]
-  (let [database (entity-database-view entity)]
-    (if (= attr :db/id)
-      (Some
-       (EntityScalar
-        (Datascript_runtime.Data_value.Int (.-eid entity))))
+  (if (= attr :db/id)
+    (Some
+     (EntityScalar
+      (Datascript_runtime.Data_value.Int (.-eid entity))))
+    (let [database (entity-database-view entity)]
       (if (db/reverse-ref? attr)
         (lookup-backwards
          database
          (.-eid entity)
          (db/reverse-ref attr))
-        (if-some [value (get @(:cache (.-state entity)) attr)]
-          (Some value)
-          (if @(:touched (.-state entity))
-            None
-            (let [datoms
-                  (db/database-view-search
-                   database
-                   (Some (.-eid entity))
-                   (Some attr)
-                   None
-                   None)]
-              (if (empty? datoms)
-                None
-                (if-some [value
-                          (entity-attr database attr (vec datoms))]
+        (let [state (.-state entity)
+              cache (:cache state)]
+          (if-some [value (get @cache attr)]
+            (Some value)
+            (if @(:touched state)
+              None
+              (if-some
+                [datoms
+                 (db/database-view-search
+                  database
+                  (Some (.-eid entity))
+                  (Some attr)
+                  None
+                  None)]
+                (if-some [value (entity-attr database attr datoms)]
                   (do
-                    (vreset!
-                     (:cache (.-state entity))
-                     (assoc @(:cache (.-state entity)) attr value))
+                    (vreset! cache (assoc @cache attr value))
                     (Some value))
-                  None)))))))))
+                  None)
+                None))))))))
 
 (defn datoms->cache
   [db datoms]

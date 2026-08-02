@@ -169,7 +169,7 @@ expect_no_text \
 expect_no_hints_between \
   "serialization keyword codec helpers contain no local type hints" \
   test/datascript/upstream/serialize.cljc \
-  freeze-keyword-value serialize-datom \
+  freeze-keyword-value serialize-datom! \
   '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_text \
   "serialization EAVT keeps its required nominal database boundary" \
@@ -193,10 +193,11 @@ expect_no_hints_between \
   test/datascript/upstream/serialize.cljc \
   serialized-ref-type serializable-impl \
   '\^(:[[:alpha:]]|[[:alpha:]])'
-expect_text \
+expect_no_hints_between \
   "serialization implementation infers its closed codec parameters" \
   test/datascript/upstream/serialize.cljc \
-  '^[[:space:]]*\[\^datascript\.db/DB db freeze-codec keyword-freezer\]$'
+  serializable-impl serializable \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_no_algorithm_hints "entity algorithms contain no local type hints" \
   test/datascript/upstream/entity.cljc \
   '\^(:[[:alpha:]]|[[:alpha:]])'

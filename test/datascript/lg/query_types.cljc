@@ -760,7 +760,7 @@
      "Pattern variables and indexes must have the same length")))
 
 (defn pattern-entity-constraint
-  [database ^:option<datascript.parser/pattern-element> element]
+  [database element]
   (match element
     None (Some None)
     (Some PatternPlaceholder) (Some None)
@@ -783,8 +783,10 @@
         (Some entity) (Some (Some entity)))
       None)))
 
-(defn ^:option<option<keyword>> pattern-attr-constraint
-  [^:option<datascript.parser/pattern-element> element]
+(signature datascript.lg.query-types/pattern-attr-constraint
+  :fn<option<datascript.parser/pattern-element>;option<option<keyword>>>)
+(defn pattern-attr-constraint
+  [element]
   (match element
     None (Some None)
     (Some PatternPlaceholder) (Some None)
@@ -795,7 +797,7 @@
       (Some attr) (Some (Some attr)))))
 
 (defn pattern-value-constraint
-  [^:option<datascript.parser/pattern-element> element]
+  [element]
   (match element
     None (Some None)
     (Some PatternPlaceholder) (Some None)
@@ -821,7 +823,7 @@
     (Some value)))
 
 (defn pattern-added-constraint
-  [^:option<datascript.parser/pattern-element> element]
+  [element]
   (match element
     None (Some None)
     (Some PatternPlaceholder) (Some None)
@@ -862,6 +864,8 @@
          indexes))
       (tuple variables indexes))))
 
+(signature datascript.lg.query-types/pattern-lookup-databases
+  :fn<datascript.db/database-view;vector<datascript.parser/pattern-element>;option<keyword>;map<string;datascript.db/database-view>>)
 (defn pattern-lookup-databases [database pattern attr]
   (let [databases
         (reduce
@@ -1049,7 +1053,9 @@
        (= 0 (alength row))
        false))))
 
-(defn constant-relation-result [relation ^:string variable]
+(signature datascript.lg.query-types/constant-relation-result
+  :fn<relation;string;option<result>>)
+(defn constant-relation-result [relation variable]
   (if-some [index (get (relation-attrs relation) variable)]
     (if-some [first-row (first (relation-rows relation))]
       (if-some [first-value (row-get first-row index)]
@@ -1078,7 +1084,9 @@
        element))
    pattern))
 
-(defn result-entity-id [database ^result value]
+(signature datascript.lg.query-types/result-entity-id
+  :fn<datascript.db/database-view;result;option<int>>)
+(defn result-entity-id [database value]
   (match value
     (Datascript_runtime.Query_value.Entity eid) (Some eid)
     (Datascript_runtime.Query_value.Value value)
@@ -1271,7 +1279,7 @@
         (hash-join input-relation matches)))))
 
 (defn relation-pattern-step
-  [^:map<string;result> bindings ^:vector<result> projected element value]
+  [bindings projected element value]
   (match element
     PatternPlaceholder
     (Some (tuple bindings projected))
@@ -1349,7 +1357,7 @@
 
 (defn resolve-bound-source-pattern
   [source input-relation constants
-   ^:vector<datascript.parser/pattern-element> pattern
+   pattern
    source-name]
   (if-some [source-database (source-database source)]
     (resolve-db-pattern
@@ -1419,8 +1427,10 @@
   (result-pattern-value
    (predicate-operand-result row operand)))
 
+(signature datascript.lg.query-types/query-source-database
+  :fn<datascript.db/database-view;map<string;source>;string;datascript.db/database-view>)
 (defn query-source-database
-  [database sources ^:string source-name]
+  [database sources source-name]
   (if-some [source (get sources source-name)]
     (if-some [source-database (source-database source)]
       source-database
@@ -1649,7 +1659,9 @@
        (function-result-attrs relation binding)
        (relation-lookup-databases relation)))))
 
-(defn join-query-parts [^:vector<string> parts]
+(signature datascript.lg.query-types/join-query-parts
+  :fn<vector<string>;string>)
+(defn join-query-parts [parts]
   (if-some [first-part (first parts)]
     (reduce
      (fn [result part]
@@ -1690,7 +1702,9 @@
      (cons name (mapv rule-argument-description arguments))))
    ")"))
 
-(defn ^:string query-binding-description [binding]
+(signature datascript.lg.query-types/query-binding-description
+  :fn<datascript.parser/binding;string>)
+(defn query-binding-description [binding]
   (if (parser/binding-ignore? binding)
     "_"
     (if-some [variable (parser/binding-scalar-variable binding)]
@@ -1885,12 +1899,12 @@
           false))
       true)))
 
-(defn ^relation resolve-predicate
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^:datascript.parser/query-callable callable
+(defn resolve-predicate
+  [database
+   sources
+   relation
+   constants
+   callable
    ^:vector<datascript.parser/fn-arg> arguments]
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
@@ -1997,14 +2011,14 @@
       (Stdlib.invalid_arg
        "Variable query predicate name is missing"))))
 
-(defn ^relation resolve-function
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^relation relation
-   ^relation constants
-   ^:datascript.parser/query-callable callable
+(defn resolve-function
+  [database
+   sources
+   relation
+   constants
+   callable
    ^:vector<datascript.parser/fn-arg> arguments
-   ^datascript.parser/binding binding]
+   binding]
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments (Some binding))]
@@ -2106,8 +2120,10 @@
 
 (declare resolve-static-clauses ensure-empty-relation-variables)
 
+(signature datascript.lg.query-types/rows-match-on-variables?
+  :fn<relation;array<result>;relation;array<result>;vector<string>;bool>)
 (defn rows-match-on-variables?
-  [left left-row right right-row ^:vector<string> variables]
+  [left left-row right right-row variables]
   (every?
    (fn [variable]
      (if-some [left-value
@@ -2120,8 +2136,10 @@
        false))
    variables))
 
+(signature datascript.lg.query-types/project-relation-variables
+  :fn<relation;vector<string>;relation>)
 (defn project-relation-variables
-  [source-relation ^:vector<string> variables]
+  [source-relation variables]
   (let [attrs (relation-attrs source-relation)
         indexes
         (mapv
@@ -2152,8 +2170,10 @@
       (relation-rows source-relation))
      lookup-databases)))
 
+(signature datascript.lg.query-types/variable-set-display
+  :fn<vector<datascript.parser/Variable>;string>)
 (defn variable-set-display
-  [^:vector<datascript.parser/Variable> variables]
+  [variables]
   (str
    "#{"
    (loop [remaining variables
@@ -2169,16 +2189,16 @@
    "}"))
 
 (defn ^relation resolve-not
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation relation
-   ^relation constants
-   ^rules rules
-   ^rule-path rule-path
+  [database
+   sources
+   implicit-source-name
+   relation
+   constants
+   rules
+   rule-path
    ^:vector<datascript.parser/Variable> variables
-   ^:vector<datascript.parser/clause> clauses
-   ^:string display]
+   clauses
+   display]
   (let [bound-variables
         (vec
          (filter
@@ -2217,15 +2237,15 @@
               (relation-rows matched))))
           (relation-rows relation)))))))
 
-(defn ^relation resolve-or-branch
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation relation
-   ^relation constants
-   ^rules rules
-   ^rule-path rule-path
-   ^datascript.parser/clause branch]
+(defn resolve-or-branch
+  [database
+   sources
+   implicit-source-name
+   relation
+   constants
+   rules
+   rule-path
+   branch]
   (if-some [clauses (parser/and-clause-clauses branch)]
     (resolve-static-clauses
      database sources implicit-source-name
@@ -2267,19 +2287,19 @@
     (mapv query-variable-set-description variable-sets))
    "]"))
 
-(defn ^relation resolve-or
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation relation
-   ^relation constants
-   ^rules rules
-   ^rule-path rule-path
+(defn resolve-or
+  [database
+   sources
+   implicit-source-name
+   relation
+   constants
+   rules
+   rule-path
    ^:vector<string> required-variable-names
    ^:vector<string> branch-variable-names
    ^:vector<datascript.parser/clause> branches
-   ^boolean join?
-   ^:string display]
+   join?
+   display]
   (let [missing-required
         (filterv
          (fn [variable]
@@ -2571,16 +2591,16 @@
      attrs
      (relation-lookup-databases relation))))
 
-(defn ^relation resolve-rule-branch
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation relation
-   ^relation constants
-   ^rules rules
-   ^rule-path rule-path
+(defn resolve-rule-branch
+  [database
+   sources
+   implicit-source-name
+   relation
+   constants
+   rules
+   rule-path
    ^:vector<datascript.parser/pattern-element> arguments
-   ^datascript.parser/RuleBranch branch]
+   branch]
   (let [parameters
         (parser/rule-branch-parameter-names branch)]
     (if (= (count parameters) (count arguments))
@@ -2602,15 +2622,15 @@
        arguments)
       (Stdlib.invalid_arg "Rule arity mismatch"))))
 
-(defn ^relation resolve-rule
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation relation
-   ^relation constants
-   ^rules rules
+(defn resolve-rule
+  [database
+   sources
+   implicit-source-name
+   relation
+   constants
+   rules
    ^rule-path rule-path
-   ^:string rule-name
+   rule-name
    ^:vector<datascript.parser/pattern-element> arguments]
   (if-some [branches (parser/rule-branches rules rule-name)]
     (let [required-count
@@ -2668,14 +2688,14 @@
       " in "
       (rule-call-description rule-name arguments)))))
 
-(defn ^relation resolve-static-clauses
-  [^datascript.db/database-view database
-   ^:map<string;source> sources
-   ^:string implicit-source-name
-   ^relation initial-relation
-   ^relation constants
-   ^rules rules
-   ^rule-path rule-path
+(defn resolve-static-clauses
+  [database
+   sources
+   implicit-source-name
+   initial-relation
+   constants
+   rules
+   rule-path
    ^:vector<datascript.parser/clause> clauses]
   (reduce
    (fn [relation clause]

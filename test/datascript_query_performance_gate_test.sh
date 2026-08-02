@@ -53,5 +53,21 @@ assert_upstream_performance() {
   '
 }
 
-assert_upstream_performance q2 4.3
-assert_upstream_performance qpred2 9.7
+failures=0
+
+for workload_and_upstream in \
+  "q1 1.5" \
+  "q2 3.5" \
+  "q3 5.2" \
+  "q4 7.6" \
+  "q5-shortcircuit 0.784" \
+  "qpred1 7.4" \
+  "qpred2 8.7"
+do
+  read -r workload upstream_ms <<< "$workload_and_upstream"
+  if ! assert_upstream_performance "$workload" "$upstream_ms"; then
+    failures=1
+  fi
+done
+
+exit "$failures"

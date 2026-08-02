@@ -136,12 +136,13 @@ let declare_indexed registry =
   |> add_or_fail
 
 let declare_emptyable registry =
+  let receiver = TVar "emptyable_receiver" in
   Protocol_registry.declare emptyable_id
     [
       {
         Protocol_registry.method_id = empty_method_id;
-        param_tys = [ TUnknown ];
-        return_ty = TUnknown;
+        param_tys = [ receiver ];
+        return_ty = receiver;
       };
     ]
     registry

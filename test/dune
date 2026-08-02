@@ -1047,6 +1047,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
@@ -1071,6 +1072,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
@@ -1106,6 +1108,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
@@ -1130,6 +1133,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
@@ -1192,6 +1196,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1209,6 +1214,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1250,6 +1256,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
@@ -1278,6 +1285,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
@@ -1318,6 +1326,7 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
@@ -1345,6 +1354,7 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
@@ -1411,11 +1421,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -1444,11 +1456,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -1491,11 +1505,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -1522,11 +1538,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -1586,11 +1604,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -1654,11 +1674,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -3698,11 +3720,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -3765,11 +3789,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -3920,11 +3946,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -3953,11 +3981,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -4000,11 +4030,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -4031,11 +4063,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -4092,11 +4126,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -4125,11 +4161,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
@@ -4172,11 +4210,13 @@
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
+  datascript/lg/annotations.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/upstream/lru.cljc
   datascript/lg/query_types.cljc
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
@@ -4203,11 +4243,13 @@
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
+   %{dep:datascript/lg/annotations.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}

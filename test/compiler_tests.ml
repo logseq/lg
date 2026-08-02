@@ -917,6 +917,33 @@ let test_if_some_and_when_some_bind_option_payloads () =
   assert_ocaml_runs "if_some_and_when_some_bind_option_payloads" "9\n8:0\n"
     ocaml_source
 
+let test_if_some_preserves_seqable_capability_payloads () =
+  let source =
+    {|
+(defn concatv [& xs]
+  (loop [remaining xs
+         result []]
+    (if-some [values (first remaining)]
+      (let [appended
+            (loop [values-remaining (seq values)
+                   appended result]
+              (if-some [value (first values-remaining)]
+                (recur (next values-remaining) (conj appended value))
+                appended))]
+        (recur (next remaining) appended))
+      result)))
+(def result (concatv [1 2] [3 4]))
+(println
+  (+ (nth result 0) (nth result 1)
+     (nth result 2) (nth result 3)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "if_some_preserves_seqable_capability_payloads"
+    "10\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_when_some_binding_constraints_remain_static () =
   let source =
     {|
@@ -1689,11 +1716,14 @@ let test_protocol_result_context_does_not_constrain_arguments () =
        (same-datoms?
          (-datoms database :eavt nil nil nil nil)
          (-datoms other :eavt nil nil nil nil))))
-(def database (Database. {:name "schema"} [(Datom. 42)]))
+(def database
+  (Database. {:name "schema" :version 1} [(Datom. 42)]))
 (println (same-database? database database))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "generic protocol results must remain statically typed";
   assert_ocaml_runs "protocol_result_context_does_not_constrain_arguments"
     "true\n" ocaml_source;
   ignore
@@ -1790,7 +1820,19 @@ let test_freshen_deferred_dynamic_dispatch_stays_monomorphic () =
   with
   | TFn ([ refreshed ], TInt) -> (
       match protocol_constraint_info refreshed with
-      | Some (_, _, TVar _) -> ()
+      | Some (_, witness_ty, TVar _) -> (
+          match protocol_witness_method_types witness_ty with
+          | Some [ TFn ([ receiver_ty ], return_ty) ]
+            when (not (is_dynamic receiver_ty))
+                 && not (is_dynamic return_ty)
+                 && not (equal receiver_ty TUnknown)
+                 && not (equal return_ty TUnknown) ->
+              ()
+          | Some [ method_ty ] ->
+              failwith
+                ("generic protocol witness positions must remain static type variables, got: "
+                ^ source_name method_ty)
+          | Some _ | None -> failwith "expected one generic witness method")
       | Some (_, _, value_ty) ->
           failwith
             ("generic receivers must keep freshened polymorphism, got: "
@@ -1869,7 +1911,7 @@ let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
 
 (defn ^boolean indexed? [db attr]
   (contains? (-attrs-by db :db/index) attr))
-|}
+  |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_compiles "deferred_forward_calls_keep_nominal_receiver_evidence"
@@ -3962,18 +4004,43 @@ let test_with_open_binds_managed_values_portably () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_clojure_collection_protocol_names_dispatch_statically () =
+  (match
+     Lg.Protocol.lookup_protocol_marker "" Lg.Compiler_environment.empty
+       "IEmptyableCollection" "-empty"
+   with
+  | Some
+      {
+        ty =
+          Lg.Semantic_type.TFn
+            ( [ receiver_constraint ],
+              Lg.Semantic_type.TVar return_receiver );
+        _;
+      }
+    -> (
+      match Lg.Types.protocol_constraint_info receiver_constraint with
+      | Some (_, _, Lg.Semantic_type.TVar receiver)
+        when String.equal receiver return_receiver ->
+          ()
+      | _ -> failwith "empty protocol receiver relationship is missing")
+  | Some marker ->
+      failwith
+        ("empty protocol must preserve its receiver type, got "
+       ^ Lg.Types.source_name marker.ty)
+  | None -> failwith "empty protocol marker is missing");
   let source =
     {|
 (defrecord Bag [^int size]
   ICounted
   (-count [_] size)
   IEmptyableCollection
-  (-empty [_] (->Bag 0)))
+  (-empty [bag] (assoc bag :size 0)))
 (def bag (->Bag 3))
 (println (str (count bag) ":" (count (empty bag))))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "empty must preserve its statically typed receiver";
   assert_ocaml_runs "clojure_collection_protocol_names_dispatch_statically"
     "3:0\n" native_source;
   ignore
@@ -4415,6 +4482,7 @@ let current_datascript_sources () =
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/annotations.cljc";
       "test/datascript/upstream/inline.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/lru.cljc";
@@ -4622,6 +4690,193 @@ let test_protocol_calls_reject_contextual_callback_return_mismatches () =
   |> expect_error_contains "array";
   Lg.Compiler.compile_string ~target:Lg.Target.Melange source
   |> expect_error_contains "array"
+
+let test_callbacks_keep_nominal_protocol_parameters_raw () =
+  let source =
+    {|
+(defprotocol Readable
+  (read-value [database] :int))
+(deftype Store [^int value])
+(extend-type Store
+  Readable
+  (read-value [database]
+    (.-value database)))
+(type-record state
+  (database :Store))
+(defn state-store [^state state]
+  (:database state))
+(defn swap-store [^state state update]
+  (let [database (update (state-store state))]
+    (record state (database database))))
+(defn store-number [^Store database]
+  (.-value database))
+(def initial
+  (record state (database (Store. 1))))
+(def updated
+  (swap-store
+    initial
+    (fn [database]
+      (if (= 1 (read-value database))
+        (Store. 2)
+        database))))
+(println (store-number (:database updated)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "callbacks_keep_nominal_protocol_parameters_raw" "2\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_keeps_protocol_evidence_with_nominal_state () =
+  let source =
+    {|
+(defprotocol Searchable
+  (search-value [database] :int))
+(deftype Database [^int value])
+(extend-type Database
+  Searchable
+  (search-value [database]
+    (.-value database)))
+(defn ^Database add-value [^Database database]
+  (do
+    (search-value database)
+    database))
+(defn ^Database add-values [^Database database]
+  (loop [index 0
+         current database]
+    (if (< index 2)
+      (recur (inc index) (add-value current))
+      current)))
+(println (.-value (add-values (Database. 7))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_keeps_protocol_evidence_with_nominal_state" "7\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_dynamic_var_uses_concrete_generic_alias_signature () =
+  let provider =
+    {|
+(namespace-scope cache.lib)
+(type-record cache-state [key value]
+  (impl :ref<option<tuple<key;value>>>))
+(signature cache.lib/cache [key value]
+  :fn<int;cache-state<key;value>>)
+(defn cache [_limit]
+  (record cache-state
+    (impl (atom nil))))
+|}
+  in
+  let consumer =
+    {|
+(namespace-scope app.cache)
+(type-alias query-cache
+  :cache.lib/cache-state<int;string>)
+(signature app.cache/*query-cache*
+  :query-cache)
+(def ^:dynamic ^query-cache *query-cache*
+  (cache.lib/cache 100))
+(println "ok")
+|}
+  in
+  let state, provider_source =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
+  assert_ocaml_runs "dynamic_var_uses_concrete_generic_alias_signature" "ok\n"
+    (provider_source ^ "\n" ^ consumer_source);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange Lg.Compiler.empty_state
+      provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
+let test_value_uses_concrete_generic_alias_signature () =
+  let provider =
+    {|
+(namespace-scope cache.lib)
+(type-record cache-state [key value]
+  (impl :ref<option<tuple<key;value>>>))
+(signature cache.lib/cache [key value]
+  :fn<int;cache-state<key;value>>)
+(defn cache [_limit]
+  (record cache-state
+    (impl (atom nil))))
+|}
+  in
+  let consumer =
+    {|
+(namespace-scope app.cache)
+(type-alias query-cache
+  :cache.lib/cache-state<int;string>)
+(signature app.cache/query-cache-value
+  :query-cache)
+(def ^query-cache query-cache-value
+  (cache.lib/cache 100))
+(println "ok")
+|}
+  in
+  let state, provider_source =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
+  assert_ocaml_runs "value_uses_concrete_generic_alias_signature" "ok\n"
+    (provider_source ^ "\n" ^ consumer_source);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange Lg.Compiler.empty_state
+      provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
+let test_reduce_over_keys_keeps_accessor_map_key_type () =
+  let source =
+    {|
+(type-record relation
+  (attrs :map<string;int>)
+  (databases :map<string;int>))
+(defn relation-attrs [^relation relation]
+  (:attrs relation))
+(defn relation-database [^relation relation ^:string variable]
+  (get (:databases relation) variable))
+(defn limit-rel [relation ^:set<string> variables]
+  (let [attrs
+        (reduce-kv
+         (fn [selected variable index]
+           (if (contains? variables variable)
+             (assoc selected variable index)
+             selected))
+         {}
+         (relation-attrs relation))
+        databases
+        (reduce
+         (fn [selected variable]
+           (if-some [database (relation-database relation variable)]
+             (assoc selected variable database)
+             selected))
+         {}
+         (keys attrs))]
+    (count databases)))
+(def fixture
+  (record relation
+    (attrs (assoc {} "x" 0))
+    (databases (assoc {} "x" 7))))
+(println (limit-rel fixture (conj (set-of :string) "x")))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "reduce_over_keys_keeps_accessor_map_key_type" "1\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_current_datascript_filter_protocol_accepts_nominal_callback () =
   let source =
@@ -5388,6 +5643,50 @@ let current_datascript_query_only_sources () =
 
 let current_datascript_query_sources () =
   current_datascript_pull_sources () @ current_datascript_query_only_sources ()
+
+let test_datascript_limit_context_specializes_empty_reduce_vector () =
+  let query_path = "test/datascript/limit_context.cljc" in
+  let query_source =
+    {|
+(ns app.limit-context
+  (:require [datascript.lg.query-types :as query-types]))
+
+(signature app.limit-context/limit-rel
+  :fn<query-types/relation;set<string>;option<query-types/relation>>)
+(defn limit-rel [relation _variables]
+  (Some relation))
+
+(defn limit-context [context variables]
+  (let [relations
+        (reduce
+         (fn [limited relation]
+           (if-some [relation (limit-rel relation variables)]
+             (conj limited relation)
+             limited))
+         []
+         (query-types/context-relations context))]
+    (query-types/context
+     relations
+     (query-types/context-sources context)
+     (query-types/context-rules context))))
+|}
+  in
+  let sources =
+    [
+      ( "test/datascript/lg/query_types.cljc",
+        read_file
+          (Filename.concat (repo_root ())
+             "test/datascript/lg/query_types.cljc") );
+      (query_path, query_source);
+    ]
+  in
+  let compile target =
+    ignore
+      (extend_datascript_baseline target
+         (datascript_pull_baseline target) sources)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
 
 let native_datascript_query_baseline =
   lazy
@@ -12212,6 +12511,42 @@ let test_ocaml_arrays_support_construction_read_and_mutation () =
   assert_ocaml_runs "ocaml_arrays_support_construction_read_and_mutation"
     "42:99:0\n" ocaml_source
 
+let test_array_mutation_uses_protocol_payload_storage () =
+  let source =
+    {|
+(defprotocol Valued
+  (item-value [item] :int))
+(deftype Item [^int value]
+  Valued
+  (item-value [item]
+    (.-value item)))
+(defn normalize-item [item]
+  (let [value (.-value item)]
+    (if (= 0 (item-value item))
+      (Item. 1)
+      (do value item))))
+(defn normalize-items [items]
+  (loop [index 0]
+    (if (< index (alength items))
+      (let [source (aget items index)
+            normalized (normalize-item source)]
+        (aset items index normalized)
+        (recur (inc index)))
+      items)))
+(defn item-number [^Item item]
+  (.-value item))
+(def ^:array<Item> items
+  (normalize-items (array (Item. 0) (Item. 2))))
+(println (str (item-number (aget items 0)) ":"
+              (item-number (aget items 1))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "array_mutation_uses_protocol_payload_storage" "1:2\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_ocaml_array_primitives_support_polymorphic_helpers () =
   let source =
     {|
@@ -12390,6 +12725,64 @@ let test_nested_protocol_witnesses_keep_concrete_receiver_storage () =
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_projected_optional_nominal_values_keep_protocol_witnesses () =
+  let storage_source =
+    {|
+(ns witness.storage)
+(defprotocol Storable
+  (-store-value [backend value]))
+(type-record backend (offset :int))
+(extend-type backend
+  Storable
+  (-store-value [backend value]
+    (+ (:offset backend) value)))
+(defn store-value [value storage]
+  (-store-value storage value))
+|}
+  in
+  let db_source =
+    {|
+(ns witness.db)
+(type-record witness-options (storage :option<witness.storage/backend>))
+(defn options-storage [opts]
+  (:storage opts))
+|}
+  in
+  let consumer_source =
+    {|
+(ns witness.conn
+  (:require [witness.storage :as storage]
+            [witness.db :as db]))
+(signature witness.conn/run-store
+  :fn<witness.db/witness-options;int>)
+(defn run-store [opts]
+  (if-some [backend (db/options-storage opts)]
+    (storage/store-value 2 backend)
+    0))
+(println
+  (run-store
+    (db/witness-options. (Some (storage/backend. 40)))))
+|}
+  in
+  let compile target =
+    let state, storage_ocaml =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state storage_source
+      |> expect_ok
+    in
+    let state, db_ocaml =
+      Lg.Compiler.compile_chunk ~target state db_source |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    String.concat "\n" [ storage_ocaml; db_ocaml; consumer_ocaml ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs
+    "projected_optional_nominal_values_keep_protocol_witnesses" "42\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_ocaml_refs_support_read_and_assignment () =
   let source =
@@ -14049,6 +14442,114 @@ let test_nullable_destructured_options_flow_through_forwarding_functions () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_multi_arity_export_preserves_inferred_optional_parameter () =
+  let model =
+    {|
+(ns option.model)
+(defrecord Value [^:int item])
+(defprotocol Choice
+  (-choose [source value] :int))
+(defrecord Source []
+  Choice
+  (-choose [source value]
+    (if-some [value value]
+      (.-item value)
+      0)))
+(defrecord FilteredSource [^option.model/Source unfiltered]
+  Choice
+  (-choose [source value]
+    (-choose (.-unfiltered source) value)))
+|}
+  in
+  let api =
+    {|
+(ns option.api
+  (:require [option.model :as model]))
+(defn choose-closed
+  ([source] (model/-choose source nil))
+  ([source value] (model/-choose source value)))
+(defn choose
+  {:inline
+   (fn [source value]
+     (list 'option.api/choose-closed source (list 'Some value)))}
+  ([source] (choose-closed source))
+  ([source value] (choose-closed source (Some value))))
+|}
+  in
+  let consumer =
+    {|
+(ns option.consumer
+  (:require [option.api :as api]
+            [option.model :as model]))
+(println (api/choose-closed (model/->Source) (model/->Value 2)))
+|}
+  in
+  let state, model_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state model |> expect_ok
+  in
+  let state, api_ocaml =
+    Lg.Compiler.compile_chunk state api |> expect_ok
+  in
+  let _, consumer_ocaml = Lg.Compiler.compile_chunk state consumer |> expect_ok in
+  if string_contains_substring consumer_ocaml "Option.get (Some" then
+    failwith "an exported optional overload must not unwrap an inline Some";
+  assert_ocaml_runs "multi_arity_export_preserves_inferred_optional_parameter"
+    "2\n" (String.concat "\n" [ model_ocaml; api_ocaml; consumer_ocaml ])
+
+let test_contains_propagates_protocol_set_element_to_parameter () =
+  let source =
+    {|
+(defprotocol AttrSource
+  (-attrs [source] :set<keyword>))
+(defrecord Source [^:set<keyword> attrs]
+  AttrSource
+  (-attrs [_] attrs))
+(signature *global-attrs* :set<keyword>)
+(def ^:dynamic *global-attrs* #{:name})
+(defn has-attr? [source attr]
+  (contains? (-attrs source) attr))
+(defn has-global-attr? [attr]
+  (contains? *global-attrs* attr))
+(println
+ (str
+  (has-attr? (Source. #{:name}) :name) ":"
+  (has-global-attr? :name)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed set membership must not introduce dynamic";
+  assert_ocaml_runs "contains_propagates_protocol_set_element_to_parameter"
+    "true:true\n" ocaml_source
+
+let test_match_infers_optional_closed_variant_parameter () =
+  let source =
+    {|
+(type-variant item
+  Empty
+  (Value :int))
+(defn item-score [item]
+  (match item
+    None 0
+    (Some Empty) 1
+    (Some (Value value)) value))
+(defn first-item-score [items]
+  (match (nth items 0)
+    Empty 1
+    (Value value) value))
+(println
+ (str
+  (item-score (Some Empty)) ":"
+  (item-score (Some (Value 4))) ":"
+  (first-item-score [Empty])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "optional closed variant inference must not introduce dynamic";
+  assert_ocaml_runs "match_infers_optional_closed_variant_parameter" "1:4:1\n"
+    ocaml_source
+
 let test_multi_arity_defn_remains_callable_as_a_value () =
   let source =
     {|
@@ -14409,6 +14910,106 @@ let test_caller_evidence_flows_into_mutual_recursion () =
   assert_ocaml_runs "caller_evidence_flows_into_mutual_recursion" "3\n"
     ocaml_source
 
+let test_forward_declaration_waits_for_closed_record_definition () =
+  let source =
+    {|
+(deftype Item [^int value])
+(declare make-item choose-item)
+(defn item-value [^Item item]
+  (.-value item))
+(defn find-value []
+  (let [from (choose-item :left 42 7)]
+    (item-value from)))
+(defn ^Item make-item [value]
+  (Item. value))
+(defn choose-item [index left right]
+  (case index
+    :left (make-item left)
+    :right (make-item right)
+    (Stdlib.invalid_arg "unknown item index")))
+(println (find-value))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "forward declarations must resolve to closed definitions";
+  assert_ocaml_runs "forward_declaration_waits_for_closed_record_definition"
+    "42\n" ocaml_source
+
+let test_forward_optional_result_is_narrowed_before_closed_record_call () =
+  let source =
+    {|
+(type-record item (value :int))
+(declare maybe-item)
+(defn compare-items [^item left ^item right]
+  (compare (:value left) (:value right)))
+(defn find-item [^item target]
+  (let [found (maybe-item target)]
+    (when (and (some? found) (<= 0 (compare-items target found)))
+      found)))
+(defn maybe-item [value]
+  (Some value))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "forward optional record results must remain static";
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
+  let pss_sources =
+    [
+      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.cljc";
+    ]
+    |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
+  in
+  let consumer_source =
+    {|
+(ns test.forward-sorted-set
+  (:require [me.tonsky.persistent-sorted-set :as set]))
+(defrecord Database
+  [^set/btset<int;unit;unit> eavt
+   ^set/btset<int;unit;unit> aevt])
+(declare typed-index components->pattern)
+(defn find-datom [^Database db index value]
+  (let [items (typed-index db index)
+        cmp (set/comparator items)
+        from (components->pattern value)
+        datom (set/seek-first items from cmp)]
+    (when (and (some? datom) (<= 0 (cmp from datom)))
+      datom)))
+(defn typed-index [^Database db index]
+  (case index
+    :eavt (.-eavt db)
+    :aevt (.-aevt db)
+    (Stdlib.invalid_arg "unknown index")))
+(defn components->pattern [value]
+  value)
+|}
+  in
+  let compile target =
+    let state, outputs =
+      List.fold_left
+        (fun (state, outputs) source ->
+          let state, output =
+            Lg.Compiler.compile_chunk ~target state source |> expect_ok
+          in
+          (state, output :: outputs))
+        (Lg.Compiler.empty_state, []) pss_sources
+    in
+    let _, output =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    String.concat "\n" (List.rev (output :: outputs))
+  in
+  let ocaml_source = compile Lg.Target.Native in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed sorted-set calls must remain static";
+  ignore (compile Lg.Target.Melange)
+
 let test_mutual_recursion_keeps_different_arities_separate () =
   let source =
     {|
@@ -14704,6 +15305,120 @@ let test_protocol_methods_use_their_static_receiver_witnesses () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_protocol_methods_use_static_witnesses_for_concrete_parameters () =
+  let provider =
+    {|
+(ns app.db)
+(defprotocol Identified (identifier [value] :int))
+(defprotocol Added (added? [value] :bool))
+(deftype Datom [^:int value ^:bool added]
+  Identified
+  (identifier [_] value)
+  Added
+  (added? [_] added))
+(defn datom-closed
+  ([value]
+   (Datom. value true))
+  ([value added]
+   (Datom. value added)))
+(defn make-datom [maybe-value default-value added]
+  (datom-closed
+    (if-some [value maybe-value] value default-value)
+    added))
+(defprotocol Search
+  (-search [database pattern] :seq<Datom>))
+(defn datom-entry [datom]
+  (if (added? datom)
+    (.-value datom)
+    (- (.-value datom))))
+(defn tx-datom [datom]
+  (datom-entry datom))
+(defn generic-identifier [value]
+  (identifier value))
+|}
+  in
+  let consumer =
+    {|
+(ns app.db)
+(defrecord Database [^:bool marker]
+  Search
+  (-search [_ ^Datom pattern]
+    (map (fn [datom] datom) [pattern])))
+(defrecord FilteredDatabase [^Database database]
+  Search
+  (-search [_ ^Datom pattern]
+    (-search database pattern)))
+(defn search [database maybe-value default-value added]
+  (let [found
+        (first
+          (-search
+            database
+            (make-datom maybe-value default-value added)))]
+    (if (added? found)
+      (identifier found)
+      (- (identifier found)))))
+(defn identifiers [database]
+  (map
+    (fn [^app.db/Datom datom]
+      (identifier datom))
+    (-search database (make-datom (Some 5) 0 true))))
+(defn database? [value]
+  (satisfies? Search value))
+(defn entid [^app.db/Database database maybe-value default-value added]
+  {:pre [(database? database)]}
+  (search database maybe-value default-value added))
+(type-variant database-view
+  (DatabaseView :app.db/Database))
+(defn database-view-entid [database maybe-value default-value added]
+  (match database
+    (DatabaseView unfiltered)
+    (entid unfiltered maybe-value default-value added)))
+(println
+  (str
+    (search (Database. true) (Some 42) 0 true)
+    ":"
+    (search (Database. true) None 7 false)
+    ":"
+    (search
+      (FilteredDatabase. (Database. true))
+      (Some 9)
+      0
+      true)
+    ":"
+    (database-view-entid
+      (DatabaseView (Database. true))
+      (Some 11)
+      0
+      true)
+    ":"
+    (pr-str (vec (identifiers (Database. true))))
+    ":"
+    (pr-str
+      (mapv tx-datom
+        [(Datom. 8 true) (Datom. 9 false)]))
+    ":"
+    (generic-identifier (Datom. 13 true))))
+|}
+  in
+  let state, provider_ocaml =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _state, consumer_ocaml =
+    Lg.Compiler.compile_chunk state consumer |> expect_ok
+  in
+  assert_ocaml_runs
+    "protocol_methods_use_static_witnesses_for_concrete_parameters"
+    "42:-7:9:11:[5]:[8 -9]:13\n"
+    (provider_ocaml ^ "\n" ^ consumer_ocaml);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      Lg.Compiler.empty_state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
 let test_extend_type_methods_use_their_static_receiver_witnesses () =
   let source =
     {|
@@ -14998,7 +15713,7 @@ let test_forward_declared_deftype_fields_keep_nominal_receiver () =
   let source =
     {|
 (declare touch cleanup)
-(deftype Cache [^:map<keyword,int> key-value ^int limit])
+(deftype Cache [^:map<keyword;int> key-value ^int limit])
 (defn touch [^Cache cache]
   (do
     (get (.-key-value cache) :missing)
@@ -15231,6 +15946,88 @@ let test_static_deftype_preserves_identity_predicate () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_identity_predicate_uses_constrained_receiver_values () =
+  let source =
+    {|
+(defprotocol IValue
+  (read-value [value] :int))
+(deftype Item [^int value]
+  IValue
+  (read-value [item] (.-value item)))
+(defn observe [^Item item]
+  (do
+    (read-value item)
+    item))
+(def item (Item. 1))
+(println (identical? (observe item) item))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "identity_predicate_uses_constrained_receiver_values"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_static_protocol_lookup_through_existing_capability () =
+  let source =
+    {|
+(defprotocol Named
+  (name-of [value] :string))
+(defprotocol Quantified
+  (count-of [value] :int))
+(deftype Item [^string name ^int count]
+  Named
+  (name-of [item] (.-name item))
+  Quantified
+  (count-of [item] (.-count item)))
+(defn read-name [value]
+  (name-of value))
+(defn read-count [value]
+  (count-of value))
+(defn inspect [^Item item]
+  (do
+    (name-of item)
+    (count-of item)
+    (str (read-name item) ":" (read-count item))))
+(println (inspect (Item. "Ada" 3)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "static_protocol_lookup_through_existing_capability"
+    "Ada:3\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_function_calls_narrow_multiple_protocol_capabilities () =
+  let source =
+    {|
+(defprotocol Named
+  (name-of [value] :string))
+(defprotocol Quantified
+  (count-of [value] :int))
+(deftype Item [^string name ^int count]
+  Named
+  (name-of [item] (.-name item))
+  Quantified
+  (count-of [item] (.-count item)))
+(defn read-name [value]
+  (name-of value))
+(defn read-count [value]
+  (count-of value))
+(defn inspect [item]
+  (do
+    (name-of item)
+    (count-of item)
+    (str (read-name item) ":" (read-count item))))
+(println (inspect (Item. "Ada" 3)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "function_calls_narrow_multiple_protocol_capabilities"
+    "Ada:3\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_quoted_symbols_do_not_create_recursive_dependencies () =
   let quoted_name =
     Lg.Ast.FList
@@ -15353,6 +16150,56 @@ let test_deftype_mutable_fields_support_set_bang () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "deftype_mutable_fields_support_set_bang" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deftype_mutable_fields_support_external_set_bang () =
+  let source =
+    {|
+(defprotocol MutableMetric
+  (metric-value [metric] :int))
+(deftype Metric [^:mutable ^int value]
+  MutableMetric
+  (metric-value [_] value))
+(def metric (Metric. 1))
+(println (set! (.-value metric) 42))
+(println (.-value metric))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "deftype_mutable_fields_support_external_set_bang"
+    "42\n42\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deftype_external_set_bang_rejects_immutable_fields () =
+  {|
+(defprotocol ImmutableMetric
+  (metric-value [metric] :int))
+(deftype Metric [^int value]
+  ImmutableMetric
+  (metric-value [_] value))
+(def metric (Metric. 1))
+(set! (.-value metric) 42)
+|}
+  |> Lg.Compiler.compile_string
+  |> expect_error_contains "field :value is not mutable"
+
+let test_deftype_mutable_field_assignment_infers_method_parameter () =
+  let source =
+    {|
+(deftype Counter [^:mutable ^int value]
+  Object
+  (setValue [_ next-value]
+    (set! value next-value)))
+(def counter (Counter. 1))
+(println (.setValue counter 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "deftype_mutable_field_assignment_infers_method_parameter" "42\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -15529,6 +16376,68 @@ let test_qualified_record_hints_survive_forward_protocol_dependencies () =
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_receiver_evidence_uses_canonical_namespaced_record_type () =
+  let forward_type =
+    Lg.Types.ocaml_name
+      (Lg.Semantic_type.TOcaml "__lg_record:model.database/DB")
+  in
+  if not (String.equal forward_type "model_database_db") then
+    failwith "qualified forward record types must emit their canonical name";
+  let record_source =
+    {|
+(ns model.database)
+(defrecord DB [^:vector<int> items])
+|}
+  in
+  let consumer_source =
+    {|
+(ns model.database)
+(defn db-count [database]
+  (count (:items database)))
+(extend-type DB
+  Counted
+  (-count [database]
+    (db-count database)))
+(println (count (DB. [1 2 3])))
+|}
+  in
+  let compile target =
+    let state, record_output =
+      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state record_source
+      |> expect_ok
+    in
+    let canonical_record =
+      Lg.Resolver.lookup_record_type "model.database"
+        state.typecheck_state.env "DB"
+      |> expect_ok
+    in
+    let stale_record =
+      Lg.Semantic_type.TNamed_record
+        { canonical_record with type_name = "DB" }
+    in
+    let resolved_record =
+      Lg.Function_elaborator.infer_named_record "model.database"
+        state.typecheck_state.env stale_record
+    in
+    if
+      not
+        (String.equal (Lg.Types.ocaml_name resolved_record)
+           (Lg.Types.ocaml_name
+              (Lg.Semantic_type.TNamed_record canonical_record)))
+    then failwith "named record evidence must be restored from its canonical type id";
+    let _, consumer_output =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    record_output ^ "\n" ^ consumer_output
+  in
+  let native_source = compile Lg.Target.Native in
+  if string_contains_substring native_source "(database : dB)" then
+    failwith "protocol evidence must use the canonical namespaced record type";
+  assert_ocaml_runs
+    "protocol_receiver_evidence_uses_canonical_namespaced_record_type"
+    "3\n" native_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_equality_dispatches_to_record_iequiv () =
   let source =
@@ -16049,8 +16958,8 @@ let test_recursive_protocol_vectors_keep_static_protocol_elements () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses () =
-  let source =
+let test_recursive_protocol_frame_stacks_require_sum_elements () =
+  Lg.Compiler.compile_string
     {|
 (defprotocol IFrame
   (-run [this]))
@@ -16075,13 +16984,7 @@ let test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses () =
         (.-value ^ResultFrame frame)))))
 (println (run-stack))
 |}
-  in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs
-    "recursive_protocol_frame_stacks_preserve_dispatch_witnesses" "7\n"
-    ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  |> expect_error_contains "define a closed sum type"
 
 let test_deep_recursive_protocol_frame_stacks_require_sum_elements () =
   Lg.Compiler.compile_string
@@ -16706,21 +17609,13 @@ let test_branch_local_record_hints_materialize_protocol_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_protocol_witness_results_unpack_concrete_sequence_returns () =
+let test_protocol_witness_results_reject_dynamic_sequence_returns () =
   let open Lg.Types in
-  let result =
-    Lg.Call_elaborator.adapt_protocol_witness_result
-      Lg.Compiler_environment.empty ~expected:(TSeq TInt)
-      ~actual:(dynamic_constraint TUnknown)
-      (Lg.Semantic_ir.Ident "raw_protocol_result")
-    |> expect_ok
-  in
-  if
-    not
-      (Lg.Semantic_ir.exists_identifier
-         (fun name -> name = "Lg_runtime.Runtime_dynamic.to_seq")
-         result.semantic_expr)
-  then failwith "concrete protocol sequence return was not unpacked"
+  Lg.Call_elaborator.adapt_protocol_witness_result
+    Lg.Compiler_environment.empty ~expected:(TSeq TInt)
+    ~actual:(dynamic_constraint TUnknown)
+    (Lg.Semantic_ir.Ident "raw_protocol_result")
+  |> expect_error_contains "collections cannot cross a dynamic boundary"
 
 let test_defn_accepts_attribute_maps_and_return_hints () =
   let source =
@@ -21960,12 +22855,12 @@ let test_protocol_calls_recover_structurally_inferred_named_records () =
   assert_ocaml_runs "protocol_calls_recover_structurally_inferred_named_records"
     "42\n" ocaml_source
 
-let test_transducer_type_hints_infer_nominal_record_fields () =
+let test_transducer_type_hints_infer_closed_nominal_record_fields () =
   let source =
     {|
 (defprotocol IDatom
   (datom-value [datom]))
-(deftype Datom [e a v ^int tx]
+(deftype Datom [e a ^boolean v ^int tx]
   IDatom
   (datom-value [_] tx))
 (defrecord Search [items]
@@ -22327,6 +23222,29 @@ let test_dependency_graph_orders_declared_protocol_dependencies () =
   in
   if not (List.exists (fun names -> List.sort String.compare names = [ "left"; "right" ]) components)
   then failwith "mutual recursion must form one strongly connected component"
+
+let test_dependency_graph_orders_sidecar_signature_before_value () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [
+          FSymbol "def";
+          FSymbol "^:dynamic";
+          FSymbol "*query-cache*";
+          FInt 1;
+        ];
+      FList
+        [
+          FSymbol "signature";
+          FSymbol "app/*query-cache*";
+          FKeyword ":int";
+        ];
+    ]
+  in
+  match Lg.Dependency_graph.stable_order forms with
+  | 1 :: 0 :: _ -> ()
+  | _ -> failwith "sidecar signature must precede its value definition"
 
 let test_dependency_graph_ignores_type_record_field_names () =
   let open Lg.Ast in
@@ -24110,7 +25028,7 @@ let test_cond_thread_recognizes_namespaced_array_normalization_macros () =
     "cond_thread_recognizes_namespaced_array_normalization_macros" "ok\n"
     (arrays_ocaml ^ "\n" ^ app_ocaml)
 
-let test_occurrence_type_hints_only_refine_their_branch () =
+let test_occurrence_type_hints_require_closed_record_sums () =
   let source =
     {|
 (defrecord Base [^int value])
@@ -24124,9 +25042,9 @@ let test_occurrence_type_hints_only_refine_their_branch () =
 (println (.-value (unwrap (Wrapped. base))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "occurrence_type_hints_only_refine_their_branch" "7\n7\n"
-    ocaml_source
+  Lg.Compiler.compile_string source
+  |> expect_error_contains
+       "conditional branches have incompatible types: base and wrapped; define a closed sum type"
 
 let test_update_reads_dynamic_reduce_accumulators_dynamically () =
   let source =
@@ -32442,6 +33360,8 @@ let tests =
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",
       test_if_some_and_when_some_bind_option_payloads );
+    ( "if-some preserves seqable capability payloads",
+      test_if_some_preserves_seqable_capability_payloads );
     ( "when-some binding constraints remain static",
       test_when_some_binding_constraints_remain_static );
     ( "nil predicates evaluate arguments once",
@@ -32770,6 +33690,16 @@ let tests =
       test_protocol_calls_contextualize_anonymous_callbacks );
     ( "protocol calls reject contextual callback return mismatches",
       test_protocol_calls_reject_contextual_callback_return_mismatches );
+    ( "callbacks keep nominal protocol parameters raw",
+      test_callbacks_keep_nominal_protocol_parameters_raw );
+    ( "loop keeps protocol evidence with nominal state",
+      test_loop_keeps_protocol_evidence_with_nominal_state );
+    ( "dynamic var uses concrete generic alias signature",
+      test_dynamic_var_uses_concrete_generic_alias_signature );
+    ( "value uses concrete generic alias signature",
+      test_value_uses_concrete_generic_alias_signature );
+    ( "reduce over keys keeps accessor map key type",
+      test_reduce_over_keys_keeps_accessor_map_key_type );
     ( "current DataScript filter protocol accepts nominal callback",
       test_current_datascript_filter_protocol_accepts_nominal_callback );
     ( "DataScript make-array one arity behaves on Native and Melange",
@@ -32795,6 +33725,8 @@ let tests =
       test_quoted_query_literals_are_shared_across_calls );
     ( "current DataScript pull API behaves on Native",
       test_current_datascript_pull_api_behaves_on_native );
+    ( "DataScript limit-context specializes empty reduce vector",
+      test_datascript_limit_context_specializes_empty_reduce_vector );
     ( "current DataScript query compiles for Native and Melange",
       test_current_datascript_query_compiles_for_native_and_melange );
     ( "current DataScript parser collects pattern variables",
@@ -33184,6 +34116,8 @@ let tests =
       test_double_converts_ints_and_preserves_floats );
     ( "OCaml arrays support construction read and mutation",
       test_ocaml_arrays_support_construction_read_and_mutation );
+    ( "array mutation uses protocol payload storage",
+      test_array_mutation_uses_protocol_payload_storage );
     ( "OCaml array primitives support polymorphic helpers",
       test_ocaml_array_primitives_support_polymorphic_helpers );
     ( "to-array copies static vectors directly",
@@ -33198,6 +34132,8 @@ let tests =
       test_optional_protocol_values_can_flow_to_seqable_else_branches );
     ( "nested protocol witnesses keep concrete receiver storage",
       test_nested_protocol_witnesses_keep_concrete_receiver_storage );
+    ( "projected optional nominal values keep protocol witnesses",
+      test_projected_optional_nominal_values_keep_protocol_witnesses );
     ( "OCaml refs support read and assignment",
       test_ocaml_refs_support_read_and_assignment );
     ( "custom IDeref dispatches nominal return values",
@@ -33374,6 +34310,12 @@ let tests =
       test_multi_arity_defn_accepts_nil_for_destructured_options );
     ( "nullable destructured options flow through forwarding functions",
       test_nullable_destructured_options_flow_through_forwarding_functions );
+    ( "multi-arity export preserves inferred optional parameter",
+      test_multi_arity_export_preserves_inferred_optional_parameter );
+    ( "contains propagates protocol set element to parameter",
+      test_contains_propagates_protocol_set_element_to_parameter );
+    ( "match infers optional closed variant parameter",
+      test_match_infers_optional_closed_variant_parameter );
     ( "multi-arity defn remains callable as a value",
       test_multi_arity_defn_remains_callable_as_a_value );
     ( "multi-arity calls project structural row arguments",
@@ -33419,6 +34361,12 @@ let tests =
       test_mutually_recursive_functions_need_no_sidecar_signature );
     ( "caller evidence flows into mutual recursion",
       test_caller_evidence_flows_into_mutual_recursion );
+    ( "forward declaration waits for closed record definition",
+      test_forward_declaration_waits_for_closed_record_definition );
+    ( "forward optional result is narrowed before closed record call",
+      test_forward_optional_result_is_narrowed_before_closed_record_call );
+    ( "forward closed record result flows into generic sorted set call",
+      test_forward_closed_record_result_flows_into_generic_sorted_set_call );
     ( "mutual recursion keeps different arities separate",
       test_mutual_recursion_keeps_different_arities_separate );
     ( "polymorphic recursion requires explicit interface",
@@ -33460,6 +34408,8 @@ let tests =
       test_satisfies_question_selects_each_generic_protocol_witness );
     ( "protocol methods use their static receiver witnesses",
       test_protocol_methods_use_their_static_receiver_witnesses );
+    ( "protocol methods use static witnesses for concrete parameters",
+      test_protocol_methods_use_static_witnesses_for_concrete_parameters );
     ( "extend-type methods use their static receiver witnesses",
       test_extend_type_methods_use_their_static_receiver_witnesses );
     ( "satisfies? guards generic protocol dispatch",
@@ -33508,6 +34458,12 @@ let tests =
       test_static_deftype_values_do_not_gain_map_semantics );
     ( "static deftype preserves identity predicate",
       test_static_deftype_preserves_identity_predicate );
+    ( "identity predicate uses constrained receiver values",
+      test_identity_predicate_uses_constrained_receiver_values );
+    ( "static protocol lookup uses the constrained value type",
+      test_static_protocol_lookup_through_existing_capability );
+    ( "function calls narrow multiple protocol capabilities",
+      test_function_calls_narrow_multiple_protocol_capabilities );
     ( "quoted symbols do not create recursive dependencies",
       test_quoted_symbols_do_not_create_recursive_dependencies );
     ( "forward declaration detection includes overload targets",
@@ -33520,6 +34476,12 @@ let tests =
       test_deftype_hinted_fields_preserve_static_values );
     ( "deftype mutable fields support set!",
       test_deftype_mutable_fields_support_set_bang );
+    ( "deftype mutable fields support external set!",
+      test_deftype_mutable_fields_support_external_set_bang );
+    ( "deftype external set! rejects immutable fields",
+      test_deftype_external_set_bang_rejects_immutable_fields );
+    ( "deftype mutable field assignment infers method parameter",
+      test_deftype_mutable_field_assignment_infers_method_parameter );
     ( "deftype methods support instance call syntax",
       test_deftype_methods_support_instance_call_syntax );
     ( "defrecord fields infer host records from protocol methods",
@@ -33534,6 +34496,8 @@ let tests =
       test_defrecord_protocol_methods_support_forward_calls );
     ( "qualified record hints survive forward protocol dependencies",
       test_qualified_record_hints_survive_forward_protocol_dependencies );
+    ( "protocol receiver evidence uses canonical namespaced record type",
+      test_protocol_receiver_evidence_uses_canonical_namespaced_record_type );
     ( "equality dispatches to record IEquiv",
       test_equality_dispatches_to_record_iequiv );
     ( "nullable record equality dispatches to IEquiv",
@@ -33570,8 +34534,8 @@ let tests =
       test_recursive_protocol_sequence_returns_remain_concrete );
     ( "recursive protocol vectors keep static protocol elements",
       test_recursive_protocol_vectors_keep_static_protocol_elements );
-    ( "recursive protocol frame stacks preserve dispatch witnesses",
-      test_recursive_protocol_frame_stacks_preserve_dispatch_witnesses );
+    ( "recursive protocol frame stacks require sum elements",
+      test_recursive_protocol_frame_stacks_require_sum_elements );
     ( "deep recursive protocol frame stacks require sum elements",
       test_deep_recursive_protocol_frame_stacks_require_sum_elements );
     ( "dynamic protocol parameters are rejected",
@@ -33612,8 +34576,8 @@ let tests =
       test_condp_preserves_function_recur_tail_positions );
     ( "branch-local record hints materialize protocol parameters",
       test_branch_local_record_hints_materialize_protocol_parameters );
-    ( "protocol witness results unpack concrete sequence returns",
-      test_protocol_witness_results_unpack_concrete_sequence_returns );
+    ( "protocol witness results reject dynamic sequence returns",
+      test_protocol_witness_results_reject_dynamic_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
     ( "inline macros can distinguish float literals",
@@ -34150,8 +35114,8 @@ let tests =
       test_macros_preserve_nested_parameter_type_hints );
     ( "protocol calls recover structurally inferred named records",
       test_protocol_calls_recover_structurally_inferred_named_records );
-    ( "transducer type hints infer nominal record fields",
-      test_transducer_type_hints_infer_nominal_record_fields );
+    ( "transducer type hints infer closed nominal record fields",
+      test_transducer_type_hints_infer_closed_nominal_record_fields );
     ( "deftype methods flush after their declared dependencies",
       test_deftype_methods_flush_after_their_declared_dependencies );
     ( "protocol consumers use stable later implementation returns",
@@ -34170,6 +35134,8 @@ let tests =
       test_declared_record_constructors_follow_record_dependencies );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
+    ( "dependency graph orders sidecar signature before value",
+      test_dependency_graph_orders_sidecar_signature_before_value );
     ( "dependency graph ignores type-record field names",
       test_dependency_graph_ignores_type_record_field_names );
     ( "dependency graph orders nested type annotation dependencies",
@@ -34271,8 +35237,8 @@ let tests =
       test_cond_thread_arrays_preserve_nominal_elements_for_sorting );
     ( "cond-> recognizes namespaced array normalization macros",
       test_cond_thread_recognizes_namespaced_array_normalization_macros );
-    ( "occurrence type hints only refine their branch",
-      test_occurrence_type_hints_only_refine_their_branch );
+    ( "occurrence type hints require closed record sums",
+      test_occurrence_type_hints_require_closed_record_sums );
     ( "update reads dynamic reduce accumulators dynamically",
       test_update_reads_dynamic_reduce_accumulators_dynamically );
     ( "reduce rejects heterogeneous vector accumulator slots",
@@ -35072,6 +36038,7 @@ let datascript_integration_tests =
     "current DataScript pull accepts source and closed runtime patterns";
     "current DataScript pull parser preserves schema semantics on Native";
     "current DataScript pull API behaves on Native";
+    "DataScript limit-context specializes empty reduce vector";
     "current DataScript query compiles for Native and Melange";
     "current DataScript parser collects pattern variables";
     "current DataScript query behaves on Native";

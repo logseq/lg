@@ -162,7 +162,7 @@
            (not= :aka (db/datom-attr datom))
            (<=
             (count
-             (db/-search
+             (db/search-vector
               unfiltered-db
               (Some (.-e datom))
               (Some :aka)

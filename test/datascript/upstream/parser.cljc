@@ -225,8 +225,10 @@
     (util/raise "Cannot parse rule-vars, expected [ variable+ | ([ variable+ ] variable*) ]"
       {:error :parser/rule-vars})))
 
+(signature datascript.parser/flatten-rule-vars
+  :fn<datascript.parser/RuleVars;vector<symbol>>)
 (defn  flatten-rule-vars
-  [ ^datascript.parser/RuleVars rule-vars]
+  [rule-vars]
   (vec
    (concat
     (match (:required rule-vars)
@@ -234,16 +236,20 @@
       (Some values) (mapv :symbol values))
     (mapv :symbol (:free rule-vars)))))
 
+(signature datascript.parser/rule-vars-arity
+  :fn<datascript.parser/RuleVars;tuple<int;int>>)
 (defn  rule-vars-arity
-  [ ^datascript.parser/RuleVars rule-vars]
+  [rule-vars]
   (tuple
    (match (:required rule-vars)
      None 0
      (Some values) (count values))
    (count (:free rule-vars))))
 
+(signature datascript.parser/join-rule-variable-names
+  :fn<vector<string>;string>)
 (defn  join-rule-variable-names
-  [ ^:vector<string> names]
+  [names]
   (if-some [first-name (first names)]
     (reduce
      (fn [ joined  name]
@@ -252,8 +258,10 @@
      (subvec names 1))
     ""))
 
+(signature datascript.parser/rule-vars-display
+  :fn<datascript.parser/RuleVars;string>)
 (defn  rule-vars-display
-  [ ^datascript.parser/RuleVars rule-vars]
+  [rule-vars]
   (let [required-parts
         (if-some [required (.-required rule-vars)]
           [(str
@@ -769,7 +777,9 @@
      items)
     None))
 
-(defn ^:keyword return-map-keyword [ ^:symbol symbol]
+(signature datascript.parser/return-map-keyword
+  :fn<symbol;keyword>)
+(defn return-map-keyword [symbol]
   (str ":" symbol))
 
 (defn  parse-return-map
@@ -1091,14 +1101,12 @@
   [ clauses]
   (vec (distinct (mapcat clause-vars clauses))))
 
-(defn- ^:string auto-rule-variable
-  [ ^:string variable  ^:int seqid]
+(defn- auto-rule-variable
+  [variable seqid]
   (str variable "__auto__" seqid))
 
-(defn- ^datascript.parser/Variable substitute-rule-variable
-  [ ^:map<string;pattern-element> replacements
-    ^:int seqid
-    ^datascript.parser/Variable variable]
+(defn- substitute-rule-variable
+  [replacements seqid variable]
   (let [name (str (.-symbol variable))]
     (if-some [replacement (get replacements name)]
       (match replacement
@@ -1113,7 +1121,7 @@
       (Variable. (auto-rule-variable name seqid)))))
 
 (defn-  substitute-rule-pattern-element
-  [ ^:map<string;pattern-element> replacements
+  [replacements
     seqid
     element]
   (match element
@@ -1126,7 +1134,7 @@
     _ element))
 
 (defn-  substitute-rule-fn-arg
-  [ ^:map<string;pattern-element> replacements
+  [replacements
     seqid
     argument]
   (match argument
@@ -1260,7 +1268,7 @@
     (AndClause
      (substitute-rule-clauses replacements seqid clauses))))
 
-(defn ^:private ^:vector<clause> substitute-rule-clauses
+(defn ^:private substitute-rule-clauses
   [ replacements
     seqid
     clauses]
@@ -1269,7 +1277,7 @@
      (substitute-rule-clause replacements seqid clause))
    clauses))
 
-(defn ^:option<vector<datascript.parser/clause>> parse-clauses
+(defn parse-clauses
   [ clauses]
   (parse-items
    (fn [ form]
@@ -1493,7 +1501,7 @@
                (str "Insufficient bindings: " missing
                     " are not bound in clause " (source not)))))))))
 
-(defn ^:datascript.parser/clause parse-clause
+(defn parse-clause
   [ form]
   (if-some [clause (parse-not form)]
     clause
@@ -1515,7 +1523,7 @@
                    "Cannot parse clause, expected (data-pattern | pred-expr | fn-expr | rule-expr | not-clause | not-join-clause | or-clause | or-join-clause)"
                    {:error :parser/where}))))))))))
 
-(defn ^:vector<datascript.parser/clause> parse-where
+(defn parse-where
   [ form]
   (if-some [items (data-value-items form)]
     (if-some [clauses (parse-clauses items)]
@@ -1538,7 +1546,7 @@
   [^datascript.parser/PlainSymbol name
    ^:vector<datascript.parser/RuleBranch> branches])
 
-(defn ^datascript.parser/RuleBranch parse-rule
+(defn parse-rule
   [ form]
   (if-some [items (data-value-items form)]
     (if-some [head (first items)]
@@ -1565,9 +1573,10 @@
     (util/raise "Cannot parse rule"
       {:error :parser/rule})))
 
+(signature datascript.parser/validate-arity
+  :fn<datascript.parser/PlainSymbol;vector<datascript.parser/RuleBranch>;unit>)
 (defn validate-arity
-  [ ^datascript.parser/PlainSymbol name
-    ^:vector<datascript.parser/RuleBranch> branches]
+  [name branches]
   (if-some [first-branch (first branches)]
     (let [vars0 (:vars first-branch)
           arity0 (rule-vars-arity vars0)]
@@ -1585,11 +1594,12 @@
     (util/raise "Rule must contain at least one branch"
       {:error :parser/rule})))
 
-(defn  add-rule-branch
-  [ ^:vector<datascript.parser/Rule> rules
-    ^datascript.parser/RuleBranch branch]
-  (loop [remaining rules
-          ^:vector<datascript.parser/Rule> result []
+(signature datascript.parser/add-rule-branch
+  :fn<vector<datascript.parser/Rule>;datascript.parser/RuleBranch;vector<datascript.parser/Rule>>)
+(defn add-rule-branch
+  [rules branch]
+    (loop [remaining rules
+          result []
          found false]
     (if (empty? remaining)
       (if found
@@ -1989,7 +1999,7 @@
         (traversable-vector-exn node)))
 
 (defn-  data-values-traversable
-  [ ^:list<data-value> values]
+  [values]
   (Rrbvec.of_list
    (List.map
     (fn [ value]
@@ -1997,17 +2007,19 @@
     values)))
 
 (defn-  data-map-entries-traversable
-  [ ^:list<tuple<data-value;data-value>> entries]
+  [entries]
   (Rrbvec.of_list
    (List.map
-    (fn [ ^:tuple<data-value;data-value> entry]
-      (TraversalVector
-       [(TraversalData (tuple-get entry 0))
-        (TraversalData (tuple-get entry 1))]))
+    (fn [entry]
+      (match entry
+        (tuple key value)
+        (TraversalVector
+         [(TraversalData key)
+          (TraversalData value)])))
     entries)))
 
 (defn-  optional-data-values-traversable
-  [ ^:list<option<data-value>> values]
+  [values]
   (let [ values
         (Rrbvec.of_list values)]
     (loop [ idx 0
@@ -2159,7 +2171,7 @@
   (mapv traversable-string-exn (traversable-vector-exn node)))
 
 (defn-  postwalk-optional-data-values
-  [ ^:list<option<data-value>> values
+  [values
     walk]
   (let [ values
         (Rrbvec.of_list values)]
@@ -2181,7 +2193,7 @@
         (Rrbvec.to_list result)))))
 
 (defn-  postwalk-data-values
-  [ ^:list<data-value> values
+  [values
     walk]
   (List.map
    (fn [ value]
@@ -2202,13 +2214,13 @@
     (Datascript_runtime.Data_value.Map entries)
     (Datascript_runtime.Data_value.Map
      (List.map
-      (fn [ ^:tuple<data-value;data-value> entry]
-        (tuple
-         (tuple-get entry 0)
-         (traversable-data-exn
-          (walk
-           (TraversalData
-            (tuple-get entry 1))))))
+      (fn [entry]
+        (match entry
+          (tuple key value)
+          (tuple
+           key
+           (traversable-data-exn
+            (walk (TraversalData value))))))
       entries))
     (Datascript_runtime.Data_value.Set values)
     (Datascript_runtime.Data_value.Set
@@ -2578,11 +2590,9 @@
     (traversable-postwalk node f false)))
 
 (defn collect
-  ([ ^:fn<traversable;bool> pred  ^traversable form]
+  ([pred form]
    (collect pred form []))
-  ([ ^:fn<traversable;bool> pred
-     ^traversable form
-     ^:vector<traversable> acc]
+  ([pred form ^:vector<traversable> acc]
    (if (pred form)
      (conj acc form)
      (-collect form pred acc))))
@@ -2977,14 +2987,16 @@
     _ None))
 
 (defn  rule-vars-names
-  [ ^datascript.parser/RuleVars variables]
+  [variables]
   (mapv
    (fn [ variable]
      (str (.-symbol variable)))
    (rule-vars-values variables)))
 
+(signature datascript.parser/rule-vars-required-names
+  :fn<datascript.parser/RuleVars;vector<string>>)
 (defn  rule-vars-required-names
-  [ ^datascript.parser/RuleVars variables]
+  [variables]
   (if-some [required (.-required variables)]
     (mapv
      (fn [ variable]
@@ -3135,7 +3147,7 @@
 (defn  static-rule-branch
   [ rule-name
     parameters
-    ^:vector<clause> clauses]
+    clauses]
   (if (empty? clauses)
     (Stdlib.invalid_arg "Rule branch should have clauses")
     (RuleBranch.
@@ -3151,7 +3163,7 @@
   [ rule-name
     required
     free
-    ^:vector<clause> clauses]
+    clauses]
   (if (empty? clauses)
     (Stdlib.invalid_arg "Rule branch should have clauses")
     (RuleBranch.
@@ -3968,7 +3980,9 @@
       (Some keyword))
     _ None))
 
-(defn ^:map<keyword;vector<Datascript_runtime.Data_value.t>> query->map
+(signature datascript.parser/query->map
+  :fn<Datascript_runtime.Data_value.t;map<keyword;vector<Datascript_runtime.Data_value.t>>>)
+(defn query->map
   [ query]
   (if-some [items (data-value-items query)]
     (loop [remaining items
@@ -3990,8 +4004,10 @@
     (util/raise "Query should be a vector or a map"
       {:error :parser/query, :form query})))
 
+(signature datascript.parser/variable-names
+  :fn<vector<datascript.parser/Variable>;vector<string>>)
 (defn-  variable-names
-  [ ^:vector<datascript.parser/Variable> variables]
+  [variables]
   (mapv
    (fn [ variable]
      (str (.-symbol variable)))
@@ -4029,25 +4045,27 @@
 (defn-  names-display [ names]
   (str "[" (join-rule-variable-names names) "]"))
 
-(defn- ^:vector<string> query-find-vars
+(signature datascript.parser/query-find-vars
+  :fn<datascript.parser/find-spec;vector<string>>)
+(defn- query-find-vars
   [ find]
   (vec (mapcat find-element-vars (find-spec-elements find))))
 
-(defn- ^:vector<string> query-with-vars
+(defn- query-with-vars
   [ with]
   (if-some [variables with]
     (variable-names variables)
     []))
 
-(defn- ^:vector<string> query-input-vars
+(defn- query-input-vars
   [ inputs]
   (vec (mapcat variable-names (mapv input-binding-vars inputs))))
 
-(defn- ^:vector<string> query-where-vars
+(defn- query-where-vars
   [ clauses]
   (vec (mapcat variable-names (mapv clause-vars clauses))))
 
-(defn- ^:vector<string> query-input-source-names
+(defn- query-input-source-names
   [ inputs]
   (mapv
    (fn [ source]
@@ -4059,7 +4077,7 @@
   (count (filter input-binding-rules? inputs)))
 
 (defn validate-query
-  [ ^datascript.parser/Query query
+  [query
     _form
     form-map]
   (let [find-vars (query-find-vars (.-qfind query))

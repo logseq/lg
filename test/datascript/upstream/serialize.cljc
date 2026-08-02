@@ -48,9 +48,11 @@
       (<= (compare left-attr right-attr) 0) -1
       :else 1)))
 
+(signature datascript.serialize/all-attrs
+  :fn<datascript.db/DB;vector<keyword>>)
 (defn- all-attrs
   "All attrs in a DB, distinct, sorted"
-  [^datascript.db/DB db]
+  [db]
   (let [aevt (:aevt db)]
     (if (empty? aevt)
       []
@@ -68,10 +70,10 @@
             (recur (conj attrs next-attr))
             attrs))))))
 
-(defn ^:string freeze-kw [^:keyword kw]
+(defn freeze-kw [kw]
   (str kw))
 
-(defn- thaw-kw [^:string s]
+(defn- thaw-kw [s]
   (keyword
    (if (str/starts-with? s ":")
      (subs s 1)
@@ -89,13 +91,14 @@
     (CustomKeywordThawer thaw-keyword) (thaw-keyword value)
     DefaultKeywordThawer (thaw-kw value)))
 
-(defn- ^serialized-value serialize-datom
-  [^:Datascript_runtime.Serialization_value.encoder encoder
-   ^codec freeze-codec
+(defn- serialize-datom!
+  [result
+   encoder
+   freeze-codec
    attrs-map
-   ^:int idx
-   ^datascript.db/Datom datom]
-  (db/datom-set-idx datom idx)
+   idx
+   datom]
+  (set! (.-idx datom) idx)
   (let [entity    (.-e datom)
         attribute
         (Datascript_runtime.Serialization_value.find_attribute_index
@@ -108,8 +111,8 @@
                     (Datascript_runtime.Serialization_value.encode_value
                      encoder (.-v datom)))
         tx        (- (.-tx datom) db/tx0)]
-    (Datascript_runtime.Serialization_value.datom
-     entity attribute value tx)))
+    (Datascript_runtime.Serialization_value.set_datom
+     result idx entity attribute value tx)))
 
 (defn- freeze-attrs
   [keyword-freezer attrs]
@@ -118,30 +121,27 @@
      (freeze-keyword-value keyword-freezer attr))
    attrs))
 
+(signature datascript.serialize/serialize-eavt
+  :fn<datascript.db/DB;Datascript_runtime.Serialization_value.encoder;codec;Datascript_runtime.Serialization_value.attribute_indexes;Datascript_runtime.Serialization_value.datom_array>)
 (defn- serialize-eavt
-  [^datascript.db/DB db encoder freeze-codec attrs-map]
-  (let [datoms (:eavt db)]
-    (if-some [first-datom (first datoms)]
-      (let [result
-            (arrays/make-array
-             (count datoms)
-             (serialize-datom
-              encoder freeze-codec attrs-map 0 first-datom))]
-        (reduce
-         (fn [index datom]
-           (if (> index 0)
-             (arrays/aset
-              result index
-              (serialize-datom encoder freeze-codec attrs-map index datom))
-             (Stdlib.ignore 0))
-           (inc index))
-         0
-         datoms)
-        result)
-      (arrays/empty-array))))
+  [db encoder freeze-codec attrs-map]
+  (let [datoms (:eavt db)
+        result
+        (Datascript_runtime.Serialization_value.create_datom_array
+         (count datoms))]
+    (reduce
+     (fn [index datom]
+       (serialize-datom!
+        result encoder freeze-codec attrs-map index datom)
+       (inc index))
+     0
+     datoms)
+    result))
 
+(signature datascript.serialize/datom-indexes
+  :fn<set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>>;array<int>>)
 (defn- datom-indexes
-  [^:set/btset<datascript.db/Datom;Datascript_runtime.Storage_backend.t;tuple<int;Datascript_runtime.Storage_value.t>> datoms]
+  [datoms]
   (let [result (arrays/make-array (count datoms) 0)]
     (reduce
      (fn [index datom]
@@ -175,7 +175,7 @@
   dtx      :: tx - tx0
   aevt     :: [<index in eavt> ...]
   avet     :: [<index in eavt> ...]"
-  [^datascript.db/DB db freeze-codec keyword-freezer]
+  [db freeze-codec keyword-freezer]
   (when-some [_database-storage (storage/storage db)]
     (Stdlib.invalid_arg
      "serializable doesn't work with databases that have :storage"))
@@ -197,7 +197,7 @@
                       encoder))]
     (match freeze-codec
       (CustomCodec freeze-fn)
-      (Datascript_runtime.Serialization_value.database_arrays_with_schema
+      (Datascript_runtime.Serialization_value.database_datom_array_with_schema
        (count (:eavt db))
        db/tx0
        (:max-eid db)
@@ -213,7 +213,7 @@
        (:branching-factor settings)
        (serialized-ref-type (:ref-type settings)))
       DefaultCodec
-      (Datascript_runtime.Serialization_value.database_arrays
+      (Datascript_runtime.Serialization_value.database_datom_array
        (count (:eavt db))
        db/tx0
        (:max-eid db)
@@ -242,74 +242,85 @@
            DefaultKeywordFreezer)]
      (serializable-impl db freeze-codec freeze-keyword))))
 
-(defn- ^datascript.db/Datom deserialize-datom
-  [^:int tx0
-   ^:array<keyword> attrs
-   ^:vector<string> keywords
-   ^codec thaw-codec
-   ^prepared-serialized-value prepared
-   ^:int index]
-  (let [datom     (Datascript_runtime.Serialization_value.prepared_datom
-                   prepared index)
-        entity    (Datascript_runtime.Serialization_value.prepared_datom_entity
-                   datom)
+(defn- deserialize-datom
+  [tx0
+   attrs
+   keywords
+   thaw-codec
+   prepared
+   cursor
+   index]
+  (Datascript_runtime.Serialization_value.read_prepared_datom_into
+   prepared index cursor)
+  (let [entity    (Datascript_runtime.Serialization_value.cursor_datom_entity
+                   cursor)
         attribute (arrays/aget
                    attrs
-                   (Datascript_runtime.Serialization_value.prepared_datom_attribute
-                    datom))
+                   (Datascript_runtime.Serialization_value.cursor_datom_attribute
+                    cursor))
         value     (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.decode_value_with
                      thaw-fn
                      keywords
-                     (Datascript_runtime.Serialization_value.prepared_datom_value
-                      datom))
+                     (Datascript_runtime.Serialization_value.cursor_datom_value
+                      cursor))
                     DefaultCodec
-                    (Datascript_runtime.Serialization_value.decode_prepared_datom_value
-                     keywords datom))
+                    (Datascript_runtime.Serialization_value.decode_cursor_datom_value
+                     keywords cursor))
         tx        (+ tx0
-                     (Datascript_runtime.Serialization_value.prepared_datom_tx
-                      datom))]
+                     (Datascript_runtime.Serialization_value.cursor_datom_tx
+                      cursor))]
     (db/datom entity attribute value tx)))
 
-(defn- ^:array<datascript.db/Datom> deserialize-datoms
-  [^:int tx0
-   ^:array<keyword> attrs
-   ^:vector<string> keywords
-   ^codec thaw-codec
-   ^prepared-serialized-value prepared]
+(defn- deserialize-datoms
+  [tx0
+   attrs
+   keywords
+   thaw-codec
+   prepared]
   (let [datom-count
-        (Datascript_runtime.Serialization_value.prepared_datom_count prepared)]
+        (Datascript_runtime.Serialization_value.prepared_datom_count prepared)
+        cursor
+        (Datascript_runtime.Serialization_value.create_prepared_datom_cursor)]
     (if (zero? datom-count)
       (arrays/empty-array)
       (let [result
             (arrays/make-array
              datom-count
-             (deserialize-datom tx0 attrs keywords thaw-codec prepared 0))]
+             (deserialize-datom tx0 attrs keywords thaw-codec prepared cursor 0))]
         (loop [index 1]
           (if (< index datom-count)
             (do
               (arrays/aset
                result index
                (deserialize-datom
-                tx0 attrs keywords thaw-codec prepared index))
+                tx0 attrs keywords thaw-codec prepared cursor index))
               (recur (inc index)))
             result))))))
 
-(defn- ^:array<datascript.db/Datom> reorder-datoms
-  [^:array<datascript.db/Datom> datoms
-   ^:option<array<int>> indexes]
-  (Datascript_runtime.Serialization_value.reorder_array datoms indexes))
+(defn- restore-index [comparator datoms indexes ref-type]
+  #?(:melange
+     (if-some [indexes indexes]
+       (set/from-sorted-indexed-array comparator datoms indexes ref-type)
+       (set/from-sorted-array
+        comparator datoms (arrays/alength datoms) None ref-type))
+     :default
+     (let [ordered
+           (Datascript_runtime.Serialization_value.reorder_array
+            datoms indexes)]
+       (set/from-sorted-array
+        comparator ordered (arrays/alength ordered) None ref-type))))
 
-(defn- ^datascript.db/DB from-serializable-impl
-  [^serialized-value from
-   ^codec thaw-codec
-   ^keyword-thawer keyword-thawer
-   ^restore-ref-type restore-ref-type
+(defn- from-serializable-impl
+  [from
+   thaw-codec
+   keyword-thawer
+   restore-ref-type
    branching-factor-override]
   (let [prepared (Datascript_runtime.Serialization_value.prepare from)
         tx0      (Datascript_runtime.Serialization_value.prepared_tx0 prepared)
-         schema   (match thaw-codec
+        schema   (match thaw-codec
                     (CustomCodec thaw-fn)
                     (Datascript_runtime.Serialization_value.schema_of_value
                      (thaw-fn
@@ -334,26 +345,18 @@
                            (thaw-keyword-value keyword-thawer value)))))
          eavt     (deserialize-datoms
                    tx0 attrs keywords thaw-codec prepared)
-         aevt     (reorder-datoms
-                   eavt
-                   (Datascript_runtime.Serialization_value.prepared_aevt_array
-                    prepared))
-         avet     (reorder-datoms
-                   eavt
-                   (Datascript_runtime.Serialization_value.prepared_avet_array
-                    prepared))
-         serialized-branching-factor
-         (Datascript_runtime.Serialization_value.prepared_branching_factor
-          prepared)
-         branching-factor
-         (if-some [branching-factor branching-factor-override]
-           branching-factor
-           serialized-branching-factor)
-         serialized-ref-type
-         (Datascript_runtime.Serialization_value.prepared_ref_type prepared)
-         ref-type (match restore-ref-type
-                    (OverrideRefType ref-type) ref-type
-                    SerializedRefType serialized-ref-type)]
+        serialized-branching-factor
+        (Datascript_runtime.Serialization_value.prepared_branching_factor
+         prepared)
+        branching-factor
+        (if-some [branching-factor branching-factor-override]
+          branching-factor
+          serialized-branching-factor)
+        serialized-ref-type
+        (Datascript_runtime.Serialization_value.prepared_ref_type prepared)
+        ref-type (match restore-ref-type
+                   (OverrideRefType ref-type) ref-type
+                   SerializedRefType serialized-ref-type)]
     (db/restore-db
      (db/make-db-snapshot
       schema
@@ -362,21 +365,27 @@
         (arrays/alength eavt) None ref-type)
        branching-factor)
       (set/with-branching-factor
-       (set/from-sorted-array db/cmp-datoms-aevt aevt
-        (arrays/alength aevt) None ref-type)
+       (restore-index
+        db/cmp-datoms-aevt
+        eavt
+        (Datascript_runtime.Serialization_value.prepared_aevt_array prepared)
+        ref-type)
        branching-factor)
       (set/with-branching-factor
-       (set/from-sorted-array db/cmp-datoms-avet avet
-        (arrays/alength avet) None ref-type)
+       (restore-index
+        db/cmp-datoms-avet
+        eavt
+        (Datascript_runtime.Serialization_value.prepared_avet_array prepared)
+        ref-type)
        branching-factor)
       (Datascript_runtime.Serialization_value.prepared_max_eid prepared)
       (Datascript_runtime.Serialization_value.prepared_max_tx prepared)))))
 
-(defn ^datascript.db/DB from-serializable
-  ([^serialized-value from]
+(defn from-serializable
+  ([from]
    (from-serializable-impl
     from DefaultCodec DefaultKeywordThawer SerializedRefType None))
-  ([^serialized-value from
+  ([from
     {:keys [thaw-fn thaw-kw ref-type branching-factor]}]
    (let [thaw-codec
          (if-some [thaw-fn thaw-fn]

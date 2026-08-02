@@ -4,15 +4,94 @@ set -eu
 
 count_inline_hints() {
   {
-    rg -o '\^[A-Za-z_:][A-Za-z0-9_./:<>,;?!-]*' "$@" \
+    rg -o --no-filename '\^[A-Za-z_:][A-Za-z0-9_./:<>,;?!-]*' "$@" \
       -g '*.clj' -g '*.cljc' -g '*.cljs' || true
-  } | wc -l | tr -d ' '
+  } | awk '
+    $0 !~ /^\^:(private|const|mutable|dynamic|export|no-doc|ordering-fn)$/ {
+      count++
+    }
+    END { print count + 0 }
+  '
 }
 
-query_hint_limit=413
+count_declaration_hints() {
+  awk '
+    function hint_count(line, count, hint) {
+      count = 0
+      while (match(line, /\^[A-Za-z_:][A-Za-z0-9_\.\/:<>,;?!-]*/)) {
+        hint = substr(line, RSTART, RLENGTH)
+        if (hint !~ /^\^:(private|const|mutable|dynamic|export|no-doc|ordering-fn)$/) {
+          count++
+        }
+        line = substr(line, RSTART + RLENGTH)
+      }
+      return count
+    }
+    function paren_delta(line, opened, closed, copy) {
+      copy = line
+      opened = gsub(/\(/, "", copy)
+      copy = line
+      closed = gsub(/\)/, "", copy)
+      return opened - closed
+    }
+    FNR == 1 {
+      mode = ""
+      depth = 0
+    }
+    mode == "fields" {
+      total += hint_count($0)
+      if (index($0, "]") > 0) mode = ""
+      next
+    }
+    mode == "form" {
+      total += hint_count($0)
+      depth += paren_delta($0)
+      if (depth <= 0) mode = ""
+      next
+    }
+    /^\((deftype|defrecord|deftrecord)[[:space:]]/ {
+      total += hint_count($0)
+      if (index($0, "]") == 0) mode = "fields"
+      next
+    }
+    /^[[:space:]]*\(defprotocol[[:space:]]/ {
+      total += hint_count($0)
+      depth = paren_delta($0)
+      if (depth > 0) mode = "form"
+      next
+    }
+    /^[[:space:]]+\(-[A-Za-z0-9_?!*+.<>=-]+[[:space:]]*\[/ {
+      total += hint_count($0)
+      if (index($0, "]") == 0) mode = "fields"
+      next
+    }
+    /^\(def(once)?[[:space:]]+\^[A-Za-z_:]/ {
+      total += hint_count($0)
+      depth = paren_delta($0)
+      if (depth > 0) mode = "form"
+      next
+    }
+    END { print total + 0 }
+  ' "$@"
+}
+
+query_hint_limit=225
 query_hint_count=$(count_inline_hints test/datascript/lg)
 if [ "$query_hint_count" -gt "$query_hint_limit" ]; then
   echo "DataScript query inline hints increased: $query_hint_count > $query_hint_limit" >&2
+  exit 1
+fi
+
+datascript_hint_limit=92
+datascript_hint_count=$(count_inline_hints \
+  test/datascript/upstream \
+  test/datascript/lg)
+datascript_declaration_hint_count=$(count_declaration_hints \
+  test/datascript/upstream/*.cljc \
+  test/datascript/lg/*.cljc)
+datascript_algorithm_hint_count=$((datascript_hint_count - datascript_declaration_hint_count))
+if [ "$datascript_algorithm_hint_count" -gt "$datascript_hint_limit" ]; then
+  echo "DataScript algorithm-local hints exceed the 95 percent removal target: $datascript_algorithm_hint_count > $datascript_hint_limit (total=$datascript_hint_count, declarations=$datascript_declaration_hint_count)" >&2
   exit 1
 fi
 
@@ -91,4 +170,4 @@ if [ "$pss_hint_count" -ne 0 ]; then
   exit 1
 fi
 
-echo "DataScript annotation audit passed: query=$query_hint_count, parser=$parser_hint_count, pss=$pss_hint_count"
+echo "DataScript annotation audit passed: total=$datascript_hint_count, declarations=$datascript_declaration_hint_count, algorithm=$datascript_algorithm_hint_count, query=$query_hint_count, parser=$parser_hint_count, pss=$pss_hint_count"

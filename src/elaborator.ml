@@ -148,8 +148,7 @@ let freshen_deferred_type ?return_param_index ty =
           Types.TOcaml_app (name, List.map dynamic_unknowns arguments)
       | Types.TTuple items -> Types.TTuple (List.map dynamic_unknowns items)
       | Types.TFn (parameters, return_ty) ->
-          Types.TFn
-            (List.map dynamic_unknowns parameters, dynamic_unknowns return_ty)
+          Types.TFn (List.map dynamic_unknowns parameters, dynamic_unknowns return_ty)
       | Types.TOverloaded_fn arities ->
           Types.TOverloaded_fn
             (List.map
@@ -197,18 +196,17 @@ let freshen_deferred_type ?return_param_index ty =
         | None ->
             Types.protocol_constraint protocol_id [] value_ty
         | Some method_tys ->
+            let freshen_method_position =
+              if dynamic_dispatch then dynamic_unknowns else freshen
+            in
             let method_tys =
               List.map
                 (function
                   | Types.TFn (_receiver :: parameters, return_ty) ->
-                      (* Untyped protocol method positions dispatch through
-                         the dynamic witness ABI in the implementation;
-                         rigid variables would claim polymorphism the
-                         generated code does not have. *)
                       Types.TFn
                         ( Types.constraint_value_type value_ty
-                          :: List.map dynamic_unknowns parameters,
-                          dynamic_unknowns return_ty )
+                          :: List.map freshen_method_position parameters,
+                          freshen_method_position return_ty )
                   | method_ty -> freshen method_ty)
                 method_tys
             in

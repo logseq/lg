@@ -13,14 +13,6 @@
              ^:Datascript_runtime.Data_value.t right]
     (Datascript_runtime.Data_value.compare left right)))
 
-(signature datascript.db/Datom
-  {:e :int
-   :a :keyword
-   :v :Datascript_runtime.Data_value.t
-   :tx :int
-   :idx :int
-   :cached-hash :int})
-
 (signature datascript.db/empty-schema-entry
   :map<keyword;Datascript_runtime.Data_value.t>)
 
@@ -75,29 +67,8 @@
 (signature datascript.db/cmp-datoms-avet-quick
   :fn<datascript.db/Datom;datascript.db/Datom;int>)
 
-(signature datascript.db/resolve-tuple-refs
-  :fn<datascript.db/DB;keyword;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
-
-(signature datascript.db/schema-tuple-attrs
-  :fn<datascript.db/DB;keyword;vector<string>>)
-
 (signature datascript.db/data-value-tuple-items
   :fn<Datascript_runtime.Data_value.t;vector<option<Datascript_runtime.Data_value.t>>>)
-
-(signature datascript.db/entid
-  :fn<datascript.db/DB;Datascript_runtime.Data_value.entity_ref;option<int>>)
-
-(signature datascript.db/entid-strict
-  :fn<datascript.db/DB;Datascript_runtime.Data_value.entity_ref;int>)
-
-(signature datascript.db/db-equal?
-  :fn<datascript.db/DB;datascript.db/DB;bool>)
-
-(signature datascript.db/db-hash
-  :fn<datascript.db/DB;int>)
-
-(signature datascript.db/db-count
-  :fn<datascript.db/DB;int>)
 
 (signature datascript.db/filtered-db-datoms
   :fn<datascript.db/FilteredDB;vector<datascript.db/Datom>>)
@@ -105,8 +76,11 @@
 (signature datascript.db/filtered-db-equal?
   :fn<datascript.db/FilteredDB;datascript.db/FilteredDB;bool>)
 
-(signature datascript.db/filtered-db-hash
-  :fn<datascript.db/FilteredDB;int>)
-
 (signature datascript.db/filtered-db-count
   :fn<datascript.db/FilteredDB;int>)
+
+(signature datascript.lg.query/normalize-pattern-clause
+  :fn<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>>)
+
+(signature datascript.lg.query/remove-pairs
+  :fn<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>;tuple<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>>>)

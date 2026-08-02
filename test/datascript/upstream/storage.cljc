@@ -68,32 +68,30 @@
        (Datascript_runtime.Storage_backend.restore backend address))))
 
 (defn- store-backend
-  [^storage-backend backend
-   ^:vector<tuple<int;stored_value>> address-data
-   ^:vector<int> delete-addresses]
+  [backend address-data delete-addresses]
   :unit
   (Datascript_runtime.Storage_backend.store
    backend address-data delete-addresses))
 
 (defn- list-backend-addresses
-  [^storage-backend backend]
+  [backend]
   :vector<int>
   (Datascript_runtime.Storage_backend.list_addresses backend))
 
 (defn- delete-backend-addresses
-  [^storage-backend backend ^:vector<int> addresses]
+  [backend addresses]
   :unit
   (Datascript_runtime.Storage_backend.delete backend addresses))
 
 (defn make-backend
-  [^:fn<vector<tuple<int;stored_value>>;vector<int>;unit> store-fn
+  [store-fn
    ^:fn<int;option<stored_value>> restore-fn
    ^:fn<unit;vector<int>> list-addresses-fn
-   ^:fn<vector<int>;unit> delete-fn]
+   delete-fn]
   (Datascript_runtime.Storage_backend.create
    store-fn restore-fn list-addresses-fn delete-fn))
 
-(defn- ^storage-backend adapt-storage [storage]
+(defn- adapt-storage [storage]
   (if (satisfies? StorageBoundary/ClosedStorage storage)
     (StorageBoundary/ClosedStorage/closed-storage storage)
     (Datascript_runtime.Storage_backend.create
@@ -119,14 +117,16 @@
           :cljs
           (Stdlib.ignore addresses))))))
 
-(defn ^datascript.db/database-options maybe-adapt-storage
-  [^datascript.db/database-options opts]
+(signature datascript.storage/maybe-adapt-storage
+  :fn<datascript.db/database-options;datascript.db/database-options>)
+(defn maybe-adapt-storage
+  [opts]
   (if-some [storage (db/options-storage opts)]
     (db/options-assoc-storage opts (adapt-storage storage))
     opts))
 
 (defn- same-backend?
-  [^storage-backend left ^storage-backend right]
+  [left right]
   (Datascript_runtime.Storage_backend.equal left right))
 
 (type-record restoration
@@ -145,23 +145,26 @@
 (defn- generate-address []
   (vswap! next-address inc))
 
-(defn- remember-database [^datascript.db/DB database]
+(defn- remember-database [database]
   (vswap! stored-databases conj (weak-ref database))
   nil)
 
-(defn serializable-datom [^datascript.db/Datom datom]
+(signature datascript.storage/serializable-datom
+  :fn<datascript.db/Datom;serialized-datom>)
+
+(defn serializable-datom [datom]
   (Datascript_runtime.Storage_value.serialized_datom
    (.-e datom) (str (db/datom-attr datom)) (.-v datom) (.-tx datom)))
 
-(defn- restore-datom [^serialized-datom datom]
+(defn- restore-datom [datom]
   (db/datom
    (Datascript_runtime.Storage_value.datom_e datom)
    (keyword (Datascript_runtime.Storage_value.datom_a datom))
    (Datascript_runtime.Storage_value.datom_v datom)
    (Datascript_runtime.Storage_value.datom_tx datom)))
 
-(defn- ^:vector<serialized-datom> serialize-datoms
-  [^:vector<datascript.db/Datom> datoms]
+(defn- serialize-datoms
+  [datoms]
   (loop [idx 0
          result []]
     (if (< idx (count datoms))
@@ -175,12 +178,12 @@
     (Some value) value
     None (Stdlib.failwith "stored node has no child address")))
 
-(defn- restore-address [^:int address]
+(defn- restore-address [address]
   (Some address))
 
-(defn- ^serialized-node serialize-node
-  [^:set/tree<datascript.db/Datom> node]
-  (let [node-keys (set/node-keys node)
+(defn- serialize-node
+  [node]
+  (let [^:array<datascript.db/Datom> node-keys (set/node-keys node)
         keys
         (loop [idx 0
                result []]
@@ -198,7 +201,7 @@
        (mapv serialize-address
              (array-seq (set/node-addresses node)))))))
 
-(defn- restore-node [^serialized-node data ^:int address]
+(defn- restore-node [data address]
   (let [keys
         (arrays/into-array
          (map restore-datom
@@ -215,7 +218,7 @@
 (signature datascript.storage/make-storage-adapter
   :fn<storage-backend;unit;set/storage<datascript.db/Datom;storage-backend;tuple<int;stored_value>>>)
 
-(defn make-storage-adapter [^storage-backend backend _opts]
+(defn make-storage-adapter [backend _opts]
   (let [pending-deletes (volatile! (arrays/empty-array))
         write-buffer (volatile! [])]
     (set/make-storage-with-owner
@@ -250,19 +253,23 @@
          (vreset! write-buffer [])
          entries)))))
 
-(defn storage-adapter [^datascript.db/DB database]
+(signature datascript.storage/storage-adapter
+  :fn<datascript.db/DB;option<storage-backend>>)
+(defn storage-adapter [database]
   (when database
     (match (set/set-storage (:eavt database))
       (Some adapter) adapter
       None nil)))
 
-(defn ^:option<storage-backend> storage [^datascript.db/DB database]
+(defn storage [database]
   (when-some [adapter (storage-adapter database)]
     (match (set/storage-owner adapter)
       (Some backend) backend
       None nil)))
 
-(defn addresses [^:vector<datascript.db/DB> databases]
+(signature datascript.storage/addresses
+  :fn<vector<datascript.db/DB>;set<int>>)
+(defn addresses [databases]
   (reduce
    (fn [used database]
      (reduce
@@ -276,8 +283,8 @@
    #{root-addr tail-addr}
    databases))
 
-(defn- ^:vector<datascript.db/DB> alive-databases []
-  (let [^:ref<vector<datascript.db/DB>> databases
+(defn- alive-databases []
+  (let [databases
         (volatile! [])
         references
         (reduce
@@ -292,8 +299,8 @@
         _updated (vreset! stored-databases references)]
     @databases))
 
-(defn- ^:vector<datascript.db/DB> databases-for-storage
-  [^storage-backend backend]
+(defn- databases-for-storage
+  [backend]
   (reduce
    (fn [databases database]
      (if-some [database-backend (storage database)]
@@ -304,18 +311,17 @@
    []
    (alive-databases)))
 
-(defn- ^storage-backend adapter-backend [adapter]
+(defn- adapter-backend [adapter]
   (match (set/storage-owner adapter)
     (Some backend) backend
     None (Stdlib.invalid_arg "Storage adapter has no owner")))
 
-(defn- ^serialized-index set-metadata [values ^:int address]
+(defn- set-metadata [values address]
   (Datascript_runtime.Storage_value.serialized_index
    address (set/set-shift values) (set/set-count values)))
 
-(defn- ^:map<string;map<string;Datascript_runtime.Data_value.t>>
-  serialize-schema
-  [^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+(defn- serialize-schema
+  [schema]
   (reduce-kv
    (fn [result attr properties]
      (assoc
@@ -329,9 +335,10 @@
    {}
    schema))
 
-(defn- ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>>
-  restore-schema
-  [^:map<string;map<string;Datascript_runtime.Data_value.t>> schema]
+(signature datascript.storage/restore-schema
+  :fn<map<string;map<string;Datascript_runtime.Data_value.t>>;map<keyword;map<keyword;Datascript_runtime.Data_value.t>>>)
+(defn- restore-schema
+  [schema]
   (reduce-kv
    (fn [result attr properties]
      (assoc
@@ -348,7 +355,7 @@
 (signature datascript.storage/store-impl!
   :fn<datascript.db/DB;set/storage<datascript.db/Datom;storage-backend;tuple<int;stored-value>>;bool;datascript.db/DB>)
 
-(defn store-impl! [^datascript.db/DB database adapter force?]
+(defn store-impl! [database adapter force?]
   (let [_remembered (remember-database database)
         eavt-address (set/store (:eavt database) adapter)
         aevt-address (set/store (:aevt database) adapter)
@@ -391,11 +398,11 @@
     database))
 
 (defn store
-  ([^datascript.db/DB database]
+  ([database]
    (if-some [adapter (storage-adapter database)]
      (store-impl! database adapter false)
      (Stdlib.invalid_arg "Database has no associated storage")))
-  ([^datascript.db/DB database storage]
+  ([database storage]
    (let [backend (adapt-storage storage)]
      (if-some [adapter (storage-adapter database)]
        (let [current-backend (adapter-backend adapter)]
@@ -409,8 +416,7 @@
         false)))))
 
 (defn store-tail
-  [^datascript.db/DB database
-   ^:vector<vector<datascript.db/Datom>> tail]
+  [database tail]
   (if-some [backend (storage database)]
     (store-backend
      backend
@@ -425,10 +431,10 @@
 
 (defn- restore-index
   [comparator
-   ^serialized-index metadata
+   metadata
    adapter
-   ^:Datascript_runtime.Storage_value.ref_type ref-type
-   ^:int branching-factor]
+   ref-type
+   branching-factor]
   (set/restore-by
    comparator
    (Datascript_runtime.Storage_value.index_address metadata)
@@ -440,7 +446,7 @@
 
 (declare db-with-tail)
 
-(defn restore-impl [^storage-backend backend opts]
+(defn restore-impl [backend opts]
   (when-some [stored-root (-restore backend root-addr)]
     (match stored-root
       (Datascript_runtime.Storage_value.Stored_root root)
@@ -500,9 +506,8 @@
               (tail restored-tail)))
       _ (Stdlib.failwith "storage root address has the wrong payload"))))
 
-(defn- ^datascript.db/DB db-with-tail-datoms
-  [^datascript.db/DB database
-   ^:vector<datascript.db/Datom> datoms]
+(defn- db-with-tail-datoms
+  [database datoms]
   ;; Replay a tail group through transaction semantics so cardinality and
   ;; uniqueness constraints match the original transaction.
   (try
@@ -517,9 +522,10 @@
         (mapv db/datom->tx-entry datoms))))
     (catch _ (do database))))
 
+(signature datascript.storage/db-with-tail
+  :fn<datascript.db/DB;vector<vector<datascript.db/Datom>>;datascript.db/DB>)
 (defn db-with-tail
-  [^datascript.db/DB database
-   ^:vector<vector<datascript.db/Datom>> tail]
+  [database tail]
   (reduce
    (fn [current datoms]
      (if (empty? datoms)
@@ -538,7 +544,7 @@
      (:database result)
      nil)))
 
-(defn- collect-garbage-backend [^storage-backend backend]
+(defn- collect-garbage-backend [backend]
   (let [current (restore backend)
         databases
         (if-some [database current]
@@ -560,5 +566,5 @@
    (defn collect-garbage [storage]
      (collect-garbage-backend (adapt-storage storage)))
    :cljs
-   (defn collect-garbage [^storage-backend backend]
+   (defn collect-garbage [backend]
      (collect-garbage-backend backend)))

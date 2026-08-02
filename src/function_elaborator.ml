@@ -77,6 +77,12 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
 
 let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
+  | TNamed_record record as ty -> (
+      match
+        Resolver.lookup_record_type scope env (Type_id.to_string record.type_id)
+      with
+      | Ok canonical -> Types.refresh_named_record canonical ty
+      | Error _ -> ty)
   | TNullable inner ->
       TNullable (infer_named_record ~allow_dynamic_fields scope env inner)
   | TArray inner ->
@@ -313,6 +319,29 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | _ -> inferred)
   | inferred -> inferred
 
+let rec collapse_static_record_protocols env ty =
+  match Types.protocol_constraint_info ty with
+  | Some (protocol_id, _, value_ty) ->
+      let value_ty = collapse_static_record_protocols env value_ty in
+      (match value_ty with
+      | TNamed_record _ when Protocol.type_satisfies env protocol_id value_ty ->
+          value_ty
+      | _ -> Types.protocol_constraint_with_value ty value_ty)
+  | None -> (
+      match ty with
+      | TVector element_ty ->
+          TVector (collapse_static_record_protocols env element_ty)
+      | TRecord fields ->
+          TRecord
+            (List.map
+               (fun (field : field) ->
+                 {
+                   field with
+                   ty = collapse_static_record_protocols env field.ty;
+                 })
+               fields)
+      | ty -> ty)
+
 let rec protocol_witness_constraint_type receiver_ty = function
   | TUnknown | TMeta _ -> TOcaml "_"
   | TVar _ as ty -> ty
@@ -354,7 +383,8 @@ and pattern_constraint_type = function
   | TOcaml_app (name, arguments) ->
       TOcaml_app (name, List.map pattern_constraint_type arguments)
   | TTuple items -> TTuple (List.map pattern_constraint_type items)
-  | TArray ty -> TArray (pattern_constraint_type ty)
+  | TArray ty ->
+      TArray (pattern_constraint_type (Types.constraint_value_type ty))
   | TRef ty -> TRef (pattern_constraint_type ty)
   | TList ty -> TList (pattern_constraint_type ty)
   | TVector ty -> TVector (pattern_constraint_type ty)
@@ -377,6 +407,10 @@ and pattern_constraint_type = function
                 { field with ty = pattern_constraint_type field.ty })
               record.fields;
         }
+  | ty -> ty
+
+let array_storage_type = function
+  | TArray element_ty -> TArray (Types.constraint_value_type element_ty)
   | ty -> ty
 
 let rec contains_open_type = function
@@ -799,6 +833,12 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                          | ty -> ty
                        in
                        let inferred_ty =
+                         collapse_static_record_protocols env inferred_ty
+                       in
+                       let inferred_ty =
+                         infer_named_record scope env inferred_ty
+                       in
+                       let inferred_ty =
                          match inferred_ty with
                          | TNullable inner
                          | TOcaml_app ("option", [ inner ])
@@ -829,6 +869,25 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                when Type_id.equal explicit.type_id
                                       inferred.type_id ->
                                  inferred_ty
+                             | TNamed_record _, inferred
+                               when Option.is_some
+                                      (Types.protocol_constraint_info inferred)
+                               ->
+                                 let value_ty =
+                                   Type_inference.refine_type explicit_ty
+                                     (Types.constraint_value_type inferred)
+                                 in
+                                 (match
+                                    Types.protocol_constraint_info inferred
+                                  with
+                                 | Some (protocol_id, _, _)
+                                   when Protocol.type_satisfies env protocol_id
+                                          value_ty ->
+                                     value_ty
+                                 | Some _ ->
+                                     Types.protocol_constraint_with_value
+                                       inferred value_ty
+                                 | None -> assert false)
                              | ( TFn
                                    ([ TUnknown; TUnknown ], TOcaml "int"),
                                  TFn ([ _; _ ], _) ) ->
@@ -840,6 +899,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                        | _ -> (
                            match List.nth_opt param_type_overrides index with
                            | Some (Some ty) ->
+                               let ty = infer_named_record scope env ty in
                                if Types.equal ty TUnknown then
                                  (spec, inferred_ty)
                                else if Types.equal ty TMap_keys then
@@ -872,6 +932,12 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                then
                                  let refined =
                                    match (ty, inferred_ty) with
+                                   | TNamed_record _, inferred
+                                     when Option.is_some
+                                            (Types.protocol_constraint_info
+                                               inferred) ->
+                                       Type_inference.refine_type ty
+                                         (Types.constraint_value_type inferred)
                                    | TRecord _, TNamed_record record
                                      when Types.row_compatible ~expected:ty
                                             ~actual:inferred_ty ->
@@ -884,6 +950,11 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                else
                                  (spec, ty)
                            | None | Some None -> (spec, inferred_ty)))
+              in
+              let typed_specs =
+                List.map
+                  (fun (spec, ty) -> (spec, array_storage_type ty))
+                  typed_specs
               in
               let param_bindings =
                 typed_specs
@@ -964,6 +1035,7 @@ let fn_code ?(row_param_type_names = []) parts =
   let param_tys =
     parts.param_bindings
     |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+    |> List.map array_storage_type
   in
   let sequence_first_arguments =
     match Semantic_ir.unlocated parts.body.semantic_expr with
@@ -998,7 +1070,8 @@ let fn_code ?(row_param_type_names = []) parts =
                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.first_opt",
                      arguments )) )
         | None -> (param_tys, parts.body.ty, parts.body.semantic_expr))
-    | return_ty, _ -> (param_tys, return_ty, parts.body.semantic_expr)
+    | return_ty, _ ->
+        (param_tys, array_storage_type return_ty, parts.body.semantic_expr)
   in
   let rec capability_pattern ?value_type name ty =
     match Types.protocol_constraint_info ty with
@@ -1140,6 +1213,8 @@ let fn_code ?(row_param_type_names = []) parts =
                          (Types.printable_constraint_info binding.ty)
                     || Option.is_some
                          (Types.symbol_predicate_constraint_info binding.ty)
+                    || Option.is_some
+                         (Types.contains_constraint_info binding.ty)
                   then capability_pattern binding.ocaml_name binding.ty
                   else Semantic_ir.PVar binding.ocaml_name
                 in
@@ -1154,11 +1229,20 @@ let fn_code ?(row_param_type_names = []) parts =
             body_semantic_expr )
   in
   let return_param_index =
-    match
-      ( parts.destructured_bindings,
-        Semantic_ir.unlocated parts.body.semantic_expr )
-    with
-    | [], Semantic_ir.Ident returned_name ->
+    let returned_name =
+      match Semantic_ir.unlocated parts.body.semantic_expr with
+      | Semantic_ir.Ident name -> Some name
+      | Semantic_ir.Sequence expressions -> (
+          match List.rev expressions with
+          | expression :: _ -> (
+              match Semantic_ir.unlocated expression with
+              | Semantic_ir.Ident name -> Some name
+              | _ -> None)
+          | [] -> None)
+      | _ -> None
+    in
+    match (parts.destructured_bindings, returned_name) with
+    | [], Some returned_name ->
         param_names
         |> List.mapi (fun index name -> (index, name))
         |> List.find_opt (fun (_index, name) -> name = returned_name)

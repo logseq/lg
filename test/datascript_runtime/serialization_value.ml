@@ -26,10 +26,13 @@ let vector_values = function
       ]
   | Lg_edn_backend.Int_vector values ->
       values |> Array.to_list |> List.map int
-  | _ -> invalid_arg "expected serialized vector"
-
-let rrbvec_of_values = function
-  | Lg_edn_backend.Vector values -> Rrbvec.of_array values
+  | Lg_edn_backend.Int4_array (entities, attributes, values, txs) ->
+      Array.to_list
+        (Array.mapi
+           (fun index value ->
+             Lg_edn_backend.Int4_vector
+               (entities.(index), attributes.(index), value, txs.(index)))
+           values)
   | _ -> invalid_arg "expected serialized vector"
 
 let edn_keyword value =
@@ -119,6 +122,19 @@ let rec data_value_of_edn = function
           data_value_of_edn third;
           Data_value.Int fourth;
         ]
+  | Lg_edn_backend.Int4_array (entities, attributes, values, txs) ->
+      Data_value.Vector
+        (Array.to_list
+           (Array.mapi
+              (fun index value ->
+                Data_value.Vector
+                  [
+                    Data_value.Int entities.(index);
+                    Data_value.Int attributes.(index);
+                    data_value_of_edn value;
+                    Data_value.Int txs.(index);
+                  ])
+              values))
   | Lg_edn_backend.Int_vector values ->
       Data_value.Vector
         (values |> Array.to_list |> List.map (fun value -> Data_value.Int value))
@@ -160,10 +176,76 @@ and entity_ref_of_edn value =
       Data_value.Lookup_ref (string_value attr, data_value_of_edn value)
   | _ -> invalid_arg "invalid serialized entity reference"
 
-let data_value_of_edn_string source =
-  source |> Lg_edn_backend.of_edn_string |> data_value_of_edn
+let decoded_string = function
+  | Data_value.String value -> value
+  | _ -> invalid_arg "expected serialized string"
 
-let keyword_reference index = vector [ int 0; int index ]
+let decoded_int = function
+  | Data_value.Int value -> value
+  | Data_value.Wide_int value -> Int64.to_int value
+  | _ -> invalid_arg "expected serialized integer"
+
+let decoded_entity_ref = function
+  | Data_value.Vector [ Data_value.String "entity"; value ] ->
+      Data_value.Entity_id (decoded_int value)
+  | Data_value.Vector [ Data_value.String "temp"; Data_value.String value ] ->
+      Data_value.Temp_id value
+  | Data_value.Vector [ Data_value.String "auto-temp"; value ] ->
+      Data_value.Auto_tempid (decoded_int value)
+  | Data_value.Vector [ Data_value.String "current-tx" ] ->
+      Data_value.Current_tx
+  | Data_value.Vector [ Data_value.String "ident"; Data_value.String value ] ->
+      Data_value.Ident value
+  | Data_value.Vector
+      [ Data_value.String "lookup"; Data_value.String attr; value ] ->
+      Data_value.Lookup_ref (attr, value)
+  | _ -> invalid_arg "invalid serialized entity reference"
+
+let unsupported_decoded_value _ =
+  invalid_arg "unsupported DataScript value in serialized schema"
+
+let data_value_edn_folder =
+  let decoded_tag tag value =
+    match tag with
+    | "uuid" -> Data_value.Uuid (decoded_string value)
+    | "inst-ms" -> Data_value.Instant (decoded_int value)
+    | "datascript/ref" -> Data_value.Ref (decoded_int value)
+    | "datascript/tx-ref" -> Data_value.Tx_ref
+    | "datascript/entity-ref" ->
+        Data_value.Ref_to (decoded_entity_ref value)
+    | _ -> unsupported_decoded_value value
+  in
+  {
+    Lg_edn_backend.edn_nil = Data_value.Nil;
+    edn_bool = (fun value -> Data_value.Bool value);
+    edn_string = (fun value -> Data_value.String value);
+    edn_char = unsupported_decoded_value;
+    edn_symbol = (fun value -> Data_value.Symbol value);
+    edn_keyword = (fun value -> Data_value.Keyword (data_keyword value));
+    edn_int =
+      (fun value ->
+        let narrowed = Int64.to_int value in
+        if Int64.equal (Int64.of_int narrowed) value then Data_value.Int narrowed
+        else Data_value.Wide_int value);
+    edn_bigint = unsupported_decoded_value;
+    edn_float = (fun value -> Data_value.Float value);
+    edn_decimal = unsupported_decoded_value;
+    edn_ratio = unsupported_decoded_value;
+    edn_regex = (fun value -> Data_value.Regex value);
+    edn_list =
+      (fun values -> Data_value.List (Array.to_list values));
+    edn_vector =
+      (fun values -> Data_value.Vector (Array.to_list values));
+    edn_map = (fun entries -> Data_value.Map (Array.to_list entries));
+    edn_set = (fun values -> Data_value.Set (Array.to_list values));
+    edn_tagged = decoded_tag;
+  }
+
+let data_value_of_edn_string source =
+  Lg_edn_backend.fold_edn_string data_value_edn_folder source
+
+let keyword_reference index =
+  Lg_edn_backend.Int_vector [| 0; index |]
 
 let encode_non_keyword_with freeze value =
   match value with
@@ -206,6 +288,8 @@ let decode_value_with thaw keywords value =
           Data_value.Float neg_infinity
       | [ marker ] when int_value marker = 4 -> Data_value.Float nan
       | _ -> invalid_arg "invalid serialized DataScript value marker")
+  | Lg_edn_backend.Int_vector [| 0; index |] ->
+      Data_value.Keyword (Rrbvec.nth keywords index)
   | _ -> invalid_arg "invalid serialized DataScript value"
 
 let thaw_edn = function
@@ -215,31 +299,33 @@ let thaw_edn = function
 let decode_value keywords value = decode_value_with thaw_edn keywords value
 
 type encoder = {
-  keyword_indexes : (string, int) Hashtbl.t;
+  keyword_references : Lg_edn_backend.t Lg_edn_backend.string_map;
   mutable reversed_keywords : string list;
   mutable keyword_count : int;
 }
 
 let create_encoder () =
   {
-    keyword_indexes = Hashtbl.create 16;
+    keyword_references = Lg_edn_backend.string_map_create ();
     reversed_keywords = [];
     keyword_count = 0;
   }
 
 let encode_value_with encoder freeze = function
+  | Data_value.String value -> Lg_edn_backend.String value
   | Data_value.Keyword keyword ->
-      let index =
-        match Hashtbl.find_opt encoder.keyword_indexes keyword with
-        | Some index -> index
+      let reference =
+        match Lg_edn_backend.string_map_find encoder.keyword_references keyword with
+        | Some reference -> reference
         | None ->
-            let index = encoder.keyword_count in
-            Hashtbl.add encoder.keyword_indexes keyword index;
-            encoder.reversed_keywords <- keyword :: encoder.reversed_keywords;
-            encoder.keyword_count <- index + 1;
-            index
+          let index = encoder.keyword_count in
+          let reference = keyword_reference index in
+          Lg_edn_backend.string_map_set encoder.keyword_references keyword reference;
+          encoder.reversed_keywords <- keyword :: encoder.reversed_keywords;
+          encoder.keyword_count <- index + 1;
+          reference
       in
-      keyword_reference index
+      reference
   | value -> encode_non_keyword_with freeze value
 
 let encode_value encoder value = encode_value_with encoder freeze_edn value
@@ -289,11 +375,38 @@ let find_attribute_index indexes target =
       in
       find (Array.length attributes - 1)
   | Large_attribute_indexes indexes ->
-      Attribute_indexes.find_opt indexes target
-      |> Option.value ~default:(-1)
+      Attribute_indexes.find_opt indexes target |> Option.value ~default:(-1)
 
 let datom entity attribute value tx =
   Lg_edn_backend.Int4_vector (entity, attribute, value, tx)
+
+type datom_array = {
+  datom_entities : int array;
+  datom_attributes : int array;
+  datom_values : t array;
+  datom_txs : int array;
+}
+
+let create_datom_array length =
+  {
+    datom_entities = Array.make length 0;
+    datom_attributes = Array.make length 0;
+    datom_values = Array.make length Lg_edn_backend.Nil;
+    datom_txs = Array.make length 0;
+  }
+
+let set_datom datoms index entity attribute value tx =
+  datoms.datom_entities.(index) <- entity;
+  datoms.datom_attributes.(index) <- attribute;
+  datoms.datom_values.(index) <- value;
+  datoms.datom_txs.(index) <- tx
+
+let datom_array_value datoms =
+  Lg_edn_backend.Int4_array
+    ( datoms.datom_entities,
+      datoms.datom_attributes,
+      datoms.datom_values,
+      datoms.datom_txs )
 
 let datom_field index = function
   | Lg_edn_backend.Int4_vector (entity, attribute, value, tx) -> (
@@ -352,6 +465,33 @@ let database_arrays_with_schema count tx0 max_eid max_tx schema attrs keywords
       field "branching-factor" (int branching_factor);
       field "ref-type" (string ref_type);
     |]
+
+let database_datom_array_with_schema count tx0 max_eid max_tx schema attrs
+    keywords datoms aevt avet branching_factor ref_type =
+  let ref_type =
+    match ref_type with Storage_value.Strong -> "strong" | Storage_value.Weak -> "weak"
+  in
+  let field name value = (string name, value) in
+  Lg_edn_backend.Map
+    [|
+      field "count" (int count);
+      field "tx0" (int tx0);
+      field "max-eid" (int max_eid);
+      field "max-tx" (int max_tx);
+      field "schema" schema;
+      field "attrs" (string_vector attrs);
+      field "keywords" (string_vector keywords);
+      field "eavt" (datom_array_value datoms);
+      field "aevt" (optional_int_array aevt);
+      field "avet" (optional_int_array avet);
+      field "branching-factor" (int branching_factor);
+      field "ref-type" (string ref_type);
+    |]
+
+let database_datom_array count tx0 max_eid max_tx schema attrs keywords datoms
+    aevt avet branching_factor ref_type =
+  database_datom_array_with_schema count tx0 max_eid max_tx (string schema)
+    attrs keywords datoms aevt avet branching_factor ref_type
 
 let database_with_schema count tx0 max_eid max_tx schema attrs keywords datoms
     aevt avet branching_factor ref_type =
@@ -440,6 +580,12 @@ let int_vector_value = function
 
 let vector_array = function
   | Lg_edn_backend.Vector values -> values
+  | Lg_edn_backend.Int4_array (entities, attributes, values, txs) ->
+      Array.mapi
+        (fun index value ->
+          Lg_edn_backend.Int4_vector
+            (entities.(index), attributes.(index), value, txs.(index)))
+        values
   | _ -> invalid_arg "expected serialized vector"
 
 let int_array_value value =
@@ -457,7 +603,7 @@ let optional_int_array_value = function
 
 let attrs value = field value "attrs" |> string_vector_value
 let keywords value = field value "keywords" |> string_vector_value
-let datoms value = field value "eavt" |> rrbvec_of_values
+let datoms value = field value "eavt" |> vector_array |> Rrbvec.of_array
 let aevt value = field value "aevt" |> optional_int_vector_value
 let avet value = field value "avet" |> optional_int_vector_value
 let datoms_array value = field value "eavt" |> vector_array
@@ -479,17 +625,25 @@ let ref_type value =
 
 type prepared_datoms =
   | Prepared_edn_datoms of t array
-  | Prepared_json_datoms of Lg_edn_backend.json array
+  | Prepared_edn_datom_array of int array * int array * t array * int array
+  | Prepared_json_datoms of Lg_edn_backend.json_datom array
 
 type prepared_value =
   | Prepared_edn_value of t
-  | Prepared_json_value of Lg_edn_backend.json
+  | Prepared_json_value of Lg_edn_backend.json_value
 
 type prepared_datom = {
   prepared_entity : int;
   prepared_attribute : int;
   prepared_value : prepared_value;
   prepared_tx : int;
+}
+
+type prepared_datom_cursor = {
+  mutable cursor_entity : int;
+  mutable cursor_attribute : int;
+  mutable cursor_value : prepared_value;
+  mutable cursor_tx : int;
 }
 
 type prepared = {
@@ -516,67 +670,47 @@ let prepare_edn value =
     prepared_database_schema = schema_value value;
     prepared_database_attrs = attrs value;
     prepared_database_keywords = keywords value;
-    prepared_database_datoms = Prepared_edn_datoms (datoms_array value);
+    prepared_database_datoms =
+      (match field value "eavt" with
+      | Lg_edn_backend.Int4_array (entities, attributes, values, txs) ->
+          Prepared_edn_datom_array (entities, attributes, values, txs)
+      | value -> Prepared_edn_datoms (vector_array value));
     prepared_database_aevt = aevt_array value;
     prepared_database_avet = avet_array value;
     prepared_database_branching_factor = branching_factor value;
     prepared_database_ref_type = ref_type value;
   }
 
-let json_string_vector json =
-  json |> Lg_edn_backend.json_array
-  |> Array.map Lg_edn_backend.json_string
-  |> Rrbvec.of_array
-
-let json_optional_int_array json =
-  if Lg_edn_backend.json_is_null json then None
-  else
-    Some
-      (json |> Lg_edn_backend.json_array
-      |> Array.map Lg_edn_backend.json_int)
-
-let json_ref_type json =
-  match Lg_edn_backend.json_string json with
+let json_ref_type = function
   | "strong" -> Storage_value.Strong
   | "weak" -> Storage_value.Weak
   | value -> invalid_arg ("unsupported reference type " ^ value)
 
 let prepare_json source =
-  let json = Lg_edn_backend.json_of_string source in
-  let setting name = Lg_edn_backend.json_field_opt json name in
+  let json = Lg_edn_backend.json_database_of_string source in
   let branching_factor, ref_type =
-    match (setting "branching-factor", setting "ref-type") with
+    match
+      ( json.json_database_branching_factor,
+        json.json_database_ref_type )
+    with
     | Some branching_factor, Some ref_type ->
-        ( Lg_edn_backend.json_int branching_factor,
-          json_ref_type ref_type )
+        (branching_factor, json_ref_type ref_type)
     | None, None -> (32, Storage_value.Strong)
     | Some _, None | None, Some _ ->
         invalid_arg "serialized database has incomplete settings"
   in
   {
-    prepared_database_count =
-      Lg_edn_backend.json_field json "count" |> Lg_edn_backend.json_int;
-    prepared_database_tx0 =
-      Lg_edn_backend.json_field json "tx0" |> Lg_edn_backend.json_int;
-    prepared_database_max_eid =
-      Lg_edn_backend.json_field json "max-eid" |> Lg_edn_backend.json_int;
-    prepared_database_max_tx =
-      Lg_edn_backend.json_field json "max-tx" |> Lg_edn_backend.json_int;
-    prepared_database_schema =
-      Lg_edn_backend.json_field json "schema"
-      |> Lg_edn_backend.json_to_edn;
-    prepared_database_attrs =
-      Lg_edn_backend.json_field json "attrs" |> json_string_vector;
-    prepared_database_keywords =
-      Lg_edn_backend.json_field json "keywords" |> json_string_vector;
+    prepared_database_count = json.json_database_count;
+    prepared_database_tx0 = json.json_database_tx0;
+    prepared_database_max_eid = json.json_database_max_eid;
+    prepared_database_max_tx = json.json_database_max_tx;
+    prepared_database_schema = json.json_database_schema;
+    prepared_database_attrs = Rrbvec.of_array json.json_database_attrs;
+    prepared_database_keywords = Rrbvec.of_array json.json_database_keywords;
     prepared_database_datoms =
-      Prepared_json_datoms
-        (Lg_edn_backend.json_field json "eavt"
-        |> Lg_edn_backend.json_array);
-    prepared_database_aevt =
-      Lg_edn_backend.json_field json "aevt" |> json_optional_int_array;
-    prepared_database_avet =
-      Lg_edn_backend.json_field json "avet" |> json_optional_int_array;
+      Prepared_json_datoms json.json_database_datoms;
+    prepared_database_aevt = json.json_database_aevt;
+    prepared_database_avet = json.json_database_avet;
     prepared_database_branching_factor = branching_factor;
     prepared_database_ref_type = ref_type;
   }
@@ -619,15 +753,88 @@ let prepared_ref_type value = value.prepared_database_ref_type
 let prepared_datom_count value =
   match value.prepared_database_datoms with
   | Prepared_edn_datoms values -> Array.length values
+  | Prepared_edn_datom_array (_, _, values, _) -> Array.length values
   | Prepared_json_datoms values -> Array.length values
 
-let prepared_json_datom entity attribute value tx =
-  {
-    prepared_entity = Lg_edn_backend.json_int entity;
-    prepared_attribute = Lg_edn_backend.json_int attribute;
-    prepared_value = Prepared_json_value value;
-    prepared_tx = Lg_edn_backend.json_int tx;
-  }
+let json_datom_entity = function
+  | Lg_edn_backend.Json_string_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_int_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_float_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_bool_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_keyword_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_edn_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_positive_infinity_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_negative_infinity_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Json_nan_datom { json_datom_entity; _ }
+  | Lg_edn_backend.Invalid_json_value_datom { json_datom_entity; _ } ->
+      json_datom_entity
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let json_datom_attribute = function
+  | Lg_edn_backend.Json_string_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_int_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_float_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_bool_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_keyword_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_edn_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_positive_infinity_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_negative_infinity_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Json_nan_datom { json_datom_attribute; _ }
+  | Lg_edn_backend.Invalid_json_value_datom { json_datom_attribute; _ } ->
+      json_datom_attribute
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let json_datom_tx = function
+  | Lg_edn_backend.Json_string_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_int_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_float_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_bool_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_keyword_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_edn_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_positive_infinity_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_negative_infinity_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Json_nan_datom { json_datom_tx; _ }
+  | Lg_edn_backend.Invalid_json_value_datom { json_datom_tx; _ } ->
+      json_datom_tx
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let json_datom_value = function
+  | Lg_edn_backend.Json_string_datom { json_string_value; _ } ->
+      Lg_edn_backend.Json_string_value json_string_value
+  | Lg_edn_backend.Json_int_datom { json_int_value; _ } ->
+      Lg_edn_backend.Json_int_value json_int_value
+  | Lg_edn_backend.Json_float_datom { json_float_value; _ } ->
+      Lg_edn_backend.Json_float_value json_float_value
+  | Lg_edn_backend.Json_bool_datom { json_bool_value; _ } ->
+      Lg_edn_backend.Json_bool_value json_bool_value
+  | Lg_edn_backend.Json_keyword_datom { json_keyword_value; _ } ->
+      Lg_edn_backend.Json_keyword_value json_keyword_value
+  | Lg_edn_backend.Json_edn_datom { json_edn_value; _ } ->
+      Lg_edn_backend.Json_edn_value json_edn_value
+  | Lg_edn_backend.Json_positive_infinity_datom _ ->
+      Lg_edn_backend.Json_positive_infinity
+  | Lg_edn_backend.Json_negative_infinity_datom _ ->
+      Lg_edn_backend.Json_negative_infinity
+  | Lg_edn_backend.Json_nan_datom _ -> Lg_edn_backend.Json_nan
+  | Lg_edn_backend.Invalid_json_value_datom _ ->
+      Lg_edn_backend.Invalid_json_value
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let prepared_json_datom value =
+  match value with
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+  | value ->
+      {
+        prepared_entity = json_datom_entity value;
+        prepared_attribute = json_datom_attribute value;
+        prepared_value = Prepared_json_value (json_datom_value value);
+        prepared_tx = json_datom_tx value;
+      }
 
 let prepared_datom value index =
   match value.prepared_database_datoms with
@@ -649,56 +856,56 @@ let prepared_datom value index =
             prepared_tx = int_value fields.(3);
           }
       | _ -> invalid_arg "invalid serialized datom")
-  | Prepared_json_datoms values ->
-      Lg_edn_backend.with_json_array4 values.(index) prepared_json_datom
+  | Prepared_edn_datom_array (entities, attributes, values, txs) ->
+      {
+        prepared_entity = entities.(index);
+        prepared_attribute = attributes.(index);
+        prepared_value = Prepared_edn_value values.(index);
+        prepared_tx = txs.(index);
+      }
+  | Prepared_json_datoms values -> prepared_json_datom values.(index)
 
 let prepared_datom_entity value = value.prepared_entity
 let prepared_datom_attribute value = value.prepared_attribute
 
+let edn_of_json_value = function
+  | Lg_edn_backend.Json_string_value value -> Lg_edn_backend.String value
+  | Lg_edn_backend.Json_int_value value -> Lg_edn_backend.Small_int value
+  | Lg_edn_backend.Json_float_value value -> Lg_edn_backend.Float value
+  | Lg_edn_backend.Json_bool_value value -> Lg_edn_backend.Bool value
+  | Lg_edn_backend.Json_keyword_value value ->
+      Lg_edn_backend.Vector
+        [| Lg_edn_backend.Small_int 0; Lg_edn_backend.Small_int value |]
+  | Lg_edn_backend.Json_edn_value value ->
+      Lg_edn_backend.Vector
+        [| Lg_edn_backend.Small_int 1; Lg_edn_backend.String value |]
+  | Lg_edn_backend.Json_positive_infinity ->
+      Lg_edn_backend.Vector [| Lg_edn_backend.Small_int 2 |]
+  | Lg_edn_backend.Json_negative_infinity ->
+      Lg_edn_backend.Vector [| Lg_edn_backend.Small_int 3 |]
+  | Lg_edn_backend.Json_nan ->
+      Lg_edn_backend.Vector [| Lg_edn_backend.Small_int 4 |]
+  | Lg_edn_backend.Invalid_json_value ->
+      invalid_arg "invalid serialized DataScript value"
+
 let prepared_datom_value value =
   match value.prepared_value with
   | Prepared_edn_value value -> value
-  | Prepared_json_value value -> Lg_edn_backend.json_to_edn value
+  | Prepared_json_value value -> edn_of_json_value value
 
-let decode_json_value keywords value =
-  match Lg_edn_backend.json_string_opt value with
-  | Some value -> Data_value.String value
-  | None -> (
-      match Lg_edn_backend.json_int_opt value with
-      | Some value -> Data_value.Int value
-      | None -> (
-          match Lg_edn_backend.json_float_opt value with
-          | Some value -> Data_value.Float value
-          | None -> (
-              match Lg_edn_backend.json_bool_opt value with
-              | Some value -> Data_value.Bool value
-              | None -> (
-                  match Lg_edn_backend.json_array_opt value with
-                  | Some marker when Array.length marker = 2 -> (
-                      match Lg_edn_backend.json_int_opt marker.(0) with
-                      | Some 0 ->
-                          Data_value.Keyword
-                            (Rrbvec.nth keywords
-                               (Lg_edn_backend.json_int marker.(1)))
-                      | Some 1 ->
-                          marker.(1)
-                          |> Lg_edn_backend.json_string
-                          |> Lg_edn_backend.of_edn_string
-                          |> data_value_of_edn
-                      | _ ->
-                          invalid_arg
-                            "invalid serialized DataScript value marker")
-                  | Some marker when Array.length marker = 1 -> (
-                      match Lg_edn_backend.json_int_opt marker.(0) with
-                      | Some 2 -> Data_value.Float infinity
-                      | Some 3 -> Data_value.Float neg_infinity
-                      | Some 4 -> Data_value.Float nan
-                      | _ ->
-                          invalid_arg
-                            "invalid serialized DataScript value marker")
-                  | _ ->
-                      invalid_arg
-                        "invalid serialized DataScript value"))))
+let decode_json_value keywords = function
+  | Lg_edn_backend.Json_string_value value -> Data_value.String value
+  | Lg_edn_backend.Json_int_value value -> Data_value.Int value
+  | Lg_edn_backend.Json_float_value value -> Data_value.Float value
+  | Lg_edn_backend.Json_bool_value value -> Data_value.Bool value
+  | Lg_edn_backend.Json_keyword_value value ->
+      Data_value.Keyword (Rrbvec.nth keywords value)
+  | Lg_edn_backend.Json_edn_value value -> data_value_of_edn_string value
+  | Lg_edn_backend.Json_positive_infinity -> Data_value.Float infinity
+  | Lg_edn_backend.Json_negative_infinity -> Data_value.Float neg_infinity
+  | Lg_edn_backend.Json_nan -> Data_value.Float nan
+  | Lg_edn_backend.Invalid_json_value ->
+      invalid_arg "invalid serialized DataScript value"
 
 let decode_prepared_datom_value keywords value =
   match value.prepared_value with
@@ -706,6 +913,165 @@ let decode_prepared_datom_value keywords value =
   | Prepared_json_value value -> decode_json_value keywords value
 
 let prepared_datom_tx value = value.prepared_tx
+
+let create_prepared_datom_cursor () =
+  {
+    cursor_entity = 0;
+    cursor_attribute = 0;
+    cursor_value = Prepared_edn_value Lg_edn_backend.Nil;
+    cursor_tx = 0;
+  }
+
+let set_prepared_datom_cursor cursor entity attribute value tx =
+  cursor.cursor_entity <- entity;
+  cursor.cursor_attribute <- attribute;
+  cursor.cursor_value <- value;
+  cursor.cursor_tx <- tx
+
+let read_json_datom_into cursor = function
+  | Lg_edn_backend.Json_string_datom
+      { json_datom_entity; json_datom_attribute; json_string_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value (Lg_edn_backend.Json_string_value json_string_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_int_datom
+      { json_datom_entity; json_datom_attribute; json_int_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value (Lg_edn_backend.Json_int_value json_int_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_float_datom
+      { json_datom_entity; json_datom_attribute; json_float_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value (Lg_edn_backend.Json_float_value json_float_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_bool_datom
+      { json_datom_entity; json_datom_attribute; json_bool_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value (Lg_edn_backend.Json_bool_value json_bool_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_keyword_datom
+      { json_datom_entity; json_datom_attribute; json_keyword_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value
+           (Lg_edn_backend.Json_keyword_value json_keyword_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_edn_datom
+      { json_datom_entity; json_datom_attribute; json_edn_value; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value (Lg_edn_backend.Json_edn_value json_edn_value))
+        json_datom_tx
+  | Lg_edn_backend.Json_positive_infinity_datom
+      { json_datom_entity; json_datom_attribute; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value Lg_edn_backend.Json_positive_infinity)
+        json_datom_tx
+  | Lg_edn_backend.Json_negative_infinity_datom
+      { json_datom_entity; json_datom_attribute; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value Lg_edn_backend.Json_negative_infinity)
+        json_datom_tx
+  | Lg_edn_backend.Json_nan_datom
+      { json_datom_entity; json_datom_attribute; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value Lg_edn_backend.Json_nan) json_datom_tx
+  | Lg_edn_backend.Invalid_json_value_datom
+      { json_datom_entity; json_datom_attribute; json_datom_tx } ->
+      set_prepared_datom_cursor cursor json_datom_entity json_datom_attribute
+        (Prepared_json_value Lg_edn_backend.Invalid_json_value) json_datom_tx
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let read_prepared_datom_into value index cursor =
+  match value.prepared_database_datoms with
+  | Prepared_edn_datom_array (entities, attributes, values, txs) ->
+      set_prepared_datom_cursor cursor entities.(index) attributes.(index)
+        (Prepared_edn_value values.(index)) txs.(index)
+  | Prepared_json_datoms values -> read_json_datom_into cursor values.(index)
+  | Prepared_edn_datoms values -> (
+      match values.(index) with
+      | Lg_edn_backend.Int4_vector (entity, attribute, value, tx) ->
+          set_prepared_datom_cursor cursor entity attribute
+            (Prepared_edn_value value) tx
+      | Lg_edn_backend.Vector fields when Array.length fields = 4 ->
+          set_prepared_datom_cursor cursor (int_value fields.(0))
+            (int_value fields.(1)) (Prepared_edn_value fields.(2))
+            (int_value fields.(3))
+      | _ -> invalid_arg "invalid serialized datom")
+
+let cursor_datom_entity cursor = cursor.cursor_entity
+let cursor_datom_attribute cursor = cursor.cursor_attribute
+
+let cursor_datom_value cursor =
+  match cursor.cursor_value with
+  | Prepared_edn_value value -> value
+  | Prepared_json_value value -> edn_of_json_value value
+
+let decode_cursor_datom_value keywords cursor =
+  match cursor.cursor_value with
+  | Prepared_edn_value value -> decode_value keywords value
+  | Prepared_json_value value -> decode_json_value keywords value
+
+let cursor_datom_tx cursor = cursor.cursor_tx
+
+let decode_json_datom keywords = function
+  | Lg_edn_backend.Json_string_datom { json_string_value; _ } ->
+      Data_value.String json_string_value
+  | Lg_edn_backend.Json_int_datom { json_int_value; _ } ->
+      Data_value.Int json_int_value
+  | Lg_edn_backend.Json_float_datom { json_float_value; _ } ->
+      Data_value.Float json_float_value
+  | Lg_edn_backend.Json_bool_datom { json_bool_value; _ } ->
+      Data_value.Bool json_bool_value
+  | Lg_edn_backend.Json_keyword_datom { json_keyword_value; _ } ->
+      Data_value.Keyword (Rrbvec.nth keywords json_keyword_value)
+  | Lg_edn_backend.Json_edn_datom { json_edn_value; _ } ->
+      data_value_of_edn_string json_edn_value
+  | Lg_edn_backend.Json_positive_infinity_datom _ ->
+      Data_value.Float infinity
+  | Lg_edn_backend.Json_negative_infinity_datom _ ->
+      Data_value.Float neg_infinity
+  | Lg_edn_backend.Json_nan_datom _ -> Data_value.Float nan
+  | Lg_edn_backend.Invalid_json_value_datom _ ->
+      invalid_arg "invalid serialized DataScript value"
+  | Lg_edn_backend.Invalid_json_datom ->
+      invalid_arg "invalid serialized datom"
+
+let prepared_datom_entity_at value index =
+  match value.prepared_database_datoms with
+  | Prepared_json_datoms values -> json_datom_entity values.(index)
+  | Prepared_edn_datom_array (entities, _, _, _) -> entities.(index)
+  | Prepared_edn_datoms _ ->
+      prepared_datom value index |> prepared_datom_entity
+
+let prepared_datom_attribute_at value index =
+  match value.prepared_database_datoms with
+  | Prepared_json_datoms values -> json_datom_attribute values.(index)
+  | Prepared_edn_datom_array (_, attributes, _, _) -> attributes.(index)
+  | Prepared_edn_datoms _ ->
+      prepared_datom value index |> prepared_datom_attribute
+
+let prepared_datom_value_at value index =
+  match value.prepared_database_datoms with
+  | Prepared_json_datoms values ->
+      values.(index) |> json_datom_value |> edn_of_json_value
+  | Prepared_edn_datom_array (_, _, values, _) -> values.(index)
+  | Prepared_edn_datoms _ ->
+      prepared_datom value index |> prepared_datom_value
+
+let decode_prepared_datom_value_at keywords value index =
+  match value.prepared_database_datoms with
+  | Prepared_json_datoms values -> decode_json_datom keywords values.(index)
+  | Prepared_edn_datom_array (_, _, values, _) ->
+      decode_value keywords values.(index)
+  | Prepared_edn_datoms _ ->
+      prepared_datom value index
+      |> decode_prepared_datom_value keywords
+
+let prepared_datom_tx_at value index =
+  match value.prepared_database_datoms with
+  | Prepared_json_datoms values -> json_datom_tx values.(index)
+  | Prepared_edn_datom_array (_, _, _, txs) -> txs.(index)
+  | Prepared_edn_datoms _ -> prepared_datom value index |> prepared_datom_tx
 
 let schema_to_edn = function
   | None -> Lg_edn_backend.Nil

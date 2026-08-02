@@ -132,8 +132,8 @@
 
 (defn squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
-  [#?(:clj ^:Lg_runtime.Runtime_uuid.t uuid
-      :cljs ^:string uuid)]
+  [#?(:clj uuid
+      :cljs uuid)]
   (-> (subs (str uuid) 0 8)
       (js/parseInt 16)
       (* 1000)))

@@ -46,6 +46,7 @@ type t =
   | Prefix of string * t
   | Constraint of t * string
   | Field of t * string
+  | SetField of t * string * t
   | Cons of t * t
   | Record of (string * t) list * string option
   | RecordUpdate of t * (string * t) list
@@ -185,6 +186,9 @@ let rec to_source = function
   | Constraint (expression, type_name) ->
       "(" ^ to_source expression ^ " : " ^ type_name ^ ")"
   | Field (target, field_name) -> to_source target ^ "." ^ field_name
+  | SetField (target, field_name, value) ->
+      "(" ^ to_source target ^ "." ^ field_name ^ " <- " ^ to_source value
+      ^ ")"
   | Cons (head, tail) -> "(" ^ to_source head ^ " :: " ^ to_source tail ^ ")"
   | Record (fields, type_name) ->
       let fields =
@@ -527,7 +531,8 @@ and to_parsetree ~context = function
             List.for_all discardable values
         | Apply _ | Uncurried_apply _ | Labelled_apply _ | If _ | Fun _
         | Sequence _ | Let _ | LetRec _ | LetRecIn _ | Match _
-        | Match_guarded _ | Try _ | Infix _ | Prefix _ | Field _ | Cons _
+        | Match_guarded _ | Try _ | Infix _ | Prefix _ | Field _ | SetField _
+        | Cons _
         | Record _ | RecordUpdate _ ->
             false
       in
@@ -687,6 +692,14 @@ and to_parsetree ~context = function
           Ok
             (Ast_helper.Exp.field ~loc target
                (lid (longident_of_string field_name))))
+  | SetField (target, field_name, value) -> (
+      match (to_parsetree ~context target, to_parsetree ~context value) with
+      | (Error _ as err), _ -> err
+      | _, (Error _ as err) -> err
+      | Ok target, Ok value ->
+          Ok
+            (Ast_helper.Exp.setfield ~loc target
+               (lid (longident_of_string field_name)) value))
   | Cons (head, tail) -> (
       match (to_parsetree ~context head, to_parsetree ~context tail) with
       | (Error _ as err), _ -> err

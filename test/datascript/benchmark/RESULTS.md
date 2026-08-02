@@ -456,3 +456,130 @@ rules tests with 30 assertions, serialization tests with 45 assertions, the
 matrix, and the generated-code static-boundary scan. The repository-wide
 compiler suite still has unrelated static-migration failures, so the final
 acceptance phase remains open.
+
+## Fresh same-host release matrix (2026-08-01)
+
+After restoring the public storage path and rebuilding both LG targets with
+`--profile release`, all non-serialization workloads were rerun in isolated
+processes on the same host. Each process used 20,000 people, a 2-second warmup,
+five 1-second samples, batch size 10, and seed 42. The pinned upstream runner
+uses the same timing windows and batch size; its output is rounded.
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add-1` | 493.4 | 270.145 | -45.2% | 467.257 | -5.3% |
+| `add-5` | 1197.9 | 612.040 | -48.9% | 1349.085 | +12.6% |
+| `add-all` | 1665.5 | 668.136 | -59.9% | 1466.373 | -12.0% |
+| `init` | 54.5 | 53.313 | -2.2% | 36.161 | -33.7% |
+| `find-datoms` | 1.4 | 0.725 | -48.2% | 1.194 | -14.7% |
+| `find-datom` | 1.7 | 0.786 | -53.8% | 0.870 | -48.8% |
+| `retract-5` | 2902.3 | 835.361 | -71.2% | 1048.936 | -63.9% |
+| `q1` | 1.5 | 0.774 | -48.4% | 1.943 | +29.6% |
+| `q2` | 3.5 | 1.976 | -43.5% | 4.051 | +15.7% |
+| `q3` | 5.2 | 2.790 | -46.4% | 6.352 | +22.1% |
+| `q4` | 7.6 | 4.034 | -46.9% | 8.843 | +16.4% |
+| `q5-shortcircuit` | 0.784 | 0.217 | -72.4% | 1.024 | +30.7% |
+| `qpred1` | 7.4 | 4.850 | -34.5% | 7.764 | +4.9% |
+| `qpred2` | 8.7 | 6.468 | -25.7% | 11.559 | +32.9% |
+| `pull-one-entities` | 1.8 | 1.307 | -27.4% | 2.208 | +22.7% |
+| `pull-one` | 1.1 | 0.678 | -38.4% | 1.296 | +17.8% |
+| `pull-many-entities` | 4.9 | 3.267 | -33.3% | 5.898 | +20.4% |
+| `pull-many` | 2.1 | 1.311 | -37.6% | 2.068 | -1.5% |
+| `pull-wildcard` | 4.5 | 1.990 | -55.8% | 3.871 | -14.0% |
+| `rules-wide-3x3` | 0.484 | 0.136 | -72.0% | 0.304 | -37.1% |
+| `rules-wide-5x3` | 4.7 | 1.704 | -63.7% | 2.801 | -40.4% |
+| `rules-wide-7x3` | 62.9 | 25.654 | -59.2% | 43.933 | -30.2% |
+| `rules-wide-4x6` | 14.3 | 6.231 | -56.4% | 9.449 | -33.9% |
+| `rules-long-10x3` | 1.7 | 0.391 | -77.0% | 0.989 | -41.8% |
+| `rules-long-30x3` | 16.1 | 3.026 | -81.2% | 7.551 | -53.1% |
+| `rules-long-30x5` | 21.6 | 3.978 | -81.6% | 9.246 | -57.2% |
+
+Serialization was compared separately at the pinned runner's fixed 300,000
+people, with identical timing windows and batch size:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `freeze` | 680.8 | 480.609 | -29.4% | 961.423 | +41.2% |
+| `thaw` | 1134.9 | 1171.422 | +3.2% | 1254.921 | +10.6% |
+
+The LG-only 20,000-person serialization rows were 32.344 ms Native and 63.036
+ms Melange for `freeze`, and 73.459 ms Native and 50.590 ms Melange for
+`thaw`. They are not compared with upstream because changing the pinned
+runner's fixed 300,000-person serialization population would alter the
+authoritative benchmark harness.
+
+## Post-annotation-cleanup release matrix (2026-08-02)
+
+After reducing algorithm-local DataScript hints to 40, both LG release
+runners were rebuilt and every workload was run in an isolated process. The
+non-serialization workloads used 20,000 people, a 2-second warmup, five
+1-second samples, batch size 10, and seed 42. Serialization used the pinned
+runner's authoritative 300,000-person population with the same timing
+parameters. The upstream column is the same-host pinned `3f141af` baseline
+recorded on 2026-08-01.
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add-1` | 493.400 | 273.134 | -44.6% | 473.373 | -4.1% |
+| `add-5` | 1197.900 | 622.445 | -48.0% | 1122.661 | -6.3% |
+| `add-all` | 1665.500 | 676.718 | -59.4% | 1230.350 | -26.1% |
+| `init` | 54.500 | 53.457 | -1.9% | 32.520 | -40.3% |
+| `find-datoms` | 1.400 | 0.694 | -50.4% | 0.953 | -31.9% |
+| `find-datom` | 1.700 | 0.535 | -68.5% | 0.703 | -58.6% |
+| `retract-5` | 2902.300 | 664.793 | -77.1% | 891.260 | -69.3% |
+| `q1` | 1.500 | 0.632 | -57.9% | 1.008 | -32.8% |
+| `q2` | 3.500 | 1.584 | -54.8% | 2.524 | -27.9% |
+| `q3` | 5.200 | 2.213 | -57.4% | 4.066 | -21.8% |
+| `q4` | 7.600 | 3.131 | -58.8% | 5.480 | -27.9% |
+| `q5-shortcircuit` | 0.784 | 0.171 | -78.2% | 0.417 | -46.8% |
+| `qpred1` | 7.400 | 3.979 | -46.2% | 5.482 | -25.9% |
+| `qpred2` | 8.700 | 5.228 | -39.9% | 7.990 | -8.2% |
+| `pull-one-entities` | 1.800 | 1.192 | -33.8% | 1.580 | -12.2% |
+| `pull-one` | 1.100 | 0.481 | -56.2% | 0.837 | -23.9% |
+| `pull-many-entities` | 4.900 | 3.067 | -37.4% | 4.677 | -4.5% |
+| `pull-many` | 2.100 | 1.115 | -46.9% | 1.648 | -21.5% |
+| `pull-wildcard` | 4.500 | 1.859 | -58.7% | 3.546 | -21.2% |
+| `rules-wide-3x3` | 0.484 | 0.134 | -72.2% | 0.280 | -42.1% |
+| `rules-wide-5x3` | 4.700 | 1.587 | -66.2% | 2.556 | -45.6% |
+| `rules-wide-7x3` | 62.900 | 23.467 | -62.7% | 37.442 | -40.5% |
+| `rules-wide-4x6` | 14.300 | 5.862 | -59.0% | 8.512 | -40.5% |
+| `rules-long-10x3` | 1.700 | 0.397 | -76.7% | 0.901 | -47.0% |
+| `rules-long-30x3` | 16.100 | 3.110 | -80.7% | 6.786 | -57.9% |
+| `rules-long-30x5` | 21.600 | 3.977 | -81.6% | 8.445 | -60.9% |
+| `freeze` | 680.800 | 468.616 | -31.2% | 772.063 | +13.4% |
+| `thaw` | 1134.900 | 1049.509 | -7.5% | 981.915 | -13.5% |
+
+All 26 non-serialization workloads remain faster than pinned upstream on both
+LG targets. Native is also faster for both serialization workloads. Melange
+`thaw` is faster, while Melange `freeze` remains the only tracked regression
+at +13.4%.
+
+Native is faster on all 26 non-serialization workloads and on full-scale
+freeze; full-scale thaw is within 3.2 percent but remains a failure. Melange is
+faster on 15 of 26 non-serialization workloads. Its confirmed release-matrix
+failures are `add-5`, `q1` through `q5-shortcircuit`, `qpred1`, `qpred2`,
+`pull-one-entities`, `pull-one`, `pull-many-entities`, full-scale `freeze`, and
+full-scale `thaw`. Close results require independent reruns before an
+implementation change is accepted.
+
+## Prepared datom cursor checkpoint (2026-08-02)
+
+The full-scale thaw gate previously matched the same closed prepared datom
+once for entity, attribute, value, and transaction, then matched the value
+again for default decoding. The retained implementation reads each row once
+into one reusable typed cursor. It does not allocate a row record, introduce a
+dynamic value, or change restoration order. Custom codecs still receive the
+same closed EDN value.
+
+The Native 300,000-person median improved from 1177.197 ms to 1045.487 ms.
+Melange measured 1124.227 ms. Both pass the pinned 1134.9 ms upstream gate;
+the Melange margin is approximately 0.9 percent and therefore remains subject
+to final acceptance reruns. Native and Melange serialization behavior tests
+also passed (9 tests on each target, 45 Melange assertions).
+
+Full serialization acceptance remains open because Melange `freeze` is still
+slower than upstream. The last rebuilt full-scale median was approximately
+760 ms against 680.8 ms upstream. Larger integer-vector chunks, a string-rope
+writer, native-map string interning, and alternate small-schema attribute
+indexing either regressed `freeze`, regressed `thaw`, or added complexity
+without a measured improvement and were removed.

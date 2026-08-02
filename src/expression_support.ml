@@ -95,6 +95,21 @@ let rec truthiness_expression ty expression =
           ] )
   | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
 
+let nil_predicate_needs_value ty =
+  Option.is_some (Types.nil_predicate_constraint_info ty)
+  || Types.is_dynamic ty
+  ||
+  match Types.seqable_constraint_info ty with
+  | Some ((`Optional | `Optional_sequential), _, _) -> true
+  | Some (`Required, _, _) -> false
+  | None -> (
+      match ty with
+      | TNullable _ | TOcaml_app ("option", [ _ ])
+      | TOcaml "Lg_edn_backend.t" ->
+          true
+      | TOcaml_app (name, [ _ ]) -> name = Types.next_seq_type_name
+      | _ -> false)
+
 let rec nil_predicate_expression ty expression =
   match Types.nil_predicate_constraint_info ty with
   | Some _ -> (
@@ -127,21 +142,31 @@ let rec nil_predicate_expression ty expression =
       | TNullable payload_ty | TOcaml_app ("option", [ payload_ty ]) ->
           let value_name = "__lg_optional_nil_value" in
           let value = Semantic_ir.Ident value_name in
-          let payload_is_nil =
-            match Types.nil_predicate_constraint_info payload_ty with
-            | Some _ ->
-                Semantic_ir.Apply
-                  ( Semantic_ir.Apply
-                      (Semantic_ir.Ident "fst", [ value ]),
-                    [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ value ]) ] )
-            | None -> nil_predicate_expression payload_ty value
+          let payload_pattern, payload_is_nil =
+            if nil_predicate_needs_value payload_ty then
+              let payload_is_nil =
+                match Types.nil_predicate_constraint_info payload_ty with
+                | Some _ ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Apply
+                          (Semantic_ir.Ident "fst", [ value ]),
+                        [
+                          Semantic_ir.Apply
+                            (Semantic_ir.Ident "snd", [ value ]);
+                        ] )
+                | None -> nil_predicate_expression payload_ty value
+              in
+              (Semantic_ir.PVar value_name, payload_is_nil)
+            else
+              ( Semantic_ir.PAny,
+                Semantic_ir.Bool (Types.equal payload_ty TNil) )
           in
           Semantic_ir.Match
             ( expression,
               [
                 (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
                 ( Semantic_ir.PConstructor
-                    ("Some", Some (Semantic_ir.PVar value_name)),
+                    ("Some", Some payload_pattern),
                   payload_is_nil );
               ] )
       | TOcaml "Lg_edn_backend.t" ->
@@ -380,38 +405,51 @@ let set_module_name env ty =
 let capability_storage_expression ty expression =
   let rec build name = function
     | ty when Types.is_dynamic ty -> Semantic_ir.Ident name
-    | ty -> (
+    | ty ->
+        let layer witness_name value_ty =
+          Semantic_ir.Tuple
+            [ Semantic_ir.Ident witness_name; build name value_ty ]
+        in
         match Types.protocol_constraint_info ty with
         | Some (protocol_id, _, value_ty) ->
-            Semantic_ir.Tuple
-              [
-                Semantic_ir.Ident (Types.protocol_witness_name name protocol_id);
-                build name value_ty;
-              ]
+            layer (Types.protocol_witness_name name protocol_id) value_ty
         | None -> (
-            match Types.contains_constraint_info ty with
-            | Some (_, value_ty) ->
-                Semantic_ir.Tuple
-                  [
-                    Semantic_ir.Ident (name ^ "__contains");
-                    build name value_ty;
-                  ]
+            match Types.truthy_constraint_info ty with
+            | Some value_ty -> layer (name ^ "__truthy") value_ty
             | None -> (
-            match ty with
-            | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
-              when constraint_name = Types.seqable_constraint_name
-                   || constraint_name = Types.optional_seqable_constraint_name
-                   || constraint_name
-                      = Types.optional_sequential_constraint_name ->
-                Semantic_ir.Tuple
-                  [
-                    Semantic_ir.Ident
-                      (if constraint_name = Types.seqable_constraint_name then
-                         name ^ "__seq"
-                       else name ^ "__seq_optional");
-                    build name value_ty;
-                  ]
-            | _ -> Semantic_ir.Ident name)))
+                match Types.nil_predicate_constraint_info ty with
+                | Some value_ty -> layer (name ^ "__nil") value_ty
+                | None -> (
+                    match Types.printable_constraint_info ty with
+                    | Some value_ty -> layer (name ^ "__print") value_ty
+                    | None -> (
+                        match Types.symbol_predicate_constraint_info ty with
+                        | Some value_ty -> layer (name ^ "__symbol") value_ty
+                        | None -> (
+                            match Types.contains_constraint_info ty with
+                            | Some (_, value_ty) ->
+                                layer (name ^ "__contains") value_ty
+                            | None -> (
+                                match ty with
+                                | TOcaml_app
+                                    ( constraint_name,
+                                      [ _element_ty; value_ty ] )
+                                  when constraint_name
+                                       = Types.seqable_constraint_name
+                                       || constraint_name
+                                          = Types.optional_seqable_constraint_name
+                                       || constraint_name
+                                          = Types.optional_sequential_constraint_name
+                                  ->
+                                    let witness_name =
+                                      if
+                                        constraint_name
+                                        = Types.seqable_constraint_name
+                                      then name ^ "__seq"
+                                      else name ^ "__seq_optional"
+                                    in
+                                    layer witness_name value_ty
+                                | _ -> Semantic_ir.Ident name))))))
   in
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident name -> build name ty
@@ -1357,6 +1395,38 @@ let lookup_function_ty scope env name =
                   } ->
                   Ok (TFn (receiver_ty :: rest, return_ty))
               | Some marker -> Ok marker.ty
+              | None
+                when is_constructor_name name
+                     && not (List.mem name [ "Some"; "None"; "Ok"; "Error" ]) ->
+                  let candidates =
+                    let suffix = "/" ^ name in
+                    Env.to_bindings env
+                    |> List.filter_map
+                         (fun (key, (binding : binding)) ->
+                           if String.ends_with ~suffix key then
+                             match binding.ty with
+                             | TFn (_, (TOcaml _ | TOcaml_app _)) ->
+                                 Some binding.ty
+                             | _ -> None
+                           else None)
+                    |> List.sort_uniq Stdlib.compare
+                  in
+                  (match candidates with
+                  | [ constructor_ty ] -> Ok constructor_ty
+                  | [] ->
+                      let constructor_name =
+                        Resolver.resolve_ocaml_constructor_target scope env name
+                      in
+                      (match
+                         Ocaml_signature.constructor_signature constructor_name
+                       with
+                      | Ok signature ->
+                          Ok
+                            (TFn
+                               ( signature.payload_types,
+                                 signature.result_type ))
+                      | Error _ -> Error.error ("unknown function " ^ name))
+                  | _ :: _ :: _ -> Error.error ("ambiguous constructor " ^ name))
               | None -> Error.error ("unknown function " ^ name))))
 
 let ocaml_call_target = Resolver.ocaml_call_target

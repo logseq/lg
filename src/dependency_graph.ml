@@ -155,6 +155,22 @@ let require_referred_symbols entries =
 
 let dependency_symbols = function
   | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
+  | FList [ FSymbol "signature"; _name; annotation ] ->
+      type_annotation_symbols annotation
+  | FList
+      [
+        FSymbol "signature";
+        _name;
+        FVector parameters;
+        annotation;
+      ] ->
+      let parameters =
+        parameters
+        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+        |> String_set.of_list
+      in
+      type_annotation_symbols annotation
+      |> List.filter (fun name -> not (String_set.mem name parameters))
   | FList
       (FSymbol "type-record" :: _name :: FVector parameters :: field_forms) ->
       let parameters =
@@ -268,6 +284,14 @@ let method_names form =
 let rec provided_names = function
   | FList [ FSymbol "defn-signature"; definition ] -> provided_names definition
   | FList (FSymbol "do" :: forms) -> List.concat_map provided_names forms
+  | FList (FSymbol "signature" :: FSymbol name :: _) -> (
+      match String.rindex_opt name '/' with
+      | Some index ->
+          [
+            name;
+            String.sub name (index + 1) (String.length name - index - 1);
+          ]
+      | None -> [ name ])
   | FList (FSymbol "declare+" :: FSymbol name :: _) -> [ name ]
   | FList (FSymbol "declare" :: names) ->
       List.filter_map (function FSymbol name -> Some name | _ -> None) names
@@ -291,6 +315,10 @@ let rec provided_names = function
       name :: constructors
   | FList
       (FSymbol ("type-alias" | "type-record") :: FSymbol name :: _) ->
+      [ name ]
+  | FList
+      (FSymbol ("def" | "defonce") :: FSymbol "^:dynamic" :: FSymbol name
+      :: _) ->
       [ name ]
   | FList
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
@@ -489,7 +517,10 @@ let stable_order forms =
       declaration_provider_indices (indexed_forms forms)
     in
     let dependencies index form =
-      form_dependencies providers declaration_providers index form
+      let dependencies =
+        form_dependencies providers declaration_providers index form
+      in
+      dependencies
     in
     let component_of = Hashtbl.create (List.length forms) in
     List.iteri

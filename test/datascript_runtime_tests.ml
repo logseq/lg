@@ -531,6 +531,45 @@ let test_static_map_assoc_uses_a_precomputed_hash () =
   assert (Runtime_map.get_option map "first" = Some 3);
   assert (Runtime_map.get_option map "second" = Some 2)
 
+let test_small_static_hashed_maps_preserve_map_semantics () =
+  let entries = List.init 10 (fun index -> (string_of_int index, index)) in
+  let map =
+    List.fold_left
+      (fun map (key, value) ->
+        Runtime_map.assoc_hashed map key (Hashtbl.hash key) value)
+      Runtime_map.empty entries
+  in
+  let updated =
+    Runtime_map.assoc_hashed map "3" (Hashtbl.hash "3") 30
+  in
+  assert (Runtime_map.count updated = 10);
+  assert (Runtime_map.get_option updated "3" = Some 30);
+  assert (Runtime_map.get_option updated "9" = Some 9);
+  assert (
+    Runtime_map.to_list updated
+    = List.map
+        (fun (key, value) ->
+          if String.equal key "3" then (key, 30) else (key, value))
+        entries);
+  let removed = Runtime_map.dissoc updated "1" in
+  assert (Runtime_map.count removed = 9);
+  assert (Runtime_map.get_option removed "1" = None);
+  assert (
+    Runtime_map.to_list removed
+    = (entries
+      |> List.filter_map (fun (key, value) ->
+             if String.equal key "1" then None
+             else if String.equal key "3" then Some (key, 30)
+             else Some (key, value))));
+  let small =
+    Runtime_map.empty
+    |> fun map -> Runtime_map.assoc map "first" 1
+    |> fun map -> Runtime_map.assoc map "second" 2
+    |> fun map -> Runtime_map.dissoc map "first"
+  in
+  assert (Runtime_map.to_list small = [ ("second", 2) ]);
+  assert (Runtime_map.get_option small "first" = None)
+
 let test_query_hash_join_uses_closed_result_keys () =
   let empty_databases = Lg_runtime.Lg_map.empty in
   let left =
@@ -769,6 +808,34 @@ let test_serialization_uses_a_closed_typed_facade () =
       (Rrbvec.of_list [ ":user/name" ])
       encoded_keyword
     = Value.Keyword ":user/name");
+  let compact_datoms = Serialization_value.create_datom_array 2 in
+  Serialization_value.set_datom compact_datoms 0 42 0 encoded_name 7;
+  Serialization_value.set_datom compact_datoms 1 43 0 encoded_keyword 8;
+  let compact_serialized =
+    Serialization_value.database_datom_array_with_schema 2 536870912 43 8
+      (Serialization_value.schema_to_value schema)
+      (Rrbvec.of_list [ ":user/name" ])
+      (Rrbvec.of_list [ ":user/name" ])
+      compact_datoms (Some [| 0; 1 |]) (Some [| 0; 1 |]) 512
+      Storage_value.Weak
+  in
+  let compact_rows = Serialization_value.datoms_array compact_serialized in
+  assert (Array.length compact_rows = 2);
+  assert (Serialization_value.datom_entity compact_rows.(0) = 42);
+  assert (Serialization_value.datom_value compact_rows.(0) = encoded_name);
+  assert (Serialization_value.datom_entity compact_rows.(1) = 43);
+  assert (Serialization_value.datom_value compact_rows.(1) = encoded_keyword);
+  let expanded_serialized =
+    Serialization_value.database_arrays_with_schema 2 536870912 43 8
+      (Serialization_value.schema_to_value schema)
+      (Rrbvec.of_list [ ":user/name" ])
+      (Rrbvec.of_list [ ":user/name" ])
+      compact_rows (Some [| 0; 1 |]) (Some [| 0; 1 |]) 512
+      Storage_value.Weak
+  in
+  assert (
+    Lg_runtime.Runtime_edn.write_json_string compact_serialized
+    = Lg_runtime.Runtime_edn.write_json_string expanded_serialized);
   let encoder = Serialization_value.create_encoder () in
   assert (
     try
@@ -866,6 +933,60 @@ let test_serialized_json_prepares_concrete_database_fields () =
   assert (
     Serialization_value.prepared_ref_type prepared = Storage_value.Weak)
 
+let prepared_json_value keywords source =
+  let database =
+    Printf.sprintf
+      {|{"count":1,"tx0":536870912,"max-eid":42,"max-tx":7,"schema":"nil","attrs":[":user/value"],"keywords":%s,"eavt":[[42,0,%s,7]],"aevt":[0],"avet":[0],"branching-factor":32,"ref-type":"weak"}|}
+      keywords source
+  in
+  let prepared =
+    database
+    |> Lg_runtime.Runtime_edn.read_json_source
+    |> Serialization_value.prepare
+  in
+  Serialization_value.prepared_datom prepared 0
+  |> Serialization_value.decode_prepared_datom_value
+       (Serialization_value.prepared_keywords prepared)
+
+let test_prepared_json_decodes_closed_value_categories () =
+  assert (prepared_json_value {|[]|} {|"Ada"|} = Value.String "Ada");
+  assert (prepared_json_value {|[]|} {|42|} = Value.Int 42);
+  assert (prepared_json_value {|[]|} {|1.5|} = Value.Float 1.5);
+  assert (prepared_json_value {|[]|} {|true|} = Value.Bool true);
+  assert (
+    prepared_json_value {|[":user/name"]|} {|[0,0]|}
+    = Value.Keyword ":user/name");
+  assert (
+    prepared_json_value {|[]|} {|[1,"[:nested 7]"]|}
+    = Value.Vector [ Value.Keyword ":nested"; Value.Int 7 ]);
+  assert (
+    prepared_json_value {|[]|} {|[2]|} = Value.Float infinity);
+  assert (
+    prepared_json_value {|[]|} {|[3]|} = Value.Float neg_infinity);
+  match prepared_json_value {|[]|} {|[4]|} with
+  | Value.Float value -> assert (Float.is_nan value)
+  | _ -> assert false
+
+let test_prepared_json_accepts_value_whitespace () =
+  assert (
+    prepared_json_value {|[]|} " \n\t42 "
+    = Value.Int 42);
+  assert (
+    prepared_json_value {|[":user/name"]|} "[ 0 ,\n 0 ]"
+    = Value.Keyword ":user/name")
+
+let test_prepared_json_rejects_invalid_closed_values () =
+  let rejects source =
+    match prepared_json_value {|[]|} source with
+    | _ -> false
+    | exception Invalid_argument _ -> true
+  in
+  assert (rejects {|null|});
+  assert (rejects {|{}|});
+  assert (rejects {|[]|});
+  assert (rejects {|[9]|});
+  assert (rejects {|[0,0,0]|})
+
 let test_serialization_reorders_arrays_without_changing_identity_order () =
   let values = [| "first"; "second"; "third" |] in
   assert (Serialization_value.reorder_array values None == values);
@@ -905,6 +1026,9 @@ let () =
   test_collection_items_preserve_collection_kind ();
   test_entity_refs_are_extracted_from_closed_values ();
   test_serialized_json_prepares_concrete_database_fields ();
+  test_prepared_json_decodes_closed_value_categories ();
+  test_prepared_json_accepts_value_whitespace ();
+  test_prepared_json_rejects_invalid_closed_values ();
   test_serialization_reorders_arrays_without_changing_identity_order ();
   test_prepared_json_rejects_invalid_datom ();
   test_lookup_refs_are_extracted_from_closed_vectors ();
@@ -920,6 +1044,7 @@ let () =
   test_query_distinct_entity_rows_avoid_boxed_hash_keys ();
   test_static_map_assoc_hashes_each_key_once ();
   test_static_map_assoc_uses_a_precomputed_hash ();
+  test_small_static_hashed_maps_preserve_map_semantics ();
   test_query_hash_join_uses_closed_result_keys ();
   test_query_inputs_use_closed_recursive_binding_values ();
   test_storage_payloads_keep_integer_addresses_and_closed_values ();

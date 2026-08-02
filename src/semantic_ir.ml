@@ -49,6 +49,7 @@ type t =
   | Prefix of string * t
   | Constraint of t * string
   | Field of t * string
+  | SetField of t * string * t
   | Cons of t * t
   | Record of (string * t) list * string option
   | RecordUpdate of t * (string * t) list
@@ -173,6 +174,7 @@ let rec type_annotations expression =
     | UnpackDynamic { conversion = value; _ }
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
+    | SetField (target, _, value) -> [ target; value ]
     | Record (fields, _) -> List.map snd fields
     | RecordUpdate (record, fields) -> record :: List.map snd fields
     | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []
@@ -248,6 +250,8 @@ let rec rewrite fn expression =
     | Constraint (value, type_name) ->
         Constraint (rewrite fn value, type_name)
     | Field (value, field) -> Field (rewrite fn value, field)
+    | SetField (target, field, value) ->
+        SetField (rewrite fn target, field, rewrite fn value)
     | Cons (head, tail) -> Cons (rewrite fn head, rewrite fn tail)
     | Record (fields, type_name) ->
         Record
@@ -305,6 +309,7 @@ let rec exists_identifier predicate expression =
     | UnpackDynamic { conversion = value; _ }
     | NullableToSeq { conversion = value; _ } ->
         [ value ]
+    | SetField (target, _, value) -> [ target; value ]
     | Record (fields, _) -> List.map snd fields
     | RecordUpdate (record, fields) -> record :: List.map snd fields
     | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ -> []

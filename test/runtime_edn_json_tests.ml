@@ -4,6 +4,11 @@ module Runtime_edn = Lg_runtime.Runtime_edn
 let assert_json expected value =
   assert (String.equal expected (Runtime_edn.write_json_string value))
 
+let assert_invalid_argument callback =
+  match callback () with
+  | exception Invalid_argument _ -> ()
+  | _ -> assert false
+
 let () =
   assert_json "null" Edn.Nil;
   assert_json "true" (Edn.Bool true);
@@ -45,7 +50,31 @@ let () =
        |]);
   assert_json "[]" (Edn.Int_vector [||]);
   assert_json {|[1,2,3]|} (Edn.Int_vector [| 1; 2; 3 |]);
-  assert_json {|[-1,0,42,7]|} (Edn.Int_vector [| -1; 0; 42; 7 |])
+  assert_json {|[-1,0,42,7]|} (Edn.Int_vector [| -1; 0; 42; 7 |]);
+  assert_json
+    (Printf.sprintf "[%d,%d]" min_int max_int)
+    (Edn.Int_vector [| min_int; max_int |]);
+  assert_invalid_argument (fun () ->
+      Runtime_edn.write_json_string
+        (Edn.Int4_array
+           ( [| 1; 2 |],
+             [| 0 |],
+             [| Edn.String "value" |],
+             [| 1 |] )))
+
+let () =
+  let count = 5_000 in
+  let value =
+    Edn.Vector
+      (Array.init count (fun index ->
+           Edn.Int4_vector (index, 0, Edn.Small_int index, 1)))
+  in
+  let rows =
+    Array.init count (fun index ->
+        Printf.sprintf "[%d,0,%d,1]" index index)
+  in
+  let expected = "[" ^ String.concat "," (Array.to_list rows) ^ "]" in
+  assert_json expected value
 
 let () =
   let value =

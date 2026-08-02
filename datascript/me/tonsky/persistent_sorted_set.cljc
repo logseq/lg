@@ -1358,6 +1358,34 @@
            (arrays/aslice values offset next-offset))
           (recur next-offset (inc part-index)))))))
 
+(defn- partition-indexed-array [values indexes]
+  (let [length (arrays/alength indexes)
+        parts (arrays/make-array
+               (partition-count length)
+               (arrays/empty-array))]
+    (loop [offset 0
+           part-index 0]
+      (if (= offset length)
+        parts
+        (let [part-size (partition-size (- length offset))
+              part (arrays/make-array
+                    part-size
+                    (arrays/aget
+                     values (arrays/aget indexes offset)))]
+          (loop [part-offset 0]
+            (if (= part-offset part-size)
+              nil
+              (do
+                (arrays/aset
+                 part
+                 part-offset
+                 (arrays/aget
+                  values
+                  (arrays/aget indexes (+ offset part-offset))))
+                (recur (inc part-offset)))))
+          (arrays/aset parts part-index part)
+          (recur (+ offset part-size) (inc part-index)))))))
+
 (defn- unique-count [values cmp]
   (let [length (arrays/alength values)]
     (if (= 0 length)
@@ -1397,11 +1425,9 @@
               nil)))
         result))))
 
-(defn from-sorted-array-with-storage [cmp values storage]
-  (let [leaves
-        (arrays/amap
-         (fn [keys] (new-leaf keys))
-         (partition-array values))]
+(defn- from-sorted-partitions-with-storage
+  [cmp value-count partitions storage]
+  (let [leaves (arrays/amap (fn [keys] (new-leaf keys)) partitions)]
     (loop [current-level leaves
            shift 0]
       (let [length (arrays/alength current-level)]
@@ -1413,7 +1439,7 @@
           (make-set
            (arrays/aget current-level 0)
            shift
-           (arrays/alength values)
+           value-count
            cmp
            storage)
 
@@ -1428,6 +1454,13 @@
                children))
             (partition-array current-level))
            (inc shift)))))))
+
+(defn from-sorted-array-with-storage [cmp values storage]
+  (from-sorted-partitions-with-storage
+   cmp
+   (arrays/alength values)
+   (partition-array values)
+   storage))
 
 (defn from-sorted-array-base [cmp values]
   (from-sorted-array-with-storage cmp values None))
@@ -1543,6 +1576,10 @@
 (defn set-reduce [set f initial]
   (node-fold (set-root set) f initial (set-storage set)))
 
+(signature me.tonsky.persistent-sorted-set/seek-first
+  [value owner write]
+  :fn<btset<value;owner;write>;value;fn<value;value;ordering>;option<value>>)
+
 (defn seek-first [set target cmp]
   (if-some [path
               (seek-path
@@ -1616,7 +1653,8 @@
                index (path-get left 0)
                result initial]
           (if (path-lt left right)
-            (let [result (f result (arrays/aget keys index))
+            (let [result
+                  (uncurried-call f result (arrays/aget keys index))
                   next-index (inc index)]
               (if (< next-index (arrays/alength keys))
                 (recur
@@ -1791,6 +1829,15 @@
    (with-ref-type
     (from-sorted-array cmp values length storage)
     ref-type)))
+
+(defn from-sorted-indexed-array [cmp values indexes ref-type]
+  (with-ref-type
+   (from-sorted-partitions-with-storage
+    (as-ordering cmp)
+    (arrays/alength indexes)
+    (partition-indexed-array values indexes)
+    None)
+   ref-type))
 
 (defn sorted-set-with-comparator [cmp storage]
   (let [set (empty-set cmp)]

@@ -1231,74 +1231,204 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                   | _ -> arity)
                 parsed_clauses arities
             in
-            let arity_index_for_count count =
-              let rec find index = function
-                | [] -> None
-                | (arity : fn_arity) :: rest -> (
-                    match arity.rest_param with
-                    | None when List.length arity.fixed_params = count ->
-                        Some index
-                    | Some _ when List.length arity.fixed_params <= count ->
-                        Some index
-                    | None | Some _ -> find (index + 1) rest)
-              in
-              find 0 arities
+            let known_call name =
+              name = source_name
+              || name = Names.scoped_key scope source_name
+              || Result.is_ok (lookup_function_ty scope env name)
+              || Option.is_some (Protocol.lookup_marker scope env name)
             in
-            let rec nullable_self_call_parameters acc = function
+            let fold_lefti fn initial values =
+              let rec loop index acc = function
+                | [] -> acc
+                | value :: rest -> loop (index + 1) (fn acc index value) rest
+              in
+              loop 0 initial values
+            in
+            let rec nil_call_slots acc = function
               | FList (FSymbol name :: arguments)
-                when name = source_name
-                     || name = Names.scoped_key scope source_name ->
+                when known_call name ->
                   let acc =
-                    match arity_index_for_count (List.length arguments) with
-                    | None -> acc
-                    | Some arity_index ->
-                        let rec collect parameter_index acc = function
-                          | [] -> acc
-                          | FSymbol "nil" :: rest ->
-                              collect (parameter_index + 1)
-                                ((arity_index, parameter_index) :: acc)
-                                rest
-                          | _ :: rest ->
-                              collect (parameter_index + 1) acc rest
-                        in
-                        collect 0 acc arguments
+                    fold_lefti
+                      (fun acc argument_index -> function
+                        | FSymbol "nil" -> (name, argument_index) :: acc
+                        | _ -> acc)
+                      acc arguments
                   in
-                  List.fold_left nullable_self_call_parameters acc arguments
+                  List.fold_left nil_call_slots acc arguments
               | FList forms | FVector forms ->
-                  List.fold_left nullable_self_call_parameters acc forms
+                  List.fold_left nil_call_slots acc forms
               | FMap pairs ->
                   List.fold_left
                     (fun acc (key, value) ->
-                      nullable_self_call_parameters
-                        (nullable_self_call_parameters acc key)
+                      nil_call_slots (nil_call_slots acc key) value)
+                    acc pairs
+              | _ -> acc
+            in
+            let nullable_call_slots =
+              List.fold_left
+                (fun acc (clause : multi_arity_clause) ->
+                  List.fold_left nil_call_slots acc clause.body_forms)
+                [] parsed_clauses
+              |> List.sort_uniq compare
+            in
+            let self_call name =
+              name = source_name || name = Names.scoped_key scope source_name
+            in
+            let arity_index_for_count count =
+              let rec find index = function
+                | [] -> None
+                | (arity : fn_arity) :: rest ->
+                    let matches =
+                      match arity.rest_param with
+                      | None -> List.length arity.fixed_params = count
+                      | Some _ -> List.length arity.fixed_params <= count
+                    in
+                    if matches then Some index else find (index + 1) rest
+              in
+              find 0 arities
+            in
+            let rec direct_nullable_parameters acc = function
+              | FList (FSymbol name :: arguments) when self_call name ->
+                  let acc =
+                    match arity_index_for_count (List.length arguments) with
+                    | None -> acc
+                    | Some target_arity_index ->
+                        fold_lefti
+                          (fun acc parameter_index -> function
+                            | FSymbol "nil" ->
+                                (target_arity_index, parameter_index) :: acc
+                            | _ -> acc)
+                          acc arguments
+                  in
+                  List.fold_left direct_nullable_parameters acc arguments
+              | FList forms | FVector forms ->
+                  List.fold_left direct_nullable_parameters acc forms
+              | FMap pairs ->
+                  List.fold_left
+                    (fun acc (key, value) ->
+                      direct_nullable_parameters
+                        (direct_nullable_parameters acc key)
+                        value)
+                    acc pairs
+              | _ -> acc
+            in
+            let rec forwarded_nullable_parameters specs arity_index acc =
+              function
+              | FList (FSymbol name :: arguments) when known_call name ->
+                  let acc =
+                    fold_lefti
+                      (fun acc argument_index -> function
+                        | FSymbol parameter_name
+                          when List.mem (name, argument_index)
+                                 nullable_call_slots -> (
+                            match
+                              List.find_index
+                                (fun (spec : Destructure.param_spec) ->
+                                  spec.source_name = parameter_name)
+                                specs
+                            with
+                            | Some parameter_index ->
+                                (arity_index, parameter_index) :: acc
+                            | None -> acc)
+                        | _ -> acc)
+                      acc arguments
+                  in
+                  List.fold_left
+                    (forwarded_nullable_parameters specs arity_index)
+                    acc arguments
+              | FList forms | FVector forms ->
+                  List.fold_left
+                    (forwarded_nullable_parameters specs arity_index)
+                    acc forms
+              | FMap pairs ->
+                  List.fold_left
+                    (fun acc (key, value) ->
+                      forwarded_nullable_parameters specs arity_index
+                        (forwarded_nullable_parameters specs arity_index acc
+                           key)
                         value)
                     acc pairs
               | _ -> acc
             in
             let nullable_parameters =
+              let forwarded =
+                parsed_clauses
+                |> List.mapi (fun arity_index clause ->
+                       match Destructure.parse_param_specs clause.params with
+                       | Error _ -> []
+                       | Ok specs ->
+                           List.fold_left
+                             (forwarded_nullable_parameters specs arity_index)
+                             [] clause.body_forms)
+                |> List.concat
+              in
               List.fold_left
                 (fun acc (clause : multi_arity_clause) ->
-                  List.fold_left nullable_self_call_parameters acc
+                  List.fold_left direct_nullable_parameters acc
                     clause.body_forms)
-                [] parsed_clauses
+                forwarded parsed_clauses
             in
             let arities =
               List.mapi
                 (fun arity_index (arity : fn_arity) ->
-                  let fixed_params =
-                    List.mapi
-                      (fun parameter_index ty ->
-                        if
-                          List.mem (arity_index, parameter_index)
-                            nullable_parameters
-                        then
-                          match ty with
-                          | TNullable _ -> ty
-                          | ty -> TNullable ty
-                        else ty)
-                      arity.fixed_params
+                  let nullable_indices =
+                    nullable_parameters
+                    |> List.filter_map (fun (candidate_arity, parameter_index) ->
+                           if candidate_arity = arity_index then
+                             Some parameter_index
+                           else None)
+                    |> List.sort_uniq Int.compare
                   in
-                  { arity with fixed_params })
+                  List.fold_left
+                    (fun (arity : fn_arity) parameter_index ->
+                      match List.nth_opt arity.fixed_params parameter_index with
+                      | None
+                      | Some (TNullable _)
+                      | Some (TOcaml_app ("option", [ _ ])) ->
+                          arity
+                      | Some ((TMeta _ | TVar _) as inferred_ty)
+                        when Option.is_none signature ->
+                          let payload_ty = Type_solver.fresh () in
+                          let substitutions =
+                            match inferred_ty with
+                            | TMeta { id; _ } ->
+                                [
+                                  ( Type_solver.Metavariable id,
+                                    TNullable payload_ty );
+                                ]
+                            | TVar name ->
+                                [
+                                  ( Type_solver.Declared name,
+                                    TNullable payload_ty );
+                                ]
+                            | _ -> assert false
+                          in
+                          {
+                            fixed_params =
+                              List.mapi
+                                (fun index ty ->
+                                  if index = parameter_index then
+                                    TNullable payload_ty
+                                  else Type_solver.apply substitutions ty)
+                                arity.fixed_params;
+                            rest_param =
+                              Option.map
+                                (Type_solver.apply substitutions)
+                                arity.rest_param;
+                            return_ty =
+                              Type_solver.apply substitutions arity.return_ty;
+                          }
+                      | Some ty ->
+                          {
+                            arity with
+                            fixed_params =
+                              List.mapi
+                                (fun index candidate ->
+                                  if index = parameter_index then TNullable ty
+                                  else candidate)
+                                arity.fixed_params;
+                          })
+                    arity nullable_indices)
                 arities
             in
             if pass = 0 then

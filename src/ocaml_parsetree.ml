@@ -109,6 +109,17 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "option" [ type_constructor "string" [] ]));
           (None, value_ty);
         ]
+  | Types.TOcaml_app (name, [ key_ty; value_ty ])
+    when name = Types.contains_constraint_name ->
+      let key_ty = core_type ~type_variables key_ty in
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None,
+           Ast_helper.Typ.arrow ~loc Nolabel key_ty
+             (type_constructor "bool" []));
+          (None, value_ty);
+        ]
   | Types.TOcaml_app (name, [ inner; container ])
     when name = Types.seqable_constraint_name ->
       let element = core_type ~type_variables inner in
@@ -266,6 +277,7 @@ let record_type_definition type_name parameters fields location =
     |> List.map (fun (field : Types.field) ->
            let field_loc = declaration_location field.location in
            Ast_helper.Type.field ~loc:field_loc
+             ~mut:(if field.mutable_ then Mutable else Immutable)
              (named_loc field.ocaml_name field_loc)
              (core_type ~type_variables:parameters field.ty))
   in

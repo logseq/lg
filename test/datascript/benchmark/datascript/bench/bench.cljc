@@ -78,7 +78,8 @@
   [& body]
   `(datascript.bench.bench/bench-fn
     (fn []
-      (Stdlib.ignore (do ~@body)))))
+      (let [_result# (do ~@body)]
+        (Stdlib.ignore 0)))))
 
 ;; test dbs
 

@@ -28,8 +28,11 @@
   (NavigationDatafiedEntities :datascript.datafy/datafied-entities)
   (NavigationScalar :Datascript_runtime.Data_value.t))
 
-(defn ^datascript.datafy/navigation-value entity-navigation
-  [^datascript.impl.entity/Entity value]
+(signature datascript.datafy/entity-navigation
+  :fn<datascript.impl.entity/Entity;datascript.datafy/navigation-value>)
+
+(defn entity-navigation
+  [value]
   (NavigationEntity value))
 
 (defn- entity-pull-pattern
@@ -58,8 +61,11 @@
          (Some pulled) pulled
          None {})))))
 
-(defn ^datascript.datafy/navigation-value datafy
-  [^datascript.datafy/navigation-value value]
+(signature datascript.datafy/datafy
+  :fn<datascript.datafy/navigation-value;datascript.datafy/navigation-value>)
+
+(defn datafy
+  [value]
   (match value
     (NavigationEntity source)
     (NavigationDatafiedEntity (datafy-entity source))
@@ -76,9 +82,12 @@
     (Some scalar) (NavigationScalar scalar)
     None NavigationMissing))
 
-(defn ^datascript.datafy/navigation-value lookup
-  [^datascript.datafy/navigation-value value
-   ^datascript.datafy/navigation-key key]
+(signature datascript.datafy/lookup
+  :fn<datascript.datafy/navigation-value;datascript.datafy/navigation-key;datascript.datafy/navigation-value>)
+
+(defn lookup
+  [value
+   key]
   (match value
     (NavigationDatafiedEntity source)
     (match key
@@ -135,10 +144,13 @@
       :else
       (NavigationScalar value))))
 
-(defn ^datascript.datafy/navigation-value nav
-  [^datascript.datafy/navigation-value datafied
-   ^datascript.datafy/navigation-key key
-   ^datascript.datafy/navigation-value value]
+(signature datascript.datafy/nav
+  :fn<datascript.datafy/navigation-value;datascript.datafy/navigation-key;datascript.datafy/navigation-value;datascript.datafy/navigation-value>)
+
+(defn nav
+  [datafied
+   key
+   value]
   (match datafied
     (NavigationDatafiedEntity source)
     (match key
@@ -158,7 +170,10 @@
       _ value)
     _ value))
 
-(defn- ^:option<int> pulled-entity-id
+(signature datascript.datafy/pulled-entity-id
+  :fn<Datascript_runtime.Data_value.t;option<int>>)
+
+(defn- pulled-entity-id
   [pulled]
   (if-some [entity-ref (pulled-entity-ref pulled)]
     (match entity-ref
@@ -166,8 +181,11 @@
       _ None)
     None))
 
-(defn ^:option<int> navigation-entity-id
-  [^datascript.datafy/navigation-value value]
+(signature datascript.datafy/navigation-entity-id
+  :fn<datascript.datafy/navigation-value;option<int>>)
+
+(defn navigation-entity-id
+  [value]
   (match value
     (NavigationEntity source) (Some (.-eid source))
     (NavigationDatafiedEntity source)
@@ -175,14 +193,23 @@
      (Datascript_runtime.Data_value.map_of_data_map (:values source)))
     _ None))
 
-(defn- ^:vector<Datascript_runtime.Data_value.t> empty-pulled-entities []
+(signature datascript.datafy/empty-pulled-entities
+  :fn<vector<Datascript_runtime.Data_value.t>>)
+
+(defn- empty-pulled-entities []
   [])
 
-(defn- ^:vector<int> empty-entity-ids []
+(signature datascript.datafy/empty-entity-ids
+  :fn<vector<int>>)
+
+(defn- empty-entity-ids []
   [])
 
-(defn ^:vector<int> navigation-entity-ids
-  [^datascript.datafy/navigation-value value]
+(signature datascript.datafy/navigation-entity-ids
+  :fn<datascript.datafy/navigation-value;vector<int>>)
+
+(defn navigation-entity-ids
+  [value]
   (let [values
         (match value
           (NavigationEntities _ values) values
@@ -196,8 +223,11 @@
      (empty-entity-ids)
      values)))
 
-(defn ^:option<Datascript_runtime.Data_value.t> navigation-scalar
-  [^datascript.datafy/navigation-value value]
+(signature datascript.datafy/navigation-scalar
+  :fn<datascript.datafy/navigation-value;option<Datascript_runtime.Data_value.t>>)
+
+(defn navigation-scalar
+  [value]
   (match value
     (NavigationScalar scalar) (Some scalar)
     _ None))

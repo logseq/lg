@@ -677,6 +677,20 @@ let rec ocaml_name = function
   | TUnknown -> "'a"
   | TMeta _ -> "_"
   | TVar name -> "'" ^ name
+  | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      (match String.rindex_opt source_name '/' with
+      | Some index ->
+          let owner = String.sub source_name 0 index in
+          let local_name =
+            String.sub source_name (index + 1)
+              (String.length source_name - index - 1)
+          in
+          Names.ocaml_binding_name owner local_name
+      | None -> Names.sanitize_name source_name)
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
   | TOcaml_app (name, [ _capability ]) when name = dynamic_constraint_name ->
@@ -1013,8 +1027,14 @@ let rec refresh_named_record (fresh : named_record) ty =
 
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
-let make_field ?location keyword ty =
-  { keyword; ocaml_name = Names.keyword_to_ocaml_name keyword; ty; location }
+let make_field ?location ?(mutable_ = false) keyword ty =
+  {
+    keyword;
+    ocaml_name = Names.keyword_to_ocaml_name keyword;
+    ty;
+    mutable_;
+    location;
+  }
 
 let make_record_extension_field ?(ty = record_extension_type) () =
   make_field record_extension_keyword ty
@@ -1140,7 +1160,14 @@ let instantiate_receiver_method_type receiver_ty method_ty =
              with
             | Some TUnknown | None -> None
             | Some ty -> Some ty)
-        | _ -> None
+        | template_receiver -> (
+            match protocol_constraint_info template_receiver with
+            | Some (_, _, TVar parameter) ->
+                Some
+                  (substitute_type_variables
+                     [ (Type_solver.Declared parameter, receiver_ty) ]
+                     (TVar parameter))
+            | Some _ | None -> None)
       in
       let method_ty =
         instantiate_type ~templates:[ template_receiver ]
@@ -1211,6 +1238,8 @@ let rec idents_in_conversion names = function
   | Semantic_ir.Constraint (value, _)
   | Semantic_ir.Field (value, _) ->
       idents_in_conversion names value
+  | Semantic_ir.SetField (target, _, value) ->
+      idents_in_conversion (idents_in_conversion names target) value
   | Semantic_ir.PackDynamic { conversion; _ }
   | Semantic_ir.UnpackDynamic { conversion; _ }
   | Semantic_ir.NullableToSeq { conversion; _ } ->
@@ -1291,6 +1320,8 @@ let rec dynamic_pinned_idents names = function
   | Semantic_ir.Constraint (value, _)
   | Semantic_ir.Field (value, _) ->
       dynamic_pinned_idents names value
+  | Semantic_ir.SetField (target, _, value) ->
+      dynamic_pinned_idents (dynamic_pinned_idents names target) value
   | Semantic_ir.UnpackDynamic { conversion; _ }
   | Semantic_ir.NullableToSeq { conversion; _ } ->
       dynamic_pinned_idents names conversion

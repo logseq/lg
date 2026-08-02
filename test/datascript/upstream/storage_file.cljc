@@ -15,18 +15,18 @@
   (address-to-filename :option<fn<int;string>>)
   (filename-to-address :option<fn<string;int>>))
 
-(defn ^file-storage-options default-options []
+(defn default-options []
   (record file-storage-options
           (write-value None)
           (read-value None)
           (address-to-filename None)
           (filename-to-address None)))
 
-(defn ^file-storage-options options
-  [^:fn<out_channel;Datascript_runtime.Storage_value.t;unit> write-value
-   ^:fn<in_channel;Datascript_runtime.Storage_value.t> read-value
-   ^:fn<int;string> address-to-filename
-   ^:fn<string;int> filename-to-address]
+(defn options
+  [write-value
+   read-value
+   address-to-filename
+   filename-to-address]
   (record file-storage-options
           (write-value (Some write-value))
           (read-value (Some read-value))
@@ -34,21 +34,21 @@
           (filename-to-address (Some filename-to-address))))
 
 (defn- file-path
-  [^file-storage-backend backend ^:int address]
+  [backend address]
   (Filename.concat
    (:directory backend)
    ((:address-to-filename backend) address)))
 
 (defn- write-file
-  [^file-storage-backend backend
-   ^:int address
-   ^:Datascript_runtime.Storage_value.t value]
+  [backend
+   address
+   value]
   (let [output (Stdlib.open_out_bin (file-path backend address))
         _written ((:write-value backend) output value)]
     (Stdlib.close_out output)))
 
 (defn- read-file
-  [^file-storage-backend backend ^:int address]
+  [backend address]
   (let [path (file-path backend address)]
     (when (Sys.file_exists path)
       (let [input (Stdlib.open_in_bin path)
@@ -57,39 +57,39 @@
         value))))
 
 (defn- delete-file
-  [^file-storage-backend backend ^:int address]
+  [backend address]
   (let [path (file-path backend address)]
     (when (Sys.file_exists path)
       (Sys.remove path))))
 
 (defn- default-write
-  [^:out_channel output
-   ^:Datascript_runtime.Storage_value.t value]
+  [output
+   value]
   :unit
   (Marshal.to_channel output value (list-of :Marshal.extern_flags)))
 
 (defn- default-read
-  [^:in_channel input]
+  [input]
   :Datascript_runtime.Storage_value.t
   (Marshal.from_channel input))
 
-(defn- default-address-to-filename [^:int address] :string
+(defn- default-address-to-filename [address] :string
   (Lg_runtime.Runtime_int.format_hex address 8))
 
-(defn- default-filename-to-address [^:string filename] :int
-  (Stdlib.int_of_string (str "0x" filename)))
+(defn- default-filename-to-address [filename] :int
+  (Stdlib.int_of_string (String.cat "0x" filename)))
 
-(defn- ensure-directory [^:string directory]
+(defn- ensure-directory [directory]
   (when-not (Sys.file_exists directory)
     (Unix.mkdir directory 493))
   directory)
 
-(defn ^:datascript.storage/storage-backend file-storage
-  ([^:string directory]
+(defn file-storage
+  ([directory]
    (file-storage
     directory
     (default-options)))
-  ([^:string directory ^file-storage-options opts]
+  ([directory opts]
    (let [write-value
          (if-some [write (:write-value opts)]
            write

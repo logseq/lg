@@ -37,6 +37,7 @@ and field = {
   keyword : string;
   ocaml_name : string;
   ty : ty;
+  mutable_ : bool;
   location : Location.t option;
 }
 

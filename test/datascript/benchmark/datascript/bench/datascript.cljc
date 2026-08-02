@@ -1420,7 +1420,7 @@
 (def *serialize-db
   (delay
    (d/db-with
-    (d/empty-db schema)
+    empty-db
     (mapv
      (fn [person]
        (datascript.db/tx-entity person))

@@ -206,8 +206,8 @@
    (.-datoms state)))
 
 (defn visit
-  [context kind entity attr value]
-  (match (.-visitor context)
+  [visitor-option kind entity attr value]
+  (match visitor-option
     None (Stdlib.ignore 0)
     (Some visitor)
     (Stdlib.ignore (visitor kind entity attr value))))
@@ -233,6 +233,9 @@
   (and
    (not (neg? (compare attr from)))
    (not (pos? (compare attr to)))))
+
+(signature datascript.pull-api/pull-forward-cursor
+  :fn<datascript.db/database-view;datascript.pull-parser/PullPattern;int;option<datascript.pull-api/DatomCursor>>)
 
 (defn pull-forward-cursor
   [database pattern id]
@@ -299,7 +302,7 @@
         datoms (pull-forward-cursor database pattern id)]
     (when (:wildcard pattern)
       (visit
-       context :db.pull/wildcard (Some id) None None))
+       (.-visitor context) :db.pull/wildcard (Some id) None None))
     (record AttrsState
       (seen seen)
       (recursion-limits recursion-limits)
@@ -605,6 +608,9 @@
     (Stdlib.invalid_arg
      "Frame does not accept a child result")))
 
+(signature datascript.pull-api/attrs-state-with
+  :fn<datascript.pull-api/AttrsState;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;option<datascript.pull-parser/pull-attr>;option<datascript.pull-parser/pull-attr>;int;option<datascript.pull-api/DatomCursor>;datascript.pull-api/AttrsState>)
+
 (defn attrs-state-with
   [state values attr resume-attr attr-index datoms]
   (record AttrsState
@@ -618,6 +624,9 @@
     (attr-index attr-index)
     (datoms datoms)
     (id (.-id state))))
+
+(signature datascript.pull-api/advance-attrs-state
+  :fn<datascript.pull-api/AttrsState;map<Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>;option<datascript.pull-api/DatomCursor>;datascript.pull-api/AttrsState>)
 
 (defn advance-attrs-state
   [state values datoms]
@@ -727,10 +736,10 @@
       (merge-attr-value values attr None))))
 
 (defn missing-attr-state
-  [context state attr]
+  [visitor-option state attr]
   (let [data (dpp/attr-data attr)]
     (visit
-     context
+     visitor-option
      :db.pull/attr
      (Some (.-id state))
      (Some (.-name data))
@@ -759,7 +768,7 @@
     (let [attr (dpp/attribute (.-db context) (.-a datom))
           data (dpp/attr-data attr)]
       (visit
-       context
+       (.-visitor context)
        :db.pull/attr
        (Some (.-id state))
        (Some (.-name data))
@@ -815,14 +824,14 @@
           None
           (run-attrs-frame
            context
-           (missing-attr-state context state attr))
+           (missing-attr-state (.-visitor context) state attr))
 
           (Some cursor)
           (match (cursor-datom cursor)
             None
             (run-attrs-frame
              context
-             (missing-attr-state context state attr))
+             (missing-attr-state (.-visitor context) state attr))
             (Some datom)
             (let [comparison
                   (String.compare
@@ -847,12 +856,12 @@
                 (< comparison 0)
                 (run-attrs-frame
                  context
-                 (missing-attr-state context state attr))
+                 (missing-attr-state (.-visitor context) state attr))
 
                 :else
                 (do
                   (visit
-                   context
+                   (.-visitor context)
                    :db.pull/attr
                    (Some (.-id state))
                    (Some (.-name data))
@@ -909,7 +918,7 @@
               (.-id state)))
             None))]
       (visit
-       context
+       (.-visitor context)
        :db.pull/reverse
        None
        (Some (.-name data))

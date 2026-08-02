@@ -17,6 +17,7 @@ type t =
   | List of t array
   | Vector of t array
   | Int4_vector of int * int * t * int
+  | Int4_array of int array * int array * t array * int array
   | Int_vector of int array
   | Map of (t * t) array
   | Set of t array
@@ -24,6 +25,118 @@ type t =
   | Json_source of string
 
 type json = Yojson.Safe.t
+
+type 'a string_map = (string, 'a) Hashtbl.t
+
+let string_map_create () = Hashtbl.create 16
+let string_map_find map key = Hashtbl.find_opt map key
+let string_map_set map key value = Hashtbl.replace map key value
+
+type json_value =
+  | Json_string_value of string
+  | Json_int_value of int
+  | Json_float_value of float
+  | Json_bool_value of bool
+  | Json_keyword_value of int
+  | Json_edn_value of string
+  | Json_positive_infinity
+  | Json_negative_infinity
+  | Json_nan
+  | Invalid_json_value
+
+type json_datom =
+  | Json_string_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_string_value : string;
+      json_datom_tx : int;
+    }
+  | Json_int_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_int_value : int;
+      json_datom_tx : int;
+    }
+  | Json_float_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_float_value : float;
+      json_datom_tx : int;
+    }
+  | Json_bool_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_bool_value : bool;
+      json_datom_tx : int;
+    }
+  | Json_keyword_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_keyword_value : int;
+      json_datom_tx : int;
+    }
+  | Json_edn_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_edn_value : string;
+      json_datom_tx : int;
+    }
+  | Json_positive_infinity_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Json_negative_infinity_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Json_nan_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Invalid_json_value_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Invalid_json_datom
+
+type json_database = {
+  json_database_count : int;
+  json_database_tx0 : int;
+  json_database_max_eid : int;
+  json_database_max_tx : int;
+  json_database_schema : t;
+  json_database_attrs : string array;
+  json_database_keywords : string array;
+  json_database_datoms : json_datom array;
+  json_database_aevt : int array option;
+  json_database_avet : int array option;
+  json_database_branching_factor : int option;
+  json_database_ref_type : string option;
+}
+
+type 'a edn_folder = {
+  edn_nil : 'a;
+  edn_bool : bool -> 'a;
+  edn_string : string -> 'a;
+  edn_char : Uchar.t -> 'a;
+  edn_symbol : string -> 'a;
+  edn_keyword : string -> 'a;
+  edn_int : int64 -> 'a;
+  edn_bigint : string -> 'a;
+  edn_float : float -> 'a;
+  edn_decimal : string -> 'a;
+  edn_ratio : string -> 'a;
+  edn_regex : string -> 'a;
+  edn_list : 'a array -> 'a;
+  edn_vector : 'a array -> 'a;
+  edn_map : ('a * 'a) array -> 'a;
+  edn_set : 'a array -> 'a;
+  edn_tagged : string -> 'a -> 'a;
+}
 
 let integer value =
   let narrowed = Int64.to_int value in
@@ -79,6 +192,24 @@ let rec to_edn = function
              to_edn third;
              Melange_edn.any (Melange_edn.int (Int64.of_int fourth));
            ])
+  | Int4_array (entities, attributes, values, txs) ->
+      Melange_edn.any
+        (Melange_edn.vector
+           (Array.to_list
+              (Array.mapi
+                 (fun index value ->
+                   Melange_edn.any
+                     (Melange_edn.vector
+                        [
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int entities.(index)));
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int attributes.(index)));
+                          to_edn value;
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int txs.(index)));
+                        ]))
+                 values)))
   | Int_vector values ->
       Melange_edn.any
         (Melange_edn.vector
@@ -97,6 +228,33 @@ let rec to_edn = function
   | Json_source source -> Melange_edn.of_edn_string source
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
+
+let fold_edn_string folder source =
+  let rec fold (Melange_edn.Any value) =
+    match value with
+    | Melange_edn.Nil -> folder.edn_nil
+    | Melange_edn.Bool value -> folder.edn_bool value
+    | Melange_edn.String value -> folder.edn_string value
+    | Melange_edn.Char value -> folder.edn_char value
+    | Melange_edn.Symbol value -> folder.edn_symbol value
+    | Melange_edn.Keyword value ->
+        folder.edn_keyword (Melange_edn.keyword_to_string value)
+    | Melange_edn.Int value -> folder.edn_int value
+    | Melange_edn.Bigint value -> folder.edn_bigint value
+    | Melange_edn.Float value -> folder.edn_float value
+    | Melange_edn.Decimal value -> folder.edn_decimal value
+    | Melange_edn.Ratio value -> folder.edn_ratio value
+    | Melange_edn.Regex value -> folder.edn_regex value
+    | Melange_edn.List values -> folder.edn_list (Array.map fold values)
+    | Melange_edn.Vector values -> folder.edn_vector (Array.map fold values)
+    | Melange_edn.Map entries ->
+        folder.edn_map
+          (Array.map (fun (key, value) -> (fold key, fold value)) entries)
+    | Melange_edn.Set values -> folder.edn_set (Array.map fold values)
+    | Melange_edn.Tagged (tag, value) -> folder.edn_tagged tag (fold value)
+  in
+  source |> Melange_edn.of_edn_string |> fold
+
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
 
 let min_safe_json_integer = -9007199254740991.
@@ -182,6 +340,241 @@ let json_array_opt = function
 let json_is_null = function `Null -> true | _ -> false
 let json_to_edn = of_json
 
+let json_datom_of_json json_datom_entity json_datom_attribute value
+    json_datom_tx =
+  match value with
+  | `String json_string_value ->
+      Json_string_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_string_value;
+          json_datom_tx;
+        }
+  | `Int json_int_value ->
+      Json_int_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_int_value;
+          json_datom_tx;
+        }
+  | `Intlit value -> (
+      match int_of_string_opt value with
+      | Some json_int_value ->
+          Json_int_datom
+            {
+              json_datom_entity;
+              json_datom_attribute;
+              json_int_value;
+              json_datom_tx;
+            }
+      | None ->
+          Invalid_json_value_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx })
+  | `Float value when Float.is_integer value ->
+      Json_int_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_int_value = int_of_float value;
+          json_datom_tx;
+        }
+  | `Float json_float_value ->
+      Json_float_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_float_value;
+          json_datom_tx;
+        }
+  | `Bool json_bool_value ->
+      Json_bool_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_bool_value;
+          json_datom_tx;
+        }
+  | `List [ marker; value ] -> (
+      match json_int_opt marker with
+      | Some 0 -> (
+          match json_int_opt value with
+          | Some json_keyword_value ->
+              Json_keyword_datom
+                {
+                  json_datom_entity;
+                  json_datom_attribute;
+                  json_keyword_value;
+                  json_datom_tx;
+                }
+          | None ->
+              Invalid_json_value_datom
+                { json_datom_entity; json_datom_attribute; json_datom_tx })
+      | Some 1 -> (
+          match value with
+          | `String json_edn_value ->
+              Json_edn_datom
+                {
+                  json_datom_entity;
+                  json_datom_attribute;
+                  json_edn_value;
+                  json_datom_tx;
+                }
+          | _ ->
+              Invalid_json_value_datom
+                { json_datom_entity; json_datom_attribute; json_datom_tx })
+      | _ ->
+          Invalid_json_value_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx })
+  | `List [ marker ] -> (
+      match json_int_opt marker with
+      | Some 2 ->
+          Json_positive_infinity_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | Some 3 ->
+          Json_negative_infinity_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | Some 4 ->
+          Json_nan_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | _ ->
+          Invalid_json_value_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx })
+  | `Null | `List _ | `Assoc _ ->
+      Invalid_json_value_datom
+        { json_datom_entity; json_datom_attribute; json_datom_tx }
+
+let read_json_space_if_present lexer lexbuf =
+  let position = lexbuf.Lexing.lex_curr_pos in
+  if position < lexbuf.Lexing.lex_buffer_len then
+    match Bytes.get lexbuf.Lexing.lex_buffer position with
+    | ' ' | '\t' | '\n' | '\r' | '/' ->
+        Yojson.Safe.read_space lexer lexbuf
+    | _ -> ()
+
+let json_database_of_string source =
+  let lexer = Yojson.Safe.init_lexer () in
+  let lexbuf = Lexing.from_string source in
+  let count = ref None in
+  let tx0 = ref None in
+  let max_eid = ref None in
+  let max_tx = ref None in
+  let schema = ref None in
+  let attrs = ref None in
+  let keywords = ref None in
+  let datoms = ref None in
+  let aevt = ref None in
+  let avet = ref None in
+  let branching_factor = ref None in
+  let ref_type = ref None in
+  let required name = function
+    | Some value -> value
+    | None -> invalid_arg ("missing JSON field " ^ name)
+  in
+  let read_separator lexer lexbuf =
+    read_json_space_if_present lexer lexbuf;
+    Yojson.Safe.read_array_sep lexer lexbuf;
+    read_json_space_if_present lexer lexbuf
+  in
+  let read_datom lexer lexbuf =
+    Yojson.Safe.read_lbr lexer lexbuf;
+    read_json_space_if_present lexer lexbuf;
+    match
+      let json_datom_entity = Yojson.Safe.read_int lexer lexbuf in
+      read_separator lexer lexbuf;
+      let json_datom_attribute = Yojson.Safe.read_int lexer lexbuf in
+      read_separator lexer lexbuf;
+      let json_datom_value = Yojson.Safe.read_json lexer lexbuf in
+      read_separator lexer lexbuf;
+      let json_datom_tx = Yojson.Safe.read_int lexer lexbuf in
+      read_json_space_if_present lexer lexbuf;
+      Yojson.Safe.read_rbr lexer lexbuf;
+      json_datom_of_json json_datom_entity json_datom_attribute
+        json_datom_value json_datom_tx
+    with
+    | value -> value
+    | exception Yojson__Common.End_of_array -> Invalid_json_datom
+  in
+  let initial_capacity () =
+    match !count with Some value when value > 0 -> value | _ -> 16
+  in
+  let read_int_array lexer lexbuf =
+    let values = ref (Array.make (initial_capacity ()) 0) in
+    let add index lexer lexbuf =
+      if index = Array.length !values then (
+        let grown = Array.make (max 1 (index * 2)) 0 in
+        Array.blit !values 0 grown 0 index;
+        values := grown);
+      (!values).(index) <- Yojson.Safe.read_int lexer lexbuf;
+      index + 1
+    in
+    let length = Yojson.Safe.read_sequence add 0 lexer lexbuf in
+    if length = Array.length !values then !values
+    else Array.sub !values 0 length
+  in
+  let read_datom_array lexer lexbuf =
+    let values =
+      ref (Array.make (initial_capacity ()) Invalid_json_datom)
+    in
+    let add index lexer lexbuf =
+      if index = Array.length !values then (
+        let grown =
+          Array.make (max 1 (index * 2)) Invalid_json_datom
+        in
+        Array.blit !values 0 grown 0 index;
+        values := grown);
+      (!values).(index) <- read_datom lexer lexbuf;
+      index + 1
+    in
+    let length = Yojson.Safe.read_sequence add 0 lexer lexbuf in
+    if length = Array.length !values then !values
+    else Array.sub !values 0 length
+  in
+  let read_optional_int_array lexer lexbuf =
+    if Yojson.Safe.read_null_if_possible lexer lexbuf then None
+    else Some (read_int_array lexer lexbuf)
+  in
+  let read_field () name lexer lexbuf =
+    match name with
+    | "count" -> count := Some (Yojson.Safe.read_int lexer lexbuf)
+    | "tx0" -> tx0 := Some (Yojson.Safe.read_int lexer lexbuf)
+    | "max-eid" -> max_eid := Some (Yojson.Safe.read_int lexer lexbuf)
+    | "max-tx" -> max_tx := Some (Yojson.Safe.read_int lexer lexbuf)
+    | "schema" -> schema := Some (Yojson.Safe.read_json lexer lexbuf |> of_json)
+    | "attrs" ->
+        attrs := Some (Yojson.Safe.read_array Yojson.Safe.read_string lexer lexbuf)
+    | "keywords" ->
+        keywords :=
+          Some (Yojson.Safe.read_array Yojson.Safe.read_string lexer lexbuf)
+    | "eavt" ->
+        datoms := Some (read_datom_array lexer lexbuf)
+    | "aevt" -> aevt := Some (read_optional_int_array lexer lexbuf)
+    | "avet" -> avet := Some (read_optional_int_array lexer lexbuf)
+    | "branching-factor" ->
+        branching_factor := Some (Yojson.Safe.read_int lexer lexbuf)
+    | "ref-type" -> ref_type := Some (Yojson.Safe.read_string lexer lexbuf)
+    | _ -> Yojson.Safe.skip_json lexer lexbuf
+  in
+  ignore (Yojson.Safe.read_fields read_field () lexer lexbuf);
+  read_json_space_if_present lexer lexbuf;
+  if not (Yojson.Safe.read_eof lexbuf) then
+    invalid_arg "unexpected data after serialized database";
+  {
+    json_database_count = required "count" !count;
+    json_database_tx0 = required "tx0" !tx0;
+    json_database_max_eid = required "max-eid" !max_eid;
+    json_database_max_tx = required "max-tx" !max_tx;
+    json_database_schema = required "schema" !schema;
+    json_database_attrs = required "attrs" !attrs;
+    json_database_keywords = required "keywords" !keywords;
+    json_database_datoms = required "eavt" !datoms;
+    json_database_aevt = required "aevt" !aevt;
+    json_database_avet = required "avet" !avet;
+    json_database_branching_factor = !branching_factor;
+    json_database_ref_type = !ref_type;
+  }
+
 let add_json_string buffer value =
   Yojson.Safe.write_string buffer value
 
@@ -214,6 +607,30 @@ let add_json_int buffer value =
     Buffer.add_string buffer (Int64.to_string value)
   else add_json_string buffer (Int64.to_string value)
 
+let add_json_small_int buffer value =
+  if value = min_int then Buffer.add_string buffer (string_of_int value)
+  else (
+    let value =
+      if value < 0 then (
+        Buffer.add_char buffer '-';
+        -value)
+      else value
+    in
+    let rec add_digits value =
+      if value >= 10 then add_digits (value / 10);
+      Buffer.add_char buffer (Char.chr (48 + (value mod 10)))
+    in
+    add_digits value)
+
+let int4_array_length entities attributes values txs =
+  let length = Array.length values in
+  if
+    Array.length entities <> length
+    || Array.length attributes <> length
+    || Array.length txs <> length
+  then invalid_arg "Int4_array columns must have equal lengths";
+  length
+
 let rec add_json_value buffer = function
   | Nil -> Buffer.add_string buffer "null"
   | Bool true -> Buffer.add_string buffer "true"
@@ -223,27 +640,44 @@ let rec add_json_value buffer = function
       add_json_string buffer value
   | Char value -> add_json_char buffer value
   | Keyword value -> add_json_string buffer (":" ^ value)
-  | Small_int value -> Buffer.add_string buffer (string_of_int value)
+  | Small_int value -> add_json_small_int buffer value
   | Int value -> add_json_int buffer value
   | Float value -> add_json_float buffer value
   | List values | Vector values | Set values ->
       add_json_array buffer values
   | Int4_vector (first, second, third, fourth) ->
       Buffer.add_char buffer '[';
-      Buffer.add_string buffer (string_of_int first);
+      add_json_small_int buffer first;
       Buffer.add_char buffer ',';
-      Buffer.add_string buffer (string_of_int second);
+      add_json_small_int buffer second;
       Buffer.add_char buffer ',';
       add_json_value buffer third;
       Buffer.add_char buffer ',';
-      Buffer.add_string buffer (string_of_int fourth);
+      add_json_small_int buffer fourth;
+      Buffer.add_char buffer ']'
+  | Int4_array (entities, attributes, values, txs) ->
+      let _ = int4_array_length entities attributes values txs in
+      Buffer.add_char buffer '[';
+      Array.iteri
+        (fun index value ->
+          if index > 0 then Buffer.add_char buffer ',';
+          Buffer.add_char buffer '[';
+          add_json_small_int buffer entities.(index);
+          Buffer.add_char buffer ',';
+          add_json_small_int buffer attributes.(index);
+          Buffer.add_char buffer ',';
+          add_json_value buffer value;
+          Buffer.add_char buffer ',';
+          add_json_small_int buffer txs.(index);
+          Buffer.add_char buffer ']')
+        values;
       Buffer.add_char buffer ']'
   | Int_vector values ->
       Buffer.add_char buffer '[';
       Array.iteri
         (fun index value ->
           if index > 0 then Buffer.add_char buffer ',';
-          Buffer.add_string buffer (string_of_int value))
+          add_json_small_int buffer value)
         values;
       Buffer.add_char buffer ']'
   | Map entries -> add_json_object buffer entries
@@ -275,8 +709,21 @@ and add_json_object buffer entries =
     entries;
   Buffer.add_char buffer '}'
 
+let estimated_json_capacity = function
+  | Map entries ->
+      Array.fold_left
+        (fun capacity (_, value) ->
+          match value with
+          | Vector values -> capacity + (Array.length values * 32)
+          | Int4_array (_, _, values, _) ->
+              capacity + (Array.length values * 32)
+          | Int_vector values -> capacity + (Array.length values * 8)
+          | _ -> capacity)
+        256 entries
+  | _ -> 256
+
 let to_json_string value =
-  let buffer = Buffer.create 256 in
+  let buffer = Buffer.create (estimated_json_capacity value) in
   add_json_value buffer value;
   Buffer.contents buffer
 

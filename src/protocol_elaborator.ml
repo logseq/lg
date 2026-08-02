@@ -263,10 +263,17 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                 Error.error
                                   "protocol methods must have a receiver parameter"
                             | actual_receiver :: _ ->
-                                if not (Types.equal receiver_ty actual_receiver) then
+                                let receiver_value_ty =
+                                  Types.constraint_value_type actual_receiver
+                                in
+                                if
+                                  not
+                                    (Types.equal receiver_ty receiver_value_ty)
+                                then
                                   Error.error
                                     ("protocol implementation receiver must be "
-                                   ^ source_name receiver_ty)
+                                   ^ source_name receiver_ty
+                                   ^ ", got " ^ source_name actual_receiver)
                                 else
                                   let mismatch =
                                     List.combine expected_params actual_params

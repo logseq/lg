@@ -14,12 +14,12 @@
 
 (def ^:private next-conn-identity (atom 0))
 
-(defn- ^int fresh-conn-identity []
+(defn- fresh-conn-identity []
   (swap! next-conn-identity
          (fn [current]
            (inc current))))
 
-(defn- state-identity-hash [^conn-state state]
+(defn- state-identity-hash [state]
   (:identity-hash state))
 
 (defrecord Conn
@@ -35,9 +35,7 @@
     (:db @(:atom connection))))
 
 (defn- make-conn
-  [^datascript.db/DB database
-   ^:vector<vector<datascript.db/Datom>> tx-tail
-   ^:option<datascript.db/DB> db-last-stored]
+  [database tx-tail db-last-stored]
   (let [state-atom
         (atom
          (record conn-state
@@ -50,33 +48,35 @@
     (record Conn
             (atom state-atom))))
 
-(defn- state-db [^conn-state state]
+(signature datascript.conn/state-db
+  :fn<datascript.conn/conn-state;datascript.db/DB>)
+(defn- state-db [state]
   (:db state))
 
 (defn- state-tx-tail
-  [^conn-state state]
+  [state]
   (:tx-tail state))
 
-(defn- state-db-last-stored [^conn-state state]
+(defn- state-db-last-stored [state]
   (:db-last-stored state))
 
 (defn- state-listeners
-  [^conn-state state]
+  [state]
   (:listeners state))
 
-(defn- state-skip-store? [^conn-state state]
+(defn- state-skip-store? [state]
   (:skip-store? state))
 
 (defn- tx-meta-value
-  [^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  [tx-meta]
   (if-some [metadata tx-meta]
     (Datascript_runtime.Data_value.map_of_keyword_map metadata)
     (Datascript_runtime.Data_value.Nil)))
 
-(defn current-db [^Conn conn]
+(defn current-db [conn]
   (state-db @(:atom conn)))
 
-(defn- state-with-db [^conn-state state ^datascript.db/DB database]
+(defn- state-with-db [state database]
   (record conn-state
           (db database)
           (tx-tail (state-tx-tail state))
@@ -99,10 +99,7 @@
        false))))
 
 (defn- state-with-storage
-  [^conn-state state
-   ^datascript.db/DB database
-   ^:vector<vector<datascript.db/Datom>> tx-tail
-   ^:option<datascript.db/DB> db-last-stored]
+  [state database tx-tail db-last-stored]
   (record conn-state
           (db database)
           (tx-tail tx-tail)
@@ -112,7 +109,7 @@
           (skip-store? (state-skip-store? state))))
 
 (defn- state-with-tail
-  [^conn-state state ^:vector<vector<datascript.db/Datom>> tx-tail]
+  [state tx-tail]
   (record conn-state
           (db (state-db state))
           (tx-tail tx-tail)
@@ -122,8 +119,7 @@
           (skip-store? (state-skip-store? state))))
 
 (defn- state-with-listeners
-  [^conn-state state
-   ^:map<Datascript_runtime.Data_value.t;fn<datascript.db/TxReport;unit>> listeners]
+  [state listeners]
   (record conn-state
           (db (state-db state))
           (tx-tail (state-tx-tail state))
@@ -157,12 +153,10 @@
    [connection update-database]
    (swap-db! connection update-database)))
 
-(defn ^datascript.db/TxReport with-closed
-  ([^datascript.db/DB database ^:vector<datascript.db/tx-entry> tx-data]
+(defn with-closed
+  ([^datascript.db/DB database tx-data]
    (with-closed database tx-data None))
-  ([^datascript.db/DB database
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  ([^datascript.db/DB database tx-data tx-meta]
    {:pre [(db/db? database)]}
    (if (instance? db/FilteredDB database)
      (Stdlib.invalid_arg "Filtered DB cannot be modified")
@@ -182,17 +176,13 @@
        (cons
         (list 'datascript.db/tx-data tx-data)
         tx-meta))))}
-  ([^datascript.db/DB database
-    ^:vector<datascript.db/tx-entry> tx-data]
+  ([database tx-data]
    (with-closed database tx-data))
-  ([^datascript.db/DB database
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  ([database tx-data tx-meta]
    (with-closed database tx-data tx-meta)))
 
-(defn ^datascript.db/DB db-with-closed
-  [^datascript.db/DB database
-   ^:vector<datascript.db/tx-entry> tx-data]
+(defn db-with-closed
+  [database tx-data]
   {:pre [(db/db? database)]}
   (:db-after (with-closed database tx-data)))
 
@@ -203,16 +193,15 @@
       'datascript.conn/db-with-closed
       database
       (list 'datascript.db/tx-data tx-data)))}
-  [^datascript.db/DB database
-   ^:vector<datascript.db/tx-entry> tx-data]
+  [database tx-data]
   (db-with-closed database tx-data))
 
-(defn conn? [^Conn conn]
+(defn conn? [conn]
   (if-some [database (current-db conn)]
     (db/db? database)
     true))
 
-(defn ^Conn conn-from-db [^datascript.db/DB database]
+(defn conn-from-db [database]
   {:pre [(db/db? database)]}
   (if-some [database-storage (storage/storage database)]
     (do
@@ -220,32 +209,33 @@
       (make-conn database [] (Some database)))
     (make-conn database [] nil)))
 
-(defn ^Conn conn-from-datoms
+(defn conn-from-datoms
   ([datoms]
    (conn-from-db
     (db/init-db-with-schema-option (to-array datoms) None)))
   ([datoms schema]
    (conn-from-db (db/init-db (to-array datoms) schema)))
-  ([datoms schema ^datascript.db/database-options opts]
+  ([datoms schema opts]
    (let [opts (storage/maybe-adapt-storage opts)
          database (db/init-db (to-array datoms) schema opts)
          _stored
          (when-some [backend (db/options-storage opts)]
-           (Stdlib.ignore (storage/store database backend)))]
+           (Stdlib.ignore
+            (storage/store database backend)))]
      (conn-from-db database))))
 
-(defn ^Conn create-conn-closed
+(defn create-conn-closed
   ([]
    (conn-from-db (db/empty-db None (db/default-options))))
-  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([schema]
    (conn-from-db (db/empty-db (Some schema) (db/default-options))))
-  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
-    ^datascript.db/database-options opts]
+  ([schema opts]
    (let [opts (storage/maybe-adapt-storage opts)
          database (db/empty-db schema opts)
          _stored
          (when-some [backend (db/options-storage opts)]
-           (Stdlib.ignore (storage/store database backend)))]
+           (Stdlib.ignore
+            (storage/store database backend)))]
      (conn-from-db database))))
 
 (defn create-conn
@@ -266,10 +256,9 @@
           (second arguments))))}
   ([]
    (create-conn-closed))
-  ([^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  ([schema]
    (create-conn-closed schema))
-  ([^:option<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>> schema
-    ^datascript.db/database-options opts]
+  ([schema opts]
    (create-conn-closed schema opts)))
 
 (defn restore-conn
@@ -284,7 +273,7 @@
      (make-conn database tail (Some stored-database))))))
 
 (defn store-after-transact!
-  [^Conn conn ^datascript.db/TxReport tx-report]
+  [conn tx-report]
   :unit
   (Stdlib.ignore
    (when-not (state-skip-store? @(:atom conn))
@@ -324,8 +313,8 @@
              (storage/store-tail database tx-tail))))))))
 
 (defn -transact!
-  [^Conn conn
-   ^:vector<datascript.db/tx-entry> tx-data
+  [conn
+   tx-data
    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
   {:pre [(conn? conn)]}
   (let [report-ref (volatile! nil)
@@ -341,33 +330,33 @@
             (vreset! report-ref report)
             (:db-after report))
           database)))
-    (let [report @report-ref]
-      (store-after-transact! conn report)
-      report)))
+    (if-some [report @report-ref]
+      (do
+        (store-after-transact! conn report)
+        report)
+      (Stdlib.invalid_arg "Transaction did not produce a report"))))
 
-(defn run-callbacks [^Conn conn ^datascript.db/TxReport report]
+(signature datascript.conn/run-callbacks
+  :fn<datascript.conn/Conn;datascript.db/TxReport;unit>)
+(defn run-callbacks [conn report]
   (let [state @(:atom conn)]
     (doseq [[_ callback] (state-listeners state)]
       (callback report))))
 
 (defn transact!
-  ([^Conn conn ^:vector<datascript.db/tx-entry> tx-data]
+  ([conn tx-data]
    (transact! conn tx-data None))
-  ([^Conn conn
-    ^:vector<datascript.db/tx-entry> tx-data
-    ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+  ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
    (let [report (-transact! conn tx-data tx-meta)]
      (run-callbacks conn report)
      report)))
 
 (defn reset-conn!
-  ([^Conn conn ^datascript.db/DB database]
+  ([conn database]
    (reset-conn!
     conn database (Datascript_runtime.Data_value.Nil)))
-  ([^Conn conn
-    ^datascript.db/DB database
-    ^:Datascript_runtime.Data_value.t tx-meta]
+  ([conn database ^:Datascript_runtime.Data_value.t tx-meta]
    {:pre [(conn? conn)
           (db/db? database)]}
    (let [db-before (current-db conn)
@@ -406,8 +395,7 @@
      database)))
 
 (defn reset-schema!
-  [^Conn conn
-   ^:map<keyword;map<keyword;Datascript_runtime.Data_value.t>> schema]
+  [conn schema]
   {:pre [(conn? conn)]}
   (let [database
         (swap-db!
@@ -426,12 +414,12 @@
     database))
 
 (defn listen!-closed
-  ([^Conn conn callback]
+  ([conn callback]
    (listen!-closed
     conn
     (Datascript_runtime.Data_value.Float (rand))
     callback))
-  ([^Conn conn ^:Datascript_runtime.Data_value.t key callback]
+  ([conn key callback]
    {:pre [(conn? conn)]}
    (let [state-atom (:atom conn)
          state @state-atom
@@ -470,13 +458,13 @@
           connection
           (key-form (first args))
           (first (next args))))))}
-  ([^Conn conn callback]
+  ([conn callback]
    (listen!-closed conn callback))
-  ([^Conn conn ^:Datascript_runtime.Data_value.t key callback]
+  ([conn key callback]
    (listen!-closed conn key callback)))
 
 (defn unlisten!-closed
-  [^Conn conn ^:Datascript_runtime.Data_value.t key]
+  [conn key]
   {:pre [(conn? conn)]}
   (let [state-atom (:atom conn)
         state @state-atom
@@ -503,5 +491,5 @@
                         'Datascript_runtime.Data_value.Int
                         key)))))))]
        (list 'datascript.conn/unlisten!-closed connection key-form)))}
-  [^Conn conn ^:Datascript_runtime.Data_value.t key]
+  [conn key]
   (unlisten!-closed conn key))

@@ -17,6 +17,7 @@ type t =
   | List of t array
   | Vector of t array
   | Int4_vector of int * int * t * int
+  | Int4_array of int array * int array * t array * int array
   | Int_vector of int array
   | Map of (t * t) array
   | Set of t array
@@ -24,6 +25,118 @@ type t =
   | Json_source of string
 
 type json = Js.Json.t
+
+type 'a string_map = (string, 'a) Js.Map.t
+
+let string_map_create () = Js.Map.make ()
+let string_map_find map key = Js.Map.get ~key map
+let string_map_set map key value = ignore (Js.Map.set ~key ~value map)
+
+type json_value =
+  | Json_string_value of string
+  | Json_int_value of int
+  | Json_float_value of float
+  | Json_bool_value of bool
+  | Json_keyword_value of int
+  | Json_edn_value of string
+  | Json_positive_infinity
+  | Json_negative_infinity
+  | Json_nan
+  | Invalid_json_value
+
+type json_datom =
+  | Json_string_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_string_value : string;
+      json_datom_tx : int;
+    }
+  | Json_int_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_int_value : int;
+      json_datom_tx : int;
+    }
+  | Json_float_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_float_value : float;
+      json_datom_tx : int;
+    }
+  | Json_bool_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_bool_value : bool;
+      json_datom_tx : int;
+    }
+  | Json_keyword_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_keyword_value : int;
+      json_datom_tx : int;
+    }
+  | Json_edn_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_edn_value : string;
+      json_datom_tx : int;
+    }
+  | Json_positive_infinity_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Json_negative_infinity_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Json_nan_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Invalid_json_value_datom of {
+      json_datom_entity : int;
+      json_datom_attribute : int;
+      json_datom_tx : int;
+    }
+  | Invalid_json_datom
+
+type json_database = {
+  json_database_count : int;
+  json_database_tx0 : int;
+  json_database_max_eid : int;
+  json_database_max_tx : int;
+  json_database_schema : t;
+  json_database_attrs : string array;
+  json_database_keywords : string array;
+  json_database_datoms : json_datom array;
+  json_database_aevt : int array option;
+  json_database_avet : int array option;
+  json_database_branching_factor : int option;
+  json_database_ref_type : string option;
+}
+
+type 'a edn_folder = {
+  edn_nil : 'a;
+  edn_bool : bool -> 'a;
+  edn_string : string -> 'a;
+  edn_char : Uchar.t -> 'a;
+  edn_symbol : string -> 'a;
+  edn_keyword : string -> 'a;
+  edn_int : int64 -> 'a;
+  edn_bigint : string -> 'a;
+  edn_float : float -> 'a;
+  edn_decimal : string -> 'a;
+  edn_ratio : string -> 'a;
+  edn_regex : string -> 'a;
+  edn_list : 'a array -> 'a;
+  edn_vector : 'a array -> 'a;
+  edn_map : ('a * 'a) array -> 'a;
+  edn_set : 'a array -> 'a;
+  edn_tagged : string -> 'a -> 'a;
+}
 
 let integer value =
   let narrowed = Int64.to_int value in
@@ -79,6 +192,24 @@ let rec to_edn = function
              to_edn third;
              Melange_edn.any (Melange_edn.int (Int64.of_int fourth));
            ])
+  | Int4_array (entities, attributes, values, txs) ->
+      Melange_edn.any
+        (Melange_edn.vector
+           (Array.to_list
+              (Array.mapi
+                 (fun index value ->
+                   Melange_edn.any
+                     (Melange_edn.vector
+                        [
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int entities.(index)));
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int attributes.(index)));
+                          to_edn value;
+                          Melange_edn.any
+                            (Melange_edn.int (Int64.of_int txs.(index)));
+                        ]))
+                 values)))
   | Int_vector values ->
       Melange_edn.any
         (Melange_edn.vector
@@ -97,6 +228,33 @@ let rec to_edn = function
   | Json_source source -> Melange_edn.of_edn_string source
 
 let of_edn_string source = Melange_edn.of_edn_string source |> of_edn
+
+let fold_edn_string folder source =
+  let rec fold (Melange_edn.Any value) =
+    match value with
+    | Melange_edn.Nil -> folder.edn_nil
+    | Melange_edn.Bool value -> folder.edn_bool value
+    | Melange_edn.String value -> folder.edn_string value
+    | Melange_edn.Char value -> folder.edn_char value
+    | Melange_edn.Symbol value -> folder.edn_symbol value
+    | Melange_edn.Keyword value ->
+        folder.edn_keyword (Melange_edn.keyword_to_string value)
+    | Melange_edn.Int value -> folder.edn_int value
+    | Melange_edn.Bigint value -> folder.edn_bigint value
+    | Melange_edn.Float value -> folder.edn_float value
+    | Melange_edn.Decimal value -> folder.edn_decimal value
+    | Melange_edn.Ratio value -> folder.edn_ratio value
+    | Melange_edn.Regex value -> folder.edn_regex value
+    | Melange_edn.List values -> folder.edn_list (Array.map fold values)
+    | Melange_edn.Vector values -> folder.edn_vector (Array.map fold values)
+    | Melange_edn.Map entries ->
+        folder.edn_map
+          (Array.map (fun (key, value) -> (fold key, fold value)) entries)
+    | Melange_edn.Set values -> folder.edn_set (Array.map fold values)
+    | Melange_edn.Tagged (tag, value) -> folder.edn_tagged tag (fold value)
+  in
+  source |> Melange_edn.of_edn_string |> fold
+
 let to_edn_string value = value |> to_edn |> Melange_edn.to_edn_string
 
 let min_safe_json_integer = -9007199254740991.
@@ -196,6 +354,186 @@ let json_is_null json = Js.Json.test json Null
 
 let json_to_edn = of_json
 
+let json_datom_of_json json_datom_entity json_datom_attribute value
+    json_datom_tx =
+  match Js.Json.classify value with
+  | JSONString json_string_value ->
+      Json_string_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_string_value;
+          json_datom_tx;
+        }
+  | JSONNumber value when Float.is_integer value ->
+      Json_int_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_int_value = int_of_float value;
+          json_datom_tx;
+        }
+  | JSONNumber json_float_value ->
+      Json_float_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_float_value;
+          json_datom_tx;
+        }
+  | JSONFalse ->
+      Json_bool_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_bool_value = false;
+          json_datom_tx;
+        }
+  | JSONTrue ->
+      Json_bool_datom
+        {
+          json_datom_entity;
+          json_datom_attribute;
+          json_bool_value = true;
+          json_datom_tx;
+        }
+  | JSONArray [| marker; value |] -> (
+      match json_int_opt marker with
+      | Some 0 -> (
+          match json_int_opt value with
+          | Some json_keyword_value ->
+              Json_keyword_datom
+                {
+                  json_datom_entity;
+                  json_datom_attribute;
+                  json_keyword_value;
+                  json_datom_tx;
+                }
+          | None ->
+              Invalid_json_value_datom
+                { json_datom_entity; json_datom_attribute; json_datom_tx })
+      | Some 1 -> (
+          match Js.Json.decodeString value with
+          | Some json_edn_value ->
+              Json_edn_datom
+                {
+                  json_datom_entity;
+                  json_datom_attribute;
+                  json_edn_value;
+                  json_datom_tx;
+                }
+          | None ->
+              Invalid_json_value_datom
+                { json_datom_entity; json_datom_attribute; json_datom_tx })
+      | _ ->
+          Invalid_json_value_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx })
+  | JSONArray [| marker |] -> (
+      match json_int_opt marker with
+      | Some 2 ->
+          Json_positive_infinity_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | Some 3 ->
+          Json_negative_infinity_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | Some 4 ->
+          Json_nan_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx }
+      | _ ->
+          Invalid_json_value_datom
+            { json_datom_entity; json_datom_attribute; json_datom_tx })
+  | JSONNull | JSONArray _ | JSONObject _ ->
+      Invalid_json_value_datom
+        { json_datom_entity; json_datom_attribute; json_datom_tx }
+
+let json_datom_of_json_fast json_datom_entity json_datom_attribute value
+    json_datom_tx =
+  match Js.typeof value with
+  | "string" -> (
+      match Js.Json.decodeString value with
+      | Some json_string_value ->
+          Json_string_datom
+            {
+              json_datom_entity;
+              json_datom_attribute;
+              json_string_value;
+              json_datom_tx;
+            }
+      | None -> assert false)
+  | "number" -> (
+      match Js.Json.decodeNumber value with
+      | Some value when Float.is_integer value ->
+          Json_int_datom
+            {
+              json_datom_entity;
+              json_datom_attribute;
+              json_int_value = int_of_float value;
+              json_datom_tx;
+            }
+      | Some json_float_value ->
+          Json_float_datom
+            {
+              json_datom_entity;
+              json_datom_attribute;
+              json_float_value;
+              json_datom_tx;
+            }
+      | None -> assert false)
+  | _ ->
+      json_datom_of_json json_datom_entity json_datom_attribute value
+        json_datom_tx
+
+let json_database_of_string source =
+  let json = json_of_string source in
+  let field name = json_field json name in
+  let string_array name = field name |> json_array |> Array.map json_string in
+  let optional_int_array name =
+    let value = field name in
+    if json_is_null value then None
+    else
+      let source = json_array value in
+      let result = Array.make (Array.length source) 0 in
+      for index = 0 to Array.length source - 1 do
+        Js.Array.unsafe_set result index
+          (json_int (Js.Array.unsafe_get source index));
+        Js.Array.unsafe_set source index Js.Json.null
+      done;
+      Some result
+  in
+  let datom value =
+    match json_array_opt value with
+    | Some [| entity; attribute; value; tx |] ->
+        json_datom_of_json_fast (json_int entity) (json_int attribute) value
+          (json_int tx)
+    | _ -> Invalid_json_datom
+  in
+  let datom_array value =
+    let source = json_array value in
+    let result = Array.make (Array.length source) Invalid_json_datom in
+    for index = 0 to Array.length source - 1 do
+      Js.Array.unsafe_set result index
+        (datom (Js.Array.unsafe_get source index));
+      Js.Array.unsafe_set source index Js.Json.null
+    done;
+    result
+  in
+  {
+    json_database_count = field "count" |> json_int;
+    json_database_tx0 = field "tx0" |> json_int;
+    json_database_max_eid = field "max-eid" |> json_int;
+    json_database_max_tx = field "max-tx" |> json_int;
+    json_database_schema = field "schema" |> json_to_edn;
+    json_database_attrs = string_array "attrs";
+    json_database_keywords = string_array "keywords";
+    json_database_datoms = field "eavt" |> datom_array;
+    json_database_aevt = optional_int_array "aevt";
+    json_database_avet = optional_int_array "avet";
+    json_database_branching_factor =
+      json_field_opt json "branching-factor" |> Option.map json_int;
+    json_database_ref_type =
+      json_field_opt json "ref-type" |> Option.map json_string;
+  }
+
 let json_key = function
   | String value | Symbol value | Keyword value -> value
   | _ ->
@@ -205,6 +543,7 @@ let json_key = function
 type json_writer = {
   mutable tokens : string array;
   chunks : string array;
+  string_tokens : (string, string) Js.Map.t;
 }
 
 let flush_json_writer writer =
@@ -215,10 +554,25 @@ let flush_json_writer writer =
 
 let add_json_token writer token =
   ignore (Js.Array.push ~value:token writer.tokens);
-  if Array.length writer.tokens >= 8_192 then flush_json_writer writer
+  if Array.length writer.tokens >= 4_096 then flush_json_writer writer
+
+let json_escape_pattern = Js.Re.fromString "[\"\\\\\\x00-\\x1f]"
+
+let json_string_token value =
+  if Js.Re.test ~str:value json_escape_pattern then
+    Js.Json.stringify (Js.Json.string value)
+  else "\"" ^ value ^ "\""
+
+let writer_json_string_token writer value =
+  match Js.Map.get ~key:value writer.string_tokens with
+  | Some token -> token
+  | None ->
+      let token = json_string_token value in
+      ignore (Js.Map.set ~key:value ~value:token writer.string_tokens);
+      token
 
 let add_json_string writer value =
-  add_json_token writer (Js.Json.stringify (Js.Json.string value))
+  add_json_token writer (writer_json_string_token writer value)
 
 let add_json_char writer value =
   value
@@ -242,8 +596,6 @@ let add_json_int writer value =
     add_json_token writer (Int64.to_string value)
   else add_json_string writer (Int64.to_string value)
 
-let json_string_token value = Js.Json.stringify (Js.Json.string value)
-
 let json_int_token value =
   let min_safe_json_integer = -9007199254740991L in
   let max_safe_json_integer = 9007199254740991L in
@@ -259,29 +611,42 @@ let json_float_token value =
   | FP_normal | FP_subnormal | FP_zero ->
       Js.Json.stringify (Js.Json.number value)
 
-let rec compact_json_value = function
+let rec compact_json_value writer = function
   | Nil -> Some "null"
   | Bool true -> Some "true"
   | Bool false -> Some "false"
   | String value | Symbol value | Bigint value | Decimal value | Ratio value
   | Regex value ->
-      Some (json_string_token value)
-  | Keyword value -> Some (json_string_token (":" ^ value))
+      Some (writer_json_string_token writer value)
+  | Keyword value ->
+      Some (writer_json_string_token writer (":" ^ value))
   | Small_int value -> Some (string_of_int value)
   | Int value -> Some (json_int_token value)
   | Float value -> Some (json_float_token value)
   | Vector values when Array.length values = 1 ->
-      compact_json_value values.(0)
+      compact_json_value writer values.(0)
       |> Option.map (fun value -> "[" ^ value ^ "]")
   | Vector values when Array.length values = 2 -> (
       match
-        (compact_json_value values.(0), compact_json_value values.(1))
+        ( compact_json_value writer values.(0),
+          compact_json_value writer values.(1) )
       with
       | Some first, Some second -> Some ("[" ^ first ^ "," ^ second ^ "]")
       | _ -> None)
-  | Char _ | List _ | Vector _ | Int4_vector _ | Int_vector _ | Map _
-  | Set _ | Tagged _ | Json_source _ ->
+  | Int_vector values when Array.length values = 2 ->
+      Some ("[" ^ Js.Array.join ~sep:"," values ^ "]")
+  | Char _ | List _ | Vector _ | Int4_vector _ | Int4_array _ | Int_vector _
+  | Map _ | Set _ | Tagged _ | Json_source _ ->
       None
+
+let int4_array_length entities attributes values txs =
+  let length = Array.length values in
+  if
+    Array.length entities <> length
+    || Array.length attributes <> length
+    || Array.length txs <> length
+  then invalid_arg "Int4_array columns must have equal lengths";
+  length
 
 let rec add_json_value writer = function
   | Nil -> add_json_token writer "null"
@@ -309,22 +674,22 @@ let rec add_json_value writer = function
         let value = values.(index) in
         match value with
         | Int4_vector (first, second, third, fourth) -> (
-            match compact_json_value third with
+            match compact_json_value writer third with
             | Some third ->
-                let prefix = if index > 0 then ",[" else "[" in
-                add_json_token writer
-                  (prefix ^ string_of_int first ^ "," ^ string_of_int second
-                 ^ "," ^ third ^ "," ^ string_of_int fourth ^ "]")
+              let prefix = if index > 0 then ",[" else "[" in
+              add_json_token writer
+                (prefix ^ string_of_int first ^ "," ^ string_of_int second
+               ^ "," ^ third ^ "," ^ string_of_int fourth ^ "]")
             | None ->
-                if index > 0 then add_json_token writer ",";
-                add_json_value writer value)
+              if index > 0 then add_json_token writer ",";
+              add_json_value writer value)
         | value ->
             if index > 0 then add_json_token writer ",";
             add_json_value writer value
       done;
       add_json_token writer "]"
   | Int4_vector (first, second, third, fourth) ->
-      (match compact_json_value third with
+      (match compact_json_value writer third with
       | Some third ->
           add_json_token writer
             ("[" ^ string_of_int first ^ "," ^ string_of_int second ^ ","
@@ -339,13 +704,9 @@ let rec add_json_value writer = function
           add_json_token writer ",";
           add_json_token writer (string_of_int fourth);
           add_json_token writer "]")
-  | Int_vector values ->
-      add_json_token writer "[";
-      for index = 0 to Array.length values - 1 do
-        let prefix = if index > 0 then "," else "" in
-        add_json_token writer (prefix ^ string_of_int values.(index))
-      done;
-      add_json_token writer "]"
+  | Int4_array (entities, attributes, values, txs) ->
+      add_json_int4_array writer entities attributes values txs
+  | Int_vector values -> add_json_int_vector writer values
   | Map entries ->
       add_json_token writer "{";
       Array.iteri
@@ -364,8 +725,53 @@ let rec add_json_value writer = function
       add_json_token writer "}"
   | Json_source source -> add_json_token writer source
 
+and add_json_int4_array writer entities attributes values txs =
+  add_json_token writer "[";
+  let length = int4_array_length entities attributes values txs in
+  for index = 0 to length - 1 do
+    add_json_int4_array_row writer entities attributes txs index
+      (Array.unsafe_get values index)
+  done;
+  add_json_token writer "]"
+
+and add_json_int4_array_row writer entities attributes txs index value =
+  let prefix = if index > 0 then ",[" else "[" in
+  match compact_json_value writer value with
+  | Some value ->
+      add_json_token writer
+        (prefix ^ string_of_int (Array.unsafe_get entities index) ^ ","
+       ^ string_of_int (Array.unsafe_get attributes index)
+       ^ "," ^ value ^ ","
+       ^ string_of_int (Array.unsafe_get txs index)
+       ^ "]")
+  | None ->
+      if index > 0 then add_json_token writer ",";
+      add_json_value writer
+        (Int4_vector
+           ( Array.unsafe_get entities index,
+             Array.unsafe_get attributes index,
+             value,
+             Array.unsafe_get txs index ))
+
+and add_json_int_vector writer values =
+  add_json_token writer "[";
+  let chunk_size = 8_192 in
+  let chunk_count =
+    (Array.length values + chunk_size - 1) / chunk_size
+  in
+  for chunk_index = 0 to chunk_count - 1 do
+    let start = chunk_index * chunk_size in
+    let end_ = min (start + chunk_size) (Array.length values) in
+    let prefix = if chunk_index > 0 then "," else "" in
+    let chunk = Js.Array.slice ~start ~end_ values in
+    add_json_token writer (prefix ^ Js.Array.join ~sep:"," chunk)
+  done;
+  add_json_token writer "]"
+
 let to_json_string value =
-  let writer = { tokens = [||]; chunks = [||] } in
+  let writer =
+    { tokens = [||]; chunks = [||]; string_tokens = Js.Map.make () }
+  in
   add_json_value writer value;
   flush_json_writer writer;
   Js.Array.join ~sep:"" writer.chunks

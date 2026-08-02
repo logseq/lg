@@ -105,6 +105,8 @@ let rec expression = function
   | Prefix (operator, value) -> Prefix (operator, expression value)
   | Constraint (value, type_name) -> Constraint (expression value, type_name)
   | Field (target, name) -> Field (expression target, name)
+  | SetField (target, name, value) ->
+      SetField (expression target, name, expression value)
   | Cons (head, tail) -> Cons (expression head, expression tail)
   | Record (fields, type_name) ->
       Record

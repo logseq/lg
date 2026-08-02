@@ -30,6 +30,45 @@ let () =
       (Printf.sprintf
          "serialized datom structural integers remain wide-boxed: %.0f bytes"
          allocated_bytes);
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  let compact_datoms = Serialization_value.create_datom_array count in
+  for index = 0 to count - 1 do
+    Serialization_value.set_datom compact_datoms index index 0 value index
+  done;
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 5_000_000. then
+    failwith
+      (Printf.sprintf
+         "compact serialized datoms allocated row wrappers: %.0f bytes"
+         allocated_bytes);
+  let encoder = Serialization_value.create_encoder () in
+  let keyword = Datascript_runtime.Data_value.Keyword ":status/active" in
+  ignore (Serialization_value.encode_value encoder keyword);
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  for _ = 1 to count do
+    ignore (Serialization_value.encode_value encoder keyword)
+  done;
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 1_024. then
+    failwith
+      (Printf.sprintf
+         "repeated keyword encoding rebuilt immutable references: %.0f bytes"
+         allocated_bytes);
+  let string_value = Datascript_runtime.Data_value.String "Ada" in
+  ignore (Serialization_value.encode_value encoder string_value);
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  for _ = 1 to count do
+    ignore (Serialization_value.encode_value encoder string_value)
+  done;
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 1_024. then
+    failwith
+      (Printf.sprintf
+         "repeated string encoding rebuilt immutable values: %.0f bytes"
+         allocated_bytes);
   let datoms = Rrbvec.of_array (Array.make count datom) in
   let indexes = Rrbvec.of_array (Array.init count Fun.id) in
   Gc.compact ();
@@ -100,4 +139,20 @@ let () =
     failwith
       (Printf.sprintf
          "prepared JSON datoms unpacked the same row repeatedly: %.0f bytes"
+         allocated_bytes);
+  Gc.compact ();
+  let allocated_before = Gc.allocated_bytes () in
+  for index = 0 to json_datom_count - 1 do
+    ignore (Serialization_value.prepared_datom_entity_at prepared index);
+    ignore (Serialization_value.prepared_datom_attribute_at prepared index);
+    ignore
+      (Serialization_value.decode_prepared_datom_value_at Rrbvec.empty
+         prepared index);
+    ignore (Serialization_value.prepared_datom_tx_at prepared index)
+  done;
+  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
+  if allocated_bytes >= 2_000_000. then
+    failwith
+      (Printf.sprintf
+         "indexed prepared JSON datom access retained wrapper allocations: %.0f bytes"
          allocated_bytes)

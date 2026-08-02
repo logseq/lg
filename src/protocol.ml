@@ -337,6 +337,11 @@ let common_method_return env protocol_id method_name =
 let refine_marker_signature env protocol_id target_method_id
     (signature : Protocol_registry.method_signature) =
   let registry = Env.protocols env in
+  let target_param_tys =
+    List.map
+      (function TUnknown -> Type_solver.fresh () | ty -> ty)
+      signature.param_tys
+  in
   let return_ty =
     match signature.return_ty with
     | TUnknown | TMeta _ ->
@@ -355,6 +360,14 @@ let refine_marker_signature env protocol_id target_method_id
                   ( candidate_method_id,
                     (method_ : Protocol_registry.method_signature) )
                 ->
+                  let param_tys =
+                    if
+                      String.equal
+                        (Method_id.name candidate_method_id)
+                        (Method_id.name target_method_id)
+                    then target_param_tys
+                    else method_.param_tys
+                  in
                   let return_ty =
                     if
                       String.equal
@@ -369,12 +382,17 @@ let refine_marker_signature env protocol_id target_method_id
                         |> Option.value ~default:method_.return_ty
                     | return_ty -> return_ty
                   in
-                  TFn (method_.param_tys, return_ty))
+                  TFn (param_tys, return_ty))
            |> fun methods ->
-           Types.protocol_constraint protocol_id methods TUnknown)
+           let receiver_value_ty =
+             match target_param_tys with
+             | (TVar _ as receiver) :: _ -> receiver
+             | _ -> TUnknown
+           in
+           Types.protocol_constraint protocol_id methods receiver_value_ty)
   in
   let param_tys =
-    signature.param_tys
+    target_param_tys
     |> List.mapi (fun index declared ->
            if index = 0 then
              Option.value receiver_constraint ~default:declared
@@ -503,7 +521,46 @@ let common_method_returns env protocol_id =
       |> List.map (fun (method_id, _) ->
              common_method_return env protocol_id (Method_id.name method_id))
 
-let refine_constraint_method_returns env ty =
+let common_method_parameters env protocol_id method_id =
+  let registry =
+    Compiler_environment.protocol_evidence env
+    |> Option.value ~default:(Env.protocols env)
+  in
+  let implementations =
+    Protocol_registry.implementations_for_method protocol_id method_id
+      registry
+  in
+  let parameter_lists =
+    implementations
+    |> List.filter_map (fun (implementation : binding) ->
+           match implementation.ty with
+           | TFn (_receiver :: parameters, _) -> Some parameters
+           | TFn ([], _) | _ -> None)
+  in
+  match parameter_lists with
+  | [] -> []
+  | first :: rest
+    when List.for_all
+           (fun parameters -> List.length parameters = List.length first)
+           rest ->
+      List.mapi
+        (fun index _ ->
+          let candidates =
+            parameter_lists
+            |> List.filter_map (fun parameters ->
+                   match List.nth parameters index with
+                   | TUnknown | TMeta _ | TVar _ -> None
+                   | ty -> Some (Types.constraint_value_type ty))
+          in
+          match candidates with
+          | candidate :: candidates
+            when List.for_all (Types.equal candidate) candidates ->
+              Some candidate
+          | [] | _ :: _ -> None)
+        first
+  | _ -> []
+
+let refine_constraint_methods env ty =
   let rec method_types = function
     | TUnit -> Some []
     | TTuple [ method_ty; rest ] ->
@@ -517,17 +574,48 @@ let refine_constraint_method_returns env ty =
       | None -> ty
       | Some methods ->
           let returns = common_method_returns env protocol_id in
-          if List.length methods <> List.length returns then ty
+          let parameters =
+            Protocol_registry.find_protocol protocol_id (Env.protocols env)
+            |> Option.map (fun (declaration : Protocol_registry.declaration) ->
+                   declaration.methods
+                   |> Protocol_registry.Method_map.bindings
+                   |> List.map (fun (method_id, _) ->
+                          common_method_parameters env protocol_id method_id))
+            |> Option.value ~default:[]
+          in
+          if
+            List.length methods <> List.length returns
+            || List.length methods <> List.length parameters
+          then ty
           else
             let methods =
               List.map2
-                (fun method_ty return_ty ->
-                  match (method_ty, return_ty) with
-                  | ( TFn (params, (TUnknown | TMeta _)),
-                      Some return_ty ) ->
-                      TFn (params, return_ty)
+                (fun method_ty (inferred_parameters, inferred_return) ->
+                  match method_ty with
+                  | TFn (receiver :: existing_parameters, existing_return)
+                    when List.length existing_parameters
+                         = List.length inferred_parameters ->
+                      let parameters =
+                        List.map2
+                          (fun existing inferred ->
+                            match (existing, inferred) with
+                            | (TUnknown | TMeta _ | TVar _), Some inferred ->
+                                inferred
+                            | existing, _ -> existing)
+                          existing_parameters inferred_parameters
+                      in
+                      let return_ty =
+                        match (existing_return, inferred_return) with
+                        | (TUnknown | TMeta _), Some inferred -> inferred
+                        | existing, _ -> existing
+                      in
+                      TFn (receiver :: parameters, return_ty)
+                  | TFn (params, (TUnknown | TMeta _)) -> (
+                      match inferred_return with
+                      | Some return_ty -> TFn (params, return_ty)
+                      | None -> method_ty)
                   | _ -> method_ty)
-                methods returns
+                methods (List.combine parameters returns)
             in
             Types.protocol_constraint protocol_id methods value_ty)
 
@@ -562,7 +650,7 @@ let refine_deferred_type env = function
       (match ty with
       | TFn (parameters, return_ty) ->
           TFn
-            ( List.map (refine_constraint_method_returns env) parameters,
+            ( List.map (refine_constraint_methods env) parameters,
               return_ty )
       | _ -> assert false)
   | ty -> ty

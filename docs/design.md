@@ -313,6 +313,15 @@ The currently accepted measured representation optimizations are narrow:
   result rows when no transaction constraint is present. The slice bounds,
   comparator, datom order, added filtering, and projected columns are
   unchanged; this only avoids allocating an intermediate datom vector.
+- When that bound attribute is cardinality-one, the reducer uses one typed
+  EAVT lower-bound seek and validates the returned datom. Cardinality-many
+  attributes retain the complete slice traversal and result order.
+- Unindexed AEVT value scans compare closed `String` and `Keyword` payloads
+  with static string equality. Every other DataScript value retains the full
+  closed-domain equality operation.
+- The persistent-sorted-set slice reducer invokes its typed binary callback
+  directly on Melange, matching the ordinary node reducer. Native control flow
+  is unchanged.
 - Bound-entity query clauses classify value and transaction pattern positions
   once before reducing input rows. An unbound variable or missing position
   cannot constrain a slice, so it does not repeat relation-attribute lookups for
@@ -364,8 +373,14 @@ The currently accepted measured representation optimizations are narrow:
   full 300,000-person benchmark still shows substantial serialization overhead.
   Attribute lookup now converts the closed attribute vector once before the
   datom loop, and index restoration uses a typed array loop without callback
-  allocation. This passes the focused 100,000-person Native and Melange thaw
-  gates, but the full 300,000-person workload remains an acceptance failure.
+  allocation. Prepared datoms are read once per row into a reusable closed
+  cursor whose entity, attribute, encoded value, and transaction fields retain
+  their concrete types. Default JSON thaw therefore performs one closed datom
+  dispatch instead of repeatedly matching the same row for each field; custom
+  codecs still receive the same closed EDN value. The 300,000-person median
+  improved from 1177.197 ms to 1045.487 ms on Native. Melange measured
+  1124.227 ms. Both are below the pinned 1134.9 ms upstream gate, although the
+  Melange margin remains narrow and must be rechecked in final acceptance.
 - Serialization attribute indexing uses one closed size dispatch. Schemas with
   at most eight attributes use a reverse string-array scan; larger schemas use
   a typed string hashtable. Both retain the upstream last-index result for

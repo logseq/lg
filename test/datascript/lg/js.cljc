@@ -78,8 +78,8 @@
         'datascript.js/q-string
         source
         input-forms)))}
-  [^string source
-   & ^:list<datascript.lg.query-types/input> inputs]
+  [source
+   & inputs]
   (q-string source (vec inputs)))
 
 (defn- data-value-int [field value]
@@ -139,7 +139,7 @@
    true))
 
 (defn- data-value->datom
-  [^:Datascript_runtime.Data_value.t input]
+  [input]
   (if-some
     [values
      (Datascript_runtime.Data_value.sequential_items input)]
@@ -196,7 +196,7 @@
       (Datascript_runtime.Data_value.to_edn_string source)))))
 
 (defn- pull-source-attribute-option
-  [^:Datascript_runtime.Data_value.t source]
+  [source]
   (if-some
     [name
      (Datascript_runtime.Data_value.keyword_value source)]
@@ -207,7 +207,7 @@
       _ None)))
 
 (defn- pull-source-wildcard?
-  [^:Datascript_runtime.Data_value.t source]
+  [source]
   (match source
     (Datascript_runtime.Data_value.Symbol name)
     (= name "*")
@@ -243,8 +243,8 @@
       (Datascript_runtime.Data_value.to_edn_string source)))))
 
 (defn- pull-source-option
-  [^:Datascript_runtime.Data_value.t key
-   ^:Datascript_runtime.Data_value.t value]
+  [key
+   value]
   (if-some
     [name
      (Datascript_runtime.Data_value.keyword_value key)]
@@ -476,8 +476,10 @@
   [database pattern entity-refs]
   (pull-many-string database pattern entity-refs))
 
-(defn- ^:keyword index-string->keyword
-  [^string index]
+(signature datascript.js/index-string->keyword
+  :fn<string;keyword>)
+(defn- index-string->keyword
+  [index]
   (if (= ":" (subs index 0 1))
     (keyword (subs index 1))
     (keyword index)))
@@ -532,9 +534,9 @@
        (cons
         'datascript.core/datoms
         (cons database (cons index components)))))}
-  [^datascript.db/DB database
-   ^string index
-   & ^:list<Datascript_runtime.Data_value.t> components]
+  [database
+   index
+   & components]
   (datoms-from-components
    database
    (index-string->keyword index)
@@ -590,9 +592,9 @@
        (cons
         'datascript.core/seek-datoms
         (cons database (cons index components)))))}
-  [^datascript.db/DB database
-   ^string index
-   & ^:list<Datascript_runtime.Data_value.t> components]
+  [database
+   index
+   & components]
   (seek-datoms-from-components
    database
    (index-string->keyword index)
@@ -671,8 +673,8 @@
 (def ^:export unlisten d/unlisten!)
 
 (defn ^:export resolve_tempid
-  [^:map<Datascript_runtime.Data_value.t;int> tempids
-   ^:Datascript_runtime.Data_value.t tempid]
+  [tempids
+   tempid]
   (get tempids tempid))
 
 (defn ^:export index_range

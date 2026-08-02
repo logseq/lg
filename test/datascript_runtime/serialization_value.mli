@@ -31,6 +31,11 @@ val datom_attribute : t -> int
 val datom_value : t -> t
 val datom_tx : t -> int
 
+type datom_array
+
+val create_datom_array : int -> datom_array
+val set_datom : datom_array -> int -> int -> int -> t -> int -> unit
+
 val database :
   int ->
   int ->
@@ -91,6 +96,36 @@ val database_arrays_with_schema :
   Storage_value.ref_type ->
   t
 
+val database_datom_array_with_schema :
+  int ->
+  int ->
+  int ->
+  int ->
+  t ->
+  string Rrbvec.t ->
+  string Rrbvec.t ->
+  datom_array ->
+  int array option ->
+  int array option ->
+  int ->
+  Storage_value.ref_type ->
+  t
+
+val database_datom_array :
+  int ->
+  int ->
+  int ->
+  int ->
+  string ->
+  string Rrbvec.t ->
+  string Rrbvec.t ->
+  datom_array ->
+  int array option ->
+  int array option ->
+  int ->
+  Storage_value.ref_type ->
+  t
+
 val count : t -> int
 val tx0 : t -> int
 val max_eid : t -> int
@@ -110,6 +145,7 @@ val ref_type : t -> Storage_value.ref_type
 
 type prepared
 type prepared_datom
+type prepared_datom_cursor
 
 val prepare : t -> prepared
 val prepared_count : prepared -> int
@@ -134,6 +170,20 @@ val prepared_datom_value : prepared_datom -> t
 val decode_prepared_datom_value :
   string Rrbvec.t -> prepared_datom -> Data_value.t
 val prepared_datom_tx : prepared_datom -> int
+val create_prepared_datom_cursor : unit -> prepared_datom_cursor
+val read_prepared_datom_into : prepared -> int -> prepared_datom_cursor -> unit
+val cursor_datom_entity : prepared_datom_cursor -> int
+val cursor_datom_attribute : prepared_datom_cursor -> int
+val cursor_datom_value : prepared_datom_cursor -> t
+val decode_cursor_datom_value :
+  string Rrbvec.t -> prepared_datom_cursor -> Data_value.t
+val cursor_datom_tx : prepared_datom_cursor -> int
+val prepared_datom_entity_at : prepared -> int -> int
+val prepared_datom_attribute_at : prepared -> int -> int
+val prepared_datom_value_at : prepared -> int -> t
+val decode_prepared_datom_value_at :
+  string Rrbvec.t -> prepared -> int -> Data_value.t
+val prepared_datom_tx_at : prepared -> int -> int
 
 val schema_to_string :
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t

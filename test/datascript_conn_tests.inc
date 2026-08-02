@@ -2042,6 +2042,20 @@
    %{dep:datascript-conn-melange/test/datascript_benchmark_melange.js})))
 
 (rule
+ (alias datascript-serialization-full-scale-performance)
+ (deps
+  datascript_serialization_full_scale_performance_gate_test.sh
+  datascript_benchmark_native.exe
+  (alias datascript-conn-melange)
+  datascript-conn-melange/test/datascript_benchmark_melange.js)
+ (action
+  (run
+   bash
+   %{dep:datascript_serialization_full_scale_performance_gate_test.sh}
+   %{exe:datascript_benchmark_native.exe}
+   %{dep:datascript-conn-melange/test/datascript_benchmark_melange.js})))
+
+(rule
  (alias datascript-benchmark-surface)
  (deps
   ../script/check_datascript_benchmark_surface_test.sh

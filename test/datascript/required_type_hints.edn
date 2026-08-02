@@ -1,0 +1,134 @@
+{:counts
+ {:inline-total 122
+  :declaration 91
+  :algorithm-local 31}
+
+ :policy
+ {:dynamic-introduced false
+  :compiler-special-cases-introduced false
+  :replacement "Prefer a named closed function signature when it can replace an algorithm-local hint without changing upstream control flow."}
+
+ :removed-this-pass
+ [{:category :homogeneous-variadic-prefix
+   :count 4
+   :method "Pass a homogeneous cons chain to zip-many instead of constructing a partially typed vector."}
+  {:category :closed-tuple-patterns
+   :count 3
+   :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
+  {:category :host-string-evidence
+   :count 1
+   :method "Use the concrete String concatenation already required by filename parsing."}
+  {:category :boolean-control-flow-evidence
+   :count 1
+   :method "Use if directly so the condition is constrained to bool."}
+  {:category :search-callsite-evidence
+   :count 1
+   :method "Let search-vector specialize its entity option from integer call sites instead of forcing the broader entity_ref sum."}]
+
+ :declaration-categories
+ [{:category :closed-data-model-fields
+   :count 79
+   :reason "Record, deftype, and closed variant payload fields define the DataScript data model and are declarations, not inference repairs."}
+  {:category :protocol-method-contracts
+   :count 12
+   :reason "Protocol declarations and implementations need concrete host and closed-value parameter contracts for static dispatch."}]
+
+ :algorithm-local
+ [{:category :recursive-forward-interface
+   :file "test/datascript/lg/query_types.cljc"
+   :count 11
+   :symbols {resolve-predicate [arguments]
+             resolve-function [arguments]
+             resolve-not [return variables]
+             resolve-or [required-variable-names branch-variable-names branches]
+             resolve-rule-branch [arguments]
+             resolve-rule [rule-path arguments]
+             resolve-static-clauses [clauses]}
+   :reason "These mutually recursive and forward-declared query functions otherwise create less-general collection slots, lose closed parser element types, or emit an unbound recursive return. Ordinary sidecar signatures were tested and do not replace the recursive implementation-slot constraints."}
+
+  {:category :empty-container-higher-order-backpropagation
+   :file "test/datascript/lg/query_types.cljc"
+   :count 1
+   :symbols {pattern-lookup-databases [databases]}
+   :reason "The empty map initializer does not propagate database-view values backward into the reduce callback; removing the hint crosses a forbidden host-value dynamic boundary."}
+
+  {:category :recursive-printing-return
+   :file "test/datascript/lg/query.cljc"
+   :count 1
+   :symbols {binding-source [return]}
+   :reason "Removing this hint requires artificial no-op String operations at recursive call sites; the explicit return contract is simpler."}
+
+  {:category :unknown-conj-collection-kind
+   :file "test/datascript/lg/query.cljc"
+   :count 1
+   :symbols {add-free-pattern-variable [variables]}
+   :reason "Inlining the helper can retain set evidence but duplicates control flow; the single set parameter contract is simpler."}
+
+  {:category :variadic-multi-arity-collection
+   :file "test/datascript/lg/query_v3.cljc"
+   :count 1
+   :symbols {zip [rest]}
+   :reason "The variadic implementation slot does not infer that rest is a list. The four fixed vector hints were removed by passing a homogeneous cons chain to zip-many."}
+
+  {:category :parser-multi-arity-recursion
+   :file "test/datascript/upstream/parser.cljc"
+   :count 1
+   :symbols {collect [acc]}
+   :reason "The two-arity empty vector does not constrain the recursive three-arity accumulator."}
+
+  {:category :parser-nominal-record-substitution
+   :file "test/datascript/upstream/parser.cljc"
+   :count 1
+   :symbols {substitute-rule-vars [variables]}
+   :reason "Closed RuleVars identity is lost across nested substitution callbacks without the nominal receiver."}
+
+  {:category :forward-option-element
+   :file "test/datascript/upstream/db.cljc"
+   :count 2
+   :symbols {resolve-datom [e tx]}
+   :reason "The forward implementation slot otherwise remains polymorphic while entid-strict specializes both values to option<entity_ref>."}
+
+  {:category :protocol-refinement-nominal-receiver
+   :file "test/datascript/upstream/db.cljc"
+   :count 1
+   :symbols {entid-strict [db]}
+   :reason "The declared signature does not constrain the body after db? protocol refinement; the nominal DB receiver prevents a partial structural row from escaping."}
+
+  {:category :multi-arity-transaction-boundary
+   :file "test/datascript/upstream/conn.cljc"
+   :count 4
+   :symbols {with-closed [database-arity-2 database-arity-3]
+             -transact! [tx-meta]
+             reset-conn! [tx-meta]}
+   :reason "Multi-arity defaults do not retain nominal DB, optional keyword-map, and DataValue contracts through transaction report construction."}
+
+  {:category :storage-callback-interface
+   :file "test/datascript/upstream/storage.cljc"
+   :count 2
+   :symbols {make-backend [restore-fn list-addresses-fn]}
+   :reason "Opaque storage backend construction needs the two callback interfaces to remain closed."}
+
+  {:category :macro-field-projection
+   :file "test/datascript/upstream/storage.cljc"
+   :count 1
+   :symbols {serialize-node [node-keys]}
+   :reason "The node-keys macro loses tree<Datom> element identity during field projection; the local array contract restores it without dynamic."}
+
+  {:category :opaque-host-alias-return
+   :file "test/datascript/upstream/serialize.cljc"
+   :count 2
+   :symbols {serializable-impl [return]
+             serializable [return]}
+   :reason "LG cannot see that the opaque FFI Serialization_value.t alias equals Lg_edn_backend.t; without the returns, pr-str emits <value> instead of EDN."}
+
+  {:category :nominal-filter-return
+   :file "test/datascript/upstream/core.cljc"
+   :count 1
+   :symbols {filter [return]}
+   :reason "The nominal FilteredDB return is required for protocol hashing; a database-view signature loses the -filter-view receiver witness."}
+
+  {:category :backend-specific-host-string-interface
+   :file "test/datascript/lg/js.cljc"
+   :count 1
+   :symbols {squuid_time_millis [uuid-string]}
+   :reason "Removing this hint requires an artificial empty String concatenation on Native, while Native and Melange intentionally infer different numeric return representations."}]}

@@ -642,6 +642,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Rrbvec.push_back",
                           [ collection.semantic_expr; value.semantic_expr ] )))
+            | TVector inner when Types.same_shape inner value.ty ->
+                let value =
+                  coerce_expression_to_type inner value.ty value.semantic_expr
+                in
+                Ok
+                  (typed_ir collection.ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.push_back",
+                          [ collection.semantic_expr; value ] )))
             | TVector
                 ((TNullable target_inner
                  | TOcaml_app ("option", [ target_inner ])) as inner)
@@ -3139,6 +3148,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 (adapt_key_sequence key_ty actual_ty sequence))))))
       | _ -> Error.error "select-keys expects map and key collection"
     and compile_contains scope env arg_forms =
+      let env = Env.with_expected_type None env in
       let compile_deftype_contains target key =
         let record_target =
           match target.ty with

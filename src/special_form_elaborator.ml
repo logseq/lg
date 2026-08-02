@@ -69,61 +69,60 @@ let located_form_pattern form pattern =
   located_pattern (Destructure.source_identity form) pattern
 
 let rec capability_pattern name ty =
+  let layer witness_name value_ty =
+    Semantic_ir.PTuple
+      [
+        Semantic_ir.PVar witness_name;
+        capability_pattern name value_ty;
+      ]
+  in
   match Types.protocol_constraint_info ty with
   | Some (protocol_id, _, value_ty) ->
-      Semantic_ir.PTuple
-        [
-          Semantic_ir.PVar (Types.protocol_witness_name name protocol_id);
-          capability_pattern name value_ty;
-        ]
+      layer (Types.protocol_witness_name name protocol_id) value_ty
   | None -> (
       match Types.truthy_constraint_info ty with
-      | Some value_ty ->
-          Semantic_ir.PTuple
-            [
-              Semantic_ir.PVar (name ^ "__truthy");
-              capability_pattern name value_ty;
-            ]
+      | Some value_ty -> layer (name ^ "__truthy") value_ty
       | None -> (
-          match Types.printable_constraint_info ty with
-          | Some value_ty ->
-              Semantic_ir.PTuple
-                [
-                  Semantic_ir.PVar (name ^ "__print");
-                  capability_pattern name value_ty;
-                ]
+          match Types.nil_predicate_constraint_info ty with
+          | Some value_ty -> layer (name ^ "__nil") value_ty
           | None -> (
-              match Types.symbol_predicate_constraint_info ty with
-              | Some value_ty ->
-                  Semantic_ir.PTuple
-                    [
-                      Semantic_ir.PVar (name ^ "__symbol");
-                      capability_pattern name value_ty;
-                    ]
+              match Types.printable_constraint_info ty with
+              | Some value_ty -> layer (name ^ "__print") value_ty
               | None -> (
-                  match ty with
-                  | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
-                    when constraint_name = Types.seqable_constraint_name
-                         || constraint_name
-                            = Types.optional_seqable_constraint_name
-                         || constraint_name
-                            = Types.optional_sequential_constraint_name ->
-                      Semantic_ir.PTuple
-                        [
-                          Semantic_ir.PVar
-                            (if constraint_name = Types.seqable_constraint_name
-                             then name ^ "__seq"
-                             else name ^ "__seq_optional");
-                          capability_pattern name value_ty;
-                        ]
-                  | _ -> Semantic_ir.PVar name))))
+                  match Types.symbol_predicate_constraint_info ty with
+                  | Some value_ty -> layer (name ^ "__symbol") value_ty
+                  | None -> (
+                      match Types.contains_constraint_info ty with
+                      | Some (_, value_ty) -> layer (name ^ "__contains") value_ty
+                      | None -> (
+                          match ty with
+                          | TOcaml_app
+                              (constraint_name, [ _element_ty; value_ty ])
+                            when constraint_name
+                                 = Types.seqable_constraint_name
+                                 || constraint_name
+                                    = Types.optional_seqable_constraint_name
+                                 || constraint_name
+                                    = Types.optional_sequential_constraint_name
+                            ->
+                              let witness_name =
+                                if
+                                  constraint_name
+                                  = Types.seqable_constraint_name
+                                then name ^ "__seq"
+                                else name ^ "__seq_optional"
+                              in
+                              layer witness_name value_ty
+                          | _ -> Semantic_ir.PVar name))))))
 
 let has_capability ty =
   Option.is_some (Types.protocol_constraint_info ty)
   || Option.is_some (Types.seqable_constraint_element ty)
   || Option.is_some (Types.truthy_constraint_info ty)
+  || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
+  || Option.is_some (Types.contains_constraint_info ty)
 
 let narrow_symbol_predicates scope env condition body =
   let rec narrowed_symbols = function
@@ -314,6 +313,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let rec adapt_branch_expression env result_ty (branch : typed_expr) =
     match (result_ty, branch.ty) with
+    | target, source when Types.equal target source ->
+        Ok branch.semantic_expr
     | target, source
       when Option.is_some (Types.reduced_element target)
            && Option.is_none (Types.reduced_element source) ->
@@ -1035,7 +1036,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         compile_option_match scope env name option_form
           (fun some_env -> compile_expr scope some_env then_form)
           (fun () -> compile_expr scope env else_form)
-          "if-some branches must have same type"
+          "if-some branches have incompatible types; define a closed sum type"
   and compile_when_binding ~require_truthy scope env binding_form body_forms
       error_prefix =
     match
@@ -2244,7 +2245,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 (FList (FSymbol "recur" :: recur_arguments)))
             (fun () ->
               compile_loop_tail scope env loop_name param_tys else_form)
-            "if-some branches must have same type"
+            "if-some branches have incompatible types; define a closed sum type"
         else (
           match compile_expr scope env (FSymbol collection_name) with
           | Error _ as error -> error
@@ -2272,7 +2273,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   | Ok some_expr, Ok none_expr -> (
                       match merge_branch_expressions some_expr none_expr with
                       | None ->
-                          Error.error "if-some branches must have same type"
+                          Error.error
+                            "if-some branches have incompatible types; define a \
+                             closed sum type"
                       | Some (result_ty, some_code, none_code) -> (
                           match
                             adapt_merged_branches env result_ty some_expr
@@ -2988,10 +2991,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     (fun initial_values ->
                   let params =
                     List.map2
-                      (fun name identity ->
+                      (fun name (identity, param_ty) ->
                         located_pattern identity
-                          (Semantic_ir.PVar (Names.sanitize_name name)))
-                      names identities
+                          (capability_pattern (Names.sanitize_name name)
+                             param_ty))
+                      names (List.combine identities param_tys)
                   in
                   Ok
                     (typed_ir body.ty
