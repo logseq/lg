@@ -5,7 +5,13 @@ type schema =
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
   option
 
-let int value = Lg_edn_backend.Small_int value
+let common_small_int_values =
+  Array.init 128 (fun value -> Lg_edn_backend.Small_int value)
+
+let int value =
+  if value >= 0 && value < Array.length common_small_int_values then
+    Array.unsafe_get common_small_int_values value
+  else Lg_edn_backend.Small_int value
 
 let int_value = function
   | Lg_edn_backend.Small_int value -> value
@@ -45,7 +51,7 @@ let data_keyword value =
 
 let rec data_value_to_edn = function
   | Data_value.Nil -> Lg_edn_backend.Nil
-  | Data_value.Int value -> Lg_edn_backend.Small_int value
+  | Data_value.Int value -> int value
   | Data_value.Wide_int value -> Lg_edn_backend.Int value
   | Data_value.Float value -> Lg_edn_backend.Float value
   | Data_value.String value -> string value
@@ -250,7 +256,7 @@ let keyword_reference index =
 let encode_non_keyword_with freeze value =
   match value with
   | Data_value.String value -> string value
-  | Data_value.Int value -> Lg_edn_backend.Small_int value
+  | Data_value.Int value -> int value
   | Data_value.Wide_int value -> Lg_edn_backend.Int value
   | Data_value.Float value when Float.is_finite value ->
       Lg_edn_backend.Float value
@@ -870,12 +876,12 @@ let prepared_datom_attribute value = value.prepared_attribute
 
 let edn_of_json_value = function
   | Lg_edn_backend.Json_string_value value -> Lg_edn_backend.String value
-  | Lg_edn_backend.Json_int_value value -> Lg_edn_backend.Small_int value
+  | Lg_edn_backend.Json_int_value value -> int value
   | Lg_edn_backend.Json_float_value value -> Lg_edn_backend.Float value
   | Lg_edn_backend.Json_bool_value value -> Lg_edn_backend.Bool value
   | Lg_edn_backend.Json_keyword_value value ->
       Lg_edn_backend.Vector
-        [| Lg_edn_backend.Small_int 0; Lg_edn_backend.Small_int value |]
+        [| int 0; int value |]
   | Lg_edn_backend.Json_edn_value value ->
       Lg_edn_backend.Vector
         [| Lg_edn_backend.Small_int 1; Lg_edn_backend.String value |]

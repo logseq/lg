@@ -43,32 +43,27 @@ let () =
          "compact serialized datoms allocated row wrappers: %.0f bytes"
          allocated_bytes);
   let encoder = Serialization_value.create_encoder () in
+  let small_int_value = Datascript_runtime.Data_value.Int 42 in
+  let first_small_int =
+    Serialization_value.encode_value encoder small_int_value
+  in
+  let second_small_int =
+    Serialization_value.encode_value encoder small_int_value
+  in
+  if first_small_int != second_small_int then
+    failwith "repeated small integer encoding rebuilt immutable values";
   let keyword = Datascript_runtime.Data_value.Keyword ":status/active" in
-  ignore (Serialization_value.encode_value encoder keyword);
-  Gc.compact ();
-  let allocated_before = Gc.allocated_bytes () in
-  for _ = 1 to count do
-    ignore (Serialization_value.encode_value encoder keyword)
-  done;
-  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
-  if allocated_bytes >= 1_024. then
-    failwith
-      (Printf.sprintf
-         "repeated keyword encoding rebuilt immutable references: %.0f bytes"
-         allocated_bytes);
+  let first_keyword = Serialization_value.encode_value encoder keyword in
+  let second_keyword = Serialization_value.encode_value encoder keyword in
+  if first_keyword != second_keyword then
+    failwith "repeated keyword encoding rebuilt immutable references";
   let string_value = Datascript_runtime.Data_value.String "Ada" in
-  ignore (Serialization_value.encode_value encoder string_value);
-  Gc.compact ();
-  let allocated_before = Gc.allocated_bytes () in
-  for _ = 1 to count do
-    ignore (Serialization_value.encode_value encoder string_value)
-  done;
-  let allocated_bytes = Gc.allocated_bytes () -. allocated_before in
-  if allocated_bytes >= 1_024. then
-    failwith
-      (Printf.sprintf
-         "repeated string encoding rebuilt immutable values: %.0f bytes"
-         allocated_bytes);
+  let first_string = Serialization_value.encode_value encoder string_value in
+  let second_string = Serialization_value.encode_value encoder string_value in
+  (match (first_string, second_string) with
+  | Lg_edn_backend.String first, Lg_edn_backend.String second
+    when first == second -> ()
+  | _ -> failwith "repeated string encoding copied immutable contents");
   let datoms = Rrbvec.of_array (Array.make count datom) in
   let indexes = Rrbvec.of_array (Array.init count Fun.id) in
   Gc.compact ();

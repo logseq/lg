@@ -596,6 +596,28 @@ let add_json_int writer value =
     add_json_token writer (Int64.to_string value)
   else add_json_string writer (Int64.to_string value)
 
+let common_small_int_tokens = Array.init 128 string_of_int
+let common_int4_attribute_tokens =
+  Array.init 128 (fun value -> "," ^ string_of_int value ^ ",")
+
+let common_int4_tx_tokens =
+  Array.init 128 (fun value -> "," ^ string_of_int value ^ "]")
+
+let small_int_token value =
+  if value >= 0 && value < Array.length common_small_int_tokens then
+    Array.unsafe_get common_small_int_tokens value
+  else string_of_int value
+
+let int4_attribute_token value =
+  if value >= 0 && value < Array.length common_int4_attribute_tokens then
+    Array.unsafe_get common_int4_attribute_tokens value
+  else "," ^ string_of_int value ^ ","
+
+let int4_tx_token value =
+  if value >= 0 && value < Array.length common_int4_tx_tokens then
+    Array.unsafe_get common_int4_tx_tokens value
+  else "," ^ string_of_int value ^ "]"
+
 let json_int_token value =
   let min_safe_json_integer = -9007199254740991L in
   let max_safe_json_integer = 9007199254740991L in
@@ -620,7 +642,7 @@ let rec compact_json_value writer = function
       Some (writer_json_string_token writer value)
   | Keyword value ->
       Some (writer_json_string_token writer (":" ^ value))
-  | Small_int value -> Some (string_of_int value)
+  | Small_int value -> Some (small_int_token value)
   | Int value -> Some (json_int_token value)
   | Float value -> Some (json_float_token value)
   | Vector values when Array.length values = 1 ->
@@ -657,7 +679,7 @@ let rec add_json_value writer = function
       add_json_string writer value
   | Char value -> add_json_char writer value
   | Keyword value -> add_json_string writer (":" ^ value)
-  | Small_int value -> add_json_token writer (string_of_int value)
+  | Small_int value -> add_json_token writer (small_int_token value)
   | Int value -> add_json_int writer value
   | Float value -> add_json_float writer value
   | List values | Set values ->
@@ -678,8 +700,8 @@ let rec add_json_value writer = function
             | Some third ->
               let prefix = if index > 0 then ",[" else "[" in
               add_json_token writer
-                (prefix ^ string_of_int first ^ "," ^ string_of_int second
-               ^ "," ^ third ^ "," ^ string_of_int fourth ^ "]")
+                (prefix ^ small_int_token first ^ "," ^ small_int_token second
+               ^ "," ^ third ^ "," ^ small_int_token fourth ^ "]")
             | None ->
               if index > 0 then add_json_token writer ",";
               add_json_value writer value)
@@ -692,17 +714,17 @@ let rec add_json_value writer = function
       (match compact_json_value writer third with
       | Some third ->
           add_json_token writer
-            ("[" ^ string_of_int first ^ "," ^ string_of_int second ^ ","
-           ^ third ^ "," ^ string_of_int fourth ^ "]")
+            ("[" ^ small_int_token first ^ "," ^ small_int_token second ^ ","
+           ^ third ^ "," ^ small_int_token fourth ^ "]")
       | None ->
           add_json_token writer "[";
-          add_json_token writer (string_of_int first);
+          add_json_token writer (small_int_token first);
           add_json_token writer ",";
-          add_json_token writer (string_of_int second);
+          add_json_token writer (small_int_token second);
           add_json_token writer ",";
           add_json_value writer third;
           add_json_token writer ",";
-          add_json_token writer (string_of_int fourth);
+          add_json_token writer (small_int_token fourth);
           add_json_token writer "]")
   | Int4_array (entities, attributes, values, txs) ->
       add_json_int4_array writer entities attributes values txs
@@ -728,30 +750,58 @@ let rec add_json_value writer = function
 and add_json_int4_array writer entities attributes values txs =
   add_json_token writer "[";
   let length = int4_array_length entities attributes values txs in
+  let row_tokens = Array.make 4_096 "" in
+  let row_token_count = ref 0 in
+  let flush_rows () =
+    let count = !row_token_count in
+    if count > 0 then (
+      let rows =
+        if count = Array.length row_tokens then row_tokens
+        else Js.Array.slice ~start:0 ~end_:count row_tokens
+      in
+      add_json_token writer (Js.Array.join ~sep:"" rows);
+      row_token_count := 0)
+  in
+  let previous_entity = ref 0 in
+  let previous_entity_prefix = ref "" in
+  let has_previous_entity = ref false in
   for index = 0 to length - 1 do
-    add_json_int4_array_row writer entities attributes txs index
-      (Array.unsafe_get values index)
+    let entity = Array.unsafe_get entities index in
+    let entity_prefix =
+      if !has_previous_entity && entity = !previous_entity then
+        !previous_entity_prefix
+      else
+        let entity_token = small_int_token entity in
+        let continued_prefix = ",[" ^ entity_token in
+        let entity_prefix =
+          if index > 0 then continued_prefix else "[" ^ entity_token
+        in
+        has_previous_entity := true;
+        previous_entity := entity;
+        previous_entity_prefix := continued_prefix;
+        entity_prefix
+    in
+    let value = Array.unsafe_get values index in
+    match compact_json_value writer value with
+    | Some value ->
+        Array.unsafe_set row_tokens !row_token_count
+          (entity_prefix
+         ^ int4_attribute_token (Array.unsafe_get attributes index)
+         ^ value ^ int4_tx_token (Array.unsafe_get txs index));
+        row_token_count := !row_token_count + 1;
+        if !row_token_count = Array.length row_tokens then flush_rows ()
+    | None ->
+        flush_rows ();
+        if index > 0 then add_json_token writer ",";
+        add_json_value writer
+          (Int4_vector
+             ( entity,
+               Array.unsafe_get attributes index,
+               value,
+               Array.unsafe_get txs index ))
   done;
+  flush_rows ();
   add_json_token writer "]"
-
-and add_json_int4_array_row writer entities attributes txs index value =
-  let prefix = if index > 0 then ",[" else "[" in
-  match compact_json_value writer value with
-  | Some value ->
-      add_json_token writer
-        (prefix ^ string_of_int (Array.unsafe_get entities index) ^ ","
-       ^ string_of_int (Array.unsafe_get attributes index)
-       ^ "," ^ value ^ ","
-       ^ string_of_int (Array.unsafe_get txs index)
-       ^ "]")
-  | None ->
-      if index > 0 then add_json_token writer ",";
-      add_json_value writer
-        (Int4_vector
-           ( Array.unsafe_get entities index,
-             Array.unsafe_get attributes index,
-             value,
-             Array.unsafe_get txs index ))
 
 and add_json_int_vector writer values =
   add_json_token writer "[";

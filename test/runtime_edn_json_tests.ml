@@ -54,6 +54,24 @@ let () =
   assert_json
     (Printf.sprintf "[%d,%d]" min_int max_int)
     (Edn.Int_vector [| min_int; max_int |]);
+  assert_json "[]"
+    (Edn.Int4_array ([||], [||], [||], [||]));
+  assert_json {|[[1,2,3,4],[5,6,"value",7]]|}
+    (Edn.Int4_array
+       ( [| 1; 5 |],
+         [| 2; 6 |],
+         [| Edn.Small_int 3; Edn.String "value" |],
+         [| 4; 7 |] ));
+  assert_json {|[[-1,128,127,10000]]|}
+    (Edn.Int4_array
+       ([| -1 |], [| 128 |], [| Edn.Small_int 127 |], [| 10_000 |]));
+  assert_json
+    {|[[1,2,{"tag":"tag","value":"value"},3],[1,5,null,6]]|}
+    (Edn.Int4_array
+       ( [| 1; 1 |],
+         [| 2; 5 |],
+         [| Edn.Tagged ("tag", Edn.String "value"); Edn.Nil |],
+         [| 3; 6 |] ));
   assert_invalid_argument (fun () ->
       Runtime_edn.write_json_string
         (Edn.Int4_array

@@ -583,3 +583,37 @@ slower than upstream. The last rebuilt full-scale median was approximately
 writer, native-map string interning, and alternate small-schema attribute
 indexing either regressed `freeze`, regressed `thaw`, or added complexity
 without a measured improvement and were removed.
+
+## Full serialization acceptance checkpoint (2026-08-03)
+
+The remaining Melange `freeze` regression was split into closed-value
+construction and JSON writing before changing the implementation. At 300,000
+people, isolated samples attributed roughly 330 ms to `serializable` and 439
+ms to JSON writing. The retained implementation makes four local changes:
+
+- immutable `Small_int` values from 0 through 127 are shared by the
+  serialization encoder;
+- the Melange JSON writer shares the corresponding integer text tokens;
+- compact `Int4_array` rows are joined through one reusable 4,096-row buffer;
+- repeated entity prefixes and the common `,attribute,` and `,tx]` fragments
+  are reused while preserving the generic mixed-value fallback.
+
+The source representation remains the closed `Int4_array` sum case. No
+`Runtime_dynamic.t`, unsafe cast, source conversion escape hatch, or compiler
+special case was added. Exact JSON tests cover empty arrays, cached and
+uncached integers, repeated entities, mixed compact and generic values, and
+unequal column lengths.
+
+The final release-profile full-scale gate used three isolated processes per
+runtime and workload, 300,000 people, zero-duration timing windows, batch size
+1, and seed 42:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `freeze` | 680.800 | 514.552 | -24.4% | 612.537 | -10.0% |
+| `thaw` | 1134.900 | 1041.185 | -8.3% | 997.071 | -12.1% |
+
+All four full-scale serialization comparisons now pass. A chunk size of
+8,192 regressed the focused JSON measurement, and constructing temporary JS
+JSON row arrays nearly doubled it; both experiments were removed before the
+final gate.
