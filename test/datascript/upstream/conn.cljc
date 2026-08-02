@@ -154,7 +154,7 @@
    (swap-db! connection update-database)))
 
 (defn with-closed
-  ([^datascript.db/DB database tx-data]
+  ([database tx-data]
    (with-closed database tx-data None))
   ([^datascript.db/DB database tx-data tx-meta]
    {:pre [(db/db? database)]}

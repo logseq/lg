@@ -1,7 +1,7 @@
 {:counts
- {:inline-total 120
+ {:inline-total 119
   :declaration 91
-  :algorithm-local 29}
+  :algorithm-local 28}
 
  :policy
  {:dynamic-introduced false
@@ -27,7 +27,7 @@
               :protocol-refinement-nominal-receiver
               :nominal-filter-return]}
   {:category :multi-arity-boundary-evidence
-   :count 4
+   :count 3
    :includes [:multi-arity-transaction-boundary]}
   {:category :opaque-host-boundary-evidence
    :count 5
@@ -45,6 +45,9 @@
   {:category :closed-reducer-capture-evidence
    :count 1
    :method "Keep closed lexical captures and fresh map key/value metavariables through empty-map reducer inference."}
+  {:category :multi-arity-wrapper-evidence
+   :count 1
+   :method "Let the two-argument wrapper inherit its nominal database parameter from the typed three-argument implementation arity."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -117,8 +120,8 @@
 
   {:category :multi-arity-transaction-boundary
    :file "test/datascript/upstream/conn.cljc"
-   :count 4
-   :symbols {with-closed [database-arity-2 database-arity-3]
+   :count 3
+   :symbols {with-closed [database-arity-3]
              -transact! [tx-meta]
              reset-conn! [tx-meta]}
    :reason "Multi-arity defaults do not retain nominal DB, optional keyword-map, and DataValue contracts through transaction report construction."}
