@@ -1,17 +1,48 @@
 {:counts
- {:inline-total 122
+ {:inline-total 121
   :declaration 91
-  :algorithm-local 31}
+  :algorithm-local 30}
 
  :policy
  {:dynamic-introduced false
   :compiler-special-cases-introduced false
-  :replacement "Prefer a named closed function signature when it can replace an algorithm-local hint without changing upstream control flow."}
+ :replacement "Prefer a named closed function signature when it can replace an algorithm-local hint without changing upstream control flow."}
+
+ :remaining-root-causes
+ [{:category :recursive-component-evidence
+   :count 14
+   :includes [:recursive-forward-interface
+              :recursive-printing-return
+              :forward-option-element]}
+  {:category :bidirectional-empty-container-evidence
+   :count 2
+   :includes [:empty-container-higher-order-backpropagation
+              :parser-multi-arity-recursion]}
+  {:category :closed-collection-kind-evidence
+   :count 2
+   :includes [:unknown-conj-collection-kind
+              :macro-field-projection]}
+  {:category :nominal-witness-preservation
+   :count 3
+   :includes [:parser-nominal-record-substitution
+              :protocol-refinement-nominal-receiver
+              :nominal-filter-return]}
+  {:category :multi-arity-boundary-evidence
+   :count 4
+   :includes [:multi-arity-transaction-boundary]}
+  {:category :opaque-host-boundary-evidence
+   :count 5
+   :includes [:storage-callback-interface
+              :opaque-host-alias-return
+              :backend-specific-host-string-interface]}]
 
  :removed-this-pass
  [{:category :homogeneous-variadic-prefix
    :count 4
    :method "Pass a homogeneous cons chain to zip-many instead of constructing a partially typed vector."}
+  {:category :variadic-rest-sequence-semantics
+   :count 1
+   :method "Initialize an unannotated variadic rest parameter as a static sequence metavariable before body inference."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -63,12 +94,6 @@
    :count 1
    :symbols {add-free-pattern-variable [variables]}
    :reason "Inlining the helper can retain set evidence but duplicates control flow; the single set parameter contract is simpler."}
-
-  {:category :variadic-multi-arity-collection
-   :file "test/datascript/lg/query_v3.cljc"
-   :count 1
-   :symbols {zip [rest]}
-   :reason "The variadic implementation slot does not infer that rest is a list. The four fixed vector hints were removed by passing a homogeneous cons chain to zip-many."}
 
   {:category :parser-multi-arity-recursion
    :file "test/datascript/upstream/parser.cljc"

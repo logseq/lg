@@ -89,7 +89,7 @@
         (vec (cons a (cons b rest))))))}
   ([a b]
    (zip-two a b))
-  ([a b & ^:list<vector<Datascript_runtime.Data_value.t>> rest]
+  ([a b & rest]
    (zip-many (vec (cons a (cons b rest))))))
 
 (signature datascript.query-v3/has? [value]

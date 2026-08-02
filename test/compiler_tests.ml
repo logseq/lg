@@ -14383,6 +14383,23 @@ let test_variadic_defn_destructures_rest_arguments () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_variadic_rest_is_a_static_sequence_without_a_hint () =
+  let source =
+    {|
+(defn prepend-collections
+  [^:vector<int> left ^:vector<int> right & rest]
+  (vec (cons left (cons right rest))))
+(println (count (prepend-collections [1] [2] [3] [4])))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "an unannotated variadic rest parameter must remain static";
+  assert_ocaml_runs "variadic_rest_is_a_static_sequence_without_a_hint" "4\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_multi_arity_defn_supports_cross_arity_calls_and_recur () =
   let source =
     {|
@@ -34304,6 +34321,8 @@ let tests =
       test_multi_arity_defn_dispatches_variadic_fallback );
     ( "variadic defn destructures rest arguments",
       test_variadic_defn_destructures_rest_arguments );
+    ( "variadic rest is a static sequence without a hint",
+      test_variadic_rest_is_a_static_sequence_without_a_hint );
     ( "multi-arity defn supports cross-arity calls and recur",
       test_multi_arity_defn_supports_cross_arity_calls_and_recur );
     ( "multi-arity defn accepts nil for destructured options",

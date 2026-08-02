@@ -606,6 +606,14 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                   | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
                   | _ -> Type_solver.fresh ())
             in
+            let param_ty =
+              if Some index = variadic_rest_index then
+                match param_ty with
+                | TMeta _ -> TSeq param_ty
+                | TUnknown -> TSeq (Type_solver.fresh ())
+                | ty -> ty
+              else param_ty
+            in
                let destructured =
                  if spec.destructured then
                    Destructure.pattern_names spec.pattern
