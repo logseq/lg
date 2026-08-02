@@ -1,7 +1,7 @@
 {:counts
- {:inline-total 118
+ {:inline-total 117
   :declaration 91
-  :algorithm-local 27}
+  :algorithm-local 26}
 
  :policy
  {:dynamic-introduced false
@@ -30,10 +30,9 @@
    :count 3
    :includes [:multi-arity-transaction-boundary]}
   {:category :opaque-host-boundary-evidence
-   :count 4
+   :count 3
    :includes [:storage-callback-interface
-              :opaque-host-alias-return
-              :backend-specific-host-string-interface]}]
+              :opaque-host-alias-return]}]
 
  :removed-this-pass
  [{:category :homogeneous-variadic-prefix
@@ -51,6 +50,9 @@
   {:category :opaque-return-wrapper-evidence
    :count 1
    :method "Infer the public serialization wrapper return from the explicitly typed opaque implementation boundary."}
+  {:category :backend-string-usage-evidence
+   :count 1
+   :method "Infer the exported UUID string parameter from its concrete Native uuid and Melange substring uses."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -153,8 +155,4 @@
    :symbols {filter [return]}
    :reason "The nominal FilteredDB return is required for protocol hashing; a database-view signature loses the -filter-view receiver witness."}
 
-  {:category :backend-specific-host-string-interface
-   :file "test/datascript/lg/js.cljc"
-   :count 1
-   :symbols {squuid_time_millis [uuid-string]}
-   :reason "Removing this hint requires an artificial empty String concatenation on Native, while Native and Melange intentionally infer different numeric return representations."}]}
+ ]}

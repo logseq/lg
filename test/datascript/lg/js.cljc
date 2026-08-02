@@ -693,7 +693,7 @@
   (str (d/squuid)))
 
 (defn ^:export squuid_time_millis
-  [^:string uuid-string]
+  [uuid-string]
   #?(:native
      (d/squuid-time-millis (uuid uuid-string))
      :melange
