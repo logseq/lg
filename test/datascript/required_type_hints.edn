@@ -1,7 +1,7 @@
 {:counts
- {:inline-total 117
+ {:inline-total 115
   :declaration 91
-  :algorithm-local 26}
+  :algorithm-local 24}
 
  :policy
  {:dynamic-introduced false
@@ -30,9 +30,8 @@
    :count 3
    :includes [:multi-arity-transaction-boundary]}
   {:category :opaque-host-boundary-evidence
-   :count 3
-   :includes [:storage-callback-interface
-              :opaque-host-alias-return]}]
+   :count 1
+   :includes [:opaque-host-alias-return]}]
 
  :removed-this-pass
  [{:category :homogeneous-variadic-prefix
@@ -53,6 +52,9 @@
   {:category :backend-string-usage-evidence
    :count 1
    :method "Infer the exported UUID string parameter from its concrete Native uuid and Melange substring uses."}
+  {:category :ffi-callback-argument-evidence
+   :count 2
+   :method "Infer storage callback interfaces from the closed Storage_backend.create callee signature."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -130,12 +132,6 @@
              -transact! [tx-meta]
              reset-conn! [tx-meta]}
    :reason "Multi-arity defaults do not retain nominal DB, optional keyword-map, and DataValue contracts through transaction report construction."}
-
-  {:category :storage-callback-interface
-   :file "test/datascript/upstream/storage.cljc"
-   :count 2
-   :symbols {make-backend [restore-fn list-addresses-fn]}
-   :reason "Opaque storage backend construction needs the two callback interfaces to remain closed."}
 
   {:category :macro-field-projection
    :file "test/datascript/upstream/storage.cljc"

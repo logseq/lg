@@ -85,8 +85,8 @@
 
 (defn make-backend
   [store-fn
-   ^:fn<int;option<stored_value>> restore-fn
-   ^:fn<unit;vector<int>> list-addresses-fn
+   restore-fn
+   list-addresses-fn
    delete-fn]
   (Datascript_runtime.Storage_backend.create
    store-fn restore-fn list-addresses-fn delete-fn))
