@@ -3036,6 +3036,44 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     in
     let inferred_binding_type env name value_form rest =
       let names = name :: remaining_binding_names [] rest in
+      let forms = remaining_value_forms [] rest @ body_forms in
+      let local_names = List.sort_uniq String.compare names in
+      let rec nested_function_parameters = function
+        | FList
+            (FSymbol "fn" :: FVector parameters :: body_forms)
+        | FList
+            (FSymbol "fn" :: FSymbol _ :: FVector parameters :: body_forms) ->
+            List.concat_map Destructure.pattern_names parameters
+            @ List.concat_map nested_function_parameters body_forms
+        | FList nested | FVector nested ->
+            List.concat_map nested_function_parameters nested
+        | FMap pairs ->
+            List.concat_map
+              (fun (key, value) ->
+                nested_function_parameters key
+                @ nested_function_parameters value)
+              pairs
+        | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
+        | FInt _ | FFloat _ | FChar _ | FBool _ ->
+            []
+      in
+      let nested_parameters = nested_function_parameters value_form in
+      let captured_params =
+        Dependency_graph.symbols value_form
+        |> List.sort_uniq String.compare
+        |> List.filter_map (fun candidate ->
+               if
+                 List.mem candidate local_names
+                 || List.mem candidate nested_parameters
+                 || (String.length candidate > 0
+                    && Char.uppercase_ascii candidate.[0] = candidate.[0]
+                    && Char.lowercase_ascii candidate.[0] <> candidate.[0])
+               then None
+               else
+                 match Resolver.lookup_binding scope env candidate with
+                 | Ok (binding : Types.binding) -> Some (candidate, binding.ty)
+                 | Error _ -> None)
+      in
       let initial_ty =
         match value_form with
         | FList
@@ -3048,21 +3086,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             let variable = Type_solver.fresh () in
             (Type_solver.generalize (TFn ([ variable ], variable))).body
         | _ -> (
-            match Type_inference.inferred_form_type [] value_form with
+            match
+              Type_inference.inferred_form_type captured_params value_form
+            with
             | TUnknown ->
                 Type_inference.inferred_call_return_type
                   ~lookup_function_ty:
                     (Expression_support.lookup_function_ty scope env)
-                  [] value_form
+                  captured_params value_form
             | ty -> ty)
       in
       let params =
-        names
-        |> List.sort_uniq String.compare
+        local_names
         |> List.map (fun candidate ->
                (candidate, if String.equal candidate name then initial_ty else TUnknown))
+        |> fun local_params -> local_params @ captured_params
       in
-      let forms = remaining_value_forms [] rest @ body_forms in
       let lookup_function_ty = Expression_support.lookup_function_ty scope env in
       let lookup_protocol_constraint = Protocol.constraint_type scope env in
       let lookup_dynamic_key_record_type =

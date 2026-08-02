@@ -2554,6 +2554,31 @@ let test_nil_and_empty_maps_remain_static () =
     failwith "nil and empty maps must not use Runtime_dynamic";
   assert_ocaml_runs "nil_and_empty_maps_remain_static" "0:true:42\n" ocaml
 
+let test_empty_map_reduce_infers_closed_key_and_value_types () =
+  let source =
+    {|
+(type-variant view
+  (View :int))
+(signature index-views :fn<view;map<string;view>>)
+(defn index-views [view]
+  (let [views
+        (reduce
+          (fn [views index]
+            (assoc views (str index) view))
+          {}
+          [0 3])]
+    (assoc views "final" view)))
+(println (count (index-views (View 1))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "an empty map reducer must infer closed key and value types";
+  assert_ocaml_runs "empty_map_reduce_infers_closed_key_and_value_types" "3\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_annotated_empty_maps_use_declared_key_and_value_types () =
   let source =
     {|
@@ -33526,6 +33551,8 @@ let tests =
     ( "nil collection elements use options not dynamic",
       test_nil_collection_elements_use_options_not_dynamic );
     ("nil and empty maps remain static", test_nil_and_empty_maps_remain_static);
+    ( "empty map reduce infers closed key and value types",
+      test_empty_map_reduce_infers_closed_key_and_value_types );
     ( "annotated empty maps use declared key and value types",
       test_annotated_empty_maps_use_declared_key_and_value_types );
     ( "annotated empty vectors preserve reduce accumulator types",

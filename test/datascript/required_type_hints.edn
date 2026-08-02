@@ -1,7 +1,7 @@
 {:counts
- {:inline-total 121
+ {:inline-total 120
   :declaration 91
-  :algorithm-local 30}
+  :algorithm-local 29}
 
  :policy
  {:dynamic-introduced false
@@ -15,9 +15,8 @@
               :recursive-printing-return
               :forward-option-element]}
   {:category :bidirectional-empty-container-evidence
-   :count 2
-   :includes [:empty-container-higher-order-backpropagation
-              :parser-multi-arity-recursion]}
+   :count 1
+   :includes [:parser-multi-arity-recursion]}
   {:category :closed-collection-kind-evidence
    :count 2
    :includes [:unknown-conj-collection-kind
@@ -43,6 +42,9 @@
   {:category :variadic-rest-sequence-semantics
    :count 1
    :method "Initialize an unannotated variadic rest parameter as a static sequence metavariable before body inference."}
+  {:category :closed-reducer-capture-evidence
+   :count 1
+   :method "Keep closed lexical captures and fresh map key/value metavariables through empty-map reducer inference."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -76,12 +78,6 @@
              resolve-rule [rule-path arguments]
              resolve-static-clauses [clauses]}
    :reason "These mutually recursive and forward-declared query functions otherwise create less-general collection slots, lose closed parser element types, or emit an unbound recursive return. Ordinary sidecar signatures were tested and do not replace the recursive implementation-slot constraints."}
-
-  {:category :empty-container-higher-order-backpropagation
-   :file "test/datascript/lg/query_types.cljc"
-   :count 1
-   :symbols {pattern-lookup-databases [databases]}
-   :reason "The empty map initializer does not propagate database-view values backward into the reduce callback; removing the hint crosses a forbidden host-value dynamic boundary."}
 
   {:category :recursive-printing-return
    :file "test/datascript/lg/query.cljc"

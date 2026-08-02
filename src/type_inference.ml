@@ -1253,6 +1253,10 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList [ FSymbol "reduce"; _reducer; FMap []; _collection ] ->
+      Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
+  | FList [ FSymbol "reduce"; _reducer; init; _collection ] ->
+      inferred_form_type params init
   | FList (callee :: arguments) ->
       let actual_tys = List.map (inferred_form_type params) arguments in
       let instantiate parameter_tys return_ty =
@@ -2655,7 +2659,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             string_assoc_opt item inferred |> Option.value ~default:TUnknown
         | Error _ -> TUnknown)
     | _ -> TUnknown
-  and inferred_reducer_types accumulator_ty = function
+  and inferred_reducer_types outer_params accumulator_ty = function
     | FSymbol name -> (
         match lookup_function_ty name with
         | Ok (TFn ([ accumulator_ty; item_ty ], _)) ->
@@ -2665,6 +2669,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (FSymbol "fn"
         :: FVector [ FSymbol accumulator; FSymbol item ]
         :: body_forms) -> (
+        let reducer_params =
+          [ (accumulator, accumulator_ty); (item, TUnknown) ]
+          @ List.filter
+              (fun (name, ty) ->
+                name <> accumulator && name <> item
+                && not (Type_solver.is_open ty)
+                && not (Types.is_dynamic ty))
+              outer_params
+        in
         let rec reducer_returned_vector_type params = function
           | FList
               (FSymbol ("let" | "let*") :: FVector bindings :: body_forms) ->
@@ -2684,9 +2697,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | form -> returned_vector_type params form
         in
         match
-          infer_all
-            [ (accumulator, accumulator_ty); (item, TUnknown) ]
-            body_forms
+          infer_all reducer_params body_forms
          with
         | Ok inferred ->
             let inferred_accumulator_ty =
@@ -2823,12 +2834,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             match value with
             | FList [ FSymbol "reduce"; reducer; init; _collection ] ->
                 let accumulator_ty =
-                  returned_vector_type scope_params init
-                  |> Option.value
-                       ~default:(inferred_form_type scope_params init)
+                  match init with
+                  | FMap [] ->
+                      Types.dynamic_map (Type_solver.fresh ())
+                        (Type_solver.fresh ())
+                  | _ ->
+                      returned_vector_type scope_params init
+                      |> Option.value
+                           ~default:(inferred_form_type scope_params init)
                 in
                 let inferred_accumulator_ty, _ =
-                  inferred_reducer_types accumulator_ty reducer
+                  inferred_reducer_types scope_params accumulator_ty reducer
                 in
                 refine_type accumulator_ty inferred_accumulator_ty
             | _ -> inferred_form_type scope_params value
@@ -3179,7 +3195,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _, _, Some _ ->
               let concrete_or_dynamic form =
                 match inferred_form_type params form with
-                | TUnknown -> Types.dynamic_constraint TUnknown
+                | TUnknown -> Type_solver.fresh ()
                 | ((TMeta _ | TVar _) as type_parameter) -> type_parameter
                 | ty -> ty
               in
@@ -4955,7 +4971,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           match declared_accumulator_ty with
           | TUnknown | TMeta _ | TVar _ -> (
               match init with
-              | FList [ FSymbol "hash-map" ] ->
+              | FMap [] | FList [ FSymbol "hash-map" ] ->
                   Types.dynamic_map (Type_solver.fresh ())
                     (Type_solver.fresh ())
               | _ ->
@@ -4964,7 +4980,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | ty -> ty
         in
         let inferred_accumulator_ty, inferred_element_ty =
-          inferred_reducer_types accumulator_ty reducer
+          inferred_reducer_types params accumulator_ty reducer
         in
         let accumulator_ty =
           refine_type accumulator_ty inferred_accumulator_ty

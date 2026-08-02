@@ -869,7 +869,7 @@
 (defn pattern-lookup-databases [database pattern attr]
   (let [databases
         (reduce
-         (fn [^:map<string;datascript.db/database-view> databases index]
+         (fn [databases index]
            (if-some [element (pattern-element-at pattern index)]
              (if-some [variable (pattern-variable-name element)]
                (assoc databases variable database)
