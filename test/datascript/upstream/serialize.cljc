@@ -228,7 +228,7 @@
        (:branching-factor settings)
        (serialized-ref-type (:ref-type settings))))))
 
-(defn ^serialized-value serializable
+(defn serializable
   ([db]
    (serializable-impl db DefaultCodec DefaultKeywordFreezer))
   ([db {:keys [freeze-fn freeze-kw]}]

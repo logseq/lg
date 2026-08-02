@@ -1,7 +1,7 @@
 {:counts
- {:inline-total 119
+ {:inline-total 118
   :declaration 91
-  :algorithm-local 28}
+  :algorithm-local 27}
 
  :policy
  {:dynamic-introduced false
@@ -30,7 +30,7 @@
    :count 3
    :includes [:multi-arity-transaction-boundary]}
   {:category :opaque-host-boundary-evidence
-   :count 5
+   :count 4
    :includes [:storage-callback-interface
               :opaque-host-alias-return
               :backend-specific-host-string-interface]}]
@@ -48,6 +48,9 @@
   {:category :multi-arity-wrapper-evidence
    :count 1
    :method "Let the two-argument wrapper inherit its nominal database parameter from the typed three-argument implementation arity."}
+  {:category :opaque-return-wrapper-evidence
+   :count 1
+   :method "Infer the public serialization wrapper return from the explicitly typed opaque implementation boundary."}
   {:category :closed-tuple-patterns
    :count 3
    :method "Destructure DataValue map entries with tuple patterns instead of tuple-get callbacks."}
@@ -140,10 +143,9 @@
 
   {:category :opaque-host-alias-return
    :file "test/datascript/upstream/serialize.cljc"
-   :count 2
-   :symbols {serializable-impl [return]
-             serializable [return]}
-   :reason "LG cannot see that the opaque FFI Serialization_value.t alias equals Lg_edn_backend.t; without the returns, pr-str emits <value> instead of EDN."}
+   :count 1
+   :symbols {serializable-impl [return]}
+   :reason "LG cannot see that the opaque FFI Serialization_value.t alias equals Lg_edn_backend.t at the implementation boundary; the public wrapper now infers this return from serializable-impl."}
 
   {:category :nominal-filter-return
    :file "test/datascript/upstream/core.cljc"
