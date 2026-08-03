@@ -1226,6 +1226,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         Structural_map.extension_get target fields keyword
                       with
                       | Some result -> Ok result
+                      | None
+                        when match target.ty with
+                             | TNamed_record record -> not record.nominal
+                             | _ -> false ->
+                          Ok
+                            (typed_ir (TNullable TUnknown)
+                               (Semantic_ir.Constructor ("None", None)))
                       | None -> (
                           match target.ty with
                           | TNamed_record record -> (
