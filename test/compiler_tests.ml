@@ -27405,7 +27405,7 @@ let test_transaction_records_keep_concrete_collection_fields () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_cross_module_fnil_update_packs_nominal_vectors () =
+let test_cross_module_fnil_updates_closed_vector_maps () =
   let util_source =
     {|
 (ns test.util)
@@ -27416,48 +27416,45 @@ let test_cross_module_fnil_update_packs_nominal_vectors () =
     {|
 (ns test.db
   (:require [test.util :as util]))
-(defrecord DB [max-tx])
-(defrecord TxReport [^DB db-before ^DB db-after tx-data])
 (defprotocol IDatom
   (datom-value [this]))
 (deftype Datom [value]
   IDatom
   (datom-value [_] value))
-(defn ^Datom datom [value]
+(defn datom [value]
   (Datom. value))
-(defn maybe-datom [present? value]
-  (if present? (datom value) nil))
-(defn transact-report [report datom]
-  (let [_ (datom-value datom)]
-    (update report :tx-data conj datom)))
-(defn transact-add [report [_ present? old-value value :as entity]]
-  (let [new-datom (datom value)
-        old-datom ^Datom (maybe-datom present? old-value)]
-    (cond
-      (nil? old-datom)
-      (transact-report report new-datom)
-
-      (= (.-value ^Datom old-datom) value)
-      (update report :tx-redundant util/conjv new-datom)
-
-      :else
-      (-> report
-          (transact-report old-datom)
-          (transact-report new-datom)))))
-(def initial (TxReport. (DB. 1) (DB. 1) []))
-(def inserted (transact-add initial [:add false 0 2]))
-(def redundant (transact-add inserted [:add true 2 2]))
-(def repeated (transact-add redundant [:add true 2 2]))
-(def replaced (transact-add initial [:add true 1 2]))
+(def tx-data-key :tx-data)
+(def tx-redundant-key :tx-redundant)
+(def empty-datoms (pop [(datom 0)]))
+(def initial
+  (hash-map tx-data-key empty-datoms
+            tx-redundant-key empty-datoms))
+(def inserted (update initial :tx-data util/conjv (datom 2)))
+(def redundant
+  (update inserted :tx-redundant util/conjv (datom 2)))
+(def repeated
+  (update redundant :tx-redundant util/conjv (datom 2)))
+(def replaced
+  (-> initial
+      (update :tx-data util/conjv (datom 1))
+      (update :tx-data util/conjv (datom 2))))
 (println
-  (str (count (:tx-data initial)) ":"
-       (count (:tx-data inserted)) ":"
-       (count (:tx-data redundant)) ":"
-       (count (:tx-redundant redundant)) ":"
-       (count (:tx-redundant repeated)) ":"
-       (count (:tx-data replaced)) ":"
-       (instance? Datom (first (:tx-redundant repeated))) ":"
-       (instance? Datom (last (:tx-data replaced)))))
+  (str (count (get initial :tx-data empty-datoms)) ":"
+       (count (get inserted :tx-data empty-datoms)) ":"
+       (count (get redundant :tx-data empty-datoms)) ":"
+       (count (get redundant :tx-redundant empty-datoms)) ":"
+       (count (get repeated :tx-redundant empty-datoms)) ":"
+       (count (get replaced :tx-data empty-datoms)) ":"
+       (= 2
+          (datom-value
+            (get (get repeated :tx-redundant empty-datoms)
+                 0
+                 (Datom. -1)))) ":"
+       (= 2
+          (datom-value
+            (get (get replaced :tx-data empty-datoms)
+                 1
+                 (Datom. -1))))))
 |}
   in
   let compile target =
@@ -27471,7 +27468,7 @@ let test_cross_module_fnil_update_packs_nominal_vectors () =
     util_ocaml ^ "\n" ^ db_ocaml
   in
   let native_source = compile Lg.Target.Native in
-  assert_ocaml_runs "cross_module_fnil_update_packs_nominal_vectors"
+  assert_ocaml_runs "cross_module_fnil_updates_closed_vector_maps"
     "0:1:1:1:2:2:true:true\n" native_source;
   ignore (compile Lg.Target.Melange)
 
@@ -35524,8 +35521,8 @@ let tests =
       test_explicit_type_hints_narrow_nullable_field_receivers );
     ( "transaction records keep concrete collection fields",
       test_transaction_records_keep_concrete_collection_fields );
-    ( "cross module fnil update packs nominal vectors",
-      test_cross_module_fnil_update_packs_nominal_vectors );
+    ( "cross module fnil updates closed vector maps",
+      test_cross_module_fnil_updates_closed_vector_maps );
     ( "cross module fnil conj preserves vector element type",
       test_cross_module_fnil_conj_preserves_vector_element_type );
     ( "cross module seqable callback preserves vector element type",
