@@ -4148,7 +4148,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               Types.nil_predicate_constraint value_ty
           | ty -> ty
         in
-        infer_expected expected_ty params value
+        (match (value, inferred_ty) with
+        | ( FSymbol name,
+            ((TNullable _ | TOcaml_app ("option", [ _ ])) as ty) ) ->
+            Ok (replace_param name ty params)
+        | FSymbol name, ty
+          when (match ty with
+               | TUnknown | TMeta _ | TVar _ -> false
+               | _ -> true) ->
+            Ok (replace_param name (TNullable ty) params)
+        | _ -> infer_expected expected_ty params value)
     | FList [ FSymbol "count"; collection ] -> (
         match collection with
         | FSymbol name -> constrain_seqable TUnknown params name
