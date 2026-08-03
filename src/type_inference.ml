@@ -1092,6 +1092,11 @@ let rec inferred_form_type params = function
     when String.equal operation "Array.length"
          || has_source_name operation "alength" ->
       TInt
+  | FList [ FSymbol operation; FSymbol array ]
+    when has_source_name operation "aclone" -> (
+      match string_assoc_opt array params with
+      | Some (TArray _ as ty) | Some (TOcaml_app ("array", [ _ ]) as ty) -> ty
+      | Some _ | None -> TArray TUnknown)
   | FList (FSymbol operation :: _)
     when has_source_name operation "array-binary-search-left"
          || has_source_name operation "array-binary-search-right" ->
@@ -4425,7 +4430,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | None -> infer_map ())
     | FList [ FSymbol operation; FSymbol array ]
       when String.equal operation "Array.length"
-           || has_source_name operation "alength" ->
+           || has_source_name operation "alength"
+           || has_source_name operation "aclone" ->
         let element_ty =
           match string_assoc_opt array params with
           | Some (TArray element_ty | TOcaml_app ("array", [ element_ty ])) ->
