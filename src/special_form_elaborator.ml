@@ -630,7 +630,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     when not
                            (List.for_all
                               (fun expression ->
-                                branch_types_compatible element_ty expression.ty)
+                                Types.equal element_ty expression.ty
+                                ||
+                                match (element_ty, expression.ty) with
+                                | TNullable _, TNil -> true
+                                | TNullable inner, TNullable actual
+                                | TNullable inner, actual ->
+                                    Types.assignable ~policy:Host_boundary
+                                      ~expected:inner ~actual
+                                | TVector _, TVector _
+                                  when Type_solver.is_open element_ty
+                                       || Type_solver.is_open expression.ty ->
+                                    true
+                                | _ -> false)
                               expressions) ->
                       heterogeneous_error ()
                   | Some element_ty ->

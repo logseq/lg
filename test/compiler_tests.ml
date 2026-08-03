@@ -25862,9 +25862,13 @@ let test_protocol_witnesses_are_shared_across_call_sites () =
   IReadBox
   (-read [box _fallback] (.-value box))
   (-values [box first-value second-value]
-    [(.-value box) first-value second-value]))
+    (+ (.-value box) first-value second-value)))
+(type-variant read-result
+  (ReadValue :int)
+  (ReadValues :int))
 (defn read-box [box]
-  [(-read box 0) (-values box 1 2)])
+  [(ReadValue (-read box 0))
+   (ReadValues (-values box 1 2))])
 (println (count [|}
     ^ calls
     ^ {|]))
@@ -29057,20 +29061,23 @@ let test_higher_order_mapv_wrappers_preserve_nominal_element_types () =
 let test_map_value_parameters_support_guarded_sequence_use () =
   let source =
     {|
+(type-variant entity-value
+  (ManyValues :vector<int>)
+  (OneValue :int))
 (defn sum-values [values]
   (reduce (fn [total value] (+ total value)) 0 values))
-(defn multi-value? [value]
-  (vector? value))
 (defn resolve-like [entity]
   (reduce-kv
     (fn [[total seen] _attribute value]
-      (if (multi-value? value)
-        [(+ total (sum-values value)) (inc seen)]
+      (match value
+        (ManyValues values)
+        [(+ total (sum-values values)) (inc seen)]
+        (OneValue _value)
         [total seen]))
     [0 0]
     entity))
-(println (resolve-like {:values [1 2]}))
-(println (resolve-like {:value 7}))
+(println (resolve-like {:values (ManyValues [1 2])}))
+(println (resolve-like {:value (OneValue 7)}))
 (println (resolve-like {}))
 |}
   in
@@ -29153,18 +29160,24 @@ let test_apply_accepts_concat_as_a_core_function () =
 let test_reduce_preserves_refined_vector_element_types () =
   let source =
     {|
-(defn collect-entry-values [entity]
-  (let [eid (:db/id entity)
-        entries
+(type-record Entry
+  (attribute :keyword)
+  (value :int))
+(defn collect-entry-values [source-entries]
+  (let [entries
         (apply concat
           (reduce
-            (fn [buckets [attribute value]]
+            (fn [buckets entry]
               (assoc buckets 0
-                (conj (nth buckets 0) [attribute value])))
+                (conj (nth buckets 0) entry)))
             [[] []]
-            entity))]
-    (mapv (fn [[_ value]] (+ value 0)) entries)))
-(println (collect-entry-values {:db/id 10 :a 1 :b 2}))
+            source-entries))]
+    (mapv (fn [entry] (+ (:value entry) 0)) entries)))
+(println
+  (collect-entry-values
+    [(->Entry :db/id 10)
+     (->Entry :a 1)
+     (->Entry :b 2)]))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
