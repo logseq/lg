@@ -84,6 +84,34 @@ let expect_error_contains expected = function
           (Printf.sprintf "expected error containing %S, got %S" expected
              err.message)
 
+let expect_error_location ?start_column ?end_column expected_line = function
+  | Ok _ -> failwith "expected compilation error, got successful result"
+  | Error ({ location = None; _ } : Lg.Compiler.compile_error) ->
+      failwith "expected compilation error with a source location"
+  | Error ({ location = Some location; _ } : Lg.Compiler.compile_error) ->
+      let start = location.loc_start in
+      let finish = location.loc_end in
+      let actual_start_column = start.pos_cnum - start.pos_bol in
+      let actual_end_column = finish.pos_cnum - finish.pos_bol in
+      if start.pos_lnum <> expected_line then
+        failwith
+          (Printf.sprintf "expected error on line %d, got line %d" expected_line
+             start.pos_lnum);
+      Option.iter
+        (fun expected ->
+          if actual_start_column <> expected then
+            failwith
+              (Printf.sprintf "expected start column %d, got %d" expected
+                 actual_start_column))
+        start_column;
+      Option.iter
+        (fun expected ->
+          if actual_end_column <> expected then
+            failwith
+              (Printf.sprintf "expected end column %d, got %d" expected
+                 actual_end_column))
+        end_column
+
 let typecheck_items source =
   match Lg.Lexer.tokenize source with
   | Error (err : Lg.Error.t) ->
@@ -11570,7 +11598,7 @@ let test_ocaml_errors_include_lg_source_locations () =
 
 (def answer (Stdlib.abs "bad"))
 |}
-  |> expect_error_contains "File \"<string>\", line 4"
+  |> expect_error_location 4
 
 let test_parsetree_items_preserve_top_level_source_locations () =
   let structure =
@@ -11613,7 +11641,7 @@ let test_incremental_parsetree_preserves_chunk_source_locations () =
 let test_ocaml_errors_include_nested_expression_locations () =
   Lg.Compiler.compile_string
     "(def answer\n  (if true\n    (Stdlib.abs\n      \"bad\")\n    0))"
-  |> expect_error_contains "line 4, characters 6-11"
+  |> expect_error_location ~start_column:6 ~end_column:11 4
 
 let test_parsetree_expressions_preserve_nested_source_locations () =
   let structure =

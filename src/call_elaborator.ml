@@ -9170,6 +9170,9 @@ let create ~compile_expr =
                                 expected_rest rest)
                         else
                           Error.error
+                            ?location:
+                              (semantic_expression_location
+                                 argument.semantic_expr)
                             ("OCaml argument type mismatch: expected "
                            ^ Types.source_name expected
                            ^ ", got " ^ Types.source_name argument.ty))
