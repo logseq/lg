@@ -4166,36 +4166,48 @@ let test_clojure_edn_read_string_behaves_on_native_and_melange () =
   let source =
     {|
 (ns app.edn
-  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+  (:require
+    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (println
-  (= [nil true false -12 3.5 :kw 'symbol "text"]
-     (edn/read-string "[nil true false -12 3.5 :kw symbol \"text\"]")))
+  (= "[nil true false -12 3.5 :kw symbol \"text\"]"
+     (runtime-edn/write-string
+       (edn/read-string "[nil true false -12 3.5 :kw symbol \"text\"]"))))
 (def nested
   (edn/read-string
     "{:rules [(rule [?e :name ?name])] :flags #{true nil}}"))
 (println
-  (and
-    (= [(list 'rule ['?e :name '?name])] (:rules nested))
-    (= 2 (count (:flags nested)))
-    (contains? (:flags nested) true)
-    (contains? (:flags nested) nil)))
+  (= "{:rules [(rule [?e :name ?name])] :flags #{true nil}}"
+     (runtime-edn/write-string nested)))
 (println
-  (= {:a 1 :b [2 3]}
-     (edn/read-string "{:a 1, ; ignored
-                       :b [2 3]}")))
-(println (= "hello world" (edn/read-string "\"hello world\"")))
-(println (= "line\nnext" (edn/read-string "\"line\\nnext\"")))
-(println (nil? (edn/read-string "")))
-(println (= 1 (edn/read-string "1 2")))
+  (= "{:a 1 :b [2 3]}"
+     (runtime-edn/write-string
+       (edn/read-string "{:a 1, ; ignored
+                         :b [2 3]}"))))
+(defn read-text [source]
+  (match (edn/read-string source)
+    (Lg_edn_backend/String value) value
+    _ ""))
+(defn read-small-int [source]
+  (match (edn/read-string source)
+    (Lg_edn_backend/Small_int value) value
+    _ 0))
+(defn read-nil? [source]
+  (match (edn/read-string source)
+    Lg_edn_backend/Nil true
+    _ false))
+(println (= "hello world" (read-text "\"hello world\"")))
+(println (= "line\nnext" (read-text "\"line\\nnext\"")))
+(println (read-nil? ""))
+(println (= 1 (read-small-int "1 2")))
 (def schema
   {:avatar {:db/valueType :db.type/ref
             :db/isComponent true}})
 (def restored-schema (edn/read-string (pr-str schema)))
 (println
-  (and
-    (= :db.type/ref (get-in restored-schema [:avatar :db/valueType]))
-    (= true (get-in restored-schema [:avatar :db/isComponent]))))
+  (= "{:avatar {:db/valueType :db.type/ref :db/isComponent true}}"
+     (runtime-edn/write-string restored-schema)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
