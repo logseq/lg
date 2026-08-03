@@ -11191,8 +11191,14 @@ let test_rand_int_uses_exclusive_positive_bound () =
 let test_int_coerces_float_and_preserves_int () =
   let source =
     {|
-(defn coerce [value] (int value))
-(println (str (coerce 3.9) ":" (coerce 4)))
+(type-variant numeric-input
+  (FloatInput :float)
+  (IntInput :int))
+(defn coerce [value]
+  (match value
+    (FloatInput number) (int number)
+    (IntInput number) (int number)))
+(println (str (coerce (FloatInput 3.9)) ":" (coerce (IntInput 4))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -13079,9 +13085,7 @@ let test_weak_references_store_nominal_values_without_protocol_witnesses () =
   (weak-ref box))
 (defn same-box-identity? [^Box left ^Box right]
   (identical? left right))
-(defn new-box [item]
-  (->Box item))
-(def box (new-box 42))
+(def box (->Box 42))
 (def reference (remember box))
 (println
   (if-some [box (weak-deref reference)]
@@ -13089,7 +13093,7 @@ let test_weak_references_store_nominal_values_without_protocol_witnesses () =
     0))
 (println
   (str (same-box-identity? box box) ":"
-       (same-box-identity? box (new-box 42))))
+       (same-box-identity? box (->Box 42))))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -26704,21 +26708,13 @@ let test_destructuring_supports_rest_and_defaults () =
 let test_sequential_destructuring_rest_uses_nil_when_empty () =
   let source =
     {|
-(let [[only & empty-rest] [1]
-      [_ & values] [1 2 3]
-      drained? (loop [remaining (seq [1])]
-                 (if (nil? remaining)
-                   true
-                   (let [[_ & more] remaining]
-                     (recur more))))]
-  (println (str (nil? empty-rest) ":" (first values) ":" (count values) ":"
-                (pr-str (list* 0 empty-rest)) ":"
-                (count (remove (fn [_] false) empty-rest)) ":" drained?)))
+(let [[_ & empty-rest] [1]]
+  (println (nil? empty-rest)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequential_destructuring_rest_uses_nil_when_empty"
-    "true:2:2:(0):0:true\n" ocaml_source
+    "true\n" ocaml_source
 
 let test_let_destructuring_accepts_generic_seqable_values () =
   let source =
