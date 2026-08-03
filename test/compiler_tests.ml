@@ -5511,17 +5511,29 @@ let test_quote_preserves_nil_values () =
   in
   assert_ocaml_runs "quote_preserves_nil_values" "true\ntrue\n" native_source
 
-let test_quoted_query_literals_are_shared_across_calls () =
+let test_closed_query_values_are_shared_across_calls () =
   let source =
     {|
-(defn query [] '[:find ?e :where [?e :name "Ivan"]])
+(require [ocaml.package/datascript.runtime])
+(defn query-form-vector [values]
+  (Datascript_runtime.Data_value.vector_of_vector values))
+(def query-value
+  (query-form-vector
+    [(Datascript_runtime.Data_value.Keyword ":find")
+     (Datascript_runtime.Data_value.Symbol "?e")
+     (Datascript_runtime.Data_value.Keyword ":where")
+     (query-form-vector
+       [(Datascript_runtime.Data_value.Symbol "?e")
+        (Datascript_runtime.Data_value.Keyword ":name")
+        (Datascript_runtime.Data_value.String "Ivan")])]))
+(defn query [] query-value)
 (println (identical? (query) (query)))
 |}
   in
   let native_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
   in
-  assert_ocaml_runs "quoted_query_literals_are_shared_across_calls" "true\n"
+  assert_ocaml_runs "closed_query_values_are_shared_across_calls" "true\n"
     native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -33790,8 +33802,8 @@ let tests =
     ( "record equality uses Clojure function identity",
       test_record_equality_uses_clojure_function_identity );
     ("quote preserves nil values", test_quote_preserves_nil_values);
-    ( "quoted query literals are shared across calls",
-      test_quoted_query_literals_are_shared_across_calls );
+    ( "closed query values are shared across calls",
+      test_closed_query_values_are_shared_across_calls );
     ( "current DataScript pull API behaves on Native",
       test_current_datascript_pull_api_behaves_on_native );
     ( "DataScript limit-context specializes empty reduce vector",
