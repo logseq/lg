@@ -657,7 +657,7 @@ let into target source =
           | _ ->
               Error.error
                 "into map target expects key-value tuple entries")
-      | TVector (TVar _) ->
+      | TVector (TUnknown | TMeta _ | TVar _) ->
           Ok
             (typed_ir (TVector source_inner)
                (apply "Rrbvec.append_list"
