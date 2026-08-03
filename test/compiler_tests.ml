@@ -11136,17 +11136,25 @@ let test_user_macros_receive_portable_namespace_environment () =
     "42:7\n" ocaml_source
 
 let test_user_macros_receive_call_site_namespace () =
-  let source =
+  let provider =
     {|
 (namespace-scope macro.source)
 (defmacro call-site-namespace []
   (:ns &env))
+|}
+  in
+  let consumer =
+    {|
 (namespace-scope consumer.tests)
 (require [macro.source :refer [call-site-namespace]])
 (println (call-site-namespace))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let state, provider_source =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
+  let ocaml_source = provider_source ^ "\n" ^ consumer_source in
   assert_ocaml_runs "user_macros_receive_call_site_namespace"
     "consumer.tests\n" ocaml_source
 
