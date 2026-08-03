@@ -288,10 +288,11 @@ let flush_compile_jobs (jobs : compile_job list) =
 let run_marker phase index = Printf.sprintf "__LG_TEST_%s_%04d__\n" phase index
 
 let wrapped_run_module index (job : run_job) =
-  Printf.sprintf "let () = print_string %S\n%slet () = print_string %S\n"
+  Printf.sprintf
+    "let () =\n  print_string %S;\n  let module Case_%04d = struct\n%s\nend in\n  \
+     print_string %S\n"
     (run_marker "BEGIN" index)
-    (wrapped_module index job.ocaml_source)
-    (run_marker "END" index)
+    index job.ocaml_source (run_marker "END" index)
 
 let chunks_of count values =
   let rec take remaining taken values =
