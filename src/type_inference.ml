@@ -590,6 +590,28 @@ let constrain_seqable element_ty params name =
         TSet (refine_type existing_element element_ty)
     | TArray existing_element ->
         TArray (refine_type existing_element element_ty)
+    | existing when Option.is_some (Types.truthy_constraint_info existing) ->
+        Types.truthy_constraint
+          (add_constraint (Option.get (Types.truthy_constraint_info existing)))
+    | existing
+      when Option.is_some (Types.nil_predicate_constraint_info existing) ->
+        Types.nil_predicate_constraint
+          (add_constraint
+             (Option.get (Types.nil_predicate_constraint_info existing)))
+    | existing when Option.is_some (Types.printable_constraint_info existing) ->
+        Types.printable_constraint
+          (add_constraint
+             (Option.get (Types.printable_constraint_info existing)))
+    | existing
+      when Option.is_some (Types.symbol_predicate_constraint_info existing) ->
+        Types.symbol_predicate_constraint
+          (add_constraint
+             (Option.get (Types.symbol_predicate_constraint_info existing)))
+    | existing when Option.is_some (Types.contains_constraint_info existing) ->
+        let key_ty, value_ty =
+          Option.get (Types.contains_constraint_info existing)
+        in
+        Types.contains_constraint_with_value key_ty (add_constraint value_ty)
     | existing -> (
         match Types.protocol_constraint_info existing with
         | Some (_, _, value_ty) ->
@@ -3077,9 +3099,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                             |> Result.value ~default:TUnknown
                           in
                           let infer_value =
-                            match expected with
-                            | TUnknown | TMeta _ | TVar _ -> infer_form params value
-                            | expected -> infer_expected expected params value
+                            match (pattern, value, expected) with
+                            | FVector _, FSymbol source, TVector element_ty ->
+                                constrain_seqable element_ty params source
+                            | _, _, (TUnknown | TMeta _ | TVar _) ->
+                                infer_form params value
+                            | _, _, expected ->
+                                infer_expected expected params value
                           in
                           Result.bind infer_value (fun params ->
                               propagate params rest)

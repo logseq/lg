@@ -255,6 +255,24 @@ let protocol_constraint_with_value constraint_ty value_ty =
       TOcaml_app (name, [ witness_ty; value_ty ])
   | ty -> ty
 
+let capability_constraint_value ty =
+  match protocol_constraint_info ty with
+  | Some (_, _, value_ty) -> Some value_ty
+  | None -> (
+      match truthy_constraint_info ty with
+      | Some value_ty -> Some value_ty
+      | None -> (
+          match nil_predicate_constraint_info ty with
+          | Some value_ty -> Some value_ty
+          | None -> (
+              match printable_constraint_info ty with
+              | Some value_ty -> Some value_ty
+              | None -> (
+                  match symbol_predicate_constraint_info ty with
+                  | Some value_ty -> Some value_ty
+                  | None ->
+                      Option.map snd (contains_constraint_info ty)))))
+
 let rec seqable_constraint_element = function
   | TOcaml_app (name, [ element_ty; _container_ty ])
     when name = seqable_constraint_name
@@ -262,8 +280,8 @@ let rec seqable_constraint_element = function
          || name = optional_sequential_constraint_name ->
       Some element_ty
   | ty -> (
-      match protocol_constraint_info ty with
-      | Some (_, _, value_ty) -> seqable_constraint_element value_ty
+      match capability_constraint_value ty with
+      | Some value_ty -> seqable_constraint_element value_ty
       | None -> None)
 
 let rec seqable_constraint_info = function
@@ -277,16 +295,16 @@ let rec seqable_constraint_info = function
     when name = optional_sequential_constraint_name ->
       Some (`Optional_sequential, element_ty, value_ty)
   | ty -> (
-      match protocol_constraint_info ty with
-      | Some (_, _, value_ty) -> seqable_constraint_info value_ty
+      match capability_constraint_value ty with
+      | Some value_ty -> seqable_constraint_info value_ty
       | None -> None)
 
 let rec constraint_value_type ty =
   match dynamic_constraint_info ty with
   | Some _ -> ty
-  | None ->
-  match protocol_constraint_info ty with
-  | Some (_, _, value_ty) -> constraint_value_type value_ty
+  | None -> (
+  match capability_constraint_value ty with
+  | Some value_ty -> constraint_value_type value_ty
   | None -> (
       match ty with
       | TOcaml_app (name, [ _element_ty; value_ty ])
@@ -294,20 +312,7 @@ let rec constraint_value_type ty =
              || name = optional_seqable_constraint_name
              || name = optional_sequential_constraint_name ->
           constraint_value_type value_ty
-      | TOcaml_app (name, [ _key_ty; value_ty ])
-        when name = contains_constraint_name ->
-          constraint_value_type value_ty
-      | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
-          constraint_value_type value_ty
-      | TOcaml_app (name, [ value_ty ])
-        when name = nil_predicate_constraint_name ->
-          constraint_value_type value_ty
-      | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
-          constraint_value_type value_ty
-      | TOcaml_app (name, [ value_ty ])
-        when name = symbol_predicate_constraint_name ->
-          constraint_value_type value_ty
-      | value_ty -> value_ty)
+      | value_ty -> value_ty))
 
 let protocol_witness_name value_name protocol_id =
   value_name ^ "__protocol_"

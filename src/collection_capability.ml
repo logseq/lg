@@ -12,6 +12,21 @@ let identifier_holds_packed_constraint name =
   || String.starts_with ~prefix:"__lg_static_argument_" name
   || String.starts_with ~prefix:"__lg_erased_protocol_arg_" name
 
+let rec constraint_value_expression ty expression =
+  let unwrap value_ty =
+    let expression =
+      match Semantic_ir.unlocated expression with
+      | Semantic_ir.Ident name
+        when not (identifier_holds_packed_constraint name) ->
+          expression
+      | _ -> Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+    in
+    constraint_value_expression value_ty expression
+  in
+  match Types.capability_constraint_value ty with
+  | Some value_ty -> unwrap value_ty
+  | None -> expression
+
 let valid_ocaml_type_name name =
   String.length name > 0
   && not (String.contains name ':')
@@ -140,7 +155,15 @@ let rec resolve_callback_record env = function
 
 let rec to_seq_expr env collection =
   let collection = { collection with ty = resolve_host_record env collection.ty } in
-  if Types.is_dynamic collection.ty then
+  let value_ty = Types.constraint_value_type collection.ty in
+  if
+    Option.is_none (Types.seqable_constraint_info collection.ty)
+    && not (Types.equal value_ty collection.ty)
+  then
+    to_seq_expr env
+      (typed_ir value_ty
+         (constraint_value_expression collection.ty collection.semantic_expr))
+  else if Types.is_dynamic collection.ty then
     let element_ty = Types.dynamic_constraint TUnknown in
     Ok
       ( element_ty,

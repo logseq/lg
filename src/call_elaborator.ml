@@ -672,8 +672,8 @@ let dynamic_boundary_error_message direction ty =
       | "Lg_runtime.Runtime_uuid.t" ) ->
       Some
         (cannot_cross "static values"
-           "keep the value statically typed or place alternatives in a closed \
-            sum type")
+           "keep the value statically typed or define a sum type: use a closed \
+            sum type containing every alternative")
   | TUnit -> Some (cannot_cross "static values" "keep unit statically typed")
   | TNil ->
       Some

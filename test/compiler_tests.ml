@@ -20592,7 +20592,9 @@ let test_doseq_preserves_generic_protocol_collection_elements () =
       | None -> failwith "missing PSS Seqable implementation"
     in
     (match integers.ty with
-    | Lg.Types.TNamed_record { type_arguments = [ Lg.Types.TInt ]; _ } -> ()
+    | Lg.Types.TNamed_record
+        { type_arguments = Lg.Types.TInt :: _; _ } ->
+        ()
     | ty ->
         failwith
           ("PSS constructor lost its integer element type: "
