@@ -4322,7 +4322,7 @@ let test_melange_transit_api_compiles_for_native_and_melange () =
   (transit/to-string
     (transit/of-edn
       (target-edn/of-edn-string
-        (runtime-edn/write-string {:answer 42})))
+        (pr-str {:answer 42})))
     :mode (transit-json/Normal)))
 (defn decode [encoded]
   (transit/of-string encoded))
