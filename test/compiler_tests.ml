@@ -8521,6 +8521,11 @@ let test_current_datascript_query_supports_programmatic_query_values () =
   (query-types/source-input
    (query-types/database-source database)))
 
+(def view-source-input
+  (query-types/source-input
+   (query-types/database-source
+    (db/database-view database))))
+
 (def name-input
   (query-types/binding-input
    (query-types/scalar-binding
@@ -8533,6 +8538,9 @@ let test_current_datascript_query_supports_programmatic_query_values () =
 (def variadic-result
   (query/q programmatic-query source-input name-input))
 
+(def view-result
+  (query/q programmatic-query [view-source-input name-input]))
+
 (println
   (if-some [rows (query-types/output-relation vector-result)]
     (= 1 (count rows))
@@ -8541,16 +8549,21 @@ let test_current_datascript_query_supports_programmatic_query_values () =
   (if-some [rows (query-types/output-relation variadic-result)]
     (= 1 (count rows))
     false))
+(println
+  (if-some [rows (query-types/output-relation view-result)]
+    (= 1 (count rows))
+    false))
 |}
   in
+  let native_baseline = datascript_query_baseline Lg.Target.Native in
   let native_source =
     compile_from_datascript_baseline Lg.Target.Native
-      (datascript_query_baseline Lg.Target.Native)
+      native_baseline
       [ ("test/datascript/query_programmatic.cljc", source) ]
   in
   assert_ocaml_runs
     "current_datascript_query_supports_programmatic_query_values"
-    "true\ntrue\n" native_source;
+    "true\ntrue\ntrue\n" native_source;
   ignore
     (compile_from_datascript_baseline Lg.Target.Melange
        (datascript_query_baseline Lg.Target.Melange)
@@ -23455,6 +23468,37 @@ let test_dependency_graph_orders_nested_type_annotation_dependencies () =
     failwith
       "nested type annotations must follow their nominal record dependencies"
 
+let test_dependency_graph_orders_protocol_return_type_dependencies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [
+          FSymbol "defprotocol";
+          FSymbol "IDatabaseView";
+          FList
+            [
+              FSymbol "-database-view";
+              FVector [ FSymbol "database" ];
+              FKeyword ":app.database/database-view";
+            ];
+        ];
+      FList
+        [
+          FSymbol "type-variant";
+          FSymbol "database-view";
+          FList [ FSymbol "DatabaseView"; FKeyword ":int" ];
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 1 < position 0) then
+    failwith
+      "protocol return annotations must follow their nominal type dependencies"
+
 let test_dependency_graph_treats_declare_macro_as_declaration () =
   let open Lg.Ast in
   let declaration =
@@ -28638,6 +28682,170 @@ let test_empty_core_api () =
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let assert_zero_arity_generic_collection_specializes name provider consumer =
+  let state, provider_source =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, consumer_source =
+    Lg.Compiler.compile_chunk state consumer |> expect_ok
+  in
+  assert_ocaml_runs name "true\n" (provider_source ^ "\n" ^ consumer_source);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      Lg.Compiler.empty_state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
+
+let test_zero_arity_generic_vector_constructor_specializes_in_function () =
+  assert_zero_arity_generic_collection_specializes
+    "zero_arity_generic_vector_constructor_specializes_in_function"
+      {|
+(ns app.fast)
+(signature app.fast/fast-arr [value]
+  :fn<vector<value>>)
+(defn fast-arr [] [])
+|}
+    {|
+(ns app.consumer
+  (:require [app.fast :as fast]))
+(defn run-fast []
+  (let [appended (into (fast/fast-arr) [1 2 3])]
+    (println (= [1 2 3] appended))))
+(run-fast)
+|}
+
+let test_zero_arity_generic_map_constructor_specializes_in_function () =
+  assert_zero_arity_generic_collection_specializes
+    "zero_arity_generic_map_constructor_specializes_in_function"
+      {|
+(ns app.fast)
+(signature app.fast/fast-map [key value]
+  :fn<map<key;value>>)
+(defn fast-map [] {})
+|}
+    {|
+(ns app.consumer
+  (:require [app.fast :as fast]))
+(defn run-fast []
+  (let [associated (assoc (fast/fast-map) "one" 1)]
+    (println (= 1 (get associated "one")))))
+(run-fast)
+|}
+
+let test_zero_arity_generic_set_constructor_specializes_in_function () =
+  assert_zero_arity_generic_collection_specializes
+    "zero_arity_generic_set_constructor_specializes_in_function"
+      {|
+(ns app.fast)
+(signature app.fast/fast-set [value]
+  :fn<set<value>>)
+(defn fast-set [] #{})
+|}
+    {|
+(ns app.consumer
+  (:require [app.fast :as fast]))
+(defn run-fast []
+  (let [distinct-values (into (fast/fast-set) [1 1 2])]
+    (println (= #{1 2} distinct-values))))
+(run-fast)
+|}
+
+let test_zero_arity_generic_fast_collections_support_upstream_operations () =
+  assert_zero_arity_generic_collection_specializes
+    "zero_arity_generic_fast_collections_support_upstream_operations"
+    {|
+(ns app.fast)
+(signature app.fast/fast-arr [value]
+  :fn<vector<value>>)
+(defn fast-arr [] [])
+(signature app.fast/fast-map [key value]
+  :fn<map<key;value>>)
+(defn fast-map [] {})
+(signature app.fast/fast-set [value]
+  :fn<set<value>>)
+(defn fast-set [] #{})
+|}
+    {|
+(ns app.consumer
+  (:require [app.fast :as fast]))
+(defn run-fast []
+  (let [appended (into (fast/fast-arr) [1 2 3])
+        associated (assoc (fast/fast-map) "one" 1)
+        distinct-values (into (fast/fast-set) [1 1 2])]
+    (println
+      (and
+        (empty? (fast/fast-arr))
+        (= [1 2 3] appended)
+        (= 6 (reduce + 0 appended))
+        (empty? (fast/fast-map))
+        (= 1 (get associated "one"))
+        (= 0 (count (fast/fast-set)))
+        (= [1 2] (vec (sort distinct-values)))
+        (= 2 (count distinct-values))))))
+(run-fast)
+|}
+
+let test_protocol_witness_packs_closed_variant_receivers () =
+  let provider =
+    {|
+(ns app.database)
+(type-record DB
+  (value :int))
+(type-variant database-view
+  (DatabaseView :DB)
+  (FilteredDatabaseView :DB))
+(defprotocol IDatabaseView
+  (-database-view [database] :app.database/database-view))
+(extend-type DB
+  IDatabaseView
+  (-database-view [database] (DatabaseView database)))
+(extend-type database-view
+  IDatabaseView
+  (-database-view [database] database))
+(defn normalize-database [database]
+  (-database-view database))
+(defn make-database [] (record DB (value 7)))
+(defn database-value [database]
+  (match database
+    (DatabaseView value) (:value value)
+    (FilteredDatabaseView value) (:value value)))
+|}
+  in
+  let consumer =
+    {|
+(ns app.consumer
+  (:require [app.database :as database]))
+(println
+  (let [view
+        (database/normalize-database
+          (database/make-database))]
+    (and
+      (= 7 (database/database-value view))
+      (= 7
+         (database/database-value
+           (database/normalize-database view))))))
+|}
+  in
+  let state, provider_source =
+    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+  in
+  let _, consumer_source =
+    Lg.Compiler.compile_chunk state consumer |> expect_ok
+  in
+  assert_ocaml_runs "protocol_witness_packs_closed_variant_receivers" "true\n"
+    (provider_source ^ "\n" ^ consumer_source);
+  let state, _ =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      Lg.Compiler.empty_state provider
+    |> expect_ok
+  in
+  ignore
+    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
+    |> expect_ok)
 
 let test_empty_rejects_unsupported_values () =
   Lg.Compiler.compile_string {|(def x (empty 1))|}
@@ -35338,6 +35546,8 @@ let tests =
       test_dependency_graph_ignores_type_record_field_names );
     ( "dependency graph orders nested type annotation dependencies",
       test_dependency_graph_orders_nested_type_annotation_dependencies );
+    ( "dependency graph orders protocol return type dependencies",
+      test_dependency_graph_orders_protocol_return_type_dependencies );
     ( "dependency graph treats declare macro as declaration",
       test_dependency_graph_treats_declare_macro_as_declaration );
     ( "dependency graph orders non-dash protocol methods before consumers",
@@ -35760,6 +35970,16 @@ let tests =
     ( "sequence boolean predicates accept truthy results",
       test_sequence_boolean_predicates_accept_truthy_results );
     ("empty core api works", test_empty_core_api);
+    ( "zero arity generic vector constructor specializes in function",
+      test_zero_arity_generic_vector_constructor_specializes_in_function );
+    ( "zero arity generic map constructor specializes in function",
+      test_zero_arity_generic_map_constructor_specializes_in_function );
+    ( "zero arity generic set constructor specializes in function",
+      test_zero_arity_generic_set_constructor_specializes_in_function );
+    ( "zero arity generic fast collections support upstream operations",
+      test_zero_arity_generic_fast_collections_support_upstream_operations );
+    ( "protocol witness packs closed variant receivers",
+      test_protocol_witness_packs_closed_variant_receivers );
     ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
     ("into core api works", test_into_core_api);
     ("into supports typed map targets", test_into_supports_typed_map_targets);

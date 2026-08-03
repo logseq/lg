@@ -1039,6 +1039,10 @@
   IDatabaseView
   (-database-view [db] (FilteredDatabaseView db)))
 
+(extend-type database-view
+  IDatabaseView
+  (-database-view [database] database))
+
 (defn database-view [database]
   (-database-view database))
 

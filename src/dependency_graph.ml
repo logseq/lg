@@ -237,18 +237,21 @@ let dependency_symbols = function
           | _ -> None)
         names
   | FList (FSymbol "defprotocol" :: _name :: method_forms) ->
-      let rec type_hints = function
+      let rec type_dependencies = function
+        | FKeyword _ as annotation -> type_annotation_symbols annotation
         | FSymbol name when String.starts_with ~prefix:"^" name -> [ name ]
-        | FList forms | FVector forms -> List.concat_map type_hints forms
+        | FList forms | FVector forms ->
+            List.concat_map type_dependencies forms
         | FMap pairs ->
             List.concat_map
-              (fun (key, value) -> type_hints key @ type_hints value)
+              (fun (key, value) ->
+                type_dependencies key @ type_dependencies value)
               pairs
-        | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
-        | FInt _ | FFloat _ | FChar _ | FBool _ ->
+        | FSymbol _ | FCoreSymbol _ | FString _ | FRegex _ | FInt _
+        | FFloat _ | FChar _ | FBool _ ->
             []
       in
-      List.concat_map type_hints method_forms
+      List.concat_map type_dependencies method_forms
   | FList
       (FSymbol ("deftype" | "defrecord") :: _name :: fields
       :: implementations) ->

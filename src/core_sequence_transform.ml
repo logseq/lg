@@ -698,20 +698,16 @@ let into target source =
                           (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
                     target.semantic_expr;
                     source_list_expr ]))
-      | TSet TUnknown when Types.is_dynamic source_inner ->
-          Ok
-            (typed_ir source_inner
-               (apply "Lg_runtime.Runtime_dynamic.set"
-                  [
-                    apply "Lg_runtime.Runtime_seq.of_list"
-                      [ source_list_expr ];
-                  ]))
-      | TSet TUnknown ->
+      | TSet (TUnknown | TMeta _ | TVar _) ->
           Types.set_module_name source_inner
           |> Result.map (fun set_module ->
                  typed_ir (TSet source_inner)
                    (apply (set_module ^ ".of_list")
-                      [ source_list_expr ]))
+                      [ Semantic_ir.Infix
+                          ( "@",
+                            apply "Lg_runtime.Runtime_poly_set.elements"
+                              [ target.semantic_expr ],
+                            source_list_expr ) ]))
       | TSet target_inner when Types.equal target_inner source_inner ->
           Types.set_module_name target_inner
           |> Result.map (fun set_module ->

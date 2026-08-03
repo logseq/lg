@@ -664,11 +664,13 @@ let common_method_return_param_index env protocol_id method_name =
   let indices =
     Protocol_registry.implementations_for_method protocol_id method_id
       registry
-    |> List.filter_map (fun (implementation : binding) ->
+    |> List.map (fun (implementation : binding) ->
            implementation.return_param_index)
   in
   match indices with
-  | first :: rest when List.for_all (( = ) first) rest -> Some first
+  | Some first :: rest
+    when List.for_all (fun index -> index = Some first) rest ->
+      Some first
   | [] | _ -> None
 
 let method_position env (marker : binding) method_name =

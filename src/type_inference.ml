@@ -1343,6 +1343,43 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
   | FList [ FSymbol "reduce"; _reducer; init; _collection ] ->
       inferred_form_type params init
+  | FList
+      [
+        FSymbol ("into" | "clojure.core/into");
+        target;
+        source;
+      ] ->
+      let infer form =
+        match inferred_form_type params form with
+        | TUnknown ->
+            inferred_call_return_type ~lookup_function_ty params form
+        | ty -> ty
+      in
+      let target_ty = infer target in
+      let source_ty =
+        match infer source with
+        | TUnknown ->
+            returned_vector_type params source
+            |> Option.value ~default:TUnknown
+        | ty -> ty
+      in
+      let source_element =
+        match source_ty with
+        | TVector element_ty | TList element_ty | TSet element_ty
+        | TArray element_ty | TSeq element_ty ->
+            Some element_ty
+        | source_ty -> Types.seqable_constraint_element source_ty
+      in
+      (match (target_ty, source_element) with
+      | TVector (TUnknown | TMeta _ | TVar _), Some element_ty ->
+          TVector element_ty
+      | TList (TUnknown | TMeta _ | TVar _), Some element_ty ->
+          TList element_ty
+      | TSet (TUnknown | TMeta _ | TVar _), Some element_ty ->
+          TSet element_ty
+      | TArray (TUnknown | TMeta _ | TVar _), Some element_ty ->
+          TArray element_ty
+      | _ -> target_ty)
   | FList (callee :: arguments) ->
       let actual_tys = List.map (inferred_form_type params) arguments in
       let instantiate parameter_tys return_ty =
