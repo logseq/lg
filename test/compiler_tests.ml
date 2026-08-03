@@ -2168,6 +2168,8 @@ let test_declared_type_ids_preserve_source_identity () =
     Lg.Resolver.lookup_record_type "" state.env "Domain.user-profile"
     |> expect_ok
   in
+  if record.type_name <> "Domain.user_profile" then
+    failwith ("qualified record emitted as " ^ record.type_name);
   if Lg.Type_id.to_string record.type_id <> "Domain/user-profile" then
     failwith "declared Type_id must preserve source ownership and spelling";
   match
@@ -31194,8 +31196,14 @@ let test_workspace_index_tracks_qualified_type_dependencies () =
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index consumer_uri = None then
+    let detail =
+      Lg.Language_service.workspace_error index consumer_uri
+      |> Option.map (fun error -> ": " ^ error.Lg.Error.message)
+      |> Option.value ~default:""
+    in
     failwith
-      "qualified OCaml type annotations must depend on their module provider"
+      ("qualified OCaml type annotations must depend on their module provider"
+      ^ detail)
 
 let test_workspace_index_tracks_concise_type_dependencies () =
   let provider_uri = "file:///tmp/a-workspace-domain-concise.cljc" in

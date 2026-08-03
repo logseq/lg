@@ -219,6 +219,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
         when List.length record.type_parameters = List.length arguments ->
           TNamed_record { record with type_arguments = arguments }
       | Ok _ | Error _ -> TOcaml_app (name, arguments)))
+  | TOcaml name as ty when String.contains name '.' -> ty
   | TOcaml name as ty ->
       let record_prefix = "__lg_record:" in
       let source_name =
@@ -238,10 +239,21 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
                 manifest = Some manifest;
                 _;
               } ->
-              infer_named_record ~allow_dynamic_fields scope env manifest
+              if
+                String.contains source_name '.'
+                || String.contains source_name '/'
+              then ty
+              else infer_named_record ~allow_dynamic_fields scope env manifest
           | Some { kind = Alias; _ } -> ty
           | Some { kind = Variant; type_id; _ } ->
-              TOcaml (Names.sanitize_name (Type_id.name type_id))
+              let type_name = Names.sanitize_name (Type_id.name type_id) in
+              if
+                String.contains source_name '.'
+                || String.contains source_name '/'
+              then
+                let owner = Type_id.owner type_id |> String.concat "." in
+                TOcaml (Type_registry.emitted_name ~scope:owner type_name)
+              else TOcaml type_name
           | Some { kind = Record; _ } | None ->
               Env.to_bindings env
               |> List.find_map (fun (_, (binding : binding)) ->
