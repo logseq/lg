@@ -214,6 +214,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     match fn.ty with
     | TFn ([ expected_accumulator_ty; item_ty ], return_ty)
       when (not (Types.equal expected_accumulator_ty actual_accumulator_ty))
+           && Option.is_none (Types.reduced_element return_ty)
            && Types.assignable ~policy:Host_boundary
                 ~expected:(Types.constraint_value_type expected_accumulator_ty)
                 ~actual:actual_accumulator_ty
