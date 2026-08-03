@@ -105,6 +105,12 @@ let rec refine_type existing inferred =
         Types.dynamic_constraint_info inferred |> Option.value ~default:TUnknown
       in
       Types.dynamic_constraint (refine_type existing capability)
+  | existing, inferred
+    when Option.is_some (Types.truthy_constraint_info existing)
+         && Option.is_some (Types.truthy_constraint_info inferred) ->
+      let existing_value = Types.truthy_constraint_info existing |> Option.get in
+      let inferred_value = Types.truthy_constraint_info inferred |> Option.get in
+      Types.truthy_constraint (refine_type existing_value inferred_value)
   | existing, inferred -> (
       match
         ( Types.protocol_constraint_info existing,
