@@ -1849,19 +1849,6 @@
   [result]
   :fn<datascript.db/DB;int;keyword;option<Datascript_runtime.Data_value.t>;fn<result;Datom;result>;result;result>)
 
-(signature datascript.db/cardinality-one-datom-matches?
-  :fn<datascript.db/Datom;int;keyword;option<Datascript_runtime.Data_value.t>;bool>)
-
-(defn- cardinality-one-datom-matches?
-  [datom entity attr value]
-  (and
-   (= entity (.-e datom))
-   (String.equal attr (.-a datom))
-   (match value
-     None true
-     (Some expected)
-     (Datascript_runtime.Data_value.equal expected (.-v datom)))))
-
 (defn reduce-eavt-slice
   [db
     entity
@@ -1871,28 +1858,15 @@
    initial]
   (let [eavt (.-eavt db)
         comparator (set/comparator eavt)]
-    (if (multival? db attr)
-      (set/set-slice-reduce-with
-       eavt
-       (datom-bound
-        (Some entity) (Some attr) value None e0 tx0)
-       (datom-bound
-        (Some entity) (Some attr) value None e0 txmax)
-       comparator
-       f
-       initial)
-      (if-some
-        [datom
-         (set/seek-first
-          eavt
-          (datom-bound
-           (Some entity) (Some attr) None None e0 tx0)
-          comparator)]
-        (if (cardinality-one-datom-matches?
-             datom entity attr value)
-          (uncurried-call f initial datom)
-          initial)
-        initial))))
+    (set/set-slice-reduce-with
+     eavt
+     (datom-bound
+      (Some entity) (Some attr) value None e0 tx0)
+     (datom-bound
+      (Some entity) (Some attr) value None e0 txmax)
+     comparator
+     f
+     initial)))
 
 (defn search-vector
   [db

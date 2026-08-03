@@ -97,6 +97,15 @@ let rec sequence_forms = function
   | Recur _ -> Error.error "recur is only valid in macro loop tail position"
   | Volatile _ -> Error.error "expected sequential macro value, got volatile"
 
+let concat_sequence_values values =
+  let rec concat reversed = function
+    | [] -> Ok (Form (FList (List.rev reversed)))
+    | value :: rest ->
+        Result.bind (sequence_forms value) (fun forms ->
+            concat (List.rev_append forms reversed) rest)
+  in
+  concat [] values
+
 let truthy = function
   | Form (FSymbol "nil" | FBool false) -> false
   | Form _ | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _
@@ -246,6 +255,8 @@ let rec eval context = function
                        [
                          "assoc";
                          "conj";
+                         "concat";
+                         "clojure.core/concat";
                          "identity";
                          "list";
                          "first";
@@ -652,6 +663,8 @@ and apply_value context callable args =
             | Ok form -> collect (form :: forms) rest)
       in
       collect [] args
+  | Builtin ("concat" | "clojure.core/concat") ->
+      concat_sequence_values args
   | Builtin
       (("first" | "second" | "last" | "next" | "nnext" | "butlast") as name)
     -> (
@@ -864,6 +877,8 @@ and eval_builtin context name arg_forms =
       unary (fun value ->
           sequence_forms value
           |> Result.map (fun forms -> Form (FList (List.rev forms))))
+  | "concat" | "clojure.core/concat" ->
+      Result.bind (eval_args ()) concat_sequence_values
   | "count" ->
       unary (fun value ->
           sequence_forms value

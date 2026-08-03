@@ -18047,6 +18047,27 @@ let test_macros_can_apply_functions_to_argument_sequences () =
   assert_ocaml_runs "macros_can_apply_functions_to_argument_sequences" "42\n"
     ocaml_source
 
+let test_macro_concat_preserves_sequence_semantics () =
+  let source =
+    {|
+(defmacro direct-values []
+  (concat '(vector) [40] '(2)))
+
+(defmacro applied-values []
+  (apply concat (list '(vector) [40] '(2))))
+
+(defmacro empty-concat-count []
+  (count (concat)))
+
+(println (= [40 2] (direct-values)))
+(println (= [40 2] (applied-values)))
+(println (empty-concat-count))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macro_concat_preserves_sequence_semantics"
+    "true\ntrue\n0\n" ocaml_source
+
 let test_cond_contextualizes_anonymous_function_branches () =
   let source =
     {|
@@ -34780,6 +34801,8 @@ let tests =
     ("macros can clear form metadata", test_macros_can_clear_form_metadata);
     ( "macros can apply functions to argument sequences",
       test_macros_can_apply_functions_to_argument_sequences );
+    ( "macro concat preserves sequence semantics",
+      test_macro_concat_preserves_sequence_semantics );
     ( "cond contextualizes anonymous function branches",
       test_cond_contextualizes_anonymous_function_branches );
     ( "if merges generic array function branches",
