@@ -2331,7 +2331,10 @@ let test_generic_function_signatures_preserve_type_parameters () =
         Lg.Types.TVar output )
     when input = output ->
       ()
-  | _ -> failwith "generic signature must preserve one shared type variable");
+  | _ ->
+      failwith
+        ("generic signature must preserve one shared type variable, got "
+       ^ Lg.Types.source_name binding.ty));
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "generic function signatures must not use Runtime_dynamic";
   assert_ocaml_runs "generic_function_signatures_preserve_type_parameters"

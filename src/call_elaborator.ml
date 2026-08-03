@@ -2675,39 +2675,6 @@ let static_deftype_callable env ty arity =
   in
   resolve false (Types.constraint_value_type ty)
 
-let compile_static_unordered_hash env value =
-  match Collection_capability.to_seq_expr env value with
-  | Error _ -> Ok None
-  | Ok (element_ty, sequence) ->
-      let dynamic = Types.dynamic_constraint TUnknown in
-      let element_ty =
-        match element_ty with
-        | TUnknown | TMeta _ | TVar _ -> dynamic
-        | element_ty -> element_ty
-      in
-      let item_name = "__lg_hash_unordered_item" in
-      let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
-      Result.map
-        (fun packed_item ->
-          Some
-            (Semantic_ir.Apply
-               ( Semantic_ir.Ident
-                   "Lg_runtime.Runtime_dynamic.hash_unordered_coll",
-                 [
-                   Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.seq",
-                       [
-                         Semantic_ir.Apply
-                           ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
-                             [
-                               Semantic_ir.Fun
-                                 ([ Semantic_ir.PVar item_name ], packed_item);
-                               sequence;
-                             ] );
-                       ] );
-                 ] )))
-        (pack_dynamic_value env dynamic item)
-
 let compile_ihash scope env value =
   let value_ty =
     Types.constraint_value_type value.ty |> resolve_named_record_application env
@@ -2748,7 +2715,7 @@ let compile_ihash scope env value =
          then adapt_value_to_type env parameter_ty value
          else Error.error "incompatible IHash receiver"
        with
-      | Error _ -> compile_static_unordered_hash env value
+      | Error _ -> Ok None
       | Ok value ->
           let call =
             Semantic_ir.Apply (Semantic_ir.Ident ocaml_name, [ value ])
@@ -2760,6 +2727,107 @@ let compile_ihash scope env value =
           | _ -> Error.error "IHash/-hash must return int"))
   | Some _ -> Error.error "IHash/-hash has an invalid signature"
   | None -> Ok None
+
+let rec compile_static_hash scope env value =
+  let apply name arguments =
+    Semantic_ir.Apply (Semantic_ir.Ident name, arguments)
+  in
+  match value.ty with
+  | TInt ->
+      Ok
+        (apply "Lg_runtime.Runtime_hash.hash_int" [ value.semantic_expr ])
+  | TFloat ->
+      Ok
+        (apply "Lg_runtime.Runtime_hash.hash_float" [ value.semantic_expr ])
+  | TChar -> Ok (apply "Char.code" [ value.semantic_expr ])
+  | TString | TRegex ->
+      Ok
+        (apply "Lg_runtime.Runtime_hash.hash_string" [ value.semantic_expr ])
+  | TSymbol ->
+      Ok
+        (apply "Lg_runtime.Runtime_hash.hash_symbol" [ value.semantic_expr ])
+  | TKeyword ->
+      Ok
+        (apply "Lg_runtime.Runtime_hash.hash_keyword" [ value.semantic_expr ])
+  | TBool ->
+      Ok
+        (Semantic_ir.If
+           (value.semantic_expr, Semantic_ir.Int 1231, Semantic_ir.Int 1237))
+  | TNil | TUnit ->
+      Ok
+        (Semantic_ir.Sequence [ value.semantic_expr; Semantic_ir.Int 0 ])
+  | TRecord fields ->
+      let fields =
+        List.filter (fun field -> not (Types.is_record_extension_field field))
+          fields
+      in
+      let rec entry_hashes hashes = function
+        | [] -> Ok (List.rev hashes)
+        | (field : field) :: rest ->
+            let field_value =
+              typed_ir field.ty (Structural_map.field_expr value field)
+            in
+            Result.bind (compile_static_hash scope env field_value)
+              (fun value_hash ->
+                let key_hash =
+                  apply "Lg_runtime.Runtime_hash.hash_keyword"
+                    [ Semantic_ir.String field.keyword ]
+                in
+                let entry_hash =
+                  apply "Lg_runtime.Runtime_hash.hash_ordered"
+                    [
+                      apply "List.to_seq"
+                        [ Semantic_ir.List [ key_hash; value_hash ] ];
+                    ]
+                in
+                entry_hashes (entry_hash :: hashes) rest)
+      in
+      Result.map
+        (fun hashes ->
+          apply "Lg_runtime.Runtime_hash.hash_unordered"
+            [ apply "List.to_seq" [ Semantic_ir.List hashes ] ])
+        (entry_hashes [] fields)
+  | (TArray _ | TList _ | TVector _ | TSeq _) ->
+      compile_static_collection_hash scope env
+        "Lg_runtime.Runtime_hash.hash_ordered" value
+  | TSet _ ->
+      compile_static_collection_hash scope env
+        "Lg_runtime.Runtime_hash.hash_unordered" value
+  | _ ->
+      Result.bind (compile_ihash scope env value) (function
+        | Some expression -> Ok expression
+        | None ->
+            Error.error
+              ("hash requires a statically supported type, got "
+             ^ Types.source_name value.ty))
+
+and compile_static_collection_hash scope env hash_name value =
+  Result.bind (Collection_capability.to_seq_expr env value)
+    (fun (element_ty, sequence) ->
+      match element_ty with
+      | TUnknown | TMeta _ | TVar _ ->
+          Error.error "hash requires a closed collection element type"
+      | element_ty ->
+          let item_name = "__lg_hash_unordered_item" in
+          let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+          Result.map
+            (fun item_hash ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident hash_name,
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                        [
+                          Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], item_hash);
+                          sequence;
+                        ] );
+                  ] ))
+            (compile_static_hash scope env item))
+
+let compile_static_unordered_hash scope env value =
+  compile_static_collection_hash scope env
+    "Lg_runtime.Runtime_hash.hash_unordered" value
 
 let rec compile_record_iequiv_pair scope env left right =
   match (optional_payload left.ty, optional_payload right.ty) with
@@ -8553,96 +8621,16 @@ let create ~compile_expr =
             Result.bind (compile_ihash scope env value) (function
               | Some expression ->
                   Ok (typed_ir TInt expression)
-              | None -> (
-                  match value.ty with
-                  | TInt ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Lg_runtime.Runtime_hash.hash_int"
-                              [ value.semantic_expr ]))
-                  | TFloat ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Lg_runtime.Runtime_hash.hash_float"
-                              [ value.semantic_expr ]))
-                  | TChar ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Char.code" [ value.semantic_expr ]))
-                  | TString ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Lg_runtime.Runtime_hash.hash_string"
-                              [ value.semantic_expr ]))
-                  | TSymbol ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Lg_runtime.Runtime_hash.hash_symbol"
-                              [ value.semantic_expr ]))
-                  | TKeyword ->
-                      Ok
-                        (typed_ir TInt
-                           (apply "Lg_runtime.Runtime_hash.hash_keyword"
-                              [ value.semantic_expr ]))
-                  | TBool ->
-                      Ok
-                        (typed_ir TInt
-                           (Semantic_ir.If
-                              ( value.semantic_expr,
-                                Semantic_ir.Int 1231,
-                                Semantic_ir.Int 1237 )))
-                  | TNil | TUnit ->
-                      Ok
-                        (typed_ir TInt
-                           (Semantic_ir.Sequence
-                              [ value.semantic_expr; Semantic_ir.Int 0 ]))
-                  | _ ->
-                      Error.error
-                        ("hash requires a statically supported type, got "
-                       ^ Types.source_name value.ty)))
+              | None ->
+                  Result.map (fun expression -> typed_ir TInt expression)
+                    (compile_static_hash scope env value))
         | Ok _ -> Error.error "hash expects 1 argument")
               | "hash-unordered-coll" -> (
                   match compile_args () with
                   | Error _ as error -> error
                   | Ok [ value ] ->
-                      (match Collection_capability.to_seq_expr env value with
-                      | Ok (element_ty, sequence) ->
-                          let dynamic = Types.dynamic_constraint TUnknown in
-                          let item_name = "__lg_hash_unordered_item" in
-                          let element_ty =
-                            match element_ty with
-                            | TUnknown | TMeta _ | TVar _ -> dynamic
-                            | element_ty -> element_ty
-                          in
-                          let item =
-                            typed_ir element_ty (Semantic_ir.Ident item_name)
-                          in
-                          Result.map
-                            (fun packed_item ->
-                              typed_ir TInt
-                                (apply
-                                   "Lg_runtime.Runtime_dynamic.hash_unordered_coll"
-                                   [
-                                     apply "Lg_runtime.Runtime_dynamic.seq"
-                                       [
-                                         apply "Lg_runtime.Runtime_seq.map"
-                                           [ Semantic_ir.Fun
-                                               ( [ Semantic_ir.PVar item_name ],
-                                                 packed_item );
-                                             sequence;
-                                           ];
-                                       ];
-                                   ]))
-                            (pack_dynamic_value env dynamic item)
-                      | Error _ ->
-                          let dynamic = Types.dynamic_constraint TUnknown in
-                          Result.map
-                            (fun value ->
-                              typed_ir TInt
-                                (apply
-                                   "Lg_runtime.Runtime_dynamic.hash_unordered_coll"
-                                   [ value ]))
-                            (pack_dynamic_value env dynamic value))
+                      Result.map (fun expression -> typed_ir TInt expression)
+                        (compile_static_unordered_hash scope env value)
                   | Ok _ -> Error.error "hash-unordered-coll expects 1 argument"
                   )
               | "class" | "type" ->

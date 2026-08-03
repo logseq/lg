@@ -827,7 +827,29 @@ and set_module_name = function
   | ty -> Error.error ("sets require a generated comparator for " ^ source_name ty)
 
 let record_fields = function
-  | TRecord fields | TNamed_record { fields; _ } -> Some fields
+  | TRecord fields -> Some fields
+  | TNamed_record record ->
+      let fields =
+        if
+          List.length record.type_parameters
+          = List.length record.type_arguments
+        then
+          let substitutions =
+            List.map2
+              (fun parameter argument ->
+                (Type_solver.Declared parameter, argument))
+              record.type_parameters record.type_arguments
+          in
+          List.map
+            (fun (field : field) ->
+              {
+                field with
+                ty = Type_solver.apply substitutions field.ty;
+              })
+            record.fields
+        else record.fields
+      in
+      Some fields
   | _ -> None
 
 let type_id_of_name type_name =

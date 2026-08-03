@@ -1214,7 +1214,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           Ok
                             (typed_ir (TNullable TUnknown)
                                (Semantic_ir.Constructor ("None", None)))))
-              | TNamed_record { fields; _ } -> (
+              | TNamed_record record -> (
+                  let fields =
+                    Types.record_fields (TNamed_record record)
+                    |> Option.value ~default:record.fields
+                  in
                   match find_field keyword fields with
                   | Some field ->
                       let field_ty = contextual_field_type env field.ty in
