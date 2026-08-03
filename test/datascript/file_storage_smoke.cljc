@@ -45,8 +45,7 @@
        backend
        [(tuple
          999999
-         (Datascript_runtime.Storage_value.Stored_tail []))]
-       [])
+         (Datascript_runtime.Storage_value.Stored_tail []))])
       orphan-present
       (contains? (set (storage/-list-addresses backend)) 999999)
       _orphan-deleted (storage/-delete backend [999999])

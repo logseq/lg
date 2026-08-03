@@ -50,11 +50,12 @@
 (defn- read-file
   [backend address]
   (let [path (file-path backend address)]
-    (when (Sys.file_exists path)
+    (if (Sys.file_exists path)
       (let [input (Stdlib.open_in_bin path)
             value ((:read-value backend) input)
             _closed (Stdlib.close_in input)]
-        value))))
+        (Some value))
+      None)))
 
 (defn- delete-file
   [backend address]
@@ -125,7 +126,7 @@
           (Stdlib.ignore 0))
         (fn [address]
           (read-file backend address))
-        (fn [_ignored]
+        (fn []
           (mapv
            (:filename-to-address backend)
            (array-seq (Sys.readdir (:directory backend)))))

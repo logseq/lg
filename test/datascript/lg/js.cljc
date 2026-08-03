@@ -692,6 +692,10 @@
 (defn ^:export squuid []
   (str (d/squuid)))
 
+#?(:native
+   (signature datascript.js/squuid_time_millis :fn<string;int>)
+   :melange
+   (signature datascript.js/squuid_time_millis :fn<string;float>))
 (defn ^:export squuid_time_millis
   [uuid-string]
   #?(:native
