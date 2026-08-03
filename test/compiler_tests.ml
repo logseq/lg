@@ -4277,9 +4277,14 @@ let test_clojure_edn_read_string_supports_symbolic_numbers () =
 (ns app.symbolic-edn
   (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
 
-(def nan (edn/read-string "##NaN"))
-(def positive-infinity (edn/read-string "##Inf"))
-(def negative-infinity (edn/read-string "##-Inf"))
+(defn read-float [source]
+  (match (edn/read-string source)
+    (Lg_edn_backend/Float value) value
+    _ 0.0))
+
+(def nan (read-float "##NaN"))
+(def positive-infinity (read-float "##Inf"))
+(def negative-infinity (read-float "##-Inf"))
 (println (not= nan nan))
 (println (pos? positive-infinity))
 (println (neg? negative-infinity))
