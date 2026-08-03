@@ -794,9 +794,14 @@ let lookup_print_method scope env record =
   lookup_binding scope env (print_method_name record)
 
 let binding_of_expr ?(row_param_types = []) ocaml_name expr =
+  let never_returns =
+    match Semantic_ir.unlocated expr.semantic_expr with
+    | Semantic_ir.Fun (_, body) -> Semantic_ir.never_returns body
+    | _ -> false
+  in
   let binding =
     Types.binding ~row_param_types ?return_param_index:expr.return_param_index
-      ocaml_name expr.ty
+      ~never_returns ocaml_name expr.ty
   in
   {
     binding with

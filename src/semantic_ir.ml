@@ -139,6 +139,18 @@ let rec unlocated = function
       unlocated conversion
   | expression -> expression
 
+let rec never_returns = function
+  | Typed (_, expression) | Located (_, _, expression) ->
+      never_returns expression
+  | Apply (Ident "raise", [ _ ])
+  | Apply (Ident "Lg_runtime.Runtime_exception.throw", [ _ ]) ->
+      true
+  | Sequence expressions -> (
+      match List.rev expressions with
+      | last :: _ -> never_returns last
+      | [] -> false)
+  | _ -> false
+
 let annotate ty = function
   | Typed (_, expression) -> Typed (ty, expression)
   | expression -> Typed (ty, expression)

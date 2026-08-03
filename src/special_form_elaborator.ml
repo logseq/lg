@@ -2003,16 +2003,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | Error _ as err -> err
           | Ok clause -> parse_catches (clause :: acc) rest)
     in
-    let rec never_returns = function
-      | Semantic_ir.Located (_, _, expression)
-      | Semantic_ir.Typed (_, expression) ->
-          never_returns expression
-      | Semantic_ir.Apply (Semantic_ir.Ident "raise", [ _ ]) -> true
-      | Semantic_ir.Sequence expressions -> (
-          match List.rev expressions with
-          | last :: _ -> never_returns last
-          | [] -> false)
-      | _ -> false
+    let never_returns expression =
+      if Semantic_ir.never_returns expression then true
+      else
+        match Semantic_ir.unlocated expression with
+        | Semantic_ir.Apply (Semantic_ir.Ident name, _) ->
+            Env.to_bindings env
+            |> List.exists (fun (_, (binding : binding)) ->
+                   binding.never_returns
+                   && String.equal binding.ocaml_name name)
+        | _ -> false
     in
     let compatible_try_type body handlers =
       let body_ty = body.ty in

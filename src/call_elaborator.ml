@@ -4791,6 +4791,19 @@ let create ~compile_expr =
                       [ source.semantic_expr; radix.semantic_expr ] )))
         | Ok _ -> Error.error "js/parseInt expects a string and radix"
         | Error _ as error -> error)
+    | "js/Error." -> (
+        match (Env.target env, compile_args ()) with
+        | (Target.Melange | Target.Js_of_ocaml), Ok [ message ]
+          when Types.equal message.ty TString ->
+            Ok
+              (typed_ir (TOcaml "exn")
+                 (Semantic_ir.Constructor
+                    ("Failure", Some message.semantic_expr)))
+        | (Target.Melange | Target.Js_of_ocaml), Ok _ ->
+            Error.error "js/Error expects a string message"
+        | Target.Native, Ok _ ->
+            Error.error "js/Error is only available on JavaScript targets"
+        | _, (Error _ as error) -> error)
     | "js/Date." -> (
         match (Env.target env, arg_forms) with
         | Target.Melange, [] ->
@@ -5368,6 +5381,21 @@ let create ~compile_expr =
             Ok (typed_ir TInt date.semantic_expr)
         | Ok _ -> Error.error ".getTime expects a JavaScript Date"
         | Error _ as error -> error)
+    | ".toString" -> (
+        match (Env.target env, compile_args ()) with
+        | (Target.Melange | Target.Js_of_ocaml), Ok [ value; radix ]
+          when Types.equal value.ty TInt && Types.equal radix.ty TInt ->
+            Ok
+              (typed_ir TString
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_string.int_to_string_radix",
+                      [ value.semantic_expr; radix.semantic_expr ] )))
+        | (Target.Melange | Target.Js_of_ocaml), Ok _ ->
+            Error.error ".toString expects an int and radix"
+        | Target.Native, Ok _ ->
+            Error.error ".toString radix interop is only available on JavaScript targets"
+        | _, (Error _ as error) -> error)
     | map_constructor
       when Option.is_some (map_record_constructor_type_name map_constructor) -> (
         let type_name =
