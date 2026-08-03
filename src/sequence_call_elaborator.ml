@@ -43,14 +43,33 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let returns_truthy_value = function
   | TBool | TUnknown | TMeta _ | TVar _ -> true
-  | ty -> Types.is_dynamic ty
+  | ty ->
+      Types.is_dynamic ty
+      || Option.is_some (Types.truthy_constraint_info ty)
 
 let truthy_call return_ty fn arguments =
   let call = Semantic_ir.Apply (fn, arguments) in
   if Types.equal return_ty TBool then call
+  else if Option.is_some (Types.truthy_constraint_info return_ty) then
+    let result_name = "__lg_truthy_callback_result" in
+    let result = Semantic_ir.Ident result_name in
+    Semantic_ir.Let
+      ( [ (Semantic_ir.PVar result_name, call) ],
+        Semantic_ir.Apply
+          ( Semantic_ir.Apply (Semantic_ir.Ident "fst", [ result ]),
+            [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ result ]) ] ) )
   else
     Semantic_ir.Apply
       (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ call ])
+
+let normalize_truthy_function fn =
+  match (fn.ty, Semantic_ir.unlocated fn.semantic_expr) with
+  | TFn (parameters, return_ty), Semantic_ir.Fun (patterns, body)
+    when Option.is_some (Types.truthy_constraint_info return_ty) ->
+      typed_ir (TFn (parameters, TBool))
+        (Semantic_ir.Fun
+           (patterns, Expression_support.truthiness_expression return_ty body))
+  | _ -> fn
 
 let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     ~pack_constrained_value =
@@ -130,10 +149,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         let item_name = "__lg_erased_sequence_item" in
         Result.map
           (fun item ->
-            typed_ir (TFn ([ actual_ty ], return_ty))
-              (Semantic_ir.Fun
-                 ( [ Semantic_ir.PVar item_name ],
-                   Semantic_ir.Apply (fn.semantic_expr, [ item ]) )))
+            normalize_truthy_function
+              (typed_ir (TFn ([ actual_ty ], return_ty))
+                 (Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar item_name ],
+                      Semantic_ir.Apply (fn.semantic_expr, [ item ]) ))))
           (dynamic_unpack env expected_ty (Semantic_ir.Ident item_name))
     | TFn ([ expected_ty ], return_ty)
       when Types.is_dynamic expected_ty && not (Types.is_dynamic actual_ty) ->
@@ -141,12 +161,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         let item = typed_ir actual_ty (Semantic_ir.Ident item_name) in
         Result.map
           (fun item ->
-            typed_ir (TFn ([ actual_ty ], return_ty))
-              (Semantic_ir.Fun
-                 ( [ Semantic_ir.PVar item_name ],
-                   Semantic_ir.Apply (fn.semantic_expr, [ item ]) )))
+            normalize_truthy_function
+              (typed_ir (TFn ([ actual_ty ], return_ty))
+                 (Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar item_name ],
+                      Semantic_ir.Apply (fn.semantic_expr, [ item ]) ))))
           (pack_dynamic_value env expected_ty item)
-    | _ -> Ok fn
+    | _ -> Ok (normalize_truthy_function fn)
   in
   let adapt_reducer_function env actual_item_ty fn =
     match fn.ty with

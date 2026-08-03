@@ -11131,6 +11131,9 @@ let create ~compile_expr =
                   if dynamic_callable then materialize_protocol_unknown ty
                   else ty
                 in
+                let storage_param_tys =
+                  List.map instantiate storage_param_tys
+                in
                 let param_tys = List.map materialize param_tys in
                 let callback_element_candidates =
                   List.fold_left2
@@ -11225,6 +11228,8 @@ let create ~compile_expr =
                     (fun storage_ty instantiated_ty ->
                       match storage_ty with
                       | TSet (TUnknown | TMeta _ | TVar _) -> storage_ty
+                      | _ when has_capability_constraint storage_ty ->
+                          storage_ty
                       | _ -> instantiated_ty)
                     storage_param_tys param_tys
                 in
