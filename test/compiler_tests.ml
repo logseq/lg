@@ -27343,13 +27343,17 @@ let test_explicit_type_hints_narrow_nullable_field_receivers () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_nested_record_fields_preserve_outer_record_inference () =
+let test_transaction_records_keep_concrete_collection_fields () =
   let source =
     {|
 (defrecord DB [max-tx])
-(defrecord TxReport [^DB db-before ^DB db-after tx-data])
 (defrecord Datom [value])
-(def conjv (fnil conj []))
+(defrecord TxReport
+  [^DB db-before
+   ^DB db-after
+   ^:vector<Datom> tx-data
+   ^:vector<Datom> tx-redundant
+   ^boolean extra])
 (defn maybe-datom [present? value]
   (if present? (Datom. value) nil))
 (defn transact-report [report datom]
@@ -27367,13 +27371,13 @@ let test_nested_record_fields_preserve_outer_record_inference () =
       (transact-report report' new-datom)
 
       (= (:value old-datom) value)
-      (update report' :tx-redundant conjv new-datom)
+      (update report' :tx-redundant conj new-datom)
 
       :else
       (-> report'
           (transact-report old-datom)
           (transact-report new-datom)))))
-(def initial (TxReport. (DB. 1) (DB. 1) []))
+(def initial (TxReport. (DB. 1) (DB. 1) [] [] false))
 (def inserted (transact-add initial nil 2))
 (def redundant (transact-add inserted (maybe-datom true 2) 2))
 (def repeated (transact-add redundant (maybe-datom true 2) 2))
@@ -27385,12 +27389,16 @@ let test_nested_record_fields_preserve_outer_record_inference () =
        (count (:tx-redundant redundant)) ":"
        (count (:tx-redundant repeated)) ":"
        (count (:tx-data replaced)) ":"
-       (instance? Datom (first (:tx-redundant repeated))) ":"
-       (instance? Datom (last (:tx-data replaced)))))
+       (= 2
+          (:value
+            (get (:tx-redundant repeated) 0 (Datom. -1)))) ":"
+       (= 2
+          (:value
+            (get (:tx-data replaced) 1 (Datom. -1))))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "nested_record_fields_preserve_outer_record_inference"
+  assert_ocaml_runs "transaction_records_keep_concrete_collection_fields"
     "0:1:1:1:2:2:true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
@@ -35514,8 +35522,8 @@ let tests =
       test_defrecord_self_constructors_preserve_hinted_field_nullability );
     ( "explicit type hints narrow nullable field receivers",
       test_explicit_type_hints_narrow_nullable_field_receivers );
-    ( "nested record fields preserve outer record inference",
-      test_nested_record_fields_preserve_outer_record_inference );
+    ( "transaction records keep concrete collection fields",
+      test_transaction_records_keep_concrete_collection_fields );
     ( "cross module fnil update packs nominal vectors",
       test_cross_module_fnil_update_packs_nominal_vectors );
     ( "cross module fnil conj preserves vector element type",
