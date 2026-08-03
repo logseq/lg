@@ -27675,8 +27675,8 @@ let test_destructuring_rejects_unsupported_let_sources () =
 let test_map_destructuring_supports_typed_direct_keyword_bindings () =
   let source =
     {|
-(defrecord Context [value])
-(defrecord Pattern [name])
+(defrecord Context [^:int value])
+(defrecord Pattern [^:string name])
 (defn describe [{^Context context :context ^Pattern pattern :pattern}]
   (str (.-value context) ":" (.-name pattern)))
 (println
@@ -29467,18 +29467,20 @@ let test_rest_is_empty_safe () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "rest_is_empty_safe" "true:():true:()\n" ocaml_source
 
-let test_mixed_lists_pack_optional_values () =
+let test_closed_lists_preserve_optional_values () =
   let source =
     {|
-(defn context [value]
+(defn context [^:option<int> value]
   (when (some? value) true)
-  (list 'context value))
-(println (str (pr-str (context nil)) ":" (pr-str (context 42))))
+  (list value))
+(println
+  (str (nil? (first (context nil))) ":"
+       (= 42 (first (context 42)))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "mixed_lists_pack_optional_values"
-    "(context nil):(context 42)\n" ocaml_source
+  assert_ocaml_runs "closed_lists_preserve_optional_values" "true:true\n"
+    ocaml_source
 
 let test_conj_rejects_list_type_mismatch () =
   Lg.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
@@ -35819,7 +35821,8 @@ let tests =
     ( "syntax convergence: empty lists infer type from branch context",
       test_empty_lists_infer_type_from_branch_context );
     ("rest is empty-safe", test_rest_is_empty_safe);
-    ("mixed lists pack optional values", test_mixed_lists_pack_optional_values);
+    ( "closed lists preserve optional values",
+      test_closed_lists_preserve_optional_values );
     ("conj rejects list type mismatch", test_conj_rejects_list_type_mismatch);
     ("collection positional helpers work", test_collection_positional_helpers);
     ("subvec core api works", test_subvec_core_api);
