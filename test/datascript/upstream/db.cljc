@@ -471,6 +471,8 @@
 
 (signature datascript.db/components->pattern
   :fn<datascript.db/DB;keyword;option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>;int;int;datascript.db/Datom>)
+(signature datascript.db/resolve-datom
+  :fn<datascript.db/DB;option<Datascript_runtime.Data_value.entity_ref>;option<keyword>;option<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.entity_ref>;int;int;datascript.db/Datom>)
 
 (declare resolve-datom components->pattern)
 
@@ -1959,10 +1961,10 @@
 
 (defn resolve-datom
   [db
-   ^:option<Datascript_runtime.Data_value.entity_ref> e
+   e
    a
    v
-   ^:option<Datascript_runtime.Data_value.entity_ref> tx
+   tx
    default-e
    default-tx]
   (if-some [attr a]

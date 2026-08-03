@@ -1189,10 +1189,13 @@
     (BindColl
      (substitute-rule-binding replacements seqid binding))))
 
+(signature datascript.parser/substitute-rule-vars
+  :fn<map<string;datascript.parser/pattern-element>;int;datascript.parser/RuleVars;datascript.parser/RuleVars>)
+
 (defn-  substitute-rule-vars
   [ replacements
     seqid
-    ^datascript.parser/RuleVars variables]
+    variables]
   (RuleVars.
    (match (.-required variables)
      None None
@@ -2589,13 +2592,20 @@
       f]
     (traversable-postwalk node f false)))
 
+(signature datascript.parser/collect-impl
+  :fn<fn<traversable;bool>;traversable;vector<traversable>;vector<traversable>>)
+
+(defn- collect-impl
+  [pred form acc]
+  (if (pred form)
+    (conj acc form)
+    (-collect form pred acc)))
+
 (defn collect
   ([pred form]
    (collect pred form []))
-  ([pred form ^:vector<traversable> acc]
-   (if (pred form)
-     (conj acc form)
-     (-collect form pred acc))))
+  ([pred form acc]
+   (collect-impl pred form acc)))
 
 (defn  postwalk
   [ form

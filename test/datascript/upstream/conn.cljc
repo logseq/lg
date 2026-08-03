@@ -153,18 +153,25 @@
    [connection update-database]
    (swap-db! connection update-database)))
 
+(signature datascript.conn/with-closed-impl
+  :fn<datascript.db/DB;vector<datascript.db/tx-entry>;option<map<keyword;Datascript_runtime.Data_value.t>>;datascript.db/TxReport>)
+
+(defn- with-closed-impl
+  [database tx-data tx-meta]
+  {:pre [(db/db? database)]}
+  (if (instance? db/FilteredDB database)
+    (Stdlib.invalid_arg "Filtered DB cannot be modified")
+    (db/transact-tx-data
+      (db/->TxReport database database [] {}
+                     (tx-meta-value tx-meta)
+                     {} {} (db/empty-used-tempid-eids))
+      tx-data)))
+
 (defn with-closed
   ([database tx-data]
    (with-closed database tx-data None))
-  ([^datascript.db/DB database tx-data tx-meta]
-   {:pre [(db/db? database)]}
-   (if (instance? db/FilteredDB database)
-     (Stdlib.invalid_arg "Filtered DB cannot be modified")
-     (db/transact-tx-data
-       (db/->TxReport database database [] {}
-                      (tx-meta-value tx-meta)
-                      {} {} (db/empty-used-tempid-eids))
-       tx-data))))
+  ([database tx-data tx-meta]
+   (with-closed-impl database tx-data tx-meta)))
 
 (defn with
   {:inline
@@ -312,10 +319,13 @@
                            state database [] (Some database))))))
              (storage/store-tail database tx-tail))))))))
 
+(signature datascript.conn/-transact!
+  :fn<datascript.conn/Conn;vector<datascript.db/tx-entry>;option<map<keyword;Datascript_runtime.Data_value.t>>;datascript.db/TxReport>)
+
 (defn -transact!
   [conn
    tx-data
-   ^:option<map<keyword;Datascript_runtime.Data_value.t>> tx-meta]
+   tx-meta]
   {:pre [(conn? conn)]}
   (let [report-ref (volatile! nil)
         tx-meta
@@ -352,47 +362,54 @@
      (run-callbacks conn report)
      report)))
 
+(signature datascript.conn/reset-conn-impl!
+  :fn<datascript.conn/Conn;datascript.db/DB;Datascript_runtime.Data_value.t;datascript.db/DB>)
+
+(defn- reset-conn-impl!
+  [conn database tx-meta]
+  {:pre [(conn? conn)
+         (db/db? database)]}
+  (let [db-before (current-db conn)
+        report
+        (db/->TxReport
+         db-before
+         database
+         (vec
+          (concat
+           (map
+            (fn [datom]
+              (db/datom
+               (.-e datom)
+               (db/datom-attr datom)
+               (.-v datom)
+               (db/datom-tx datom)
+               false))
+            (db/-datoms db-before :eavt nil nil nil nil))
+           (db/-datoms database :eavt nil nil nil nil)))
+         {}
+         tx-meta
+         {}
+         {}
+         (db/empty-used-tempid-eids))]
+    (if-some [database-storage (storage/storage db-before)]
+      (do
+        (Stdlib.ignore (storage/store database))
+        (Stdlib.ignore
+         (let [state-atom (:atom conn)
+               state @state-atom]
+           (reset! state-atom
+                   (state-with-storage
+                    state database [] (Some database))))))
+      (Stdlib.ignore (reset-db! conn database)))
+    (run-callbacks conn report)
+    database))
+
 (defn reset-conn!
   ([conn database]
    (reset-conn!
     conn database (Datascript_runtime.Data_value.Nil)))
-  ([conn database ^:Datascript_runtime.Data_value.t tx-meta]
-   {:pre [(conn? conn)
-          (db/db? database)]}
-   (let [db-before (current-db conn)
-         report
-         (db/->TxReport
-          db-before
-          database
-          (vec
-           (concat
-            (map
-             (fn [datom]
-               (db/datom
-                (.-e datom)
-                (db/datom-attr datom)
-                (.-v datom)
-                (db/datom-tx datom)
-                false))
-             (db/-datoms db-before :eavt nil nil nil nil))
-            (db/-datoms database :eavt nil nil nil nil)))
-          {}
-          tx-meta
-          {}
-          {}
-          (db/empty-used-tempid-eids))]
-     (if-some [database-storage (storage/storage db-before)]
-       (do
-         (Stdlib.ignore (storage/store database))
-         (Stdlib.ignore
-          (let [state-atom (:atom conn)
-                state @state-atom]
-            (reset! state-atom
-                    (state-with-storage
-                     state database [] (Some database))))))
-       (Stdlib.ignore (reset-db! conn database)))
-     (run-callbacks conn report)
-     database)))
+  ([conn database tx-meta]
+   (reset-conn-impl! conn database tx-meta)))
 
 (defn reset-schema!
   [conn schema]

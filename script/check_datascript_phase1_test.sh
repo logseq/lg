@@ -165,7 +165,7 @@ expect_text \
 expect_no_text \
   "serialization does not linearly search attributes per datom" \
   test/datascript/upstream/serialize.cljc \
-  'Serialization_value\.attribute_index'
+  'Serialization_value\.attribute_index([^[:alnum:]_]|$)'
 expect_no_hints_between \
   "serialization keyword codec helpers contain no local type hints" \
   test/datascript/upstream/serialize.cljc \
@@ -178,7 +178,7 @@ expect_text \
 expect_text \
   "serialization EAVT database receiver remains concrete" \
   test/datascript/upstream/serialize.cljc \
-  '^[[:space:]]*\[\^datascript\.db/DB db encoder freeze-codec attrs-map\]$'
+  '^  :fn<datascript\.db/DB;Datascript_runtime\.Serialization_value\.encoder;codec;'
 expect_no_hints_between \
   "serialization attribute freezer contains no local type hints" \
   test/datascript/upstream/serialize.cljc \
@@ -187,7 +187,7 @@ expect_no_hints_between \
 expect_text \
   "serialization datom index keeps its required concrete PSS boundary" \
   test/datascript/upstream/serialize.cljc \
-  '^[[:space:]]*\[\^:set/btset<datascript\.db/Datom;.*> datoms\]$'
+  '^  :fn<set/btset<datascript\.db/Datom;'
 expect_no_hints_between \
   "serialization reference policy helper contains no local type hints" \
   test/datascript/upstream/serialize.cljc \
@@ -359,26 +359,16 @@ expect_no_hints_between \
   test/datascript/upstream/pull_parser.cljc \
   source-operation parse-pattern-items \
   '\^(:[[:alpha:]]|[[:alpha:]])'
-expect_text \
-  "pull parser check keeps its required closed condition boundary" \
+expect_no_hints_between \
+  "pull parser check infers all closed boundaries" \
   test/datascript/upstream/pull_parser.cljc \
-  '\[\^boolean condition'
-expect_text \
-  "pull parser check keeps its required closed message boundary" \
+  check source-operation \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
+expect_no_hints_between \
+  "pull parser pattern recursion contains no local type hints" \
   test/datascript/upstream/pull_parser.cljc \
-  '\^:string expected'
-expect_text \
-  "pull parser check keeps its required closed fragment boundary" \
-  test/datascript/upstream/pull_parser.cljc \
-  '\^:Datascript_runtime\.Data_value\.t fragment'
-expect_no_text \
-  "pull parser pattern recursion contains only its required item boundary" \
-  test/datascript/upstream/pull_parser.cljc \
-  '\(defn \^PullPattern parse-pattern-items|\^datascript\.db/database-view database|\^int index|\^:vector<pull-attr> attrs|\^boolean wildcard'
-expect_text \
-  "pull parser pattern recursion keeps its required closed item boundary" \
-  test/datascript/upstream/pull_parser.cljc \
-  '\[database \^:vector<pull-source-item> items index attrs wildcard\]'
+  parse-pattern-items parse-pattern-view \
+  '\^(:[[:alpha:]]|[[:alpha:]])'
 expect_no_hints_between \
   "pull parser pattern public helpers contain no local type hints" \
   test/datascript/upstream/pull_parser.cljc \

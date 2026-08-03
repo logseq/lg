@@ -1876,6 +1876,10 @@
 
 (signature datascript.lg.query-types/differ-predicate-matches?
   :fn<array<result>;vector<predicate-operand>;bool>)
+(signature datascript.lg.query-types/resolve-predicate
+  :fn<datascript.db/database-view;map<string;source>;relation;relation;datascript.parser/query-callable;vector<datascript.parser/fn-arg>;relation>)
+(signature datascript.lg.query-types/resolve-function
+  :fn<datascript.db/database-view;map<string;source>;relation;relation;datascript.parser/query-callable;vector<datascript.parser/fn-arg>;datascript.parser/binding;relation>)
 
 (defn- differ-predicate-matches?
   [row operands]
@@ -1905,7 +1909,7 @@
    relation
    constants
    callable
-   ^:vector<datascript.parser/fn-arg> arguments]
+   arguments]
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
              relation constants name arguments None)]
@@ -2017,7 +2021,7 @@
    relation
    constants
    callable
-   ^:vector<datascript.parser/fn-arg> arguments
+   arguments
    binding]
   (if-some [name (parser/static-callable-name callable)]
     (let [_ (validate-static-call-bindings
@@ -2118,6 +2122,17 @@
       (Stdlib.invalid_arg
        "Variable query function name is missing"))))
 
+(signature datascript.lg.query-types/resolve-not
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<datascript.parser/Variable>;vector<datascript.parser/clause>;string;relation>)
+(signature datascript.lg.query-types/resolve-or
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<string>;vector<string>;vector<datascript.parser/clause>;bool;string;relation>)
+(signature datascript.lg.query-types/resolve-rule-branch
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<datascript.parser/pattern-element>;datascript.parser/RuleBranch;relation>)
+(signature datascript.lg.query-types/resolve-rule
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;string;vector<datascript.parser/pattern-element>;relation>)
+(signature datascript.lg.query-types/resolve-static-clauses
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<datascript.parser/clause>;relation>)
+
 (declare resolve-static-clauses ensure-empty-relation-variables)
 
 (signature datascript.lg.query-types/rows-match-on-variables?
@@ -2196,7 +2211,7 @@
    constants
    rules
    rule-path
-   ^:vector<datascript.parser/Variable> variables
+   variables
    clauses
    display]
   (let [bound-variables
@@ -2295,9 +2310,9 @@
    constants
    rules
    rule-path
-   ^:vector<string> required-variable-names
-   ^:vector<string> branch-variable-names
-   ^:vector<datascript.parser/clause> branches
+   required-variable-names
+   branch-variable-names
+   branches
    join?
    display]
   (let [missing-required
@@ -2599,7 +2614,7 @@
    constants
    rules
    rule-path
-   ^:vector<datascript.parser/pattern-element> arguments
+   arguments
    branch]
   (let [parameters
         (parser/rule-branch-parameter-names branch)]
@@ -2629,9 +2644,9 @@
    relation
    constants
    rules
-   ^rule-path rule-path
+   rule-path
    rule-name
-   ^:vector<datascript.parser/pattern-element> arguments]
+   arguments]
   (if-some [branches (parser/rule-branches rules rule-name)]
     (let [required-count
           (if-some [first-branch (first branches)]
@@ -2696,7 +2711,7 @@
    constants
    rules
    rule-path
-   ^:vector<datascript.parser/clause> clauses]
+   clauses]
   (reduce
    (fn [relation clause]
      (if (empty? (relation-rows relation))

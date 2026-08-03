@@ -9055,7 +9055,7 @@ let test_current_datascript_transaction_supports_operation_vectors () =
      cas-updated 3 :name
      (Datascript_runtime.Data_value.String "New"))))
 (println
- (= "Compare-and-set transaction failed"
+ (= ":db.fn/cas failed on datom [3 :name \"New\"], expected \"Old\""
     (failed-cas-message)))
 |}
   in
@@ -13828,7 +13828,7 @@ let test_recursive_functions_use_sidecar_return_types () =
   (Many :vector<binding>))
 (signature user/flatten-binding
   :fn<binding;vector<int>>)
-(defn ^:vector<int> flatten-binding [^:binding binding]
+(defn flatten-binding [binding]
   (match binding
     (Single value) [value]
     (Many bindings) (vec (mapcat flatten-binding bindings))))
@@ -14063,10 +14063,14 @@ let test_recursive_option_array_return_is_inferred_from_static_branches () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_typed_recursive_functions_require_valid_signatures () =
-  Lg.Compiler.compile_string {|
+  let inferred =
+    Lg.Compiler.compile_string {|
 (defn bad [n] :int (bad n))
 |}
-  |> expect_error "recursive defn parameters require type annotations";
+    |> expect_ok
+  in
+  if string_contains_substring inferred "Runtime_dynamic" then
+    failwith "recursive parameter inference must remain static";
   Lg.Compiler.compile_string {|
 (defn bad [^:int n] :string
   0)

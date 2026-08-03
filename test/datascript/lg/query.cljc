@@ -228,7 +228,10 @@
    (aggregate-context-relation context)
    resultset))
 
-(defn- ^:string binding-source
+(signature datascript.lg.query/binding-source
+  :fn<datascript.parser/binding;string>)
+
+(defn- binding-source
   [binding]
   (if (datascript.parser/binding-ignore? binding)
     "_"
@@ -781,8 +784,11 @@
     (Some (nth pattern index))
     None))
 
+(signature datascript.lg.query/add-free-pattern-variable
+  :fn<set<string>;option<Datascript_runtime.Data_value.t>;set<string>>)
+
 (defn- add-free-pattern-variable
-  [^:set<string> variables pattern-value]
+  [variables pattern-value]
   (match pattern-value
     None variables
     (Some value)

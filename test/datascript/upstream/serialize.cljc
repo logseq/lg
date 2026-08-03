@@ -159,7 +159,10 @@
     (Lg_runtime.Runtime_ref_type.Weak)
     (Datascript_runtime.Storage_value.Weak)))
 
-(defn- ^serialized-value serializable-impl
+(signature datascript.serialize/serializable-impl
+  :fn<datascript.db/DB;codec;keyword-freezer;serialized-value>)
+
+(defn- serializable-impl
   "Serialized structure breakdown:
 
    count    :: number    

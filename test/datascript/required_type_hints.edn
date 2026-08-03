@@ -1,40 +1,46 @@
 {:counts
- {:inline-total 115
+ {:inline-total 95
   :declaration 91
-  :algorithm-local 24}
+  :algorithm-local 4}
 
  :policy
  {:dynamic-introduced false
   :compiler-special-cases-introduced false
- :replacement "Prefer a named closed function signature when it can replace an algorithm-local hint without changing upstream control flow."}
+  :replacement "Prefer a named closed function signature when it can replace an algorithm-local hint without changing upstream control flow."}
 
  :remaining-root-causes
- [{:category :recursive-component-evidence
-   :count 14
-   :includes [:recursive-forward-interface
-              :recursive-printing-return
-              :forward-option-element]}
-  {:category :bidirectional-empty-container-evidence
+  [{:category :recursive-component-evidence
    :count 1
-   :includes [:parser-multi-arity-recursion]}
-  {:category :closed-collection-kind-evidence
-   :count 2
-   :includes [:unknown-conj-collection-kind
-              :macro-field-projection]}
+   :includes [:recursive-forward-interface]}
+  {:category :macro-field-projection-evidence
+   :count 1
+   :includes [:macro-field-projection]}
   {:category :nominal-witness-preservation
-   :count 3
-   :includes [:parser-nominal-record-substitution
-              :protocol-refinement-nominal-receiver
+   :count 2
+   :includes [:protocol-refinement-nominal-receiver
               :nominal-filter-return]}
-  {:category :multi-arity-boundary-evidence
-   :count 3
-   :includes [:multi-arity-transaction-boundary]}
-  {:category :opaque-host-boundary-evidence
-   :count 1
-   :includes [:opaque-host-alias-return]}]
+  ]
 
  :removed-this-pass
- [{:category :homogeneous-variadic-prefix
+  [{:category :recursive-sidecar-contracts
+   :count 13
+   :method "Move closed query, recursive string rendering, and forward datom evidence into named sidecar signatures; retain only the recursive return hint that prevents an unbound SCC implementation slot."}
+  {:category :transaction-sidecar-contracts
+   :count 3
+   :method "Use one closed single-arity transaction signature directly and small typed implementation helpers behind the two public multi-arity wrappers."}
+  {:category :closed-set-sidecar-contract
+   :count 1
+   :method "Move the set<string> collection kind for add-free-pattern-variable into a named closed signature."}
+  {:category :opaque-return-sidecar-contract
+   :count 1
+   :method "Move the opaque serialized-value return boundary into the serializable-impl sidecar signature."}
+  {:category :multi-arity-accumulator-helper
+   :count 1
+   :method "Keep public collect arities while moving the typed traversable accumulator into a small single-arity implementation helper."}
+  {:category :nominal-sidecar-contract
+   :count 1
+   :method "Preserve RuleVars identity through substitution with a named nominal input and return signature."}
+  {:category :homogeneous-variadic-prefix
    :count 4
    :method "Pass a homogeneous cons chain to zip-many instead of constructing a partially typed vector."}
   {:category :variadic-rest-sequence-semantics
@@ -79,45 +85,9 @@
  :algorithm-local
  [{:category :recursive-forward-interface
    :file "test/datascript/lg/query_types.cljc"
-   :count 11
-   :symbols {resolve-predicate [arguments]
-             resolve-function [arguments]
-             resolve-not [return variables]
-             resolve-or [required-variable-names branch-variable-names branches]
-             resolve-rule-branch [arguments]
-             resolve-rule [rule-path arguments]
-             resolve-static-clauses [clauses]}
-   :reason "These mutually recursive and forward-declared query functions otherwise create less-general collection slots, lose closed parser element types, or emit an unbound recursive return. Ordinary sidecar signatures were tested and do not replace the recursive implementation-slot constraints."}
-
-  {:category :recursive-printing-return
-   :file "test/datascript/lg/query.cljc"
    :count 1
-   :symbols {binding-source [return]}
-   :reason "Removing this hint requires artificial no-op String operations at recursive call sites; the explicit return contract is simpler."}
-
-  {:category :unknown-conj-collection-kind
-   :file "test/datascript/lg/query.cljc"
-   :count 1
-   :symbols {add-free-pattern-variable [variables]}
-   :reason "Inlining the helper can retain set evidence but duplicates control flow; the single set parameter contract is simpler."}
-
-  {:category :parser-multi-arity-recursion
-   :file "test/datascript/upstream/parser.cljc"
-   :count 1
-   :symbols {collect [acc]}
-   :reason "The two-arity empty vector does not constrain the recursive three-arity accumulator."}
-
-  {:category :parser-nominal-record-substitution
-   :file "test/datascript/upstream/parser.cljc"
-   :count 1
-   :symbols {substitute-rule-vars [variables]}
-   :reason "Closed RuleVars identity is lost across nested substitution callbacks without the nominal receiver."}
-
-  {:category :forward-option-element
-   :file "test/datascript/upstream/db.cljc"
-   :count 2
-   :symbols {resolve-datom [e tx]}
-   :reason "The forward implementation slot otherwise remains polymorphic while entid-strict specializes both values to option<entity_ref>."}
+   :symbols {resolve-not [return]}
+   :reason "Named closed sidecar signatures replace every parameter hint in the recursive query component. Removing the remaining resolve-not return hint emits an unbound recursive implementation slot; keeping one explicit return contract is simpler than adding SCC-specific compiler logic."}
 
   {:category :protocol-refinement-nominal-receiver
    :file "test/datascript/upstream/db.cljc"
@@ -125,25 +95,11 @@
    :symbols {entid-strict [db]}
    :reason "The declared signature does not constrain the body after db? protocol refinement; the nominal DB receiver prevents a partial structural row from escaping."}
 
-  {:category :multi-arity-transaction-boundary
-   :file "test/datascript/upstream/conn.cljc"
-   :count 3
-   :symbols {with-closed [database-arity-3]
-             -transact! [tx-meta]
-             reset-conn! [tx-meta]}
-   :reason "Multi-arity defaults do not retain nominal DB, optional keyword-map, and DataValue contracts through transaction report construction."}
-
   {:category :macro-field-projection
    :file "test/datascript/upstream/storage.cljc"
    :count 1
    :symbols {serialize-node [node-keys]}
    :reason "The node-keys macro loses tree<Datom> element identity during field projection; the local array contract restores it without dynamic."}
-
-  {:category :opaque-host-alias-return
-   :file "test/datascript/upstream/serialize.cljc"
-   :count 1
-   :symbols {serializable-impl [return]}
-   :reason "LG cannot see that the opaque FFI Serialization_value.t alias equals Lg_edn_backend.t at the implementation boundary; the public wrapper now infers this return from serializable-impl."}
 
   {:category :nominal-filter-return
    :file "test/datascript/upstream/core.cljc"
