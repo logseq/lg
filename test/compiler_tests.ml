@@ -10874,11 +10874,9 @@ let test_map_vector_requires_sum_elements () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "define a closed sum type containing the supported records";
+  |> expect_error_contains "define a sum type containing these types";
   Lg.Compiler.compile_string ~target:Lg.Target.Melange source
-  |> expect_error_contains
-       "define a closed sum type containing the supported records"
+  |> expect_error_contains "define a sum type containing these types"
 
 let test_forward_declared_functions_work_as_collection_callbacks () =
   let source =
@@ -17276,11 +17274,9 @@ let test_recursive_protocol_vectors_require_sum_elements () =
   |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "define a closed sum type containing the supported records";
+  |> expect_error_contains "define a sum type containing these types";
   Lg.Compiler.compile_string ~target:Lg.Target.Melange source
-  |> expect_error_contains
-       "define a closed sum type containing the supported records"
+  |> expect_error_contains "define a sum type containing these types"
 
 let test_loop_protocol_vectors_require_sum_elements () =
   let source =
@@ -28811,11 +28807,11 @@ let test_assoc_rejects_an_untyped_first_class_reference () =
     {|
 (def result (update {} :nested assoc :answer 42))
 (println (get (get result :nested) :answer))
-|}
+  |}
   in
   Lg.Compiler.compile_string source
   |> expect_error_contains
-       "assoc cannot be used as an untyped first-class function"
+       "assoc requires an optional value with a concrete static map or record type"
 
 let test_assoc_uses_a_statically_typed_first_class_wrapper () =
   let source =
@@ -28843,7 +28839,7 @@ let test_assoc_rejects_untyped_map_parameters () =
 (defn put [m k v] (assoc m k v))
 (def result (put {} :answer 42))
 (println (get result :answer))
-|}
+  |}
   in
   Lg.Compiler.compile_string source
   |> expect_error_contains "assoc requires a statically typed map"
@@ -28888,10 +28884,10 @@ let test_assoc_rejects_untyped_nullable_maps () =
   (if (nil? m)
     (assoc m k v)
     (assoc m k v)))
-|}
+  |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains "assoc requires a statically typed map"
+  |> expect_error_contains "assoc expects a map or vector"
 
 let test_assoc_accepts_nullable_static_maps () =
   let source =
