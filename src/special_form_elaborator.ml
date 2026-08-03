@@ -2003,13 +2003,29 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | Error _ as err -> err
           | Ok clause -> parse_catches (clause :: acc) rest)
     in
-    let compatible_try_type body_ty handlers_ty =
+    let rec never_returns = function
+      | Semantic_ir.Located (_, _, expression)
+      | Semantic_ir.Typed (_, expression) ->
+          never_returns expression
+      | Semantic_ir.Apply (Semantic_ir.Ident "raise", [ _ ]) -> true
+      | Semantic_ir.Sequence expressions -> (
+          match List.rev expressions with
+          | last :: _ -> never_returns last
+          | [] -> false)
+      | _ -> false
+    in
+    let compatible_try_type body handlers =
+      let body_ty = body.ty in
+      let handlers_ty = handlers.ty in
       match (body_ty, handlers_ty) with
       | body_ty, handlers_ty
         when Types.contains_dynamic body_ty
              || Types.contains_dynamic handlers_ty ->
           Error.error
             "try branch type is dynamic; add a static type annotation or define a closed sum type containing every branch type"
+      | (TUnknown | TMeta _ | TVar _), _
+        when never_returns body.semantic_expr ->
+          Ok handlers_ty
       | (TUnknown | TMeta _ | TVar _), _ | _, (TUnknown | TMeta _ | TVar _) ->
           Error.error
             "try branch type is unresolved; add a static type annotation or define a closed sum type containing every branch type"
@@ -2051,7 +2067,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             | Ok handlers -> (
                 match
                   ( Semantic_ir.unlocated handlers.semantic_expr,
-                    compatible_try_type body.ty handlers.ty )
+                    compatible_try_type body handlers )
                 with
                 | _, (Error _ as err) -> err
                 | Semantic_ir.Match_guarded (_, cases), Ok ty ->
