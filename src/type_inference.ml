@@ -4050,7 +4050,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         ] ->
         let inferred_or_dynamic form =
           match inferred_form_type params form with
-          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
           | ty -> ty
         in
         let key_ty = inferred_or_dynamic key in
@@ -4074,7 +4074,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         ] ->
         let element_ty =
           match inferred_form_type params value with
-          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
           | ty -> ty
         in
         let reference_ty =
