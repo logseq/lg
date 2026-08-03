@@ -204,6 +204,35 @@ Add an annotation audit to CI.
 The audit must count algorithm-local hints separately from type declarations and external signatures.
 It must fail if DataScript or PSS adds a new local hint without an allowlisted design explanation.
 
+### Reviewed remaining annotation inventory
+
+The reviewed DataScript inventory contains 95 inline annotations: 91 declaration
+annotations and 4 algorithm-local annotations. Persistent sorted set contains no
+inline annotations. The 91 declaration annotations are part of the closed static
+model rather than inference scaffolding:
+
+| Boundary | Count | Justification |
+| --- | ---: | --- |
+| Nominal record and deftype fields | 70 | Preserve the closed shapes of datoms, databases, filtered databases, transaction reports, entities, connections, and parser forms. |
+| Typed global state | 3 | Constrain the query cache, data reader registry, and weak stored-database registry. |
+| Protocol method parameters | 18 | Define closed index, equality, ordering, relation, and storage dispatch contracts. |
+
+The four algorithm-local annotations were each removed and independently
+recompiled against the complete Native DataScript source set. Each removal has a
+specific static failure and is therefore retained:
+
+| Location | Boundary | Failure without the annotation |
+| --- | --- | --- |
+| `datascript.db/entid-strict` | Nominal `DB` receiver | The named database record reaches a dynamic boundary as an anonymous structural record. |
+| `datascript.lg.query-types/resolve-not` | Recursive relation result | The recursive SCC emits an unbound OCaml value without an explicit result interface. |
+| `datascript.storage/serialize-node` | `Datom array` returned by the PSS node accessor | A datom reaches a dynamic boundary before indexed serialization. |
+| `datascript.core/filter` | Nominal `FilteredDB` result | Downstream hashing sees an anonymous `__lg_record` instead of the nominal filtered database type. |
+
+These four annotations may be removed only after a general inference improvement
+eliminates the corresponding failure. Do not replace them with dynamic values,
+source conversion helpers, name-based inference, or DataScript-specific compiler
+branches.
+
 ## Phase 1: Pin upstream and record the parity matrix
 
 Files:
