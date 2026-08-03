@@ -24221,7 +24221,7 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
     {|
 (defrecord PlainSymbol [symbol])
 (defrecord RuleVars [required free])
-(defrecord RuleForm [name vars clauses])
+(defrecord RuleForm [^:symbol name vars clauses])
 
 (defn parse-plain-symbol [form]
   (when (symbol? form)
