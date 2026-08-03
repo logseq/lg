@@ -4677,13 +4677,23 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   | Ok params, _ -> Ok params)
                 (Ok params) values value_types)
     | FList (FSymbol "prn" :: values) ->
-        infer_expected_all (Types.dynamic_constraint TUnknown) params values
+        List.fold_left
+          (fun result value ->
+            Result.bind result (fun params ->
+                match value with
+                | FSymbol name when string_mem_assoc name params ->
+                    constrain_printable_symbol params name
+                | _ ->
+                    infer_expected
+                      (Types.printable_constraint (Type_solver.fresh ()))
+                      params value))
+          (Ok params) values
     | FList (FSymbol "apply" :: FSymbol ("pr" | "clojure.core/pr") :: arguments)
       -> (
         match List.rev arguments with
         | FSymbol collection :: _ ->
             constrain_seqable
-              (Types.dynamic_constraint TUnknown)
+              (Types.printable_constraint (Type_solver.fresh ()))
               params collection
         | _ -> infer_all params arguments)
     | FList
