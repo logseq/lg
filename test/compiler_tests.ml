@@ -29558,18 +29558,18 @@ let test_reduce_partition_callback_infers_static_accumulator_and_items () =
    (record Item (attr :a) (value 2))
    (record Item (attr :b) (value 3))])
 
-(declare build-cache)
+(def seed-key :seed)
+(def empty-cache
+  (dissoc (hash-map seed-key 0) seed-key))
 
-(defn build-cache [items]
+(def cache
   (reduce
     (fn [result part]
       (if-some [item (first part)]
         (assoc result (.-attr item) (.-value item))
         result))
-    (hash-map)
+    empty-cache
     (partition-by (fn [item] (.-attr item)) items)))
-
-(def cache (build-cache items))
 
 (println (str (get cache :a 0) ":" (get cache :b 0)))
 |}
