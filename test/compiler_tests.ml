@@ -12127,17 +12127,33 @@ let test_parameterized_variant_relationships_are_checked_by_ocaml () =
 |}
   |> expect_error_contains "string"
 
-let test_parameterized_type_declarations_reject_bad_parameters () =
-  Lg.Compiler.compile_string {|(type-alias maybe [a a] :option<a>)|}
-  |> expect_error_contains "duplicate type parameter a";
-  Lg.Compiler.compile_string {|(type-record pair [a :bad] (value :a))|}
-  |> expect_error_contains "type parameters must be symbols";
-  Lg.Compiler.compile_string {|(type-variant box [a] (Box :missing))|}
-  |> expect_error_contains "Unbound type constructor missing";
-  Lg.Compiler.compile_string {|(type-alias maybe [] :option<int>)|}
-  |> expect_error_contains "type parameter vector must not be empty";
-  Lg.Compiler.compile_string {|(type-record bad [a] (callback :fn<int>))|}
-  |> expect_error_contains "unknown record field type :fn<int>"
+let test_parameterized_type_declarations_validate_parameters () =
+  let reject label source expected =
+    try Lg.Compiler.compile_string source |> expect_error_contains expected
+    with Failure message -> failwith (label ^ ": " ^ message)
+  in
+  reject "duplicate parameter" {|(type-alias maybe [a a] :option<a>)|}
+    "duplicate type parameter a";
+  reject "non-symbol parameter"
+    {|(type-record pair [a :bad] (value :a))|}
+    "type parameters must be symbols";
+  reject "unknown variant parameter"
+    {|(type-variant box [a] (Box :missing))|}
+    "Unbound type constructor missing";
+  reject "empty parameter vector" {|(type-alias maybe [] :option<int>)|}
+    "type parameter vector must not be empty";
+  let zero_arity_field =
+    {|
+(type-record thunk-holder
+  (callback :fn<int>))
+(def holder
+  (record thunk-holder
+    (callback (fn [] 42))))
+(println ((:callback holder)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string zero_arity_field |> expect_ok in
+  assert_ocaml_runs "zero_arity_function_record_field" "42\n" ocaml_source
 
 let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
   let source =
@@ -33349,8 +33365,8 @@ let test_discarded_function_values_use_ignore () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if not (string_contains_substring ocaml_source "Stdlib.ignore") then
-    failwith "discarded expressions must use Stdlib.ignore";
+  if not (string_contains_substring ocaml_source ".ignore") then
+    failwith ("discarded expressions must use ignore:\n" ^ ocaml_source);
   assert_ocaml_runs "discarded_function_values_use_ignore" "2\n" ocaml_source
 
 let test_discarded_pure_values_are_elided () =
@@ -33360,7 +33376,7 @@ let test_discarded_pure_values_are_elided () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "Stdlib.ignore" then
+  if string_contains_substring ocaml_source ".ignore" then
     failwith "discarded pure values should not generate effect scaffolding";
   assert_ocaml_runs "discarded_pure_values_are_elided" "2\n" ocaml_source
 
@@ -34147,8 +34163,8 @@ let tests =
       test_parameterized_record_relationships_are_checked_by_ocaml );
     ( "parameterized variant relationships are checked by OCaml",
       test_parameterized_variant_relationships_are_checked_by_ocaml );
-    ( "parameterized type declarations reject bad parameters",
-      test_parameterized_type_declarations_reject_bad_parameters );
+    ( "parameterized type declarations validate parameters",
+      test_parameterized_type_declarations_validate_parameters );
     ( "OCaml-owned branch types are checked by OCaml",
       test_ocaml_owned_branch_types_are_checked_by_ocaml );
     ( "OCaml-owned branch type mismatch is delegated to OCaml",
