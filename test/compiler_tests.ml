@@ -17506,8 +17506,10 @@ let test_cross_module_dynamic_protocol_results_require_static_sum () =
       Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state set_source
       |> expect_ok
     in
-    ignore app_source;
-    Lg.Compiler.compile_chunk ~target state db_source
+    let state, _db_ocaml =
+      Lg.Compiler.compile_chunk ~target state db_source |> expect_ok
+    in
+    Lg.Compiler.compile_chunk ~target state app_source
     |> expect_error_contains "match a closed sum type"
   in
   reject Lg.Target.Native;
@@ -17860,8 +17862,7 @@ let test_compare_rejects_dynamic_scalar_domains () =
 (def int-result (cmp 1 2))
 (def string-result (cmp "b" "a"))
 |}
-  |> expect_error_contains
-       "define a closed sum type and match its cases explicitly"
+  |> expect_error_contains "compare arguments must have the same type"
 
 let test_class_and_type_require_static_sum_matching () =
   let reject source =
@@ -20532,7 +20533,7 @@ let test_doseq_preserves_generic_protocol_collection_elements () =
     native_source;
   ignore (compile Lg.Target.Melange)
 
-let test_vals_support_generic_dynamic_and_empty_maps () =
+let test_vals_support_generic_and_empty_maps_and_reject_open_edn_values () =
   let source =
     {|
 (ns app.vals
@@ -20542,24 +20543,26 @@ let test_vals_support_generic_dynamic_and_empty_maps () =
   (reduce max (vals values)))
 (defn lookup-plus-max [values key]
   (+ (values key) (reduce max (vals values))))
-(def dynamic-values
-  (vals (edn/read-string "{:a 1 :b 2}")))
-
 (println (= 3 (max-value (hash-map 'a 1 'b 3))))
 (println (= 4 (lookup-plus-max (hash-map 'a 1 'b 3) 'a)))
-(println
-  (and
-    (= 2 (count dynamic-values))
-    (= 1 (first dynamic-values))
-    (= 2 (second dynamic-values))))
 (println (empty? (vals (hash-map))))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "vals_support_generic_dynamic_and_empty_maps"
-    "true\ntrue\ntrue\ntrue\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  assert_ocaml_runs "vals_support_generic_and_empty_maps" "true\ntrue\ntrue\n"
+    native_source;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  let reject_open_edn target =
+    Lg.Compiler.compile_string ~target
+      {|
+(ns app.dynamic-vals
+  (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
+(vals (edn/read-string "{:a 1 :b 2}"))
+|}
+    |> expect_error_contains "vals expects a map"
+  in
+  reject_open_edn Lg.Target.Native;
+  reject_open_edn Lg.Target.Melange
 
 let test_zipmap_stops_at_shortest_and_preserves_dynamic_boundaries () =
   let source =
@@ -34741,8 +34744,8 @@ let tests =
     ("vals return homogeneous values", test_vals_return_homogeneous_values);
     ( "vals accept statically typed record maps",
       test_vals_accept_statically_typed_record_maps );
-    ( "vals support generic dynamic and empty maps",
-      test_vals_support_generic_dynamic_and_empty_maps );
+    ( "vals support generic and empty maps and reject open EDN values",
+      test_vals_support_generic_and_empty_maps_and_reject_open_edn_values );
     ( "zipmap stops at shortest and preserves dynamic boundaries",
       test_zipmap_stops_at_shortest_and_preserves_dynamic_boundaries );
     ("map accepts callable map values", test_map_accepts_callable_map_values);
