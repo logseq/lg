@@ -1333,10 +1333,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           Env.with_expected_type (Some TBool) env
       | _ -> env
     in
+    let body =
+      Result.bind
+        (compile_body scope env "when body requires at least one form" body_forms)
+        (fun body ->
+          match Env.expected_type env with
+          | Some (TNullable inner | TOcaml_app ("option", [ inner ]))
+            when Option.is_none (optional_payload body.ty) ->
+              Result.map (typed_ir inner)
+                (adapt_branch_expression env inner body)
+          | Some _ | None -> Ok body)
+    in
     match
-      ( compile_expr scope condition_env condition,
-        compile_body scope env "when body requires at least one form" body_forms
-      )
+      (compile_expr scope condition_env condition, body)
     with
     | (Error _ as err), _ -> err
     | _, (Error _ as err) -> err
@@ -1585,6 +1594,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                      let last = index = last_index in
                      let value_ty =
                        match (operator, last, expression.ty) with
+                       | ( `And,
+                           false,
+                           (TNullable payload_ty
+                           | TOcaml_app ("option", [ payload_ty ])) )
+                         when payload_is_always_truthy payload_ty ->
+                           TNil
+                       | `And, false, ty -> (
+                           match Types.truthy_constraint_info ty with
+                           | Some
+                               (TNullable payload_ty
+                               | TOcaml_app ("option", [ payload_ty ]))
+                             when payload_is_always_truthy payload_ty ->
+                               TNil
+                           | Some _ | None -> expression.ty)
                        | ( `Or,
                            false,
                            (TNullable payload_ty
@@ -3126,7 +3149,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           let inferred = inferred_binding_type env name value_form rest in
           match inferred with
           | TUnknown | TMeta _ | TVar _ -> env
-          | ty -> Env.with_expected_type (Some ty) env)
+          | ty ->
+              let expected_ty =
+                Types.truthy_constraint_info ty |> Option.value ~default:ty
+              in
+              Env.with_expected_type (Some expected_ty) env)
       | (FVector _ as pattern) ->
           let names =
             Destructure.pattern_names pattern

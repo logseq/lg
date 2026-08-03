@@ -120,6 +120,10 @@ let rec refine_type existing inferred =
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
   | existing, inferred
+    when Option.is_some (Types.truthy_constraint_info existing) ->
+      let value_ty = Types.truthy_constraint_info existing |> Option.get in
+      Types.truthy_constraint (refine_type value_ty inferred)
+  | existing, inferred
     when Option.is_some (Types.contains_constraint_info existing)
          && Option.is_some (Types.contains_constraint_info inferred) ->
       let existing_key, existing_value =
