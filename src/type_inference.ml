@@ -652,6 +652,33 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
 
 let add_record_field_constraint name keyword field_ty params =
   let merge_nested_fields fields inferred_fields =
+    let rec same_open_shape left right =
+      Types.equal left right
+      ||
+      match (left, right) with
+      | (TUnknown | TMeta _ | TVar _), _
+      | _, (TUnknown | TMeta _ | TVar _) ->
+          true
+      | TNullable left, TNullable right
+      | TNullable left, TOcaml_app ("option", [ right ])
+      | TOcaml_app ("option", [ left ]), TNullable right ->
+          same_open_shape left right
+      | TArray left, TArray right
+      | TRef left, TRef right
+      | TList left, TList right
+      | TVector left, TVector right
+      | TSet left, TSet right
+      | TSeq left, TSeq right ->
+          same_open_shape left right
+      | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args) ->
+          left_name = right_name
+          && List.length left_args = List.length right_args
+          && List.for_all2 same_open_shape left_args right_args
+      | TTuple left, TTuple right ->
+          List.length left = List.length right
+          && List.for_all2 same_open_shape left right
+      | _ -> false
+    in
     let statically_seqable = function
       | TRecord _ | TNamed_record _ | TMap_keys
       | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
@@ -662,13 +689,26 @@ let add_record_field_constraint name keyword field_ty params =
       match find_field inferred.keyword fields with
       | None -> Ok (inferred :: fields)
       | Some existing when Types.equal existing.ty inferred.ty -> Ok fields
-      | Some existing when Types.equal existing.ty TUnknown ->
+      | Some existing
+        when (match existing.ty with
+             | TUnknown | TMeta _ | TVar _ -> true
+             | _ -> false) ->
           Ok
             (inferred
             :: List.filter
                  (fun field -> field.keyword <> inferred.keyword)
                  fields)
-      | Some _ when Types.equal inferred.ty TUnknown -> Ok fields
+      | Some _
+        when (match inferred.ty with
+             | TUnknown | TMeta _ | TVar _ -> true
+             | _ -> false) ->
+          Ok fields
+      | Some existing when same_open_shape existing.ty inferred.ty ->
+          Ok
+            ( { inferred with ty = refine_type existing.ty inferred.ty }
+            :: List.filter
+                 (fun field -> field.keyword <> inferred.keyword)
+                 fields )
       | Some existing
         when statically_seqable existing.ty
              && Option.is_some
@@ -740,7 +780,7 @@ let add_record_field_constraint name keyword field_ty params =
         | TRecord existing_fields, TNullable (TRecord inferred_fields) ->
             Result.map
               (fun nested_fields ->
-                make_field keyword (TRecord nested_fields)
+                make_field keyword (TNullable (TRecord nested_fields))
                 :: List.filter
                      (fun candidate -> candidate.keyword <> keyword)
                      fields)
@@ -756,7 +796,7 @@ let add_record_field_constraint name keyword field_ty params =
         | TNamed_record _ as existing, TNullable (TRecord inferred_fields)
           when Types.row_compatible ~expected:(TRecord inferred_fields)
                  ~actual:existing ->
-            Ok fields
+            replace_field_type (TNullable existing)
         | ( TNullable (TNamed_record _ as existing),
             (TRecord inferred_fields | TNullable (TRecord inferred_fields)) )
           when Types.row_compatible ~expected:(TRecord inferred_fields)
@@ -1904,6 +1944,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args)
       when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
         infer_expected_all expected_ty params args
+    | FList
+        [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
+        add_record_field_constraint name keyword
+          (TRecord [ make_field nested_keyword expected_ty ])
+          params
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword expected_ty params
     | FList [ FKeyword keyword; FSymbol name; default ]

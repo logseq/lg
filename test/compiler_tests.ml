@@ -24000,27 +24000,52 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
 let test_nested_keyword_lookup_preserves_nullable_map_evidence () =
   let source =
     {|
-(defrecord ReturnMap [type symbols])
-(defrecord Query [qreturn-map])
+(type-record return-map
+  (type :keyword)
+  (symbols :vector<keyword>))
+(type-record query
+  (qreturn-map :option<return-map>))
 
 (defn validate-return-map [query]
   (when-some [return-map (:qreturn-map query)]
     (:type return-map))
   (when-some [return-symbols (:symbols (:qreturn-map query))]
-    (count return-symbols))
+    (Rrbvec.length return-symbols))
+  true)
+
+(defn validate-return-map-reversed [query]
+  (when-some [return-symbols (:symbols (:qreturn-map query))]
+    (Rrbvec.length return-symbols))
+  (when-some [return-map (:qreturn-map query)]
+    (:type return-map))
   true)
 
 (println
-  (str (validate-return-map (Query. nil)) ":"
+  (str (validate-return-map
+         (record query (qreturn-map None))) ":"
        (validate-return-map
-         (Query. (ReturnMap. :keys [:name])))))
+         (record query
+           (qreturn-map
+             (Some (record return-map
+                     (type :keys)
+                     (symbols [:name])))))) ":"
+       (validate-return-map-reversed
+         (record query (qreturn-map None))) ":"
+       (validate-return-map-reversed
+         (record query
+           (qreturn-map
+             (Some (record return-map
+                     (type :keys)
+                     (symbols [:name]))))))))
 |}
   in
   let native_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
   in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "nested nullable record lookup must remain statically typed";
   assert_ocaml_runs "nested_keyword_lookup_preserves_nullable_map_evidence"
-    "true:true\n" native_source;
+    "true:true:true:true\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
