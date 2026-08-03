@@ -25090,35 +25090,39 @@ let test_map_to_record_evaluates_source_once () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_cond_thread_arrays_preserve_nominal_elements_for_sorting () =
+let test_closed_array_sources_preserve_nominal_elements_for_sorting () =
   let source =
     {|
 (deftype Entry [^int value])
 (type-record entry-array
   (values :array<entry>))
+(type-variant entry-source
+  (EntryVector :vector<entry>)
+  (EntryArray :array<entry>))
 (defn compare-entries [^Entry left ^Entry right]
   (compare (.-value left) (.-value right)))
-(defn sorted-entries [values]
-  (first (drop-while (fn [^Entry _] false) values))
-  (let [result (cond-> values
-                 (not (array-value? values)) (array-from))]
+(defn sorted-entries [source]
+  (let [result
+        (match source
+          (EntryVector values) (array-from values)
+          (EntryArray values) values)]
     (asort! compare-entries result)
     result))
 (def from-vector
   (record entry-array
-    (values (sorted-entries [(Entry. 2) (Entry. 1)]))))
+    (values (sorted-entries (EntryVector [(Entry. 2) (Entry. 1)])))))
 (def from-array
   (record entry-array
-    (values (sorted-entries (array (Entry. 4) (Entry. 3))))))
+    (values (sorted-entries (EntryArray (array (Entry. 4) (Entry. 3)))))))
 (println "ok")
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs
-    "cond_thread_arrays_preserve_nominal_elements_for_sorting" "ok\n"
+    "closed_array_sources_preserve_nominal_elements_for_sorting" "ok\n"
     ocaml_source
 
-let test_cond_thread_recognizes_namespaced_array_normalization_macros () =
+let test_namespaced_array_macros_preserve_closed_sources () =
   let arrays_source =
     {|
 (ns arrays)
@@ -25138,14 +25142,22 @@ let test_cond_thread_recognizes_namespaced_array_normalization_macros () =
 (ns app
   (:require [arrays :as arrays]))
 (deftype Entry [^int value])
+(type-variant entry-source
+  (EntryVector :vector<entry>)
+  (EntryArray :array<entry>))
 (defn compare-entries [^Entry left ^Entry right]
   (compare (.-value left) (.-value right)))
-(defn normalize [values]
-  (first values)
-  (let [result (cond-> values
-                 (not (arrays/array? values)) (arrays/into-array))]
+(defn normalize [source]
+  (let [result
+        (match source
+          (EntryVector values) (arrays/into-array values)
+          (EntryArray values) values)]
     (arrays/asort result compare-entries)
     result))
+(def vector-source (EntryVector [(Entry. 2) (Entry. 1)]))
+(def array-source (EntryArray (array (Entry. 4) (Entry. 3))))
+(normalize vector-source)
+(normalize array-source)
 (println "ok")
 |}
   in
@@ -25154,7 +25166,7 @@ let test_cond_thread_recognizes_namespaced_array_normalization_macros () =
   in
   let _, app_ocaml = Lg.Compiler.compile_chunk state app_source |> expect_ok in
   assert_ocaml_runs
-    "cond_thread_recognizes_namespaced_array_normalization_macros" "ok\n"
+    "namespaced_array_macros_preserve_closed_sources" "ok\n"
     (arrays_ocaml ^ "\n" ^ app_ocaml)
 
 let test_occurrence_type_hints_require_closed_record_sums () =
@@ -35379,10 +35391,10 @@ let tests =
       test_map_to_record_preserves_generic_fields_from_map_literals );
     ( "map->record evaluates source once",
       test_map_to_record_evaluates_source_once );
-    ( "cond-> arrays preserve nominal elements for sorting",
-      test_cond_thread_arrays_preserve_nominal_elements_for_sorting );
-    ( "cond-> recognizes namespaced array normalization macros",
-      test_cond_thread_recognizes_namespaced_array_normalization_macros );
+    ( "closed array sources preserve nominal elements for sorting",
+      test_closed_array_sources_preserve_nominal_elements_for_sorting );
+    ( "namespaced array macros preserve closed sources",
+      test_namespaced_array_macros_preserve_closed_sources );
     ( "occurrence type hints require closed record sums",
       test_occurrence_type_hints_require_closed_record_sums );
     ( "nested assoc reads static records",
