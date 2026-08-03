@@ -409,10 +409,10 @@ let test_assoc_rejects_type_changes () =
     {|
 (def x {:name "Ada", :age 36})
 (def y (assoc x :age "old"))
-|}
+  |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains "heterogeneous map values"
+  |> expect_error_contains "cannot assoc :age as string because it is already int"
 
 let test_dissoc_missing_fields_is_noop () =
   let source =
@@ -13446,9 +13446,11 @@ let test_ocaml_refs_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(reset! (atom 1) "bad")|}
   |> expect_error_contains "reset! value must match referenced type"
 
-let test_float_arithmetic_rejects_mixed_numeric_types () =
-  Lg.Compiler.compile_string {|(def bad (+ 1 2.5))|}
-  |> expect_error "numeric arguments must all have the same type"
+let test_float_arithmetic_coerces_mixed_numeric_types () =
+  let source = {|(println (+ 1 2.5))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_arithmetic_coerces_mixed_numeric_types" "3.5\n"
+    ocaml_source
 
 let test_float_arithmetic_uses_core_numeric_operators () =
   let source =
@@ -13549,11 +13551,11 @@ let test_float_sets_support_scalar_and_collection_elements () =
   assert_ocaml_runs "float_sets_support_scalar_and_collection_elements"
     "2:true:1:true:2:true\n" ocaml_source
 
-let test_float_numeric_core_rejects_invalid_mixes () =
-  Lg.Compiler.compile_string {|(def bad (< 1 2.0))|}
-  |> expect_error_contains "same type";
-  Lg.Compiler.compile_string {|(def bad (max 1 2.0))|}
-  |> expect_error_contains "same type";
+let test_float_numeric_core_coerces_mixed_numbers () =
+  let source = {|(println (str (< 1 2.0) ":" (max 1 2.0)))|} in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "float_numeric_core_coerces_mixed_numbers" "true:2.\n"
+    ocaml_source;
   Lg.Compiler.compile_string {|(def bad (even? 2.0))|}
   |> expect_error "expected int arguments for even?"
 
@@ -18793,7 +18795,7 @@ let test_vals_accept_statically_typed_record_maps () =
 
 let test_vals_rejects_heterogeneous_values () =
   Lg.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
-  |> expect_error_contains "define a sum type"
+  |> expect_error_contains "vals requires all map values to have the same type"
 
 let test_vectors_require_closed_sums_for_mixed_keyword_and_string_elements () =
   Lg.Compiler.compile_string {|(println (pr-str [:name "name"]))|}
@@ -34260,8 +34262,8 @@ let tests =
       test_fn_predicate_recognizes_static_functions );
     ( "OCaml refs reject invalid operations",
       test_ocaml_refs_reject_invalid_operations );
-    ( "syntax convergence: float arithmetic rejects mixed numeric types",
-      test_float_arithmetic_rejects_mixed_numeric_types );
+    ( "syntax convergence: float arithmetic coerces mixed numeric types",
+      test_float_arithmetic_coerces_mixed_numeric_types );
     ( "syntax convergence: float arithmetic uses core numeric operators",
       test_float_arithmetic_uses_core_numeric_operators );
     ( "special float literals are portable",
@@ -34276,8 +34278,8 @@ let tests =
       test_float_numeric_core_is_coherent );
     ( "numeric coherence: float sets support scalar and collection elements",
       test_float_sets_support_scalar_and_collection_elements );
-    ( "numeric coherence: invalid float mixes are rejected",
-      test_float_numeric_core_rejects_invalid_mixes );
+    ( "numeric coherence: mixed numbers coerce to float",
+      test_float_numeric_core_coerces_mixed_numbers );
     ( "OCaml record values compile through source backend",
       test_ocaml_record_values_compile_through_source_backend );
     ( "custom record set modules are emitted on demand",

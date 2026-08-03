@@ -8480,19 +8480,13 @@ let create ~compile_expr =
     | "max" | "min" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok (first :: _ as args)
-          when Types.equal first.ty TFloat
-                         && List.for_all
-                              (fun arg -> Types.equal arg.ty TFloat)
-                              args ->
-            Core_float.compile_min_max name args
         | Ok args
           when List.exists (fun arg -> Types.equal arg.ty TFloat) args
                && List.for_all
                     (fun arg -> Types.is_numeric arg.ty)
                     args ->
-                      Error.error
-                        (name ^ " numeric arguments must all have the same type")
+            Core_float.compile_min_max name
+              (List.map Core_float.widen_to_float args)
         | Ok args -> Core_int.compile_min_max name args)
     | "quot" | "rem" | "mod" -> (
         match compile_args () with
