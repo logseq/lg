@@ -617,3 +617,24 @@ All four full-scale serialization comparisons now pass. A chunk size of
 8,192 regressed the focused JSON measurement, and constructing temporary JS
 JSON row arrays nearly doubled it; both experiments were removed before the
 final gate.
+
+## Final typed-boundary verification (2026-08-03)
+
+After reducing the reviewed inventory to 4 algorithm-local annotations and
+91 closed declaration annotations, the complete DataScript upstream alias,
+the cross-runtime scaling gates, and the full-scale serialization gate were
+rebuilt serially. No dynamic boundary or compiler special case was added.
+
+The full-scale serialization gate used the pinned 300,000-person workload and
+the recorded upstream baseline:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `freeze` | 680.800 | 528.994 | -22.3% | 588.983 | -13.5% |
+| `thaw` | 1134.900 | 1071.185 | -5.6% | 964.377 | -15.0% |
+
+All four comparisons pass. The scaling checks also passed: `add-all` grew by
+4.59 times when the population grew from 1,000 to 4,000; the Melange/Native
+`init` ratio was 0.56; the Melange/Native `freeze` ratio was 1.37; and the
+wide recursive-rule 5x3-to-7x3 ratios were 14.75 Native and 13.97 Melange.
+The dedicated recursive-rule performance test passed separately.
