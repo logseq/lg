@@ -81,7 +81,16 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       match
         Resolver.lookup_record_type scope env (Type_id.to_string record.type_id)
       with
-      | Ok canonical -> Types.refresh_named_record canonical ty
+      | Ok canonical -> (
+          match Types.refresh_named_record canonical ty with
+          | TNamed_record refreshed when String.contains record.type_name '.' ->
+              TNamed_record
+                {
+                  refreshed with
+                  type_name = record.type_name;
+                  set_module_name = record.set_module_name;
+                }
+          | refreshed -> refreshed)
       | Error _ -> ty)
   | TNullable inner ->
       TNullable (infer_named_record ~allow_dynamic_fields scope env inner)
@@ -219,7 +228,6 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
         when List.length record.type_parameters = List.length arguments ->
           TNamed_record { record with type_arguments = arguments }
       | Ok _ | Error _ -> TOcaml_app (name, arguments)))
-  | TOcaml name as ty when String.contains name '.' -> ty
   | TOcaml name as ty ->
       let record_prefix = "__lg_record:" in
       let source_name =
@@ -239,19 +247,22 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
                 manifest = Some manifest;
                 _;
               } ->
-              if
-                String.contains source_name '.'
-                || String.contains source_name '/'
-              then ty
-              else infer_named_record ~allow_dynamic_fields scope env manifest
+              infer_named_record ~allow_dynamic_fields scope env manifest
           | Some { kind = Alias; _ } -> ty
           | Some { kind = Variant; type_id; _ } ->
               let type_name = Names.sanitize_name (Type_id.name type_id) in
+              let owner = Type_id.owner type_id |> String.concat "." in
+              let owner_is_module =
+                owner <> ""
+                && Module_registry.mem_module
+                     (Module_id.create ~owner:[] ~name:owner)
+                     (Env.modules env)
+              in
               if
-                String.contains source_name '.'
-                || String.contains source_name '/'
+                (String.contains source_name '.'
+                || String.contains source_name '/')
+                && owner_is_module
               then
-                let owner = Type_id.owner type_id |> String.concat "." in
                 TOcaml (Type_registry.emitted_name ~scope:owner type_name)
               else TOcaml type_name
           | Some { kind = Record; _ } | None ->

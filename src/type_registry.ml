@@ -41,6 +41,12 @@ let declare ?(type_parameters = []) ?manifest ~scope source_name kind registry =
 let find_by_emitted_name emitted_name registry =
   Emitted_map.find_opt emitted_name registry
 
+let hide_manifest ~scope source_name registry =
+  let emitted_name = emitted_name ~scope source_name in
+  Emitted_map.update emitted_name
+    (Option.map (fun declaration -> { declaration with manifest = None }))
+    registry
+
 let bindings registry = Emitted_map.bindings registry
 
 let export_scope ~from_scope ~to_scope source target =

@@ -1,4 +1,5 @@
 module Signature_map = Map.Make (Signature_id)
+module Signature_set = Set.Make (Signature_id)
 module Functor_map = Map.Make (Functor_id)
 module Module_map = Map.Make (Module_id)
 module Module_set = Set.Make (Module_id)
@@ -75,6 +76,31 @@ let find_signature_named ~owner name registry =
               || Names.module_path_to_ocaml (Signature_id.name signature_id) = name)
          then Some (signature_id, items)
          else None)
+
+let abstract_signature_types signature_id registry =
+  let rec collect visiting signature_id =
+    if Signature_set.mem signature_id visiting then []
+    else
+      let visiting = Signature_set.add signature_id visiting in
+      match find_signature signature_id registry with
+      | None -> []
+      | Some items ->
+          List.concat_map
+            (function
+              | Lowered.Signature_type
+                  { type_name; manifest = None; _ } ->
+                  [ type_name ]
+              | Lowered.Signature_include { module_signature; _ } ->
+                  collect visiting
+                    (Signature_id.create ~owner:(Signature_id.owner signature_id)
+                       ~name:module_signature)
+              | Lowered.Signature_type { manifest = Some _; _ }
+              | Lowered.Signature_value _
+              | Lowered.Signature_module _ ->
+                  [])
+            items
+  in
+  collect Signature_set.empty signature_id
 
 let store_functor_result functor_id bindings registry =
   {

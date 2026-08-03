@@ -7,6 +7,19 @@ let binding_key module_path name = module_path ^ "/" ^ name
 let binding_ocaml_name module_path name =
   Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
 
+let remap_binding_module_path module_path (binding : binding) =
+  let member_name =
+    match String.rindex_opt binding.ocaml_name '.' with
+    | None -> binding.ocaml_name
+    | Some separator ->
+        String.sub binding.ocaml_name (separator + 1)
+          (String.length binding.ocaml_name - separator - 1)
+  in
+  {
+    binding with
+    ocaml_name = Names.module_path_to_ocaml module_path ^ "." ^ member_name;
+  }
+
 let changed_bindings previous updated =
   Env.to_bindings updated
   |> List.filter (fun (key, binding) ->
@@ -58,7 +71,7 @@ let include_public_bindings module_path env included_module_path =
            let name = String.sub key prefix_len (String.length key - prefix_len) in
            Some
              ( binding_key module_path name,
-               { binding with ocaml_name = binding_ocaml_name module_path name } )
+               remap_binding_module_path module_path binding )
          else if
            String.length key > record_prefix_len
            && String.sub key 0 record_prefix_len = record_prefix
@@ -90,9 +103,7 @@ let alias_bindings env alias_path target_path =
                (String.length key - direct_prefix_len)
            in
            let alias_key = binding_key alias_path name in
-           let alias_binding =
-             { binding with ocaml_name = binding_ocaml_name alias_path name }
-           in
+           let alias_binding = remap_binding_module_path alias_path binding in
            Some (alias_key, alias_binding)
          else if
            String.length key > nested_prefix_len
@@ -107,10 +118,7 @@ let alias_bindings env alias_path target_path =
                let nested_alias_path = alias_path ^ "." ^ nested_path in
                Some
                  ( binding_key nested_alias_path name,
-                   {
-                     binding with
-                     ocaml_name = binding_ocaml_name nested_alias_path name;
-                   } )
+                   remap_binding_module_path nested_alias_path binding )
            | _ -> None)
          else if
            String.length key > direct_record_prefix_len

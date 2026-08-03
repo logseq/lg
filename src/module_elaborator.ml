@@ -678,6 +678,26 @@ let rec compile_module ?location ?signature_name ?signature_location
             (Env.protocols env)
         in
         let env = Env.with_protocols protocols env in
+        let env =
+          match signature_name with
+          | None -> env
+          | Some signature_name ->
+              let signature_id =
+                Signature_id.create
+                  ~owner:(if scope = "" then [] else [ scope ])
+                  ~name:signature_name
+              in
+              let types =
+                Module_registry.abstract_signature_types signature_id
+                  (Env.modules env)
+                |> List.fold_left
+                     (fun types type_name ->
+                       Type_registry.hide_manifest ~scope:module_path type_name
+                         types)
+                     (Env.types env)
+              in
+              Env.with_types types env
+        in
         let modules =
           if register_module then
             Module_registry.declare_module (module_id_of_path module_path)
