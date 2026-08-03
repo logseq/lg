@@ -623,7 +623,8 @@ let constrain_optional_seqable ?(sequential = false) element_ty params name =
     else Types.optional_seqable_constraint element_ty value_ty
   in
   let rec add_constraint = function
-    | TUnknown | TMeta _ | TVar _ -> make_optional element_ty TUnknown
+    | (TUnknown | TMeta _ | TVar _) as value_ty ->
+        make_optional element_ty (TNullable value_ty)
     | (TNullable _ | TOcaml_app ("option", [ _ ])) as value_ty ->
         make_optional element_ty value_ty
     | TOcaml_app (constraint_name, [ existing_element; value_ty ])
@@ -4212,7 +4213,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               Types.nil_predicate_constraint value_ty
           | ty -> ty
         in
+        let nil_predicate_optional_seqable =
+          Option.bind
+            (Types.nil_predicate_constraint_info inferred_ty)
+            (fun ty ->
+              match Types.seqable_constraint_info ty with
+              | Some ((`Optional | `Optional_sequential), _, _) -> Some ty
+              | Some (`Required, _, _) | None -> None)
+        in
         (match (value, inferred_ty) with
+        | FSymbol name, _
+          when Option.is_some nil_predicate_optional_seqable ->
+            Ok
+              (replace_param name
+                 (Option.get nil_predicate_optional_seqable)
+                 params)
+        | FSymbol name, ty
+          when (match Types.seqable_constraint_info ty with
+               | Some ((`Optional | `Optional_sequential), _, _) -> true
+               | Some (`Required, _, _) | None -> false) ->
+            Ok (replace_param name ty params)
         | ( FSymbol name,
             ((TNullable _ | TOcaml_app ("option", [ _ ])) as ty) ) ->
             Ok (replace_param name ty params)

@@ -49,6 +49,11 @@ let create ~compile_expr =
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
     | _ -> None
   in
+  let non_concrete_compare_error () =
+    Error.error
+      "compare expects one concrete comparable type; define a closed sum type \
+       and match its cases explicitly for a heterogeneous domain"
+  in
     let compile_distinct_question scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
@@ -93,6 +98,10 @@ let create ~compile_expr =
             | _ -> None
           in
           (match comparable with
+          | None
+            when Option.is_some (Types.seqable_constraint_info left.ty)
+                 && Option.is_some (Types.seqable_constraint_info right.ty) ->
+              non_concrete_compare_error ()
           | None ->
             Error.error
               ("compare arguments must have the same type: "
@@ -124,10 +133,7 @@ let create ~compile_expr =
                   Error.error
                     "IComparable/-compare has an invalid signature"
               | None when not (comparable_type ty) ->
-                  Error.error
-                    "compare expects one concrete comparable type; define a \
-                     closed sum type and match its cases explicitly for a \
-                     heterogeneous domain"
+                  non_concrete_compare_error ()
               | None ->
                   Ok
                     (typed_ir TInt

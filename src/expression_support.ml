@@ -269,6 +269,12 @@ let rec merge_branch_types left right =
         Some right
     | left, right when protocol_has_value left right ->
         Some left
+    | left, right
+      when Option.is_some (protocol_value_type right) ->
+        merge_branch_types left (Option.get (protocol_value_type right))
+    | left, right
+      when Option.is_some (protocol_value_type left) ->
+        merge_branch_types (Option.get (protocol_value_type left)) right
     | left, right when Types.is_dynamic left || Types.is_dynamic right ->
         Some (Types.dynamic_constraint TUnknown)
     | TNil, (TOcaml_app ("option", _) as option_ty)
@@ -295,8 +301,8 @@ let rec merge_branch_types left right =
         Option.map
           (fun merged -> TNullable merged)
           (merge_branch_types inner ty)
-    | TOcaml_app ("option", [ inner ]), ty | ty, TOcaml_app ("option", [ inner ])
-      ->
+    | TOcaml_app ("option", [ inner ]), ty
+    | ty, TOcaml_app ("option", [ inner ]) ->
         Option.map
           (fun merged -> TOcaml_app ("option", [ merged ]))
           (merge_branch_types inner ty)

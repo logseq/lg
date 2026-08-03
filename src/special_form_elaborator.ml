@@ -316,6 +316,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | target, source when Types.equal target source ->
         Ok branch.semantic_expr
     | target, source
+      when Option.is_some (protocol_value_type source) ->
+        adapt_branch_expression env target
+          { branch with ty = Option.get (protocol_value_type source) }
+    | target, source
       when Option.is_some (Types.reduced_element target)
            && Option.is_none (Types.reduced_element source) ->
         let target_inner = Option.get (Types.reduced_element target) in
