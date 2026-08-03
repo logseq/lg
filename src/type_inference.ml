@@ -921,6 +921,14 @@ let add_record_field_constraint name keyword field_ty params =
           | value_ty -> TNullable value_ty
         in
         Result.map Types.truthy_constraint (add_constraint value_ty)
+    | ty when Option.is_some (Types.nil_predicate_constraint_info ty) ->
+        let value_ty = Types.nil_predicate_constraint_info ty |> Option.get in
+        let value_ty =
+          match value_ty with
+          | TNullable _ | TOcaml_app ("option", [ _ ]) -> value_ty
+          | value_ty -> TNullable value_ty
+        in
+        add_constraint value_ty
     | ty when Types.is_dynamic ty ->
         let capability =
           Types.dynamic_constraint_info ty |> Option.value ~default:TUnknown
