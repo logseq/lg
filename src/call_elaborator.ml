@@ -6624,12 +6624,23 @@ let create ~compile_expr =
                   (adapt_sequence ()))
         | Ok _ -> Error.error (name ^ " expects a collection"))
     | ("array-binary-search-left" | "array-binary-search-right") as name -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ comparator; array; right; key ] -> (
-            match array_element_type array.ty with
-            | None -> Error.error (name ^ " expects an OCaml array")
+        match arg_forms with
+        | [ comparator_form; array_form; right_form; key_form ] -> (
+            match compile_expr scope env array_form with
+            | Error _ as error -> error
+            | Ok array -> (
+                match array_element_type array.ty with
+                | None -> Error.error (name ^ " expects an OCaml array")
                 | Some element_ty -> (
+                    match
+                      ( compile_expr scope env comparator_form,
+                        compile_expr scope env right_form,
+                        compile_expr scope env key_form )
+                    with
+                    | (Error _ as error), _, _ -> error
+                    | _, (Error _ as error), _ -> error
+                    | _, _, (Error _ as error) -> error
+                    | Ok comparator, Ok right, Ok key -> (
                 match comparator.ty with
                 | TFn ([ left_ty; right_ty ], return_ty)
                   when Types.assignable ~policy:Host_boundary
@@ -6673,8 +6684,8 @@ let create ~compile_expr =
                 | _ ->
                     Error.error
                       (name
-                     ^ " expects a compatible binary comparator, array, right index, and key")))
-        | Ok _ ->
+                     ^ " expects a compatible binary comparator, array, right index, and key")))))
+        | _ ->
             Error.error
               (name
              ^ " expects a binary comparator, array, right index, and key"))
