@@ -10133,6 +10133,21 @@ let create ~compile_expr =
             | Error _ -> Error.error "group-by expects a seqable value"
             | Ok (inner, sequence) -> (
                 let item_name = "__lg_group_by_item" in
+                let compile_deferred_function name =
+                  let function_env =
+                    Env.add
+                      (Names.scoped_key scope item_name)
+                      (Types.binding item_name inner)
+                      env
+                  in
+                  compile_expr scope function_env
+                    (FList [ FSymbol name; FSymbol item_name ])
+                  |> Result.map (fun body ->
+                         typed_ir
+                           (TFn ([ inner ], body.ty))
+                           (Semantic_ir.Fun
+                              ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
+                in
                 let key_function =
                   match function_form with
                   | FKeyword keyword ->
@@ -10151,6 +10166,10 @@ let create ~compile_expr =
                                   ( [ constrained_identifier_pattern item_name
                                         inner ],
                                     body.semantic_expr )))
+                  | FSymbol name -> (
+                      match compile_function_arg scope env function_form with
+                      | Ok function_ -> Ok function_
+                      | Error _ -> compile_deferred_function name)
                   | form -> compile_function_arg scope env form
                 in
                 match key_function with

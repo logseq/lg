@@ -507,10 +507,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | Some _ | None ->
     let expected_element =
       match Env.expected_type env with
-      | Some (TVector element)
-        when not (Types.is_dynamic element)
-             && not
-                  (match element with TUnknown | TMeta _ | TVar _ -> true | _ -> false) ->
+      | Some (TVector element) when not (Types.is_dynamic element) ->
           Some element
       | Some _ | None -> None
     in
@@ -537,7 +534,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     match forms with
     | [] ->
         Ok
-          (typed_ir (TVector (TVar "vector_element"))
+          (typed_ir (TVector (Type_solver.fresh ()))
              (Semantic_ir.Ident "Rrbvec.empty"))
     | first :: rest -> (
         match compile_expr scope env first with
@@ -633,15 +630,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     when not
                            (List.for_all
                               (fun expression ->
-                                Types.equal element_ty expression.ty
-                                ||
-                                match (element_ty, expression.ty) with
-                                | TNullable _, TNil -> true
-                                | TNullable inner, TNullable actual
-                                | TNullable inner, actual ->
-                                    Types.assignable ~policy:Host_boundary
-                                      ~expected:inner ~actual
-                                | _ -> false)
+                                branch_types_compatible element_ty expression.ty)
                               expressions) ->
                       heterogeneous_error ()
                   | Some element_ty ->

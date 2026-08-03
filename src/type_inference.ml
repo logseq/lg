@@ -6198,13 +6198,29 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (fun transformed -> infer_all params [ target; transformed ])
     | FList
         (FSymbol ("interleave" | "clojure.core/interleave") :: collections) ->
-        let dynamic = Types.dynamic_constraint TUnknown in
+        let element_ty =
+          collections
+          |> List.find_map (fun collection ->
+                 let element_ty =
+                   match collection with
+                   | FList [ FSymbol "repeat"; value ]
+                   | FList [ FSymbol "repeat"; _; value ] ->
+                       Some (inferred_form_type params value)
+                   | _ ->
+                       inferred_form_type params collection
+                       |> Types.next_seq_element
+                 in
+                 match element_ty with
+                 | Some (TUnknown | TMeta _ | TVar _) | None -> None
+                 | Some element_ty -> Some element_ty)
+          |> Option.value ~default:(Type_solver.fresh ())
+        in
         List.fold_left
           (fun result collection ->
             Result.bind result (fun params ->
                 match collection with
-                | FSymbol name -> constrain_seqable dynamic params name
-                | collection -> infer_form params collection))
+                | FSymbol name -> constrain_seqable element_ty params name
+                | collection -> infer_sequence_form element_ty params collection))
           (Ok params) collections
     | FList (FList [ FKeyword keyword; FSymbol receiver ] :: arguments) -> (
         let infer_unknown_field () =

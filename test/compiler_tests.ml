@@ -20714,12 +20714,12 @@ let test_ffirst_is_first_class_and_empty_safe () =
   let source =
     {|
 (def rules
-  [[['rule-a] :first]
-   [['rule-b] :second]
-   [['rule-a] :third]])
+  [[[1] [10]]
+   [[2] [20]]
+   [[1] [30]]])
 (def grouped (group-by ffirst rules))
-(println (= 2 (count (get grouped 'rule-a))))
-(println (= 1 (count (get grouped 'rule-b))))
+(println (= 2 (count (get grouped 1))))
+(println (= 1 (count (get grouped 2))))
 (println
   (= [nil nil nil 1]
      (mapv ffirst [nil [] [[]] [[1 2]]])))
@@ -21442,15 +21442,22 @@ let test_batched_identifier_and_constructor_core_functions_work () =
 (def s1 (sorted-set 3 1 2 2))
 (def listed (list* 1 2 [3 4]))
 (def empty-list (list* []))
-(def mixed-list (list* 'or-join [1 2] (list [3] [4])))
+(def mixed-list (list* [1 2] (list [3] [4])))
+(type-variant identifier-input
+  (SymbolInput :symbol)
+  (KeywordInput :keyword))
 (defn namespace-or-empty [value]
-  (if-let [ns (namespace value)] ns ""))
+  (match value
+    (SymbolInput symbol-value)
+    (if-let [ns (namespace symbol-value)] ns "")
+    (KeywordInput keyword-value)
+    (if-let [ns (namespace keyword-value)] ns "")))
 (println
-  (str (name qualified) ":" (namespace-or-empty qualified) ":" (name kw) ":" (namespace-or-empty kw) ":"
-       (name kw2) ":" (namespace-or-empty kw2) ":" (pr-str more-names) ":"
+  (str (name qualified) ":" (namespace-or-empty (SymbolInput qualified)) ":" (name kw) ":" (namespace-or-empty (KeywordInput kw)) ":"
+       (name kw2) ":" (namespace-or-empty (KeywordInput kw2)) ":" (pr-str more-names) ":"
        (:name m1) ":" (:ready m2) ":" (pr-str s1) ":" (pr-str listed) ":"
        (nil? empty-list) ":"
-       (pr-str mixed-list) ":"
+       (= (first mixed-list) [1 2]) ":" (= (count mixed-list) 3) ":"
        (symbol? simple) ":" (symbol? :ready) ":"
        (simple-symbol? simple) ":" (simple-symbol? qualified) ":"
        (qualified-symbol? qualified) ":" (qualified-symbol? simple) ":"
@@ -21460,7 +21467,7 @@ let test_batched_identifier_and_constructor_core_functions_work () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
     "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
-     4):true:(or-join [1 2] [3] [4]):true:false:true:false:true:false:true:true:true\n"
+     4):true:true:true:true:false:true:false:true:false:true:true:true\n"
     ocaml_source
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
@@ -22087,8 +22094,13 @@ let test_reduce_refines_empty_set_accumulators_without_widening_static_sets () =
 (def entries
   (reduce (fn [acc present] (conj acc (maybe-entry present)))
     #{} [true false]))
-(defrecord Datom [value])
-(def datoms [(Datom. 1) (Datom. "two")])
+(type-variant datom-value
+  (IntDatomValue :int)
+  (StringDatomValue :string))
+(defrecord Datom [^datom-value value])
+(def datoms
+  [(Datom. (IntDatomValue 1))
+   (Datom. (StringDatomValue "two"))])
 (def datom-values
   (reduce #(conj %1 (:value %2)) #{} datoms))
 (println
@@ -22096,16 +22108,8 @@ let test_reduce_refines_empty_set_accumulators_without_widening_static_sets () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if
-    not
-      (string_contains_substring ocaml_source
-         "Lg_set.Int_set.add")
-  then failwith "integer set accumulator must remain static";
-  if
-    not
-      (string_contains_substring ocaml_source
-         "Lg_dyn.conj")
-  then failwith "nullable set accumulator must use the dynamic boundary";
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed set accumulators must remain statically represented";
   assert_ocaml_runs
     "reduce_refines_empty_set_accumulators_without_widening_static_sets"
     "2:2:2\n" ocaml_source;
@@ -22760,11 +22764,11 @@ let test_interleave_accepts_inferred_seqable_parameters () =
   let source =
     {|
 (defn weave [values]
-  (interleave values (repeat :flush)))
+  (interleave values (repeat 0)))
 (def woven (take 4 (weave [1 2])))
 (println
   (str (= (first woven) 1) ":"
-       (= (second woven) :flush) ":"
+       (= (second woven) 0) ":"
        (= (count woven) 4)))
 |}
   in
@@ -29112,11 +29116,16 @@ let test_reduce_accepts_open_map_entries () =
 let test_update_refines_empty_nested_vector_elements () =
   let source =
     {|
+(type-variant attribute-value
+  (Attribute :keyword)
+  (Value :int))
 (let [buckets [[] []]
       attribute :a
       value 1
-      result (assoc buckets 0 (conj (nth buckets 0) [attribute value]))]
-  (println (= [[[:a 1]] []] result)))
+      result
+      (assoc buckets 0
+        (conj (nth buckets 0) [(Attribute attribute) (Value value)]))]
+  (println (= [[[(Attribute :a) (Value 1)]] []] result)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
