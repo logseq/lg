@@ -23905,18 +23905,28 @@ let test_destructured_let_keeps_provisional_body_inference () =
 let test_recursive_collection_result_specializes_self_calls () =
   let source =
     {|
-(defn expand-values [values]
-  (map
-    (fn [value]
-      (if (sequential? value)
-        (first (expand-values value))
-        value))
-    values))
+(type-variant nested-value
+  (ScalarValue :int)
+  (NestedValues :vector<nested-value>))
+
+(defn ^:vector<nested-value> expand-values [values]
+  (vec
+    (map
+      (fn [value]
+        (match value
+          (ScalarValue _) value
+          (NestedValues nested)
+            (if-some [expanded (first (expand-values nested))]
+              expanded
+              value)))
+      values)))
 
 (print "ok")
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "recursive closed collections must remain statically typed";
   assert_ocaml_runs "recursive_collection_result_specializes_self_calls" "ok"
     ocaml_source
 
