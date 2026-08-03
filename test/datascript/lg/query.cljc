@@ -914,7 +914,7 @@
    database
    (parse-lookup-pattern
     (resolve-pattern-lookup-refs
-     (query-types/database-source database)
+     (query-types/database-view-source database)
      (substitute-constants context pattern)))))
 
 (signature datascript.lg.query/lookup-pattern-coll
@@ -1834,7 +1834,7 @@
   (q-closed
    query
    [(query-types/source-input
-     (query-types/database-source
+     (query-types/database-view-source
       (datascript.db/database-view database)))]))
 
 (defn q
@@ -2516,7 +2516,7 @@
                  'datascript.lg.query-types/relation-source
                 (vec (map relation-row-form source-value)))
                 (list
-                 'datascript.lg.query-types/database-source
+                 'datascript.lg.query-types/database-view-source
                  (list
                   'datascript.db/database-view
                   value))))))

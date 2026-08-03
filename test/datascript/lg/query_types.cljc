@@ -79,7 +79,7 @@
   :fn<vector<result>;result>)
 (signature datascript.lg.query-types/function-binding-result
   :fn<datascript.parser/binding;result;binding-value>)
-(signature datascript.lg.query-types/database-source
+(signature datascript.lg.query-types/database-view-source
   :fn<datascript.db/database-view;source>)
 (signature datascript.lg.query-types/relation-source
   :fn<vector<array<result>>;source>)
@@ -244,8 +244,11 @@
 (defn invoke-callable [callable arguments]
   (Datascript_runtime.Query_value.invoke_callable callable arguments))
 
-(defn database-source [database]
+(defn database-view-source [database]
   (Datascript_runtime.Query_value.database_source database))
+
+(defn database-source [database]
+  (database-view-source (db/database-view database)))
 
 (defn relation-source [rows]
   (Datascript_runtime.Query_value.relation_source rows))
@@ -3007,7 +3010,7 @@
   [database query input-relation]
   (execute-db-query-with-rules
    database
-   {"$" (database-source database)}
+   {"$" (database-view-source database)}
    query input-relation []))
 
 (defn execute-db-query
