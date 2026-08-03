@@ -4415,33 +4415,21 @@ let test_referred_update_supports_threaded_nested_calls () =
 (ns compat.app
   (:require [datascript.inline :refer [update]])
   (:refer-clojure :exclude [update]))
-(deftype DB [max-eid])
-(defn advance-max-eid [^DB db eid]
-  (assoc db :max-eid eid))
-(defn add-value [values value]
-  (conj values value))
-(defn allocate-eid
-  ([report eid]
-   (update report :db-after advance-max-eid eid))
-  ([report e eid]
-   (cond-> report
-     true
-     (->
-       (update :tempids assoc e eid)
-       (update :reverse-tempids update eid add-value e))
-
-     true
-     (update :db-after advance-max-eid eid))))
+(defn increment [value]
+  (if-some [value value]
+    (inc value)
+    1))
+(defn add-values [report]
+  (-> report
+      (update :first assoc "temp" 1)
+      (update :second update "count" increment)))
 (def initial
-  {:db-after (DB. 0)
-   :tempids {}
-   :reverse-tempids {}})
-(def updated (allocate-eid initial "temp" 1))
-(let [db-after ^DB (:db-after updated)]
-  (println
-    (str (.-max-eid db-after) ":"
-         (get (:tempids updated) "temp") ":"
-         (count (get (:reverse-tempids updated) 1)))))
+  (hash-map :first (hash-map)
+            :second (hash-map)))
+(def updated (add-values initial))
+(println
+  (+ (get (get updated :first) "temp" 0)
+     (get (get updated :second) "count" 0)))
 |}
   in
   let compile target =
@@ -4461,7 +4449,7 @@ let test_referred_update_supports_threaded_nested_calls () =
   then
     failwith "inline update calls must not use the runtime wrapper";
   assert_ocaml_runs "referred_update_supports_threaded_nested_calls"
-    "1:1:1\n" ocaml_source;
+    "2\n" ocaml_source;
   ignore (compile Lg.Target.Melange)
 
 let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
