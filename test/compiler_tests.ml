@@ -18067,8 +18067,7 @@ let test_if_merges_generic_array_function_branches () =
 (defn array-getter [check? index]
   (if check?
     (fn [values]
-      (let [value (aget values index)]
-        (if (int? value) value value)))
+      (+ (aget values index) 0))
     (fn [values]
       (aget values index))))
 (println ((array-getter true 0) (into-array [42])))
