@@ -130,7 +130,7 @@
    (fn [key] (contains? left key))
    (keys right))))
 
-(defn same-attrs?
+(defn- same-attrs?
   [left right]
   (and
    (= (count left) (count right))
