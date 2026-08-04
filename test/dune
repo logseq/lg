@@ -3949,6 +3949,7 @@
  (name datascript-upstream)
  (deps
   (alias datascript-conn)
+  (alias datascript-filter)
   (alias datascript-static-boundary)
   (alias datascript-benchmark-surface)))
 
