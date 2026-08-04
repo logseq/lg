@@ -136,6 +136,18 @@ expect_text "the upstream repository URL is exact" "$upstream_doc" \
   'https://github\.com/logseq/datascript(\.git)?'
 expect_text "the full pinned commit is recorded" "$upstream_doc" \
   '3f141af97b70e1f14c65eaa119acd822ebece37e'
+expect_no_text "the current parity matrix contains no stale missing-behavior status" \
+  "$upstream_doc" \
+  'Missing behavior'
+expect_text "the current upstream inventory result is recorded" \
+  "$upstream_doc" \
+  '170/170'
+expect_text "the current differential parity result is recorded" \
+  "$upstream_doc" \
+  '56/56'
+expect_text "the final benchmark gate remains explicitly pending" \
+  "$upstream_doc" \
+  'Benchmark.*Pending'
 expect_file "the pinned datascript-ocaml benchmark baseline is documented" \
   "$datascript_ocaml_doc"
 expect_text "the datascript-ocaml repository URL is exact" \

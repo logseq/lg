@@ -58,16 +58,24 @@ dependency rather than a file in the Logseq DataScript fork.
 The vendored files are ports, not an alternative authority. Local changes in
 another DataScript checkout have no role in comparisons.
 
-## Initial parity matrix
+## Current parity matrix
 
-| Area | Classification | Phase 1 evidence |
+| Area | Classification | Current evidence |
 |---|---|---|
-| Query | Missing behavior | Differential cases cover duplicate projection, inputs, rules, compound clauses, aggregation, pull, and return maps. |
-| Database/transaction | Missing behavior | Upstream transaction tests are inventoried in `upstream_tests.tsv`; closed transaction forms remain incomplete. |
-| Pull/entity | Missing behavior | Entity references and pull options/visitors are named differential cases. |
-| Connection/storage | Target boundary plus missing behavior | Native and Melange use typed storage adapters and `Strong | Weak`; option propagation remains a compatibility task. |
-| Serialization | Representation-only plus missing custom codec behavior | Closed payloads exist; custom callback arities remain in the API manifest. |
-| PSS | Measured optimization | The permitted iterator, frame, and storage-policy differences are documented in `docs/design.md`. |
+| Query | Behavior parity with closed representations | Upstream query splits pass on Native and Melange; the surface matrix covers every clause, find, and input family. |
+| Database/transaction | Behavior parity with closed representations | Entity maps, operation vectors, raw datoms, transaction functions, upserts, tuple maintenance, component cascades, ordering, and invalid-input cases are covered. |
+| Pull/entity | Behavior parity with closed representations | Attribute options, visitors, recursion, cycles, reverse references, missing entities, and parse reuse pass on both targets. |
+| Connection/storage | Behavior parity with a target boundary | Connection and storage suites pass. Native and Melange use typed adapters and the documented closed `Strong | Weak` reference policy. |
+| Serialization | Behavior parity with measured representation optimizations | Default and custom codecs, schema and option propagation, datom order, index reuse, branching, reference policy, attached-storage rejection, and old payloads are covered. |
+| PSS | Behavior parity with measured representation optimizations | Ordering, slices, persistence, lazy traversal, storage callbacks, and reference policy pass; retained iterator differences are documented in `docs/design.md`. |
+| Public API | Upstream-complete | The generated comparator reports every upstream var, arity, protocol method, option, source-form family, and tagged reader present in LG. |
+| Benchmark | Pending | All three LG and pinned datascript-ocaml runners build; the final isolated workload matrix remains intentionally unrun. |
 
-The full behavior inventory is in `differential/cases.tsv` and
-`upstream_status.tsv`. No missing row is treated as target-host permission.
+As of 2026-08-04, the machine-checkable inventory reports 170/170 upstream
+tests covered, the differential catalog reports 56/56 cases at parity, and the
+surface matrix reports no cataloged behavior missing. `upstream_status.tsv`,
+`differential/cases.tsv`, and the generated API manifests remain the
+authoritative detailed evidence. A passing inventory is not permission to
+remove upstream control flow or replace a closed representation with dynamic
+typing; remaining source differences still require the review rules in
+`docs/design.md`.
