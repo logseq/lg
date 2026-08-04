@@ -122,6 +122,8 @@ expect_failure() {
 }
 
 upstream_doc=test/datascript/UPSTREAM.md
+datascript_ocaml_doc=test/datascript/benchmark/DATASCRIPT_OCAML.md
+datascript_ocaml_rev=test/datascript/benchmark/datascript-ocaml.rev
 api_manifest=test/datascript/api_manifest/upstream.tsv
 lg_api_manifest=test/datascript/api_manifest/lg.tsv
 differential_cases=test/datascript/differential/cases.tsv
@@ -134,6 +136,19 @@ expect_text "the upstream repository URL is exact" "$upstream_doc" \
   'https://github\.com/logseq/datascript(\.git)?'
 expect_text "the full pinned commit is recorded" "$upstream_doc" \
   '3f141af97b70e1f14c65eaa119acd822ebece37e'
+expect_file "the pinned datascript-ocaml benchmark baseline is documented" \
+  "$datascript_ocaml_doc"
+expect_text "the datascript-ocaml repository URL is exact" \
+  "$datascript_ocaml_doc" \
+  'https://github\.com/logseq/datascript-ocaml(\.git)?'
+expect_text "the full datascript-ocaml benchmark commit is recorded" \
+  "$datascript_ocaml_doc" \
+  '42160006c6fa7af9c9b50cc08e933d0a01715abc'
+expect_file "the datascript-ocaml benchmark revision is machine-readable" \
+  "$datascript_ocaml_rev"
+expect_text "the datascript-ocaml benchmark revision is pinned exactly" \
+  "$datascript_ocaml_rev" \
+  '^42160006c6fa7af9c9b50cc08e933d0a01715abc$'
 expect_no_text "built-in algorithms contain no inline type hints" \
   test/datascript/upstream/built_ins.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'
