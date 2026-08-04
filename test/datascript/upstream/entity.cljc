@@ -311,11 +311,13 @@
                   (Some attr)
                   None
                   None)]
-                (if-some [value (entity-attr database attr datoms)]
-                  (do
-                    (vreset! cache (assoc @cache attr value))
-                    (Some value))
-                  None)
+                (if (empty? datoms)
+                  None
+                  (if-some [value (entity-attr database attr datoms)]
+                    (do
+                      (vreset! cache (assoc @cache attr value))
+                      (Some value))
+                    None))
                 None))))))))
 
 (defn datoms->cache
