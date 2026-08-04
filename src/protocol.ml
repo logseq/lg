@@ -668,8 +668,9 @@ let common_method_return_param_index env protocol_id method_name =
            implementation.return_param_index)
   in
   match indices with
-  | Some first :: rest
-    when List.for_all (fun index -> index = Some first) rest ->
+  | Some first :: Some second :: rest
+    when first = second
+         && List.for_all (fun index -> index = Some first) rest ->
       Some first
   | [] | _ -> None
 

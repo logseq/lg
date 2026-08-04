@@ -1492,6 +1492,9 @@ let rec compile scope env next_type = function
                       && not (String.starts_with ~prefix:"-" name)
                       && not (String.starts_with ~prefix:"." name)
                       && not (List.mem name deftype_method_names)
+                      && Option.is_none
+                           (Expression_support.untyped_first_class_function_error
+                              name)
                       && Result.is_error (lookup_function scope env name))
                       || List.exists unresolved_print_call arguments
                   | FList forms | FVector forms ->

@@ -83,9 +83,16 @@ let values_for target fields =
 let record_expr fields values =
   {
     ty = TRecord fields;
-    semantic_expr = Semantic_ir.annotate (TRecord fields)
-      (Semantic_ir.Record
-         (List.map (fun ((field : field), value) -> (field.ocaml_name, value)) values, None));
+    semantic_expr =
+      (match values with
+      | [] -> Semantic_ir.Unit
+      | _ ->
+          Semantic_ir.annotate (TRecord fields)
+            (Semantic_ir.Record
+               ( List.map
+                   (fun ((field : field), value) -> (field.ocaml_name, value))
+                   values,
+                 None )));
     record_values = Some values;
     return_param_index = None;
   }
@@ -336,6 +343,6 @@ let select_keys target fields keywords =
       | keyword :: rest -> (
           match find_field keyword fields with
           | Some field -> collect (field :: acc) rest
-          | None -> Error.error ("cannot select unknown field " ^ keyword))
+          | None -> collect acc rest)
     in
     collect [] keywords

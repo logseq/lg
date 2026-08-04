@@ -1862,6 +1862,9 @@ let rec same_runtime_representation left right =
   else
     match (left, right) with
     | (TUnknown | TMeta _ | TVar _), _ | _, (TUnknown | TMeta _ | TVar _) -> true
+    | TNil, (TNullable _ | TOcaml_app ("option", [ _ ]))
+    | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil ->
+        true
     | TNullable left, TNullable right
     | TArray left, TArray right
     | TRef left, TRef right
@@ -1884,6 +1887,12 @@ let rec same_runtime_representation left right =
         && List.length left.type_arguments = List.length right.type_arguments
         && List.for_all2 same_runtime_representation left.type_arguments
              right.type_arguments
+    | TNamed_record record, TOcaml_app (name, arguments)
+    | TOcaml_app (name, arguments), TNamed_record record ->
+        (name = record.type_name || name = Type_id.name record.type_id)
+        && List.length record.type_arguments = List.length arguments
+        && List.for_all2 same_runtime_representation record.type_arguments
+             arguments
     | _ -> false
 
 let named_record_can_specialize expected actual =
@@ -2367,6 +2376,8 @@ let rec adapt_value_to_type env expected actual =
          | (TList expected_item, TList actual_item)
          | (TArray expected_item, TArray actual_item) ->
              not (Types.equal expected_item actual_item)
+             && not
+                  (same_runtime_representation expected_item actual_item)
          | _ -> false)
   then
     Ok actual.semantic_expr
@@ -4014,7 +4025,12 @@ let create ~compile_expr =
                               [ key_type; value_type ] ))
                          (Semantic_ir.Apply
                             ( Semantic_ir.Ident constructor,
-                              [ collection.semantic_expr ] )))
+                              [
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_map.to_list",
+                                    [ collection.semantic_expr ] );
+                              ] )))
                 | None -> Error.error "transient expects a set, vector, or map")
             ))
     | _ -> Error.error "transient expects 1 argument"
@@ -11695,6 +11711,7 @@ let create ~compile_expr =
                 match compile_arg_exprs 0 [] args with
                 | Error _ as err -> err
                 | Ok arg_exprs -> (
+                let ret = materialize ret in
                 let callback_return =
                   args
                   |> List.find_map (fun argument ->

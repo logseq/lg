@@ -1384,32 +1384,46 @@
       (db/database-view database)))
     (query-types/rules-input follows-rules)]))
 
+(defn- assert-rule-result-count
+  [database expected]
+  (assert-query-count
+   (bench-rules database)
+   expected
+   "rules"))
+
 (defn bench-rules-wide-3x3 []
   (let [database (wide-db 3 3)]
+    (assert-rule-result-count database 102)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-wide-5x3 []
   (let [database (wide-db 5 3)]
+    (assert-rule-result-count database 1641)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-wide-7x3 []
   (let [database (wide-db 7 3)]
+    (assert-rule-result-count database 21324)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-wide-4x6 []
   (let [database (wide-db 4 6)]
+    (assert-rule-result-count database 5910)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-long-10x3 []
   (let [database (long-db 10 3)]
+    (assert-rule-result-count database 165)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-long-30x3 []
   (let [database (long-db 30 3)]
+    (assert-rule-result-count database 1395)
     (bench/bench (bench-rules database))))
 
 (defn bench-rules-long-30x5 []
   (let [database (long-db 30 5)]
+    (assert-rule-result-count database 2325)
     (bench/bench (bench-rules database))))
 
 (def serialization-people-count

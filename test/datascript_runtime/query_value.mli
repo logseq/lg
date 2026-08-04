@@ -154,8 +154,16 @@ val relation_result :
 
 val relation_lookup_database : 'db relation -> string -> 'db option
 val relation_with_rows : 'db relation -> 'db result array Rrbvec.t -> 'db relation
+val relation_filter_rows :
+  'db relation -> ('db result array -> bool) -> 'db relation
+val relation_relabel :
+  'db relation ->
+  (string, int) Lg_runtime.Lg_map.t ->
+  (string, 'db) Lg_runtime.Lg_map.t ->
+  'db relation
 val relation_append_rows : 'db relation -> 'db relation -> 'db relation
 val equal_result : 'db result -> 'db result -> bool
+val equal_pattern_result : 'db result -> 'db result -> bool
 
 val row_hash :
   'db result array Rrbvec.t -> int array -> 'db row_hash

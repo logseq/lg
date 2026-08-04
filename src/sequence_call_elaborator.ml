@@ -1885,7 +1885,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     let element_type_is_open =
                       Types.is_dynamic inner
                       || Types.equal inner TUnknown
-                      || match inner with TVar _ -> true | _ -> false
+                      || match inner with
+                         | TMeta _ | TVar _ -> true
+                         | _ -> false
                     in
                     match fn_form with
                     | FSymbol name -> (

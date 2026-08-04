@@ -849,23 +849,22 @@
     None))
 
 (defn pattern-projection [pattern]
-  (loop [remaining pattern
-         index 0
+  (let [pattern-count (count pattern)]
+  (loop [index 0
          variables []
          indexes []]
-    (if-some [element (first remaining)]
+    (if (< index pattern-count)
+      (let [element (nth pattern index)]
       (if-some [variable (pattern-variable-name element)]
         (recur
-         (subvec remaining 1)
          (inc index)
          (conj variables variable)
          (conj indexes index))
         (recur
-         (subvec remaining 1)
          (inc index)
          variables
-         indexes))
-      (tuple variables indexes))))
+         indexes)))
+      (tuple variables indexes)))))
 
 (signature datascript.lg.query-types/pattern-lookup-databases
   :fn<datascript.db/database-view;vector<datascript.parser/pattern-element>;option<keyword>;map<string;datascript.db/database-view>>)
@@ -965,6 +964,10 @@
 
 (defn relation-with-rows [relation rows]
   (Datascript_runtime.Query_value.relation_with_rows relation rows))
+
+(defn relation-relabel [relation attrs lookup-databases]
+  (Datascript_runtime.Query_value.relation_relabel
+   relation attrs lookup-databases))
 
 (defn sum-relation [left right]
   (if (= (relation-attrs left) (relation-attrs right))
@@ -1281,6 +1284,73 @@
         matches
         (hash-join input-relation matches)))))
 
+(defn- pattern-cache-key
+  [database pattern]
+  (let [database-id
+        (datascript.db/database-view-identity-hash database)
+        pattern-count (count pattern)]
+    (loop [index 0
+           variable-indexes {}
+           next-variable-index 0
+           key (str database-id)]
+      (if (< index pattern-count)
+        (let [element (nth pattern index)]
+        (if-some [variable (pattern-variable-name element)]
+          (if-some [variable-index (get variable-indexes variable)]
+            (recur
+             (inc index)
+             variable-indexes
+             next-variable-index
+             (str key "|?" (Stdlib.string_of_int variable-index)))
+            (recur
+             (inc index)
+             (assoc variable-indexes variable next-variable-index)
+             (inc next-variable-index)
+             (str key "|?"
+                  (Stdlib.string_of_int next-variable-index))))
+          (if-some [value (parser/pattern-element-constant element)]
+            (recur
+             (inc index)
+             variable-indexes
+             next-variable-index
+             (str key "|="
+                  (Datascript_runtime.Data_value.to_edn_string value)))
+            (recur
+             (inc index)
+             variable-indexes
+             next-variable-index
+             (str key "|_")))))
+        key))))
+
+(defn- cached-pattern-relation
+  [database pattern cached]
+  (let [projection (pattern-projection pattern)
+        variables (tuple-get projection 0)
+        attr
+        (match (pattern-attr-constraint
+                (pattern-element-at pattern 1))
+          (Some value) value
+          None None)]
+    (relation-relabel
+     cached
+     (index-attrs variables)
+     (pattern-lookup-databases database pattern attr))))
+
+(defn resolve-db-pattern-cached
+  [database input-relation pattern cache]
+  (let [pattern
+        (substitute-pattern-constants input-relation pattern)
+        key (pattern-cache-key database pattern)
+        matches
+        (if-some [cached (get @cache key)]
+          (cached-pattern-relation database pattern cached)
+          (let [matches (lookup-db-pattern database pattern)
+                _ (swap! cache assoc key matches)]
+            matches))]
+    (if (identity-relation? input-relation)
+      matches
+      (hash-join input-relation matches))))
+
 (defn relation-pattern-step
   [bindings projected element value]
   (match element
@@ -1420,10 +1490,7 @@
 (defn predicate-operand-result [row operand]
   (match operand
     (PredicateColumn index)
-    (if-some [result (row-get row index)]
-      result
-      (Stdlib.invalid_arg
-       "Predicate column is outside the relation row"))
+    (aget row index)
     (PredicateResult result) result))
 
 (defn predicate-operand-value [row operand]
@@ -1878,7 +1945,7 @@
     true))
 
 (signature datascript.lg.query-types/differ-predicate-matches?
-  :fn<array<result>;vector<predicate-operand>;bool>)
+  :fn<array<result>;array<predicate-operand>;bool>)
 (signature datascript.lg.query-types/resolve-predicate
   :fn<datascript.db/database-view;map<string;source>;relation;relation;datascript.parser/query-callable;vector<datascript.parser/fn-arg>;relation>)
 (signature datascript.lg.query-types/resolve-function
@@ -1886,21 +1953,20 @@
 
 (defn- differ-predicate-matches?
   [row operands]
-  (let [operand-count (count operands)
+  (let [operand-count (alength operands)
         middle (quot operand-count 2)]
     (if (= operand-count (* middle 2))
       (loop [index 0]
         (if (< index middle)
           (let [left
                 (predicate-operand-result
-                 row (nth operands index))
+                 row (aget operands index))
                 right
                 (predicate-operand-result
-                 row (nth operands (+ middle index)))]
+                 row (aget operands (+ middle index)))]
             (if
-             (Datascript_runtime.Data_value.equal
-              (result-pattern-value left)
-              (result-pattern-value right))
+             (Datascript_runtime.Query_value.equal_pattern_result
+              left right)
               (recur (inc index))
               true))
           false))
@@ -1930,6 +1996,7 @@
                  (compile-predicate-argument
                   relation constants argument))
                arguments)
+              operand-array (to-array operands)
               differ?
               (match function
                 (PureStaticPredicate pure)
@@ -1939,15 +2006,14 @@
               (if (= 2 (count operands))
                 (Some (tuple (nth operands 0) (nth operands 1)))
                 None)]
-          (relation-with-rows
+          (Datascript_runtime.Query_value.relation_filter_rows
            relation
-           (filterv
             (fn [row]
               (let [matches?
                     (if differ?
                       (Some
                        (differ-predicate-matches?
-                        row operands))
+                        row operand-array))
                       (match function
                         (ComparisonStaticPredicate comparison)
                         (let [binary-result
@@ -1989,8 +2055,7 @@
                   (Stdlib.invalid_arg
                    (str
                     "Unsupported static query predicate: "
-                    name)))))
-            (relation-rows relation)))))
+                    name))))))))
       (Stdlib.invalid_arg
        (str
         "Unknown predicate '"

@@ -306,6 +306,26 @@ let test_query_sources_and_results_are_closed_sum_types () =
     Query_value.equal_result metadata_result
       (Query_value.Value (Value.Int 7)));
   assert (
+    Query_value.equal_pattern_result (Query_value.Entity 7)
+      (Query_value.Value (Value.Int 7)));
+  assert (
+    Query_value.equal_pattern_result (Query_value.Attr ":user/name")
+      (Query_value.Pull (Value.Keyword ":user/name")));
+  assert (
+    Query_value.equal_pattern_result (Query_value.Added false)
+      (Query_value.Metadata (Value.Keyword ":db/retract", [])));
+  assert (
+    Query_value.equal_pattern_result (Query_value.Value (Value.Ref 7))
+      (Query_value.Pull (Value.Int 7)));
+  assert (
+    Query_value.equal_pattern_result
+      (Query_value.Value (Value.Wide_int 7L))
+      (Query_value.Pull (Value.Float 7.0)));
+  assert (
+    not
+      (Query_value.equal_pattern_result (Query_value.Entity 7)
+         (Query_value.Value (Value.Int 8))));
+  assert (
     try
       ignore (Query_value.metadata (Value.Int 7) (Value.String "invalid"));
       false
@@ -365,6 +385,65 @@ let test_query_relations_and_contexts_keep_static_fields () =
     Query_value.relation_lookup_databases without_rows = lookup_databases);
   let appended = Query_value.relation_append_rows relation relation in
   assert (Rrbvec.length (Query_value.relation_rows appended) = 2);
+  let predicate_calls = ref 0 in
+  let unchanged =
+    Query_value.relation_filter_rows relation (fun _ ->
+        incr predicate_calls;
+        true)
+  in
+  assert (unchanged == relation);
+  assert (!predicate_calls = 1);
+  let empty = Query_value.relation_filter_rows relation (fun _ -> false) in
+  assert (Rrbvec.is_empty (Query_value.relation_rows empty));
+  let mixed_rows =
+    Rrbvec.of_list
+      [
+        [| Query_value.Entity 1 |];
+        [| Query_value.Entity 3 |];
+        [| Query_value.Entity 2 |];
+        [| Query_value.Entity 4 |];
+        [| Query_value.Entity 6 |];
+      ]
+  in
+  let mixed_relation = Query_value.relation attrs mixed_rows lookup_databases in
+  let filtered =
+    Query_value.relation_filter_rows mixed_relation (function
+      | [| Query_value.Entity entity |] -> entity mod 2 = 0
+      | _ -> false)
+  in
+  assert (
+    Query_value.relation_rows filtered
+    = Rrbvec.of_list
+        [
+          [| Query_value.Entity 2 |];
+          [| Query_value.Entity 4 |];
+          [| Query_value.Entity 6 |];
+        ]);
+  let interrupted_rows =
+    Rrbvec.of_array
+      [|
+        [| Query_value.Entity 2 |];
+        [| Query_value.Entity 3 |];
+        [| Query_value.Entity 4 |];
+        [| Query_value.Entity 6 |];
+      |]
+  in
+  let interrupted_relation =
+    Query_value.relation attrs interrupted_rows lookup_databases
+  in
+  let interrupted_filtered =
+    Query_value.relation_filter_rows interrupted_relation (function
+      | [| Query_value.Entity entity |] -> entity mod 2 = 0
+      | _ -> false)
+  in
+  assert (
+    Query_value.relation_rows interrupted_filtered
+    = Rrbvec.of_list
+        [
+          [| Query_value.Entity 2 |];
+          [| Query_value.Entity 4 |];
+          [| Query_value.Entity 6 |];
+        ]);
   assert (Query_value.context_relations context = Rrbvec.of_list [ relation ]);
   assert (Query_value.context_sources context = sources);
   assert (Query_value.context_rules context = [ "rule" ])
@@ -633,6 +712,22 @@ let test_query_hash_join_uses_closed_result_keys () =
          (Query_value.hash_join (fun _ result -> result) attr_relation
             keyword_relation))
     = 1);
+  let shared_row = [| Query_value.Entity 7 |] in
+  let same_attrs_left =
+    Query_value.relation
+      (Lg_runtime.Lg_map.of_list [ ("?e", 0) ])
+      (Rrbvec.of_list [ shared_row ]) empty_databases
+  in
+  let same_attrs_right =
+    Query_value.relation
+      (Lg_runtime.Lg_map.of_list [ ("?e", 0) ])
+      (Rrbvec.of_list [ [| Query_value.Entity 7 |] ]) empty_databases
+  in
+  let same_attrs_join =
+    Query_value.hash_join (fun _ result -> result) same_attrs_left
+      same_attrs_right
+  in
+  assert (Rrbvec.nth (Query_value.relation_rows same_attrs_join) 0 == shared_row);
   let entity_relation =
     Query_value.relation
       (Lg_runtime.Lg_map.of_list [ ("?e", 0) ])

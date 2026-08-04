@@ -23,11 +23,29 @@
   :map<string;vector<rule-arguments>>)
 
 (type-record rule-frame
-  (prefix-clauses :vector<datascript.parser/clause>)
+  (prefix-variable-names :set<string>)
   (prefix-context :datascript.lg.query-types/context)
   (clauses :vector<datascript.parser/clause>)
   (used-args :rule-call-history)
   (pending-guards :vector<datascript.parser/clause>))
+
+(signature datascript.lg.query/append-rule-clauses
+  :fn<vector<datascript.parser/clause>;vector<datascript.parser/clause>;vector<datascript.parser/clause>>)
+(defn- append-rule-clauses [left right]
+  (reduce
+   (fn [clauses clause]
+     (conj clauses clause))
+   left
+   right))
+
+(signature datascript.lg.query/append-rule-frames
+  :fn<vector<rule-frame>;vector<rule-frame>;vector<rule-frame>>)
+(defn- append-rule-frames [left right]
+  (reduce
+   (fn [frames frame]
+     (conj frames frame))
+   left
+   right))
 
 (type-alias tuple-getter
   :fn<array<datascript.lg.query-types/result>;datascript.lg.query-types/result>)
@@ -109,8 +127,22 @@
     (fn [key] (contains? right key))
     (keys left))
    (every?
-    (fn [key] (contains? left key))
+   (fn [key] (contains? left key))
    (keys right))))
+
+(defn same-attrs?
+  [left right]
+  (and
+   (= (count left) (count right))
+   (reduce-kv
+    (fn [equal variable left-index]
+      (and
+       equal
+       (if-some [right-index (get right variable)]
+         (= left-index right-index)
+         false)))
+    true
+    left)))
 
 (defn getter-fn
   [attrs attr]
@@ -484,7 +516,7 @@
         left-rows (query-types/relation-rows left)
         right-rows (query-types/relation-rows right)]
     (cond
-      (= left-attrs right-attrs)
+      (same-attrs? left-attrs right-attrs)
       (query-types/relation
        left-attrs
        (into left-rows right-rows)
@@ -1157,10 +1189,9 @@
           "-differ?"
           (mapv
            rule-argument-as-fn-arg
-           (vec
-            (concat
-             (tuple-get remaining 0)
-             (tuple-get remaining 1)))))))
+           (into
+            (tuple-get remaining 0)
+            (tuple-get remaining 1))))))
      previous-calls)
     []))
 
@@ -1349,26 +1380,25 @@
 
 (defn-
   split-typed-guards
-  [clauses
+  [bound
     guards]
-  (let [bound (clause-variable-names clauses)]
-    (reduce
-     (fn [
-          split
-           guard]
-       (if
-        (every?
-         (fn [variable]
-           (contains? bound (str (.-symbol variable))))
-         (datascript.parser/clause-vars guard))
-         (tuple
-          (conj (tuple-get split 0) guard)
-          (tuple-get split 1))
-         (tuple
-          (tuple-get split 0)
-          (conj (tuple-get split 1) guard))))
-     (tuple [] [])
-     guards)))
+  (reduce
+   (fn [
+        split
+         guard]
+     (if
+      (every?
+       (fn [variable]
+         (contains? bound (str (.-symbol variable))))
+       (datascript.parser/clause-vars guard))
+       (tuple
+        (conj (tuple-get split 0) guard)
+        (tuple-get split 1))
+       (tuple
+        (tuple-get split 0)
+        (conj (tuple-get split 1) guard))))
+   (tuple [] [])
+   guards))
 
 (signature datascript.lg.query/missing-vars
   :fn<set<string>;vector<string>;set<string>>)
@@ -1565,13 +1595,13 @@
       (query-types/relation-rows projected)))))
 
 (defn- make-rule-frame
-  [prefix-clauses
+  [prefix-variable-names
     prefix-context
     clauses
     used-args
     pending-guards]
   (record rule-frame
-    (prefix-clauses prefix-clauses)
+    (prefix-variable-names prefix-variable-names)
     (prefix-context prefix-context)
     (clauses clauses)
     (used-args used-args)
@@ -1602,11 +1632,39 @@
 
 (defn- solve-rule-prefix
   [context
-    clauses]
+    clauses
+    pattern-cache]
   (reduce
    (fn [current
          clause]
-     (-resolve-clause current clause))
+     (match clause
+       (datascript.parser/PatternClause query-source pattern)
+       (let [source-name
+             (if-some [name
+                       (datascript.parser/query-source-name query-source)]
+               name
+               *implicit-source-name*)
+             relation (join-context-relations current)
+             resolved
+             (if-some [source
+                       (get
+                        (query-types/context-sources current)
+                        source-name)]
+               (if-some [database (query-types/source-database source)]
+                 (query-types/resolve-db-pattern-cached
+                  database relation pattern pattern-cache)
+                 (if-some [rows (query-types/source-rows source)]
+                   (query-types/resolve-relation-pattern
+                    rows relation pattern)
+                   (Stdlib.invalid_arg
+                    (str "Unsupported query source: " source-name))))
+               (Stdlib.invalid_arg
+                (str "Query source is not bound: " source-name)))]
+         (query-types/context
+          [resolved]
+          (query-types/context-sources current)
+          (query-types/context-rules current)))
+       _ (-resolve-clause current clause)))
    context
    clauses))
 
@@ -1640,7 +1698,8 @@
                     (datascript.parser/rule-clause-source-name clause)]
             name
             "$")
-          variables (rule-output-variables arguments)]
+          variables (rule-output-variables arguments)
+          pattern-cache (atom {})]
       (binding
        [*implicit-source-name* source-name
         *implicit-source*
@@ -1648,7 +1707,8 @@
          context source-name)]
        (loop
         [stack
-         [(make-rule-frame [] context [clause] {} [])]
+         [(make-rule-frame
+           (set-of :string) context [clause] {} [])]
          result
          (query-types/empty-relation
           (query-types/index-attrs variables)
@@ -1670,30 +1730,30 @@
                        nested-rule-name
                        call-args
                        (:used-args frame))
+                      bound-variable-names
+                      (into
+                       (:prefix-variable-names frame)
+                       (clause-variable-names leading-clauses))
                       guard-split
                       (split-typed-guards
-                       (vec
-                        (concat
-                         (:prefix-clauses frame)
-                         leading-clauses))
-                       (vec
-                        (concat
-                         guards
-                         (:pending-guards frame))))
+                       bound-variable-names
+                       (append-rule-clauses
+                        guards
+                        (:pending-guards frame)))
                       active-guards (tuple-get guard-split 0)
                       pending-guards (tuple-get guard-split 1)]
                   (if
                    (some rule-guard-always-false? active-guards)
                     (recur (subvec stack 1) result)
                     (let [prefix-clauses
-                          (vec
-                           (concat
-                            leading-clauses
-                            active-guards))
+                          (append-rule-clauses
+                           leading-clauses
+                           active-guards)
                           prefix-context
                           (solve-rule-prefix
                            (:prefix-context frame)
-                           prefix-clauses)]
+                           prefix-clauses
+                           pattern-cache)]
                       (if
                        (context-has-empty-relation?
                         prefix-context)
@@ -1719,27 +1779,25 @@
                                (fn [
                                     branch]
                                  (make-rule-frame
-                                  prefix-clauses
+                                  bound-variable-names
                                   prefix-context
-                                  (vec
-                                   (concat
-                                    branch
-                                    next-clauses))
+                                  (append-rule-clauses
+                                   branch next-clauses)
                                   used-args
                                   pending-guards))
                                branches)]
                           (recur
-                           (vec
-                            (concat
-                             branch-frames
-                             (subvec stack 1)))
+                           (append-rule-frames
+                            branch-frames
+                            (subvec stack 1))
                            result))))))
                 (Stdlib.invalid_arg
                  "Expected a rule clause"))
               (let [resolved-context
                     (solve-rule-prefix
                      (:prefix-context frame)
-                     leading-clauses)
+                     leading-clauses
+                     pattern-cache)
                     branch-result
                     (rule-result-relation
                      resolved-context variables)]

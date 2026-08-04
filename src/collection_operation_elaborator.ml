@@ -1230,13 +1230,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         Structural_map.extension_get target fields keyword
                       with
                       | Some result -> Ok result
-                      | None
-                        when match target.ty with
-                             | TNamed_record record -> not record.nominal
-                             | _ -> false ->
-                          Ok
-                            (typed_ir (TNullable TUnknown)
-                               (Semantic_ir.Constructor ("None", None)))
                       | None -> (
                           match target.ty with
                           | TNamed_record record -> (
@@ -1255,10 +1248,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                       "-lookup" [ target; key ]
                               with
                               | Some result -> Ok result
-                              | None ->
+                              | None when record.nominal ->
                                   Error.error
                                     ("unknown record field "
-                                   ^ Names.keyword_source_name keyword))
+                                   ^ Names.keyword_source_name keyword)
+                              | None ->
+                                  Ok
+                                    (typed_ir (TNullable TUnknown)
+                                       (Semantic_ir.Constructor ("None", None))))
                           | _ -> assert false)))
               | ty when Types.is_dynamic ty ->
                   Ok (dynamic_lookup ty target)
@@ -1446,19 +1443,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       List.map
                         (fun (field : field) ->
                           ( Semantic_ir.PString field.keyword,
-                            Structural_map.field_expr target field ))
+                            Semantic_ir.Constructor
+                              ( "Some",
+                                Some
+                                  (Structural_map.field_expr target field) ) ))
                         fields
                       @ [
                           ( Semantic_ir.PAny,
-                            apply "invalid_arg"
-                              [
-                                Semantic_ir.String
-                                  "record key does not select a compatible \
-                                   field";
-                              ] );
+                            Semantic_ir.Constructor ("None", None) );
                         ]
                     in
-                    Ok (typed_ir result_ty (Semantic_ir.Match (key, cases)))
+                    Ok
+                      (typed_ir (TNullable result_ty)
+                         (Semantic_ir.Match (key, cases)))
                 | None -> (
                     match
                   match

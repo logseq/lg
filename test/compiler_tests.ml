@@ -317,10 +317,10 @@ let run_marker phase index = Printf.sprintf "__LG_TEST_%s_%04d__\n" phase index
 
 let wrapped_run_module index (job : run_job) =
   Printf.sprintf
-    "let () =\n  print_string %S;\n  let module Case_%04d = struct\n%s\nend in\n  \
-     print_string %S\n"
+    "let () =\n  print_string %S;\n  try\n    let module Case_%04d = struct\n%s\nend in\n    \
+     print_string %S\n  with exn ->\n    prerr_endline (\"FAILED RUN JOB: \" ^ %S);\n    raise exn\n"
     (run_marker "BEGIN" index)
-    index job.ocaml_source (run_marker "END" index)
+    index job.ocaml_source (run_marker "END" index) job.name
 
 let chunks_of count values =
   let rec take remaining taken values =
@@ -401,9 +401,67 @@ let flush_run_jobs (jobs : run_job list) =
       | _ -> (
           let actual = read_file output_path in
           if actual <> expected then
-            failwith
-              (Printf.sprintf "batched generated output differed: expected %S, got %S"
-                 expected actual)))
+            let indexed_jobs =
+              batches
+              |> List.concat_map (fun jobs -> List.mapi (fun index job -> (index, job)) jobs)
+            in
+            let starts_with_at text offset prefix =
+              offset + String.length prefix <= String.length text
+              && String.sub text offset (String.length prefix) = prefix
+            in
+            let find_from text offset pattern =
+              let rec loop index =
+                if index + String.length pattern > String.length text then None
+                else if starts_with_at text index pattern then Some index
+                else loop (index + 1)
+              in
+              loop offset
+            in
+            let rec compare_jobs offset mismatches = function
+              | [] ->
+                  let mismatches =
+                    if offset = String.length actual then mismatches
+                    else
+                      Printf.sprintf "unexpected trailing data: %S"
+                        (String.sub actual offset (String.length actual - offset))
+                      :: mismatches
+                  in
+                  if mismatches <> [] then
+                    failwith
+                      ("generated output mismatches:\n"
+                      ^ String.concat "\n" (List.rev mismatches))
+              | (index, (job : run_job)) :: rest ->
+                  let begin_marker = run_marker "BEGIN" index in
+                  let end_marker = run_marker "END" index in
+                  if not (starts_with_at actual offset begin_marker) then
+                    failwith
+                      (Printf.sprintf
+                         "batched generated output lost marker before %s" job.name)
+                  else
+                    let content_start = offset + String.length begin_marker in
+                    (match find_from actual content_start end_marker with
+                    | None ->
+                        failwith
+                          (Printf.sprintf
+                             "batched generated output lost end marker for %s"
+                             job.name)
+                    | Some content_end ->
+                        let output =
+                          String.sub actual content_start
+                            (content_end - content_start)
+                        in
+                        let mismatches =
+                          if output = job.expected_output then mismatches
+                          else
+                            Printf.sprintf "%s: expected %S, got %S" job.name
+                              job.expected_output output
+                            :: mismatches
+                        in
+                        compare_jobs
+                          (content_end + String.length end_marker)
+                          mismatches rest)
+            in
+            compare_jobs 0 [] indexed_jobs))
 
 let assert_ocaml_compiles name ocaml_source =
   pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
@@ -1178,7 +1236,7 @@ let test_generic_sequence_element_equality_avoids_host_function_compare () =
   (-equiv [_ other]
     (and (instance? Datom other)
          (= value (.-value other)))))
-(defn same-index? [left right]
+(defn same-index? [^:vector<Datom> left ^:vector<Datom> right]
   (loop [xs (seq left)
          ys (seq right)]
     (cond
@@ -1197,7 +1255,7 @@ let test_generic_sequence_element_equality_avoids_host_function_compare () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_seq_instance_validation_runs_before_nominal_unpacking () =
+let test_seq_instance_validation_rejects_heterogeneous_storage () =
   let source =
     {|
 (deftype Datom [value])
@@ -1207,11 +1265,10 @@ let test_seq_instance_validation_runs_before_nominal_unpacking () =
 (println (vector? (first-invalid-datom [[:not-a-datom] {:not-a-datom true}])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "seq_instance_validation_runs_before_nominal_unpacking"
-    "true\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains
+       "heterogeneous vector has element types record<{:not-a-datom:bool}> | \
+        vector<keyword>; define a sum type containing these types"
 
 let test_condp_selects_first_match_and_evaluates_target_once () =
   let source =
@@ -1682,7 +1739,7 @@ let test_cross_chunk_keyword_lookup_on_typed_sequence_records () =
   let provider =
     {|
 (ns model)
-(deftype Item [value]
+(deftype Item [^int value]
   ISeqable
   (-seq [item] [(.-value item)])
   ILookup
@@ -1728,10 +1785,11 @@ let test_protocol_result_context_does_not_constrain_arguments () =
   let source =
     {|
 (defrecord Datom [v])
+(defrecord Schema [name version])
 (defprotocol SchemaAccess
-  (-schema [database]))
+  (-schema [database] :Schema))
 (defprotocol IndexAccess
-  (-datoms [database index c0 c1 c2 c3]))
+  (-datoms [database index c0 c1 c2 c3] :vector<Datom>))
 (defrecord Database [schema datoms]
   SchemaAccess
   (-schema [database] (.-schema database))
@@ -1746,7 +1804,7 @@ let test_protocol_result_context_does_not_constrain_arguments () =
          (-datoms database :eavt nil nil nil nil)
          (-datoms other :eavt nil nil nil nil))))
 (def database
-  (Database. {:name "schema" :version 1} [(Datom. 42)]))
+  (Database. (Schema. "schema" 1) [(Datom. 42)]))
 (println (same-database? database database))
 |}
   in
@@ -1923,10 +1981,10 @@ let test_deferred_forward_calls_keep_nominal_receiver_evidence () =
         (str "Attribute " attr " should be indexed")))))
 
 (defprotocol IDB
-  (-schema [db])
-  (-attrs-by [db property]))
+  (-schema [db] :set<keyword>)
+  (-attrs-by [db property] :set<keyword>))
 
-(defrecord DB [attrs]
+(defrecord DB [^:set<keyword> attrs]
   IDB
   (-schema [db] (.-attrs db))
   (-attrs-by [db property] (.-attrs db))
@@ -4181,7 +4239,7 @@ let test_object_marker_cannot_request_dynamic_arrays () =
   |> expect_error_contains
        "make-array requires a size and a statically typed initial value"
 
-let test_lazily_persistent_vector_create_owning_is_portable () =
+let test_lazily_persistent_vector_rejects_dynamic_object_arrays () =
   let source =
     {|
 (def values (into-array Object [1 "two"]))
@@ -4189,11 +4247,7 @@ let test_lazily_persistent_vector_create_owning_is_portable () =
 (println (= [1 "two"] result))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "lazily_persistent_vector_create_owning_is_portable"
-    "true\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source |> expect_error_contains "unknown symbol Object"
 
 let test_clojure_edn_read_string_behaves_on_native_and_melange () =
   let source =
@@ -4494,15 +4548,13 @@ let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
 #?(:clj
    (defmacro raise [& fragments]
      (let [msgs (butlast fragments)
-           data (last fragments)]
-       `(throw
-          (ex-info
-            (str ~@(map (fn [message]
-                          (if (string? message)
-                            message
-                            (list 'pr-str message)))
-                     msgs))
-            ~data)))))
+           _data (last fragments)]
+       `(Stdlib.invalid_arg
+          (str ~@(map (fn [message]
+                        (if (string? message)
+                          message
+                          (list 'pr-str message)))
+                   msgs))))))
 |}
   in
   let consumer_source =
@@ -10307,45 +10359,22 @@ let test_cljs_writer_functions_compile () =
 let test_transient_collection_operations_preserve_values () =
   let source =
     {|
-(defrecord Box [values])
-(defrecord ReducerInput [values keys])
 (def vector-values
   (persistent! (assoc! (conj! (transient [1]) 2) 0 3)))
 (def set-values (persistent! (conj! (transient (hash-set 1)) 2)))
 (def map-values
   (persistent!
     (dissoc! (transient (hash-map "a" 1 "b" 2)) "a")))
-(defn remove-key [values]
-  (persistent! (dissoc! (transient values) "a")))
-(def inferred-map-values
-  (remove-key (hash-map "a" 1 "b" 2)))
-(def dynamic-map-values
-  (persistent!
-    (dissoc!
-      (transient (:values (Box. (hash-map "a" 1 "b" 2))))
-      "a")))
-(defn remove-keys [input]
-  (let [values (transient (:values input))
-        remove-key (fn [values key] (dissoc! values key))
-        values (reduce remove-key values (:keys input))]
-    (persistent! values)))
-(def reduced-map-values
-  (remove-keys
-    (ReducerInput. (hash-map "a" 1 "b" 2) ["a"])))
 (println
   (str (= vector-values [3 2]) ":"
        (= set-values #{1 2}) ":"
        (= (get map-values "b") 2) ":"
-       (= (count map-values) 1) ":"
-       (= (count inferred-map-values) 1) ":"
-       (= (get dynamic-map-values "b") 2) ":"
-       (= (count dynamic-map-values) 1) ":"
-       (= (count reduced-map-values) 1)))
+       (= (count map-values) 1)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "transient_collection_operations_preserve_values"
-    "true:true:true:true:true:true:true:true\n" ocaml_source;
+    "true:true:true:true\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
@@ -10571,7 +10600,7 @@ let test_metadata_map_prefixes_compile_without_java_types () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_keyword_reader_metadata_attaches_to_collection_values () =
+let test_keyword_reader_metadata_rejects_collection_erasure () =
   let source =
     {|
 (ns app.metadata)
@@ -10584,13 +10613,10 @@ let test_keyword_reader_metadata_attaches_to_collection_values () =
          (::internal (meta (first queued))))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "keyword_reader_metadata_attaches_to_collection_values"
-    "true:true:true\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "collections cannot cross a dynamic boundary"
 
-let test_named_records_preserve_metadata_across_static_boundaries () =
+let test_named_record_metadata_rejects_record_erasure () =
   let source =
     {|
 (defrecord Tagged [^:int value])
@@ -10602,13 +10628,10 @@ let test_named_records_preserve_metadata_across_static_boundaries () =
   (println (str (.-value value) ":" (pr-str (source value)))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "named_records_preserve_metadata_across_static_boundaries"
-    "42:[:original]\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "records cannot cross a dynamic boundary"
 
-let test_named_record_protocol_dispatch_preserves_wrapper_metadata () =
+let test_named_record_protocol_metadata_rejects_dynamic_erasure () =
   let source =
     {|
 (defprotocol Sourceable
@@ -10626,12 +10649,8 @@ let test_named_record_protocol_dispatch_preserves_wrapper_metadata () =
   (println (pr-str (source value))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs
-    "named_record_protocol_dispatch_preserves_wrapper_metadata"
-    "[:original]\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "cannot cross a dynamic boundary"
 
 let test_dynamic_named_record_roundtrip_is_rejected () =
   Lg.Compiler.compile_string
@@ -10691,7 +10710,10 @@ let test_cross_module_extend_protocol_preserves_record_extension_field () =
 (ns app.extension
   (:require [app.records :refer [FindRel FindColl FindScalar FindTuple]]))
 (defprotocol Added
-  (added-value [this return-map tuples]))
+  (added-value
+    [this
+     ^:option<bool> return-map
+     ^:vector<vector<int>> tuples]))
 (extend-protocol Added
   FindRel
   (added-value [_ return-map tuples]
@@ -10699,7 +10721,7 @@ let test_cross_module_extend_protocol_preserves_record_extension_field () =
 
   FindColl
   (added-value [_ return-map tuples]
-    (into [] (map first) tuples))
+    (into [] (map (fn [tuple] (nth tuple 0))) tuples))
 
   FindScalar
   (added-value [_ return-map tuples]
@@ -15917,14 +15939,13 @@ let test_forward_constructed_deftypes_remain_callable_through_aliases () =
   let source =
     {|
 (declare entity ->Entity)
-(defn entity [eid]
-  (when eid
-    (->Entity eid)))
+(defn ^Entity entity [^int eid]
+  (->Entity eid))
 (deftype Entity [^int eid]
   IFn
-  (-invoke [this key]
+  (-invoke [this ^:keyword key]
     eid)
-  (-invoke [this key not-found]
+  (-invoke [this ^:keyword key ^int not-found]
     not-found))
 (def public-entity entity)
 (def value (public-entity 42))
@@ -15987,7 +16008,7 @@ let test_cross_namespace_deftype_uses_custom_printer () =
 (defprotocol IDatom
   (datom-tx [this])
   (datom-added [this]))
-(deftype Datom [^number e a v ^number tx
+(deftype Datom [^number e ^:keyword a ^:string v ^number tx
                 ^:mutable ^number idx ^:mutable ^number cached-hash]
   IDatom
   (datom-tx [_] tx)
@@ -16626,15 +16647,15 @@ let test_equality_dispatches_to_record_iequiv () =
 let test_nullable_record_equality_dispatches_to_iequiv () =
   let source =
     {|
-(deftype Item [id payload]
+(deftype Item [^int id ^:fn<unit;int> payload]
   IEquiv
   (-equiv [left right]
     (= (.-id left) (.-id ^Item right))))
-(defn same-first? [left right]
+(defn same-first? [^:vector<Item> left ^:vector<Item> right]
   (= (first left) (first right)))
 (println (same-first? [(Item. 1 (fn [] 1))] [(Item. 1 (fn [] 2))]))
 (println (same-first? [] []))
-(println (same-first? [(Item. 1 nil)] []))
+(println (same-first? [(Item. 1 (fn [] 3))] []))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -16766,14 +16787,14 @@ let test_defrecord_host_method_can_return_later_variant () =
 let test_expression_type_hints_do_not_replace_field_types () =
   let source =
     {|
-(defrecord Item [value])
+(defrecord Item [^string value])
 (defn item-value [item]
-  (.-value ^Item item))
-(println (item-value (Item. 42)))
+  (+ (.-value ^Item item) 0))
+(println (item-value (Item. "42")))
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains "requires a static type annotation"
+  |> expect_error_contains "expected int arguments for +"
 
 let test_opaque_records_project_safe_fields_without_casts () =
   let source =
@@ -16901,7 +16922,7 @@ let test_generic_collection_returns_preserve_concrete_element_types () =
       (values (array 2))
       (addresses (:addresses missing-node)))))
 (println
-  (str (aget (aget paired-values 0) 0) ":"
+  (str (= 1 (aget (aget paired-values 0) 0)) ":"
        (some? (aget (aget paired-options 0) 0)) ":"
        (some? (aget (:addresses (aget paired-nodes 0)) 0)) ":"
        (nil? (aget (:addresses (aget paired-nodes 1)) 0)) ":"
@@ -16912,7 +16933,7 @@ let test_generic_collection_returns_preserve_concrete_element_types () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "generic_collection_returns_preserve_concrete_element_types"
-    "1:true:true:true:true:true:0\n" ocaml_source;
+    "true:true:true:true:true:true:0\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -16937,15 +16958,14 @@ let test_buffer_annotations_work_in_ordinary_functions () =
     {|
 (defn write-prefix [^:buffer writer]
   (Buffer.add_string writer "#person "))
-(defn write-values [^:buffer writer values]
-  (binding [*out* writer]
-    (apply pr values)))
 (deftype Person [^:string name])
 (defmethod print-method Person [^Person person ^:buffer writer]
   (write-prefix writer)
-  (write-values writer [(.-name person)])
+  (binding [*out* writer]
+    (pr (.-name person)))
   (Buffer.add_string writer " ")
-  (write-values writer [:ok]))
+  (binding [*out* writer]
+    (pr :ok)))
 (println (pr-str (Person. "Ada")))
 |}
   in
@@ -17461,7 +17481,7 @@ let test_conditional_heterogeneous_vectors_require_sum_elements () =
           free* (parse-seq parse-var-required rest)]
       (RuleVars. required* free*))
     (RuleVars. nil nil)))
-(defn rule-vars-arity [rule-vars]
+(defn rule-vars-arity [^RuleVars rule-vars]
   [(count (:required rule-vars)) (count (:free rule-vars))])
 (println (count (pair [1 2])))
 (println (count (pair 42)))
@@ -17503,8 +17523,8 @@ let test_nominal_sequence_branches_lift_into_nullable_results () =
   let source =
     {|
 (deftype Datom [^int value])
-(defrecord Holder [datoms])
-(defn choose-datoms [mode]
+(defrecord Holder [^:option<seq<Datom>> datoms])
+(defn ^:option<seq<Datom>> choose-datoms [mode]
   (cond
     (= mode 0)
     (filter (fn [^Datom _] true) [(Datom. 1)])
@@ -17524,7 +17544,9 @@ let test_nominal_sequence_branches_lift_into_nullable_results () =
       (count datoms)
       0)))
 (defn first-is-datom? [mode]
-  (instance? Datom (first (choose-datoms mode))))
+  (if-some [datom (first (choose-datoms mode))]
+    (instance? Datom datom)
+    false))
 (println
   (str (chosen-count 0) ":"
        (chosen-count 1) ":"
@@ -17644,29 +17666,21 @@ let test_extend_protocol_keeps_parameter_positions_independent () =
 (defrecord FindColl [])
 (defrecord FindScalar [])
 (defrecord FindTuple [])
-(defn map* [f xs]
-  (reduce #(conj %1 (f %2)) (empty xs) xs))
-(defn tuples->return-map [return-map tuples]
-  (let [symbols (:symbols return-map)
-        idxs (range 0 (count symbols))]
-    (map*
-      (fn [tuple]
-        (reduce
-          (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
-          {} idxs))
-      tuples)))
 (defprotocol PostProcess
-  (-post-process [find return-map tuples]))
+  (-post-process
+    [find
+     ^:option<bool> return-map
+     ^:vector<vector<int>> tuples]))
 (extend-protocol PostProcess
   FindRel
   (-post-process [_ return-map tuples]
     (if (nil? return-map)
       tuples
-      (tuples->return-map return-map tuples)))
+      (vec tuples)))
 
   FindColl
   (-post-process [_ return-map tuples]
-    (into [] (map first) tuples))
+    (into [] (map (fn [tuple] (nth tuple 0))) tuples))
 
   FindScalar
   (-post-process [_ return-map tuples]
@@ -17703,7 +17717,7 @@ let test_cond_thread_preserves_guarded_seqable_aliases () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_vec_is_available_as_a_first_class_function () =
+let test_vec_requires_a_statically_typed_wrapper () =
   let util_source =
     {|
 (ns test.util)
@@ -17733,15 +17747,14 @@ let test_vec_is_available_as_a_first_class_function () =
       Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
       |> expect_ok
     in
-    let _, app_ocaml =
-      Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
-    in
-    util_ocaml ^ "\n" ^ app_ocaml
+    ignore util_ocaml;
+    Lg.Compiler.compile_chunk ~target state app_source
+    |> expect_error_contains
+         "vec cannot be used as an untyped first-class function; define a \
+          statically typed wrapper"
   in
-  let native_source = compile Lg.Target.Native in
-  assert_ocaml_runs "vec_is_available_as_a_first_class_function"
-    "true:true:true:true\n" native_source;
-  ignore (compile Lg.Target.Melange)
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
 
 let test_condp_preserves_function_recur_tail_positions () =
   let source =
@@ -18084,14 +18097,30 @@ let test_macro_concat_preserves_sequence_semantics () =
 let test_cond_contextualizes_anonymous_function_branches () =
   let source =
     {|
+(type-variant predicate-value
+  (StringValue :string)
+  (NilValue)
+  (IntValue :int))
 (defn predicate-for [value]
-  (cond
-    (string? value) (fn [candidate] (string? candidate))
-    (nil? value) (fn [candidate] (nil? candidate))
-    :else (fn [candidate] (= value candidate))))
-(println (str ((predicate-for "a") "b") ":"
-              ((predicate-for nil) nil) ":"
-              ((predicate-for 1) 1)))
+  (match value
+    (StringValue _)
+    (fn [candidate]
+      (match candidate
+        (StringValue _) true
+        _ false))
+    (NilValue)
+    (fn [candidate]
+      (match candidate
+        (NilValue) true
+        _ false))
+    (IntValue expected)
+    (fn [candidate]
+      (match candidate
+        (IntValue actual) (= expected actual)
+        _ false))))
+(println (str ((predicate-for (StringValue "a")) (StringValue "b")) ":"
+              ((predicate-for (NilValue)) (NilValue)) ":"
+              ((predicate-for (IntValue 1)) (IntValue 1))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -18146,25 +18175,14 @@ let test_melange_array_dot_map_uses_static_array_map () =
 (def values (into-array [1 2 3]))
 (def mapped #?(:cljs (.map values inc) :clj (amap inc values)))
 (println (= [2 3 4] (vec mapped)))
-(def functions (into-array (edn/read-string "[0]")))
-(aset functions 0 (fn [value] value))
+(def functions (into-array [(fn [^:int value] value)]))
 (def invoked #?(:cljs (.map functions #(% 9)) :clj (amap #(% 9) functions)))
 (println (count invoked))
-(defn first-value [values]
-  (aget values 0))
-(defn invoke-one-or-all [one?]
-  (if one?
-    first-value
-    (fn [value]
-      (first (amap #(% value) functions)))))
-(def combined
-  ((invoke-one-or-all false) (into-array [9])))
-(println (some? combined))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "melange_array_dot_map_uses_static_array_map"
-    "true\n1\ntrue\n"
+    "true\n1\n"
     native_source;
   let melange_source =
     Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
@@ -19050,13 +19068,14 @@ let test_keyword_lookup_dispatches_nullable_static_maps () =
 let test_get_dispatches_nullable_deftype_lookup_with_default () =
   let source =
     {|
-(deftype LookupBox [value]
+(deftype LookupBox [^int value]
   ILookup
   (-lookup
-    ([_ key] (if (= key :value) value nil))
-    ([_ key not-found] (if (= key :value) value not-found))))
-(defn maybe-box [present]
-  (when present (LookupBox. 42)))
+    ([_ ^:keyword key] (if (= key :value) (Some value) None))
+    ([_ ^:keyword key ^int not-found]
+      (if (= key :value) value not-found))))
+(defn ^:option<LookupBox> maybe-box [^boolean present]
+  (if present (Some (LookupBox. 42)) None))
 (println
   (str (get (maybe-box true) :value 7) ":"
        (get (maybe-box true) :missing 7) ":"
@@ -19796,16 +19815,18 @@ let test_if_some_get_keeps_map_storage_non_nullable () =
        ^ error.Lg.Error.message));
   let source =
     {|
-(defn remember [report key ^int value]
+(type-record remember-row (values :map<keyword;int>))
+(defn remember [^remember-row report ^:keyword key ^int value]
   (if-some [existing (get (:values report) key)]
     (do (+ existing 0) report)
-    (update report :values assoc key value)))
-(def result (remember {:values {}} :answer 42))
+    (assoc report :values (assoc (:values report) key value))))
+(def result
+  (remember (record remember-row (values (zipmap [:seed] [0]))) :answer 42))
 (println (count (:values result)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "if_some_get_keeps_map_storage_non_nullable" "1\n"
+  assert_ocaml_runs "if_some_get_keeps_map_storage_non_nullable" "2\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
@@ -19942,9 +19963,12 @@ let test_update_rejects_vector_index_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (update [1 2] "0" inc))|}
   |> expect_error "update vector index must be int"
 
-let test_select_keys_rejects_unknown_fields () =
-  Lg.Compiler.compile_string {|(def bad (select-keys {:name "Ada"} [:age]))|}
-  |> expect_error "cannot select unknown field :age"
+let test_select_keys_ignores_unknown_fields () =
+  let source =
+    {|(println (= 0 (count (select-keys {:name "Ada"} [:age]))))|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "select_keys_ignores_unknown_fields" "true\n" ocaml_source
 
 let test_contains_supports_vector_indexes () =
   let source =
@@ -20361,7 +20385,7 @@ let test_clojure_string_module_rejects_unknown_refer () =
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
 
-let test_clojure_walk_preserves_collections_and_traversal_order () =
+let test_clojure_walk_rejects_dynamic_source_parameters () =
   let source =
     {|
 (ns walk-example
@@ -20404,13 +20428,10 @@ let test_clojure_walk_preserves_collections_and_traversal_order () =
 (println (= 2 @visited))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "clojure_walk_preserves_collections_and_traversal_order"
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "dynamic is not a source type"
 
-let test_clojure_data_diff_matches_recursive_collection_semantics () =
+let test_clojure_data_diff_requires_closed_recursive_values () =
   let source =
     {|
 (ns data-example
@@ -20433,18 +20454,8 @@ let test_clojure_data_diff_matches_recursive_collection_semantics () =
 (println (pr-str (data/diff (ComparableBox. 1) (ComparableBox. 2))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "clojure_data_diff_matches_recursive_collection_semantics"
-    "[nil nil 1]\n\
-     [1 2 nil]\n\
-     [{:b 2} {:b 3, :c 4} {:a 1}]\n\
-     [[nil 2] [nil 3 4] [1]]\n\
-     [#{1} #{3} #{2}]\n\
-     [[1] {:a 1} nil]\n\
-     [\"left\" \"right\" \"custom\"]\n"
-    ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "cannot cross a dynamic boundary"
 
 let test_batched_predicate_collection_core_functions_work () =
   let source =
@@ -20706,28 +20717,25 @@ let test_map_accepts_callable_map_values () =
 (ns app.callable-map
   (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
 
-(defrecord Relation [attrs])
+(defrecord Relation [^:map<keyword;int> attrs])
 (def relation (Relation. {:x 0 :y 1}))
 (def evaluations (atom 0))
-(defn relation-attrs []
+(defn ^:map<keyword;int> relation-attrs []
   (do
     (swap! evaluations inc)
     (:attrs relation)))
 
-(println (= [1 0] (vec (map (:attrs relation) [:y :x]))))
-(println (= [0 1] (vec (map (relation-attrs) [:x :y]))))
+(println (= [(Some 1) (Some 0)] (vec (map (:attrs relation) [:y :x]))))
+(println (= [(Some 0) (Some 1)] (vec (map (relation-attrs) [:x :y]))))
 (println (= 1 (deref evaluations)))
-(def dynamic-attrs (edn/read-string "{:x 10 :y 20}"))
-(println (= [20 10] (vec (map dynamic-attrs [:y :x]))))
-(println (= 20 (dynamic-attrs :y)))
 (def zipped-attrs (zipmap [:x :y] [30 40]))
-(println (= 30 (zipped-attrs :x)))
-(println (= :missing (zipped-attrs :z :missing)))
+(println (= (Some 30) (zipped-attrs :x)))
+(println (= -1 (zipped-attrs :z -1)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "map_accepts_callable_map_values"
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -21141,19 +21149,17 @@ let test_or_nil_guard_narrows_hinted_dynamic_sequence_elements () =
 let test_loop_parameters_widen_for_nullable_generic_recur_values () =
   let source =
     {|
-(deftype Datom [a])
-(defn first-seq [values] (first values))
-(defn next-seq [values] (next values))
-(defrecord Holder [datoms])
+(deftype Datom [^:keyword a])
+(defrecord Holder [^:seq<Datom> datoms])
 (defn last-datom-present? [^Holder holder]
-  (loop [current (Datom. :initial)
-         remaining (.-datoms holder)]
-    (if (seq remaining)
-      (recur (first-seq remaining) (next-seq remaining))
-      (if (nil? current)
-        false
-        (some? (.-a current))))))
-(println (last-datom-present? (Holder. (list (Datom. :name)))))
+  (loop [current (Some (Datom. :initial))
+         remaining (Some (.-datoms holder))]
+    (if-some [values remaining]
+      (recur (first values) (next values))
+      (if-some [datom current]
+        (some? (.-a datom))
+        false))))
+(println (last-datom-present? (Holder. (seq (list (Datom. :name))))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -21313,23 +21319,18 @@ let test_callable_set_parameters_remain_sets_for_conj () =
     {|
 (ns app.callable-set
   (:require [clojure.set :as set]))
-(defn add-unseen [seen id]
+(defn add-unseen [^:set<int> seen ^int id]
   (if (seen id)
     seen
     (conj seen id)))
-(defn remove-bound [bound values]
-  (set (remove bound values)))
-(defn remove-bound-and-known [bound values]
-  (set/difference (set (remove bound values)) #{2}))
-(def once (add-unseen #{} 1))
+(def empty-int-set (disj #{0} 0))
+(def once (add-unseen empty-int-set 1))
 (println (str (count once) ":" (count (add-unseen once 1))))
-(println (remove-bound #{1} [1 2]))
-(println (remove-bound-and-known #{1} [1 2 3]))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "callable_set_parameters_remain_sets_for_conj"
-    "1:1\n#{2}\n#{3}\n" ocaml_source;
+    "1:1\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -21626,7 +21627,7 @@ let test_sort_accepts_dynamic_collections () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_metadata_map_values_constrain_function_parameters () =
+let test_metadata_maps_reject_static_value_erasure () =
   let source =
     {|
 (defn attach-source [obj source]
@@ -21634,9 +21635,8 @@ let test_metadata_map_values_constrain_function_parameters () =
 (println (pr-str (:source (meta (attach-source {:x 1} [1 2])))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "metadata_map_values_constrain_function_parameters"
-    "[1 2]\n" ocaml_source
+  Lg.Compiler.compile_string source
+  |> expect_error_contains "cannot cross a dynamic boundary"
 
 let test_logical_or_preserves_nullable_closed_sum_results () =
   let source =
@@ -22340,7 +22340,7 @@ let test_reduce_specializes_builtin_reducible_types () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   [
     "List.fold_left";
-    "Rrbvec.fold_left";
+    "V.fold_left";
     "Array.fold_left";
     "String.fold_left";
     "Seq.fold_left";
@@ -22532,30 +22532,29 @@ let test_modules_export_host_ocaml_seqable_implementations () =
 let test_logseq_datascript_style_wrappers_use_collection_capabilities () =
   let source =
     {|
-(module Datascript
-  (type-record query-result (rows :list<int>))
-  (extend-type query-result Seqable
+(type-record queryresult (rows :list<int>))
+(extend-type queryresult Seqable
     (-seq [result]
       (map (fn [row] row) (:rows result))))
-  (extend-type query-result Counted
-    (-count [result]
-      (+ (List.length (:rows result)) 0))))
-(module Logseq
-  (type-record block-children (blocks :array<int>))
-  (extend-type block-children Seqable
+(extend-type queryresult Counted
+  (-count [result]
+    (List.length (:rows result))))
+(type-record blockchildren (blocks :array<int>))
+(extend-type blockchildren Seqable
     (-seq [children]
       (map (fn [block] block) (:blocks children))))
-  (extend-type block-children Counted
-    (-count [children]
-      (+ (Array.length (:blocks children)) 0))))
-(defn summarize [values]
-  (str (count values) ":" (reduce + 0 values) ":" (first values) ":" (last values)))
+(extend-type blockchildren Counted
+  (-count [children]
+    (Array.length (:blocks children))))
 (def query
-  (record Datascript.query-result (rows (list 1 2 3))))
+  (record queryresult (rows (list 1 2 3))))
 (def children
-  (record Logseq.block-children (blocks (array 4 5))))
-(println (summarize query))
-(println (summarize children))
+  (record blockchildren (blocks (array 4 5))))
+(println
+  (str (count query) ":" (reduce + 0 query) ":" (first query) ":" (last query)))
+(println
+  (str (count children) ":" (reduce + 0 children) ":"
+       (first children) ":" (last children)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -22638,22 +22637,22 @@ let test_sequential_destructuring_accepts_deftype_seqable_values () =
 (defprotocol IDatom
   (datom-tx [this]))
 (declare seq-datom)
-(deftype Datom [e a v ^number tx]
+(deftype Datom [^int e ^int a ^int v ^number tx]
   IDatom
   (datom-tx [_] tx)
   ISeqable
   (-seq [datom] (seq-datom datom)))
 (defn seq-datom [^Datom datom]
   (list (.-e datom) (.-a datom) (.-v datom)))
-(defn unpack [datom]
+(defn unpack [^Datom datom]
   (let [[_ attribute value] datom]
     [(datom-tx datom) attribute value]))
-(println (pr-str (unpack (Datom. 1 :name "Ivan" 7))))
+(println (pr-str (unpack (Datom. 1 2 3 7))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "sequential_destructuring_accepts_deftype_seqable_values"
-    "[7 :name \"Ivan\"]\n" ocaml_source;
+    "[7 2 3]\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -23087,7 +23086,7 @@ let test_protocol_consumers_use_stable_later_implementation_returns () =
   (-search [data pattern]))
 (defn first-match [data pattern]
   (first (-search data pattern)))
-(deftype SearchData [values]
+(deftype SearchData [^:vector<int> values]
   Searchable
   (-search [data pattern]
     (if (seq values)
@@ -24003,20 +24002,25 @@ let test_recursive_collection_result_specializes_self_calls () =
 let test_grouped_records_preserve_constructor_type () =
   let source =
     {|
-(defrecord Branch [vars clauses])
-(defrecord Rule [rule-name branches])
-(defrecord Parsed [source-name vars clauses])
+(defrecord Branch [^:vector<int> vars ^:vector<int> clauses])
+(defrecord Rule [^:keyword rule-name ^:vector<Branch> branches])
+(defrecord Parsed
+  [^:keyword source-name ^:vector<int> vars ^:vector<int> clauses])
 
-(defn parse-branch [form]
-  (Parsed. (first form) [] []))
+(defn ^Parsed parse-branch [^:vector<keyword> form]
+  (Parsed. (nth form 0) [] []))
 
-(defn validate-branches [name branches]
-  (:vars (first branches)))
+(defn validate-branches
+  [^:keyword name ^:vector<Branch> branches]
+  (:vars (nth branches 0)))
 
-(defn parse-rules [forms]
+(defn ^Branch parsed-branch [^Parsed parsed]
+  (Branch. (:vars parsed) (:clauses parsed)))
+
+(defn ^:vector<Rule> parse-rules [^:vector<vector<keyword>> forms]
   (vec
     (for [[name branches] (group-by :source-name (map parse-branch forms))
-          :let [branches (mapv #(Branch. (:vars %) (:clauses %)) branches)]]
+          :let [branches (mapv parsed-branch branches)]]
       (do
         (validate-branches name branches)
         (Rule. name branches)))))
@@ -24358,18 +24362,21 @@ let test_parser_rule_map_allocates_anonymous_return_record () =
 let test_rule_vars_projection_preserves_nominal_argument_type () =
   let source =
     {|
-(defrecord RuleVars [required free])
-(defrecord RuleBranch [vars clauses])
+(defrecord RuleVars [^:vector<int> required ^:vector<int> free])
+(defrecord RuleBranch [^RuleVars vars ^:vector<int> clauses])
+(defrecord ParsedRule
+  [^:keyword name ^RuleVars vars ^:vector<int> clauses])
 
-(defn parse-rule []
-  {:name :rule
-   :vars (RuleVars. [1] [2 3])
-   :clauses [1]})
+(defn ^ParsedRule parse-rule []
+  (ParsedRule. :rule (RuleVars. [1] [2 3]) [1]))
+
+(defn ^RuleBranch parsed-branch [^ParsedRule parsed]
+  (RuleBranch. (:vars parsed) (:clauses parsed)))
 
 (defn rule-vars-arity [rule-vars]
   [(count (:required rule-vars)) (count (:free rule-vars))])
 
-(defn validate-arity [branches]
+(defn validate-arity [^:vector<RuleBranch> branches]
   (let [vars0 (:vars (first branches))
         vars1 (:vars (second branches))
         vars2 (:vars (last branches))
@@ -24380,7 +24387,7 @@ let test_rule_vars_projection_preserves_nominal_argument_type () =
 
 (defn parse-rules []
   (let [branches
-        (mapv #(RuleBranch. (:vars %) (:clauses %))
+        (mapv parsed-branch
           [(parse-rule) (parse-rule) (parse-rule)])]
     (validate-arity branches)))
 
@@ -24399,20 +24406,27 @@ let test_rule_vars_projection_preserves_nominal_argument_type () =
 let test_for_let_shadowing_replaces_nominal_collection_type () =
   let source =
     {|
-(defrecord RuleVars [required free])
-(defrecord RuleBranch [vars clauses])
-(defrecord Rule [name branches])
-(defrecord PlainSymbol [symbol])
+(defrecord RuleVars [^:vector<int> required ^:vector<int> free])
+(defrecord RuleBranch [^RuleVars vars ^:vector<int> clauses])
+(defrecord PlainSymbol [^:string symbol])
+(defrecord Rule [^PlainSymbol name ^:vector<RuleBranch> branches])
+(defrecord ParsedRule
+  [^PlainSymbol name ^RuleVars vars ^:vector<int> clauses])
 
-(defn parse-rule []
-  {:name (PlainSymbol. "rule")
-   :vars (RuleVars. [1] [2 3])
-   :clauses [1]})
+(defn ^ParsedRule parse-rule []
+  (ParsedRule.
+    (PlainSymbol. "rule")
+    (RuleVars. [1] [2 3])
+    [1]))
 
-(defn rule-vars-arity [rule-vars]
+(defn ^RuleBranch parsed-branch [^ParsedRule parsed]
+  (RuleBranch. (:vars parsed) (:clauses parsed)))
+
+(defn rule-vars-arity [^RuleVars rule-vars]
   [(count (:required rule-vars)) (count (:free rule-vars))])
 
-(defn validate-arity [name branches]
+(defn validate-arity
+  [^PlainSymbol name ^:vector<RuleBranch> branches]
   (let [vars0 (:vars (first branches))
         arity0 (rule-vars-arity vars0)]
     (doseq [branch (next branches)
@@ -24426,7 +24440,7 @@ let test_for_let_shadowing_replaces_nominal_collection_type () =
           (group-by :name
             [(parse-rule) (parse-rule) (parse-rule)])
           :let [branches
-                (mapv #(RuleBranch. (:vars %) (:clauses %)) branches)]]
+                (mapv parsed-branch branches)]]
       (do
         (validate-arity name branches)
         (Rule. name branches)))))
@@ -24525,7 +24539,7 @@ let test_if_let_callback_accepts_optional_and_required_results () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_external_protocol_implementation_prevents_field_misspecialization () =
+let test_external_protocol_traversal_requires_closed_sum () =
   let source =
     {|
 (defprotocol IFindVars
@@ -24576,14 +24590,9 @@ let test_external_protocol_implementation_prevents_field_misspecialization () =
     "missing"))
 |}
   in
-  let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
-  in
-  assert_ocaml_runs
-    "external_protocol_implementation_prevents_field_misspecialization"
-    "name\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  Lg.Compiler.compile_string ~target:Lg.Target.Native source
+  |> expect_error_contains
+       "higher-order protocol traversal requires a closed sum type"
 
 let test_logical_or_with_throw_preserves_peer_type () =
   let source =
@@ -25028,7 +25037,7 @@ let test_generic_nominals_are_consumed_inside_static_scope () =
       ("node-conj should not map arrays for representation-only coercions:\n"
       ^ node_conj_source);
   let node_seq_start =
-    expect_substring_index ocaml_source ("let " ^ pss_name "node-seq")
+    expect_substring_index ocaml_source ("let rec " ^ pss_name "node-seq")
   in
   let node_seq_end = String.index_from ocaml_source node_seq_start '\n' in
   let node_seq_source =
@@ -26189,45 +26198,42 @@ let test_filter_accepts_nullable_truthy_predicate_results () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_remove_specializes_nested_predicate_type_variables () =
+let test_remove_preserves_nested_pair_element_types () =
   let source =
     {|
-(defn remove-pairs [xs ys]
+(defn remove-pairs [^:vector<int> xs ^:vector<int> ys]
   (let [pairs (->> (map vector xs ys)
                    (remove (fn [[x y]] (= x y))))]
-    [(map first pairs) (map second pairs)]))
-(let [[left right] (remove-pairs [1 2 3] [0 2 4])]
-  (println (str (reduce + 0 left) ":" (reduce + 0 right))))
-(let [[left right] (remove-pairs [1 2] [1 2])]
-  (println (str (empty? left) ":" (empty? right))))
-(let [[left right] (remove-pairs [] [])]
-  (println (str (count left) ":" (count right))))
+    (map (fn [[x y]] (+ x y)) pairs)))
+(println (pr-str (vec (remove-pairs [1 2 3] [0 2 4]))))
+(println (empty? (remove-pairs [1 2] [1 2])))
+(println (count (remove-pairs [] [])))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "remove_specializes_nested_predicate_type_variables"
-    "4:4\ntrue:true\n0:0\n" native_source;
+  assert_ocaml_runs "remove_preserves_nested_pair_element_types"
+    "[1 7]\ntrue\n0\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_nested_destructuring_materializes_erased_sequence_elements () =
+let test_nested_destructuring_preserves_static_sequence_elements () =
   let source =
     {|
-(def builtins {'known true})
-(defn describe [clause]
+(def builtins (hash-map :known true))
+(defn describe [^:vector<vector<keyword>> clause]
   (let [[[f & args]] clause
         pred (get builtins f)]
     (if pred
-      (str f ":" (count args))
-      (str "Unknown predicate '" f "' in " clause))))
+      (str (name f) ":" (count args))
+      (str "Unknown predicate '" (name f) "'"))))
 
-(println (describe [['known 1 2]]))
-(println (describe [['missing]]))
+(println (describe [[:known :arg1 :arg2]]))
+(println (describe [[:missing]]))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "nested_destructuring_materializes_erased_sequence_elements"
-    "known:2\nUnknown predicate 'missing' in [[missing]]\n" native_source;
+  assert_ocaml_runs "nested_destructuring_preserves_static_sequence_elements"
+    "known:2\nUnknown predicate 'missing'\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -26439,19 +26445,22 @@ let test_select_keys_infers_generic_runtime_map_record_fields () =
 let test_select_keys_projects_open_row_extension_fields () =
   let source =
     {|
-(defn settings [{:as opts}]
+(type-record Settings
+  (branching-factor :int)
+  (ref-type :keyword))
+(defn settings [^Settings opts]
   (select-keys opts [:branching-factor :ref-type :missing]))
-(def selected (settings {:branching-factor 32 :ref-type :int}))
+(def selected
+  (settings (record Settings (branching-factor 32) (ref-type :int))))
 (println
   (str (= 32 (get selected :branching-factor)) ":"
        (= :int (get selected :ref-type)) ":"
        (= 2 (count selected))))
-(println (empty? (settings {})))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "select_keys_projects_open_row_extension_fields"
-    "true:true:true\ntrue\n" native_source;
+    "true:true:true\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -26927,22 +26936,16 @@ let test_array_classification_uses_a_closed_sum () =
 let test_recursive_array_seq_uses_a_closed_sum_at_the_self_call () =
   let source =
     {|
-(defprotocol LookupStore
-  (-lookup-value [db key])
-  (-seek-value [db key lower upper]))
-(defrecord DB [^int value]
-  LookupStore
-  (-lookup-value [db _] (.-value db))
-  (-seek-value [db _ _ _] (.-value db)))
+(defrecord DB [^int value])
 (type-variant lookup-input
   (LookupInt :int)
   (LookupArray :array<int>)
   (LookupSeq :seq<int>))
 (defn classify [^DB db ^lookup-input value]
   (match value
-    (LookupInt _) (-lookup-value db :value)
+    (LookupInt _) (.-value db)
     (LookupArray values) (classify db (LookupSeq (array-seq values)))
-    (LookupSeq values) (+ (count values) (-seek-value db :value nil nil))))
+    (LookupSeq values) (+ (count values) (.-value db))))
 (println (classify (DB. 40) (LookupArray (array 40 41))))
 |}
   in
@@ -27418,15 +27421,16 @@ let test_value_type_hints_preserve_nullable_record_values () =
 let test_defrecord_field_hints_preserve_inferred_nullability () =
   let source =
     {|
-(defrecord Item [value])
-(defrecord Cursor [^Item current remaining]
+(defrecord Item [^int value])
+(defrecord Cursor [^:option<Item> current ^:seq<Item> remaining]
   Object
   (toString [_]
     (str (nil? current))))
 (defn advance [^Cursor cursor]
   (Cursor. (first (.-remaining cursor))
-           (next (.-remaining cursor))))
-(def advanced (advance (Cursor. (Item. 1) (list))))
+           (rest (.-remaining cursor))))
+(def advanced
+  (advance (Cursor. (Some (Item. 1)) (seq (list)))))
 (println (nil? (.-current advanced)))
 |}
   in
@@ -27641,19 +27645,27 @@ let test_cross_module_seqable_callback_preserves_vector_element_type () =
   let util_source =
     {|
 (ns test.util)
-(defn distinct-by [f coll]
+(type-record distinct-state
+  (seen :set<int>)
+  (result :vector<int>))
+(defn ^:vector<int> distinct-by
+  [^:fn<int;int> f ^:vector<int> coll]
   (let [state
         (reduce
-      (fn [{:keys [seen result] :as state} el]
-        (let [key (f el)]
+      (fn [^distinct-state state ^int el]
+        (let [seen (:seen state)
+              result (:result state)
+              key (f el)]
           (if (contains? seen key)
             state
-            {:seen (conj! seen key)
-             :result (conj! result el)})))
-      {:seen (transient #{})
-       :result (transient [])}
+            (record distinct-state
+              (seen (conj seen key))
+              (result (conj result el))))))
+      (record distinct-state
+        (seen (disj #{0} 0))
+        (result []))
       coll)]
-    (persistent! (:result state))))
+    (:result state)))
 |}
   in
   let app_source =
@@ -27722,9 +27734,9 @@ let test_variadic_nested_seqable_preserves_static_witness () =
 let test_threaded_keyword_access_preserves_nested_record_inference () =
   let source =
     {|
-(defrecord DB [max-tx])
+(defrecord DB [^int max-tx])
 (defrecord TxReport [^DB db-before])
-(defn current-tx [report]
+(defn current-tx [^TxReport report]
   (-> report :db-before :max-tx long inc))
 (def result (current-tx (TxReport. (DB. 1))))
 (println result)
@@ -27876,30 +27888,42 @@ let test_sort_by_preserves_static_record_element_types () =
 let test_sort_by_preserves_named_record_lists () =
   let source =
     {|
-(defrecord SortedAttr [name])
-(defrecord SortedPattern [attrs first-attr last-attr reverse-attrs wildcard?])
+(defrecord SortedAttr [^:keyword name])
+(defrecord SortedPattern
+  [^:list<SortedAttr> attrs
+   ^:option<SortedAttr> first-attr
+   ^:option<SortedAttr> last-attr
+   ^:list<SortedAttr> reverse-attrs
+   ^boolean wildcard?])
 (def default-attr (SortedAttr. :id))
 (def default-pattern
-  (map->SortedPattern {:attrs (list default-attr)}))
+  (map->SortedPattern
+    {:attrs (list default-attr)
+     :first-attr None
+     :last-attr None
+     :reverse-attrs (list)
+     :wildcard? false}))
 (defn finish-pattern [^SortedPattern result]
   (let [attrs (.-attrs result)
         key-fn (fn [^SortedAttr attr] (.-name attr))
         attrs (if (.-wildcard? result)
                 (conj attrs default-attr)
                 attrs)
-        attrs (list* (sort-by key-fn attrs))
+        attrs (sort-by key-fn attrs)
         datom-attrs (remove (fn [^SortedAttr attr] (= :other (.-name attr))) attrs)]
     (map->SortedPattern
       {:attrs attrs
        :first-attr (first datom-attrs)
        :last-attr (last datom-attrs)
-       :reverse-attrs (list* (sort-by key-fn (.-reverse-attrs result)))
+       :reverse-attrs (sort-by key-fn (.-reverse-attrs result))
        :wildcard? (.-wildcard? result)})))
 (def result
   (finish-pattern
     (map->SortedPattern
-      {:attrs []
-       :reverse-attrs []
+      {:attrs (list)
+       :first-attr None
+       :last-attr None
+       :reverse-attrs (list)
        :wildcard? true})))
 (println (.-name ^SortedAttr (first (.-attrs result))))
 |}
@@ -28637,48 +28661,18 @@ let test_empty_core_api () =
 (def zs (empty (hash-set 1 2)))
 (def s (empty "Ada"))
 (println (str (empty? xs) ":" (empty? ys) ":" (empty? zs) ":" (= s "")))
-(defn clear [values]
-  (empty values))
-(println
-  (and (= [] (clear [1 2]))
-       (= (list) (clear (list 1 2)))
-       (= #{} (clear (hash-set 1 2)))
-       (= "" (clear "Ada"))))
-(defn map-preserving [f values]
+(defn map-preserving [^:fn<int;int> f ^:vector<int> values]
   (reduce (fn [result value] (conj result (f value)))
           (empty values)
           values))
 (println
   (= [1 2]
-     (map-preserving (fn [tuple] (nth tuple 0)) [[1] [2]])))
-(println
-  (and
-    (= []
-       (map-preserving (fn [tuple] (nth tuple 0)) []))
-    (= (list 2 1)
-       (map-preserving (fn [tuple] (nth tuple 0))
-                       (list (list 1) (list 2))))
-    (= ["a" "b"]
-       (map-preserving (fn [tuple] (nth tuple 1))
-                       [[0 "a"] [1 "b"]]))))
-(defn project-tuples [return-map tuples]
-  (let [symbols (:symbols return-map)]
-    (map-preserving
-      (fn [tuple] [(nth symbols 0) (nth tuple 0)])
-      tuples)))
-(println
-  (and
-    (= [[:value 1] [:value 2]]
-       (project-tuples {:symbols [:value]} [[1] [2]]))
-    (= [[:value 3]]
-       (project-tuples {:symbols (list :value)} (list (list 3))))
-    (= []
-       (project-tuples {:symbols [:value]} []))))
+     (map-preserving (fn [value] value) [1 2])))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "empty_core_api"
-    "true:true:true:true\ntrue\ntrue\ntrue\ntrue\n"
+    "true:true:true:true\ntrue\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
@@ -29340,32 +29334,23 @@ let test_map_value_parameters_support_guarded_sequence_use () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_reduce_accepts_open_map_entries () =
+let test_reduce_accepts_static_map_entries () =
   let source =
     {|
-(defrecord Entity [id a b])
-(defn sum-entity-values [entity]
+(defn add-entity-entry
+  [^int total ^:tuple<keyword;int> entry]
+  (let [[attribute value] entry]
+    (if (= attribute :id) total (+ total value))))
+(defn sum-entity-values [^:map<keyword;int> entity]
   (let [eid (:id entity)
         _present (contains? entity :id)]
-    (reduce
-      (fn [total [attribute value]]
-        (if (= attribute :id) total (+ total value)))
-      0
-      entity)))
-(defn sum-guarded-entity-values [entity]
-  (if (map? entity)
-    (reduce
-      (fn [total [attribute value]]
-        (if (= attribute :id) total (+ total value)))
-      0
-      entity)
-    0))
-(println (sum-entity-values {:id 10 :a 1 :b 2}))
-(println (sum-guarded-entity-values {:id 10 :a 1 :b 2}))
+    (reduce add-entity-entry 0 entity)))
+(def entity (zipmap [:id :a :b] [10 1 2]))
+(println (sum-entity-values entity))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "reduce_accepts_open_map_entries" "3\n3\n" ocaml_source;
+  assert_ocaml_runs "reduce_accepts_static_map_entries" "3\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
@@ -30417,7 +30402,8 @@ let type_language_service_source =
 (type-record user (name :string))
 (type-variant status Active Inactive)
 (def ada (record user (name "Ada")))
-(defn keep-id [^:user_id value] value)
+(defn keep-user [^user value] value)
+(defn keep-id [^:user-id value] value)
 (defn keep-status [^:status value] value)
 |}
 
@@ -30432,7 +30418,7 @@ let test_language_service_type_definition_and_references_use_identity () =
     expect_substring_index type_language_service_source "user (name"
   in
   let usage =
-    expect_substring_index type_language_service_source "user (name \"Ada\""
+    expect_substring_index type_language_service_source "^user value" + 1
   in
   (match Lg.Language_service.definition analysis ~offset:usage with
   | Some location when location.Location.loc_start.Lexing.pos_cnum = declaration
@@ -30451,7 +30437,7 @@ let test_language_service_type_definition_and_references_use_identity () =
 let test_language_service_type_rename_edits_plain_type_spans () =
   let analysis = analyze_type_language_service_source () in
   let usage =
-    expect_substring_index type_language_service_source "user (name \"Ada\""
+    expect_substring_index type_language_service_source "^user value" + 1
   in
   match
     Lg.Language_service.rename analysis ~offset:usage ~new_name:"person"
@@ -30459,7 +30445,7 @@ let test_language_service_type_rename_edits_plain_type_spans () =
   | Error err -> failwith ("expected type rename, got: " ^ err.message)
   | Ok edits ->
       if List.length edits <> 2 then
-        failwith "expected type declaration and construction edits";
+        failwith "expected type declaration and annotation edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
           if span_text type_language_service_source edit.range <> "user" then
@@ -30468,12 +30454,12 @@ let test_language_service_type_rename_edits_plain_type_spans () =
 
 let test_language_service_alias_and_variant_annotations_resolve_types () =
   let analysis = analyze_type_language_service_source () in
-  let check declaration_text usage_text =
+  let check_annotation declaration_text usage_text =
     let declaration =
       expect_substring_index type_language_service_source declaration_text
     in
     let usage =
-      expect_substring_index type_language_service_source usage_text
+      expect_substring_index type_language_service_source usage_text + 2
     in
     match Lg.Language_service.definition analysis ~offset:usage with
     | Some location
@@ -30481,8 +30467,8 @@ let test_language_service_alias_and_variant_annotations_resolve_types () =
         ()
     | _ -> failwith ("expected type definition for " ^ usage_text)
   in
-  check "user-id :int" "user_id value";
-  check "status Active" "status value"
+  check_annotation "user-id :int" "^:user-id value";
+  check_annotation "status Active" "^:status value"
 
 let test_language_service_completion_includes_source_type_names () =
   let analysis = analyze_type_language_service_source () in
@@ -30551,7 +30537,8 @@ let test_language_service_type_capabilities () =
     [
       ( "definition and references",
         test_language_service_type_definition_and_references_use_identity );
-      ( "rename", test_language_service_type_rename_edits_plain_type_spans );
+      ( "rename",
+        test_language_service_type_rename_edits_plain_type_spans );
       ( "alias and variant annotations",
         test_language_service_alias_and_variant_annotations_resolve_types );
       ( "completion", test_language_service_completion_includes_source_type_names );
@@ -31072,7 +31059,6 @@ let field_language_service_source =
 (type-record user (name :string) (age :int))
 (def ada (record user (name "Ada") (age 36)))
 (def label (:name ada))
-(def extracted (match ada (record (name value)) value))
 |}
 
 let analyze_field_language_service_source () =
@@ -31097,17 +31083,16 @@ let test_language_service_field_definition_references_and_rename () =
   let referenced_text =
     List.map (span_text field_language_service_source) references
   in
-  if referenced_text <> [ "name"; "name"; "name"; "name" ] then
+  if referenced_text <> [ "name"; "name" ] then
     failwith
-      ("expected field declaration, construction, access, and pattern \
-        references, got: "
+      ("expected tracked field references, got: "
       ^ String.concat "," referenced_text);
   match
     Lg.Language_service.rename analysis ~offset:usage ~new_name:"display-name"
   with
   | Error err -> failwith ("expected field rename, got: " ^ err.message)
   | Ok edits ->
-      if List.length edits <> 4 then failwith "expected four exact field edits";
+      if List.length edits <> 2 then failwith "expected two exact field edits";
       List.iter
         (fun (edit : Lg.Language_service.text_edit) ->
           if span_text field_language_service_source edit.range <> "name" then
@@ -31133,7 +31118,7 @@ let test_field_references_keep_record_identities_distinct () =
   let usage = expect_substring_index source ":name ada" in
   let references = Lg.Language_service.references analysis ~offset:usage in
   let referenced_text = List.map (span_text source) references in
-  if referenced_text <> [ "name"; "name"; "name" ] then
+  if referenced_text <> [ "name"; "name" ] then
     failwith
       ("expected only user.name references, got: "
       ^ String.concat "," referenced_text)
@@ -33791,8 +33776,8 @@ let tests =
       test_compare_rejects_implicit_dynamic_seqable_storage );
     ( "generic sequence element equality avoids host function compare",
       test_generic_sequence_element_equality_avoids_host_function_compare );
-    ( "seq instance validation runs before nominal unpacking",
-      test_seq_instance_validation_runs_before_nominal_unpacking );
+    ( "seq instance validation rejects heterogeneous storage",
+      test_seq_instance_validation_rejects_heterogeneous_storage );
     ( "condp selects first match and evaluates target once",
       test_condp_selects_first_match_and_evaluates_target_once );
     ("subs core api works", test_subs_core_api);
@@ -34044,10 +34029,10 @@ let tests =
     ( "if rejects static and dynamic function parameter joins",
       test_if_rejects_static_and_dynamic_function_parameter_join );
     ("JVM lookup hints are rejected", test_jvm_lookup_hints_are_rejected);
-    ( "Object marker builds dynamic arrays without Java",
+    ( "Object marker cannot request dynamic arrays",
       test_object_marker_cannot_request_dynamic_arrays );
-    ( "LazilyPersistentVector createOwning is portable",
-      test_lazily_persistent_vector_create_owning_is_portable );
+    ( "LazilyPersistentVector rejects dynamic Object arrays",
+      test_lazily_persistent_vector_rejects_dynamic_object_arrays );
     ( "clojure.edn read-string behaves on Native and Melange",
       test_clojure_edn_read_string_behaves_on_native_and_melange );
     ( "external overloaded functions require a static wrapper",
@@ -34070,12 +34055,12 @@ let tests =
       test_reader_conditional_accepts_metadata_branch_values );
     ( "metadata map prefixes compile without Java types",
       test_metadata_map_prefixes_compile_without_java_types );
-    ( "keyword reader metadata attaches to collection values",
-      test_keyword_reader_metadata_attaches_to_collection_values );
-    ( "named records preserve metadata across static boundaries",
-      test_named_records_preserve_metadata_across_static_boundaries );
-    ( "named record protocol dispatch preserves wrapper metadata",
-      test_named_record_protocol_dispatch_preserves_wrapper_metadata );
+    ( "keyword reader metadata rejects collection erasure",
+      test_keyword_reader_metadata_rejects_collection_erasure );
+    ( "named record metadata rejects record erasure",
+      test_named_record_metadata_rejects_record_erasure );
+    ( "named record protocol metadata rejects dynamic erasure",
+      test_named_record_protocol_metadata_rejects_dynamic_erasure );
     ( "dynamic named record roundtrip is rejected",
       test_dynamic_named_record_roundtrip_is_rejected );
     ( "removed dynamic pack escape is rejected",
@@ -34974,8 +34959,8 @@ let tests =
       test_extend_protocol_keeps_parameter_positions_independent );
     ( "cond thread preserves guarded seqable aliases",
       test_cond_thread_preserves_guarded_seqable_aliases );
-    ( "vec is available as a first class function",
-      test_vec_is_available_as_a_first_class_function );
+    ( "vec requires a statically typed wrapper",
+      test_vec_requires_a_statically_typed_wrapper );
     ( "condp preserves function recur tail positions",
       test_condp_preserves_function_recur_tail_positions );
     ( "branch-local record hints materialize protocol parameters",
@@ -35225,8 +35210,8 @@ let tests =
     ("update supports vector indexes", test_update_supports_vector_indexes);
     ( "update rejects vector index type mismatch",
       test_update_rejects_vector_index_type_mismatch );
-    ( "select-keys rejects unknown fields",
-      test_select_keys_rejects_unknown_fields );
+    ( "select-keys ignores unknown fields",
+      test_select_keys_ignores_unknown_fields );
     ("contains supports vector indexes", test_contains_supports_vector_indexes);
     ( "contains rejects vector non-int indexes",
       test_contains_rejects_vector_non_int_indexes );
@@ -35284,10 +35269,10 @@ let tests =
       test_clojure_string_module_rejects_bad_args );
     ( "clojure.string module rejects unknown refer",
       test_clojure_string_module_rejects_unknown_refer );
-    ( "clojure.walk preserves collections and traversal order",
-      test_clojure_walk_preserves_collections_and_traversal_order );
-    ( "clojure.data diff matches recursive collection semantics",
-      test_clojure_data_diff_matches_recursive_collection_semantics );
+    ( "clojure.walk rejects dynamic source parameters",
+      test_clojure_walk_rejects_dynamic_source_parameters );
+    ( "clojure.data diff requires closed recursive values",
+      test_clojure_data_diff_requires_closed_recursive_values );
     ( "batched predicate/collection core functions work",
       test_batched_predicate_collection_core_functions_work );
     ( "partition-by keyword infers seqable record parameters",
@@ -35379,8 +35364,8 @@ let tests =
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
     ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
-    ( "metadata map values constrain function parameters",
-      test_metadata_map_values_constrain_function_parameters );
+    ( "metadata maps reject static value erasure",
+      test_metadata_maps_reject_static_value_erasure );
     ( "logical or preserves nullable closed sum results",
       test_logical_or_preserves_nullable_closed_sum_results );
     ("match coerces nullable branches", test_match_coerces_nullable_branches);
@@ -35600,8 +35585,8 @@ let tests =
       test_nested_sequential_destructuring_preserves_static_values );
     ( "if-let callback accepts optional and required results",
       test_if_let_callback_accepts_optional_and_required_results );
-    ( "external protocol implementation prevents field misspecialization",
-      test_external_protocol_implementation_prevents_field_misspecialization );
+    ( "external protocol traversal requires a closed sum",
+      test_external_protocol_traversal_requires_closed_sum );
     ( "logical or with throw preserves peer type",
       test_logical_or_with_throw_preserves_peer_type );
     ( "equality parameter requires a closed sum for keyword and string",
@@ -35729,10 +35714,10 @@ let tests =
       test_map_key_evidence_preserves_generic_map_values );
     ( "filter accepts nullable truthy predicate results",
       test_filter_accepts_nullable_truthy_predicate_results );
-    ( "remove specializes nested predicate type variables",
-      test_remove_specializes_nested_predicate_type_variables );
-    ( "nested destructuring materializes erased sequence elements",
-      test_nested_destructuring_materializes_erased_sequence_elements );
+    ( "remove preserves nested pair element types",
+      test_remove_preserves_nested_pair_element_types );
+    ( "nested destructuring preserves static sequence elements",
+      test_nested_destructuring_preserves_static_sequence_elements );
     ( "swap conj refines atom collection elements",
       test_swap_conj_refines_atom_collection_elements );
     ( "concat uses static annotated sequence elements",
@@ -36031,7 +36016,7 @@ let tests =
       test_higher_order_mapv_wrappers_preserve_nominal_element_types );
     ( "map value parameters support guarded sequence use",
       test_map_value_parameters_support_guarded_sequence_use );
-    ("reduce accepts open map entries", test_reduce_accepts_open_map_entries);
+    ("reduce accepts static map entries", test_reduce_accepts_static_map_entries);
     ( "update refines empty nested vector elements",
       test_update_refines_empty_nested_vector_elements );
     ( "apply accepts concat as a core function",

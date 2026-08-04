@@ -111,20 +111,26 @@ check_rule_scaling() {
   local wide_5_ms=$2
   local wide_7_ms=$3
   local wide_7_limit_ms=$4
+  local ratio_limit=$5
+  local long_30x5_ms=$6
+  local long_30x5_limit_ms=$7
   awk \
     -v runtime_name="$runtime_name" \
     -v wide_5_ms="$wide_5_ms" \
     -v wide_7_ms="$wide_7_ms" \
-    -v wide_7_limit_ms="$wide_7_limit_ms" '
+    -v wide_7_limit_ms="$wide_7_limit_ms" \
+    -v ratio_limit="$ratio_limit" \
+    -v long_30x5_ms="$long_30x5_ms" \
+    -v long_30x5_limit_ms="$long_30x5_limit_ms" '
     BEGIN {
       ratio = wide_7_ms / wide_5_ms
-      if (ratio >= 25.0 || wide_7_ms >= wide_7_limit_ms) {
-        printf "%s rule expansion scales unlike upstream: wide-5x3=%sms wide-7x3=%sms ratio=%.2f\n",
-          runtime_name, wide_5_ms, wide_7_ms, ratio
+      if (ratio >= ratio_limit || wide_7_ms >= wide_7_limit_ms || long_30x5_ms >= long_30x5_limit_ms) {
+        printf "%s rule expansion exceeds the complete-result upstream boundary: wide-5x3=%sms wide-7x3=%sms ratio=%.2f long-30x5=%sms\n",
+          runtime_name, wide_5_ms, wide_7_ms, ratio, long_30x5_ms
         exit 1
       }
-      printf "%s rule expansion scaling: wide-5x3=%sms wide-7x3=%sms ratio=%.2f\n",
-        runtime_name, wide_5_ms, wide_7_ms, ratio
+      printf "%s rule expansion scaling: wide-5x3=%sms wide-7x3=%sms ratio=%.2f long-30x5=%sms\n",
+        runtime_name, wide_5_ms, wide_7_ms, ratio, long_30x5_ms
     }
   '
 }
@@ -133,11 +139,15 @@ native_wide_5_ms=$(run_native_rule rules-wide-5x3)
 native_wide_7_ms=$(run_native_rule rules-wide-7x3)
 melange_wide_5_ms=$(run_melange_rule rules-wide-5x3)
 melange_wide_7_ms=$(run_melange_rule rules-wide-7x3)
+native_long_30x5_ms=$(run_native_rule rules-long-30x5)
+melange_long_30x5_ms=$(run_melange_rule rules-long-30x5)
 
-if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms" 40.0; then
+if ! check_rule_scaling native "$native_wide_5_ms" "$native_wide_7_ms" 40.0 \
+  18.0 "$native_long_30x5_ms" 10.0; then
   failures=1
 fi
-if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms" 85.0; then
+if ! check_rule_scaling melange "$melange_wide_5_ms" "$melange_wide_7_ms" 60.0 \
+  18.0 "$melange_long_30x5_ms" 20.0; then
   failures=1
 fi
 

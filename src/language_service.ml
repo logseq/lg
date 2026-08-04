@@ -554,7 +554,18 @@ let source_type_name source_name =
         (String.length value - String.length prefix)
     else value
   in
-  source_name |> strip "^:" |> strip ":"
+  source_name |> strip "^:" |> strip "^" |> strip ":"
+
+let is_type_annotation source_name =
+  String.starts_with ~prefix:"^" source_name
+
+let type_annotation_name_range source_name (span : Ast.source_span) =
+  let prefix_length =
+    if String.starts_with ~prefix:"^:" source_name then 2
+    else if is_type_annotation source_name then 1
+    else 0
+  in
+  { span with start_offset = span.start_offset + prefix_length }
 
 let ocaml_type_name source_name =
   match List.rev (String.split_on_char '.' (source_type_name source_name)) with
@@ -618,7 +629,22 @@ let type_identity_at analysis offset source_name =
     }
   in
   iterator.structure iterator analysis.compiler.typed_structure;
-  best_semantic_identity best
+  match best_semantic_identity best with
+  | Some _ as identity -> identity
+  | None when is_type_annotation source_name -> (
+      let longident = longident_of_dotted_name (ocaml_type_name source_name) in
+      match
+        Env.find_type_by_name longident
+          analysis.compiler.typed_structure.str_final_env
+      with
+      | _, declaration ->
+          Some
+            { key =
+                Ocaml_uid (Lg_compiler_support.Ocaml_type.uid declaration);
+              definition_location =
+                Lg_compiler_support.Ocaml_type.location declaration }
+      | exception Not_found -> None)
+  | None -> None
 
 let module_name_matches source_name path =
   Path.name path = Names.module_path_to_ocaml source_name
@@ -794,7 +820,7 @@ let method_identity_at analysis offset ?protocol_name method_name =
 
 let qualified_symbol_parts (token : Ast.token) source_name =
   if
-    String.starts_with ~prefix:"^:" source_name
+    is_type_annotation source_name
     || String.starts_with ~prefix:":" source_name
   then None
   else
@@ -898,7 +924,10 @@ let semantic_occurrence_at analysis offset =
           |> Option.map (fun identity -> { identity; range = qualifier_range })
       | qualification ->
           let range =
-            match qualification with
+            if is_type_annotation source_name then
+              type_annotation_name_range source_name span
+            else
+              match qualification with
             | Some (_, _, _, member_range) -> member_range
             | None -> span
           in

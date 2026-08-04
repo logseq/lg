@@ -10,6 +10,13 @@ type 'db result =
 
 and 'db callable = 'db result Rrbvec.t -> Data_value.t option
 
+module Int_table = Hashtbl.Make (struct
+  type t = int
+
+  let equal = Int.equal
+  let hash value = value
+end)
+
 type 'db source =
   | Database_source of 'db
   | Relation_source of 'db result array Rrbvec.t
@@ -45,10 +52,13 @@ type 'db relation = {
   attrs : (string, int) Lg_runtime.Lg_map.t;
   rows : 'db result array Rrbvec.t;
   lookup_databases : (string, 'db) Lg_runtime.Lg_map.t;
+  entity_hashes :
+    'db result array list Int_table.t Int_table.t;
+  entity_columns : int array option Int_table.t;
 }
 
 type 'db row_hash =
-  (int, ('db result array * 'db result array Rrbvec.t) list) Hashtbl.t
+  ('db result array * 'db result array Rrbvec.t) list Int_table.t
 
 type ('db, 'rules) context = {
   relations : 'db relation Rrbvec.t;
@@ -238,7 +248,13 @@ let collect_tuples acc relation len copy_map =
     Rrbvec.empty acc
 
 let relation attrs rows lookup_databases =
-  { attrs; rows; lookup_databases }
+  {
+    attrs;
+    rows;
+    lookup_databases;
+    entity_hashes = Int_table.create 0;
+    entity_columns = Int_table.create 0;
+  }
 
 let index_attrs variables =
   Rrbvec.fold_left
@@ -259,10 +275,46 @@ let relation_result relation variable row =
 let relation_lookup_database relation variable =
   Lg_runtime.Lg_map.get_option relation.lookup_databases variable
 
-let relation_with_rows relation rows = { relation with rows }
+let relation_with_rows relation rows =
+  {
+    relation with
+    rows;
+    entity_hashes = Int_table.create 0;
+    entity_columns = Int_table.create 0;
+  }
+
+let relation_filter_rows relation predicate =
+  let filtered = ref None in
+  let index = ref 0 in
+  Rrbvec.iter
+    (fun row ->
+      (if predicate row then
+         match !filtered with
+         | None -> ()
+         | Some rows -> filtered := Some (Rrbvec.push_back rows row)
+       else
+         match !filtered with
+         | Some _ -> ()
+         | None -> (
+             match Rrbvec.subvec relation.rows 0 !index with
+             | Some rows -> filtered := Some rows
+             | None -> assert false));
+      incr index)
+    relation.rows;
+  match !filtered with
+  | None -> relation
+  | Some rows -> relation_with_rows relation rows
+
+let relation_relabel relation attrs lookup_databases =
+  { relation with attrs; lookup_databases }
 
 let relation_append_rows left right =
-  { left with rows = Rrbvec.append left.rows right.rows }
+  {
+    left with
+    rows = Rrbvec.append left.rows right.rows;
+    entity_hashes = Int_table.create 0;
+    entity_columns = Int_table.create 0;
+  }
 
 let join_key_value = function
   | Entity entity -> Value (Data_value.Int entity)
@@ -284,6 +336,68 @@ let equal_result left right =
   | Callable left, Callable right -> left == right
   | _ -> false
 
+let equal_entity_pattern_value entity = function
+  | Data_value.Int value | Data_value.Ref value -> entity = value
+  | Data_value.Wide_int value -> Int64.equal (Int64.of_int entity) value
+  | Data_value.Float value -> Float.equal (float_of_int entity) value
+  | _ -> false
+
+let equal_keyword_pattern_value keyword = function
+  | Data_value.Keyword value -> String.equal keyword value
+  | _ -> false
+
+let added_keyword = function true -> ":db/add" | false -> ":db/retract"
+
+let equal_pattern_data_value left right =
+  match (left, right) with
+  | (Data_value.Int left | Data_value.Ref left),
+    (Data_value.Int right | Data_value.Ref right) ->
+      left = right
+  | (Data_value.Int left | Data_value.Ref left), Data_value.Wide_int right ->
+      Int64.equal (Int64.of_int left) right
+  | Data_value.Wide_int left, (Data_value.Int right | Data_value.Ref right) ->
+      Int64.equal left (Int64.of_int right)
+  | Data_value.Wide_int left, Data_value.Wide_int right ->
+      Int64.equal left right
+  | (Data_value.Int left | Data_value.Ref left), Data_value.Float right ->
+      Float.equal (float_of_int left) right
+  | Data_value.Float left, (Data_value.Int right | Data_value.Ref right) ->
+      Float.equal left (float_of_int right)
+  | Data_value.Wide_int left, Data_value.Float right ->
+      Float.equal (Int64.to_float left) right
+  | Data_value.Float left, Data_value.Wide_int right ->
+      Float.equal left (Int64.to_float right)
+  | Data_value.Float left, Data_value.Float right -> Float.equal left right
+  | Data_value.Keyword left, Data_value.Keyword right
+  | Data_value.String left, Data_value.String right
+  | Data_value.Symbol left, Data_value.Symbol right ->
+      String.equal left right
+  | Data_value.Bool left, Data_value.Bool right -> Bool.equal left right
+  | _ -> Data_value.equal left right
+
+let equal_pattern_result left right =
+  match (left, right) with
+  | Entity left, Entity right -> left = right
+  | Entity entity, (Value value | Metadata (value, _) | Pull value)
+  | (Value value | Metadata (value, _) | Pull value), Entity entity ->
+      equal_entity_pattern_value entity value
+  | Attr left, Attr right -> String.equal left right
+  | Attr attr, (Value value | Metadata (value, _) | Pull value)
+  | (Value value | Metadata (value, _) | Pull value), Attr attr ->
+      equal_keyword_pattern_value attr value
+  | Added left, Added right -> Bool.equal left right
+  | Added added, (Value value | Metadata (value, _) | Pull value)
+  | (Value value | Metadata (value, _) | Pull value), Added added ->
+      equal_keyword_pattern_value (added_keyword added) value
+  | Attr attr, Added added | Added added, Attr attr ->
+      String.equal attr (added_keyword added)
+  | (Value left | Metadata (left, _) | Pull left),
+    (Value right | Metadata (right, _) | Pull right) ->
+      equal_pattern_data_value left right
+  | (Database _ | Callable _), _ | _, (Database _ | Callable _) ->
+      invalid_arg "A database or callable query result has no pattern value"
+  | _ -> false
+
 let tagged_hash tag hash = ((hash lsl 5) - hash) lxor tag
 
 let hash_result = function
@@ -295,6 +409,53 @@ let hash_result = function
   | Pull value -> tagged_hash 4 (Data_value.hash value)
   | Added added -> tagged_hash 5 (if added then 1 else 0)
   | Callable callable -> tagged_hash 6 (Hashtbl.hash callable)
+
+let entity_join_id = function
+  | Entity entity | Value (Data_value.Int entity)
+  | Value (Data_value.Ref entity) | Metadata (Data_value.Int entity, _)
+  | Metadata (Data_value.Ref entity, _) ->
+      Some entity
+  | _ -> None
+
+let relation_entity_column relation index =
+  match Int_table.find_opt relation.entity_columns index with
+  | Some column -> column
+  | None ->
+      let column = Array.make (Rrbvec.length relation.rows) 0 in
+      let position = ref 0 in
+      let valid = ref true in
+      Rrbvec.iter
+        (fun row ->
+          (match entity_join_id row.(index) with
+          | Some entity -> column.(!position) <- entity
+          | None -> valid := false);
+          incr position)
+        relation.rows;
+      let column = if !valid then Some column else None in
+      Int_table.replace relation.entity_columns index column;
+      column
+
+let relation_entity_hash relation index =
+  match Int_table.find_opt relation.entity_hashes index with
+  | Some buckets -> Some buckets
+  | None ->
+      let buckets = Int_table.create (max 16 (Rrbvec.length relation.rows)) in
+      let valid = ref true in
+      Rrbvec.iter
+        (fun row ->
+          match entity_join_id row.(index) with
+          | None -> valid := false
+          | Some entity ->
+              let bucket =
+                Int_table.find_opt buckets entity
+                |> Option.value ~default:[]
+              in
+              Int_table.replace buckets entity (row :: bucket))
+        relation.rows;
+      if !valid then (
+        Int_table.replace relation.entity_hashes index buckets;
+        Some buckets)
+      else None
 
 let equal_result_map left right =
   Lg_runtime.Lg_map.count left = Lg_runtime.Lg_map.count right
@@ -314,14 +475,14 @@ let hash_result_map map =
     0 map
 
 let distinct_by equal hash_value values =
-  let buckets = Hashtbl.create (max 16 (Rrbvec.length values)) in
+  let buckets = Int_table.create (max 16 (Rrbvec.length values)) in
   Rrbvec.fold_left
     (fun unique_values value ->
       let hash = hash_value value in
-      let bucket = Option.value (Hashtbl.find_opt buckets hash) ~default:[] in
+      let bucket = Option.value (Int_table.find_opt buckets hash) ~default:[] in
       if List.exists (equal value) bucket then unique_values
       else (
-        Hashtbl.replace buckets hash (value :: bucket);
+        Int_table.replace buckets hash (value :: bucket);
         Rrbvec.push_back unique_values value))
     Rrbvec.empty values
 
@@ -347,12 +508,12 @@ let row_hash_key row indexes =
   Array.map (fun index -> join_key_value row.(index)) indexes
 
 let row_hash rows indexes =
-  let buckets = Hashtbl.create (max 16 (Rrbvec.length rows)) in
+  let buckets = Int_table.create (max 16 (Rrbvec.length rows)) in
   Rrbvec.iter
     (fun row ->
       let key = row_hash_key row indexes in
       let hash = hash_key key in
-      let bucket = Hashtbl.find_opt buckets hash |> Option.value ~default:[] in
+      let bucket = Int_table.find_opt buckets hash |> Option.value ~default:[] in
       let rec add = function
         | [] -> [ (key, Rrbvec.of_list [ row ]) ]
         | (candidate, grouped_rows) :: rest
@@ -360,14 +521,14 @@ let row_hash rows indexes =
             (candidate, Rrbvec.push_back grouped_rows row) :: rest
         | group :: rest -> group :: add rest
       in
-      Hashtbl.replace buckets hash (add bucket))
+      Int_table.replace buckets hash (add bucket))
     rows;
   buckets
 
 let row_hash_find row_hash row indexes =
   let key = row_hash_key row indexes in
   let bucket =
-    Hashtbl.find_opt row_hash (hash_key key) |> Option.value ~default:[]
+    Int_table.find_opt row_hash (hash_key key) |> Option.value ~default:[]
   in
   List.find_map
     (fun (candidate, rows) ->
@@ -434,16 +595,16 @@ let subtract_relation left right =
     shared_indexes |> List.map snd |> Array.of_list
   in
   let buckets =
-    Hashtbl.create (max 16 (Rrbvec.length right.rows))
+    Int_table.create (max 16 (Rrbvec.length right.rows))
   in
   Rrbvec.iter
     (fun row ->
       let key = project_row row right_indexes in
       let hash = hash_key key in
       let bucket =
-        Option.value (Hashtbl.find_opt buckets hash) ~default:[]
+        Option.value (Int_table.find_opt buckets hash) ~default:[]
       in
-      Hashtbl.replace buckets hash (key :: bucket))
+      Int_table.replace buckets hash (key :: bucket))
     right.rows;
   let rows =
     Rrbvec.fold_left
@@ -451,14 +612,19 @@ let subtract_relation left right =
         let key = project_row row left_indexes in
         let bucket =
           Option.value
-            (Hashtbl.find_opt buckets (hash_key key))
+            (Int_table.find_opt buckets (hash_key key))
             ~default:[]
         in
         if List.exists (equal_key key) bucket then rows
         else Rrbvec.push_back rows row)
       Rrbvec.empty left.rows
   in
-  { left with rows }
+  {
+    left with
+    rows;
+    entity_hashes = Int_table.create 0;
+    entity_columns = Int_table.create 0;
+  }
 
 let aggregate_values rows index =
   rows |> Rrbvec.to_list
@@ -617,10 +783,66 @@ let aggregate_distinct rows index =
   Value (Data_value.Set values)
 
 let append_right_only left right right_indexes =
-  let left_length = Array.length left in
-  Array.init (left_length + Array.length right_indexes) (fun index ->
-      if index < left_length then left.(index)
-      else right.(right_indexes.(index - left_length)))
+  match Array.length right_indexes with
+  | 0 -> left
+  | 1 ->
+      let left_length = Array.length left in
+      let result =
+        Array.make (left_length + 1) right.(right_indexes.(0))
+      in
+      Array.blit left 0 result 0 left_length;
+      result
+  | 2 ->
+      let left_length = Array.length left in
+      let result =
+        Array.make (left_length + 2) right.(right_indexes.(0))
+      in
+      Array.blit left 0 result 0 left_length;
+      result.(left_length + 1) <- right.(right_indexes.(1));
+      result
+  | right_length ->
+      let left_length = Array.length left in
+      Array.init (left_length + right_length) (fun index ->
+          if index < left_length then left.(index)
+          else right.(right_indexes.(index - left_length)))
+
+module Row_builder = struct
+  type 'a t = {
+    mutable values : 'a array option;
+    mutable length : int;
+    initial_capacity : int;
+  }
+
+  let create initial_capacity =
+    { values = None; length = 0; initial_capacity = max 8 initial_capacity }
+
+  let add builder value =
+    match builder.values with
+    | None ->
+        builder.values <- Some (Array.make builder.initial_capacity value);
+        builder.length <- 1
+    | Some values ->
+        let values =
+          if builder.length < Array.length values then values
+          else
+            let grown = Array.make (2 * Array.length values) value in
+            Array.blit values 0 grown 0 builder.length;
+            builder.values <- Some grown;
+            grown
+        in
+        values.(builder.length) <- value;
+        builder.length <- builder.length + 1
+
+  let finish builder =
+    match builder.values with
+    | None -> Rrbvec.empty
+    | Some values ->
+        let values =
+          if builder.length = Array.length values then values
+          else Array.sub values 0 builder.length
+        in
+        Rrbvec.of_array values
+end
 
 let merge_lookup_databases left right =
   Lg_runtime.Lg_map.fold_left
@@ -656,7 +878,7 @@ let hash_join resolve_lookup left right =
     merge_lookup_databases left.lookup_databases right.lookup_databases
   in
   if common = [] then
-    { attrs; rows = product_rows left.rows right.rows; lookup_databases }
+    relation attrs (product_rows left.rows right.rows) lookup_databases
   else
     let lookup_database variable =
       match
@@ -684,55 +906,84 @@ let hash_join resolve_lookup left right =
     let rows =
       match common with
       | [ (variable, left_index, right_index) ] ->
-          let buckets =
-            Hashtbl.create (max 16 (Rrbvec.length left.rows))
+          let entity_keys = Option.is_some (lookup_database variable) in
+          let left_buckets =
+            if entity_keys then relation_entity_hash left left_index else None
           in
-          Rrbvec.fold_left
-            (fun () row ->
-              let row_key =
-                result_at variable left_index right_index row `Left
-              in
-              let hash = hash_result row_key in
-              let bucket =
-                Hashtbl.find_opt buckets hash |> Option.value ~default:[]
-              in
-              Hashtbl.replace buckets hash ((row_key, row) :: bucket))
-            () left.rows;
-          Rrbvec.fold_left
-            (fun rows right_row ->
-              let right_key =
-                result_at variable left_index right_index right_row `Right
-              in
-              let candidates =
-                Hashtbl.find_opt buckets (hash_result right_key)
-                |> Option.value ~default:[]
-              in
-              List.fold_left
-                (fun rows (left_key, left_row) ->
-                  if equal_result left_key right_key then
-                    Rrbvec.push_back rows
-                      (append_right_only left_row right_row right_only_indexes)
-                  else rows)
-                rows candidates)
-            Rrbvec.empty right.rows
+          let right_column =
+            if entity_keys then relation_entity_column right right_index else None
+          in
+          (match (left_buckets, right_column) with
+          | Some buckets, Some right_column ->
+            let position = ref 0 in
+            let rows = Row_builder.create (Rrbvec.length left.rows) in
+            Rrbvec.iter
+              (fun right_row ->
+                let entity = right_column.(!position) in
+                incr position;
+                let candidates =
+                  Int_table.find_opt buckets entity
+                  |> Option.value ~default:[]
+                in
+                List.iter
+                  (fun left_row ->
+                    Row_builder.add rows
+                      (append_right_only left_row right_row
+                         right_only_indexes))
+                  candidates)
+              right.rows;
+            Row_builder.finish rows
+          | _ ->
+            let buckets =
+              Int_table.create (max 16 (Rrbvec.length left.rows))
+            in
+            Rrbvec.fold_left
+              (fun () row ->
+                let row_key =
+                  result_at variable left_index right_index row `Left
+                in
+                let hash = hash_result row_key in
+                let bucket =
+                  Int_table.find_opt buckets hash |> Option.value ~default:[]
+                in
+                Int_table.replace buckets hash ((row_key, row) :: bucket))
+              () left.rows;
+            Rrbvec.fold_left
+              (fun rows right_row ->
+                let right_key =
+                  result_at variable left_index right_index right_row `Right
+                in
+                let candidates =
+                  Int_table.find_opt buckets (hash_result right_key)
+                  |> Option.value ~default:[]
+                in
+                List.fold_left
+                  (fun rows (left_key, left_row) ->
+                    if equal_result left_key right_key then
+                      Rrbvec.push_back rows
+                        (append_right_only left_row right_row
+                           right_only_indexes)
+                    else rows)
+                  rows candidates)
+              Rrbvec.empty right.rows)
       | _ ->
           let buckets =
-            Hashtbl.create (max 16 (Rrbvec.length left.rows))
+            Int_table.create (max 16 (Rrbvec.length left.rows))
           in
           Rrbvec.fold_left
             (fun () row ->
               let row_key = key row `Left in
               let hash = hash_key row_key in
               let bucket =
-                Hashtbl.find_opt buckets hash |> Option.value ~default:[]
+                Int_table.find_opt buckets hash |> Option.value ~default:[]
               in
-              Hashtbl.replace buckets hash ((row_key, row) :: bucket))
+              Int_table.replace buckets hash ((row_key, row) :: bucket))
             () left.rows;
           Rrbvec.fold_left
             (fun rows right_row ->
               let right_key = key right_row `Right in
               let candidates =
-                Hashtbl.find_opt buckets (hash_key right_key)
+                Int_table.find_opt buckets (hash_key right_key)
                 |> Option.value ~default:[]
               in
               List.fold_left
@@ -744,7 +995,7 @@ let hash_join resolve_lookup left right =
                 rows candidates)
             Rrbvec.empty right.rows
     in
-    { attrs; rows; lookup_databases }
+    relation attrs rows lookup_databases
 
 let context relations sources rules = { relations; sources; rules }
 let context_relations context = context.relations
