@@ -214,8 +214,8 @@ model rather than inference scaffolding:
 | Boundary | Count | Justification |
 | --- | ---: | --- |
 | Nominal record and deftype fields | 70 | Preserve the closed shapes of datoms, databases, filtered databases, transaction reports, entities, connections, and parser forms. |
-| Typed global state | 3 | Constrain the query cache, data reader registry, and weak stored-database registry. |
-| Protocol method parameters | 18 | Define closed index, equality, ordering, relation, and storage dispatch contracts. |
+| Typed global state | 2 | Constrain the data reader registry and weak stored-database registry. The query cache is constrained by its explicit signature without a duplicate inline annotation. |
+| Protocol method parameters | 19 | Define closed index, equality, ordering, relation, and storage dispatch contracts. |
 
 The four algorithm-local annotations were each removed and independently
 recompiled against the complete Native DataScript source set. Each removal has a
