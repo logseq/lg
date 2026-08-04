@@ -3945,12 +3945,23 @@
    %{dep:datascript_conn_native_base.ml}
    %{dep:datascript_conn_melange_base.ml})))
 
+(rule
+ (alias datascript-ocaml-benchmark-result-checker)
+ (deps
+  ../script/check_datascript_ocaml_benchmark_result.sh
+  ../script/check_datascript_ocaml_benchmark_result_test.sh)
+ (action
+  (run
+   sh
+   %{dep:../script/check_datascript_ocaml_benchmark_result_test.sh})))
+
 (alias
  (name datascript-upstream)
  (deps
   (alias datascript-conn)
   (alias datascript-filter)
   (alias datascript-static-boundary)
+  (alias datascript-ocaml-benchmark-result-checker)
   (alias datascript-benchmark-surface)))
 
 (rule
