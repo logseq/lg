@@ -28,7 +28,7 @@ expect_text() {
   path=$2
   pattern=$3
   if [ -f "$repo_root/$path" ] &&
-     LC_ALL=C grep -Eq "$pattern" "$repo_root/$path"; then
+     LC_ALL=C grep -Eq -- "$pattern" "$repo_root/$path"; then
     pass "$description"
   else
     fail "$description"
@@ -40,7 +40,7 @@ expect_no_text() {
   path=$2
   pattern=$3
   if [ -f "$repo_root/$path" ] &&
-     ! LC_ALL=C grep -Eq "$pattern" "$repo_root/$path"; then
+     ! LC_ALL=C grep -Eq -- "$pattern" "$repo_root/$path"; then
     pass "$description"
   else
     fail "$description"
@@ -165,6 +165,18 @@ expect_text "the datascript-ocaml repository URL is exact" \
 expect_text "the full datascript-ocaml benchmark commit is recorded" \
   "$datascript_ocaml_doc" \
   '42160006c6fa7af9c9b50cc08e933d0a01715abc'
+expect_text "the datascript-ocaml workload count is recorded" \
+  "$datascript_ocaml_doc" \
+  '14 workloads'
+expect_text "the operation-comparable datascript-ocaml subset is recorded" \
+  "$datascript_ocaml_doc" \
+  '10 operation-comparable'
+expect_text "datascript-ocaml remains a supplemental comparison" \
+  "$datascript_ocaml_doc" \
+  'supplemental Native comparison'
+expect_text "the datascript-ocaml full-run timing protocol is recorded" \
+  "$datascript_ocaml_doc" \
+  '--size 20000 --warmup-ms 2000 --sample-ms 1000 --samples 5'
 expect_file "the datascript-ocaml benchmark revision is machine-readable" \
   "$datascript_ocaml_rev"
 expect_text "the datascript-ocaml benchmark revision is pinned exactly" \
