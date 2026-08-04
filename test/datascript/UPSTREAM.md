@@ -30,7 +30,7 @@ sh script/check_datascript_api_manifest.sh \
 | `src/datascript/impl/entity.cljc` | `test/datascript/upstream/entity.cljc` |
 | `src/datascript/datafy.cljc` | `test/datascript/lg/datafy.cljc` |
 | `src/datascript/conn.cljc` | `test/datascript/upstream/conn.cljc` |
-| `src/datascript/storage.clj` | `test/datascript/upstream/storage_file.cljc` |
+| `src/datascript/storage.clj` | `test/datascript/upstream/storage.cljc`, `test/datascript/upstream/storage_file.cljc` |
 | `src/datascript/storage.cljs` | `test/datascript/upstream/storage.cljc` |
 | `src/datascript/core.cljc` | `test/datascript/upstream/core.cljc` |
 | `src/datascript/serialize.cljc` | `test/datascript/upstream/serialize.cljc` |
@@ -41,6 +41,14 @@ sh script/check_datascript_api_manifest.sh \
 Persistent sorted set is maintained in the same repository under
 `datascript/me/tonsky/`; it is a typed port of the corresponding upstream
 dependency rather than a file in the Logseq DataScript fork.
+
+`source_review.tsv` records the definition-level review of every mapped file.
+Across the mapping, 280 of 376 upstream top-level definitions retain their
+exact names (74.5%). The remaining 96 are reviewed closed-type replacements,
+private-helper decompositions, or target-boundary splits; none remains
+unreviewed. This exact-name percentage is a maintenance metric, not a behavior
+score. Behavior remains governed by the upstream suites, differential catalog,
+surface matrix, and public API manifest.
 
 ## Machine-checkable artifacts
 

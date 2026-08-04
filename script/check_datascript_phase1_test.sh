@@ -121,7 +121,16 @@ expect_failure() {
   fi
 }
 
+source_review_evidence_exists() {
+  awk -F '\t' '$1 !~ /^#/ { print $9 }' "$repo_root/$source_review" |
+    tr ',' '\n' |
+    while IFS= read -r evidence; do
+      [ -f "$repo_root/$evidence" ] || exit 1
+    done
+}
+
 upstream_doc=test/datascript/UPSTREAM.md
+source_review=test/datascript/source_review.tsv
 datascript_ocaml_doc=test/datascript/benchmark/DATASCRIPT_OCAML.md
 datascript_ocaml_rev=test/datascript/benchmark/datascript-ocaml.rev
 api_manifest=test/datascript/api_manifest/upstream.tsv
@@ -413,6 +422,40 @@ for mapping in \
 do
   expect_text "file mapping is recorded: $mapping" "$upstream_doc" "$mapping"
 done
+
+expect_text "JVM storage maps to both shared and file-backend LG modules" \
+  "$upstream_doc" \
+  'src/datascript/storage\.clj.*test/datascript/upstream/storage\.cljc.*test/datascript/upstream/storage_file\.cljc'
+
+expect_file "the mapped-source definition review is checked in" "$source_review"
+expect_text "the source review records its pinned upstream commit" \
+  "$source_review" \
+  '3f141af97b70e1f14c65eaa119acd822ebece37e'
+expect_success "all mapped-source definitions are reviewed" \
+  awk -F '\t' '
+    /^#/ { next }
+    NF != 9 { exit 1 }
+    {
+      replacement_count = ($5 == 0 && $7 == "-") ? 0 : split($7, names, ",")
+      if (replacement_count != $5) {
+        exit 1
+      }
+      rows += 1
+      upstream += $3
+      exact += $4
+      represented += $5
+      unreviewed += $6
+    }
+    END {
+      exit !(rows == 14 &&
+             upstream == 376 &&
+             exact == 280 &&
+             represented == 96 &&
+             unreviewed == 0)
+    }
+  ' "$repo_root/$source_review"
+expect_success "every mapped-source review cites existing evidence" \
+  source_review_evidence_exists
 
 expect_file "the upstream API manifest is checked in" "$api_manifest"
 expect_file "the LG API manifest is checked in" "$lg_api_manifest"
