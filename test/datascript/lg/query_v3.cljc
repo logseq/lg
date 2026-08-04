@@ -16,7 +16,7 @@
 (signature datascript.query-v3/query-cache
   :datascript.query-v3/query-cache-state-v3)
 
-(def ^query-cache-state-v3 query-cache
+(def query-cache
   (lru/cache lru-cache-size))
 
 (signature datascript.query-v3/mapa [input output]
@@ -38,13 +38,6 @@
   (da/aslice arr start end))
 
 (defn concatv
-  {:inline
-   (fn [& xs]
-     (reduce
-      (fn [result input]
-        (list 'clojure.core/into result input))
-      []
-      xs))}
   [& xs]
   (loop [remaining xs
          result []]
@@ -335,7 +328,7 @@
   (-fold [relation combine initial])
   (-size [relation] :int)
   (-getter
-   [relation symbol]
+   [relation ^:string symbol]
    :fn<array<datascript.lg.query-types/result>;datascript.lg.query-types/result>)
   (-indexes
    [relation ^:vector<string> symbols]

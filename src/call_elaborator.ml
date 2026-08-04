@@ -4842,7 +4842,7 @@ let create ~compile_expr =
                     let expression =
                       List.fold_right
                         (fun (ocaml_name, value) body ->
-                          apply "Lg_runtime.Runtime_dynamic_var.bind"
+                          apply "Lg_runtime.Runtime_binding.bind"
                             [
                               Semantic_ir.Ident ocaml_name;
                               value;

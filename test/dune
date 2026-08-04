@@ -3932,10 +3932,24 @@
    datascript.test.query-rules
    2)))
 
+(rule
+ (alias datascript-static-boundary)
+ (deps
+  datascript/static_codegen_smoke.sh
+  datascript_conn_native_base.ml
+  datascript_conn_melange_base.ml)
+ (action
+  (run
+   sh
+   %{dep:datascript/static_codegen_smoke.sh}
+   %{dep:datascript_conn_native_base.ml}
+   %{dep:datascript_conn_melange_base.ml})))
+
 (alias
  (name datascript-upstream)
  (deps
   (alias datascript-conn)
+  (alias datascript-static-boundary)
   (alias datascript-benchmark-surface)))
 
 (rule

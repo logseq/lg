@@ -138,7 +138,7 @@ for generated_source in "$@"; do
   fi
 
   if grep -E \
-    "Runtime_dynamic([^_[:alnum:]]|$)|Lg_dyn|D\\.[A-Za-z_]+" \
+    "Runtime_dynamic|Lg_dyn|D\\.[A-Za-z_]+" \
     "$generated_source" >/dev/null; then
     echo "Generated DataScript references Runtime_dynamic: $generated_source" >&2
     exit 1
