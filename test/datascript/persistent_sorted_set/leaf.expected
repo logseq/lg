@@ -19,6 +19,7 @@ set-build:true:true:true:true
 set-persistent:true:true:true:true:true:true
 set-large:true:true:true:true:true:true:true
 set-slice:true:true:true:true:true:true:true
+set-singleton-slice:true:true
 set-insert-stress:true:true:true:true
 set-delete-stress:true:true:true:true:true:true:true
 set-iterator:true:true:true
@@ -43,6 +44,7 @@ set-build:true:true:true:true
 set-persistent:true:true:true:true:true:true
 set-large:true:true:true:true:true:true:true
 set-slice:true:true:true:true:true:true:true
+set-singleton-slice:true:true
 set-insert-stress:true:true:true:true
 set-delete-stress:true:true:true:true:true:true:true
 set-iterator:true:true:true

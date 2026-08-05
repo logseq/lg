@@ -367,6 +367,15 @@
           (= 995 (last large-rslice))))
     (println "set-slice:false:false:false:false:false:false:false"))
   (println "set-slice:false:false:false:false:false:false:false"))
+(println
+ (str "set-singleton-slice:"
+      (if-some [singleton (pss/set-slice large-set 1000 1000)]
+        (and
+         (= 1 (count singleton))
+         (= 1000 (first singleton)))
+        false)
+      ":"
+      (nil? (pss/set-slice large-set 1001 1000))))
 
 (def ^:pss/btset<int;unit;unit> inserted-set
   (loop [set (pss/empty-set int-compare)

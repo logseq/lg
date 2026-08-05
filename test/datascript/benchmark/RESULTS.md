@@ -638,3 +638,28 @@ All four comparisons pass. The scaling checks also passed: `add-all` grew by
 `init` ratio was 0.56; the Melange/Native `freeze` ratio was 1.37; and the
 wide recursive-rule 5x3-to-7x3 ratios were 14.75 Native and 13.97 Melange.
 The dedicated recursive-rule performance test passed separately.
+
+## Singleton slice boundary checkpoint (2026-08-05)
+
+Profiling the remaining Melange `q3` regression identified repeated small EAVT
+slices in the bound-entity query path. The retained PSS change recognizes the
+case where the lower-bound key is within the requested range and the next key
+in the same leaf is already above the upper bound. It then uses that next key
+as the exclusive right path instead of repeating an upper-bound binary search.
+All other ranges retain the existing `rseek-path` or `binary-search-r` control
+flow. The optimization does not change cursor order, inclusivity, or storage
+restoration.
+
+Three stable, order-reversed adjacent A/B pairs compared commit `e34cc95`
+against the modified worktree with the standard 20,000-person `q3` protocol.
+The modified runner was faster by 4.1%, 7.3%, and 4.0%, for a median improvement
+of 4.1%. Absolute measurements outside this window were discarded because
+WindowServer, Chrome, and other UI processes consumed substantial CPU and made
+the same binary vary by more than 2x. They are not evidence for the final
+upstream gate.
+
+Native and Melange singleton-slice and reversed-range tests pass. The complete
+query suite (164 tests and 752 assertions per target), transaction suite,
+pull suite, and index suite also pass with the optimized boundary search. PSS
+still has zero inline type hints, and generated DataScript remains free of
+dynamic boundaries.

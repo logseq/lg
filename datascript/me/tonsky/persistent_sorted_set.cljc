@@ -1158,20 +1158,36 @@
                   (path-set
                    current-path 0
                    #?(:melange (int left-idx) :default left-idx))
+                  next-idx
+                  #?(:melange (+ left-idx 1.0)
+                     :default (inc left-idx))
                   right
-                  (if (pos?
-                       (uncurried-compare
-                        cmp key-to (arrays/aget keys (dec keys-length))))
-                    (rseek-path root key-to cmp shift storage)
+                  (if
+                   (and
+                    (< next-idx keys-length)
+                    (not
+                     (< (uncurried-compare
+                         cmp key-to (arrays/aget keys left-idx))
+                        0))
+                    (< (uncurried-compare
+                        cmp key-to (arrays/aget keys next-idx))
+                       0))
                     (path-set
                      current-path 0
-                     #?(:melange
-                        (int
-                         (binary-search-r
-                          cmp keys (dec keys-length) key-to))
-                        :default
-                        (binary-search-r
-                         cmp keys (dec keys-length) key-to))))]
+                     #?(:melange (int next-idx) :default next-idx))
+                    (if (pos?
+                         (uncurried-compare
+                          cmp key-to (arrays/aget keys (dec keys-length))))
+                      (rseek-path root key-to cmp shift storage)
+                      (path-set
+                       current-path 0
+                       #?(:melange
+                          (int
+                           (binary-search-r
+                            cmp keys (dec keys-length) key-to))
+                          :default
+                          (binary-search-r
+                           cmp keys (dec keys-length) key-to)))))]
               (if (path-lt left right)
                 (Some (tuple left right keys))
                 nil))))
