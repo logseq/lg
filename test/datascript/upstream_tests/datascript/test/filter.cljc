@@ -228,6 +228,39 @@
         :password
         (Datascript_runtime.Data_value.String "<SECRET>")))
       (is
+       (match
+        (db/database-view-search
+         (db/database-view db)
+         (Some 1)
+         (Some :password)
+         None
+         None)
+        (Some datoms) (some? (first datoms))
+        None false))
+      (is
+       (match
+        (db/database-view-search
+         (db/database-view (d/filter db remove-pass))
+         (Some 1)
+         (Some :password)
+         None
+         None)
+        None true
+        (Some _) false))
+      (is
+       (match
+        (db/database-view-search
+         (db/database-view
+          (-> db
+              (d/filter remove-ivan)
+              (d/filter remove-pass)))
+         (Some 1)
+         (Some :password)
+         None
+         None)
+        None true
+        (Some _) false))
+      (is
        (entity-attr-absent?
         (d/entity (d/filter db remove-pass) 1)
         :password))

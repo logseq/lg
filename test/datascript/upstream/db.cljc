@@ -2712,7 +2712,12 @@
     (DatabaseView unfiltered)
     (-search unfiltered (search-pattern entity attr value tx))
     (FilteredDatabaseView filtered)
-    (-search filtered (search-pattern entity attr value tx))))
+    (if-some
+      [datoms (-search filtered (search-pattern entity attr value tx))]
+      (if (empty? datoms)
+        None
+        (Some datoms))
+      None)))
 
 (defn  database-view-search-vector
   [ database
