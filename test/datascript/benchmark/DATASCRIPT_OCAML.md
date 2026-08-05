@@ -49,3 +49,11 @@ _build/default/bench/bench_ocaml.exe \
 LG and upstream DataScript remain isolated one workload per process with their
 documented batch size. The final report must keep the datascript-ocaml table
 separate and describe these protocol and data-set differences.
+
+The complete 2026-08-05 run is checked in as
+`datascript-ocaml-20260805.tsv`. Validate it with:
+
+```sh
+sh script/check_datascript_ocaml_benchmark_result.sh \
+  test/datascript/benchmark/datascript-ocaml-20260805.tsv
+```

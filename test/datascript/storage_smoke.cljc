@@ -849,7 +849,11 @@
 
 (defn small-database []
   (conn/db-with
-   (db/empty-db None (db/default-options))
+   (db/empty-db
+    None
+    (db/options-with-ref-type
+     (db/default-options)
+     (Lg_runtime.Runtime_ref_type.Strong)))
    [(tx-add-string 1 :name "Ivan")
     (tx-add-string 2 :name "Oleg")
     (tx-add-string 3 :name "Petr")]))
@@ -974,7 +978,7 @@
       settings (set/settings (:eavt (restore-database! backend)))
       settings-ok
       (and (= 32 (:branching-factor settings))
-           (= (Lg_runtime.Runtime_ref_type.Weak)
+           (= (Lg_runtime.Runtime_ref_type.Strong)
               (:ref-type settings)))]
   (println
    (str environment ":storage-basics-small:"

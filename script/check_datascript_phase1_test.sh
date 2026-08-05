@@ -133,6 +133,9 @@ upstream_doc=test/datascript/UPSTREAM.md
 source_review=test/datascript/source_review.tsv
 datascript_ocaml_doc=test/datascript/benchmark/DATASCRIPT_OCAML.md
 datascript_ocaml_rev=test/datascript/benchmark/datascript-ocaml.rev
+datascript_ocaml_result=test/datascript/benchmark/datascript-ocaml-20260805.tsv
+datascript_ocaml_result_checker=script/check_datascript_ocaml_benchmark_result.sh
+benchmark_results=test/datascript/benchmark/RESULTS.md
 api_manifest=test/datascript/api_manifest/upstream.tsv
 lg_api_manifest=test/datascript/api_manifest/lg.tsv
 differential_cases=test/datascript/differential/cases.tsv
@@ -154,9 +157,12 @@ expect_text "the current upstream inventory result is recorded" \
 expect_text "the current differential parity result is recorded" \
   "$upstream_doc" \
   '56/56'
-expect_text "the final benchmark gate remains explicitly pending" \
+expect_text "the final benchmark gate is complete" \
   "$upstream_doc" \
-  'Benchmark.*Pending'
+  'Benchmark.*Complete'
+expect_text "the final benchmark report records all upstream workloads" \
+  "$benchmark_results" \
+  '28/28'
 expect_file "the pinned datascript-ocaml benchmark baseline is documented" \
   "$datascript_ocaml_doc"
 expect_text "the datascript-ocaml repository URL is exact" \
@@ -182,6 +188,11 @@ expect_file "the datascript-ocaml benchmark revision is machine-readable" \
 expect_text "the datascript-ocaml benchmark revision is pinned exactly" \
   "$datascript_ocaml_rev" \
   '^42160006c6fa7af9c9b50cc08e933d0a01715abc$'
+expect_file "the complete datascript-ocaml benchmark result is checked in" \
+  "$datascript_ocaml_result"
+expect_success "the complete datascript-ocaml benchmark result is valid" \
+  "$repo_root/$datascript_ocaml_result_checker" \
+  "$repo_root/$datascript_ocaml_result"
 expect_no_text "built-in algorithms contain no inline type hints" \
   test/datascript/upstream/built_ins.cljc \
   '\^(:[[:alpha:]]|[[:upper:]])'

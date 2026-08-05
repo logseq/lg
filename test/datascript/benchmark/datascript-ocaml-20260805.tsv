@@ -1,0 +1,16 @@
+runtime	ocaml
+size	20000
+add-1	460.90
+add-5	639.51
+add-all	650.68
+datoms-name	0.21198
+q1	0.85257
+q2	2.19
+q3	3.87
+q4	5.64
+q5-shortcircuit	0.02038
+qpred1	5.22
+qpred2	5.22
+q2pred	0.89382
+pull-one	0.00207
+storage-roundtrip	3901.70

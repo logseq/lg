@@ -77,9 +77,9 @@ another DataScript checkout have no role in comparisons.
 | Serialization | Behavior parity with measured representation optimizations | Default and custom codecs, schema and option propagation, datom order, index reuse, branching, reference policy, attached-storage rejection, and old payloads are covered. |
 | PSS | Behavior parity with measured representation optimizations | Ordering, slices, persistence, lazy traversal, storage callbacks, and reference policy pass; retained iterator differences are documented in `docs/design.md`. |
 | Public API | Upstream-complete | The generated comparator reports every upstream var, arity, protocol method, option, source-form family, and tagged reader present in LG. |
-| Benchmark | Pending | All three LG and pinned datascript-ocaml runners build; the final isolated workload matrix remains intentionally unrun. |
+| Benchmark | Complete | The final isolated 28-workload upstream/LG Native/LG Melange matrix passes on both LG targets; the latest pinned datascript-ocaml runner also completed all 14 supplemental workloads. |
 
-As of 2026-08-04, the machine-checkable inventory reports 170/170 upstream
+As of 2026-08-05, the machine-checkable inventory reports 170/170 upstream
 tests covered, the differential catalog reports 56/56 cases at parity, and the
 surface matrix reports no cataloged behavior missing. `upstream_status.tsv`,
 `differential/cases.tsv`, and the generated API manifests remain the
@@ -87,3 +87,11 @@ authoritative detailed evidence. A passing inventory is not permission to
 remove upstream control flow or replace a closed representation with dynamic
 typing; remaining source differences still require the review rules in
 `docs/design.md`.
+
+The final benchmark evidence is recorded in `benchmark/RESULTS.md`. Close or
+initially failing comparisons were repeated in five isolated, order-reversed
+pairs and compared by process medians. Native and Melange pass 28/28 tracked
+upstream workloads. The supplemental datascript-ocaml result is stored in
+`benchmark/datascript-ocaml-20260805.tsv` and is intentionally reported
+separately because its generator, seed, schema, and single-process protocol
+differ from the authoritative upstream runner.

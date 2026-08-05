@@ -663,3 +663,98 @@ query suite (164 tests and 752 assertions per target), transaction suite,
 pull suite, and index suite also pass with the optimized boundary search. PSS
 still has zero inline type hints, and generated DataScript remains free of
 dynamic boundaries.
+
+## Final four-way acceptance matrix (2026-08-05)
+
+The release runners were rebuilt from commit `55171f6` before this run. The
+pinned upstream DataScript runner, LG Native, and LG Melange ran each workload
+in a separate process with 20,000 people, a 2-second warmup, five 1-second
+samples, and batch size 10. LG used seed 42; the pinned upstream runner retained
+its own generator. Upstream serialization remains fixed at 300,000 people, so
+LG used the same 300,000-person population for the two serialization
+comparisons.
+
+The first complete pass produced the following process medians. Negative
+deltas are faster than pinned upstream:
+
+| Workload | Upstream JS | LG Native | Native delta | LG Melange | Melange delta |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add-1` | 645.900 | 257.562 | -60.1% | 443.208 | -31.4% |
+| `add-5` | 1492.100 | 595.112 | -60.1% | 1058.744 | -29.0% |
+| `add-all` | 1565.300 | 659.112 | -57.9% | 1160.341 | -25.9% |
+| `init` | 56.600 | 71.926 | +27.1% | 30.773 | -45.6% |
+| `find-datoms` | 2.300 | 0.835 | -63.7% | 0.914 | -60.2% |
+| `find-datom` | 3.200 | 0.599 | -81.3% | 0.707 | -77.9% |
+| `retract-5` | 2876.200 | 775.348 | -73.0% | 772.847 | -73.1% |
+| `q1` | 1.700 | 0.895 | -47.3% | 1.099 | -35.4% |
+| `q2` | 4.000 | 1.577 | -60.6% | 2.235 | -44.1% |
+| `q3` | 6.200 | 2.271 | -63.4% | 3.272 | -47.2% |
+| `q4` | 8.900 | 3.271 | -63.3% | 4.678 | -47.4% |
+| `q5-shortcircuit` | 1.100 | 0.189 | -82.8% | 0.402 | -63.4% |
+| `qpred1` | 8.000 | 9.614 | +20.2% | 5.635 | -29.6% |
+| `qpred2` | 9.500 | 6.417 | -32.5% | 9.171 | -3.5% |
+| `pull-one-entities` | 2.200 | 2.062 | -6.3% | 1.712 | -22.2% |
+| `pull-one` | 1.200 | 1.065 | -11.2% | 0.861 | -28.2% |
+| `pull-many-entities` | 6.000 | 3.693 | -38.5% | 5.203 | -13.3% |
+| `pull-many` | 1.800 | 1.146 | -36.4% | 1.839 | +2.2% |
+| `pull-wildcard` | 4.200 | 1.834 | -56.3% | 3.937 | -6.3% |
+| `rules-wide-3x3` | 0.449 | 0.083 | -81.6% | 0.243 | -45.9% |
+| `rules-wide-5x3` | 4.500 | 0.833 | -81.5% | 1.760 | -60.9% |
+| `rules-wide-7x3` | 60.900 | 10.900 | -82.1% | 25.450 | -58.2% |
+| `rules-wide-4x6` | 13.700 | 2.775 | -79.7% | 5.678 | -58.6% |
+| `rules-long-10x3` | 1.500 | 0.277 | -81.5% | 0.779 | -48.1% |
+| `rules-long-30x3` | 15.500 | 1.822 | -88.2% | 5.339 | -65.6% |
+| `rules-long-30x5` | 20.600 | 2.247 | -89.1% | 6.626 | -67.8% |
+| `freeze` | 1202.600 | 459.150 | -61.8% | 1118.670 | -7.0% |
+| `thaw` | 1401.300 | 1028.991 | -26.6% | 1600.607 | +14.2% |
+
+The initially failing or close comparisons were then run in five independent,
+order-reversed upstream/target pairs. Their process-median acceptance results
+replace the corresponding first-pass comparisons:
+
+| Workload and target | Upstream median | LG median | Delta |
+| --- | ---: | ---: | ---: |
+| Native `init` | 106.200 | 87.781 | -17.3% |
+| Native `qpred1` | 14.600 | 7.090 | -51.4% |
+| Melange `qpred2` | 10.200 | 9.255 | -9.3% |
+| Melange `pull-many` | 2.500 | 2.354 | -5.8% |
+| Melange `thaw` | 1227.000 | 1193.957 | -2.7% |
+
+The final two close comparisons were repeated after terminating a stale
+Computer Use Playwright `chrome-headless-shell` process tree that was consuming
+CPU during earlier samples. No implementation change was used to obtain the
+clean results. The five clean Melange `qpred2` samples were 9.152, 9.258,
+8.684, 9.255, and 10.128 ms; the five upstream samples had a 10.200 ms median.
+The five clean Melange `thaw` samples were 1212.151, 1193.957, 1173.980,
+1253.341, and 1126.148 ms; the five upstream samples had a 1227.000 ms median.
+
+Native and Melange therefore pass 28/28 tracked upstream workloads. The
+Melange `thaw` margin is below 3 percent, but it satisfies the required
+five-process median rule.
+
+The latest pinned datascript-ocaml revision
+`42160006c6fa7af9c9b50cc08e933d0a01715abc` was fetched from `origin/main`,
+rebuilt, and run with 20,000 people, a 2-second warmup, five 1-second samples,
+and its fixed single-process protocol:
+
+| datascript-ocaml workload | ms/op |
+| --- | ---: |
+| `add-1` | 460.900 |
+| `add-5` | 639.510 |
+| `add-all` | 650.680 |
+| `datoms-name` | 0.21198 |
+| `q1` | 0.85257 |
+| `q2` | 2.190 |
+| `q3` | 3.870 |
+| `q4` | 5.640 |
+| `q5-shortcircuit` | 0.02038 |
+| `qpred1` | 5.220 |
+| `qpred2` | 5.220 |
+| `q2pred` | 0.89382 |
+| `pull-one` | 0.00207 |
+| `storage-roundtrip` | 3901.700 |
+
+This table is supplemental rather than an upstream gate: datascript-ocaml uses
+a different random generator, seed, schema, generated rows, and one process
+for all workloads. The machine-checkable raw table is
+`datascript-ocaml-20260805.tsv`.
