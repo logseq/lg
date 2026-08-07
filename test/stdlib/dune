@@ -1,0 +1,134 @@
+(rule
+ (targets clojure_set_bootstrap.ml clojure_set.state)
+ (deps
+  ../../stdlib/clojure/set.mil
+  ../../stdlib/clojure/set.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    native
+    --compile-files-state
+    clojure_set.state
+    %{dep:../../stdlib/clojure/set.mil}
+    %{dep:../../stdlib/clojure/set.cljc}
+    -o
+    clojure_set_bootstrap.ml))))
+
+(rule
+ (target clojure_set_app_chunk.ml)
+ (deps clojure_set_app.cljc clojure_set.state ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    native
+    --compile-chunk-from
+    clojure_set.state
+    %{dep:clojure_set_app.cljc}
+    -o
+    %{target}))))
+
+(rule
+ (target clojure_set_native.ml)
+ (deps clojure_set_bootstrap.ml clojure_set_app_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:clojure_set_bootstrap.ml})
+    (cat %{dep:clojure_set_app_chunk.ml})))))
+
+(executable
+ (name clojure_set_native)
+ (modules clojure_set_native)
+ (flags
+  (:standard -w -32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target clojure_set.actual)
+ (deps clojure_set_native.exe clojure_set.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:clojure_set_native.exe}))
+   (diff %{dep:clojure_set.expected} %{target}))))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/clojure/set.mil
+  ../../stdlib/clojure/set.cljc
+  clojure_set_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/clojure/set.mil}
+   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:clojure_set_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/clojure/set.mil
+  ../../stdlib/clojure/set.cljc
+  clojure_set_non_set.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/clojure/set.mil}
+   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:clojure_set_non_set.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/clojure/set.mil
+  ../../stdlib/clojure/set.cljc
+  clojure_set_mixed.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/clojure/set.mil}
+   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:clojure_set_mixed.cljc}
+   "same element type")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_clojure_set_dispatch.sh
+  ../../stdlib/upstream.edn
+  ../../stdlib/clojure/set.cljc
+  (source_tree ../../src))
+ (action
+  (run sh %{dep:check_no_clojure_set_dispatch.sh} ../..)))
+
+(alias
+ (name runtest)
+ (deps
+  (alias ../../stdlib/stdlib-melange)))

@@ -4189,42 +4189,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (constrain_symbol (Types.dynamic_constraint transient_map) params
              collection)
           (fun params -> infer_expected key_ty params key)
-    | FList [ FSymbol operation; left; right ]
-      when has_source_name operation "subset?" ->
-        let element_ty =
-          match (inferred_form_type params left, inferred_form_type params right) with
-          | TSet element_ty, _ | _, TSet element_ty -> element_ty
-          | _ -> fresh_type_variable "set_subset_item"
-        in
-        let constrain_operand params = function
-          | FSymbol name -> constrain_seqable element_ty params name
-          | form -> infer_expected (TSet element_ty) params form
-        in
-        Result.bind (constrain_operand params left) (fun params ->
-            constrain_operand params right)
-    | FList [ FSymbol operation; left; right ]
-      when has_source_name operation "union"
-           || has_source_name operation "intersection"
-           || has_source_name operation "difference" ->
-        let set_element form =
-          match inferred_form_type params form with
-          | TSet element_ty -> Some element_ty
-          | _ -> None
-        in
-        let element_ty =
-          match (set_element left, set_element right) with
-          | Some ((TUnknown | TMeta _ | TVar _) as element_ty), None
-          | None, Some ((TUnknown | TMeta _ | TVar _) as element_ty) ->
-              element_ty
-          | Some element_ty, _ | _, Some element_ty -> element_ty
-          | None, None -> fresh_type_variable "set_operation_item"
-        in
-        let constrain_operand params = function
-          | FSymbol name -> constrain_symbol (TSet element_ty) params name
-          | form -> infer_expected (TSet element_ty) params form
-        in
-        Result.bind (constrain_operand params left) (fun params ->
-            constrain_operand params right)
     | FList
         [
           FSymbol "__deftype-field-set!";

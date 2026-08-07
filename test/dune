@@ -9,6 +9,9 @@
  (modules compiler_tests)
  (deps
   compiler_test_runner.bc
+  ../stdlib/clojure/set.cljc
+  ../stdlib/clojure/set.mil
+  datascript/lg/built_ins.mil
   ../src/lg.cma
   ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
@@ -549,6 +552,8 @@
 (rule
  (target persistent_sorted_set_arrays_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   datascript/persistent_sorted_set/arrays_test.cljc
   ../bin/lg_cli.exe)
@@ -558,6 +563,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
    -o
@@ -573,6 +580,8 @@
 (rule
  (target persistent_sorted_set_arrays_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   datascript/persistent_sorted_set/arrays_test.cljc
   ../bin/lg_cli.exe)
@@ -582,6 +591,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
    -o
@@ -614,6 +625,8 @@
 (rule
  (target persistent_sorted_set_path_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -626,6 +639,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -644,6 +659,8 @@
 (rule
  (target persistent_sorted_set_path_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -656,6 +673,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -691,6 +710,8 @@
 (rule
  (target persistent_sorted_set_helpers_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -703,6 +724,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -721,6 +744,8 @@
 (rule
  (target persistent_sorted_set_helpers_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -733,6 +758,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -770,6 +797,8 @@
 (rule
  (target persistent_sorted_set_leaf_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -782,6 +811,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -800,6 +831,8 @@
 (rule
  (target persistent_sorted_set_leaf_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -812,6 +845,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -849,6 +884,8 @@
 (rule
  (target persistent_sorted_set_storage_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -861,6 +898,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -879,6 +918,8 @@
 (rule
  (target persistent_sorted_set_storage_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -891,6 +932,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -912,6 +955,8 @@
 (rule
  (target persistent_sorted_set_storage_jsoo.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -924,6 +969,8 @@
    --target
    js
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -972,6 +1019,8 @@
 (rule
  (target persistent_sorted_set_benchmark_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -984,6 +1033,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1002,6 +1053,8 @@
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1014,6 +1067,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1035,6 +1090,8 @@
 (rule
  (target persistent_sorted_set_benchmark_jsoo.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1047,6 +1104,8 @@
    --target
    js
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1066,6 +1125,8 @@
 (rule
  (target datascript_storage_smoke_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1095,6 +1156,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1135,6 +1198,8 @@
 (rule
  (target datascript_storage_smoke_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1164,6 +1229,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1231,6 +1298,8 @@
 (rule
  (target datascript_file_storage_smoke_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1250,6 +1319,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1293,6 +1364,8 @@
 (rule
  (target datascript_api_smoke_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1327,6 +1400,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1373,6 +1448,8 @@
 (rule
  (target datascript_api_smoke_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1406,6 +1483,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1478,6 +1557,8 @@
 (rule
  (target datascript_transact_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1517,6 +1598,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1570,6 +1653,8 @@
 (rule
  (target datascript_transact_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1607,6 +1692,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -1677,6 +1764,8 @@
  (target datascript_conn_native.ml)
  (enabled_if false)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -1751,6 +1840,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -3801,6 +3892,8 @@
  (target datascript_conn_melange.ml)
  (enabled_if false)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -3874,6 +3967,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -4061,6 +4156,8 @@
 (rule
  (target datascript_listen_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -4100,6 +4197,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -4153,6 +4252,8 @@
 (rule
  (target datascript_listen_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -4190,6 +4291,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -4257,6 +4360,8 @@
 (rule
  (target datascript_filter_native.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -4296,6 +4401,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -4349,6 +4456,8 @@
 (rule
  (target datascript_filter_melange.ml)
  (deps
+  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -4386,6 +4495,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}

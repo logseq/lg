@@ -1,0 +1,24 @@
+{:clojurescript
+ {:repository "https://github.com/clojure/clojurescript"
+  :commit "7ab3bc777a6d0ec38cb886461dc21a71db7b827a"
+  :license "EPL-1.0"}
+
+ :namespaces
+ {clojure.set
+  {:source "src/main/cljs/clojure/set.cljs"
+   :implementation "clojure/set.cljc"
+   :interface "clojure/set.mil"
+   :definitions
+   {union {:status :static-adaptation
+           :reason :typed-binary-helper}
+    intersection {:status :static-adaptation
+                  :reason :typed-binary-helper}
+    difference {:status :static-adaptation
+                :reason :typed-binary-helper}
+    subset? {:status :ported}
+    bubble-max-key {:status :deferred
+                    :reason :max-key-not-yet-source-defined}}
+   :notes
+   ["Binary algorithms and size-based branch order follow ClojureScript."
+    "Typed binary helpers preserve one set element type across arguments and results."
+    "Variadic functions reduce through typed helpers instead of bubble-max-key until max-key is available from source stdlib."]}}}

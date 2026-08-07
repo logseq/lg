@@ -1,0 +1,43 @@
+(rule
+ (targets clojure_set_native.ml clojure_set_native.state)
+ (deps clojure/set.mil clojure/set.cljc ../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../bin/lg_cli.exe}
+    --target
+    native
+    --compile-files-state
+    clojure_set_native.state
+    %{dep:clojure/set.mil}
+    %{dep:clojure/set.cljc}
+    -o
+    clojure_set_native.ml))))
+
+(alias
+ (name stdlib-native)
+ (deps clojure_set_native.ml clojure_set_native.state))
+
+(rule
+ (targets clojure_set_melange.ml clojure_set_melange.state)
+ (deps clojure/set.mil clojure/set.cljc ../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../bin/lg_cli.exe}
+    --target
+    melange
+    --compile-files-state
+    clojure_set_melange.state
+    %{dep:clojure/set.mil}
+    %{dep:clojure/set.cljc}
+    -o
+    clojure_set_melange.ml))))
+
+(alias
+ (name stdlib-melange)
+ (deps clojure_set_melange.ml clojure_set_melange.state))

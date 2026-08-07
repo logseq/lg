@@ -2075,6 +2075,29 @@ let rec adapt_value_to_type env expected actual =
   in
   if same_concrete_type expected actual.ty && same_representation then
     Ok actual.semantic_expr
+  else if
+    match (expected, actual.ty) with TSet _, TSet _ -> true | _ -> false
+  then
+    let expected_element, actual_element =
+      match (expected, actual.ty) with
+      | TSet expected_element, TSet actual_element ->
+          (expected_element, actual_element)
+      | _ -> assert false
+    in
+    Result.bind (Types.set_module_name expected_element) (fun expected_module ->
+        Result.map
+          (fun actual_module ->
+            if String.equal expected_module actual_module then
+              actual.semantic_expr
+            else
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident (expected_module ^ ".of_list"),
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident (actual_module ^ ".elements"),
+                        [ actual.semantic_expr ] );
+                  ] ))
+          (Types.set_module_name actual_element))
   else if Types.equal expected (TOcaml "int") && Types.equal actual.ty TInt then
     Ok actual.semantic_expr
   else if
@@ -3821,14 +3844,6 @@ let create ~compile_expr =
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
   let compile_disj = comparisons.compile_disj in
-  let clojure_set_function scope env name =
-    match String.split_on_char '/' name with
-    | [ alias; function_name ] -> (
-        match Env.resolve_namespace_alias ~scope alias env with
-        | Some "clojure.set" -> Some function_name
-        | _ -> None)
-    | _ -> None
-  in
   let rec stringify_value scope env ~pr value =
     match value.ty with
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
@@ -4545,138 +4560,6 @@ let create ~compile_expr =
           String.sub name 2 (String.length name - 2) ^ "."
       | None -> name
     in
-    match clojure_set_function scope env name with
-    | Some function_name -> (
-        match compile_args_for scope env arg_forms with
-        | Error _ as error -> error
-        | Ok [ left; right ]
-          when function_name = "subset?"
-               && not (Types.is_dynamic left.ty || Types.is_dynamic right.ty)
-          -> (
-            match
-              ( Collection_capability.to_seq_expr env left,
-                Collection_capability.to_seq_expr env right )
-            with
-            | Ok (left_ty, left_seq), Ok (right_ty, right_seq)
-              when Types.same_shape left_ty right_ty ->
-                let left_name = "__lg_subset_left" in
-                let right_name = "__lg_subset_right" in
-                Result.map
-                  (fun equal ->
-                    typed_ir TBool
-                      (Semantic_ir.Apply
-                         ( Semantic_ir.Ident "Seq.for_all",
-                           [ Semantic_ir.Fun
-                               ( [ Semantic_ir.PVar left_name ],
-                                 Semantic_ir.Apply
-                                   ( Semantic_ir.Ident "Seq.exists",
-                                     [ Semantic_ir.Fun
-                                         ( [ Semantic_ir.PVar right_name ],
-                                           equal.semantic_expr );
-                                       right_seq;
-                                     ] ) );
-                             left_seq;
-                           ] )))
-                  (Core_compare.compile ~env "="
-                     [ typed_ir left_ty (Semantic_ir.Ident left_name);
-                       typed_ir right_ty (Semantic_ir.Ident right_name);
-                     ])
-            | _ -> Core_set.compile function_name [ left; right ])
-        | Ok [ left; right ]
-          when function_name = "difference"
-               && not (Types.is_dynamic left.ty || Types.is_dynamic right.ty)
-          -> (
-            match
-              ( Collection_capability.to_seq_expr env left,
-                Collection_capability.to_seq_expr env right )
-            with
-            | Ok (left_ty, left_seq), Ok (right_ty, right_seq)
-              when Types.same_shape left_ty right_ty ->
-                let item_name = "__lg_difference_item" in
-                let excluded_name = "__lg_difference_excluded" in
-                Result.bind (Types.set_module_name left_ty) (fun set_module ->
-                    Result.map
-                      (fun equal ->
-                        typed_ir (TSet left_ty)
-                          (Semantic_ir.Apply
-                             ( Semantic_ir.Ident (set_module ^ ".of_seq"),
-                               [ Semantic_ir.Apply
-                                   ( Semantic_ir.Ident "Seq.filter",
-                                     [ Semantic_ir.Fun
-                                         ( [ Semantic_ir.PVar item_name ],
-                                           Semantic_ir.Prefix
-                                             ( "not",
-                                               Semantic_ir.Apply
-                                                 ( Semantic_ir.Ident
-                                                     "Seq.exists",
-                                                   [ Semantic_ir.Fun
-                                                       ( [ Semantic_ir.PVar
-                                                             excluded_name ],
-                                                         equal.semantic_expr );
-                                                     right_seq;
-                                                   ] ) ) );
-                                       left_seq;
-                                     ] );
-                               ] )))
-                      (Core_compare.compile ~env "="
-                         [ typed_ir left_ty (Semantic_ir.Ident item_name);
-                           typed_ir right_ty
-                             (Semantic_ir.Ident excluded_name);
-                         ]))
-            | _ -> Core_set.compile function_name [ left; right ])
-        | Ok args
-          when List.exists (fun arg -> Types.is_dynamic arg.ty) args ->
-            let runtime_name, return_ty =
-              match function_name with
-              | "union" ->
-                  ("Lg_runtime.Runtime_dynamic.set_union",
-                   Types.dynamic_constraint TUnknown)
-              | "intersection" ->
-                  ("Lg_runtime.Runtime_dynamic.set_intersection",
-                   Types.dynamic_constraint TUnknown)
-              | "difference" ->
-                  ("Lg_runtime.Runtime_dynamic.set_difference",
-                   Types.dynamic_constraint TUnknown)
-              | "subset?" ->
-                  ("Lg_runtime.Runtime_dynamic.set_subset", TBool)
-              | _ -> ("", TUnknown)
-            in
-            if runtime_name = "" then Core_set.compile function_name args
-            else
-              let dynamic = Types.dynamic_constraint TUnknown in
-              let rec pack_arguments packed = function
-                | [] -> Ok (List.rev packed)
-                | argument :: rest -> (
-                    match pack_dynamic_value env dynamic argument with
-                    | Error _ as error -> error
-                    | Ok expression ->
-                        pack_arguments (expression :: packed) rest)
-              in
-              Result.map
-                (fun arguments ->
-                  let expression =
-                    match function_name with
-                    | "difference" -> (
-                        match arguments with
-                        | first :: rest ->
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident runtime_name,
-                                [ first; Semantic_ir.List rest ] )
-                        | [] ->
-                            Semantic_ir.Apply
-                              (Semantic_ir.Ident runtime_name, arguments))
-                    | "subset?" ->
-                      Semantic_ir.Apply
-                        (Semantic_ir.Ident runtime_name, arguments)
-                    | _ ->
-                        Semantic_ir.Apply
-                        ( Semantic_ir.Ident runtime_name,
-                          [ Semantic_ir.List arguments ] )
-                  in
-                  typed_ir return_ty expression)
-                (pack_arguments [] args)
-        | Ok args -> Core_set.compile function_name args)
-      | None -> (
     match
             if qualified_core then Error.error "core"
             else lookup_binding scope env name
@@ -9110,7 +8993,7 @@ let create ~compile_expr =
                 constructor ~constructor_name
                   (fun _ -> signature.result_type)
                   (List.length signature.payload_types)))
-              | _ -> compile_named_function_call scope env name arg_forms))
+              | _ -> compile_named_function_call scope env name arg_forms)
   and compile_inferred_ocaml_call scope env function_name value_forms =
     match compile_ocaml_arguments scope env value_forms with
     | Error _ as err -> err
@@ -10671,6 +10554,18 @@ let create ~compile_expr =
                           | _ -> named_argument_compatible expected arg.ty)
                         fixed_param_tys fixed_args
                     in
+                    let open_set_elements_compatible =
+                      List.combine arity.fixed_params fixed_args
+                      |> List.filter_map (fun (expected, argument) ->
+                             match (expected, argument.ty) with
+                             | TSet (TUnknown | TMeta _ | TVar _), TSet element
+                               -> Some element
+                             | _ -> None)
+                      |> function
+                      | [] | [ _ ] -> true
+                      | first :: rest ->
+                          List.for_all (Types.same_shape first) rest
+                    in
                     let rest_compatible =
                       match arity.rest_param with
                       | None -> extra_args = []
@@ -10680,7 +10575,10 @@ let create ~compile_expr =
                               named_argument_compatible expected arg.ty)
                             extra_args
                     in
-                    if not (fixed_compatible && rest_compatible) then
+                    if not open_set_elements_compatible then
+                      Error.error
+                        (name ^ " expects sets with the same element type")
+                    else if not (fixed_compatible && rest_compatible) then
                       Error.error
                         (name ^ " called with incompatible arguments: expected ("
                        ^ String.concat ", "
@@ -10707,6 +10605,18 @@ let create ~compile_expr =
                            |> List.filter_map Fun.id))
                     else
                       let prepare_argument index expected argument =
+                        let storage_expected =
+                          match List.nth_opt arity.fixed_params index with
+                          | Some ty -> ty
+                          | None ->
+                              Option.value arity.rest_param ~default:expected
+                        in
+                        if
+                          match (storage_expected, argument.ty) with
+                          | TSet (TUnknown | TMeta _ | TVar _), TSet _ -> true
+                          | _ -> false
+                        then adapt_value_to_type env storage_expected argument
+                        else
                         match
                           specialize_dynamic_nominal_unpack expected
                             argument.semantic_expr
@@ -10888,9 +10798,13 @@ let create ~compile_expr =
                                       (Semantic_ir.Ident fn.ocaml_name)
                                       arity_index
                               in
-                              Ok
-                                (typed_ir return_ty
-                                   (Semantic_ir.Apply (target, arguments))))))
+                              let call =
+                                typed_ir arity.return_ty
+                                  (Semantic_ir.Apply (target, arguments))
+                              in
+                              Result.map
+                                (fun expression -> typed_ir return_ty expression)
+                                (adapt_value_to_type env return_ty call))))
             | TFn (param_tys, ret)
               when List.length param_tys = List.length args
                    && List.for_all2
@@ -11171,6 +11085,7 @@ let create ~compile_expr =
                   if dynamic_callable then materialize_protocol_unknown ty
                   else ty
                 in
+                let raw_storage_param_tys = storage_param_tys in
                 let storage_param_tys =
                   List.map instantiate storage_param_tys
                 in
@@ -11271,7 +11186,7 @@ let create ~compile_expr =
                       | _ when has_capability_constraint storage_ty ->
                           storage_ty
                       | _ -> instantiated_ty)
-                    storage_param_tys param_tys
+                    raw_storage_param_tys param_tys
                 in
                 let storage_ret_template =
                   Types.maybe_reduced_callback_element ret
@@ -11605,7 +11520,15 @@ let create ~compile_expr =
                               when match arg.ty with
                                    | TTuple _ -> true
                                    | _ -> false ->
-                                adapt_value_to_type env expected_ty arg
+                              adapt_value_to_type env expected_ty arg
+                            | _
+                              when match (expected_ty, arg.ty) with
+                                   | TSet expected_element, TSet actual_element ->
+                                       not
+                                         (same_set_storage_representation
+                                            expected_element actual_element)
+                                   | _ -> false ->
+                              adapt_value_to_type env expected_ty arg
                             | _, TSet (TUnknown | TMeta _ | TVar _)
                               when match arg.ty with
                                    | TSet _ -> true

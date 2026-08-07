@@ -24,6 +24,9 @@ let cardinal = List.length
 let is_empty = function [] -> true | _ -> false
 let min_elt = function value :: _ -> value | [] -> raise Not_found
 
+let fold fn set initial =
+  List.fold_left (fun accumulator value -> fn value accumulator) initial set
+
 let subset left right = List.for_all (fun value -> mem value right) left
 
 let equal left right =

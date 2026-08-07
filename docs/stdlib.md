@@ -1,0 +1,83 @@
+# Source standard library
+
+LG should implement Clojure namespaces as LG source whenever their behavior can
+be expressed with the language's static types. The compiler owns syntax,
+elaboration, and the smallest host-runtime primitives needed by source code; it
+does not own public library functions merely because they are widely used.
+
+This boundary is important for migrating Logseq. A source namespace can be
+ported, reviewed against upstream, compiled once, and then consumed by Logseq
+code through ordinary `:require`, `:as`, and `:refer` forms. Adding or changing
+such a namespace must not require rebuilding compiler dispatch code.
+
+## Upstream and compatibility tracking
+
+[`stdlib/upstream.edn`](../stdlib/upstream.edn) pins the ClojureScript commit
+used by each port and records the status of individual definitions. Statuses
+have the following meanings:
+
+- `:ported`: the LG source follows the upstream source algorithm directly.
+- `:static-adaptation`: control flow is preserved, but a small typed helper or
+  signature is needed to express an upstream dynamic relationship.
+- `:host-primitive`: the definition must remain at a documented runtime or
+  compiler boundary.
+- `:deferred`: the definition depends on language or library support that has
+  not been ported yet; the manifest records the reason.
+
+The first port is `clojure.set`, based on ClojureScript
+`src/main/cljs/clojure/set.cljs` at commit
+`7ab3bc777a6d0ec38cb886461dc21a71db7b827a`. Its size-based binary algorithms
+and branch order follow upstream. The variadic definitions reduce through
+typed binary helpers because LG cannot yet express the upstream `max-key`
+dependency and variadic rest relationship in one source signature.
+
+## Bootstrap artifacts
+
+The `stdlib` Dune directory compiles source namespaces before application
+chunks:
+
+```sh
+dune build @stdlib/stdlib-native
+dune build @stdlib/stdlib-melange
+```
+
+Each alias produces checked OCaml source plus a target-specific serialized LG
+compiler state. A consumer restores that state with `--compile-chunk-from`, so
+namespace aliases, referred vars, signatures, and inferred bindings resolve
+through the same ordinary incremental namespace machinery as application
+code. The state is target-specific and must be regenerated with the compiler;
+it is a build artifact, not a checked-in compatibility database.
+
+Generic `set<element>` source functions use LG's statically typed generic set
+representation internally. Calls from concrete persistent set modules convert
+through typed `elements` and `of_list` operations at that source-function
+boundary, and results convert back to the statically selected concrete module.
+Element types remain unified across all inputs and outputs. This boundary does
+not use `Runtime_dynamic.t`, `Obj.magic`, or a source-visible conversion API.
+
+## Porting another namespace
+
+1. Inventory the namespace and transitive namespace dependencies in the Logseq
+   code being migrated.
+2. Pin the relevant ClojureScript source commit in `stdlib/upstream.edn`.
+3. Copy the public algorithm into `stdlib/<namespace>.cljc`, keeping upstream
+   control flow and observable arities. Add the narrowest `.mil` signatures
+   needed to state relationships that inference cannot yet recover.
+4. Classify every upstream definition in the manifest. Document every static
+   adaptation or deferred definition instead of silently replacing behavior.
+5. Add a bootstrap/restore integration test for Native and Melange, behavioral
+   tests for every arity and important branch, static rejection tests, and an
+   audit that rejects public-name compiler dispatch.
+6. Add the namespace to the target's aggregate stdlib build only after its
+   dependency namespaces are available.
+
+Priorities should be driven by an actual Logseq dependency inventory. Likely
+early layers include remaining source-definable `clojure.core` functions,
+`clojure.string`, `clojure.set`, `clojure.walk`, and reader/EDN namespaces,
+followed by the library namespaces that appear most often in the selected
+Logseq migration slice. Compiler changes should add general language support
+needed by several ports, not a dispatch branch for one public var name.
+
+The architecture test in `test/stdlib` enforces that `clojure.set` is no longer
+classified as compiler-owned and that its public functions have no name-based
+call elaboration or inference path.

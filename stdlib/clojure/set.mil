@@ -1,0 +1,15 @@
+(ns clojure.set)
+
+; LG keeps the public implementation in source. These helper signatures expose
+; the static set element relation that ClojureScript obtains from dynamic sets.
+(signature clojure.set/union-two [value]
+  :fn<set<value>;set<value>;set<value>>)
+
+(signature clojure.set/intersection-two [value]
+  :fn<set<value>;set<value>;set<value>>)
+
+(signature clojure.set/difference-two [value]
+  :fn<set<value>;set<value>;set<value>>)
+
+(signature clojure.set/subset? [value]
+  :fn<set<value>;set<value>;bool>)

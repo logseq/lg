@@ -6,7 +6,7 @@ let bindings = function
   | _ -> []
 
 let is_core_namespace = function
-  | "clojure.core" | "cljs.core" | "clojure.data" | "clojure.set"
+  | "clojure.core" | "cljs.core" | "clojure.data"
   | "clojure.edn" | "cljs.reader" | "clojure.string" | "clojure.walk" ->
       true
   | _ -> false

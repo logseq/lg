@@ -279,6 +279,25 @@ let read_file path =
       let length = in_channel_length ic in
       really_input_string ic length)
 
+let clojure_set_sources () =
+  [ "stdlib/clojure/set.mil"; "stdlib/clojure/set.cljc" ]
+  |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
+
+let compile_with_clojure_set target filename source =
+  let sources = clojure_set_sources () @ [ (filename, source) ] in
+  let _, reversed_outputs =
+    List.fold_left
+      (fun (state, outputs) (source_filename, source_text) ->
+        let state, output =
+          Lg.Compiler.compile_chunk_with_filename ~target
+            ~filename:source_filename state source_text
+          |> expect_ok
+        in
+        (state, output :: outputs))
+      (Lg.Compiler.empty_state, []) sources
+  in
+  reversed_outputs |> List.rev |> String.concat "\n"
+
 let rec source_files_under directory =
   Sys.readdir directory |> Array.to_list
   |> List.concat_map (fun name ->
@@ -4596,7 +4615,8 @@ let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
   ignore (compile Lg.Target.Melange)
 
 let current_datascript_sources () =
-    [
+  clojure_set_sources ()
+  @ ([
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
       "datascript/me/tonsky/persistent_sorted_set.mil";
@@ -4609,9 +4629,11 @@ let current_datascript_sources () =
       "test/datascript/upstream/db.cljc";
       "test/datascript/upstream/parser.cljc";
       "test/datascript/upstream/entity.cljc";
+      "test/datascript/lg/built_ins.mil";
       "test/datascript/upstream/built_ins.cljc";
-    ]
-    |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
+     ]
+    |> List.map (fun path ->
+           (path, read_file (Filename.concat (repo_root ()) path))))
 
 let compile_datascript_sources ?(check_ocaml = true) target initial_state
     sources =
@@ -21338,8 +21360,7 @@ let test_untyped_heterogeneous_record_fields_are_rejected () =
 let test_callable_set_parameters_remain_sets_for_conj () =
   let source =
     {|
-(ns app.callable-set
-  (:require [clojure.set :as set]))
+(ns app.callable-set)
 (defn add-unseen [^:set<int> seen ^int id]
   (if (seen id)
     seen
@@ -21386,11 +21407,13 @@ let test_generic_clojure_set_subset_constrains_parameters () =
 (println (values-subset-of? [1 2] #{1 2 3}))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_clojure_set Lg.Target.Native "app/set_subset.cljc" source
+  in
   assert_ocaml_runs "generic_clojure_set_subset_constrains_parameters"
     "true\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_with_clojure_set Lg.Target.Melange "app/set_subset.cljc" source);
   let sequence_source =
     {|
 (ns app.sequence-subset
@@ -21398,20 +21421,26 @@ let test_generic_clojure_set_subset_constrains_parameters () =
 (defn sequence-subset-of? [values right]
   (set/subset? values right))
 (println (sequence-subset-of? [1 2] #{1 2 3}))
-(defn sequence-missing [values right]
-  (set/subset? values right)
-  (set/difference (set values) right))
-(println true)
 |}
   in
-  let native_source =
-    Lg.Compiler.compile_string sequence_source |> expect_ok
+  let compile_sequence target =
+    let state, _ =
+      List.fold_left
+        (fun (state, ()) (filename, source_text) ->
+          let state, _ =
+            Lg.Compiler.compile_chunk_with_filename ~target ~filename state
+              source_text
+            |> expect_ok
+          in
+          (state, ()))
+        (Lg.Compiler.empty_state, ()) (clojure_set_sources ())
+    in
+    Lg.Compiler.compile_chunk_with_filename ~target
+      ~filename:"app/sequence_subset.cljc" state sequence_source
+    |> expect_error_contains "called with incompatible arguments"
   in
-  assert_ocaml_runs "sequence_subset_accepts_seqable_values" "true\ntrue\n"
-    native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange sequence_source
-    |> expect_ok)
+  compile_sequence Lg.Target.Native;
+  compile_sequence Lg.Target.Melange
 
 let test_resolve_is_rejected_without_a_closed_result_type () =
   let source =

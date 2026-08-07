@@ -72,6 +72,11 @@ be set elements without sacrificing static types. Same-shaped records are
 projected to the set element record type at `hash-set`, `conj`, `contains?`, and
 `disj` boundaries.
 
+Source standard-library namespaces are bootstrapped through the ordinary
+incremental compiler state instead of compiler-owned public-name dispatch.
+See [docs/stdlib.md](docs/stdlib.md) for the ClojureScript provenance policy,
+Native/Melange artifacts, and the Logseq-oriented namespace porting workflow.
+
 Supported prototype forms:
 
 ```clojure
