@@ -174,9 +174,13 @@
   [entity writer]
   (Buffer.add_string writer (entity-print-string entity)))
 
+(defn- entid
+  [database entity-ref]
+  (db/database-view-entid database entity-ref))
+
 (defn entity
   [db entity-ref]
-  (if-some [eid (db/database-view-entid db entity-ref)]
+  (if-some [eid (entid db entity-ref)]
     (if (db/database-view-numeric-eid-exists? db eid)
       (let [value
             (Entity.
@@ -254,7 +258,7 @@
   [db attr datoms]
   (entity-value db attr (raw-entity-attr db attr datoms)))
 
-(defn lookup-backwards
+(defn- -lookup-backwards
   [db eid attr]
   (let [datoms
         (db/database-view-search
@@ -293,7 +297,7 @@
       (Datascript_runtime.Data_value.Int (.-eid entity))))
     (let [database (entity-database-view entity)]
       (if (db/reverse-ref? attr)
-        (lookup-backwards
+        (-lookup-backwards
          database
          (.-eid entity)
          (db/reverse-ref attr))

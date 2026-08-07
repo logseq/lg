@@ -232,3 +232,70 @@
                  (pss/node-lookup
                   restored-root int-compare 99 (Some storage))) ":"
               (= 5 (deref reads))))))))
+
+(defn test-lazy-remove []
+  (match (make-memory-storage)
+    (tuple storage _reads _writes _accessed deleted)
+    (let [original (range-set 33)
+          _address (pss/store original storage)
+          updated (pss/set-disj original 16)]
+      (and
+       (= 2 (deref deleted))
+       (nil? (pss/set-lookup updated 16))))))
+
+(defn stresstest-stable-addresses []
+  (match (make-memory-storage)
+    (tuple storage _reads _writes _accessed _deleted)
+    (let [original (range-set 100)
+          _address (pss/store original storage)
+          updated (pss/set-conj original 100)]
+      (all-addressed? (pss/node-addresses (pss/set-root updated))))))
+
+(defn test-walk []
+  (match (make-memory-storage)
+    (tuple storage reads _writes _accessed _deleted)
+    (let [original (range-set 100)
+          address (pss/store original storage)
+          visited (atom 0)
+          _walked
+          (pss/walk-addresses
+           original
+           (fn [_address]
+             (reset! visited (inc (deref visited)))))
+          restored (pss/restore-by int-compare address storage 1 100)]
+      (and
+       (= 5 (deref visited))
+       (= 4950 (pss/set-reduce restored + 0))
+       (= 5 (deref reads))))))
+
+(defn test-lazyness []
+  (match (make-memory-storage)
+    (tuple storage reads _writes _accessed _deleted)
+    (let [original (range-set 100)
+          address (pss/store original storage)
+          restored (pss/restore-by int-compare address storage 1 100)]
+      (and
+       (= 0 (deref reads))
+       (= 100 (pss/set-count restored))
+       (= 0 (deref reads))
+       (= (Some 42) (pss/set-lookup restored 42))
+       (= 2 (deref reads))))))
+
+(defn test-default-restore []
+  (match (make-memory-storage)
+    (tuple storage reads _writes _accessed _deleted)
+    (let [original (range-set 100)
+          address (pss/store original storage)
+          restored (pss/restore address storage)]
+      (and
+       (= 0 (deref reads))
+       (= (Some 42) (pss/set-lookup restored 42))
+       (= 100 (pss/set-count restored))))))
+
+(println
+ (str "upstream-storage-tests:"
+      (test-lazy-remove) ":"
+      (stresstest-stable-addresses) ":"
+      (test-walk) ":"
+      (test-lazyness) ":"
+      (test-default-restore)))

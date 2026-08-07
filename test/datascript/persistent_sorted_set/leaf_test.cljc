@@ -327,6 +327,17 @@
       (= 25 (reduce + 0 (pss/set-seq small-set))) ":"
       (pss/set-contains? small-set 3) ":"
       (not (pss/set-contains? small-set 4))))
+(println
+ (str "set-est-count:"
+      (if-some [iterator (pss/set-iter small-set)]
+        (= 5 (pss/est-count iterator))
+        false)))
+(println
+ (str "set-constructors:"
+      (= [1 2 3]
+         (vec (pss/set-seq (pss/sorted-set-by int-compare 3 1 2 2)))) ":"
+      (= [1 2 3]
+         (vec (pss/set-seq (pss/sorted-set 3 1 2 2))))))
 (def added-set (pss/set-conj small-set 4))
 (def duplicate-set (pss/set-conj added-set 4))
 (def removed-set (pss/set-disj added-set 3))
@@ -432,3 +443,79 @@
             (= 1999000 total) ":"
             (= 0 (pss/iter-first iterator))))))
   (println "set-iterator:false:false:false"))
+
+(defn decade-compare [left right]
+  (compare (quot left 10) (quot right 10)))
+
+(defn semantic-test-btset-by []
+  (let [set
+        (loop [set (pss/empty-set decade-compare)
+               value 0]
+          (if (= value 100)
+            set
+            (recur (pss/set-conj-with set value int-compare) (inc value))))]
+    (if-some [values (pss/set-slice set 30 30)]
+      (= (range 30 40) values)
+      false)))
+
+(defn test-slice []
+  (if-some [values (pss/set-slice large-set 995 1005)]
+    (and
+     (= (vec (range 995 1006)) (vec values))
+     (nil? (pss/set-slice large-set 1005 995)))
+    false))
+
+(defn test-reduces []
+  (= 1999000 (pss/set-reduce large-set + 0)))
+
+(defn iter-over-transient []
+  (if-some [iterator (pss/set-iter small-set)]
+    (let [updated (pss/set-conj small-set 4)]
+      (and
+       (= [1 3 5 7 9] (vec (pss/iterator-seq iterator)))
+       (pss/set-contains? updated 4)))
+    false))
+
+(defn seek-for-seq-test []
+  (= 500 (first (pss/seek (pss/set-seq large-set) 500 int-compare))))
+
+(defn test-small []
+  (= [1 3 5 7 9] (vec (pss/set-seq small-set))))
+
+(defn stresstest-btset []
+  (and
+   (= 1000 (pss/set-count inserted-set))
+   (= 0 (first (pss/set-seq inserted-set)))
+   (= 999 (last (pss/set-seq inserted-set)))))
+
+(defn stresstest-slice []
+  (if-some [values (pss/set-slice inserted-set 250 750)]
+    (= (vec (range 250 751)) (vec values))
+    false))
+
+(defn stresstest-rslice []
+  (if-some [values (pss/set-rslice inserted-set 750 250)]
+    (= (reverse (vec (range 250 751))) (vec values))
+    false))
+
+(defn stresstest-seek []
+  (= (Some 750) (pss/seek-first inserted-set 750 int-compare)))
+
+(defn test-overflow []
+  (and
+   (= 2 (pss/set-shift large-set))
+   (= 1999 (last (pss/set-seq large-set)))))
+
+(println
+ (str "upstream-core-tests:"
+      (semantic-test-btset-by) ":"
+      (test-slice) ":"
+      (test-reduces) ":"
+      (iter-over-transient) ":"
+      (seek-for-seq-test) ":"
+      (test-small) ":"
+      (stresstest-btset) ":"
+      (stresstest-slice) ":"
+      (stresstest-rslice) ":"
+      (stresstest-seek) ":"
+      (test-overflow)))

@@ -10,29 +10,14 @@
 
 (def ^:const lru-cache-size 100)
 
-(type-alias query-cache-state-v3
-  :datascript.lru/cache-state<Datascript_runtime.Data_value.t;datascript.parser/Query>)
-
-(signature datascript.query-v3/query-cache
-  :datascript.query-v3/query-cache-state-v3)
-
 (def query-cache
   (lru/cache lru-cache-size))
-
-(signature datascript.query-v3/mapa [input output]
-  :fn<fn<input;output>;vector<input>;array<output>>)
 
 (defn mapa [f coll]
   (to-array (map f coll)))
 
-(signature datascript.query-v3/arange
-  :fn<int;int;array<int>>)
-
 (defn arange [start end]
   (to-array (range start end)))
-
-(signature datascript.query-v3/subarr [value]
-  :fn<array<value>;int;int;array<value>>)
 
 (defn subarr [arr start end]
   (da/aslice arr start end))
@@ -51,14 +36,8 @@
         (recur (next remaining) appended))
       result)))
 
-(signature datascript.query-v3/zip-two
-  :fn<vector<Datascript_runtime.Data_value.t>;vector<Datascript_runtime.Data_value.t>;seq<vector<Datascript_runtime.Data_value.t>>>)
-
 (defn- zip-two [left right]
   (map (fn [left right] (conj [left] right)) left right))
-
-(signature datascript.query-v3/zip-many
-  :fn<vector<vector<Datascript_runtime.Data_value.t>>;seq<vector<Datascript_runtime.Data_value.t>>>)
 
 (defn- zip-many [collections]
   (loop [rows
@@ -85,9 +64,6 @@
   ([a b & rest]
    (zip-many (vec (cons a (cons b rest))))))
 
-(signature datascript.query-v3/has? [value]
-  :fn<vector<value>;value;option<bool>>)
-
 (defn has? [coll el]
   (some #(= el %) coll))
 
@@ -99,114 +75,14 @@
     (NativeColl/-native-coll collection)
     collection))
 
-(signature datascript.query-v3/fast-map [key value]
-  :fn<map<key;value>>)
-
 (defn fast-map []
   {})
-
-(signature datascript.query-v3/fast-arr [value]
-  :fn<vector<value>>)
 
 (defn fast-arr []
   [])
 
-(signature datascript.query-v3/fast-set [value]
-  :fn<set<value>>)
-
 (defn fast-set []
   #{})
-
-(type-alias relation-row
-  :array<datascript.lg.query-types/result>)
-
-(type-alias relation-transform
-  :fn<vector<array<datascript.lg.query-types/result>>;vector<array<datascript.lg.query-types/result>>>)
-
-(type-alias collect-specimen-v3
-  :array<option<datascript.lg.query-types/result>>)
-
-(type-alias relation-hash-v3
-  :Datascript_runtime.Query_value.row_hash<datascript.db/database-view>)
-
-(type-record relation-state
-  (symbols :vector<string>)
-  (offset-map :map<string;int>)
-  (rows :vector<array<datascript.lg.query-types/result>>)
-  (lookup-databases :map<string;datascript.db/database-view>))
-
-(type-variant coll-relation-row-v3
-  (CollQueryRowV3 :array<datascript.lg.query-types/result>)
-  (CollDatomRowV3 :datascript.db/Datom))
-
-(type-variant relation-v3
-  (ArrayRelationV3 :datascript.query-v3/relation-state)
-  (CollRelationV3 :datascript.query-v3/relation-state))
-
-(type-variant collect-transform-v3
-  (RelationCollectTransformV3
-   :datascript.query-v3/relation-v3
-   :vector<tuple<int;int>>))
-
-(type-record query-context-state-v3
-  (rels :vector<datascript.query-v3/relation-v3>)
-  (consts :map<string;datascript.lg.query-types/result>)
-  (sources :map<string;datascript.lg.query-types/source>)
-  (rules :vector<datascript.parser/Rule>)
-  (default-source-symbol :string))
-
-(type-record aggregate-context-state-v3
-  (seen :map<string;bool>)
-  (attrs :map<string;int>)
-  (values :vector<datascript.lg.query-types/result>))
-
-(type-variant query-context-v3
-  EmptyContextV3
-  (QueryContextV3 :datascript.query-v3/query-context-state-v3))
-
-(type-alias used-rule-arguments-v3
-  :map<string;vector<vector<datascript.parser/pattern-element>>>)
-
-(type-record or-resolution-v3
-  (matched :bool)
-  (rows :vector<array<datascript.lg.query-types/result>>))
-
-(type-record clause-resolution-request-v3
-  (context :datascript.query-v3/query-context-v3)
-  (clauses :vector<datascript.parser/clause>))
-
-(type-record rule-resolution-request-v3
-  (context :datascript.query-v3/query-context-v3)
-  (clause :datascript.parser/clause))
-
-(type-record rule-frame-v3
-  (prefix-clauses :vector<datascript.parser/clause>)
-  (prefix-context :datascript.query-v3/query-context-v3)
-  (clauses :vector<datascript.parser/clause>)
-  (used-arguments :datascript.query-v3/used-rule-arguments-v3)
-  (pending-guards :vector<datascript.parser/clause>))
-
-(type-record rule-clause-split-v3
-  (prefix :vector<datascript.parser/clause>)
-  (rule :option<datascript.parser/clause>)
-  (suffix :vector<datascript.parser/clause>))
-
-(type-variant predicate-function-v3
-  (ComparisonPredicateV3
-   :string
-   :datascript.built-ins/query-function)
-  (PurePredicateV3
-   :string
-   :datascript.built-ins/query-function)
-  (VariablePredicateV3
-   :string
-   :datascript.lg.query-types/callable))
-
-(type-variant collected-key-v3
-  (SingleCollectedKeyV3
-   :datascript.lg.query-types/result)
-  (CompositeCollectedKeyV3
-   :vector<datascript.lg.query-types/result>))
 
 (def empty-context EmptyContextV3)
 
@@ -442,8 +318,6 @@
     (Datascript_runtime.Query_value.Callable _)
     "#<function>"))
 
-(signature datascript.query-v3/relation-row-print-string-v3
-  :fn<array<datascript.lg.query-types/result>;string>)
 (defn- relation-row-print-string-v3
   [row]
   (str
@@ -660,8 +534,6 @@
     (CollQueryRowV3 values) values
     (CollDatomRowV3 datom) (query-types/datom-row datom)))
 
-(signature datascript.query-v3/coll-rel-with-lookups
-  :fn<vector<datascript.parser/pattern-element>;vector<datascript.query-v3/coll-relation-row-v3>;map<string;datascript.db/database-view>;datascript.query-v3/relation-v3>)
 (defn- coll-rel-with-lookups
   [pattern
    rows
@@ -687,9 +559,6 @@
 
 (defn singleton-rel []
   (array-rel [] [(to-array [])]))
-
-(signature datascript.query-v3/product
-  :fn<datascript.query-v3/relation-v3;datascript.query-v3/relation-v3;datascript.query-v3/relation-v3>)
 
 (defn product
   [left right]
@@ -721,9 +590,6 @@
      (query-types/merge-lookup-databases
       (relation-lookup-databases-v3 left)
       (relation-lookup-databases-v3 right)))))
-
-(signature datascript.query-v3/product-all
-  :fn<vector<datascript.query-v3/relation-v3>;datascript.query-v3/relation-v3>)
 
 (defn product-all
   [relations]
@@ -757,7 +623,7 @@
        context
        (merge
         (context-constants context)
-        (relation-constants relation)))
+        (rel->consts relation)))
       (context-with-relations
        context
        (conj
@@ -775,8 +641,22 @@
     (Stdlib.invalid_arg
      "Source query input requires a Source_input")))
 
-(signature datascript.query-v3/binding-source
-  :fn<datascript.parser/binding;string>)
+(defn- resolve-in
+  [context descriptor input]
+  (if (parser/static-input-rules? descriptor)
+    (if-some [rules (query-types/input-rules input)]
+      (context-with-rules context rules)
+      (Stdlib.invalid_arg
+       "Rules query input requires a Rules_input"))
+    (if-some [source-name
+              (parser/static-input-source-name descriptor)]
+      (resolve-source-input context source-name input)
+      (if-some [binding
+                (parser/static-input-binding descriptor)]
+        (resolve-value-input context binding input)
+        (Stdlib.invalid_arg
+         "Unsupported static query input descriptor")))))
+
 (defn- binding-source
   [binding]
   (if (parser/binding-ignore? binding)
@@ -792,8 +672,6 @@
           (str "[" (binding-source item) " ...]")
           "_")))))
 
-(signature datascript.query-v3/static-input-source
-  :fn<datascript.parser/static-query-input;string>)
 (defn- static-input-source
   [input]
   (if (parser/static-input-rules? input)
@@ -804,8 +682,6 @@
         (binding-source binding)
         "_"))))
 
-(signature datascript.query-v3/static-inputs-source
-  :fn<vector<datascript.parser/static-query-input>;string>)
 (defn- static-inputs-source
   [inputs]
   (str
@@ -832,32 +708,10 @@
            remaining-inputs inputs]
       (if-some [descriptor (first remaining-descriptors)]
         (if-some [input (first remaining-inputs)]
-          (if (parser/static-input-rules? descriptor)
-            (if-some [rules (query-types/input-rules input)]
-              (recur
-               (context-with-rules resolved rules)
-               (subvec remaining-descriptors 1)
-               (subvec remaining-inputs 1))
-              (Stdlib.invalid_arg
-               "Rules query input requires a Rules_input"))
-            (if-some
-              [source-name
-               (parser/static-input-source-name descriptor)]
-              (recur
-               (resolve-source-input
-                resolved source-name input)
-               (subvec remaining-descriptors 1)
-               (subvec remaining-inputs 1))
-              (if-some
-                [binding
-                 (parser/static-input-binding descriptor)]
-                (recur
-                 (resolve-value-input
-                  resolved binding input)
-                 (subvec remaining-descriptors 1)
-                 (subvec remaining-inputs 1))
-                (Stdlib.invalid_arg
-                 "Unsupported static query input descriptor"))))
+          (recur
+           (resolve-in resolved descriptor input)
+           (subvec remaining-descriptors 1)
+           (subvec remaining-inputs 1))
           (Stdlib.invalid_arg "Missing query input"))
         resolved))))
 
@@ -866,9 +720,6 @@
   (Datascript_runtime.Query_value.row_hash
    (relation-tuples relation)
    (-indexes relation symbols)))
-
-(signature datascript.query-v3/symbols-not-in
-  :fn<vector<string>;vector<string>;vector<string>>)
 
 (defn- symbols-not-in
   [excluded symbols]
@@ -974,9 +825,7 @@
       (query-types/relation-rows joined))
      (query-types/relation-lookup-databases joined))))
 
-(signature datascript.query-v3/relation-constants
-  :fn<datascript.query-v3/relation-v3;map<string;datascript.lg.query-types/result>>)
-(defn- relation-constants
+(defn- rel->consts
   [relation]
   (if-some [row (first (relation-tuples relation))]
     (reduce
@@ -994,9 +843,6 @@
       (contains? symbols symbol))
     (-symbols relation))))
 
-(signature datascript.query-v3/related-rels
-  :fn<datascript.query-v3/query-context-v3;vector<string>;vector<datascript.query-v3/relation-v3>>)
-
 (defn related-rels
   [context symbols]
   (let [symbols (set symbols)]
@@ -1004,9 +850,6 @@
      (fn [relation]
        (relation-shares-symbols? relation symbols))
      (context-relations context))))
-
-(signature datascript.query-v3/extract-rels
-  :fn<datascript.query-v3/query-context-v3;vector<string>;tuple<option<vector<datascript.query-v3/relation-v3>>;datascript.query-v3/query-context-v3>>)
 
 (defn
   extract-rels
@@ -1039,13 +882,10 @@
        context
        (merge
         (context-constants context)
-        (relation-constants relation)))
+        (rel->consts relation)))
       (context-with-relations
        context
        (conj (context-relations context) relation)))))
-
-(signature datascript.query-v3/shared-symbols
-  :fn<vector<string>;vector<string>;vector<string>>)
 
 (defn- shared-symbols
   [left right]
@@ -1086,9 +926,6 @@
                relation))]
         (join-unrelated remaining-context joined)))))
 
-(signature datascript.query-v3/project-rel
-  :fn<datascript.query-v3/relation-v3;vector<string>;option<datascript.query-v3/relation-v3>>)
-
 (defn project-rel
   [relation symbols]
   (let [relation-symbols (-symbols relation)
@@ -1107,9 +944,6 @@
          relation-symbols))
         (Some (-project relation symbols))
         None))))
-
-(signature datascript.query-v3/project-context
-  :fn<datascript.query-v3/query-context-v3;vector<string>;datascript.query-v3/query-context-v3>)
 
 (defn project-context
   [context symbols]
@@ -1267,10 +1101,7 @@
       (Datascript_runtime.Data_value.equal value constant)
       false)))
 
-(signature datascript.query-v3/row-matches-pattern-constants?
-  :fn<array<datascript.lg.query-types/result>;vector<datascript.parser/pattern-element>;bool>)
-
-(defn- row-matches-pattern-constants?
+(defn- matches-pattern?
   [row
    pattern]
   (reduce-kv
@@ -1284,9 +1115,6 @@
    true
    pattern))
 
-(signature datascript.query-v3/resolve-pattern-coll-closed
-  :fn<datascript.lg.query-types/source;vector<datascript.parser/pattern-element>;datascript.query-v3/relation-v3>)
-
 (defn- resolve-pattern-coll-closed
   [source
    pattern]
@@ -1298,7 +1126,7 @@
         (CollQueryRowV3 row))
       (filterv
        (fn [row]
-         (row-matches-pattern-constants? row pattern))
+         (matches-pattern? row pattern))
        rows)))
     (Stdlib.invalid_arg
      "Cannot match a DataScript database source as a collection")))
@@ -1403,9 +1231,6 @@
     (Stdlib.invalid_arg
      (str "Unbound source variable: " source-name))))
 
-(signature datascript.query-v3/collect-args!
-  :fn<datascript.query-v3/query-context-v3;vector<datascript.parser/fn-arg>;array<option<datascript.lg.query-types/result>>;string;unit>)
-
 (defn collect-args!
   [context
    arguments
@@ -1429,9 +1254,6 @@
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)
    arguments))
-
-(signature datascript.query-v3/predicate-row-bindings
-  :fn<datascript.query-v3/query-context-v3;vector<datascript.parser/fn-arg>;vector<tuple<string;int>>>)
 
 (defn- predicate-row-bindings
   [context
@@ -1457,9 +1279,6 @@
        (contains? (relation-offset-map relation) symbol))
      (context-relations context)))))
 
-(signature datascript.query-v3/query-symbol-set-description
-  :fn<vector<string>;string>)
-
 (defn- query-symbol-set-description
   [symbols]
   (str
@@ -1472,9 +1291,6 @@
     ""
    symbols)
    "}"))
-
-(signature datascript.query-v3/check-bound
-  :fn<datascript.query-v3/query-context-v3;vector<string>;string;unit>)
 
 (defn check-bound
   [context
@@ -1587,9 +1403,6 @@
       (data-value-truthy? value)
       false)))
 
-(signature datascript.query-v3/fill-predicate-row!
-  :fn<array<datascript.lg.query-types/result>;array<int>;array<int>;array<option<datascript.lg.query-types/result>>;unit>)
-
 (defn- fill-predicate-row!
   [row
    indexes
@@ -1600,9 +1413,6 @@
      target
      (aget target-indexes index)
      (Some (aget row (aget indexes index))))))
-
-(signature datascript.query-v3/filter-predicate-relation
-  :fn<datascript.query-v3/relation-v3;datascript.query-v3/predicate-function-v3;array<int>;array<int>;array<option<datascript.lg.query-types/result>>;datascript.query-v3/relation-v3>)
 
 (defn- filter-predicate-relation
   [relation
@@ -1713,9 +1523,6 @@
       (Some (query-types/value-result value))
       None)))
 
-(signature datascript.query-v3/function-production
-  :fn<datascript.query-v3/query-context-v3;vector<string>;tuple<datascript.query-v3/query-context-v3;datascript.query-v3/relation-v3>>)
-
 (defn-
   function-production
   [context
@@ -1725,9 +1532,6 @@
     (tuple unchanged-context (singleton-rel))
     (tuple (Some relations) remaining-context)
     (tuple remaining-context (product-all relations))))
-
-(signature datascript.query-v3/join-function-binding
-  :fn<datascript.query-v3/relation-v3;array<datascript.lg.query-types/result>;datascript.parser/binding;datascript.lg.query-types/result;datascript.query-v3/relation-v3>)
 
 (defn- join-function-binding
   [production
@@ -1753,8 +1557,6 @@
        shared
        binding-relation))))
 
-(signature datascript.query-v3/add-function-output
-  :fn<option<datascript.query-v3/relation-v3>;datascript.query-v3/relation-v3;option<datascript.query-v3/relation-v3>>)
 (defn- add-function-output
   [output relation]
   (match output
@@ -1937,9 +1739,6 @@
       (collected-keys-equal? candidate key))
     keys)))
 
-(signature datascript.query-v3/add-collected-key
-  :fn<vector<datascript.query-v3/collected-key-v3>;datascript.query-v3/collected-key-v3;vector<datascript.query-v3/collected-key-v3>>)
-
 (defn- add-collected-key
   [keys key]
   (if (collected-key-member? keys key)
@@ -1971,8 +1770,6 @@
         None))
     symbols)))
 
-(signature datascript.query-v3/fill-collect-specimen!
-  :fn<datascript.query-v3/relation-v3;array<datascript.lg.query-types/result>;vector<string>;datascript.query-v3/collect-specimen-v3;unit>)
 (defn- fill-collect-specimen!
   [relation row symbols specimen]
   (reduce-kv
@@ -1984,9 +1781,6 @@
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)
    symbols))
-
-(signature datascript.query-v3/expand-collect-specimens
-  :fn<vector<datascript.query-v3/collect-specimen-v3>;datascript.query-v3/relation-v3;vector<string>;vector<datascript.query-v3/collect-specimen-v3>>)
 
 (defn-
   expand-collect-specimens
@@ -2009,9 +1803,6 @@
       (relation-tuples relation)))
    (subvec specimens 0 0)
    specimens))
-
-(signature datascript.query-v3/collect-specimen-results
-  :fn<datascript.query-v3/collect-specimen-v3;option<vector<datascript.lg.query-types/result>>>)
 
 (defn-
   collect-specimen-results
@@ -2143,9 +1934,6 @@
       (Stdlib.invalid_arg
        "Expected a DataScript not clause"))))
 
-(signature datascript.query-v3/collect-context-rows
-  :fn<datascript.query-v3/query-context-v3;vector<string>;vector<array<datascript.lg.query-types/result>>>)
-
 (defn-
   collect-context-rows
   [context symbols]
@@ -2166,9 +1954,6 @@
            (conj rows (to-array values))))
        []
        specimens))))
-
-(signature datascript.query-v3/resolve-or-branches
-  :fn<datascript.query-v3/query-context-v3;vector<datascript.parser/clause>;vector<string>;datascript.query-v3/or-resolution-v3>)
 
 (defn- resolve-or-branches
   [branch-context
@@ -2301,9 +2086,6 @@
        (not
         (some?
          (parser/pattern-element-constant right)))))))
-
-(signature datascript.query-v3/remove-rule-argument-pairs
-  :fn<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>;tuple<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>>>)
 
 (defn- remove-rule-argument-pairs
   [left
@@ -2493,9 +2275,6 @@
        (= 0 (-size relation)))
      (context-relations context)))))
 
-(signature datascript.query-v3/concat-rule-clauses-v3
-  :fn<vector<datascript.parser/clause>;vector<datascript.parser/clause>;vector<datascript.parser/clause>>)
-
 (defn- concat-rule-clauses-v3
   [left
    right]
@@ -2504,9 +2283,6 @@
      (conj clauses clause))
    left
    right))
-
-(signature datascript.query-v3/solve-rule-stack-v3
-  :fn<vector<string>;vector<datascript.query-v3/rule-frame-v3>;datascript.query-v3/relation-v3;datascript.query-v3/relation-v3>)
 
 (defn- solve-rule-stack-v3
   [final-symbols
@@ -2610,9 +2386,6 @@
      result
      query-types/distinct-rows)))
 
-(signature datascript.query-v3/solve-rule-v3
-  :fn<datascript.query-v3/query-context-v3;datascript.parser/clause;datascript.query-v3/relation-v3>)
-
 (defn- solve-rule-v3
   [context
    clause]
@@ -2638,9 +2411,6 @@
         (solve-rule-v3 context (:clause request))]
     (hash-join-rel context relation)))
 
-(signature datascript.query-v3/collect-consts
-  :fn<vector<tuple<string;int>>;datascript.query-v3/collect-specimen-v3;map<string;datascript.lg.query-types/result>;unit>)
-
 (defn collect-consts
   [symbols-indexed
    specimen
@@ -2656,9 +2426,6 @@
    (Stdlib.ignore 0)
    symbols-indexed))
 
-(signature datascript.query-v3/collect-copy-indexes
-  :fn<vector<tuple<string;int>>;map<string;int>;vector<tuple<int;int>>>)
-
 (defn- collect-copy-indexes
   [symbols-indexed
    offsets]
@@ -2671,9 +2438,6 @@
          indexes)))
    []
    symbols-indexed))
-
-(signature datascript.query-v3/copy-collect-specimen
-  :fn<datascript.query-v3/collect-specimen-v3;array<datascript.lg.query-types/result>;vector<tuple<int;int>>;datascript.query-v3/collect-specimen-v3>)
 
 (defn- copy-collect-specimen
   [specimen
@@ -2692,9 +2456,6 @@
      copy-indexes)
     copy))
 
-(signature datascript.query-v3/expand-output-specimen
-  :fn<datascript.query-v3/relation-v3;vector<tuple<int;int>>;datascript.query-v3/collect-specimen-v3;vector<datascript.query-v3/collect-specimen-v3>>)
-
 (defn- expand-output-specimen
   [relation
    copy-indexes
@@ -2703,9 +2464,6 @@
    (fn [row]
      (copy-collect-specimen specimen row copy-indexes))
    (relation-tuples relation)))
-
-(signature datascript.query-v3/expand-output-specimens
-  :fn<datascript.query-v3/relation-v3;vector<tuple<int;int>>;vector<datascript.query-v3/collect-specimen-v3>;vector<datascript.query-v3/collect-specimen-v3>>)
 
 (defn- expand-output-specimens
   [relation
@@ -2718,9 +2476,6 @@
        relation copy-indexes specimen))
     specimens)))
 
-(signature datascript.query-v3/collect-rel-xf
-  :fn<vector<tuple<string;int>>;datascript.query-v3/relation-v3;datascript.query-v3/collect-transform-v3>)
-
 (defn collect-rel-xf
   [symbols-indexed
    relation]
@@ -2730,9 +2485,6 @@
          (relation-offset-map relation))]
     (RelationCollectTransformV3
      relation copy-indexes)))
-
-(signature datascript.query-v3/require-collect-row
-  :fn<vector<string>;datascript.query-v3/collect-specimen-v3;array<datascript.lg.query-types/result>>)
 
 (defn-
   require-collect-row
@@ -2750,9 +2502,6 @@
           (nth symbols index)))))
     []
     (vec specimen))))
-
-(signature datascript.query-v3/apply-collect-transform
-  :fn<vector<datascript.query-v3/collect-specimen-v3>;datascript.query-v3/collect-transform-v3;vector<datascript.query-v3/collect-specimen-v3>>)
 
 (defn- apply-collect-transform
   [specimens
@@ -2778,9 +2527,6 @@
         (seen seen)
         (attrs (:attrs state))
         (values (:values state))))))
-
-(signature datascript.query-v3/aggregate-state-relation
-  :fn<datascript.query-v3/aggregate-context-state-v3;datascript.lg.query-types/relation>)
 
 (defn- aggregate-state-relation
   [state]
@@ -2851,9 +2597,6 @@
       (Stdlib.invalid_arg
        "Pull find requires a database source"))))
 
-(signature datascript.query-v3/collect-to
-  :overload<fn<datascript.query-v3/query-context-v3;vector<string>;vector<array<datascript.lg.query-types/result>>;vector<array<datascript.lg.query-types/result>>>;fn<datascript.query-v3/query-context-v3;vector<string>;vector<array<datascript.lg.query-types/result>>;vector<datascript.query-v3/collect-transform-v3>;vector<array<datascript.lg.query-types/result>>>;fn<datascript.query-v3/query-context-v3;vector<string>;vector<array<datascript.lg.query-types/result>>;vector<datascript.query-v3/collect-transform-v3>;datascript.query-v3/collect-specimen-v3;vector<array<datascript.lg.query-types/result>>>>)
-
 (defn collect-to
   ([context
     symbols
@@ -2899,9 +2642,6 @@
           (conj rows (require-collect-row symbols collected)))
        acc
        specimens)))))
-
-(signature datascript.query-v3/q-closed
-  :fn<datascript.parser/Query;vector<datascript.lg.query-types/input>;datascript.lg.query-types/output>)
 
 (defn q-closed
   [query

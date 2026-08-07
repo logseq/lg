@@ -2,6 +2,12 @@
 
 set -eu
 
+if [ -e test/datascript/lg/annotations.cljc ] || \
+   [ ! -f test/datascript/lg/annotations.mil ]; then
+  echo "DataScript boundary signatures must live in test/datascript/lg/annotations.mil" >&2
+  exit 1
+fi
+
 count_inline_hints() {
   {
     rg -o --no-filename '\^[A-Za-z_:][A-Za-z0-9_./:<>,;?!-]*' "$@" \
@@ -169,5 +175,62 @@ if [ "$pss_hint_count" -ne 0 ]; then
   echo "Persistent sorted set must remain free of inline hints: $pss_hint_count" >&2
   exit 1
 fi
+
+built_ins_upstream_helpers='-differ? and-fn or-fn less greater less-equal greater-equal'
+for helper in $built_ins_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" \
+    test/datascript/upstream/built_ins.cljc; then
+    echo "DataScript built-ins must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+datafy_upstream_helpers='datafy-entity-seq navize-pulled-entity navize-pulled-entity-seq'
+for helper in $datafy_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/lg/datafy.cljc; then
+    echo "DataScript datafy must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+pull_parser_upstream_helpers='check-limit index-of conj-attr'
+for helper in $pull_parser_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/upstream/pull_parser.cljc; then
+    echo "DataScript pull parser must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+entity_upstream_helpers='entid -lookup-backwards'
+for helper in $entity_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/upstream/entity.cljc; then
+    echo "DataScript entity must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+query_upstream_helpers='context-resolve-val rel-with-attr sum-rel*'
+for helper in $query_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/lg/query.cljc; then
+    echo "DataScript query must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+query_v3_upstream_helpers='rel->consts matches-pattern? resolve-in'
+for helper in $query_v3_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/lg/query_v3.cljc; then
+    echo "DataScript query-v3 must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
+
+pull_api_upstream_helpers='assoc-some! attr-str conj-seq conj-some! first-seq next-seq'
+for helper in $pull_api_upstream_helpers; do
+  if ! rg -F -q "(defn- $helper" test/datascript/upstream/pull_api.cljc; then
+    echo "DataScript pull API must retain upstream helper implementation: $helper" >&2
+    exit 1
+  fi
+done
 
 echo "DataScript annotation audit passed: total=$datascript_hint_count, declarations=$datascript_declaration_hint_count, algorithm=$datascript_algorithm_hint_count, query=$query_hint_count, parser=$parser_hint_count, pss=$pss_hint_count"

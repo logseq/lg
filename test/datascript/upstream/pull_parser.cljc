@@ -439,7 +439,7 @@
   [attr alias]
   (with-alias-value attr alias))
 
-(defn with-limit
+(defn- check-limit
   [attr limit]
   (let [data (attr-data attr)]
     (when-not (.-multival data)
@@ -450,7 +450,13 @@
       (when-not (pos? limit)
         (Stdlib.invalid_arg
          "Pull limit must be positive"))
-      None (Stdlib.ignore 0))
+      None (Stdlib.ignore 0)))
+  (Stdlib.ignore 0))
+
+(defn with-limit
+  [attr limit]
+  (check-limit attr limit)
+  (let [data (attr-data attr)]
     (replace-attr-data
      attr
      (assoc data :limit limit))))
@@ -599,25 +605,35 @@
    (attribute database source-attr)
    (Some limit)))
 
-(defn upsert-attr
+(defn- index-of
+  [predicate values]
+  (loop [index 0]
+    (if (= index (count values))
+      None
+      (if (predicate (nth values index))
+        (Some index)
+        (recur (inc index))))))
+
+(defn- conj-attr
   [attrs attr]
   (let [alias (.-alias (attr-data attr))]
-    (loop [index 0]
-      (if (= index (count attrs))
-        (conj attrs attr)
-        (if
+    (if-some
+      [index
+       (index-of
+        (fn [candidate]
           (Datascript_runtime.Data_value.equal
            alias
-           (.-alias (attr-data (nth attrs index))))
-          (assoc attrs index attr)
-          (recur (inc index)))))))
+           (.-alias (attr-data candidate))))
+        attrs)]
+      (assoc attrs index attr)
+      (conj attrs attr))))
 
 (signature datascript.pull-parser/pattern
   :fn<vector<pull-attr>;bool;PullPattern>)
 
 (defn pattern
   [attrs wildcard]
-  (let [attrs (reduce upsert-attr [] attrs)
+  (let [attrs (reduce conj-attr [] attrs)
         attrs
         (if (and
              wildcard

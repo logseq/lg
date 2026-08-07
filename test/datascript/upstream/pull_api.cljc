@@ -504,17 +504,27 @@
         (Some value)
         (Some (PulledScalar value))))))
 
-(defn merge-attr-value
+(defn- assoc-some!
   [values attr value]
-  (let [data (dpp/attr-data attr)]
-    (match (apply-attr-xform attr value)
-      None values
-      (Some value)
+  (match value
+    None values
+    (Some value)
+    (let [data (dpp/attr-data attr)]
       (assoc-pulled-value-hashed
        values
        (.-alias data)
        (.-alias-hash data)
        (pulled-to-data value)))))
+
+(defn- conj-some!
+  [values value]
+  (match value
+    None values
+    (Some value) (conj values (pulled-to-data value))))
+
+(defn merge-attr-value
+  [values attr value]
+  (assoc-some! values attr (apply-attr-xform attr value)))
 
 (defn merge-attrs-result
   [state result]
@@ -564,10 +574,7 @@
      (seen (.-seen state))
      (recursion-limits (.-recursion-limits state))
      (values
-      (match (.-value result)
-        None (.-values state)
-        (Some value)
-        (conj (.-values state) (pulled-to-data value))))
+      (conj-some! (.-values state) (.-value result)))
      (pattern (.-pattern state))
      (attr (.-attr state))
      (datoms (next-cursor (.-datoms state))))))
@@ -973,7 +980,7 @@
     (Stdlib.invalid_arg
      "Frame merge requires a ResultFrame")))
 
-(defn- pull-attr-string
+(defn- attr-str
   [attr]
   (let [data (dpp/attr-data attr)
         alias (.-alias data)]
@@ -989,7 +996,7 @@
     (str/join
      " "
      (mapv
-      pull-attr-string
+      attr-str
       (subvec attrs index)))
     ""))
 
@@ -1007,12 +1014,12 @@
     (MultivalAttrFrame state)
     (str
      "MultivalAttrFrame<attr="
-     (pull-attr-string (.-attr state))
+     (attr-str (.-attr state))
      ">")
     (MultivalRefAttrFrame state)
     (str
      "MultivalAttrFrame<attr="
-     (pull-attr-string (.-attr state))
+     (attr-str (.-attr state))
      ">")
     (ReverseAttrsFrame state)
     (str
@@ -1021,7 +1028,7 @@
      ", attr="
      (match (.-attr state)
        None ""
-       (Some attr) (pull-attr-string attr))
+       (Some attr) (attr-str attr))
      ", attrs="
      (remaining-attrs-string
       (.-attrs state)
@@ -1034,7 +1041,7 @@
      ", attr="
      (match (.-attr state)
        None ""
-       (Some attr) (pull-attr-string attr))
+       (Some attr) (attr-str attr))
      ", attrs="
      (remaining-attrs-string
       (.-attrs state)
@@ -1052,16 +1059,16 @@
   (-str [current]
     (frame-string current)))
 
-(signature datascript.pull-api/first-frame
+(signature datascript.pull-api/first-seq
   :fn<list<frame>;frame>)
 
-(defn first-frame [stack]
+(defn- first-seq [stack]
   (peek stack))
 
-(signature datascript.pull-api/rest-frames
+(signature datascript.pull-api/next-seq
   :fn<list<frame>;list<frame>>)
 
-(defn rest-frames [stack]
+(defn- next-seq [stack]
   (pop stack))
 
 (defn result-frame-state [current]
@@ -1069,10 +1076,10 @@
     (ResultFrame result) (Some result)
     _ None))
 
-(signature datascript.pull-api/push-frame
+(signature datascript.pull-api/conj-seq
   :fn<list<frame>;frame;list<frame>>)
 
-(defn push-frame
+(defn- conj-seq
   [stack value]
   (conj stack value))
 
@@ -1081,14 +1088,14 @@
 
 (defn run-stack
   [context stack]
-  (let [current (first-frame stack)
-        stack-before-current (rest-frames stack)]
+  (let [current (first-seq stack)
+        stack-before-current (next-seq stack)]
     (match (result-frame-state current)
       (Some result)
       (if (empty? stack-before-current)
         (.-value result)
-        (let [parent (first-frame stack-before-current)
-              stack-before-parent (rest-frames stack-before-current)]
+        (let [parent (first-seq stack-before-current)
+              stack-before-parent (next-seq stack-before-current)]
           (run-stack
            context
            (conj

@@ -40,15 +40,26 @@ sh script/check_datascript_api_manifest.sh \
 
 Persistent sorted set is maintained in the same repository under
 `datascript/me/tonsky/`; it is a typed port of the corresponding upstream
-dependency rather than a file in the Logseq DataScript fork.
+dependency rather than a file in the Logseq DataScript fork. Its independently
+pinned baseline, reviewed implementation score, and upstream test mapping are
+recorded in `PERSISTENT_SORTED_SET_UPSTREAM.md`. PSS upstream test-name and
+executed behavior coverage is 15/15 on Native and 11/11 on Melange. Reviewed
+implementation matching is currently 34/35 (97.1%) on Native and 104/105
+(99.0%) on Melange.
 
 `source_review.tsv` records the definition-level review of every mapped file.
-Across the mapping, 280 of 376 upstream top-level definitions retain their
-exact names (74.5%). The remaining 96 are reviewed closed-type replacements,
+Across the mapping, 307 of 376 upstream top-level definitions retain their
+exact names and implementation responsibilities (81.6%). The remaining 69 are
+reviewed closed-type replacements,
 private-helper decompositions, or target-boundary splits; none remains
-unreviewed. This exact-name percentage is a maintenance metric, not a behavior
-score. Behavior remains governed by the upstream suites, differential catalog,
-surface matrix, and public API manifest.
+unreviewed. Counting only definitions whose implementation responsibility was
+reviewed—exact names plus those documented static replacements—the real
+implementation match is 376/376 (100.0%).
+`real_implementation_audit.sh` enforces the 95% floor and rejects any
+unreviewed definition. The 81.6% exact-name percentage is only a maintenance
+metric, not an implementation or behavior score. Behavior remains governed by
+the upstream suites, differential catalog, surface matrix, and public API
+manifest.
 
 ## Machine-checkable artifacts
 
@@ -58,6 +69,12 @@ surface matrix, and public API manifest.
   `check_datascript_phase1_test.sh` verifies that it is reproducible.
 - `script/check_datascript_api_manifest.sh` rejects an LG manifest that omits
   or narrows an upstream entry.
+- `real_implementation_audit.sh` computes reviewed implementation parity from
+  `source_review.tsv`, enforces at least 95%, and requires zero unreviewed
+  definitions.
+- `*_interface_audit.sh` verifies that migrated DataScript and PSS declarations
+  live in `.mil` files and that every compile manifest loads each interface
+  before its implementation.
 - `differential/cases.tsv` names the initial observable-behavior fixtures.
   A `known-difference` row must differ from upstream and cite an existing
   implementation or test file. When behavior is restored, the row becomes
@@ -65,6 +82,13 @@ surface matrix, and public API manifest.
 
 The vendored files are ports, not an alternative authority. Local changes in
 another DataScript checkout have no role in comparisons.
+
+The declarations for annotations, built-ins, datafy, query, query types, query
+v3, and PSS now live in dedicated `.mil` files. Entity declarations remain in
+`entity.cljc`: its public state is recursively tied to the implementation-only
+`Entity` and `EntityReferenceSet` types, so splitting that recursive group
+across the interface boundary would make the types unavailable rather than
+improve inference.
 
 ## Current parity matrix
 

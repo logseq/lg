@@ -1,7 +1,8 @@
 {:counts
- {:inline-total 95
-  :declaration 91
-  :algorithm-local 4}
+ {:inline-total 90
+  :declaration 86
+  :algorithm-local 4
+  :interface-declaration 5}
 
  :policy
  {:dynamic-introduced false
@@ -79,8 +80,12 @@
    :count 79
    :reason "Record, deftype, and closed variant payload fields define the DataScript data model and are declarations, not inference repairs."}
   {:category :protocol-method-contracts
-   :count 12
-   :reason "Protocol declarations and implementations need concrete host and closed-value parameter contracts for static dispatch."}]
+   :count 7
+   :reason "Protocol declarations and implementations in algorithm source need concrete host and closed-value parameter contracts for static dispatch."}
+  {:category :interface-protocol-method-contracts
+   :count 5
+   :file "test/datascript/lg/annotations.mil"
+   :reason "Data value protocol boundary contracts live in the dedicated interface file rather than an algorithm source file."}]
 
  :algorithm-local
  [{:category :recursive-forward-interface

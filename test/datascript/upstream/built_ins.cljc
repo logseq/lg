@@ -1,98 +1,5 @@
 (ns datascript.built-ins)
 
-(type-variant query-function
-  Equal
-  NotEqual
-  Less
-  Greater
-  LessEqual
-  GreaterEqual
-  Add
-  Subtract
-  Multiply
-  Divide
-  Quotient
-  Remainder
-  Modulo
-  Increment
-  Decrement
-  Maximum
-  Minimum
-  Zero
-  Positive
-  Negative
-  Even
-  Odd
-  Compare
-  Random
-  RandomInt
-  TrueValue
-  FalseValue
-  NilValue
-  SomeValue
-  NotValue
-  AndValues
-  OrValues
-  Complement
-  Identical
-  Identity
-  Keyword
-  Metadata
-  Name
-  Namespace
-  ValueType
-  Vector
-  List
-  Set
-  HashMap
-  ArrayMap
-  Count
-  Range
-  NotEmpty
-  Empty
-  Contains
-  StringValue
-  Substring
-  Get
-  PrStr
-  PrintStr
-  PrintlnStr
-  PrnStr
-  RegexFind
-  RegexMatches
-  RegexSequence
-  RegexPattern
-  Differ
-  GetElse
-  GetSome
-  Missing
-  Tuple
-  Blank
-  Includes
-  StartsWith
-  EndsWith
-  LowerCase
-  UpperCase
-  Capitalize
-  Join
-  IndexOf
-  Escape
-  LastIndexOf
-  Replace
-  ReplaceFirst
-  Reverse
-  Split
-  SplitLines
-  Trim
-  TrimNewline
-  TrimLeft
-  TrimRight
-  Number
-  Integer
-  String
-  Boolean
-  KeywordValue)
-
 (def query-fns
   {'= Equal
    '== Equal
@@ -190,20 +97,6 @@
    'boolean? Boolean
    'keyword? KeywordValue})
 
-(type-variant built-in-aggregate-function
-  Sum
-  Average
-  Median
-  Variance
-  StandardDeviation
-  Distinct
-  AggregateMinimum
-  AggregateMaximum
-  AggregateRandom
-  Sample
-  AggregateCount
-  CountDistinct)
-
 (def aggregates
   {'sum Sum
    'avg Average
@@ -217,59 +110,6 @@
    'sample Sample
    'count AggregateCount
    'count-distinct CountDistinct})
-
-(signature datascript.built-ins/aggregate-function
-  :fn<string;option<datascript.built-ins/built-in-aggregate-function>>)
-(signature datascript.built-ins/comparison-function
-  :fn<string;option<datascript.built-ins/query-function>>)
-(signature datascript.built-ins/apply-comparison
-  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;option<bool>>)
-(signature datascript.built-ins/ordered-values?
-  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;bool>)
-(signature datascript.built-ins/pure-function
-  :fn<string;option<datascript.built-ins/query-function>>)
-(signature datascript.built-ins/apply-pure-function
-  :fn<datascript.built-ins/query-function;vector<Datascript_runtime.Data_value.t>;option<Datascript_runtime.Data_value.t>>)
-(signature datascript.built-ins/get-else-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/get-some-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/missing-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/differ-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/complement-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/metadata-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/value-type-function?
-  :fn<datascript.built-ins/query-function;bool>)
-(signature datascript.built-ins/apply-differ
-  :fn<vector<Datascript_runtime.Data_value.t>;bool>)
-(signature datascript.built-ins/sum-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/count-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/count-distinct-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/average-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/median-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/variance-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/standard-deviation-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/distinct-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/minimum-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/maximum-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/random-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
-(signature datascript.built-ins/sample-aggregate?
-  :fn<datascript.built-ins/built-in-aggregate-function;bool>)
 
 (defn aggregate-function
   [function-name]
@@ -341,6 +181,56 @@
          (Datascript_runtime.Data_value.equal expected value))
        (subvec values 1)))))
 
+(defn- less
+  [values]
+  (loop [index 1]
+    (if (>= index (count values))
+      true
+      (if (neg?
+           (Datascript_runtime.Data_value.compare
+            (nth values (- index 1))
+            (nth values index)))
+        (recur (+ index 1))
+        false))))
+
+(defn- greater
+  [values]
+  (loop [index 1]
+    (if (>= index (count values))
+      true
+      (if (pos?
+           (Datascript_runtime.Data_value.compare
+            (nth values (- index 1))
+            (nth values index)))
+        (recur (+ index 1))
+        false))))
+
+(defn- less-equal
+  [values]
+  (loop [index 1]
+    (if (>= index (count values))
+      true
+      (if (not
+           (pos?
+            (Datascript_runtime.Data_value.compare
+             (nth values (- index 1))
+             (nth values index))))
+        (recur (+ index 1))
+        false))))
+
+(defn- greater-equal
+  [values]
+  (loop [index 1]
+    (if (>= index (count values))
+      true
+      (if (not
+           (neg?
+            (Datascript_runtime.Data_value.compare
+             (nth values (- index 1))
+             (nth values index))))
+        (recur (+ index 1))
+        false))))
+
 (defn ordered-values?
   [function
     values]
@@ -351,23 +241,12 @@
       LessEqual true
       GreaterEqual true
       _ false)
-    (loop [index 1]
-      (if (>= index (count values))
-        true
-        (let [comparison
-              (Datascript_runtime.Data_value.compare
-               (nth values (- index 1))
-               (nth values index))
-              ordered?
-              (match function
-                Less (neg? comparison)
-                Greater (pos? comparison)
-                LessEqual (not (pos? comparison))
-                GreaterEqual (not (neg? comparison))
-                _ false)]
-          (if ordered?
-            (recur (+ index 1))
-            false))))))
+    (match function
+      Less (less values)
+      Greater (greater values)
+      LessEqual (less-equal values)
+      GreaterEqual (greater-equal values)
+      _ false)))
 
 (defn- first-value
   [values]
@@ -618,25 +497,25 @@
     "clojure.string/trimr" (Some TrimRight)
     None))
 
-(defn- and-values
-  [values]
-  (loop [remaining values
-         result (Datascript_runtime.Data_value.Bool true)]
-    (if-some [value (first remaining)]
-      (if (data-value-truthy? value)
-        (recur (subvec remaining 1) value)
-        value)
-      result)))
+(defn- and-fn
+  [args]
+  (reduce
+   (fn [_ value]
+     (if (data-value-truthy? value)
+       value
+       (reduced value)))
+   (Datascript_runtime.Data_value.Bool true)
+   args))
 
-(defn- or-values
-  [values]
-  (loop [remaining values
-         result (Datascript_runtime.Data_value.Nil)]
-    (if-some [value (first remaining)]
-      (if (data-value-truthy? value)
-        value
-        (recur (subvec remaining 1) value))
-      result)))
+(defn- or-fn
+  [args]
+  (reduce
+   (fn [_ value]
+     (if (data-value-truthy? value)
+       (reduced value)
+       value))
+   (Datascript_runtime.Data_value.Nil)
+   args))
 
 (defn add-values
   [values]
@@ -744,8 +623,8 @@
          (str
           (Datascript_runtime.Data_value.to_edn_string value)
           " is not ISeqable"))))
-    AndValues (Some (and-values values))
-    OrValues (Some (or-values values))
+    AndValues (Some (and-fn values))
+    OrValues (Some (or-fn values))
     Identical
     (Datascript_runtime.Data_value.identical_value values)
     HashMap
@@ -871,7 +750,7 @@
     ValueType true
     _ false))
 
-(defn apply-differ
+(defn- -differ?
   [values]
   (let [middle (quot (count values) 2)
         left (subvec values 0 middle)
@@ -885,6 +764,10 @@
           (nth left index)
           (nth right index)))
        (range (count left)))))))
+
+(defn apply-differ
+  [values]
+  (-differ? values))
 
 (defn sum-aggregate?
   [function]

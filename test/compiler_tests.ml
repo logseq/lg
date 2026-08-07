@@ -4599,8 +4599,9 @@ let current_datascript_sources () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
-      "test/datascript/lg/annotations.cljc";
+      "test/datascript/lg/annotations.mil";
       "test/datascript/upstream/inline.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/lru.cljc";
@@ -5011,6 +5012,7 @@ let test_current_datascript_filter_protocol_accepts_nominal_callback () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -5475,6 +5477,7 @@ let test_current_datascript_pull_accepts_source_and_closed_runtime_patterns () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -5765,7 +5768,9 @@ let test_current_datascript_pull_api_behaves_on_native () =
 
 let current_datascript_query_only_sources () =
   [
+    "test/datascript/lg/query_types.mil";
     "test/datascript/lg/query_types.cljc";
+    "test/datascript/lg/query.mil";
     "test/datascript/lg/query.cljc";
   ]
   |> List.map (fun path ->
@@ -5803,6 +5808,10 @@ let test_datascript_limit_context_specializes_empty_reduce_vector () =
   in
   let sources =
     [
+      ( "test/datascript/lg/query_types.mil",
+        read_file
+          (Filename.concat (repo_root ())
+             "test/datascript/lg/query_types.mil") );
       ( "test/datascript/lg/query_types.cljc",
         read_file
           (Filename.concat (repo_root ())
@@ -8950,6 +8959,7 @@ let test_current_datascript_transaction_accepts_closed_raw_datoms () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9074,6 +9084,7 @@ let test_current_datascript_transaction_supports_reverse_refs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9181,6 +9192,7 @@ let test_current_datascript_transaction_supports_operation_vectors () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9335,6 +9347,7 @@ let test_current_datascript_transaction_resolves_tempids_and_upserts () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9492,6 +9505,7 @@ let test_current_datascript_transaction_preserves_unique_identity_edges () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9667,6 +9681,7 @@ let test_current_datascript_transaction_resolves_current_tx_and_preserves_order 
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9821,6 +9836,7 @@ let test_current_datascript_transaction_cascades_components () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9969,6 +9985,7 @@ let test_current_datascript_transaction_maintains_tuples () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10101,6 +10118,7 @@ let test_current_datascript_transaction_runs_transaction_functions () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10160,6 +10178,7 @@ let test_current_datascript_transaction_rejects_invalid_inputs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -15143,6 +15162,7 @@ let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
     ]
     |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
@@ -20573,6 +20593,7 @@ let test_doseq_preserves_generic_protocol_collection_elements () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
     ]
     |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
@@ -24925,6 +24946,7 @@ let test_generic_nominals_are_consumed_inside_static_scope () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
     ]
     |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
@@ -25071,6 +25093,7 @@ let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+      "datascript/me/tonsky/persistent_sorted_set.mil";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
     ]
     |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))

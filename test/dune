@@ -616,6 +616,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
@@ -627,6 +628,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
@@ -644,6 +646,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
@@ -655,6 +658,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
@@ -689,6 +693,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
@@ -700,6 +705,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
@@ -717,6 +723,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
@@ -728,6 +735,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
@@ -764,6 +772,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
@@ -775,6 +784,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
@@ -792,6 +802,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
@@ -803,6 +814,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
@@ -839,6 +851,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -850,6 +863,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -867,6 +881,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -878,6 +893,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -898,6 +914,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -909,6 +926,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -956,6 +974,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -967,6 +986,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -984,6 +1004,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -995,6 +1016,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -1015,6 +1037,7 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -1026,6 +1049,7 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -1044,17 +1068,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
@@ -1069,17 +1097,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1105,17 +1137,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
@@ -1130,17 +1166,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1193,10 +1233,11 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1211,10 +1252,11 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1253,19 +1295,24 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
+  datascript/lg/datafy.mil
   datascript/lg/datafy.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1282,19 +1329,24 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/lg/datafy.mil}
    %{dep:datascript/lg/datafy.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1323,19 +1375,24 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
+  datascript/lg/datafy.mil
   datascript/lg/datafy.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
@@ -1351,19 +1408,24 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
+   %{dep:datascript/lg/datafy.mil}
    %{dep:datascript/lg/datafy.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1418,17 +1480,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -1453,17 +1519,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -1502,17 +1572,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -1535,17 +1609,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -1601,17 +1679,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -1671,17 +1753,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -3717,17 +3803,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -3786,17 +3876,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -3969,17 +4063,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4004,17 +4102,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4053,17 +4155,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4086,17 +4192,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4149,17 +4259,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4184,17 +4298,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4233,17 +4351,21 @@
  (deps
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
+  ../datascript/me/tonsky/persistent_sorted_set.mil
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.cljc
+  datascript/lg/annotations.mil
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
+  datascript/lg/built_ins.mil
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
+  datascript/lg/query_types.mil
   datascript/lg/query_types.cljc
+  datascript/lg/query.mil
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4266,17 +4388,21 @@
    --compile-files
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.cljc}
+   %{dep:datascript/lg/annotations.mil}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
+   %{dep:datascript/lg/built_ins.mil}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
+   %{dep:datascript/lg/query_types.mil}
    %{dep:datascript/lg/query_types.cljc}
+   %{dep:datascript/lg/query.mil}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}

@@ -7,30 +7,6 @@
    [datascript.lru :as lru]
    [datascript.parser]))
 
-(type-variant context-resolution
-  (ContextResult :datascript.lg.query-types/result)
-  (ContextSource :datascript.lg.query-types/source)
-  (ContextAggregate
-   :datascript.built-ins/built-in-aggregate-function))
-
-(type-alias collect-row
-  :array<option<datascript.lg.query-types/result>>)
-
-(type-alias rule-arguments
-  :vector<datascript.parser/pattern-element>)
-
-(type-alias rule-call-history
-  :map<string;vector<rule-arguments>>)
-
-(type-record rule-frame
-  (prefix-variable-names :set<string>)
-  (prefix-context :datascript.lg.query-types/context)
-  (clauses :vector<datascript.parser/clause>)
-  (used-args :rule-call-history)
-  (pending-guards :vector<datascript.parser/clause>))
-
-(signature datascript.lg.query/append-rule-clauses
-  :fn<vector<datascript.parser/clause>;vector<datascript.parser/clause>;vector<datascript.parser/clause>>)
 (defn- append-rule-clauses [left right]
   (reduce
    (fn [clauses clause]
@@ -38,8 +14,6 @@
    left
    right))
 
-(signature datascript.lg.query/append-rule-frames
-  :fn<vector<rule-frame>;vector<rule-frame>;vector<rule-frame>>)
 (defn- append-rule-frames [left right]
   (reduce
    (fn [frames frame]
@@ -47,49 +21,18 @@
    left
    right))
 
-(type-alias tuple-getter
-  :fn<array<datascript.lg.query-types/result>;datascript.lg.query-types/result>)
-
-(type-variant tuple-key
-  (SingleTupleKey :datascript.lg.query-types/result)
-  (CompositeTupleKey :vector<datascript.lg.query-types/result>))
-
-(type-alias tuple-key-getter
-  :fn<array<datascript.lg.query-types/result>;tuple-key>)
-
-(type-alias tuple-call
-  :fn<array<datascript.lg.query-types/result>;option<Datascript_runtime.Data_value.t>>)
-
-(type-alias query-cache
-  :datascript.lru/cache-state<Datascript_runtime.Data_value.t;datascript.parser/Query>)
-
-(signature datascript.lg.query/*lookup-attrs*
-  :set<string>)
 (def ^:dynamic *lookup-attrs*
   (set-of :string))
 
-(signature datascript.lg.query/*implicit-source*
-  :option<datascript.db/database-view>)
 (def ^:dynamic *implicit-source*
   None)
 
-(signature datascript.lg.query/*implicit-source-name*
-  :string)
 (def ^:dynamic *implicit-source-name*
   "$")
 
-(signature datascript.lg.query/*query-cache*
-  :query-cache)
 (def ^:dynamic *query-cache*
   (lru/cache 100))
 
-(type-record aggregate-context-state
-  (seen :map<string;bool>)
-  (attrs :map<string;int>)
-  (values :vector<datascript.lg.query-types/result>))
-
-(signature datascript.lg.query/attrs-string
-  :fn<map<string;int>;string>)
 (defn- attrs-string [attrs]
   (str
    "{"
@@ -105,8 +48,6 @@
      (keys attrs)))
    "}"))
 
-(signature datascript.lg.query/intersect-keys
-  :fn<map<string;int>;map<string;int>;set<string>>)
 (defn intersect-keys
   [left right]
   (reduce
@@ -117,8 +58,6 @@
    (set-of :string)
    (keys left)))
 
-(signature datascript.lg.query/same-keys?
-  :fn<map<string;int>;map<string;int>;bool>)
 (defn same-keys?
   [left right]
   (and
@@ -260,9 +199,6 @@
    (aggregate-context-relation context)
    resultset))
 
-(signature datascript.lg.query/binding-source
-  :fn<datascript.parser/binding;string>)
-
 (defn- binding-source
   [binding]
   (if (datascript.parser/binding-ignore? binding)
@@ -301,8 +237,6 @@
    (string/join " " (mapv input-binding-source bindings))
    "]"))
 
-(signature datascript.lg.query/resolve-in
-  :fn<datascript.lg.query-types/context;tuple<datascript.parser/input-binding;datascript.lg.query-types/input>;datascript.lg.query-types/context>)
 (defn resolve-in
   [context binding-and-input]
   (let [binding (tuple-get binding-and-input 0)
@@ -508,9 +442,34 @@
      right]
    (query-types/product-relation left right)))
 
+(defn- sum-rel*
+  [left right]
+  (let [left-attrs (query-types/relation-attrs left)
+        right-attrs (query-types/relation-attrs right)
+        left-rows (query-types/relation-rows left)
+        right-rows (query-types/relation-rows right)
+        indexes (Array.make (count left-attrs) 0)
+        _indexed
+        (reduce-kv
+         (fn [_ignored variable left-index]
+           (aset indexes left-index (get right-attrs variable 0))
+           (Stdlib.ignore 0))
+         (Stdlib.ignore 0)
+         left-attrs)
+        reordered
+        (mapv
+         (fn [row]
+           (query-types/project-row row indexes))
+         right-rows)]
+    (query-types/relation
+     left-attrs
+     (vec (concat left-rows reordered))
+     (query-types/merge-lookup-databases
+      (query-types/relation-lookup-databases left)
+      (query-types/relation-lookup-databases right)))))
+
 (defn sum-rel
-  [left
-    right]
+  [left right]
   (let [left-attrs (query-types/relation-attrs left)
         right-attrs (query-types/relation-attrs right)
         left-rows (query-types/relation-rows left)
@@ -523,13 +482,8 @@
        (query-types/merge-lookup-databases
         (query-types/relation-lookup-databases left)
         (query-types/relation-lookup-databases right)))
-
-      (empty? left-rows)
-      right
-
-      (empty? right-rows)
-      left
-
+      (empty? left-rows) right
+      (empty? right-rows) left
       (not (same-keys? left-attrs right-attrs))
       (Stdlib.invalid_arg
        (str
@@ -537,31 +491,7 @@
         (attrs-string left-attrs)
         " and "
         (attrs-string right-attrs)))
-
-      :else
-      (let [indexes
-            (Array.make (count left-attrs) 0)
-            _indexed
-            (reduce-kv
-             (fn [_ignored  variable  left-index]
-               (aset
-                indexes
-                left-index
-                (get right-attrs variable 0))
-               (Stdlib.ignore 0))
-             (Stdlib.ignore 0)
-             left-attrs)
-            reordered
-            (mapv
-             (fn [row]
-               (query-types/project-row row indexes))
-             right-rows)]
-        (query-types/relation
-         left-attrs
-         (vec (concat left-rows reordered))
-         (query-types/merge-lookup-databases
-          (query-types/relation-lookup-databases left)
-          (query-types/relation-lookup-databases right)))))))
+      :else (sum-rel* left right))))
 
 (defn hash-join
   [left
@@ -660,8 +590,7 @@
         true)
       true)))
 
-(defn-
-  relation-with-attr
+(defn- rel-with-attr
   [context
     variable]
   (loop [relations (query-types/context-relations context)]
@@ -674,10 +603,10 @@
         (recur (subvec relations 1)))
       None)))
 
-(defn- resolve-context-variable
+(defn- context-resolve-val
   [context
     variable]
-  (if-some [relation (relation-with-attr context variable)]
+  (if-some [relation (rel-with-attr context variable)]
     (if-some [row (first (query-types/relation-rows relation))]
       (if-some [result
                 (query-types/relation-result
@@ -693,7 +622,7 @@
 (extend-type datascript.parser/Variable
   IContextResolve
   (-context-resolve [variable context]
-    (resolve-context-variable
+    (context-resolve-val
      context
      (str (.-symbol variable)))))
 
@@ -781,7 +710,7 @@
           (Datascript_runtime.Data_value.to_edn_string
            pattern-element)]
       (if-some [relation
-                (relation-with-attr context variable)]
+                (rel-with-attr context variable)]
         (let [rows (query-types/relation-rows relation)]
           (if (= 1 (count rows))
             (if-some [row (first rows)]
@@ -815,9 +744,6 @@
   (if (< index (count pattern))
     (Some (nth pattern index))
     None))
-
-(signature datascript.lg.query/add-free-pattern-variable
-  :fn<set<string>;option<Datascript_runtime.Data_value.t>;set<string>>)
 
 (defn- add-free-pattern-variable
   [variables pattern-value]
@@ -949,8 +875,6 @@
      (query-types/database-view-source database)
      (substitute-constants context pattern)))))
 
-(signature datascript.lg.query/lookup-pattern-coll
-  :fn<datascript.lg.query-types/context;vector<array<datascript.lg.query-types/result>>;vector<Datascript_runtime.Data_value.t>;datascript.lg.query-types/relation>)
 (defn lookup-pattern-coll
   [context rows pattern]
   (query-types/resolve-relation-pattern
@@ -959,8 +883,6 @@
    (parse-lookup-pattern
     (substitute-constants context pattern))))
 
-(signature datascript.lg.query/lookup-pattern
-  :fn<datascript.lg.query-types/context;datascript.lg.query-types/source;vector<Datascript_runtime.Data_value.t>;datascript.lg.query-types/relation>)
 (defn lookup-pattern
   [context source pattern]
   (match source
@@ -1154,8 +1076,6 @@
            (conj right-remaining right-value))))
       (tuple left-remaining right-remaining))))
 
-(signature datascript.lg.query/query-form-list
-  :fn<vector<Datascript_runtime.Data_value.t>;Datascript_runtime.Data_value.t>)
 (defn- query-form-list
   [values]
   (Datascript_runtime.Data_value.List
@@ -1261,8 +1181,6 @@
    _used-args]
   (expand-rule-branches clause context))
 
-(signature datascript.lg.query/walk-collect
-  :fn<Datascript_runtime.Data_value.t;fn<Datascript_runtime.Data_value.t;bool>;vector<Datascript_runtime.Data_value.t>>)
 (declare walk-collect)
 
 (defn walk-collect
@@ -1400,8 +1318,6 @@
    (tuple [] [])
    guards))
 
-(signature datascript.lg.query/missing-vars
-  :fn<set<string>;vector<string>;set<string>>)
 (defn- missing-vars
   [bound variables]
   (reduce
@@ -1412,8 +1328,6 @@
    (set-of :string)
    variables))
 
-(signature datascript.lg.query/variable-set-string
-  :fn<set<string>;string>)
 (defn- variable-set-string
   [variables]
   (str "#{" (string/join " " (vec variables)) "}"))
