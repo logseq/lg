@@ -94,10 +94,12 @@ file's `ns` form and respects `.gitignore`; qualified-var counts are lexical
 occurrences after alias resolution, so they are a prioritization signal rather
 than a reachability analysis.
 
-The inventory uses `needs-review` deliberately. Completion requires reducing
-that count to zero by classifying each entry as `source-portable`,
-`special-form`, `typed-primitive`, or `host-boundary`, then moving every
-`source-portable` entry out of name-based compiler dispatch. At the current
+The generator pins the reviewed compiler dispatch count and fails when that
+surface changes. Entries are classified as `source-shadowed`,
+`blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
+Completion requires reducing `source-shadowed` to zero by removing its legacy
+name-based compiler fallback, while resolving each static-typing blocker as the
+language gains the required capability, variadic, or higher-order relation. At the current
 checkpoint, the Logseq tree requires `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining

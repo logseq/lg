@@ -18,7 +18,7 @@ EOF
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
 
-awk -F '\t' '$1 == "compiler-call" && $2 == "identity" && $3 == "source-portable" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "identity" && $3 == "source-shadowed" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "+" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "Buffer.t" {found=1} END {exit found}' "$tmp/inventory.tsv"

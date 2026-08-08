@@ -33,23 +33,46 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   "$lg_root/script/extract_ocaml_string_dispatch.ml" "$call_elaborator" \
   >"$tmp/compiler-calls"
 
+dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
+if test "$dispatch_count" -ne 343; then
+  echo "compiler call dispatch changed: expected 343 names, found $dispatch_count" >&2
+  echo "review and classify every added or removed name before updating the count" >&2
+  exit 1
+fi
+
 awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("identity constantly complement comp partial fnil every-pred some-fn juxt not-any? not-every? even? odd? bit-clear bit-flip bit-set bit-test", xs)
-    for (i in xs) portable[xs[i]] = 1
+    split("identity complement not-any? not-every? even? odd? bit-clear bit-flip bit-set bit-test", xs)
+    for (i in xs) shadowed[xs[i]] = 1
+    split("apply assoc-in boolean bounded-count butlast comp concat constantly cycle dedupe distinct doall dorun drop drop-last drop-while every-pred every? ffirst filter filterv fnil fnext get-in group-by interleave interpose into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next nfirst nnext not-empty nthnext nthrest partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest reverse rseq run! select-keys some some-fn sort sort-by split-at split-with take take-last take-nth take-while update-in vals vec zipmap", xs)
+    for (i in xs) blocked[xs[i]] = 1
+    split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
+    for (i in xs) host[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
   }
   {
-    classification = "needs-review"
-    if (special[$0]) classification = "special-form"
-    else if (portable[$0]) classification = "source-portable"
-    else if (primitive[$0]) classification = "typed-primitive"
-    else if ($0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/)
+    classification = "typed-primitive"
+    reason = "static-elaboration-or-minimal-runtime-abi"
+    if (special[$0]) {
+      classification = "special-form"
+      reason = "compiler-owned-syntax-or-control-flow"
+    } else if (shadowed[$0]) {
+      classification = "source-shadowed"
+      reason = "source-stdlib-precedes-legacy-compiler-fallback"
+    } else if (blocked[$0]) {
+      classification = "blocked-static-typing"
+      reason = "requires-variadic-dependent-lazy-or-capability-type-support"
+    } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
       classification = "host-boundary"
-    print "compiler-call\t" $0 "\t" classification
+      reason = "host-interop-or-runtime-effect-boundary"
+    } else if (primitive[$0]) {
+      classification = "typed-primitive"
+      reason = "static-scalar-primitive"
+    }
+    print "compiler-call\t" $0 "\t" classification "\t" reason
   }
 ' "$tmp/compiler-calls"
 
