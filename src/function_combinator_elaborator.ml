@@ -49,8 +49,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         (element_type, apply "List.of_seq" [ sequence ]))
   in
   let compile_function_arg scope env = function
-    | FSymbol name ->
-        lookup_function scope env name |> Result.map require_callable_value
+    | FSymbol name -> (
+        match lookup_binding scope env name with
+        | Ok binding ->
+            let binding = Types.instantiate_binding binding in
+            Ok
+              (typed_ir binding.ty (binding_value_expression binding)
+              |> require_callable_value)
+        | Error _ ->
+            lookup_function scope env name |> Result.map require_callable_value)
     | FKeyword keyword ->
         let dynamic = Types.dynamic_constraint TUnknown in
         let target_name = "__lg_keyword_function_target" in
@@ -410,77 +417,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                       apply "String.concat"
                                         [ Semantic_ir.String " "; texts ];
                                     ])))
-                      | FSymbol ("distinct?" | "clojure.core/distinct?") ->
-                          if
-                            List.for_all
-                              (fun argument ->
-                                Types.equal inner TUnknown
-                                || Types.assignable ~policy:Host_boundary
-                                     ~expected:inner ~actual:argument.ty)
-                              fixed_args
-                          then
-                            let values_expr =
-                              match fixed_args with
-                              | [] -> list_expr
-                              | _ ->
-                                  Semantic_ir.Infix
-                                    ( "@",
-                                      Semantic_ir.List
-                                        (List.map
-                                         (fun argument ->
-                                           argument.semantic_expr)
-                                           fixed_args),
-                                      list_expr )
-                            in
-                            if
-                              Types.is_dynamic inner
-                              || match inner with
-                                 | TUnknown | TMeta _ | TVar _ -> true
-                                 | _ -> false
-                            then
-                              let equality =
-                                if Types.is_dynamic inner then
-                                  "Lg_runtime.Runtime_dynamic.equal"
-                                else
-                                  "Lg_runtime.Runtime_static_value.equal"
-                              in
-                              Ok
-                                (typed_ir TBool
-                                   (apply
-                                      "Lg_runtime.Runtime_seq.all_distinct"
-                                      [
-                                        Semantic_ir.Ident equality;
-                                        values_expr;
-                                      ]))
-                            else
-                              Ok
-                                (typed_ir TBool
-                                   (Semantic_ir.Let
-                                    ( [
-                                        ( Semantic_ir.PVar
-                                            "__lg_apply_values",
-                                          values_expr );
-                                      ],
-                                        Semantic_ir.Infix
-                                          ( "=",
-                                            apply "List.length"
-                                            [
-                                              apply "List.sort_uniq"
-                                                [
-                                                  Semantic_ir.Ident
-                                                      "Stdlib.compare";
-                                                    Semantic_ir.Ident
-                                                      "__lg_apply_values";
-                                                ];
-                                            ],
-                                            apply "List.length"
-                                            [
-                                              Semantic_ir.Ident
-                                                "__lg_apply_values";
-                                            ] ) )))
-                          else
-                            Error.error
-                              "apply distinct? arguments must have the same type"
                       | _ -> (
                         match compile_function_arg scope env fn_form with
                         | Error _ as err -> err

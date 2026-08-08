@@ -133,7 +133,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 148 source entries (17.31%), 175 typed
+macro surfaces. The current baseline is 151 source entries (17.66%), 172 typed
 primitives, 5 special forms, 12 host boundaries, 160 static-typing blockers,
 44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -157,10 +157,10 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 271-name compiler dispatch inventory has zero `source-shadowed`
+The current 268-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, `reduced`, `reset-vals!`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
-`subs`, `int-to-string-radix`, `any?`, `range`, `shuffle`, `alength`, `acopy`,
+`subs`, `int-to-string-radix`, `any?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
 `bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
@@ -168,7 +168,7 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
 `parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, `NaN?`,
 `infinite?`, `keyword-identical?`, `symbol-identical?`, `hash-long`,
-`special-symbol?`, and the
+`special-symbol?`, `distinct?`, `not=`, and the
 derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires

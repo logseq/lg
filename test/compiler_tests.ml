@@ -1190,7 +1190,7 @@ let test_nil_equality_accepts_annotated_options () =
        (= (:value missing) (:value present))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nil_equality_accepts_annotated_options"
     "true:true:false:true:true:true:false\n" ocaml_source
 
@@ -14262,11 +14262,11 @@ let test_special_float_literals_are_portable () =
 (println (str (pr-str ##Inf) ":" (pr-str ##-Inf) ":" (pr-str ##NaN)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "special_float_literals_are_portable"
     "true:true:true:true\n##Inf:##-Inf:##NaN\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_numeric_equality_rejects_dynamic_parameters () =
   Lg.Compiler.compile_string
@@ -14315,7 +14315,7 @@ let test_float_numeric_core_is_coherent () =
        (compare 1.0 2.0) ":" (distinct? 1.0 2.0 1.0)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "float_numeric_core_is_coherent"
     "2.:true:true:true:true:true:false:true:true:true:3.:1.5:-1:false\n"
     ocaml_source
@@ -19789,13 +19789,13 @@ let test_not_equal_core_api () =
               (not= true true false) ":" (not= 1)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "not_equal_core_api" "true:false:true:true:false\n"
     ocaml_source
 
 let test_not_equal_rejects_mixed_types () =
-  Lg.Compiler.compile_string {|(def x (not= 1 "1"))|}
-  |> expect_error "not= arguments must have the same type: int, string"
+  compile_string_with_stdlib {|(def x (not= 1 "1"))|}
+  |> expect_error_contains "not= called with incompatible arguments"
 
 let test_collection_equality_core_api () =
   let source =
@@ -19810,7 +19810,7 @@ let test_collection_equality_core_api () =
               (= ada ada2) ":" (not= ada grace)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "collection_equality_core_api"
     "true:false:true:true:true:true:true\n" ocaml_source
 
@@ -29702,7 +29702,7 @@ let test_apply_distinct_accepts_generic_seqable_values () =
 (println (all-distinct? (list 1 2 1)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "apply_distinct_accepts_generic_seqable_values"
     "true\nfalse\n" ocaml_source
 
@@ -29721,11 +29721,11 @@ let test_apply_distinct_handles_statically_typed_protocol_values () =
 (println (all-distinct? (Holder. [(Box. 1) (Box. 1)])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "apply_distinct_handles_statically_typed_protocol_values"
     "true\nfalse\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_apply_calls_overloaded_functions_with_static_arguments () =
   let source =

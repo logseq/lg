@@ -237,3 +237,25 @@
 (println (special-symbol? (symbol "if")))
 (println (special-symbol? (symbol "set!")))
 (println (not (clojure.core/special-symbol? (symbol "ordinary"))))
+
+(def original-array (array 1 2 3))
+(def cloned-array (aclone original-array))
+(aset cloned-array 0 9)
+(println (= 1 (aget original-array 0)))
+(println (= 9 (aget cloned-array 0)))
+(println (not (identical? original-array cloned-array)))
+
+(println (distinct? 1))
+(println (distinct? 1 2))
+(println (not (distinct? 1 1)))
+(println (distinct? 1 2 3 4 5))
+(println (not (core/distinct? "a" "b" "a")))
+
+(println (not (not= 1)))
+(println (not= 1 2))
+(println (not (not= 1 1)))
+(println (not= 1 1 2 1))
+(println (not (clojure.core/not= "same" "same" "same")))
+(let [same-fn (fn [value] value)]
+  (println (not (not= same-fn same-fn))))
+(println (not= (fn [value] value) (fn [value] value)))

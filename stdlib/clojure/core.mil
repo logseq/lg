@@ -29,6 +29,8 @@
   :fn<seqable<value>;vector<value>>)
 (signature clojure.core/alength [array-element]
   :fn<array<array-element>;int>)
+(signature clojure.core/aclone [array-element]
+  :fn<array<array-element>;array<array-element>>)
 (signature clojure.core/acopy [array-element]
   :fn<array<array-element>;int;int;array<array-element>;int;unit>)
 (signature clojure.core/aslice [array-element]
@@ -145,6 +147,12 @@
 
 (signature clojure.core/distinct [value]
   :fn<seqable<value>;list<value>>)
+
+(signature clojure.core/distinct? [value]
+  :overload<fn<value;bool>;fn<value;value;bool>;variadic-fn<value;value;value;bool>>)
+
+(signature clojure.core/not= [value]
+  :overload<fn<value;bool>;fn<value;value;bool>;variadic-fn<value;value;value;bool>>)
 
 (signature clojure.core/zipmap [key value]
   :fn<seqable<key>;seqable<value>;map<key;value>>)

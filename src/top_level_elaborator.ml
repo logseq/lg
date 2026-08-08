@@ -2662,6 +2662,7 @@ let rec compile scope env next_type = function
                 Types.binding ~overload_targets:targets
                   ~overload_row_param_types ocaml_name
                   prepared.expr.ty
+                |> Types.generalize_binding
               in
               let binding, value_item =
                 if

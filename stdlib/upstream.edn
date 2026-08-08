@@ -128,6 +128,8 @@
              :reason :source-wrapper-preserves-the-upstream-seqable-to-vector-contract-through-a-typed-fisher-yates-runtime-primitive}
     alength {:status :static-adaptation
              :reason :source-wrapper-for-the-upstream-public-array-length-api-through-a-polymorphic-typed-runtime-primitive}
+    aclone {:status :static-adaptation
+            :reason :source-wrapper-preserves-upstream-array-clone-semantics-through-a-polymorphic-typed-runtime-copy-primitive-because-static-arrays-require-an-initial-element}
     acopy {:status :static-adaptation
            :reason :lg-static-array-compatibility-helper-over-a-polymorphic-typed-runtime-blit-primitive}
     aslice {:status :static-adaptation
@@ -178,6 +180,10 @@
             :reason :composed-from-partition-by-and-map-with-static-indexed-group-access}
     distinct {:status :static-adaptation
               :reason :preserves-existing-eager-static-semantics-with-a-typed-seen-set}
+    distinct? {:status :static-adaptation
+               :reason :preserves-upstream-one-two-and-variadic-seen-set-control-flow-with-homogeneous-static-values}
+    not= {:status :static-adaptation
+          :reason :preserves-upstream-one-two-and-variadic-equality-semantics-without-erasing-the-homogeneous-static-value-type}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
     key {:status :static-adaptation

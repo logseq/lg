@@ -3218,7 +3218,7 @@ let rec compile_record_iequiv_pair scope env left right =
   | Some _ -> Error.error "IEquiv/-equiv has an invalid signature"
   | None -> Ok None
 
-let compile_equality scope env name args =
+let compile_equality scope env args =
   let compile_pair left right =
     let fallback () = Core_compare.compile ~env "=" [ left; right ] in
     let metadata_pair metadata other =
@@ -3253,15 +3253,7 @@ let compile_equality scope env name args =
         dynamic_pair right left
       else fallback ()
     in
-    match result with
-    | Error error
-      when name = "not=" && String.starts_with ~prefix:"=" error.message ->
-        Error
-          {
-            error with
-            message = "not=" ^ String.sub error.message 1 (String.length error.message - 1);
-          }
-    | result -> result
+    result
   in
   let rec pairs expressions = function
     | left :: ((right :: _) as rest) ->
@@ -3275,14 +3267,12 @@ let compile_equality scope env name args =
     | _ -> Ok (List.rev expressions)
   in
   match args with
-  | [] | [ _ ] ->
-      Ok (typed_ir TBool (Semantic_ir.Bool (name <> "not=")))
+  | [] | [ _ ] -> Ok (typed_ir TBool (Semantic_ir.Bool true))
   | _ ->
       Result.map
         (fun expressions ->
           let equal = Core_compare.and_expressions expressions in
-          typed_ir TBool
-            (if name = "not=" then Semantic_ir.Prefix ("not", equal) else equal))
+          typed_ir TBool equal)
         (pairs [] args)
 
 let adapt_protocol_witness_result env ~expected ~actual expression =
@@ -4125,7 +4115,6 @@ let create ~compile_expr =
   let compile_partial = functions.compile_partial in
   let compile_predicate_combinator = functions.compile_predicate_combinator in
   let compile_juxt = functions.compile_juxt in
-  let compile_distinct_question = comparisons.compile_distinct_question in
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
@@ -7032,29 +7021,6 @@ let create ~compile_expr =
                                     ]))
             | None -> Error.error (name ^ " expects an OCaml array")))
         | Ok _ -> Error.error (name ^ " expects 3 arguments"))
-    | "aclone" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
-                      Ok
-                        {
-                          array with
-                          semantic_expr = apply "Array.copy" [ semantic_expr ];
-                        }
-        | Ok [ { ty = TUnknown; semantic_expr; _ } ] ->
-            Ok
-              (typed_ir (TArray TUnknown)
-                 (apply "Array.copy" [ semantic_expr ]))
-        | Ok [ ({ ty; _ } as argument) ]
-          when Types.is_dynamic ty ->
-            let dynamic = Types.dynamic_constraint TUnknown in
-            Result.map
-              (fun value ->
-                typed_ir dynamic
-                  (apply "Lg_runtime.Runtime_dynamic.array_copy" [ value ]))
-              (pack_dynamic_value env dynamic argument)
-        | Ok [ _ ] -> Error.error "aclone expects an OCaml array"
-        | Ok _ -> Error.error "aclone expects 1 argument")
     | "array?" | "array-value?" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8019,14 +7985,14 @@ let create ~compile_expr =
                         (swap_name
                        ^ " expects a reference, function, and optional \
                           arguments"))
-    | "=" | "==" | "not=" | "<" | "<=" | ">" | ">=" -> (
+    | "=" | "==" | "<" | "<=" | ">" | ">=" -> (
         match
           compile_args_for scope (Env.with_expected_type None env) arg_forms
         with
         | Error _ as err -> err
         | Ok args ->
             let symbol_equality =
-              (name = "=" || name = "not=")
+              name = "="
               && List.exists
                    (fun arg ->
                      Option.is_some
@@ -8078,9 +8044,7 @@ let create ~compile_expr =
               in
               Ok
                 (typed_ir TBool
-                   (if name = "not=" then
-                      Semantic_ir.Prefix ("not", equal)
-                    else equal))
+                   equal)
             else
             if
               name = "=="
@@ -8114,7 +8078,7 @@ let create ~compile_expr =
                 concrete_args <> []
                 && List.for_all (fun arg -> Types.is_numeric arg.ty) concrete_args
                 &&
-                ( not (name = "=" || name = "not=")
+                (name <> "="
                 || List.length concrete_args = List.length args )
               then if
                 name = "=="
@@ -8134,7 +8098,7 @@ let create ~compile_expr =
               else None
             in
             let dynamic_equality =
-              (name = "=" || name = "not=")
+              name = "="
               && List.exists
                    (fun arg ->
                      Types.is_dynamic arg.ty
@@ -8192,8 +8156,8 @@ let create ~compile_expr =
             in
             Result.bind (adapt [] args)
               (fun args ->
-                if name = "=" || name = "not=" then
-                  compile_equality scope env name args
+                if name = "=" then
+                  compile_equality scope env args
                 else
                   Core_compare.compile ~env
                     (if name = "==" then "=" else name)
@@ -8918,7 +8882,6 @@ let create ~compile_expr =
                   compile_predicate_combinator scope env "every-pred" arg_forms
     | "some-fn" -> compile_some_fn scope env arg_forms
     | "juxt" -> compile_juxt scope env arg_forms
-    | "distinct?" -> compile_distinct_question scope env arg_forms
     | "compare" -> compile_compare scope env arg_forms
     | "ordering-compare" -> (
         match compile_compare scope env arg_forms with

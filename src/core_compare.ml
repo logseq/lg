@@ -14,7 +14,7 @@ let static_sequence_equal left right =
       [ Semantic_ir.Ident "="; left; right ] )
 
 let requires_runtime_equality = function
-  | TUnknown | TOcaml "value" -> true
+  | TUnknown | TMeta _ | TVar _ | TOcaml "value" -> true
   | _ -> false
 
 let sequential_type = function

@@ -101,6 +101,9 @@
 (defn alength [values]
   (runtime-array/length values))
 
+(defn aclone [arr]
+  (runtime-array/copy arr))
+
 (defn acopy [source source-start source-end target target-start]
   (runtime-array/copy-range source source-start source-end target target-start))
 
@@ -367,6 +370,40 @@
                        (next remaining))))
             (reverse result))))
       (list))))
+
+(defn distinct?
+  ([_x]
+   true)
+  ([x y]
+   (not (= x y)))
+  ([x y & more]
+   (if (not (= x y))
+     (loop [seen (hash-set x y)
+            remaining more]
+       (if remaining
+         (let [item (nth remaining 0)]
+           (if (contains? seen item)
+             false
+             (recur (conj seen item) (next remaining))))
+         true))
+     false)))
+
+(defn not=
+  ([_x]
+   false)
+  ([x y]
+   (not (= x y)))
+  ([x y & more]
+   (if (not (= x y))
+     true
+     (loop [previous y
+            remaining more]
+       (if remaining
+         (let [current (nth remaining 0)]
+           (if (= previous current)
+             (recur current (next remaining))
+             true))
+         false)))))
 
 (defn zipmap [keys values]
   (loop [result {}

@@ -1,7 +1,5 @@
 let equal left right =
-  left == right
-  ||
-  try left = right with Invalid_argument _ -> false
+  try left = right with Invalid_argument _ -> left == right
 
 let hash value = Hashtbl.hash value
 

@@ -1140,11 +1140,6 @@ let rec inferred_form_type params = function
   | FList [ FSymbol operation; _ ]
     when String.equal operation "Array.length" ->
       TInt
-  | FList [ FSymbol operation; FSymbol array ]
-    when has_source_name operation "aclone" -> (
-      match string_assoc_opt array params with
-      | Some (TArray _ as ty) | Some (TOcaml_app ("array", [ _ ]) as ty) -> ty
-      | Some _ | None -> TArray TUnknown)
   | FList (FSymbol operation :: _)
     when has_source_name operation "array-binary-search-left"
          || has_source_name operation "array-binary-search-right" ->
@@ -2687,7 +2682,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Ok [ (spec : Destructure.param_spec) ] when spec.destructured ->
             let names = Destructure.pattern_names spec.pattern in
             let rec compares = function
-              | FList (FSymbol ("=" | "not=") :: operands) ->
+              | FList (FSymbol "=" :: operands) ->
                   List.length operands >= 2
                   && List.for_all
                        (function
@@ -4438,8 +4433,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | None -> infer_map ())
         | None -> infer_map ())
     | FList [ FSymbol operation; FSymbol array ]
-      when String.equal operation "Array.length"
-           || has_source_name operation "aclone" ->
+      when String.equal operation "Array.length" ->
         let element_ty =
           match string_assoc_opt array params with
           | Some (TArray element_ty | TOcaml_app ("array", [ element_ty ])) ->
@@ -5174,7 +5168,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           else TInt
         in
         infer_expected_all expected_ty params args
-    | FList (FSymbol ("=" | "not=") :: args) ->
+    | FList (FSymbol "=" :: args) ->
         let expected_ty =
           let concrete =
             args
@@ -5800,7 +5794,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             let equality_first_locals =
               let rec collect locals = function
-                | FList (FSymbol ("=" | "not=") :: operands) ->
+                | FList (FSymbol "=" :: operands) ->
                     List.fold_left
                       (fun locals -> function
                         | FList

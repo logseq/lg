@@ -12,7 +12,7 @@ done
 
 for name in \
   identity complement boolean not reduced reset-vals! subs int-to-string-radix any? range shuffle \
-  alength acopy aslice aconcat array-to-seq array-to-rseq quot rem mod \
+  alength aclone acopy aslice aconcat array-to-seq array-to-rseq quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
   unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int \
@@ -20,7 +20,7 @@ for name in \
   second last \
   even? odd? every? ffirst fnext nfirst nnext not-any? not-every? \
   split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap \
-  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean splitv-at \
+  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean splitv-at distinct? not= \
   booleans bytes chars shorts ints floats doubles longs random-uuid parse-uuid system-time parse-long parse-double merge-with \
   NaN? infinite? keyword-identical? symbol-identical? hash-long special-symbol? \
   bit-clear bit-flip bit-set bit-test; do

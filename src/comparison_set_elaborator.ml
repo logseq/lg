@@ -10,7 +10,6 @@ type forms = Ast.form list -> expression_result
 type env_forms = Env.t -> Ast.form list -> expression_result
 
 type t = {
-  compile_distinct_question : call;
   compile_compare : call;
   compile_hash_set : call;
   compile_set_of : env_forms;
@@ -46,28 +45,7 @@ let create ~compile_expr =
       "compare expects one concrete comparable type; define a closed sum type \
        and match its cases explicitly for a heterogeneous domain"
   in
-    let compile_distinct_question scope env arg_forms =
-      match compile_args_for scope env arg_forms with
-      | Error _ as err -> err
-      | Ok ([] | [ _ ]) -> Ok (typed_ir TBool (Semantic_ir.Bool true))
-      | Ok (first :: _ as args) ->
-          if List.for_all (fun arg -> Types.equal first.ty arg.ty) args then
-            Ok
-              (typed_ir TBool
-                 (Semantic_ir.Infix
-                    ( "=",
-                      apply "List.length"
-                      [
-                        apply "List.sort_uniq"
-                          [
-                            Semantic_ir.Ident "compare";
-                            Semantic_ir.List
-                              (List.map (fun arg -> arg.semantic_expr) args);
-                          ];
-                      ],
-                      Semantic_ir.Int (List.length args) )))
-          else Error.error "distinct? arguments must have the same type"
-    and compile_compare scope env arg_forms =
+    let compile_compare scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ left; right ] ->
@@ -237,7 +215,6 @@ let create ~compile_expr =
       | [] -> Error.error "disj expects a set"
   in
   {
-    compile_distinct_question;
     compile_compare;
     compile_hash_set;
     compile_set_of;

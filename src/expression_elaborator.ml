@@ -1498,7 +1498,8 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                   | _ -> (
                       match List.nth_opt current_arity.fixed_params index with
                       | Some ty
-                        when not
+                        when Option.is_some signature
+                             || not
                                (match ty with
                                | TUnknown | TMeta _ | TVar _ -> true
                                | _ -> false) ->
