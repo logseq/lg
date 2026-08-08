@@ -1158,10 +1158,6 @@ let lookup_function scope env name =
                       ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | ("<" | "<=" | ">" | ">=") as operator ->
           Ok (static_int_comparison operator)
-      | "inc" ->
-          Ok (static_int_function [ TInt ] TInt "int_inc")
-      | "dec" ->
-          Ok (static_int_function [ TInt ] TInt "int_dec")
       | "max" -> Ok (static_int_function [ TInt; TInt ] TInt "int_max")
       | "min" -> Ok (static_int_function [ TInt; TInt ] TInt "int_min")
       | "zero?" -> Ok (static_int_function [ TInt ] TBool "int_zero")

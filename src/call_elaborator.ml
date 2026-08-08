@@ -7251,16 +7251,6 @@ let create ~compile_expr =
               match Core_int.expect_int_args name args with
               | Error _ as err -> err
                         | Ok () -> assert false))
-    | "inc" ->
-        compile_int_unary_call scope env name
-                    (fun expression ->
-                      Semantic_ir.Infix ("+", expression, Semantic_ir.Int 1))
-          arg_forms
-    | "dec" ->
-        compile_int_unary_call scope env name
-                    (fun expression ->
-                      Semantic_ir.Infix ("-", expression, Semantic_ir.Int 1))
-          arg_forms
     | "rand" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8416,10 +8406,6 @@ let create ~compile_expr =
                   match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_int.compile_variadic_bitwise name args)
-    | "bit-not" ->
-        compile_int_unary_call scope env name
-          (fun expression -> Semantic_ir.Prefix ("lnot", expression))
-          arg_forms
               | "bit-shift-left" | "bit-shift-right" -> (
                   match compile_args () with
         | Error _ as err -> err
@@ -9011,17 +8997,6 @@ let create ~compile_expr =
                             | _ -> typed_ir return_ty expression)
                           (Ocaml_signature.result_after_application signature
                              argument_types)))))
-  and compile_int_unary_call scope env name build_code arg_forms =
-    match compile_args_for scope env arg_forms with
-    | Error _ as err -> err
-    | Ok [ arg ] when Types.is_dynamic arg.ty -> (
-        match dynamic_unpack env TInt arg.semantic_expr with
-        | Error _ as error -> error
-        | Ok semantic_expr ->
-            Core_int.compile_unary name
-              [ { arg with ty = TInt; semantic_expr } ]
-              build_code)
-    | Ok args -> Core_int.compile_unary name args build_code
   and compile_boolean_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err

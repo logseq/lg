@@ -127,7 +127,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
           "__lg_dotimes_index_" ^ string_of_int !dotimes_counter
         else index_name
       in
-      let next_index = FList [ FSymbol "inc"; FSymbol loop_index_name ] in
+      let next_index =
+        FList [ FSymbol "+"; FSymbol loop_index_name; FInt 1 ]
+      in
       let recur = FList [ FSymbol "recur"; next_index ] in
       let body = FList (FSymbol "do" :: body_forms @ [ recur ]) in
       compile_expr scope env

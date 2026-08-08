@@ -1492,7 +1492,7 @@ let test_condp_selects_first_match_and_evaluates_target_once () =
 (println (str result ":" (deref calls)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "condp_selects_first_match_and_evaluates_target_once"
     "two:1\n" ocaml_source
 
@@ -2295,11 +2295,11 @@ let test_deferred_named_record_fields_receive_body_constraints () =
     read_file
       (Filename.concat (repo_root ()) "test/datascript/upstream/lru.cljc")
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_compiles
     "deferred_named_record_fields_receive_body_constraints" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_typed_ir_preserves_explicit_boundary_operations () =
   let open Lg.Types in
@@ -3790,8 +3790,8 @@ let test_compiler_phases_have_explicit_boundaries () =
             Lg.Call_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
           in
-        operations.compile_call "" Lg.Compiler_environment.empty "inc"
-          [ Lg.Ast.FInt 1 ]
+        operations.compile_call "" Lg.Compiler_environment.empty "+"
+          [ Lg.Ast.FInt 1; Lg.Ast.FInt 1 ]
           |> expect_ok
         in
         if call.ty <> Lg.Types.TInt then
@@ -3821,11 +3821,11 @@ let test_compiler_phases_have_explicit_boundaries () =
                 Ok value.Lg.Types.semantic_expr)
           in
         operations.compile_comp "" Lg.Compiler_environment.empty
-          [ Lg.Ast.FSymbol "inc" ]
+          [ Lg.Ast.FSymbol "zero?" ]
           |> expect_ok
         in
       (match composed.ty with
-      | Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt) -> ()
+      | Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TBool) -> ()
       | _ ->
         failwith "core higher-order call elaboration should have one owner";
       );
@@ -3847,8 +3847,8 @@ let test_compiler_phases_have_explicit_boundaries () =
         if calls != context.calls then
           failwith "call elaboration should be initialized once";
         let result =
-          calls.compile_call "" Lg.Compiler_environment.empty "inc"
-            [ Lg.Ast.FInt 1 ]
+          calls.compile_call "" Lg.Compiler_environment.empty "+"
+            [ Lg.Ast.FInt 1; Lg.Ast.FInt 1 ]
           |> expect_ok
         in
         if result.ty <> Lg.Types.TInt then
@@ -4247,7 +4247,7 @@ let expect_source_id_at_text filename source analysis text =
 let test_source_node_identity_covers_recursive_bindings () =
   let filename = "recursive-identity.cljc" in
   let source =
-    "(defn countdown [^:int n] :int\n  (if (= n 0) 0 (countdown (dec n))))"
+    "(defn countdown [^:int n] :int\n  (if (= n 0) 0 (countdown (- n 1))))"
   in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "countdown"
@@ -4324,8 +4324,8 @@ let test_source_node_identity_covers_match_bindings () =
 let test_source_node_identity_covers_loop_bindings () =
   let filename = "loop-identity.cljc" in
   let source =
-    "(def result (loop [counter 0] (if (= counter 2) counter (recur (inc \
-     counter)))))"
+    "(def result (loop [counter 0] (if (= counter 2) counter (recur (+ \
+     counter 1)))))"
   in
   let analysis = Lg.Language_service.analyze ~filename source |> expect_ok in
   expect_source_id_at_text filename source analysis "counter"
@@ -4771,11 +4771,11 @@ let test_named_fn_is_locally_recursive () =
 (println (= 0 (countdown 5)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "named_fn_is_locally_recursive" "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
-  Lg.Compiler.compile_string
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib
     {|
 (def value (fn private-name [x] x))
 (def leaked private-name)
@@ -5098,7 +5098,7 @@ let test_referred_update_supports_threaded_nested_calls () =
   (:refer-clojure :exclude [update]))
 (defn increment [value]
   (if-some [value value]
-    (inc value)
+    (+ value 1)
     1))
 (defn add-values [report]
   (-> report
@@ -5515,11 +5515,11 @@ let test_loop_keeps_protocol_evidence_with_nominal_state () =
 (println (.-value (add-values (Database. 7))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_keeps_protocol_evidence_with_nominal_state" "7\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_dynamic_var_uses_concrete_generic_alias_signature () =
   let provider =
@@ -11145,11 +11145,11 @@ let test_nth_supports_active_transient_vectors () =
     (catch (Invalid_argument _) "inactive")))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nth_supports_active_transient_vectors"
     "9:2:3\ninactive\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_volatile_transient_maps_specialize_from_vswap () =
   let source =
@@ -11170,11 +11170,11 @@ let test_volatile_transient_maps_specialize_from_vswap () =
 (println (build-index))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "volatile_transient_maps_specialize_from_vswap"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nth_rejects_non_integer_indexes () =
   let source =
@@ -11341,7 +11341,7 @@ let test_dynamic_named_record_packing_is_rejected_incrementally () =
 (defrecord Pair [^:int left ^:int right])
 (def calls (atom 0))
 (defn make-pair ^Pair []
-  (swap! calls inc)
+  (swap! calls (fn [value] (+ value 1)))
   (Pair. 1 2))
 |}
     |> expect_ok
@@ -11436,15 +11436,15 @@ let test_dotimes_evaluates_bounds_once_and_returns_nil () =
 (def runs (atom 0))
 (def values (make-array 3 0))
 (defn limit []
-  (swap! evaluations inc)
+  (swap! evaluations (fn [value] (+ value 1)))
   3)
 (def result
   (dotimes [index (limit)]
     (aset values index index)))
 (dotimes [_ 0]
-  (swap! runs inc))
+  (swap! runs (fn [value] (+ value 1))))
 (dotimes [_ -2]
-  (swap! runs inc))
+  (swap! runs (fn [value] (+ value 1))))
 (println
   (str
     (= 0 (aget values 0)) ":"
@@ -11744,12 +11744,12 @@ let test_forward_declared_mutual_recursion_reuses_stabilized_signatures () =
 (println (dispatch 3))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "forward_declared_mutual_recursion_reuses_stabilized_signatures" "3\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_fnil_wraps_core_conj_with_default_collection () =
   let source =
@@ -13708,11 +13708,11 @@ let test_custom_compare_and_set_dispatches () =
     @evaluations))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "custom_compare_and_set_dispatches"
     "true:2:false:2:4:4:5:5:7:7:14:14:24:24:1\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_custom_atom_protocol_rejects_invalid_reset_value () =
   let source =
@@ -14153,7 +14153,7 @@ let test_match_tuple_positions_remain_distinct_through_recur () =
 (println (:value (run (record state (value 1)) [Keep Increment])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "match_tuple_positions_remain_distinct_through_recur"
     "2\n" ocaml_source
 
@@ -14222,11 +14222,11 @@ let test_fn_predicate_recognizes_static_functions () =
 (println (fn? (:f boxed)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "fn_predicate_recognizes_static_functions" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_refs_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def value (deref 42))|}
@@ -14638,7 +14638,7 @@ let test_recursive_variants_support_callback_results () =
      _ 0)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_variants_support_callback_results" "42\n"
     ocaml_source
 
@@ -14883,12 +14883,12 @@ let test_recursive_option_array_return_is_inferred_from_static_branches () =
     (some? (collect 1 1))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "recursive_option_array_return_is_inferred_from_static_branches"
     "true:true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_typed_recursive_functions_require_valid_signatures () =
   let inferred =
@@ -15327,11 +15327,11 @@ let test_future_call_returns_a_realized_derefable_value () =
 (println (= 1 @calls))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "future_call_returns_a_realized_derefable_value"
     "true\n42\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_delay_is_lazy_memoized_and_derefable () =
   let source =
@@ -15347,11 +15347,11 @@ let test_delay_is_lazy_memoized_and_derefable () =
 (println (= 1 @calls))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "delay_is_lazy_memoized_and_derefable"
     "true\n42\n42\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_multi_arity_defn_dispatches_variadic_fallback () =
   let source =
@@ -15660,7 +15660,7 @@ let test_private_defn_supports_single_and_typed_recursive_arities () =
 (println (str (add-one 41) ":" (factorial 5)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "private_defn_supports_single_and_typed_recursive_arities"
     "42:120\n" ocaml_source
 
@@ -16521,7 +16521,7 @@ let test_generic_protocol_witness_evaluates_receiver_once () =
 (println (str (satisfies? Labelled (make-value)) ":" (deref calls)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_protocol_witness_evaluates_receiver_once"
     "true:1\n" ocaml_source
 
@@ -16690,11 +16690,11 @@ let test_loop_nil_initial_value_can_become_optional () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_nil_initial_value_can_become_optional" "ok\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_bindings_accept_prefix_type_hints () =
   let source =
@@ -16709,11 +16709,11 @@ let test_loop_bindings_accept_prefix_type_hints () =
 (println (.-value result))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_bindings_accept_prefix_type_hints" "2\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_nil_initial_value_accepts_nullable_function_returns () =
   let source =
@@ -16729,9 +16729,9 @@ let test_loop_nil_initial_value_accepts_nullable_function_returns () =
 (Stdlib.ignore (collect-values))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore (compile_string_with_stdlib source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_forward_declared_deftype_fields_keep_nominal_receiver () =
   let source =
@@ -18017,7 +18017,7 @@ let test_recursive_protocol_frame_stacks_require_sum_elements () =
   |> expect_error_contains "define a closed sum type"
 
 let test_deep_recursive_protocol_frame_stacks_require_sum_elements () =
-  Lg.Compiler.compile_string
+  compile_string_with_stdlib
     {|
 (defprotocol IFrame
   (-merge [this result])
@@ -18834,10 +18834,10 @@ let test_macros_iterate_literal_map_entries () =
 (println (:answer (increment-map {:answer 41})))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "macros_iterate_literal_map_entries" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_compare_rejects_dynamic_scalar_domains () =
   Lg.Compiler.compile_string
@@ -19054,11 +19054,11 @@ let test_native_and_melange_language_integers_use_ocaml_int () =
 (println (str (next-tx tx0) ":" txmax))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "native_and_melange_language_integers_use_ocaml_int"
     "536870913:2147483647\n" native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   List.iter
     (fun generated ->
@@ -19095,7 +19095,7 @@ let test_callable_expressions_are_evaluated_once () =
 (println (str result ":" (deref calls)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "callable_expressions_are_evaluated_once" "42:1\n"
     ocaml_source
 
@@ -20082,7 +20082,7 @@ let test_map_merge_update_and_select_keys () =
 (println (str (:name selected) ":" (:admin? selected) ":" (:age updated) ":" (count selected)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "map_merge_update_and_select_keys" "Ada:true:38:2\n"
     ocaml_source
 
@@ -20457,14 +20457,14 @@ let test_assoc_updates_optional_static_map_record_fields () =
 (println (next-value 41))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_updates_optional_static_map_record_fields"
     "true\ntrue\n42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_threaded_forms_accumulate_record_fields () =
   let source =
@@ -20711,13 +20711,13 @@ let test_nullable_record_constraints_merge_across_branches () =
 (println (inc (use-storage storage)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nullable_record_constraints_merge_across_branches" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_named_record_inference_keeps_distinct_host_wrappers () =
   let source =
@@ -20814,7 +20814,8 @@ let test_update_supports_vector_indexes () =
   assert_ocaml_runs "update_supports_vector_indexes" "[1 42 3]\n" ocaml_source
 
 let test_update_rejects_vector_index_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (update [1 2] "0" inc))|}
+  Lg.Compiler.compile_string
+    {|(def x (update [1 2] "0" (fn [value] (+ value 1))))|}
   |> expect_error "update vector index must be int"
 
 let test_select_keys_ignores_unknown_fields () =
@@ -20996,12 +20997,27 @@ let test_seqable_predicate_checks_closed_sum_values () =
 let test_batched_core_functions_reject_non_int_arguments () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_zero.cljc"
     {|(def x (zero? "0"))|}
-  |> expect_error "expected int arguments for zero?"
+  |> expect_error "expected int arguments for zero?";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_inc.cljc"
+    {|(def x (inc "0"))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_not.cljc"
+    {|(def x (bit-not "0"))|}
+  |> expect_error_contains "called with incompatible arguments"
 
 let test_batched_core_functions_reject_bad_arities () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_quot.cljc"
     {|(def x (quot 1))|}
-  |> expect_error_contains "expected (int, int), got (int)"
+  |> expect_error_contains "expected (int, int), got (int)";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_inc_arity.cljc"
+    {|(def x (inc))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_dec_arity.cljc"
+    {|(def x (dec 1 2))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_not_arity.cljc"
+    {|(def x (bit-not))|}
+  |> expect_error_contains "called with incompatible arguments"
 
 let test_batched_core_functions_infer_int_params () =
   let source =
@@ -22068,11 +22084,11 @@ let test_mapv_maps_static_vectors_directly () =
 (println (str (= values [1 2 3 4]) ":" (= mapped [2 3 4 5])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "mapv_maps_static_vectors_directly" "true:true\n"
     native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if
     (not (string_contains_substring melange_source "V.map"))
@@ -22246,11 +22262,11 @@ let test_references_preserve_state_across_typed_fields () =
 (println (deref (:counter state)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "references_preserve_state_across_typed_fields"
     "0\ntrue\n5\n5\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_truthy_guards_preserve_static_optional_numeric_parameters () =
   let source =
@@ -22465,11 +22481,11 @@ let test_loop_recur_analysis_respects_nested_let_shadowing () =
 (println (remaining-count [1 2 3]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_recur_analysis_respects_nested_let_shadowing" "3\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_generic_loop_sequences_remain_specializable_at_static_call_sites () =
   let source =
@@ -23064,7 +23080,7 @@ let test_lazy_map_accepts_all_builtin_seqable_types () =
 (println (pr-str (map inc host-seq)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "lazy_map_accepts_all_builtin_seqable_types"
     "(2 3)\n(2 3)\n(2 3)\n(2 3)\n(\"a\" \"b\")\n(5 6)\n" ocaml_source
 
@@ -23151,11 +23167,11 @@ let test_ocaml_unmemoized_seq_unfold_avoids_lazy_cache_layers () =
 (println (reduce + 0 values))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "S.memoize (Seq.unfold" then
     failwith "unmemoized seq-unfold emitted a memoization layer";
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_seq_unfold_contextualizes_tuple_state () =
   let source =
@@ -23172,13 +23188,13 @@ let test_ocaml_seq_unfold_contextualizes_tuple_state () =
 (println (count values))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "tuple unfold state must remain statically typed";
   assert_ocaml_runs "ocaml_seq_unfold_contextualizes_tuple_state" "3\n"
     native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange tuple unfold state must remain statically typed"
@@ -23299,12 +23315,12 @@ let test_ordering_values_use_ocaml_int_inputs_and_results () =
     (inc (ordering-compare 1 2))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "ordering_values_use_ocaml_int_inputs_and_results"
     "true:true:true:false:0\n" native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Int64." then
     failwith "ordering values must remain OCaml int end to end"
@@ -23597,7 +23613,7 @@ let test_custom_records_can_implement_core_seqable () =
 (println (reduce (fn [acc x] (+ acc x)) 0 values))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "custom_records_can_implement_core_seqable" "(2 3 4)\n6\n"
     ocaml_source
 
@@ -23614,7 +23630,7 @@ let test_modules_export_core_seqable_implementations () =
 (println (reduce (fn [acc x] (+ acc x)) 0 Cursors/values))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "modules_export_core_seqable_implementations" "(5 6)\n9\n"
     ocaml_source
 
@@ -23638,7 +23654,7 @@ let test_reduce_prefers_custom_reducible_over_seqable () =
 (println (deref seq-calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_prefers_custom_reducible_over_seqable"
     "100\n0\n2\n1\n" ocaml_source
 
@@ -23776,7 +23792,7 @@ let test_generic_sequence_functions_infer_seqable_dictionaries () =
 (println (forwarded-total (array 8 9)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_sequence_functions_infer_seqable_dictionaries"
     "3:3:3:9:13\n(5 6)\n3:2\n17\n" ocaml_source
 
@@ -23840,7 +23856,7 @@ let test_modules_export_host_ocaml_seqable_implementations () =
 (println (reduce (fn [acc x] (+ acc x)) 0 values))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "modules_export_host_ocaml_seqable_implementations"
     "(2 3 4)\n6\n" ocaml_source
 
@@ -24649,7 +24665,7 @@ let test_deferred_recursive_calls_bypass_the_holder_wrapper () =
 (defn ^:int countdown [^:int value]
   (if (zero? value)
     0
-    (countdown (dec value))))
+    (countdown (- value 1))))
 (println (countdown 100))
 |}
   in
@@ -26269,7 +26285,7 @@ let test_loop_normalizes_seqable_parameters_to_sequences () =
 (println (count-values [1 2 3]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_normalizes_seqable_parameters_to_sequences" "3\n"
     ocaml_source
 
@@ -26715,11 +26731,11 @@ let test_map_to_record_evaluates_source_once () =
 (println (str @calls ":" (+ (:a database) (:b database) (:c database))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "map_to_record_evaluates_source_once" "1:42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_closed_array_sources_preserve_nominal_elements_for_sorting () =
   let source =
@@ -26927,10 +26943,12 @@ let test_function_maps_require_a_closed_sum_for_numeric_functions () =
   |> expect_error_contains
        "compare cannot be used as an untyped first-class function";
   let static_source =
-    Lg.Compiler.compile_string
+    compile_string_with_stdlib
       {|
 (def increment inc)
-(println (increment 41))
+(def decrement dec)
+(def invert-bits bit-not)
+(println (str (increment 41) ":" (decrement 43) ":" (invert-bits 0)))
 |}
     |> expect_ok
   in
@@ -26939,8 +26957,17 @@ let test_function_maps_require_a_closed_sum_for_numeric_functions () =
     || string_contains_substring static_source "Lg_dyn"
   then
     failwith "first-class integer functions must remain static";
-  assert_ocaml_runs "first_class_integer_functions_remain_static" "42\n"
-    static_source
+  assert_ocaml_runs "first_class_integer_functions_remain_static" "42:42:-1\n"
+    static_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange
+       {|
+(def increment inc)
+(def decrement dec)
+(def invert-bits bit-not)
+(println (str (increment 41) ":" (decrement 43) ":" (invert-bits 0)))
+|}
+    |> expect_ok)
 
 let test_function_maps_require_a_closed_sum_for_random_functions () =
   let source =
@@ -28231,7 +28258,7 @@ let test_loop_and_recur_are_tail_recursive () =
 (println total)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_and_recur_are_tail_recursive" "15\n" ocaml_source
 
 let test_nested_loops_keep_recur_return_types_scoped () =
@@ -28249,11 +28276,11 @@ let test_nested_loops_keep_recur_return_types_scoped () =
 (println (+ 0 (first (reader 42))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nested_loops_keep_recur_return_types_scoped" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_recur_remains_tail_through_let_and_cond () =
   let source =
@@ -28267,7 +28294,7 @@ let test_loop_recur_remains_tail_through_let_and_cond () =
 (println result)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_recur_remains_tail_through_let_and_cond" "5\n"
     ocaml_source
 
@@ -28284,12 +28311,12 @@ let test_loop_recur_remains_tail_through_macros () =
 (println result)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_recur_remains_tail_through_macros" "5\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
   let source =
@@ -28307,7 +28334,7 @@ let test_loop_and_recur_delegate_ocaml_owned_alias_compatibility () =
 (println "loop-ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_and_recur_delegate_ocaml_owned_alias_compatibility"
     "loop-ok\n" ocaml_source
 
@@ -28321,7 +28348,7 @@ let test_loop_and_recur_delegate_ocaml_owned_mismatch_to_ocaml () =
          n 1]
     (if (= n 0)
       id
-      (recur "bad" (dec n)))))
+      (recur "bad" (- n 1)))))
 |}
   |> expect_error_contains "string"
 
@@ -29310,13 +29337,13 @@ let test_threaded_keyword_access_preserves_nested_record_inference () =
 (println result)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "threaded_keyword_access_preserves_nested_record_inference"
     "2\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_destructuring_rejects_unsupported_let_sources () =
   Lg.Compiler.compile_string {|(def x (let [{:keys [name]} [1 2]] name))|}
@@ -29677,12 +29704,12 @@ let test_some_preserves_static_record_element_types () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
-  Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (inc x)) [1 2]))|}
+  Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (+ x 1)) [1 2]))|}
   |> expect_error "mapcat function must return a collection, got int"
 
 let test_common_higher_order_helpers_reject_bad_predicates () =
   Lg.Compiler.compile_string
-    {|(def f (every-pred (fn [x] (inc x)) (fn [x] true)))|}
+    {|(def f (every-pred (fn [x] (+ x 1)) (fn [x] true)))|}
   |> expect_error "every-pred expects predicates with the same argument type"
 
 let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
@@ -30686,13 +30713,13 @@ let test_into_applies_composed_transducers () =
        (contains? transformed 4)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "into_applies_composed_transducers" "2:true:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_into_transducers_build_typed_sets () =
   let source =
@@ -30795,11 +30822,11 @@ let test_cond_thread_macros_apply_selected_steps () =
 (println (first (cond->> [1 2 3] true (map inc))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "cond_thread_macros_apply_selected_steps" "4\n8\n2\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_assoc_rejects_an_untyped_first_class_reference () =
   let source =
@@ -31072,13 +31099,13 @@ let test_map_value_parameters_support_guarded_sequence_use () =
 (println (resolve-like {}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "map_value_parameters_support_guarded_sequence_use"
     "[3 1]\n[0 0]\n[0 0]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_reduce_accepts_static_map_entries () =
   let source =
@@ -31596,11 +31623,11 @@ let test_recursive_vector_accumulator_infers_from_typed_vector_operation () =
 (println (pr-str (node-collect-addresses 3 0 [])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_vector_accumulator_conjoined_values"
     "[3 0 1 0 2 0 1 0]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_partition_callback_infers_static_accumulator_and_items () =
   let source =
@@ -35235,7 +35262,8 @@ let test_parsetree_backend_builds_native_collection_match_expressions () =
   expect_structured_value_expression {|(def result (rest (list 1 2 3)))|}
 
 let test_parsetree_backend_builds_native_function_combinator_expressions () =
-  expect_structured_value_expression {|(def result (comp inc inc))|}
+  expect_structured_value_expression
+    {|(def result (comp (fn [value] (+ value 1)) (fn [value] (+ value 1))))|}
 
 let test_parsetree_backend_builds_native_partial_expressions () =
   expect_structured_value_expression {|(def add-ten (partial + 10))|}

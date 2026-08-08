@@ -10,6 +10,9 @@
   :fn<truthy<value>;bool>)
 (signature clojure.core/not [value]
   :fn<truthy<value>;bool>)
+(signature clojure.core/inc :fn<int;int>)
+(signature clojure.core/dec :fn<int;int>)
+(signature clojure.core/bit-not :fn<int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
 (signature clojure.core/reset-vals! [value]

@@ -25,6 +25,12 @@
                     :reason :same-arity-return-type-depends-on-whether-the-input-is-already-a-parameterized-reduced-value}
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
+    inc {:status :static-adaptation
+         :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
+    dec {:status :static-adaptation
+         :reason :source-port-preserves-the-upstream-subtract-one-body-for-the-current-static-integer-numeric-domain}
+    bit-not {:status :static-adaptation
+             :reason :source-port-expresses-the-current-static-integer-complement-as-xor-with-negative-one}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}

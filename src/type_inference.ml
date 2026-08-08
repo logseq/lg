@@ -1075,7 +1075,7 @@ let rec inferred_form_type params = function
       | Some (TFn (parameter_tys, _)) ->
           TFn (parameter_tys, TOcaml "int")
       | _ -> TUnknown)
-  | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
+  | FList [ FSymbol "count"; _ ] -> TInt
   | FList
       [
         FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
@@ -1431,6 +1431,11 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
               instantiate parameter_tys arity.return_ty)
       | Ok _ | Error _ -> TUnknown)
   | _ -> TUnknown
+
+let inferred_form_or_call_type ~lookup_function_ty params form =
+  match inferred_form_type params form with
+  | TUnknown -> inferred_call_return_type ~lookup_function_ty params form
+  | ty -> ty
 
 let rec form_checks_reduced name = function
   | FList [ FSymbol predicate; FSymbol candidate ] ->
@@ -3267,8 +3272,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         | None -> (
                             match lookup_function_ty value_name with
                             | Ok ty -> ty
-                            | Error _ -> inferred_form_type params value_form))
-                    | _ -> inferred_form_type params value_form
+                            | Error _ ->
+                                inferred_form_or_call_type ~lookup_function_ty
+                                  params value_form))
+                    | _ ->
+                        inferred_form_or_call_type ~lookup_function_ty params
+                          value_form
                   in
                   let params =
                     match value_form with
@@ -3319,7 +3328,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               Types.dynamic_map_types target_ty )
           with
           | TInt, Some element_ty, None ->
-              let value_ty = inferred_form_type params value_form in
+              let value_ty =
+                inferred_form_or_call_type ~lookup_function_ty params value_form
+              in
               let element_ty =
                 if Types.is_dynamic element_ty then
                   match value_ty with
@@ -3332,7 +3343,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 (TVector element_ty) params name
           | _, _, Some _ ->
               let concrete_or_dynamic form =
-                match inferred_form_type params form with
+                match
+                  inferred_form_or_call_type ~lookup_function_ty params form
+                with
                 | TUnknown -> Type_solver.fresh ()
                 | ((TMeta _ | TVar _) as type_parameter) -> type_parameter
                 | ty -> ty
@@ -5114,8 +5127,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ( "inc" | "dec" | "zero?" | "pos?" | "neg?"
-            | "nat-int?" | "pos-int?" | "neg-int?" | "bit-not" );
+            ( "zero?" | "pos?" | "neg?" | "nat-int?" | "pos-int?"
+            | "neg-int?" );
           arg;
         ] ->
         let arg_ty =

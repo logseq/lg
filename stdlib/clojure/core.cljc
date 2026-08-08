@@ -39,6 +39,15 @@
 (defn not [x]
   (if x false true))
 
+(defn inc [x]
+  (+ x 1))
+
+(defn dec [x]
+  (- x 1))
+
+(defn bit-not [x]
+  (bit-xor x -1))
+
 (defn reduced [x]
   (runtime-reduced/reduced x))
 
