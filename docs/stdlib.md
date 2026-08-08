@@ -128,16 +128,18 @@ name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
 The current 314-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
-`not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `interpose`, `dedupe`, `distinct`, `zipmap`,
+`not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `interpose`, `dedupe`, `distinct`, `zipmap`, `clojure.string/escape`,
 and the derived bit functions have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same checkout also reports
-`cljs.test` 229 times, `clojure.test` 51 times, `cljs.pprint` 15 times,
-`clojure.pprint` 14 times, and `clojure.zip` 3 times as unsupported aggregate
-namespaces. `clojure.walk` and `clojure.data` remain explicitly blocked because
+`cljs.test` 229 times and `clojure.test` 51 times as unsupported aggregate
+namespaces. `cljs.pprint` occurs 15 times and is explicitly blocked because
+readable and display printing need distinct static printer witnesses;
+`clojure.pprint` occurs 14 times and `clojure.zip` 3 times as unsupported
+aggregate namespaces. `clojure.walk` and `clojure.data` remain explicitly blocked because
 their upstream algorithms traverse heterogeneous Clojure trees; a valid port
 must use a closed value domain rather than the existing `Runtime_dynamic.t`
 boundary.

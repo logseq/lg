@@ -3,6 +3,7 @@
 (signature clojure.string/blank? :fn<string;bool>)
 (signature clojure.string/capitalize :fn<string;string>)
 (signature clojure.string/ends-with? :fn<string;string;bool>)
+(signature clojure.string/escape :fn<string;map<char;string>;string>)
 (signature clojure.string/includes? :fn<string;string;bool>)
 
 (signature clojure.string/index-of

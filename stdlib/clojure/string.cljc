@@ -15,6 +15,9 @@
 (defn ends-with? [source suffix]
   (runtime/ends-with source suffix))
 
+(defn escape [source replacements]
+  (runtime/escape source replacements))
+
 (defn includes? [source substring]
   (runtime/includes source substring))
 

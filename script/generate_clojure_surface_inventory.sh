@@ -145,6 +145,7 @@ clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
 cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
+clojure.string/escape|source
 clojure.string/split|host-boundary
 clojure.walk/walk|host-boundary
 clojure.walk/prewalk|host-boundary

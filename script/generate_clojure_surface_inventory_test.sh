@@ -11,11 +11,13 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
   (:require [clojure.string :as string]
             [clojure.set :refer [union]]
             [clojure.walk :as walk]
+            [cljs.pprint :as pprint]
             [clojure.zip :as zip]))
 
 (string/upper-case "logseq")
 (union #{1} #{2})
 (walk/postwalk identity {})
+(pprint/pprint "value")
 (zip/root nil)
 (cljs.core/identity 1)
 EOF
@@ -40,12 +42,14 @@ awk -F '\t' '$1 == "namespace" && $2 == "clojure.data" && $3 == "compiler-owned"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.string" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.edn" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && $2 == "clojure.data/diff" && $3 == "host-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && $2 == "clojure.string/escape" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "runtime-primitive" && $2 == "Lg_runtime.Runtime_string.split" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace" && $2 == "clojure.string" && $3 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace" && $2 == "clojure.set" && $3 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var" && $2 == "clojure.string/upper-case" && $3 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.string" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.walk" && $3 == "blocked-static-typing" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "readable-and-display-printing-require-distinct-static-printer-witnesses" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "unsupported" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.walk/postwalk" && $3 == "blocked-static-typing" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.zip/root" && $3 == "unsupported" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

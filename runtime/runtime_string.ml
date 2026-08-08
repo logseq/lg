@@ -192,6 +192,16 @@ let capitalize source =
 let reverse source =
   String.of_seq (List.to_seq (List.rev (List.of_seq (String.to_seq source))))
 
+let escape source replacements =
+  let buffer = Buffer.create (String.length source) in
+  String.iter
+    (fun character ->
+      match Runtime_map.get_option replacements character with
+      | Some replacement -> Buffer.add_string buffer replacement
+      | None -> Buffer.add_char buffer character)
+    source;
+  Buffer.contents buffer
+
 let starts_with source prefix = String.starts_with ~prefix source
 let identity source = source
 

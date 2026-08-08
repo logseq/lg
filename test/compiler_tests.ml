@@ -25734,18 +25734,30 @@ let test_str_rejects_untyped_first_class_use () =
   |> expect_error_contains
        "str cannot be used as an untyped first-class function"
 
-let test_clojure_string_escape_rejects_untyped_first_class_use () =
+let test_clojure_string_escape_is_typed_first_class_source () =
   let source =
     {|
 (ns string-query (:require [clojure.string :as str]))
 (def escape str/escape)
-(println (escape "a<b" {\< "&lt;"}))
+(println (escape "a<b>" {\< "&lt;" \> "&gt;"}))
 |}
   in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/clojure_string_escape_first_class.cljc" source
+  in
+  assert_ocaml_runs "clojure_string_escape_is_typed_first_class_source"
+    "a&lt;b&gt;\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/clojure_string_escape_first_class.cljc" source);
   compile_with_stdlib_result Lg.Target.Native
-    "test/clojure_string_escape_first_class.cljc" source
-  |> expect_error_contains
-       "str/escape cannot be used as an untyped first-class function"
+    "test/clojure_string_escape_bad_replacement.cljc"
+    {|
+(ns string-query.bad (:require [clojure.string :as str]))
+(str/escape "a<b" {\< 1})
+|}
+  |> expect_error_contains "expected of type"
 
 let test_function_maps_require_a_closed_sum_for_type_predicates () =
   let source =
@@ -35961,8 +35973,8 @@ let tests =
       test_printing_functions_reject_untyped_first_class_use );
     ( "str rejects untyped first-class use",
       test_str_rejects_untyped_first_class_use );
-    ( "clojure.string escape rejects untyped first-class use",
-      test_clojure_string_escape_rejects_untyped_first_class_use );
+    ( "clojure.string escape is typed first-class source",
+      test_clojure_string_escape_is_typed_first_class_source );
     ( "function maps require a closed sum for type predicates",
       test_function_maps_require_a_closed_sum_for_type_predicates );
     ( "heterogeneous function maps require a closed sum",

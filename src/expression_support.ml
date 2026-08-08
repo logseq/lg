@@ -1080,7 +1080,6 @@ let untyped_first_class_function_error = function
     | "set"
     | "some?"
     | "str"
-    | "str/escape"
     | "string?"
     | "subs"
     | "symbol?"
@@ -1096,8 +1095,7 @@ let untyped_first_class_function_error = function
   | ( "clojure.core/dissoc"
     | "cljs.core/dissoc"
     | "clojure.core/update"
-    | "cljs.core/update"
-    | "clojure.string/escape" ) as name ->
+    | "cljs.core/update" ) as name ->
       let separator = String.rindex name '/' in
       let basename =
         String.sub name (separator + 1) (String.length name - separator - 1)

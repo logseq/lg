@@ -71,6 +71,8 @@
    {blank? {:status :static-adaptation :reason :typed-host-string-primitive}
     capitalize {:status :static-adaptation :reason :typed-host-string-primitive}
     ends-with? {:status :static-adaptation :reason :typed-host-string-primitive}
+    escape {:status :static-adaptation
+            :reason :typed-character-to-string-map-replacements-use-a-host-buffer-primitive-instead-of-arbitrary-printable-values}
     includes? {:status :static-adaptation :reason :typed-host-string-primitive}
     index-of {:status :static-adaptation :reason :typed-host-string-primitive}
     join {:status :static-adaptation :reason :typed-sequence-host-primitive}
@@ -109,6 +111,11 @@
                  :reason :typed-host-edn-reader-primitive}
     register-tag-parser! {:status :host-primitive
                           :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}}}
+
+  cljs.pprint
+  {:source "src/main/cljs/cljs/pprint.cljs"
+   :status :blocked
+   :reason :readable-and-display-printing-require-distinct-static-printer-witnesses}
 
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"

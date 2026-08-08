@@ -222,10 +222,21 @@
  (action
   (run sh %{dep:check_source_reader_bootstrap.sh} ../..)))
 
+(rule
+ (alias source-string-bootstrap)
+ (deps
+  check_source_string_bootstrap.sh
+  (source_tree ../../stdlib/clojure)
+  ../../runtime/runtime_string.ml
+  ../../src/expression_support.ml)
+ (action
+  (run sh %{dep:check_source_string_bootstrap.sh} ../..)))
+
 (alias
  (name runtest)
  (deps
   (alias aggregate-stdlib-consumer)
   (alias datascript-aggregate-stdlib)
   (alias no-source-core-fallbacks)
+  (alias source-string-bootstrap)
   (alias ../../stdlib/stdlib-melange)))
