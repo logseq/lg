@@ -37,7 +37,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("identity constantly complement comp partial fnil every-pred some-fn juxt not-any? not-every? even? odd?", xs)
+    split("identity constantly complement comp partial fnil every-pred some-fn juxt not-any? not-every? even? odd? bit-clear bit-flip bit-set bit-test", xs)
     for (i in xs) portable[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1

@@ -8,6 +8,10 @@
 
 (signature clojure.core/even? :fn<int;bool>)
 (signature clojure.core/odd? :fn<int;bool>)
+(signature clojure.core/bit-clear :fn<int;int;int>)
+(signature clojure.core/bit-flip :fn<int;int;int>)
+(signature clojure.core/bit-set :fn<int;int;int>)
+(signature clojure.core/bit-test :fn<int;int;bool>)
 
 (signature clojure.core/not-every? [value]
   :fn<fn<value;bool>;seqable<value>;bool>)

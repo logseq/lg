@@ -26,6 +26,10 @@
 (println (odd? 9))
 (println (core/not-every? (fn [x] (> x 0)) [1 -1]))
 (println (core/not-any? (fn [x] (< x 0)) [1 2]))
+(println (= 4 (core/bit-clear 5 0)))
+(println (= 7 (core/bit-set 5 1)))
+(println (= 7 (core/bit-flip 5 1)))
+(println (core/bit-test 4 2))
 (println (= "{:answer 42}"
             (runtime-edn/write-string
              (edn/read-string "{:answer 42}"))))

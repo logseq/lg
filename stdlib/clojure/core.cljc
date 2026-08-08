@@ -23,3 +23,15 @@
 
 (defn not-any? [pred coll]
   (not (some pred coll)))
+
+(defn bit-clear [x n]
+  (bit-and x (bit-not (bit-shift-left 1 n))))
+
+(defn bit-flip [x n]
+  (bit-xor x (bit-shift-left 1 n)))
+
+(defn bit-set [x n]
+  (bit-or x (bit-shift-left 1 n)))
+
+(defn bit-test [x n]
+  (not (zero? (bit-and x (bit-shift-left 1 n)))))

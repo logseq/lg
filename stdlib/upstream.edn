@@ -18,6 +18,14 @@
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}
+    bit-clear {:status :static-adaptation
+               :reason :composed-from-static-integer-bit-primitives}
+    bit-flip {:status :static-adaptation
+              :reason :composed-from-static-integer-bit-primitives}
+    bit-set {:status :static-adaptation
+             :reason :composed-from-static-integer-bit-primitives}
+    bit-test {:status :static-adaptation
+              :reason :composed-from-static-integer-bit-primitives}
     not-every? {:status :ported}
     not-any? {:status :ported}}}
 
