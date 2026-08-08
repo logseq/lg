@@ -1,7 +1,7 @@
 (rule
  (targets
-  datascript_conn_native_base.state
-  datascript_conn_native_base_chunk.ml)
+  datascript_conn_native_runtime.state
+  datascript_conn_native_runtime_chunk.ml)
  (deps
   ../stdlib/lg_stdlib_native.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
@@ -33,20 +33,12 @@
   datascript/upstream/conn.cljc
   datascript/upstream/core.cljc
   datascript/lg/js.cljc
-  ../test_runner/clojure/test.cljc
-  ../test_runner/clojure/test_native.cljc
-  datascript/upstream_test_support/datascript/test/core.cljc
-  datascript/upstream_test_support/datascript/test/storage_support.cljc
-  datascript/benchmark/datascript/bench/bench.cljc
-  datascript/benchmark/datascript/bench/datascript.cljc
   %{lib:datascript.runtime:datascript_runtime.cmi}
   %{lib:datascript.runtime:datascript_runtime__Data_value.cmi}
   %{lib:datascript.runtime:datascript_runtime__Query_value.cmi}
   %{lib:datascript.runtime:datascript_runtime__Serialization_value.cmi}
   %{lib:datascript.runtime:datascript_runtime__Storage_backend.cmi}
   %{lib:datascript.runtime:datascript_runtime__Storage_value.cmi}
-  %{lib:lg-test.runtime:lg_test_runtime.cmi}
-  %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
   ../bin/lg_cli.exe)
  (action
   (run
@@ -55,7 +47,7 @@
    native
    --compile-files-from-state
    %{dep:../stdlib/lg_stdlib_native.state}
-   datascript_conn_native_base.state
+   datascript_conn_native_runtime.state
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -85,6 +77,32 @@
    %{dep:datascript/upstream/conn.cljc}
    %{dep:datascript/upstream/core.cljc}
    %{dep:datascript/lg/js.cljc}
+   -o
+   datascript_conn_native_runtime_chunk.ml)))
+
+(rule
+ (targets
+  datascript_conn_native_base.state
+  datascript_conn_native_base_chunk.ml)
+ (deps
+  datascript_conn_native_runtime.state
+  ../test_runner/clojure/test.cljc
+  ../test_runner/clojure/test_native.cljc
+  datascript/upstream_test_support/datascript/test/core.cljc
+  datascript/upstream_test_support/datascript/test/storage_support.cljc
+  datascript/benchmark/datascript/bench/bench.cljc
+  datascript/benchmark/datascript/bench/datascript.cljc
+  %{lib:lg-test.runtime:lg_test_runtime.cmi}
+  %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files-from-state
+   %{dep:datascript_conn_native_runtime.state}
+   datascript_conn_native_base.state
    %{dep:../test_runner/clojure/test.cljc}
    %{dep:../test_runner/clojure/test_native.cljc}
    %{dep:datascript/upstream_test_support/datascript/test/core.cljc}
@@ -95,15 +113,29 @@
    datascript_conn_native_base_chunk.ml)))
 
 (rule
+ (target datascript_conn_native_runtime.ml)
+ (deps
+  ../stdlib/lg_stdlib_native.ml
+  datascript_conn_native_runtime_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:datascript_conn_native_runtime_chunk.ml})))))
+
+(rule
  (target datascript_conn_native_base.ml)
  (deps
   ../stdlib/lg_stdlib_native.ml
+  datascript_conn_native_runtime_chunk.ml
   datascript_conn_native_base_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
     (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:datascript_conn_native_runtime_chunk.ml})
     (cat %{dep:datascript_conn_native_base_chunk.ml})))))
 
 (rule

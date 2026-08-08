@@ -890,7 +890,7 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
           Compiler_state.scope;
           Compiler_state.env;
           next_type;
-          items = state.items @ new_items;
+          items = state.items;
           shared_values;
         }
       in

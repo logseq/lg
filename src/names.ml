@@ -52,6 +52,10 @@ let ocaml_keywords =
     "with";
   ]
 
+module String_set = Set.Make (String)
+
+let ocaml_keyword_set = String_set.of_list ocaml_keywords
+
 let legalize_ocaml_identifier candidate =
   let candidate =
     if candidate = "_" then "__lg_wildcard_value"
@@ -61,21 +65,28 @@ let legalize_ocaml_identifier candidate =
       | '0' .. '9' -> "value_" ^ candidate
       | _ -> candidate
   in
-  if List.mem candidate ocaml_keywords then candidate ^ "_" else candidate
+  if String_set.mem candidate ocaml_keyword_set then candidate ^ "_"
+  else candidate
+
+let sanitized_names = Hashtbl.create 4096
 
 let sanitize_name name =
-  let buffer = Buffer.create (String.length name) in
-  String.iter
-    (function
-      | 'a' .. 'z' as ch -> Buffer.add_char buffer ch
-      | 'A' .. 'Z' as ch -> Buffer.add_char buffer (Char.lowercase_ascii ch)
-      | '0' .. '9' as ch -> Buffer.add_char buffer ch
-      | '_' -> Buffer.add_char buffer '_'
-      | '-' | '?' | '!' | '/' | '.' -> Buffer.add_char buffer '_'
-      | _ -> Buffer.add_char buffer '_')
-    name;
-  let candidate = Buffer.contents buffer in
-  legalize_ocaml_identifier candidate
+  match Hashtbl.find_opt sanitized_names name with
+  | Some sanitized -> sanitized
+  | None ->
+      let buffer = Buffer.create (String.length name) in
+      String.iter
+        (function
+          | 'a' .. 'z' as ch -> Buffer.add_char buffer ch
+          | 'A' .. 'Z' as ch -> Buffer.add_char buffer (Char.lowercase_ascii ch)
+          | '0' .. '9' as ch -> Buffer.add_char buffer ch
+          | '_' -> Buffer.add_char buffer '_'
+          | '-' | '?' | '!' | '/' | '.' -> Buffer.add_char buffer '_'
+          | _ -> Buffer.add_char buffer '_')
+        name;
+      let sanitized = Buffer.contents buffer |> legalize_ocaml_identifier in
+      Hashtbl.add sanitized_names name sanitized;
+      sanitized
 
 let keyword_source_name keyword =
   if String.length keyword > 0 && keyword.[0] = ':' then
@@ -87,8 +98,18 @@ let keyword_to_ocaml_name keyword =
 
 let is_qualified name = String.contains name '/'
 
+let scoped_keys = Hashtbl.create 4096
+
 let scoped_key scope name =
-  if is_qualified name || scope = "" then name else scope ^ "/" ^ name
+  if is_qualified name || scope = "" then name
+  else
+    let key = (scope, name) in
+    match Hashtbl.find_opt scoped_keys key with
+    | Some scoped -> scoped
+    | None ->
+        let scoped = scope ^ "/" ^ name in
+        Hashtbl.add scoped_keys key scoped;
+        scoped
 
 let compact_digest name =
   let digest = Digest.string name in
@@ -113,17 +134,27 @@ let compact_source_binding name =
   if String.length name <= 96 then name
   else String.sub name 0 80 ^ "_" ^ compact_digest name
 
+let ocaml_binding_names = Hashtbl.create 4096
+
 let ocaml_binding_name scope name =
-  let candidate =
-    if scope = "" then sanitize_name name
-    else sanitize_name (scope ^ "_" ^ name)
-  in
-  if
-    scope <> ""
-    &&
-    match scope.[0] with 'a' .. 'z' -> true | _ -> false
-  then compact_source_binding candidate
-  else candidate
+  let key = (scope, name) in
+  match Hashtbl.find_opt ocaml_binding_names key with
+  | Some binding -> binding
+  | None ->
+      let candidate =
+        if scope = "" then sanitize_name name
+        else sanitize_name (scope ^ "_" ^ name)
+      in
+      let binding =
+        if
+          scope <> ""
+          &&
+          match scope.[0] with 'a' .. 'z' -> true | _ -> false
+        then compact_source_binding candidate
+        else candidate
+      in
+      Hashtbl.add ocaml_binding_names key binding;
+      binding
 
 let module_segment_to_ocaml name =
   let sanitized = sanitize_name name in

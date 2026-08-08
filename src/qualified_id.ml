@@ -14,41 +14,54 @@ module Make () : S = struct
   type t = {
     owner : string list;
     name : string;
+    comparison_key : string;
+    source_name : string;
   }
 
-  let create ~owner ~name = { owner; name }
+  let interned = Hashtbl.create 1024
+  let source_interned = Hashtbl.create 1024
+
+  let create ~owner ~name =
+    let comparison_key = String.concat "\000" owner ^ "\001" ^ name in
+    match Hashtbl.find_opt interned comparison_key with
+    | Some id -> id
+    | None ->
+        let id =
+          {
+            owner;
+            name;
+            comparison_key;
+            source_name =
+              (match owner with
+              | [] -> name
+              | owner -> String.concat "." owner ^ "/" ^ name);
+          }
+        in
+        Hashtbl.add interned comparison_key id;
+        id
 
   let of_string value =
-    match String.rindex_opt value '/' with
-    | None -> create ~owner:[] ~name:value
-    | Some index ->
-        let owner = String.sub value 0 index in
-        let name =
-          String.sub value (index + 1) (String.length value - index - 1)
+    match Hashtbl.find_opt source_interned value with
+    | Some id -> id
+    | None ->
+        let id =
+          match String.rindex_opt value '/' with
+          | None -> create ~owner:[] ~name:value
+          | Some index ->
+              let owner = String.sub value 0 index in
+              let name =
+                String.sub value (index + 1) (String.length value - index - 1)
+              in
+              create ~owner:[ owner ] ~name
         in
-        create ~owner:[ owner ] ~name
+        Hashtbl.add source_interned value id;
+        id
   let owner id = id.owner
   let name id = id.name
 
-  let rec compare_owner left right =
-    match (left, right) with
-    | [], [] -> 0
-    | [], _ -> -1
-    | _, [] -> 1
-    | left_part :: left_rest, right_part :: right_rest -> (
-        match String.compare left_part right_part with
-        | 0 -> compare_owner left_rest right_rest
-        | result -> result)
+  let compare left right = String.compare left.comparison_key right.comparison_key
 
-  let compare left right =
-    match compare_owner left.owner right.owner with
-    | 0 -> String.compare left.name right.name
-    | result -> result
+  let equal left right = String.equal left.comparison_key right.comparison_key
 
-  let equal left right = compare left right = 0
-
-  let to_string id =
-    match id.owner with
-    | [] -> id.name
-    | owner -> String.concat "." owner ^ "/" ^ id.name
+  let to_string id = id.source_name
 end

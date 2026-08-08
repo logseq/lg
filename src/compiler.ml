@@ -38,8 +38,9 @@ let compile_string_with_filename_and_diagnostics ?(target = Target.default)
     ~filename source =
   Toolchain.implementation_with_diagnostics ~target ~filename source
 
-let required_ocaml_packages ?(target = Target.default) source =
-  Toolchain.required_ocaml_packages ~target source
+let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
+    source =
+  Toolchain.required_ocaml_packages ~target ~filename source
 
 let infer_interface ?(target = Target.default) source =
   Toolchain.interface ~target source

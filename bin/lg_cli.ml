@@ -480,7 +480,10 @@ let compile_files target input_paths =
         let prefix_key =
           next_prefix_key ~target prefix_key input_path source
         in
-        match Lg.Compiler.required_ocaml_packages ~target source with
+        match
+          Lg.Compiler.required_ocaml_packages ~target ~filename:input_path
+            source
+        with
         | Error _ as err -> err
         | Ok source_packages -> (
             match read_cached_prefix_output prefix_key with
@@ -522,7 +525,9 @@ let compile_files target input_paths =
 
 let compile_file target input_path =
   let source = read_file input_path in
-  match Lg.Compiler.required_ocaml_packages ~target source with
+  match
+    Lg.Compiler.required_ocaml_packages ~target ~filename:input_path source
+  with
   | Error _ as err -> err
   | Ok packages -> (
       match
@@ -544,7 +549,7 @@ let compile_chunk_from_saved_state target state_path input_path =
   else
     let source = read_file input_path in
     Result.bind
-      (Lg.Compiler.required_ocaml_packages ~target source)
+      (Lg.Compiler.required_ocaml_packages ~target ~filename:input_path source)
       (fun source_packages ->
         let packages =
           List.sort_uniq String.compare (source_packages @ saved.packages)
@@ -572,7 +577,8 @@ let compile_files_from_saved_state target state_path input_paths =
       | input_path :: rest ->
           let source = read_file input_path in
           Result.bind
-            (Lg.Compiler.required_ocaml_packages ~target source)
+            (Lg.Compiler.required_ocaml_packages ~target ~filename:input_path
+               source)
             (fun source_packages ->
               read_sources ((input_path, source) :: sources)
                 (List.rev_append source_packages packages)

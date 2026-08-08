@@ -72,17 +72,20 @@ let find_opt name env =
 let mem name env = Symbol_map.mem (Symbol_id.of_string name) env.symbols
 
 let remove_indexed_binding key id index =
-  String_map.update key
-    (function
-      | None -> None
-      | Some bindings -> (
-          match
-            List.filter (fun (candidate, _) -> not (Symbol_id.equal candidate id))
-              bindings
-          with
-          | [] -> None
-          | bindings -> Some bindings))
-    index
+  let rec remove = function
+    | [] as bindings -> bindings
+    | (candidate, _) :: rest when Symbol_id.equal candidate id -> rest
+    | binding :: rest as bindings ->
+        let updated_rest = remove rest in
+        if updated_rest == rest then bindings else binding :: updated_rest
+  in
+  match String_map.find_opt key index with
+  | None -> index
+  | Some bindings ->
+      let updated = remove bindings in
+      if updated == bindings then index
+      else if updated = [] then String_map.remove key index
+      else String_map.add key updated index
 
 let internal_scope ~prefix name =
   let scope_start = String.length prefix in
@@ -139,7 +142,10 @@ let add name binding env =
   let id = Symbol_id.of_string name in
   let previous = Symbol_map.find_opt id env.symbols in
   let bindings_by_name =
-    remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name
+    match previous with
+    | None -> env.bindings_by_name
+    | Some _ ->
+        remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name
   in
   let bindings_by_name =
     String_map.update (Symbol_id.name id)

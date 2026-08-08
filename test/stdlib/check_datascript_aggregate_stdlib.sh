@@ -13,7 +13,9 @@ grep -q '\.\./stdlib/lg_stdlib_native\.state' "$rules"
 grep -q '\.\./stdlib/lg_stdlib_melange\.state' "$rules"
 
 mode_count=$(grep -c -- '--compile-files-from-state' "$rules")
-if [ "$mode_count" -ne 2 ]; then
-  echo "DataScript base compilation must restore both aggregate stdlib states" >&2
+if [ "$mode_count" -ne 3 ]; then
+  echo "DataScript compilation must restore both aggregate stdlib states and the native runtime state" >&2
   exit 1
 fi
+
+grep -q '%{dep:datascript_conn_native_runtime.state}' "$rules"

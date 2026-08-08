@@ -1320,12 +1320,16 @@ let requested_sets_from_located_items items =
   |> List.map snd
   |> collect_set_modules_from_items [] String_map.empty
 
+let requested_set_modules_from_located_items items =
+  requested_sets_from_located_items items
+  |> String_map.bindings |> List.map fst
+
 let structure_of_located_items_excluding excluded_sets items =
   let plain_items = List.map snd items in
   let requested_sets =
     collect_set_modules_from_items [] String_map.empty plain_items
     |> String_map.filter (fun module_name _ ->
-           not (String_map.mem module_name excluded_sets))
+           not (String_set.mem module_name excluded_sets))
   in
   let prefix = missing_root_set_definitions requested_sets plain_items in
   let rec flatten_group_items = function
@@ -1418,11 +1422,18 @@ let structure_of_located_items_excluding excluded_sets items =
   loop [] items
 
 let structure_of_located_items items =
-  structure_of_located_items_excluding String_map.empty items
+  structure_of_located_items_excluding String_set.empty items
+
+let structure_of_incremental_located_items_with_modules
+    ~previous_set_modules items =
+  structure_of_located_items_excluding
+    (String_set.of_list previous_set_modules)
+    items
 
 let structure_of_incremental_located_items ~previous_items items =
-  structure_of_located_items_excluding
-    (requested_sets_from_located_items previous_items)
+  structure_of_incremental_located_items_with_modules
+    ~previous_set_modules:
+      (requested_set_modules_from_located_items previous_items)
     items
 
 let print_implementation structure =

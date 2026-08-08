@@ -40,6 +40,7 @@ type language_analysis = {
 type state = {
   typecheck_state : Typecheck.state;
   located_items : (Location.t * Lowered.compiled_item) list;
+  requested_set_modules : string list;
   ocaml_env : Env.t option;
 }
 
@@ -526,8 +527,8 @@ module Lg_frontend : FRONTEND = struct
                ]
            | _ -> [ located ])
 
-  let implementation ?(target = Target.default) ?(filename = "<string>") source
-      =
+  let implementation_uncached ?(target = Target.default)
+      ?(filename = "<string>") source =
     let line_starts = line_starts source in
     let is_compile_time_form located =
       match located.Ast.form with
@@ -692,15 +693,38 @@ module Lg_frontend : FRONTEND = struct
                       normalized_form_locations @ form_locations;
                     parsed_as = `Lg;
                   })))
+
+  let parsed_sources = Hashtbl.create 64
+
+  let implementation ?(target = Target.default) ?(filename = "<string>") source =
+    let key =
+      String.concat "\000"
+        [ Target.to_string target; filename; Digest.to_hex (Digest.string source) ]
+    in
+    match Hashtbl.find_opt parsed_sources key with
+    | Some parsed -> Ok parsed
+    | None -> (
+        match implementation_uncached ~target ~filename source with
+        | Error _ as error -> error
+        | Ok parsed as result ->
+            Hashtbl.add parsed_sources key parsed;
+            result)
 end
 
 module Ocaml_parsetree_backend = struct
-  let implementation ?(previous_items = []) (typed : typed_result) =
+  let implementation ?(previous_items = []) ?(previous_set_modules = [])
+      (typed : typed_result) =
     match
       let items = List.combine typed.locations typed.items in
-      if previous_items = [] then Lowering.structure_of_located_items items
+      let previous_set_modules =
+        List.sort_uniq String.compare
+          (previous_set_modules
+          @ Lowering.requested_set_modules_from_located_items previous_items)
+      in
+      if previous_set_modules = [] then Lowering.structure_of_located_items items
       else
-        Lowering.structure_of_incremental_located_items ~previous_items items
+        Lowering.structure_of_incremental_located_items_with_modules
+          ~previous_set_modules items
     with
     | Error _ as err -> err
     | Ok structure -> Ok { ast = typed.ast; items = typed.items; structure }
@@ -785,6 +809,7 @@ let empty_state =
   {
     typecheck_state = Typecheck.empty_state;
     located_items = [];
+    requested_set_modules = [];
     ocaml_env = None;
   }
 
@@ -867,6 +892,7 @@ let stabilize_dependencies (parsed : parser_result) =
   }
 
 let declaration_bindings ast env =
+  let module Declared_names = Set.Make (String) in
   let rec declared_names declared = function
     | [] -> List.rev declared
     | Ast.FList (Ast.FSymbol "declare" :: form_names) :: rest ->
@@ -891,13 +917,22 @@ let declaration_bindings ast env =
         declared_names (name :: declared) rest
     | _ :: rest -> declared_names declared rest
   in
-  let final_bindings = Compiler_environment.to_bindings env in
-  declared_names [] ast
-  |> List.concat_map (fun name ->
-         let suffix = "/" ^ name in
-         final_bindings
-         |> List.filter (fun (key, _) ->
-                key = name || String.ends_with ~suffix key))
+  let declared = declared_names [] ast |> Declared_names.of_list in
+  let rec is_declared_key key offset =
+    let candidate =
+      if offset = 0 then key
+      else String.sub key offset (String.length key - offset)
+    in
+    Declared_names.mem candidate declared
+    ||
+    match String.index_from_opt key offset '/' with
+    | None -> false
+    | Some separator -> is_declared_key key (separator + 1)
+  in
+  Compiler_environment.filter_map
+    (fun key binding ->
+      if is_declared_key key 0 then Some (key, binding) else None)
+    env
   |> List.map (fun (key, (binding : Types.binding)) ->
          (key, { binding with forward_declared = true }))
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
@@ -951,6 +986,13 @@ let stabilization_ast ?(signed_names = []) ast =
   in
   let recursive_groups = Dependency_graph.recursive_groups ast in
   let recursive_indices = List.concat recursive_groups in
+  let recursive_group_by_index = Array.make (List.length ast) None in
+  List.iter
+    (fun group ->
+      List.iter
+        (fun index -> recursive_group_by_index.(index) <- Some group)
+        group)
+    recursive_groups;
   let declared_names =
     let explicit =
       ast
@@ -970,40 +1012,40 @@ let stabilization_ast ?(signed_names = []) ast =
   if declared_names = [] then ast
   else
     let indexed = List.mapi (fun index form -> (index, form)) ast in
-    let rec close required_names selected =
-      let required_names, selected, changed =
+    let selected = Array.make (List.length ast) false in
+    let rec close required_names =
+      let required_names, changed =
         List.fold_left
-          (fun (required_names, selected, changed) (index, form) ->
+          (fun (required_names, changed) (index, form) ->
             let provided = Dependency_graph.provided_names form in
             if
               ordinary_definition form
-              && not (List.mem index selected)
+              && not selected.(index)
               && intersects required_names provided
             then
+              let () = selected.(index) <- true in
               let required_names =
                 if
                   explicitly_signed_definition form
-                  || List.mem index recursive_indices
+                  || Option.is_some recursive_group_by_index.(index)
                 then required_names
                 else
                   List.fold_left add_name_variants required_names
                     (Dependency_graph.dependency_symbols form)
               in
-              (required_names, index :: selected, true)
-            else (required_names, selected, changed))
-          (required_names, selected, false) indexed
+              (required_names, true)
+            else (required_names, changed))
+          (required_names, false) indexed
       in
-      if changed then close required_names selected else selected
+      if changed then close required_names else ()
     in
     let required_names =
       List.fold_left add_name_variants Required_names.empty declared_names
     in
-    let selected = close required_names [] in
+    close required_names;
     List.mapi
       (fun index form ->
-        match
-          List.find_opt (List.exists (( = ) index)) recursive_groups
-        with
+        match recursive_group_by_index.(index) with
         | Some (first :: _ as indices) when index = first ->
             let names =
               indices
@@ -1016,7 +1058,7 @@ let stabilization_ast ?(signed_names = []) ast =
         | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
         | Some [] -> assert false
         | None when ordinary_definition form ->
-            if not (List.mem index selected) then
+            if not selected.(index) then
               Ast.FList [ Ast.FSymbol "declare" ]
             else if explicitly_signed_definition form then
               match Dependency_graph.provided_names form with
@@ -1499,8 +1541,9 @@ let typecheck_incremental state (parsed : parser_result) =
                 typecheck_state;
               } ))
 
-let required_ocaml_packages ?(target = Target.default) source =
-  match Lg_frontend.implementation ~target source with
+let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
+    source =
+  match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed -> required_packages_from_ast parsed.ast
 
@@ -1673,7 +1716,7 @@ let print_parsetree = Ocaml_parsetree_backend.print
 
 let compile_chunk_with_diagnostics ?(target = Target.default)
     ?(filename = "<string>") ?(check_ocaml = true) state source =
-  let previous_items = state.located_items in
+  let previous_set_modules = state.requested_set_modules in
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
   | Ok parsed ->
@@ -1681,10 +1724,20 @@ let compile_chunk_with_diagnostics ?(target = Target.default)
       | Error _ as err -> err
       | Ok (state, typed) ->
           (match
-             Ocaml_parsetree_backend.implementation ~previous_items typed
+             Ocaml_parsetree_backend.implementation ~previous_set_modules typed
            with
           | Error _ as err -> err
           | Ok result ->
+              let current_items = List.combine typed.locations typed.items in
+              let requested_set_modules =
+                List.sort_uniq String.compare
+                  (previous_set_modules
+                  @ Lowering.requested_set_modules_from_located_items
+                      current_items)
+              in
+              let state =
+                { state with located_items = []; requested_set_modules }
+              in
               let ocaml_source =
                 Ocaml_parsetree_backend.print result.structure
               in

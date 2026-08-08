@@ -3,5 +3,10 @@
  (public_name lg.runtime)
  (modes native byte melange)
  (preprocess
-  (pps melange.ppx))
+  (per_module
+   ((pps melange.ppx)
+    runtime_array_melange
+    runtime_seq_melange
+    runtime_time_melange
+    runtime_weak_melange)))
  (libraries rrbvec lg.edn-backend))

@@ -36,33 +36,29 @@ let rec variable_mem variable = function
   | _ :: rest -> variable_mem variable rest
 
 let map_preserving_identity map values =
-  let rec find_mapped value = function
-    | [] -> None
-    | (candidate, mapped) :: rest ->
-        if candidate == value then Some mapped else find_mapped value rest
-  in
-  let rec map_values mapped_values = function
+  let rec map_values = function
     | [] as values -> values
     | head :: tail as values ->
-        let mapped_head =
-          match find_mapped head mapped_values with
-          | Some mapped -> mapped
-          | None -> map head
-        in
-        let mapped_tail =
-          map_values ((head, mapped_head) :: mapped_values) tail
-        in
+        let mapped_head = map head in
+        let mapped_tail = map_values tail in
         if mapped_head == head && mapped_tail == tail then values
         else mapped_head :: mapped_tail
   in
-  map_values [] values
+  map_values values
 
 let apply substitutions ty =
   match substitutions with
   | [] -> ty
   | _ ->
       let visiting = ref [] in
-      let rec apply_ty ty = apply_uncached ty
+      let last_mapped = ref None in
+      let rec apply_ty ty =
+        match !last_mapped with
+        | Some (original, mapped) when original == ty -> mapped
+        | Some _ | None ->
+            let mapped = apply_uncached ty in
+            last_mapped := Some (ty, mapped);
+            mapped
       and apply_replacement variable original replacement =
         if variable_mem variable !visiting then original
         else

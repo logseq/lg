@@ -1803,6 +1803,32 @@ let test_type_solver_preserves_shared_substitution_dags () =
       (Printf.sprintf
          "shared type substitution must be linear, but took %.3fs" elapsed)
 
+let test_type_solver_applies_wide_substitutions_linearly () =
+  let open Lg.Types in
+  let width = 20_000 in
+  let template =
+    TRecord
+      (List.init width (fun index ->
+           make_field (":field-" ^ string_of_int index) (TVar "element")))
+  in
+  let started_at = Sys.time () in
+  let applied =
+    Lg.Type_solver.apply
+      [ (Lg.Type_solver.Declared "element", TInt) ]
+      template
+  in
+  let elapsed = Sys.time () -. started_at in
+  (match applied with
+  | TRecord fields
+    when List.length fields = width
+         && List.for_all (fun (field : field) -> field.ty = TInt) fields ->
+      ()
+  | _ -> failwith "wide substitution changed the type shape");
+  if elapsed > 0.10 then
+    failwith
+      (Printf.sprintf
+         "wide type substitution must be linear, but took %.3fs" elapsed)
+
 let test_type_solver_unifies_deep_types_linearly () =
   let open Lg.Types in
   let depth = 4_000 in
@@ -35526,6 +35552,8 @@ let tests =
       test_type_solver_applies_deep_substitutions_linearly );
     ( "type solver preserves shared substitution DAGs",
       test_type_solver_preserves_shared_substitution_dags );
+    ( "type solver applies wide substitutions linearly",
+      test_type_solver_applies_wide_substitutions_linearly );
     ( "type solver unifies deep types linearly",
       test_type_solver_unifies_deep_types_linearly );
     ( "type solver adds independent substitutions linearly",
