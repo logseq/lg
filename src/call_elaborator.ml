@@ -7534,24 +7534,6 @@ let create ~compile_expr =
                           [ semantic_expr ] )))
             | Ok _ -> Error.error "future-call expects a zero-argument function")
         | _ -> Error.error "future-call expects one function")
-    | "realized?" -> (
-        match compile_args () with
-        | Error _ as error -> error
-        | Ok
-            [
-              {
-                ty = TOcaml_app ("Lg_runtime.Runtime_future.t", [ _ ]);
-                semantic_expr;
-                _;
-              };
-            ] ->
-            Ok
-              (typed_ir TBool
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_future.realized",
-                      [ semantic_expr ] )))
-        | Ok [ _ ] -> Error.error "realized? expects a future"
-        | Ok _ -> Error.error "realized? expects one argument")
     | "volatile!" -> (
         match arg_forms with
         | [ FSymbol "nil" ] -> (
@@ -8214,8 +8196,8 @@ let create ~compile_expr =
                                     ]))
             | None -> Core_predicate.compile name [ receiver ])
         | Ok _ -> Error.error "sequential? expects 1 arguments")
-              | "rational?" | "ratio?" | "float?" | "double?"
-              | "decimal?" | "symbol?" | "simple-symbol?" | "qualified-symbol?"
+              | "rational?" | "float?" | "double?" | "symbol?"
+              | "simple-symbol?" | "qualified-symbol?"
               | "simple-keyword?" | "qualified-keyword?" | "ident?"
               | "simple-ident?" | "qualified-ident?" | "reversible?" | "sorted?"
                 -> (

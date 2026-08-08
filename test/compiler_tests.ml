@@ -21032,7 +21032,21 @@ let test_batched_core_functions_reject_bad_arities () =
   |> expect_error_contains "unsupported arity 0";
   compile_with_stdlib_result Lg.Target.Native "test/bad_bit_shift_arity.cljc"
     {|(def x (bit-shift-right 1))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_ratio_arity.cljc"
+    {|(def x (ratio?))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_decimal_arity.cljc"
+    {|(def x (decimal? 1 2))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_realized_arity.cljc"
+    {|(def x (realized?))|}
   |> expect_error_contains "called with incompatible arguments"
+
+let test_source_realized_rejects_non_future_values () =
+  compile_with_stdlib_result Lg.Target.Native "test/bad_realized_value.cljc"
+    {|(def x (realized? 1))|}
+  |> expect_error_contains "expected of type"
 
 let test_batched_core_functions_infer_int_params () =
   let source =
@@ -37071,6 +37085,8 @@ let tests =
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
       test_batched_core_functions_reject_bad_arities );
+    ( "source realized? rejects non-future values",
+      test_source_realized_rejects_non_future_values );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",

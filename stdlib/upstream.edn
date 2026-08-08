@@ -138,6 +138,12 @@
     uuid? {:status :blocked-static-typing
            :reason :native-uuid-is-nominal-but-melange-currently-erases-uuid-to-string-so-a-source-predicate-cannot-distinguish-ordinary-strings-without-a-shared-nominal-representation}
     any? {:status :ported}
+    ratio? {:status :static-adaptation
+            :reason :lg-has-no-ratio-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
+    decimal? {:status :static-adaptation
+              :reason :lg-has-no-decimal-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
+    realized? {:status :static-adaptation
+               :reason :source-wrapper-supports-the-current-statically-typed-future-boundary-while-full-upstream-ipending-delay-and-lazy-sequence-dispatch-remains-protocol-blocked}
     range {:status :static-adaptation
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}
     shuffle {:status :static-adaptation

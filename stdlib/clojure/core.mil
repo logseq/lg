@@ -37,6 +37,10 @@
 (signature clojure.core/NaN? :fn<float;bool>)
 (signature clojure.core/infinite? :fn<float;bool>)
 (signature clojure.core/any? [value] :fn<value;bool>)
+(signature clojure.core/ratio? [value] :fn<value;bool>)
+(signature clojure.core/decimal? [value] :fn<value;bool>)
+(signature clojure.core/realized? [value]
+  :fn<Lg_runtime.Runtime_future.t<value>;bool>)
 (signature clojure.core/range
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)
 (signature clojure.core/shuffle [value]

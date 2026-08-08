@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid special-symbol? symbol-identical?]]))
+  (:require [cljs.core :as core :refer [NaN? bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -301,3 +301,21 @@
 (println (= -4 (bit-shift-right -16 2)))
 (println (= 10 (core/bit-shift-left 5 1)))
 (println (= 6 (clojure.core/bit-and 7 6)))
+
+(def source-ratio? ratio?)
+(def source-decimal? decimal?)
+(println (not (source-ratio? 1)))
+(println (not (source-ratio? "1")))
+(println (not (source-decimal? 1)))
+(println (not (source-decimal? :value)))
+(def predicate-calls (atom 0))
+(println
+ (and (not (ratio? (do (swap! predicate-calls inc) 1)))
+      (= 1 @predicate-calls)))
+(println (not (core/ratio? 1)))
+(println (not (clojure.core/decimal? "1")))
+
+(def completed-future (future-call (fn [] 42)))
+(def source-realized? realized?)
+(println (source-realized? completed-future))
+(println (core/realized? completed-future))

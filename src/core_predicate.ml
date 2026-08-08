@@ -37,7 +37,6 @@ let compile name args =
       match name with
       | "rational?" -> static_bool (Types.equal arg.ty TInt)
       | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
-      | "ratio?" | "decimal?" -> static_bool false
       | "symbol?"
         when Option.is_some
                (Types.symbol_predicate_constraint_info arg.ty) ->

@@ -8,6 +8,7 @@
             [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
+            [ocaml.Lg_runtime.Runtime_future :as runtime-future]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
@@ -130,6 +131,17 @@
 (defn any? [x]
   (runtime-static-value/consume x)
   true)
+
+(defn ratio? [x]
+  (runtime-static-value/consume x)
+  false)
+
+(defn decimal? [x]
+  (runtime-static-value/consume x)
+  false)
+
+(defn realized? [future]
+  (runtime-future/realized future))
 
 (defn range
   ([] (runtime-seq/range 0 1))
