@@ -105,6 +105,18 @@
                 :reason :source-port-preserves-upstream-decimal-grammar-and-safe-integer-guards-through-boolean-typed-grammar-and-pre-parse-overflow-validators}
     parse-double {:status :static-adaptation
                   :reason :source-port-preserves-upstream-nan-before-number-grammar-branching-through-boolean-typed-grammar-validators}
+    NaN? {:status :static-adaptation
+          :reason :source-wrapper-preserves-upstream-javascript-number-nan-semantics-through-the-existing-typed-float-primitive}
+    infinite? {:status :ported}
+    keyword-identical? {:status :static-adaptation
+                        :reason :static-keyword-arguments-preserve-upstream-fqn-value-identity-without-open-runtime-type-tests}
+    symbol-identical? {:status :static-adaptation
+                       :reason :static-symbol-arguments-preserve-upstream-qualified-value-identity-without-open-runtime-type-tests}
+    hash-long {:status :ported}
+    special-symbol? {:status :static-adaptation
+                     :reason :static-symbol-input-preserves-upstream-special-form-set-membership}
+    uuid? {:status :blocked-static-typing
+           :reason :native-uuid-is-nominal-but-melange-currently-erases-uuid-to-string-so-a-source-predicate-cannot-distinguish-ordinary-strings-without-a-shared-nominal-representation}
     any? {:status :ported}
     range {:status :static-adaptation
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}

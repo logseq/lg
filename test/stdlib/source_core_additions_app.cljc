@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [merge-with parse-double parse-long parse-uuid]]))
+  (:require [cljs.core :as core :refer [NaN? hash-long infinite? keyword-identical? merge-with parse-double parse-long parse-uuid special-symbol? symbol-identical?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -214,3 +214,26 @@
                                            {:value 3})
                    :value
                    0)))
+
+(println (NaN? ##NaN))
+(println (not (NaN? 1.5)))
+(println (core/NaN? ##NaN))
+(println (infinite? ##Inf))
+(println (infinite? ##-Inf))
+(println (not (infinite? 1.5)))
+(println (not (core/infinite? ##NaN)))
+
+(println (keyword-identical? :block/uuid :block/uuid))
+(println (not (keyword-identical? :block/uuid :block/title)))
+(println (core/keyword-identical? :db/id :db/id))
+(println (clojure.core/keyword-identical? :db/id :db/id))
+
+(println (symbol-identical? (symbol "user" "value") (symbol "user" "value")))
+(println (not (symbol-identical? (symbol "left") (symbol "right"))))
+(println (core/symbol-identical? (symbol "ready") (symbol "ready")))
+
+(println (= 4 (hash-long 7 3)))
+(println (= -1 (core/hash-long 0 -1)))
+(println (special-symbol? (symbol "if")))
+(println (special-symbol? (symbol "set!")))
+(println (not (clojure.core/special-symbol? (symbol "ordinary"))))

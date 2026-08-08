@@ -41,7 +41,10 @@
   datascript/benchmark/datascript/bench/datascript.cljc
   %{lib:datascript.runtime:datascript_runtime.cmi}
   %{lib:datascript.runtime:datascript_runtime__Data_value.cmi}
+  %{lib:datascript.runtime:datascript_runtime__Query_value.cmi}
   %{lib:datascript.runtime:datascript_runtime__Serialization_value.cmi}
+  %{lib:datascript.runtime:datascript_runtime__Storage_backend.cmi}
+  %{lib:datascript.runtime:datascript_runtime__Storage_value.cmi}
   %{lib:lg-test.runtime:lg_test_runtime.cmi}
   %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
   ../bin/lg_cli.exe)

@@ -22,6 +22,7 @@ for name in \
   split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap \
   comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean splitv-at \
   booleans bytes chars shorts ints floats doubles longs random-uuid parse-uuid system-time parse-long parse-double merge-with \
+  NaN? infinite? keyword-identical? symbol-identical? hash-long special-symbol? \
   bit-clear bit-flip bit-set bit-test; do
   if ! grep -F "(defn $name" "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2

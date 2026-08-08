@@ -11,6 +11,7 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
   (setenv
@@ -52,6 +53,7 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
   (setenv

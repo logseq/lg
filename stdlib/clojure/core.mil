@@ -18,6 +18,8 @@
 (signature clojure.core/parse-boolean :fn<string;option<bool>>)
 (signature clojure.core/parse-long :fn<string;option<int>>)
 (signature clojure.core/parse-double :fn<string;option<float>>)
+(signature clojure.core/NaN? :fn<float;bool>)
+(signature clojure.core/infinite? :fn<float;bool>)
 (signature clojure.core/any? [value] :fn<value;bool>)
 (signature clojure.core/range
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)
@@ -71,6 +73,7 @@
 (signature clojure.core/bit-and-not-two :fn<int;int;int>)
 (signature clojure.core/unsigned-bit-shift-right :fn<int;int;int>)
 (signature clojure.core/bit-count :fn<int;int>)
+(signature clojure.core/hash-long :fn<int;int;int>)
 (signature clojure.core/second [value]
   :fn<seqable<value>;option<value>>)
 (signature clojure.core/last [value]
@@ -149,6 +152,10 @@
 
 (signature clojure.core/val [key value]
   :fn<tuple<key;value>;value>)
+
+(signature clojure.core/keyword-identical? :fn<keyword;keyword;bool>)
+(signature clojure.core/symbol-identical? :fn<symbol;symbol;bool>)
+(signature clojure.core/special-symbol? :fn<symbol;bool>)
 
 (signature clojure.core/merge-entry-with [key value]
   :fn<fn<value;value;value>;map<key;value>;tuple<key;value>;map<key;value>>)

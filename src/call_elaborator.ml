@@ -10871,9 +10871,11 @@ let create ~compile_expr =
                          | _ -> false)
                     param_tys actual_tys
                 in
-                let rec unify_argument substitutions template actual =
+                let rec unify_argument ?(preserve_optional = false)
+                    substitutions template actual =
                   let template, actual =
-                    align_optional_inference template actual
+                    if preserve_optional then (template, actual)
+                    else align_optional_inference template actual
                   in
                   match
                     ( Types.seqable_constraint_info template,
@@ -10884,8 +10886,8 @@ let create ~compile_expr =
                       None,
                       Some actual_element ) ->
                       (match
-                         unify_argument substitutions expected_element
-                           actual_element
+                         unify_argument ~preserve_optional:true substitutions
+                           expected_element actual_element
                        with
                       | Error _ as error -> error
                       | Ok substitutions ->

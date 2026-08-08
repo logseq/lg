@@ -29322,6 +29322,37 @@ let test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls () =
            source
          |> expect_error_contains expected_error)
 
+let test_source_every_preserves_optional_protocol_sequence_elements () =
+  let source =
+    {|
+(type-record item (value :int))
+(deftype OptionalItems
+  [^:vector<option<item>> items]
+  ISeqable
+  (-seq [_]
+    (seq items)))
+
+(def values
+  (OptionalItems. [(Some (record item (value 1))) None]))
+(println
+  (every?
+   (fn [^:option<item> value]
+     (match value
+       (Some item) (= 1 (:value item))
+       None true))
+   values))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_every_optional_protocol_elements.cljc" source
+  in
+  assert_ocaml_runs "source_every_preserves_optional_protocol_sequence_elements"
+    "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_every_optional_protocol_elements.cljc" source)
+
 let test_source_core_splitv_and_array_hint_identities () =
   let source =
     {|
@@ -37545,6 +37576,8 @@ let tests =
       test_source_core_map_entry_and_parse_boolean_helpers );
     ( "source core map-entry and parse-boolean helpers reject bad calls",
       test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls );
+    ( "source every preserves optional protocol sequence elements",
+      test_source_every_preserves_optional_protocol_sequence_elements );
     ( "source core splitv and array hint identities work",
       test_source_core_splitv_and_array_hint_identities );
     ( "source core splitv and array hint identities reject bad calls",

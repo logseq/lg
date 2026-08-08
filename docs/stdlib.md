@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 141 source entries, 175 typed
-primitives, 5 special forms, 12 host boundaries, 158 static-typing blockers,
-44 out-of-scope Spec entries, and 320 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 147 source entries (17.19%), 175 typed
+primitives, 5 special forms, 12 host boundaries, 159 static-typing blockers,
+44 out-of-scope Spec entries, and 313 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
@@ -163,7 +163,9 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
 `constantly`, `vec`, `max-key`, `min-key`, `frequencies`, `update-vals`,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
-`parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, and the
+`parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, `NaN?`,
+`infinite?`, `keyword-identical?`, `symbol-identical?`, `hash-long`,
+`special-symbol?`, and the
 derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
@@ -182,7 +184,16 @@ call sites. Its source port preserves the upstream entry fold and left-to-right
 combiner order. Because LG has no value-dependent return types, supplying only
 `nil` map arguments yields an empty typed map rather than upstream nil; the
 zero-map `(merge-with f)` arity still returns nil, and this static adaptation is
-recorded in `stdlib/upstream.edn`. The aggregate `clojure.set` source
+recorded in `stdlib/upstream.edn`. Logseq has 12 direct
+`keyword-identical?` calls; the source implementation uses LG's statically
+typed keyword equality, matching ClojureScript's fallback comparison of fully
+qualified names without an open runtime type test. The matching symbol
+function and the upstream float predicates, long hash combiner, and
+special-symbol membership function are source-backed in the same batch.
+`uuid?` remains a concrete static blocker: Native UUID values are nominal,
+while Melange currently represents UUID values as strings, so a source
+predicate cannot distinguish them from ordinary strings until both targets
+share a nominal representation. The aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
 `superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
 references and all 221 observed qualified-var references resolve through the

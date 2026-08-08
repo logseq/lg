@@ -74,6 +74,13 @@
     (runtime-string/parse-decimal-float source)
     :else nil))
 
+(defn NaN? [value]
+  (js/isNaN value))
+
+(defn infinite? [value]
+  (or (= value ##Inf)
+      (= value ##-Inf)))
+
 (defn any? [x]
   (runtime-static-value/consume x)
   true)
@@ -247,6 +254,9 @@
         0x1010101)
      24)))
 
+(defn hash-long [high low]
+  (bit-xor high low))
+
 (defn second [coll]
   (first (next coll)))
 
@@ -372,6 +382,19 @@
 
 (defn val [map-entry]
   (stdlib/snd map-entry))
+
+(defn keyword-identical? [left right]
+  (= left right))
+
+(defn symbol-identical? [left right]
+  (= left right))
+
+(defn special-symbol? [value]
+  (contains?
+   #{'if 'def 'fn* 'do 'let* 'loop* 'letfn* 'throw 'try 'catch 'finally
+     'recur 'new 'set! 'ns 'deftype* 'defrecord* '. 'js* '& 'quote 'case*
+     'var 'ns*}
+   value))
 
 (defn- merge-entry-with [f m entry]
   (let [k (key entry)
