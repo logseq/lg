@@ -902,26 +902,130 @@ let declaration_bindings ast env =
          (key, { binding with forward_declared = true }))
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
 
-let stabilization_ast ast =
-  let recursive_groups = Dependency_graph.recursive_groups ast in
-  List.mapi
-    (fun index form ->
-      match
-        List.find_opt (List.exists (( = ) index)) recursive_groups
-      with
-      | None -> form
-      | Some (first :: _ as indices) when index = first ->
-          let names =
-            indices
-            |> List.concat_map (fun member ->
-                   List.nth ast member |> Dependency_graph.provided_names)
-            |> List.sort_uniq String.compare
-            |> List.map (fun name -> Ast.FSymbol name)
-          in
-          Ast.FList (Ast.FSymbol "declare" :: names)
-      | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
-      | Some [] -> assert false)
+let stabilization_ast ?(signed_names = []) ast =
+  let module Signed_names = Set.Make (String) in
+  let module Required_names = Set.Make (String) in
+  let signed_names = Signed_names.of_list signed_names in
+  let scope =
     ast
+    |> List.find_map (function
+         | Ast.FList
+             [ Ast.FSymbol "namespace-scope"; Ast.FSymbol namespace ] ->
+             Some namespace
+         | _ -> None)
+    |> Option.value ~default:""
+  in
+  let explicitly_signed_definition = function
+    | Ast.FList
+        (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
+        :: Ast.FSymbol name :: _) ->
+        Signed_names.mem name signed_names
+        || (scope <> ""
+           && Signed_names.mem (Names.scoped_key scope name) signed_names)
+    | _ -> false
+  in
+  let ordinary_definition = function
+    | Ast.FList
+        (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-")
+        :: Ast.FSymbol _ :: _) ->
+        true
+    | _ -> false
+  in
+  let add_name_variants names name =
+    let names = Required_names.add name names in
+    match String.rindex_opt name '/' with
+    | None -> names
+    | Some separator ->
+        Required_names.add
+          (String.sub name (separator + 1)
+             (String.length name - separator - 1))
+          names
+  in
+  let intersects names candidates =
+    List.exists
+      (fun candidate ->
+        let variants = add_name_variants Required_names.empty candidate in
+        not
+          (Required_names.is_empty (Required_names.inter names variants)))
+      candidates
+  in
+  let recursive_groups = Dependency_graph.recursive_groups ast in
+  let recursive_indices = List.concat recursive_groups in
+  let declared_names =
+    let explicit =
+      ast
+      |> List.concat_map (function
+           | Ast.FList (Ast.FSymbol ("declare" | "declare+") :: _)
+           | Ast.FList [ Ast.FSymbol "defn-signature"; _ ] as form ->
+               Dependency_graph.provided_names form
+           | _ -> [])
+    in
+    let recursive =
+      recursive_indices
+      |> List.concat_map (fun index ->
+             Dependency_graph.provided_names (List.nth ast index))
+    in
+    List.sort_uniq String.compare (explicit @ recursive)
+  in
+  if declared_names = [] then ast
+  else
+    let indexed = List.mapi (fun index form -> (index, form)) ast in
+    let rec close required_names selected =
+      let required_names, selected, changed =
+        List.fold_left
+          (fun (required_names, selected, changed) (index, form) ->
+            let provided = Dependency_graph.provided_names form in
+            if
+              ordinary_definition form
+              && not (List.mem index selected)
+              && intersects required_names provided
+            then
+              let required_names =
+                if
+                  explicitly_signed_definition form
+                  || List.mem index recursive_indices
+                then required_names
+                else
+                  List.fold_left add_name_variants required_names
+                    (Dependency_graph.dependency_symbols form)
+              in
+              (required_names, index :: selected, true)
+            else (required_names, selected, changed))
+          (required_names, selected, false) indexed
+      in
+      if changed then close required_names selected else selected
+    in
+    let required_names =
+      List.fold_left add_name_variants Required_names.empty declared_names
+    in
+    let selected = close required_names [] in
+    List.mapi
+      (fun index form ->
+        match
+          List.find_opt (List.exists (( = ) index)) recursive_groups
+        with
+        | Some (first :: _ as indices) when index = first ->
+            let names =
+              indices
+              |> List.concat_map (fun member ->
+                     List.nth ast member |> Dependency_graph.provided_names)
+              |> List.sort_uniq String.compare
+              |> List.map (fun name -> Ast.FSymbol name)
+            in
+            Ast.FList (Ast.FSymbol "declare" :: names)
+        | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
+        | Some [] -> assert false
+        | None when ordinary_definition form ->
+            if not (List.mem index selected) then
+              Ast.FList [ Ast.FSymbol "declare" ]
+            else if explicitly_signed_definition form then
+              match Dependency_graph.provided_names form with
+              | name :: _ ->
+                  Ast.FList [ Ast.FSymbol "declare"; Ast.FSymbol name ]
+              | [] -> form
+            else form
+        | None -> form)
+      ast
 
 let recursive_definition_ast ast =
   let definition_forms = function
@@ -1277,7 +1381,11 @@ let typecheck (parsed : parser_result) =
             Source_context.with_locations parsed.form_locations (fun () ->
                 Typecheck.compile_forms_incremental state compilation_ast))
       in
-      let evidence_ast = stabilization_ast parsed.ast in
+      let signed_names =
+        initial_state.env |> Compiler_environment.signatures
+        |> Signature_overlay.value_names
+      in
+      let evidence_ast = stabilization_ast ~signed_names parsed.ast in
       let compile_evidence =
         if List.for_all2 ( == ) evidence_ast parsed.ast then None
         else
@@ -1340,7 +1448,11 @@ let typecheck_incremental state (parsed : parser_result) =
                 Typecheck.compile_forms_incremental typecheck_state
                   compilation_ast))
       in
-      let evidence_ast = stabilization_ast parsed.ast in
+      let signed_names =
+        initial_state.env |> Compiler_environment.signatures
+        |> Signature_overlay.value_names
+      in
+      let evidence_ast = stabilization_ast ~signed_names parsed.ast in
       let compile_evidence =
         if List.for_all2 ( == ) evidence_ast parsed.ast then None
         else

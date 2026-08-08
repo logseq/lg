@@ -67,3 +67,41 @@ let symbol_value = function
 let keyword_value = function
   | Lg_edn_backend.Keyword value -> ":" ^ value
   | _ -> invalid_arg "expected keyword metadata"
+
+let regex_value = function
+  | Lg_edn_backend.Regex value -> value
+  | _ -> invalid_arg "expected regex metadata"
+
+let list_value convert = function
+  | Lg_edn_backend.List values ->
+      values |> Array.map convert |> Array.to_list
+  | _ -> invalid_arg "expected list metadata"
+
+let seq_value convert = function
+  | Lg_edn_backend.List values -> values |> Array.map convert |> Array.to_seq
+  | _ -> invalid_arg "expected sequence metadata"
+
+let vector_value convert = function
+  | Lg_edn_backend.Vector values ->
+      values |> Array.map convert |> Rrbvec.of_array
+  | _ -> invalid_arg "expected vector metadata"
+
+let array_value convert = function
+  | Lg_edn_backend.Vector values -> Array.map convert values
+  | _ -> invalid_arg "expected array metadata"
+
+let set_values convert = function
+  | Lg_edn_backend.Set values -> values |> Array.map convert |> Array.to_list
+  | _ -> invalid_arg "expected set metadata"
+
+let map_value convert_key convert_value = function
+  | Lg_edn_backend.Map entries ->
+      entries
+      |> Array.map (fun (key, value) ->
+             (convert_key key, convert_value value))
+      |> Array.to_list |> Runtime_map.of_list
+  | _ -> invalid_arg "expected map metadata"
+
+let option_value convert = function
+  | Lg_edn_backend.Nil -> None
+  | value -> Some (convert value)

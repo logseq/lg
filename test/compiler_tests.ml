@@ -4764,6 +4764,11 @@ let compile_datascript_sources ?(check_ocaml = true) target initial_state source
   let state, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (filename, source) ->
+        let started_at =
+          if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+            Some (Unix.gettimeofday ())
+          else None
+        in
         let state, output =
           let source_digest = Digest.to_hex (Digest.string source) in
           match
@@ -4820,6 +4825,11 @@ let compile_datascript_sources ?(check_ocaml = true) target initial_state source
                 :: !datascript_chunk_cache;
               (output_state, output)
         in
+        Option.iter
+          (fun started_at ->
+            Printf.eprintf "lg: compiled %s for %s in %.3fs\n%!" filename
+              target_name (Unix.gettimeofday () -. started_at))
+          started_at;
         (state, output :: outputs))
       (initial_state, []) sources
   in
@@ -22254,22 +22264,83 @@ let test_sort_accepts_dynamic_collections () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_metadata_maps_preserve_closed_edn_values_statically () =
-  let source =
-    {|
+let metadata_attach_function_source =
+  {|
 (ns metadata.closed-values)
-(defn attach-source [obj ^:vector<int> source]
+(defn attach-source [^:map<keyword;int> obj ^:vector<int> source]
   (with-meta obj {:source source}))
+|}
+
+let metadata_map_setup_source =
+  metadata_attach_function_source
+  ^ {|
 (def ^:vector<int> attached-source
   (:source (meta (attach-source {:x 1} [1 2]))))
-(println (= attached-source [1 2]))
 |}
+
+let metadata_map_source =
+  metadata_map_setup_source ^ "\n(println (= attached-source [1 2]))\n"
+
+let test_metadata_maps_preserve_closed_edn_values_statically () =
+  let ocaml_source =
+    Lg.Compiler.compile_string metadata_map_source |> expect_ok
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "typed map metadata must not cross Runtime_dynamic";
   assert_ocaml_runs "metadata_maps_preserve_closed_edn_values_statically"
     "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange metadata_map_source
+    |> expect_ok)
+
+let test_metadata_compilation_isolated_from_package_include_dirs () =
+  ignore
+    (Lg.Compiler.restore_ocaml_environment
+       ~packages:[ "datascript.runtime" ] Lg.Compiler.empty_state []
+    |> expect_ok);
+  ignore
+    (Lg.Compiler.compile_string metadata_attach_function_source |> expect_ok);
+  ignore (Lg.Compiler.compile_string metadata_map_setup_source |> expect_ok);
+  ignore (Lg.Compiler.compile_string metadata_map_source |> expect_ok)
+
+let test_metadata_maps_decode_closed_edn_collections () =
+  let source =
+    {|
+(ns metadata.closed-collections)
+(def map-key :a)
+(def enriched
+  (with-meta
+    {:x 1}
+    {:vector [1 2]
+     :list (list 3 4)
+     :array (array 5 6)
+     :set (set [7 8])
+     :map (hash-map map-key 9)
+     :present (Some 10)
+     :missing nil}))
+(def ^:vector<int> vector-value (:vector (meta enriched)))
+(def ^:list<int> list-value (:list (meta enriched)))
+(def ^:array<int> array-value (:array (meta enriched)))
+(def ^:set<int> set-value (:set (meta enriched)))
+(def ^:map<keyword;int> map-value (:map (meta enriched)))
+(def ^:option<int> present-value (:present (meta enriched)))
+(def ^:option<int> missing-value (:missing (meta enriched)))
+(println
+  (and
+    (= vector-value [1 2])
+    (= (first list-value) 3)
+    (= (aget array-value 1) 6)
+    (contains? set-value 8)
+    (= (:a map-value) 9)
+    (= present-value (Some 10))
+    (nil? missing-value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "closed metadata collections must not cross Runtime_dynamic";
+  assert_ocaml_runs "metadata_maps_decode_closed_edn_collections" "true\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -24438,9 +24509,150 @@ let test_stabilization_ast_skips_mutual_function_bodies () =
   | [ _; FList (FSymbol "declare" :: names); FList [ FSymbol "declare" ]; last ] ->
       if names <> [ FSymbol "left"; FSymbol "right" ] then
         failwith "the evidence pass must retain both recursive declarations";
-      if last != List.nth forms 3 then
-        failwith "the evidence pass must preserve independent forms"
+      if last <> FList [ FSymbol "declare" ] then
+        failwith "the evidence pass must omit unrelated function bodies"
   | _ -> failwith "mutual function bodies must be omitted from evidence passes"
+
+let test_stabilization_ast_retains_forward_definition_dependencies () =
+  let open Lg.Ast in
+  let helper =
+    FList
+      [ FSymbol "defn"; FSymbol "helper"; FVector []; FInt 42 ]
+  in
+  let target =
+    FList
+      [
+        FSymbol "defn";
+        FSymbol "target";
+        FVector [];
+        FList [ FSymbol "helper" ];
+      ]
+  in
+  let unrelated =
+    FList
+      [ FSymbol "defn"; FSymbol "unrelated"; FVector []; FInt 7 ]
+  in
+  match
+    Lg.Toolchain.stabilization_ast
+      [
+        FList [ FSymbol "declare"; FSymbol "target" ];
+        helper;
+        target;
+        unrelated;
+      ]
+  with
+  | [ _; evidence_helper; evidence_target; FList [ FSymbol "declare" ] ] ->
+      if evidence_helper != helper || evidence_target != target then
+        failwith
+          "the evidence pass must retain forward definitions and their dependencies"
+  | _ ->
+      failwith
+        "the evidence pass must omit definitions unrelated to forward declarations"
+
+let test_stabilization_ast_without_forward_declarations_is_unchanged () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [ FSymbol "defn"; FSymbol "first"; FVector []; FInt 1 ];
+      FList
+        [ FSymbol "defn"; FSymbol "second"; FVector []; FInt 2 ];
+    ]
+  in
+  let evidence = Lg.Toolchain.stabilization_ast forms in
+  if not (List.for_all2 ( == ) evidence forms) then
+    failwith "files without forward declarations must keep a single full pass"
+
+let test_stabilization_ast_skips_explicitly_signed_function_bodies () =
+  let open Lg.Ast in
+  let signed =
+    FList
+      [
+        FSymbol "defn";
+        FSymbol "signed";
+        FVector [ FSymbol "value" ];
+        FSymbol "value";
+      ]
+  in
+  let unsigned =
+    FList
+      [
+        FSymbol "defn";
+        FSymbol "unsigned";
+        FVector [ FSymbol "value" ];
+        FSymbol "value";
+      ]
+  in
+  match
+    Lg.Toolchain.stabilization_ast ~signed_names:[ "user/signed" ]
+      [
+        FList [ FSymbol "namespace-scope"; FSymbol "user" ];
+        FList [ FSymbol "declare"; FSymbol "signed" ];
+        signed;
+        unsigned;
+      ]
+  with
+  | [
+   _;
+   _;
+   FList [ FSymbol "declare"; FSymbol "signed" ];
+   FList [ FSymbol "declare" ];
+  ] ->
+      ()
+  | _ ->
+      failwith
+        "the evidence pass must omit a function body whose ABI has an explicit signature"
+
+let test_stabilization_ast_keeps_other_namespace_namesakes () =
+  let open Lg.Ast in
+  let namesake =
+    FList
+      [
+        FSymbol "defn";
+        FSymbol "pattern";
+        FVector [ FSymbol "value" ];
+        FSymbol "value";
+      ]
+  in
+  match
+    Lg.Toolchain.stabilization_ast
+      ~signed_names:[ "other.namespace/pattern" ]
+      [
+        FList
+          [ FSymbol "namespace-scope"; FSymbol "current.namespace" ];
+        namesake;
+      ]
+  with
+  | [ _; evidence_namesake ] when evidence_namesake == namesake -> ()
+  | _ ->
+      failwith
+        "a sidecar signature must not hide a namesake in another namespace"
+
+let test_stabilization_ast_preserves_inline_signed_function_bodies () =
+  let open Lg.Ast in
+  let signature =
+    FList
+      [
+        FSymbol "signature";
+        FSymbol "user/signed";
+        FKeyword ":fn<int;int>";
+      ]
+  in
+  let signed =
+    FList
+      [
+        FSymbol "defn";
+        FSymbol "signed";
+        FVector [ FSymbol "value" ];
+        FSymbol "value";
+      ]
+  in
+  match Lg.Toolchain.stabilization_ast [ signature; signed ] with
+  | [ evidence_signature; evidence_signed ] ->
+      if evidence_signature != signature || evidence_signed != signed then
+        failwith
+          "inline signatures must retain body evidence for inferred capabilities"
+  | _ -> failwith "inline signatures and definitions must be preserved"
 
 let test_declarations_do_not_merge_independent_functions () =
   let source =
@@ -36097,6 +36309,10 @@ let tests =
     ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
     ( "metadata maps preserve closed EDN values statically",
       test_metadata_maps_preserve_closed_edn_values_statically );
+    ( "metadata compilation is isolated from package include dirs",
+      test_metadata_compilation_isolated_from_package_include_dirs );
+    ( "metadata maps decode closed EDN collections",
+      test_metadata_maps_decode_closed_edn_collections );
     ( "generated ML preserves readable names and layout",
       test_generated_ml_preserves_readable_names_and_layout );
     ( "logical or preserves nullable closed sum results",
@@ -36278,6 +36494,16 @@ let tests =
       test_dependency_graph_orders_later_self_referred_macros_before_requires );
     ( "stabilization ast skips mutual function bodies",
       test_stabilization_ast_skips_mutual_function_bodies );
+    ( "stabilization ast retains forward definition dependencies",
+      test_stabilization_ast_retains_forward_definition_dependencies );
+    ( "stabilization ast without forward declarations is unchanged",
+      test_stabilization_ast_without_forward_declarations_is_unchanged );
+    ( "stabilization ast skips explicitly signed function bodies",
+      test_stabilization_ast_skips_explicitly_signed_function_bodies );
+    ( "stabilization ast keeps other namespace namesakes",
+      test_stabilization_ast_keeps_other_namespace_namesakes );
+    ( "stabilization ast preserves inline signed function bodies",
+      test_stabilization_ast_preserves_inline_signed_function_bodies );
     ( "declarations do not merge independent functions",
       test_declarations_do_not_merge_independent_functions );
     ( "typecheck stabilizes forward declaration ABI",

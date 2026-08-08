@@ -874,7 +874,7 @@ and metadata_mapper ty =
       Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], body))
     (pack_metadata_expression ty (Semantic_ir.Ident value_name))
 
-let unpack_metadata_expression ty expression =
+let rec unpack_metadata_expression ty expression =
   let convert name =
     Ok
       (Semantic_ir.Apply
@@ -888,10 +888,75 @@ let unpack_metadata_expression ty expression =
   | TChar -> convert "char_value"
   | TSymbol -> convert "symbol_value"
   | TKeyword -> convert "keyword_value"
+  | TRegex -> convert "regex_value"
   | TOcaml "Lg_edn_backend.t" -> Ok expression
-  | ty ->
-      Error.error
-        ("metadata lookup cannot decode " ^ Types.source_name ty)
+  | TList element_ty ->
+      Result.map
+        (fun decoder ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.list_value",
+              [ decoder; expression ] ))
+        (metadata_decoder element_ty)
+  | TSeq element_ty ->
+      Result.map
+        (fun decoder ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.seq_value",
+              [ decoder; expression ] ))
+        (metadata_decoder element_ty)
+  | TVector element_ty ->
+      Result.map
+        (fun decoder ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.vector_value",
+              [ decoder; expression ] ))
+        (metadata_decoder element_ty)
+  | TArray element_ty | TOcaml_app ("array", [ element_ty ]) ->
+      Result.map
+        (fun decoder ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.array_value",
+              [ decoder; expression ] ))
+        (metadata_decoder element_ty)
+  | TSet element_ty -> (
+      match (metadata_decoder element_ty, Types.set_module_name element_ty) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok decoder, Ok set_module ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident (set_module ^ ".of_list"),
+                 [
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_metadata.set_values",
+                       [ decoder; expression ] );
+                 ] )))
+  | TNullable element_ty | TOcaml_app ("option", [ element_ty ]) ->
+      Result.map
+        (fun decoder ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.option_value",
+              [ decoder; expression ] ))
+        (metadata_decoder element_ty)
+  | map_ty -> (
+      match Types.dynamic_map_types map_ty with
+      | Some (key_ty, value_ty) -> (
+          match (metadata_decoder key_ty, metadata_decoder value_ty) with
+          | (Error _ as error), _ | _, (Error _ as error) -> error
+          | Ok key_decoder, Ok value_decoder ->
+              Ok
+                (Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.map_value",
+                     [ key_decoder; value_decoder; expression ] )))
+      | None ->
+          Error.error
+            ("metadata lookup cannot decode " ^ Types.source_name ty))
+
+and metadata_decoder ty =
+  let value_name = "__lg_metadata_decoded_value" in
+  Result.map
+    (fun body -> Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], body))
+    (unpack_metadata_expression ty (Semantic_ir.Ident value_name))
 
 let rec constrained_storage_type expected actual =
   match Types.dynamic_constraint_info expected with
@@ -4301,7 +4366,7 @@ let create ~compile_expr =
                   |> Option.value ~default:(TOcaml "Lg_edn_backend.t")
                 in
                 (match optional_payload expected with
-                | Some payload_ty ->
+                | Some _ ->
                     let value_name = "__lg_metadata_lookup_value" in
                     Result.map
                       (fun decoded ->
@@ -4313,10 +4378,9 @@ let create ~compile_expr =
                                    Semantic_ir.Constructor ("None", None) );
                                  ( Semantic_ir.PConstructor
                                      ("Some", Some (Semantic_ir.PVar value_name)),
-                                   Semantic_ir.Constructor
-                                     ("Some", Some decoded) );
+                                   decoded );
                                ] )))
-                      (unpack_metadata_expression payload_ty
+                      (unpack_metadata_expression expected
                          (Semantic_ir.Ident value_name))
                 | None ->
                     Result.map

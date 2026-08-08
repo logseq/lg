@@ -17,3 +17,9 @@ let find_record name overlays =
 
 let find_value name overlays =
   match find name overlays with Some (Value ty) -> Some ty | _ -> None
+
+let value_names overlays =
+  String_map.fold
+    (fun name entry names ->
+      match entry with Value _ -> name :: names | Record _ -> names)
+    overlays []

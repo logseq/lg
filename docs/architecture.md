@@ -285,6 +285,17 @@ The compiler does not always infer final declarations in one pass.
 5. recompiles until declaration ABI stabilizes;
 6. fails after 16 passes.
 
+Evidence passes do not emit final code. When a chunk contains forward or
+recursive declarations, the evidence AST therefore retains only the ordinary
+definitions needed by those declarations and their transitive source
+dependencies. Unrelated function bodies are replaced by empty declaration
+placeholders. A definition already covered by a previously compiled sidecar
+signature contributes a declaration instead of recompiling its body. Inline
+signatures still retain their bodies because the same chunk may need their
+inferred capability and row evidence. The final full pass always compiles and
+validates every source definition, and any ABI change continues through the
+same fixed-point loop.
+
 The ABI comparison covers:
 
 - canonical type scheme;
@@ -921,4 +932,3 @@ Despite the hotspots, the architecture has several strong foundations:
 The maintenance goal should be to preserve these boundaries while reducing the
 number of responsibilities concentrated in call elaboration, inference
 stabilization, and the test matrix.
-
