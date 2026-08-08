@@ -5246,7 +5246,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol
             ( "quot" | "rem" | "mod" | "bit-shift-left" | "bit-shift-right"
-            | "bit-set" | "bit-clear" | "bit-flip" | "bit-test"
             | "bit-shift-right-zero-fill" | "hash-combine" | "unchecked-divide-int"
             | "unchecked-remainder-int" );
           left;

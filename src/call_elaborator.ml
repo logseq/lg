@@ -8228,7 +8228,6 @@ let create ~compile_expr =
                   ))
         | _ -> Error.error "instance? expects a record type and value")
               | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean"
-              | "bit-set" | "bit-clear" | "bit-flip" | "bit-test"
               | "bit-shift-right-zero-fill" | "unchecked-add"
               | "unchecked-add-int" | "unchecked-subtract"
               | "unchecked-subtract-int" | "unchecked-multiply"

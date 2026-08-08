@@ -287,37 +287,6 @@ let compile name args =
       int_predicate name args (fun expr ->
           Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
   | "boolean" -> compile_boolean name args
-  | "bit-set" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt
-            (Semantic_ir.Infix
-               ( "lor",
-                 left,
-                 Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) )))
-  | "bit-clear" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt
-            (Semantic_ir.Infix
-               ( "land",
-                 left,
-                 Semantic_ir.Prefix
-                   ("lnot", Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right))
-               )))
-  | "bit-flip" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt
-            (Semantic_ir.Infix
-               ( "lxor",
-                 left,
-                 Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right) )))
-  | "bit-test" ->
-      int_binary name args (fun left right ->
-          typed_ir TBool
-            (Semantic_ir.Infix
-               ( "<>",
-                 Semantic_ir.Infix
-                   ("land", left, Semantic_ir.Infix ("lsl", Semantic_ir.Int 1, right)),
-                 Semantic_ir.Int 0 )))
   | "bit-shift-right-zero-fill" ->
       int_binary name args (fun left right ->
           typed_ir TInt

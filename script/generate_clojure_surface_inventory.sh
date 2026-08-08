@@ -34,8 +34,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 343; then
-  echo "compiler call dispatch changed: expected 343 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 339; then
+  echo "compiler call dispatch changed: expected 339 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi

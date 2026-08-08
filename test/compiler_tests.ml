@@ -20265,14 +20265,21 @@ let test_batched_numeric_scalar_core_functions_work () =
        (name :user/name) ":" (name "Ada") ":" (keyword "admin?") ":" (keyword :ready)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/numeric_scalar_core.cljc" source
+  in
   assert_ocaml_runs "batched_numeric_scalar_core_functions_work"
     "true:false:true:false:false:true:false:true:false:true:false:true:4:5:0:true:false:4611686018427387903:3:3:2:2:12:12:3:1:5:5:3:3:-4:-4:name:Ada::admin?::ready\n"
-    ocaml_source
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/numeric_scalar_core.cljc"
+       source)
 
 let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
-  Lg.Compiler.compile_string {|(def x (bit-set 1 "2"))|}
-  |> expect_error "expected int arguments for bit-set"
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_arg.cljc"
+    {|(def x (bit-set 1 "2"))|}
+  |> expect_error
+       "bit-set called with incompatible arguments: expected (int, int), got (int, string)"
 
 let test_hash_combine_matches_clojure_32_bit_overflow () =
   let source =
@@ -20403,7 +20410,7 @@ let test_batched_numeric_scalar_core_functions_infer_int_params () =
 (def bad (clear-second "7"))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native "test/infer_bit_arg.cljc" source
   |> expect_error_contains "clear-second called with incompatible arguments"
 
 let test_clojure_string_module_batch_works () =
@@ -33492,7 +33499,6 @@ let test_parsetree_backend_builds_native_scalar_expressions () =
       {|(def answer 42)|};
       {|(def result (boolean 1))|};
       {|(def result (integer? 1))|};
-      {|(def result (bit-set 1 2))|};
       {|(def result (name :user/name))|};
       {|(def result (namespace :user/name))|};
       {|(def result (keyword "user" "name"))|};
