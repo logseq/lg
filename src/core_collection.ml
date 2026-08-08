@@ -246,16 +246,10 @@ let take_drop env name count collection =
              (apply runtime_name
                 [ count.semantic_expr; sequence ]))
 
-let reverse collection =
-  match collection.ty with
-  | TList _ -> Ok (typed_ir collection.ty (apply "List.rev" [ collection.semantic_expr ]))
-  | TVector _ -> Ok (typed_ir collection.ty (apply "Rrbvec.rev" [ collection.semantic_expr ]))
-  | _ -> Error.error "reverse expects a list or vector"
-
 let compile env name args =
   match name with
   | "count" | "first" | "second" | "last" | "peek" | "pop" | "rest" | "seq"
-  | "empty?" | "empty" | "reverse" -> (
+  | "empty?" | "empty" -> (
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> (
@@ -270,7 +264,6 @@ let compile env name args =
           | "seq" -> seq env collection
           | "empty?" -> empty_question env collection
           | "empty" -> empty env collection
-          | "reverse" -> reverse collection
           | _ -> assert false))
   | "take" | "drop" -> (
       match two_args name args with

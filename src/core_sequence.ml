@@ -7,17 +7,9 @@ let one_arg name args =
   | [ arg ] -> Ok arg
   | _ -> Error.error (name ^ " expects 1 arguments")
 
-let two_args name args =
-  match args with
-  | [ left; right ] -> Ok (left, right)
-  | _ -> Error.error (name ^ " expects collection and count")
-
 let first_expr env collection = Collection_capability.first_expr env collection
 
 let next_expr env collection = Collection_capability.next_expr env collection
-
-let nth_next_expr env name collection count =
-  Collection_capability.drop_expr env name collection count
 
 let reverse_expr name collection =
   match collection.ty with
@@ -31,10 +23,6 @@ let compile env name args =
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> next_expr env collection)
-  | "nthrest" -> (
-      match two_args name args with
-      | Error _ as err -> err
-      | Ok (collection, count) -> nth_next_expr env name collection count)
   | "ffirst" -> (
       match one_arg name args with
       | Error _ as err -> err

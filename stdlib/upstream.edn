@@ -33,6 +33,8 @@
                 :reason :current-static-function-types-require-boolean-predicates}
     nthnext {:status :static-adaptation
              :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}
+    nthrest {:status :static-adaptation
+             :reason :static-sequences-use-drop-and-empty-results-are-empty-sequences}
     bounded-count {:status :static-adaptation
                    :reason :current-lg-semantics-bound-counted-and-uncounted-collections}
     butlast {:status :static-adaptation
@@ -40,7 +42,9 @@
     take-last {:status :static-adaptation
                :reason :finite-static-sequences-use-count-and-drop}
     drop-last {:status :static-adaptation
-               :reason :finite-static-sequences-use-count-and-take}}}
+               :reason :finite-static-sequences-use-count-and-take}
+    reverse {:status :static-adaptation
+             :reason :uses-upstream-reduce-path-without-reversible-protocol-fast-path}}}
 
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"

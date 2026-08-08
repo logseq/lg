@@ -33,6 +33,9 @@
 (defn nthnext [coll n]
   (drop n coll))
 
+(defn nthrest [coll n]
+  (drop n coll))
+
 (defn bounded-count [n coll]
   (count (take n coll)))
 
@@ -47,6 +50,9 @@
    (drop-last 1 coll))
   ([n coll]
    (take (- (count coll) n) coll)))
+
+(defn reverse [coll]
+  (reduce (fn [result item] (conj result item)) (list) coll))
 
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))

@@ -8861,8 +8861,7 @@ let create ~compile_expr =
                   compile_collection_call scope env name arg_forms
     | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
-              | "next" | "nthrest" | "ffirst" | "fnext" | "nfirst"
-              | "nnext" -> (
+              | "next" | "ffirst" | "fnext" | "nfirst" | "nnext" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
@@ -8879,7 +8878,6 @@ let create ~compile_expr =
     | "dorun" | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
-    | "reverse" -> compile_collection_call scope env name arg_forms
     | "every?" ->
         compile_sequence_bool_predicate scope env name arg_forms
     | "map" -> compile_map_call scope env arg_forms

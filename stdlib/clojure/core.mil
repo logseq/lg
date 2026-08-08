@@ -28,6 +28,9 @@
 (signature clojure.core/nthnext [value]
   :fn<seqable<value>;int;seq<value>>)
 
+(signature clojure.core/nthrest [value]
+  :fn<seqable<value>;int;seq<value>>)
+
 (signature clojure.core/bounded-count [value]
   :fn<int;seqable<value>;int>)
 
@@ -39,3 +42,6 @@
 
 (signature clojure.core/drop-last [value]
   :overload<fn<seqable<value>;seq<value>>;fn<int;seqable<value>;seq<value>>>)
+
+(signature clojure.core/reverse [value]
+  :fn<seqable<value>;list<value>>)

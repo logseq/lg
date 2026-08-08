@@ -294,6 +294,8 @@ let stdlib_sources () =
   ]
   |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
 
+let stdlib_source_texts () = List.map snd (stdlib_sources ())
+
 let compile_with_stdlib target filename source =
   let sources = stdlib_sources () @ [ (filename, source) ] in
   let _, reversed_outputs =
@@ -15250,13 +15252,14 @@ let test_forward_optional_result_is_narrowed_before_closed_record_call () =
 
 let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
   let pss_sources =
-    [
-      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
-      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
-      "datascript/me/tonsky/persistent_sorted_set.cljc";
-    ]
-    |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
+    stdlib_source_texts ()
+    @ ([
+         "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+         "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.cljc";
+       ]
+      |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
   in
   let consumer_source =
     {|
@@ -20702,13 +20705,14 @@ let test_doseq_prefers_reducible_over_seqable () =
 
 let test_doseq_preserves_generic_protocol_collection_elements () =
   let pss_sources =
-    [
-      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
-      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
-      "datascript/me/tonsky/persistent_sorted_set.cljc";
-    ]
-    |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
+    stdlib_source_texts ()
+    @ ([
+         "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+         "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.cljc";
+       ]
+      |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
   in
   let producer_source =
     {|
@@ -25088,13 +25092,14 @@ let test_dynamic_generic_nominal_arguments_stay_scoped_to_the_call () =
 
 let test_generic_nominals_are_consumed_inside_static_scope () =
   let pss_sources =
-    [
-      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
-      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
-      "datascript/me/tonsky/persistent_sorted_set.cljc";
-    ]
-    |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
+    stdlib_source_texts ()
+    @ ([
+         "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+         "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.cljc";
+       ]
+      |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
   in
   let consumer_source =
     {|
@@ -25235,13 +25240,14 @@ let test_generic_nominals_are_consumed_inside_static_scope () =
 
 let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
   let pss_sources =
-    [
-      "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
-      "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
-      "datascript/me/tonsky/persistent_sorted_set.cljc";
-    ]
-    |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path))
+    stdlib_source_texts ()
+    @ ([
+         "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
+         "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
+         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.cljc";
+       ]
+      |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
   in
   let consumer_source =
     {|
@@ -28805,12 +28811,18 @@ let test_reverse_core_api () =
 (println (str (pr-str (reverse xs)) ":" (pr-str (reverse ys))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "reverse_core_api" "[3 2 1]:(3 2 1)\n" ocaml_source
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/reverse.cljc" source
+  in
+  assert_ocaml_runs "reverse_core_api" "(3 2 1):(3 2 1)\n" ocaml_source
 
-let test_reverse_rejects_unsupported_collections () =
-  Lg.Compiler.compile_string {|(def x (reverse (hash-set 1)))|}
-  |> expect_error "reverse expects a list or vector"
+let test_reverse_accepts_sets_like_clojurescript () =
+  let source = {|(println (= 2 (count (reverse (hash-set 1 2)))))|} in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/reverse_set.cljc" source
+  in
+  assert_ocaml_runs "reverse_accepts_sets_like_clojurescript" "true\n"
+    ocaml_source
 
 let test_sequence_boolean_predicates () =
   let source =
@@ -33632,10 +33644,6 @@ let test_parsetree_backend_builds_native_sequence_navigation_expressions () =
     [
       {|(def result (next (list 1 2)))|};
       {|(def result (next [1 2]))|};
-      {|(def result (nthnext (list 1 2 3) 2))|};
-      {|(def result (nthnext [1 2 3] 2))|};
-      {|(def result (nthrest (list 1 2 3) 2))|};
-      {|(def result (nthrest [1 2 3] 2))|};
       {|(def result (rseq [1 2]))|};
     ]
 
@@ -36132,8 +36140,8 @@ let tests =
       test_take_and_drop_reject_non_int_counts );
     ("take and drop support sets", test_take_and_drop_support_sets);
     ("reverse core api works", test_reverse_core_api);
-    ( "reverse rejects unsupported collections",
-      test_reverse_rejects_unsupported_collections );
+    ( "reverse accepts sets like ClojureScript",
+      test_reverse_accepts_sets_like_clojurescript );
     ("sequence boolean predicates work", test_sequence_boolean_predicates);
     ( "sequence boolean predicates accept truthy results",
       test_sequence_boolean_predicates_accept_truthy_results );
