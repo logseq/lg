@@ -5971,17 +5971,6 @@ let create ~compile_expr =
     | ".containsKey" -> java_interop_error ".containsKey"
     | ".entryAt" -> java_interop_error ".entryAt"
     | "-contains-key?" -> compile_contains scope env arg_forms
-    | "reduced" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ value ] ->
-            Ok
-              (typed_ir (Types.reduced value.ty)
-                 (Semantic_ir.Apply
-                              ( Semantic_ir.Ident
-                                  "Lg_runtime.Runtime_reduced.reduced",
-                      [ value.semantic_expr ] )))
-        | Ok _ -> Error.error "reduced expects 1 arguments")
     | "reduced?" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8153,7 +8142,7 @@ let create ~compile_expr =
                   Core_compare.compile ~env
                     (if name = "==" then "=" else name)
                     args))
-              | "not" | "nil?" | "some?" | "true?" | "false?" | "int?"
+              | "nil?" | "some?" | "true?" | "false?" | "int?"
               | "number?" | "string?" | "keyword?" | "boolean?" | "vector?"
               | "list?" | "seq?" | "set?" | "map?" | "fn?" | "coll?"
               | "associative?" | "indexed?" | "seqable?" | "counted?" ->

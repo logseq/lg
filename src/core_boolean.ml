@@ -10,41 +10,6 @@ let type_predicate name predicate args =
   | Error _ as err -> err
   | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (predicate arg.ty)))
 
-let compile_not args =
-  match one_arg "not" args with
-  | Error _ as err -> err
-  | Ok arg ->
-      let expression =
-        match arg.ty with
-        | ty when Types.is_dynamic ty ->
-            Semantic_ir.Prefix
-              ( "not",
-                Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
-                    [ arg.semantic_expr ] ) )
-        | ty when Option.is_some (Types.truthy_constraint_info ty) ->
-            Semantic_ir.Prefix
-              ( "not",
-                Expression_support.truthiness_expression ty
-                  arg.semantic_expr )
-        | TBool -> Semantic_ir.Prefix ("not", arg.semantic_expr)
-        | TNil ->
-            Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool true ]
-        | TNullable inner ->
-            Semantic_ir.Prefix
-              ("not", Expression_support.truthiness_expression (TNullable inner) arg.semantic_expr)
-        | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
-            Semantic_ir.Match
-              ( arg.semantic_expr,
-                [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool true);
-                  ( Semantic_ir.PConstructor
-                      ("Some", Some Semantic_ir.PAny),
-                    Semantic_ir.Bool false );
-                ] )
-        | _ -> Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool false ]
-      in
-      Ok (typed_ir TBool expression)
-
 let compile_predicate name args expected_ty =
   type_predicate name (fun actual_ty -> Types.equal actual_ty expected_ty) args
 
@@ -121,7 +86,6 @@ let compile_nil_predicate name args expected_nil =
 
 let compile name args =
   match name with
-  | "not" -> compile_not args
   | "nil?" -> compile_nil_predicate name args true
   | "some?" -> compile_nil_predicate name args false
   | "true?" -> compile_bool_literal_predicate name args true

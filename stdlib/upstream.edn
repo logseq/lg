@@ -16,6 +16,9 @@
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}
     boolean {:status :ported}
+    not {:status :ported}
+    reduced {:status :static-adaptation
+             :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}

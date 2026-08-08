@@ -11,7 +11,7 @@ for file in stdlib/clojure/core.mil stdlib/clojure/core.cljc; do
 done
 
 for name in \
-  identity complement boolean quot rem mod \
+  identity complement boolean not reduced quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
   unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int \

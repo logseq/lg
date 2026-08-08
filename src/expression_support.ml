@@ -1061,7 +1061,6 @@ let untyped_first_class_function_error = function
     | "name"
     | "nil?"
     | "namespace"
-    | "not"
     | "not="
     | "not-empty"
     | "number?"

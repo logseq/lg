@@ -8,6 +8,10 @@
 
 (signature clojure.core/boolean [value]
   :fn<truthy<value>;bool>)
+(signature clojure.core/not [value]
+  :fn<truthy<value>;bool>)
+(signature clojure.core/reduced [value]
+  :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
 
 (signature clojure.core/quot :fn<int;int;int>)
 (signature clojure.core/rem :fn<int;int;int>)

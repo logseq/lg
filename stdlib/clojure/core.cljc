@@ -5,7 +5,8 @@
 
 (ns clojure.core
   (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]
-            [ocaml.Lg_runtime.Runtime_random :as runtime-random]))
+            [ocaml.Lg_runtime.Runtime_random :as runtime-random]
+            [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
 
 (defn identity [x]
   x)
@@ -16,6 +17,12 @@
 
 (defn boolean [x]
   (if x true false))
+
+(defn not [x]
+  (if x false true))
+
+(defn reduced [x]
+  (runtime-reduced/reduced x))
 
 (defn quot [n d]
   (runtime-int/int-quot n d))

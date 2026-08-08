@@ -1281,7 +1281,6 @@ let rec inferred_form_type params = function
       match string_assoc_opt receiver params with
       | Some ty when Types.is_dynamic ty -> ty
       | _ -> TUnknown)
-  | FList [ FSymbol "not"; _ ] -> TBool
   | _ -> TUnknown
 
 let rec returned_vector_type params = function
@@ -1592,7 +1591,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [ FSymbol "satisfies?"; FSymbol _protocol_name; FSymbol receiver ] ->
         [ receiver ]
-    | FList (FSymbol ("and" | "or" | "not") :: forms) ->
+    | FList (FSymbol ("and" | "or") :: forms) ->
         List.concat_map guarded_protocol_receivers forms
     | _ -> []
   in
@@ -5176,7 +5175,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           else TInt
         in
         infer_expected_all expected_ty params args
-    | FList [ FSymbol "not"; arg ] -> infer_truthy params arg
     | FList (FSymbol ("=" | "not=") :: args) ->
         let expected_ty =
           let concrete =

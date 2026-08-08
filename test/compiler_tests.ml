@@ -20525,6 +20525,30 @@ let test_source_sequence_accessors_are_polymorphic_first_class_vars () =
     "test/source_sequence_accessors_bad.cljc" {|(clojure.core/second 1)|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_truthiness_and_reduction_helpers_are_polymorphic_vars () =
+  let source =
+    {|
+(def invert clojure.core/not)
+(def stop clojure.core/reduced)
+(def stopped-int (stop 7))
+(def stopped-string (stop "done"))
+(println
+  (str (invert false) ":" (invert true) ":" (invert 1) ":"
+       (reduced? stopped-int) ":" (unreduced stopped-int) ":"
+       (reduced? stopped-string) ":" (unreduced stopped-string)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_truthiness_reduction.cljc" source
+  in
+  assert_ocaml_runs
+    "source_truthiness_and_reduction_helpers_are_polymorphic_vars"
+    "true:false:false:true:7:true:done\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_truthiness_reduction.cljc" source)
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -35693,6 +35717,8 @@ let tests =
       test_source_random_and_logical_shift_helpers_are_first_class_vars );
     ( "source sequence accessors are polymorphic first-class vars",
       test_source_sequence_accessors_are_polymorphic_first_class_vars );
+    ( "source truthiness and reduction helpers are polymorphic vars",
+      test_source_truthiness_and_reduction_helpers_are_polymorphic_vars );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);
