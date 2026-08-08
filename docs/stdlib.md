@@ -133,10 +133,13 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 147 source entries (17.19%), 175 typed
-primitives, 5 special forms, 12 host boundaries, 159 static-typing blockers,
-44 out-of-scope Spec entries, and 313 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 148 source entries (17.31%), 175 typed
+primitives, 5 special forms, 12 host boundaries, 160 static-typing blockers,
+44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
+`ensure-reduced` is explicitly blocked because its same-arity return type is
+dependent on whether the input is already `Reduced<T>`; representing that
+contract as a normal generic function would incorrectly nest the wrapper.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
@@ -156,7 +159,7 @@ name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
 The current 271-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
-`not`, `reduced`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
+`not`, `reduced`, `reset-vals!`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `range`, `shuffle`, `alength`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,

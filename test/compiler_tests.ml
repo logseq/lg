@@ -21162,6 +21162,40 @@ let test_source_truthiness_and_reduction_helpers_are_polymorphic_vars () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_truthiness_reduction.cljc" source)
 
+let test_source_reset_vals_matches_cljs () =
+  let source =
+    {|
+(def reset-pair clojure.core/reset-vals!)
+(def counter (atom 10))
+(def names (atom "before"))
+(def counter-values (reset-pair counter 20))
+(def name-values (reset-vals! names "after"))
+(println
+  (str (pr-str counter-values) ":" (deref counter) ":"
+       (pr-str name-values) ":" (deref names)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_reset_vals.cljc" source
+  in
+  assert_ocaml_runs "source_reset_vals_matches_cljs"
+    "[10 20]:20:[\"before\" \"after\"]:after\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_reset_vals.cljc" source)
+
+let test_source_reset_vals_preserves_static_errors () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_reset_vals_bad_arity.cljc"
+    {|(reset-vals! (atom 1))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_reset_vals_bad_value.cljc"
+    {|(reset-vals! (atom 1) "wrong")|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_source_string_index_helpers_preserve_arities () =
   let source =
     {|
@@ -36977,6 +37011,10 @@ let tests =
       test_source_sequence_accessors_are_polymorphic_first_class_vars );
     ( "source truthiness and reduction helpers are polymorphic vars",
       test_source_truthiness_and_reduction_helpers_are_polymorphic_vars );
+    ( "source reset-vals matches ClojureScript",
+      test_source_reset_vals_matches_cljs );
+    ( "source reset-vals preserves static errors",
+      test_source_reset_vals_preserves_static_errors );
     ( "source string index helpers preserve arities",
       test_source_string_index_helpers_preserve_arities );
     ( "source range shuffle and any preserve ClojureScript contracts",

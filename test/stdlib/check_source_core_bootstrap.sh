@@ -11,7 +11,7 @@ for file in stdlib/clojure/core.mil stdlib/clojure/core.cljc; do
 done
 
 for name in \
-  identity complement boolean not reduced subs int-to-string-radix any? range shuffle \
+  identity complement boolean not reduced reset-vals! subs int-to-string-radix any? range shuffle \
   alength acopy aslice aconcat array-to-seq array-to-rseq quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \

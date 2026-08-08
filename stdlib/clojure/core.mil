@@ -12,6 +12,8 @@
   :fn<truthy<value>;bool>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
+(signature clojure.core/reset-vals! [value]
+  :fn<ref<value>;value;vector<value>>)
 (signature clojure.core/subs
   :overload<fn<string;int;string>;fn<string;int;int;string>>)
 (signature clojure.core/int-to-string-radix :fn<int;int;string>)

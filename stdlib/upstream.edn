@@ -21,6 +21,10 @@
     not {:status :ported}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
+    ensure-reduced {:status :blocked-static-typing
+                    :reason :same-arity-return-type-depends-on-whether-the-input-is-already-a-parameterized-reduced-value}
+    reset-vals! {:status :static-adaptation
+                 :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}

@@ -42,6 +42,10 @@
 (defn reduced [x]
   (runtime-reduced/reduced x))
 
+(defn reset-vals! [reference new-value]
+  (let [old-value (deref reference)]
+    [old-value (reset! reference new-value)]))
+
 (defn subs
   ([source start]
    (runtime-string/substring-from source start))
