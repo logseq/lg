@@ -277,10 +277,6 @@ let compile name args =
   | "neg-int?" ->
       int_predicate name args (fun expr ->
           Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
-  | "bit-shift-right-zero-fill" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt
-            (Semantic_ir.Infix ("lsr", left, right)))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

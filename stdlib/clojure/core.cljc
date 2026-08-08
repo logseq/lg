@@ -4,7 +4,8 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]))
+  (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]
+            [ocaml.Lg_runtime.Runtime_random :as runtime-random]))
 
 (defn identity [x]
   x)
@@ -66,6 +67,15 @@
 
 (defn unchecked-negate-int [x]
   (- 0 x))
+
+(defn rand-int [n]
+  (runtime-random/rand-int n))
+
+(defn rand-nth [coll]
+  (nth coll (rand-int (count coll))))
+
+(defn bit-shift-right-zero-fill [x n]
+  (runtime-int/logical-shift-right x n))
 
 (defn even? [n]
   (zero? (bit-and n 1)))

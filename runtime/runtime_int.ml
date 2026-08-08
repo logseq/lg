@@ -31,6 +31,7 @@ let int_positive value = value > 0
 let int_negative value = value < 0
 let int_even value = value mod 2 = 0
 let int_odd value = value mod 2 <> 0
+let logical_shift_right value count = value lsr count
 
 let format_hex value width =
   if width < 0 || width > Sys.max_string_length then

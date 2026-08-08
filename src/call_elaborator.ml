@@ -7271,15 +7271,6 @@ let create ~compile_expr =
                     (fun expression ->
                       Semantic_ir.Infix ("-", expression, Semantic_ir.Int 1))
           arg_forms
-    | "rand-int" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
-            Ok
-              (typed_ir TInt
-                 (apply "Lg_runtime.Runtime_random.rand_int" [ semantic_expr ]))
-        | Ok [ _ ] -> Error.error "rand-int expects an int"
-        | Ok _ -> Error.error "rand-int expects 1 argument")
     | "rand" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -7303,7 +7294,7 @@ let create ~compile_expr =
                       [ semantic_expr ] )))
         | Ok [ _ ] -> Error.error "rand expects a numeric bound"
         | Ok _ -> Error.error "rand expects zero or one argument")
-    | ("rand-nth" | "shuffle") as random_operation -> (
+    | "shuffle" -> (
         match arg_forms with
         | [ collection_form ] -> (
             match compile_expr scope env collection_form with
@@ -7312,33 +7303,25 @@ let create ~compile_expr =
                 match Collection_capability.to_seq_expr env collection with
                 | Error _ ->
                     Error.error
-                      (random_operation ^ " expects a seqable collection")
+                      "shuffle expects a seqable collection"
                 | Ok (inner, sequence) ->
                     let values =
                       Semantic_ir.Apply
                         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
                           [ sequence ] )
                     in
-                    if random_operation = "rand-nth" then
-                      Ok
-                        (typed_ir inner
-                           (Semantic_ir.Apply
-                              ( Semantic_ir.Ident
-                                  "Lg_runtime.Runtime_random.rand_nth",
-                                [ values ] )))
-                    else
-                      Ok
-                        (typed_ir (TVector inner)
-                           (Semantic_ir.Apply
-                              ( Semantic_ir.Ident "Rrbvec.of_list",
-                                [
-                                  Semantic_ir.Apply
+                    Ok
+                      (typed_ir (TVector inner)
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Rrbvec.of_list",
+                              [
+                                Semantic_ir.Apply
                                     ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_random.shuffle",
-                                      [ values ] );
-                                ] )))))
+                                      "Lg_runtime.Runtime_random.shuffle",
+                                    [ values ] );
+                              ] )))))
         | _ ->
-            Error.error (random_operation ^ " expects one argument"))
+            Error.error "shuffle expects one argument")
     | "int" | "long" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8226,7 +8209,7 @@ let create ~compile_expr =
                   ))
         | _ -> Error.error "instance? expects a record type and value")
               | "integer?" | "nat-int?" | "pos-int?" | "neg-int?"
-              | "bit-shift-right-zero-fill" | "name"
+              | "name"
               | "namespace" | "keyword" | "symbol" -> (
         match compile_args () with
         | Error _ as err -> err

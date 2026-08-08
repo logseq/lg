@@ -1163,11 +1163,6 @@ let lookup_function scope env name =
       | "zero?" -> Ok (static_int_function [ TInt ] TBool "int_zero")
       | "pos?" -> Ok (static_int_function [ TInt ] TBool "int_positive")
       | "neg?" -> Ok (static_int_function [ TInt ] TBool "int_negative")
-      | "rand-int" ->
-          Ok
-            (typed_ir
-               (TFn ([ TInt ], TInt))
-               (Semantic_ir.Ident "Lg_runtime.Runtime_random.rand_int"))
       | _ -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =

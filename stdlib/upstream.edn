@@ -71,6 +71,11 @@
                       :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
     unchecked-negate-int {:status :static-adaptation
                           :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    rand-int {:status :static-adaptation
+              :reason :source-wrapper-over-the-typed-runtime-random-primitive}
+    rand-nth {:status :ported}
+    bit-shift-right-zero-fill {:status :static-adaptation
+                               :reason :source-wrapper-over-the-typed-runtime-logical-shift-primitive}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

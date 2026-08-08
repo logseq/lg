@@ -11339,7 +11339,9 @@ let test_user_macros_can_emit_top_level_do_definitions () =
 
 let test_rand_int_uses_exclusive_positive_bound () =
   let source = {|(println (rand-int 1))|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/rand_int.cljc" source
+  in
   assert_ocaml_runs "rand_int_uses_exclusive_positive_bound" "0\n" ocaml_source
 
 let test_int_coerces_float_and_preserves_int () =
@@ -20469,6 +20471,32 @@ let test_source_integer_helpers_are_qualified_first_class_vars () =
     "test/source_integer_helpers_bad.cljc" {|(clojure.core/quot 4 "2")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_random_and_logical_shift_helpers_are_first_class_vars () =
+  let source =
+    {|
+(def choose-index clojure.core/rand-int)
+(def choose-value clojure.core/rand-nth)
+(def logical-shift clojure.core/bit-shift-right-zero-fill)
+(println
+  (str (choose-index 1) ":"
+       (choose-value [42]) ":"
+       (logical-shift -1 1)))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_random_and_shift_helpers.cljc" source
+  in
+  assert_ocaml_runs "source_random_and_logical_shift_helpers_are_first_class_vars"
+    "0:42:4611686018427387903\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_random_and_shift_helpers.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_random_and_shift_helpers_bad.cljc"
+    {|(clojure.core/rand-int "1")|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -25883,11 +25911,15 @@ let test_random_collection_operations_preserve_element_types () =
        (= 3 (count shuffled))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/random_collection_operations.cljc" source
+  in
   assert_ocaml_runs "random_collection_operations_preserve_element_types"
     "true:true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/random_collection_operations.cljc" source)
 
 let test_reduce_branch_merges_with_typed_optional_fallback () =
   let source =
@@ -35629,6 +35661,8 @@ let tests =
       test_hash_combine_matches_clojure_32_bit_overflow );
     ( "source integer helpers are qualified first-class vars",
       test_source_integer_helpers_are_qualified_first_class_vars );
+    ( "source random and logical shift helpers are first-class vars",
+      test_source_random_and_logical_shift_helpers_are_first_class_vars );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);
