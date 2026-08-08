@@ -7,6 +7,7 @@ module type S = sig
   val name : t -> string
   val compare : t -> t -> int
   val equal : t -> t -> bool
+  val hash : t -> int
   val to_string : t -> string
 end
 
@@ -16,6 +17,7 @@ module Make () : S = struct
     name : string;
     comparison_key : string;
     source_name : string;
+    hash : int;
   }
 
   let interned = Hashtbl.create 1024
@@ -35,6 +37,7 @@ module Make () : S = struct
               (match owner with
               | [] -> name
               | owner -> String.concat "." owner ^ "/" ^ name);
+            hash = Hashtbl.hash comparison_key;
           }
         in
         Hashtbl.add interned comparison_key id;
@@ -61,7 +64,10 @@ module Make () : S = struct
 
   let compare left right = String.compare left.comparison_key right.comparison_key
 
-  let equal left right = String.equal left.comparison_key right.comparison_key
+  let equal left right =
+    left == right || String.equal left.comparison_key right.comparison_key
+
+  let hash id = id.hash
 
   let to_string id = id.source_name
 end

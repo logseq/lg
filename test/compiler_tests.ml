@@ -1725,6 +1725,16 @@ let test_empty_type_substitutions_preserve_type_identity () =
   if not (Lg.Type_solver.apply [] ty == ty) then
     failwith "empty substitutions must not copy an unchanged type tree"
 
+let test_symbol_id_hash_survives_state_roundtrip () =
+  let original = Lg.Symbol_id.of_string "datascript.db/transact-tx-data-loop" in
+  let restored : Lg.Symbol_id.t =
+    Marshal.from_string (Marshal.to_string original []) 0
+  in
+  if not (Lg.Symbol_id.equal original restored) then
+    failwith "marshaled symbol ids must preserve equality";
+  if Lg.Symbol_id.hash original <> Lg.Symbol_id.hash restored then
+    failwith "marshaled symbol ids must preserve their cached hash"
+
 let test_unrelated_type_substitutions_preserve_type_identity () =
   let open Lg.Types in
   let ty =
@@ -35644,6 +35654,8 @@ let tests =
       test_local_function_annotations_resolve_named_records );
     ( "empty type substitutions preserve type identity",
       test_empty_type_substitutions_preserve_type_identity );
+    ( "symbol id hash survives state roundtrip",
+      test_symbol_id_hash_survives_state_roundtrip );
     ( "unrelated type substitutions preserve type identity",
       test_unrelated_type_substitutions_preserve_type_identity );
     ( "type solver applies deep substitutions linearly",

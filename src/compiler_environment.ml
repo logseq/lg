@@ -2,7 +2,7 @@ module Symbol_map = Persistent_hash_map.Make (struct
   type t = Symbol_id.t
 
   let equal = Symbol_id.equal
-  let hash = Hashtbl.hash
+  let hash = Symbol_id.hash
 end)
 module String_map = Persistent_hash_map.Make (struct
   type t = string

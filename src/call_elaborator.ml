@@ -92,14 +92,6 @@ let array_element_type = function
   | TUnknown | TMeta _ | TVar _ -> Some TUnknown
   | _ -> None
 
-let compatible_array_types left right =
-  match (array_element_type left, array_element_type right) with
-  | Some left, Some right ->
-      Types.equal left TUnknown || Types.equal right TUnknown
-      || Types.assignable ~policy:Host_boundary ~expected:left ~actual:right
-      || Types.assignable ~policy:Host_boundary ~expected:right ~actual:left
-  | _ -> false
-
 let typed_item_pattern name = function
   | TNamed_record record ->
       Semantic_ir.PConstraint
@@ -119,10 +111,6 @@ let typed_dynamic_item_pattern env name = function
               Structural_map.record_type_application record )
       | None -> Semantic_ir.PTyped (Semantic_ir.PVar name, TRecord fields))
   | ty -> typed_item_pattern name ty
-
-let int_parameter_type = function
-  | TInt | TUnknown | TMeta _ | TVar _ -> true
-  | _ -> false
 
 let weak_referenceable_type = function
   | TRecord _ | TNamed_record _ | TArray _ | TRef _ | TVector _ | TSet _
