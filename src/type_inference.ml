@@ -5143,9 +5143,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol
             ( "inc" | "dec" | "zero?" | "pos?" | "neg?"
-            | "nat-int?" | "pos-int?" | "neg-int?" | "bit-not" | "unchecked-inc"
-            | "unchecked-inc-int" | "unchecked-dec" | "unchecked-dec-int"
-            | "unchecked-negate" | "unchecked-negate-int" );
+            | "nat-int?" | "pos-int?" | "neg-int?" | "bit-not" );
           arg;
         ] ->
         let arg_ty =
@@ -5166,7 +5164,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ( "quot" | "rem" | "mod" | "bit-shift-left" | "bit-shift-right"
+            ( "bit-shift-left" | "bit-shift-right"
             | "bit-shift-right-zero-fill" | "unchecked-divide-int"
             | "unchecked-remainder-int" );
           left;

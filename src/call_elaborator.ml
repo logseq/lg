@@ -8230,9 +8230,7 @@ let create ~compile_expr =
               | "unchecked-add-int" | "unchecked-subtract"
               | "unchecked-subtract-int" | "unchecked-multiply"
               | "unchecked-multiply-int" | "unchecked-divide-int"
-              | "unchecked-remainder-int" | "unchecked-inc"
-    | "unchecked-inc-int" | "unchecked-dec" | "unchecked-dec-int"
-              | "unchecked-negate" | "unchecked-negate-int" | "name"
+              | "unchecked-remainder-int" | "name"
               | "namespace" | "keyword" | "symbol" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8476,10 +8474,6 @@ let create ~compile_expr =
             Core_float.compile_min_max name
               (List.map Core_float.widen_to_float args)
         | Ok args -> Core_int.compile_min_max name args)
-    | "quot" | "rem" | "mod" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok args -> Core_int.compile_binary name args)
               | "bit-and" | "bit-or" | "bit-xor" -> (
                   match compile_args () with
         | Error _ as err -> err

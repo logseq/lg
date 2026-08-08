@@ -296,14 +296,6 @@ let compile name args =
   | "unchecked-remainder-int" ->
       int_binary name args (fun left right ->
           typed_ir TInt (Semantic_ir.Infix ("mod", left, right)))
-  | "unchecked-inc" | "unchecked-inc-int" ->
-      int_unary name args (fun expr ->
-          Semantic_ir.Infix ("+", expr, Semantic_ir.Int 1))
-  | "unchecked-dec" | "unchecked-dec-int" ->
-      int_unary name args (fun expr ->
-          Semantic_ir.Infix ("-", expr, Semantic_ir.Int 1))
-  | "unchecked-negate" | "unchecked-negate-int" ->
-      int_unary name args (fun expr -> Semantic_ir.Prefix ("~-", expr))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

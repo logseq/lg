@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 
-for name in identity complement boolean even? odd? every? ffirst fnext nfirst nnext not-any? not-every? split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap hash-combine; do
+for name in identity complement boolean quot rem mod unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int even? odd? every? ffirst fnext nfirst nnext not-any? not-every? split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap hash-combine; do
   for file in \
     src/call_elaborator.ml \
     src/expression_support.ml \

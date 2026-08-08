@@ -16,6 +16,33 @@
 (defn boolean [x]
   (if x true false))
 
+(defn quot [n d]
+  (runtime-int/int-quot n d))
+
+(defn rem [n d]
+  (runtime-int/int-rem n d))
+
+(defn mod [n d]
+  (runtime-int/clojure-mod n d))
+
+(defn unchecked-inc [x]
+  (+ x 1))
+
+(defn unchecked-inc-int [x]
+  (+ x 1))
+
+(defn unchecked-dec [x]
+  (- x 1))
+
+(defn unchecked-dec-int [x]
+  (- x 1))
+
+(defn unchecked-negate [x]
+  (- 0 x))
+
+(defn unchecked-negate-int [x]
+  (- 0 x))
+
 (defn even? [n]
   (zero? (bit-and n 1)))
 

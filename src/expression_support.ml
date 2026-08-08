@@ -1122,9 +1122,6 @@ let lookup_function scope env name =
       | Some message -> Error.error message
       | None -> (
       match name with
-      | "quot" -> Ok (static_int_function [ TInt; TInt ] TInt "int_quot")
-      | "rem" -> Ok (static_int_function [ TInt; TInt ] TInt "int_rem")
-      | "mod" -> Ok (static_int_function [ TInt; TInt ] TInt "clojure_mod")
       | "+" ->
           Ok
             (typed_ir

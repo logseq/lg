@@ -9,6 +9,16 @@
 (signature clojure.core/boolean [value]
   :fn<truthy<value>;bool>)
 
+(signature clojure.core/quot :fn<int;int;int>)
+(signature clojure.core/rem :fn<int;int;int>)
+(signature clojure.core/mod :fn<int;int;int>)
+(signature clojure.core/unchecked-inc :fn<int;int>)
+(signature clojure.core/unchecked-inc-int :fn<int;int>)
+(signature clojure.core/unchecked-dec :fn<int;int>)
+(signature clojure.core/unchecked-dec-int :fn<int;int>)
+(signature clojure.core/unchecked-negate :fn<int;int>)
+(signature clojure.core/unchecked-negate-int :fn<int;int>)
+
 (signature clojure.core/even? :fn<int;bool>)
 (signature clojure.core/odd? :fn<int;bool>)
 (signature clojure.core/every? [value result]

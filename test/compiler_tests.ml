@@ -20314,9 +20314,8 @@ let test_batched_core_functions_work () =
     || string_contains_substring ocaml_source "D.clojure_mod"
   then failwith "static integer mod must not call Runtime_dynamic";
   let typed_mod_source =
-    Lg.Compiler.compile_string
+    compile_with_stdlib Lg.Target.Native "test/typed_mod.cljc"
       "(defn ^:int wrap [^:int value] (clojure.core/mod value 32))"
-    |> expect_ok
   in
   if
     string_contains_substring typed_mod_source
@@ -20349,12 +20348,14 @@ let test_seqable_predicate_checks_closed_sum_values () =
     "true:false\n" ocaml_source
 
 let test_batched_core_functions_reject_non_int_arguments () =
-  Lg.Compiler.compile_string {|(def x (zero? "0"))|}
+  compile_with_stdlib_result Lg.Target.Native "test/bad_zero.cljc"
+    {|(def x (zero? "0"))|}
   |> expect_error "expected int arguments for zero?"
 
 let test_batched_core_functions_reject_bad_arities () =
-  Lg.Compiler.compile_string {|(def x (quot 1))|}
-  |> expect_error "quot expects 2 arguments"
+  compile_with_stdlib_result Lg.Target.Native "test/bad_quot.cljc"
+    {|(def x (quot 1))|}
+  |> expect_error_contains "expected (int, int), got (int)"
 
 let test_batched_core_functions_infer_int_params () =
   let source =
@@ -20422,6 +20423,38 @@ let test_hash_combine_matches_clojure_32_bit_overflow () =
     (compile_with_stdlib Lg.Target.Melange "test/hash_combine.cljc" source);
   compile_with_stdlib_result Lg.Target.Native "test/hash_combine_bad.cljc"
     {|(hash-combine 1 "2")|}
+  |> expect_error_contains "called with incompatible arguments"
+
+let test_source_integer_helpers_are_qualified_first_class_vars () =
+  let source =
+    {|
+(def quotient clojure.core/quot)
+(def remainder clojure.core/rem)
+(def modulo clojure.core/mod)
+(def unchecked-increment clojure.core/unchecked-inc)
+(def unchecked-increment-int clojure.core/unchecked-inc-int)
+(def unchecked-decrement clojure.core/unchecked-dec)
+(def unchecked-decrement-int clojure.core/unchecked-dec-int)
+(def unchecked-negative clojure.core/unchecked-negate)
+(def unchecked-negative-int clojure.core/unchecked-negate-int)
+(println
+  (str (quotient -7 3) ":" (remainder -7 3) ":" (modulo -7 3) ":"
+       (unchecked-increment 4) ":" (unchecked-increment-int 4) ":"
+       (unchecked-decrement 4) ":" (unchecked-decrement-int 4) ":"
+       (unchecked-negative 4) ":" (unchecked-negative-int 4)))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/source_integer_helpers.cljc"
+      source
+  in
+  assert_ocaml_runs "source_integer_helpers_are_qualified_first_class_vars"
+    "-2:-1:2:5:5:3:3:-4:-4\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_integer_helpers.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_integer_helpers_bad.cljc" {|(clojure.core/quot 4 "2")|}
   |> expect_error_contains "called with incompatible arguments"
 
 let test_hash_matches_clojure_scalar_and_collection_values () =
@@ -35582,6 +35615,8 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_non_int_bit_args );
     ( "hash-combine matches Clojure 32-bit overflow",
       test_hash_combine_matches_clojure_32_bit_overflow );
+    ( "source integer helpers are qualified first-class vars",
+      test_source_integer_helpers_are_qualified_first_class_vars );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);

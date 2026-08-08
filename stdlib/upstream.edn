@@ -37,6 +37,24 @@
               :reason :composed-from-static-integer-bit-primitives}
     hash-combine {:status :static-adaptation
                   :reason :source-wrapper-preserves-clojurescript-32-bit-overflow-through-the-typed-runtime-int-primitive}
+    quot {:status :static-adaptation
+          :reason :source-wrapper-preserves-truncation-toward-zero-through-the-typed-runtime-int-primitive}
+    rem {:status :static-adaptation
+         :reason :source-wrapper-preserves-the-sign-of-the-dividend-through-the-typed-runtime-int-primitive}
+    mod {:status :static-adaptation
+         :reason :source-wrapper-preserves-floor-modulus-through-the-typed-runtime-int-primitive}
+    unchecked-inc {:status :static-adaptation
+                   :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-inc-int {:status :static-adaptation
+                       :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-dec {:status :static-adaptation
+                   :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-dec-int {:status :static-adaptation
+                       :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-negate {:status :static-adaptation
+                      :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-negate-int {:status :static-adaptation
+                          :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

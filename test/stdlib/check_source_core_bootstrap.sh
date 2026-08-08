@@ -11,7 +11,9 @@ for file in stdlib/clojure/core.mil stdlib/clojure/core.cljc; do
 done
 
 for name in \
-  identity complement boolean even? odd? every? ffirst fnext nfirst nnext not-any? not-every? \
+  identity complement boolean quot rem mod \
+  unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int \
+  even? odd? every? ffirst fnext nfirst nnext not-any? not-every? \
   split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap hash-combine \
   bit-clear bit-flip bit-set bit-test; do
   if ! grep -F "(defn $name" "$root/stdlib/clojure/core.cljc" >/dev/null; then
