@@ -289,6 +289,35 @@ let rec resolve_type_parameters parameters = function
             | Ok param -> resolve_params (param :: acc) rest)
       in
       resolve_params [] params
+  | TOverloaded_fn arities ->
+      let resolve_arity (arity : fn_arity) =
+        let rec resolve_params acc = function
+          | [] -> Ok (List.rev acc)
+          | param :: rest -> (
+              match resolve_type_parameters parameters param with
+              | Error _ as err -> err
+              | Ok param -> resolve_params (param :: acc) rest)
+        in
+        Result.bind (resolve_params [] arity.fixed_params) (fun fixed_params ->
+            Result.bind
+              (match arity.rest_param with
+              | None -> Ok None
+              | Some rest_param ->
+                  Result.map Option.some
+                    (resolve_type_parameters parameters rest_param))
+              (fun rest_param ->
+                Result.map
+                  (fun return_ty -> { fixed_params; rest_param; return_ty })
+                  (resolve_type_parameters parameters arity.return_ty)))
+      in
+      let rec resolve_arities acc = function
+        | [] -> Ok (TOverloaded_fn (List.rev acc))
+        | arity :: rest -> (
+            match resolve_arity arity with
+            | Error _ as err -> err
+            | Ok arity -> resolve_arities (arity :: acc) rest)
+      in
+      resolve_arities [] arities
   | ty -> Ok ty
 
 let of_keyword_with_parameters parameters keyword =

@@ -8859,7 +8859,7 @@ let create ~compile_expr =
                       compile_sequence_transform_call scope env name arg_forms)
               | "take" | "drop" ->
                   compile_collection_call scope env name arg_forms
-    | "take-last" | "drop-last" | "take-nth" ->
+    | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
               | "next" | "nthrest" | "ffirst" | "fnext" | "nfirst"
               | "nnext" -> (

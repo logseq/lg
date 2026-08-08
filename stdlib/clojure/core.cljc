@@ -39,6 +39,15 @@
 (defn butlast [coll]
   (take (dec (count coll)) coll))
 
+(defn take-last [n coll]
+  (drop (- (count coll) n) coll))
+
+(defn drop-last
+  ([coll]
+   (drop-last 1 coll))
+  ([n coll]
+   (take (- (count coll) n) coll)))
+
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))
 

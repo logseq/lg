@@ -14334,6 +14334,22 @@ let test_annotated_multi_arity_defn_constrains_each_clause () =
   assert_ocaml_runs "annotated_multi_arity_defn_constrains_each_clause" "3\n"
     ocaml_source
 
+let test_generic_overload_signature_resolves_nested_type_parameters () =
+  let source =
+    {|
+(signature trim-end [value]
+  :overload<fn<seqable<value>;seq<value>>;fn<int;seqable<value>;seq<value>>>)
+(defn trim-end
+  ([coll] (trim-end 1 coll))
+  ([n coll] (take (- (count coll) n) coll)))
+(println (pr-str (trim-end 1 [1 2 3])))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "generic_overload_signature_resolves_nested_type_parameters" "(1 2)\n"
+    ocaml_source
+
 let test_generic_map_type_variables_use_static_operations () =
   let source =
     {|
@@ -20601,7 +20617,7 @@ let test_batched_predicate_collection_core_functions_work () =
   in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
     "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:(1 \
-     2 3 4):[4 5]:[1 2 3]:[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
+     2 3 4):(4 5):(1 2 3):[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
      2 3 4 5]\n\
      item:1\n\
      item:2\n"
@@ -22729,7 +22745,9 @@ let test_sequence_navigation_accepts_all_seqable_types () =
 (println (+ (second host-seq) 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/sequence_navigation.cljc" source
+  in
   assert_ocaml_runs "sequence_navigation_accepts_all_seqable_types"
     "(1 2 3)\n(2 3)\n(2 3)\n2\n(3)\n()\n(5 6)\nb\n8\n" ocaml_source
 
@@ -34824,6 +34842,8 @@ let tests =
       test_multi_arity_defn_dispatches_fixed_arities );
     ( "annotated multi-arity defn constrains each clause",
       test_annotated_multi_arity_defn_constrains_each_clause );
+    ( "generic overload signature resolves nested type parameters",
+      test_generic_overload_signature_resolves_nested_type_parameters );
     ( "generic map type variables use static operations",
       test_generic_map_type_variables_use_static_operations );
     ( "annotated set of closed sum stays static",

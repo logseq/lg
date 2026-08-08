@@ -483,35 +483,6 @@ let partition name size collection =
         in
         Ok (typed_ir (TList (TList inner)) expr)
 
-let take_drop_last name count collection =
-  if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
-  else
-    match collection_to_list_expr collection with
-    | Error _ -> Error.error (name ^ " expects a collection")
-    | Ok (_inner, list_expr) ->
-        let count_name = if name = "take-last" then "drop_count" else "keep_count" in
-        let count_expr =
-          apply "max"
-            [ Semantic_ir.Int 0;
-              Semantic_ir.Infix
-                ( "-",
-                  apply "List.length" [ Semantic_ir.Ident "source" ],
-                  count.semantic_expr ) ]
-        in
-        let result_expr =
-          if name = "take-last" then
-            drop_list_expr (Semantic_ir.Ident count_name) (Semantic_ir.Ident "source")
-          else
-            take_list_expr (Semantic_ir.Ident count_name) (Semantic_ir.Ident "source")
-        in
-        Ok
-          (typed_ir collection.ty
-             (collection_from_list_expr collection.ty
-                (Semantic_ir.Let
-                   ( [ (Semantic_ir.PVar "source", list_expr);
-                       (Semantic_ir.PVar count_name, count_expr) ],
-                     result_expr ))))
-
 let take_nth count collection =
   if not (Types.equal count.ty TInt) then Error.error "take-nth n must be int"
   else
@@ -721,8 +692,6 @@ let compile name args =
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
       partition name size collection
-  | ("take-last" | "drop-last"), [ count; collection ] ->
-      take_drop_last name count collection
   | "take-nth", [ count; collection ] -> take_nth count collection
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
@@ -739,8 +708,6 @@ let compile name args =
   | "interpose", _ -> Error.error "interpose expects separator and collection"
   | ("partition" | "partition-all"), _ ->
       Error.error (name ^ " expects size and collection")
-  | ("take-last" | "drop-last"), _ ->
-      Error.error (name ^ " expects count and collection")
   | "take-nth", _ -> Error.error "take-nth expects n and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

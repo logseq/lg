@@ -33,3 +33,9 @@
 
 (signature clojure.core/butlast [value]
   :fn<seqable<value>;seq<value>>)
+
+(signature clojure.core/take-last [value]
+  :fn<int;seqable<value>;seq<value>>)
+
+(signature clojure.core/drop-last [value]
+  :overload<fn<seqable<value>;seq<value>>;fn<int;seqable<value>;seq<value>>>)

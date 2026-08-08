@@ -116,9 +116,9 @@ surface changes. Entries are classified as `source-shadowed`,
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 328-name compiler dispatch inventory has zero `source-shadowed`
+The current 326-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `even?`, `odd?`,
-`not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `bounded-count`, `butlast`,
+`not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `bounded-count`, `butlast`, `take-last`, `drop-last`,
 and the derived bit functions have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,

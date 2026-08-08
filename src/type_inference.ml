@@ -5790,7 +5790,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ( "take-last" | "drop-last" | "take-nth" );
+            "take-nth";
           count;
           collection;
         ] -> (

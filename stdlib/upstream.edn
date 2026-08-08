@@ -36,7 +36,11 @@
     bounded-count {:status :static-adaptation
                    :reason :current-lg-semantics-bound-counted-and-uncounted-collections}
     butlast {:status :static-adaptation
-             :reason :composed-from-static-count-and-take-and-empty-results-are-empty-sequences}}}
+             :reason :composed-from-static-count-and-take-and-empty-results-are-empty-sequences}
+    take-last {:status :static-adaptation
+               :reason :finite-static-sequences-use-count-and-drop}
+    drop-last {:status :static-adaptation
+               :reason :finite-static-sequences-use-count-and-take}}}
 
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
