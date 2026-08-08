@@ -1,5 +1,6 @@
 let length = Array.length
 let copy = Array.copy
+let of_seq = Array.of_seq
 
 let copy_range source source_start source_end target target_start =
   Array.blit source source_start target target_start (source_end - source_start)

@@ -1145,9 +1145,7 @@ let rec inferred_form_type params = function
          || has_source_name operation "array-binary-search-right" ->
       TFloat
   | FList [ FSymbol operation; collection ]
-    when has_source_name operation "array-from"
-         || has_source_name operation "into-array"
-         || has_source_name operation "to-array" ->
+    when has_source_name operation "array-from" ->
       let collection_ty = inferred_form_type params collection in
       let element_ty =
         match collection_ty with
@@ -1900,9 +1898,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind infer_target (fun params ->
                 infer_assoc ~constrain_assigned:false params target pairs))
     | FList [ FSymbol name; collection ]
-      when (has_source_name name "array-from"
-           || has_source_name name "into-array"
-           || has_source_name name "to-array")
+      when has_source_name name "array-from"
            && (match expected_ty with TArray _ -> true | _ -> false) -> (
         let element_ty =
           match expected_ty with TArray element_ty -> element_ty | _ -> assert false
@@ -2729,9 +2725,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword
           (Types.seqable_constraint element_ty)
           params
-    | FList [ FSymbol operation; array ]
-      when String.equal operation "array-seq" ->
-        infer_expected (TArray element_ty) params array
     | FList
         (FSymbol ("map" | "mapv") :: FSymbol "vector" :: collections)
       when List.length collections >= 2
@@ -4491,14 +4484,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList [ FSymbol "array-seq"; FSymbol array ] ->
-        constrain_symbol (TArray TUnknown) params array
-    | FList [ FSymbol "array-seq"; FSymbol array; index ] -> (
-        match constrain_symbol (TArray TUnknown) params array with
-        | Error _ as error -> error
-        | Ok params -> infer_expected TInt params index)
-    | FList [ FSymbol ("into-array" | "to-array"); FSymbol collection ] ->
-        constrain_seqable TUnknown params collection
     | FList [ FSymbol "seqable?"; FSymbol collection ] ->
         constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->

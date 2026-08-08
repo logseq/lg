@@ -119,6 +119,18 @@
 (defn array-to-rseq [values]
   (runtime-seq/of-array-rev values))
 
+(defn array-seq
+  ([values]
+   (array-to-seq values))
+  ([values index]
+   (drop index (array-to-seq values))))
+
+(defn to-array [coll]
+  (runtime-array/of-seq (seq coll)))
+
+(defn into-array [coll]
+  (to-array coll))
+
 (defmacro amap [values index result expression]
   `(let [values# ~values
          length# (alength values#)

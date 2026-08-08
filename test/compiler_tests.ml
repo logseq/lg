@@ -4812,12 +4812,12 @@ let test_jvm_lookup_hints_are_rejected () =
 
 let test_object_marker_cannot_request_dynamic_arrays () =
   let reject source =
-    Lg.Compiler.compile_string source
+    compile_string_with_stdlib source
     |> expect_error_contains "unknown symbol Object"
   in
   reject {|(def values (into-array Object [1 2]))|};
   reject {|(def values (make-array Object 2))|};
-  Lg.Compiler.compile_string {|(def values (make-array 2))|}
+  compile_string_with_stdlib {|(def values (make-array 2))|}
   |> expect_error_contains
        "make-array requires a size and a statically typed initial value"
 
@@ -4829,7 +4829,8 @@ let test_lazily_persistent_vector_rejects_dynamic_object_arrays () =
 (println (= [1 "two"] result))
 |}
   in
-  Lg.Compiler.compile_string source |> expect_error_contains "unknown symbol Object"
+  compile_string_with_stdlib source
+  |> expect_error_contains "unknown symbol Object"
 
 let test_clojure_edn_read_string_behaves_on_native_and_melange () =
   let source =
@@ -5417,11 +5418,11 @@ let test_protocol_calls_contextualize_anonymous_callbacks () =
   (Relation rows) (println (count rows)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "protocol_calls_contextualize_anonymous_callbacks" "1\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_protocol_calls_reject_contextual_callback_return_mismatches () =
   let source =
@@ -13414,7 +13415,7 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_to_array_copies_static_vectors_directly () =
+let test_source_to_array_copies_static_vectors () =
   let source =
     {|
 (def values [1 2 3])
@@ -13423,14 +13424,11 @@ let test_to_array_copies_static_vectors_directly () =
 (println (str (first values) ":" (aget copied 0)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "to_array_copies_static_vectors_directly" "1:9\n"
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_to_array_copies_static_vectors" "1:9\n"
     native_source;
-  let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
-  in
-  if string_contains_substring melange_source "Array.of_seq" then
-    failwith "to-array must copy a static vector without a sequence round trip"
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reducer_collection_types_keep_static_stringification () =
   let source =
@@ -13478,15 +13476,22 @@ let test_reducer_collection_types_keep_static_stringification () =
       "reducer collection elements must remain statically typed through \
        stringification"
 
-let test_to_array_rejects_untyped_first_class_use () =
+let test_array_conversion_supports_static_first_class_use () =
   let source =
     {|
 (def convert to-array)
+(def convert-seq into-array)
+(def sequence-from array-seq)
+(def numbers (convert [1 2]))
+(def words (convert-seq (list "a" "b")))
+(println (str (alength numbers) ":" (first (sequence-from words 1))))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "to-array cannot be used as an untyped first-class function"
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "array_conversion_supports_static_first_class_use" "2:b\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_array_arguments_adapt_nullable_elements () =
   let source =
@@ -13497,11 +13502,11 @@ let test_array_arguments_adapt_nullable_elements () =
 (println (= 42 (first-present (to-array [42]))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "array_arguments_adapt_nullable_elements" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_optional_protocol_values_can_flow_to_seqable_else_branches () =
   let source =
@@ -17947,12 +17952,12 @@ let test_recursive_protocol_sequence_returns_remain_concrete () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "recursive_protocol_sequence_returns_remain_concrete" "ok\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_protocol_vectors_keep_static_protocol_elements () =
   let source =
@@ -18985,11 +18990,11 @@ let test_if_merges_generic_array_function_branches () =
 (println ((array-getter false 0) (into-array [7])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_merges_generic_array_function_branches" "42\n7\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_if_some_preserves_nominal_array_elements () =
   let source =
@@ -21422,11 +21427,11 @@ let test_hash_unordered_coll_uses_static_seqable_capabilities () =
 (println (= (hash-unordered-coll value) (hash-unordered-coll [1 2])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_unordered_coll_uses_static_seqable_capabilities"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_numeric_double_equals_supports_mixed_numbers () =
   let source = {|(println (str (== 1 1) ":" (== 1 1.0) ":" (== 1 2)))|} in
@@ -23937,14 +23942,14 @@ let test_parameterized_record_parameters_preserve_seqability () =
 (println (pr-str (first-value value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "parameterized record Seqability must remain static";
   assert_ocaml_runs
     "parameterized_record_parameters_preserve_seqability" "1\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_sequential_destructuring_accepts_deftype_seqable_values () =
   let source =
@@ -28504,11 +28509,11 @@ let test_array_classification_uses_a_closed_sum () =
 (println (classify (ClassifiedArray (array 42))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "array_classification_uses_a_closed_sum" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_array_seq_uses_a_closed_sum_at_the_self_call () =
   let source =
@@ -28526,11 +28531,11 @@ let test_recursive_array_seq_uses_a_closed_sum_at_the_self_call () =
 (println (classify (DB. 40) (LookupArray (array 40 41))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_array_seq_uses_a_closed_sum_at_the_self_call"
     "42\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nested_callback_record_constraints_do_not_emit_fake_types () =
   let source =
@@ -36278,12 +36283,12 @@ let tests =
       test_array_mutation_uses_protocol_payload_storage );
     ( "OCaml array primitives support polymorphic helpers",
       test_ocaml_array_primitives_support_polymorphic_helpers );
-    ( "to-array copies static vectors directly",
-      test_to_array_copies_static_vectors_directly );
+    ( "source to-array copies static vectors",
+      test_source_to_array_copies_static_vectors );
     ( "reducer collection types keep static stringification",
       test_reducer_collection_types_keep_static_stringification );
-    ( "to-array rejects untyped first-class use",
-      test_to_array_rejects_untyped_first_class_use );
+    ( "array conversion supports static first-class use",
+      test_array_conversion_supports_static_first_class_use );
     ( "array arguments adapt nullable elements",
       test_array_arguments_adapt_nullable_elements );
     ( "optional protocol values can flow to seqable else branches",

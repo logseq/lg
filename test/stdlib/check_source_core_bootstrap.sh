@@ -12,7 +12,7 @@ done
 
 for name in \
   identity complement boolean not reduced reset-vals! subs int-to-string-radix any? range shuffle \
-  alength aclone acopy aslice aconcat array-to-seq array-to-rseq quot rem mod \
+  alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
   unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int \

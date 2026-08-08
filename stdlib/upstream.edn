@@ -140,6 +140,12 @@
                   :reason :lg-static-array-compatibility-helper-over-the-typed-runtime-sequence-boundary}
     array-to-rseq {:status :static-adaptation
                    :reason :lg-static-array-compatibility-helper-over-the-typed-reverse-sequence-boundary}
+    array-seq {:status :static-adaptation
+               :reason :source-port-preserves-the-public-one-and-two-argument-array-sequence-api-with-static-empty-sequence-semantics-instead-of-a-nullable-indexed-sequence}
+    to-array {:status :static-adaptation
+              :reason :source-port-copies-a-statically-typed-seqable-through-the-polymorphic-runtime-array-boundary}
+    into-array {:status :static-adaptation
+                :reason :source-port-supports-the-upstream-one-argument-seqable-copy-arity-while-the-two-argument-runtime-type-tag-arity-remains-outside-the-static-source-language}
     amap {:status :ported
           :reason :source-macro-preserves-the-upstream-four-argument-clone-loop-and-element-update-contract}
     asort! {:status :static-adaptation

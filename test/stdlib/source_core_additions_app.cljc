@@ -259,3 +259,21 @@
 (let [same-fn (fn [value] value)]
   (println (not (not= same-fn same-fn))))
 (println (not= (fn [value] value) (fn [value] value)))
+
+(def conversion-vector [10 20 30])
+(def converted-array (to-array conversion-vector))
+(aset converted-array 0 99)
+(println (= 10 (first conversion-vector)))
+(println (= 99 (aget converted-array 0)))
+
+(def conversion-source-array (array 4 5 6))
+(def copied-source-array (to-array conversion-source-array))
+(aset copied-source-array 0 8)
+(println (= 4 (aget conversion-source-array 0)))
+(println (= 8 (aget copied-source-array 0)))
+(println (= (list 7 8) (array-seq (into-array (list 7 8)))))
+(println (= (list 4 5 6) (array-seq conversion-source-array)))
+(println (= (list 5 6) (array-seq conversion-source-array 1)))
+(println (empty? (array-seq conversion-source-array 3)))
+(println (= 2 (alength (core/to-array [1 2]))))
+(println (= 9 (first (core/array-seq (core/into-array [9])))))

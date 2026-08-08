@@ -41,6 +41,12 @@
   :fn<array<array-element>;seq<array-element>>)
 (signature clojure.core/array-to-rseq [array-element]
   :fn<array<array-element>;seq<array-element>>)
+(signature clojure.core/array-seq [array-element]
+  :overload<fn<array<array-element>;seq<array-element>>;fn<array<array-element>;int;seq<array-element>>>)
+(signature clojure.core/to-array [value]
+  :fn<seqable<value>;array<value>>)
+(signature clojure.core/into-array [value]
+  :fn<seqable<value>;array<value>>)
 (signature clojure.core/asort! [array-element]
   :fn<fn<array-element;array-element;int>;array<array-element>;unit>)
 (signature clojure.core/booleans [value] :fn<value;value>)

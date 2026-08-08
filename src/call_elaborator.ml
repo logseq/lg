@@ -6643,56 +6643,7 @@ let create ~compile_expr =
                             (typed_ir (TArray element_ty) (Semantic_ir.Array []))
                       )
         | _ -> Error.error "array-of expects one type")
-    | "array-seq" -> (
-        let compile_array_seq array index =
-          if not (int_parameter_type index.ty) then
-            Error.error "array-seq index must be int"
-          else
-            let value_ty = Types.constraint_value_type array.ty in
-            let array_ty =
-              if Types.is_dynamic value_ty then
-                Types.dynamic_constraint_info value_ty
-                |> Option.value ~default:TUnknown
-              else value_ty
-            in
-            match array_element_type array_ty with
-            | None when Types.is_dynamic value_ty ->
-                Ok
-                  (typed_ir (Types.next_seq TUnknown)
-                     (apply "Lg_runtime.Runtime_seq.drop"
-                        [
-                          index.semantic_expr;
-                          apply "Lg_runtime.Runtime_dynamic.to_seq"
-                            [ constrained_argument_value array ];
-                        ]))
-            | None ->
-                Error.error
-                  ("array-seq expects an array, got "
-                  ^ Types.source_name value_ty)
-            | Some element_ty ->
-                let sequence =
-                  if Types.is_dynamic value_ty then
-                    apply "Lg_runtime.Runtime_dynamic.to_seq"
-                      [ constrained_argument_value array ]
-                  else
-                    apply "Lg_runtime.Runtime_seq.of_array"
-                      [ constrained_argument_value array ]
-                in
-                Ok
-                  (typed_ir (Types.next_seq element_ty)
-                     (apply "Lg_runtime.Runtime_seq.drop"
-                        [ index.semantic_expr;
-                          sequence;
-                        ]))
-        in
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ array ] ->
-            compile_array_seq array
-              (typed_ir TInt (Semantic_ir.Int 0))
-        | Ok [ array; index ] -> compile_array_seq array index
-        | Ok _ -> Error.error "array-seq expects 1 or 2 arguments")
-              | ("into-array" | "to-array" | "array-from") as name -> (
+    | "array-from" as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ ({ ty = TArray _; semantic_expr; _ } as array) ] ->
