@@ -19,6 +19,8 @@
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}
+    every? {:status :static-adaptation
+            :reason :uses-static-sequence-truthiness-and-indexed-access-after-the-upstream-nonempty-check}
     bit-clear {:status :static-adaptation
                :reason :composed-from-static-integer-bit-primitives}
     bit-flip {:status :static-adaptation

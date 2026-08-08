@@ -3845,56 +3845,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_truthy params form
     | FList [ FSymbol "meta"; FSymbol value ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
-    | FList
-        [
-          FSymbol "every?";
-          FSymbol predicate;
-          FSymbol collection;
-        ] ->
-        let collection_element =
-          Option.bind (string_assoc_opt collection params)
-            Types.seqable_constraint_element
-        in
-        let predicate_type =
-          if
-            List.exists
-              (has_source_name predicate)
-              [
-                "symbol?";
-                "keyword?";
-                "string?";
-                "int?";
-                "number?";
-                "boolean?";
-                "array?";
-                "vector?";
-                "list?";
-                "seq?";
-                "set?";
-                "map?";
-                "fn?";
-                "coll?";
-              ]
-          then Types.dynamic_constraint TUnknown
-          else
-            match string_assoc_opt predicate params with
-            | Some (TSet ((TUnknown | TMeta _ | TVar _) as element_ty)) ->
-                Option.value collection_element ~default:element_ty
-            | Some (TSet element_ty) -> element_ty
-            | Some (TFn ([ parameter_type ], _)) -> parameter_type
-            | Some ty when Types.is_dynamic ty ->
-                Types.dynamic_constraint TUnknown
-            | Some _ | None -> (
-                match lookup_function_ty predicate with
-                | Ok (TFn ([ parameter_type ], _)) -> parameter_type
-                | _ -> TUnknown)
-        in
-        Result.bind (constrain_seqable predicate_type params collection)
-          (fun params ->
-            match string_assoc_opt predicate params with
-            | Some (TSet _) ->
-                constrain_symbol (TSet predicate_type) params predicate
-            | Some _ | None -> Ok params)
     | FList [ FSymbol predicate; FSymbol value ]
       when has_source_name predicate "symbol?" ->
         constrain_symbol_predicate params value

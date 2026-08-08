@@ -14373,6 +14373,41 @@ let test_truthy_signature_type_supports_static_source_functions () =
   assert_ocaml_runs "truthy_signature_type_supports_static_source_functions"
     "true\nfalse\n" ocaml_source
 
+let test_truthy_callback_returns_are_adapted_for_source_functions () =
+  let source =
+    {|
+(signature first-truthy? [value result]
+  :fn<fn<value;truthy<result>>;vector<value>;bool>)
+(defn first-truthy? [pred values]
+  (if (pred (nth values 0)) true false))
+(println (first-truthy? (fn [value] (> value 0)) [1]))
+(println (first-truthy? (fn [value] (+ value 1)) [1]))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "truthy_callback_returns_are_adapted_for_source_functions" "true\ntrue\n"
+    ocaml_source
+
+let test_source_callbacks_use_types_from_later_collection_arguments () =
+  let source =
+    {|
+(signature int-values :fn<set<int>>)
+(defn int-values [] #{1 2})
+(println
+  (every?
+    (fn [value] (contains? #{1 2} value))
+    (int-values)))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_callback_collection_inference.cljc" source
+  in
+  assert_ocaml_runs
+    "source_callbacks_use_types_from_later_collection_arguments" "true\n"
+    ocaml_source
+
 let test_generic_map_type_variables_use_static_operations () =
   let source =
     {|
@@ -21536,11 +21571,15 @@ let test_computed_sets_are_first_class_predicates () =
 (println (pr-str (vec (remove blocked [1 2 3 4]))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/computed_set_predicates.cljc"
+      source
+  in
   assert_ocaml_runs "computed_sets_are_first_class_predicates"
     "[1 3]\ntrue\ntrue\n[1 3]\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/computed_set_predicates.cljc" source)
 
 let test_generic_clojure_set_subset_constrains_parameters () =
   let source =
@@ -28436,7 +28475,9 @@ let test_sets_support_named_records () =
               (contains? rebuilt ada)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/named_record_sets.cljc" source
+  in
   assert_ocaml_runs "sets_support_named_records" "1:true:true:1:true:0:true\n"
     ocaml_source
 
@@ -28744,10 +28785,11 @@ let test_set_sequence_core_api () =
   assert_ocaml_runs "set_sequence_core_api" "true:true:true:6\n" ocaml_source
 
 let test_set_sequence_predicates_accept_truthy_results () =
+  let source =
+    {|(println (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
+  in
   let ocaml_source =
-    Lg.Compiler.compile_string
-      {|(println (every? (fn [x] (+ x 1)) (hash-set 1 2)))|}
-    |> expect_ok
+    compile_with_stdlib Lg.Target.Native "test/set_truthy_every.cljc" source
   in
   assert_ocaml_runs "set_sequence_predicates_accept_truthy_results" "true\n"
     ocaml_source
@@ -28888,10 +28930,10 @@ let test_sequence_boolean_predicates () =
     ocaml_source
 
 let test_sequence_boolean_predicates_accept_truthy_results () =
+  let source = {|(println (every? (fn [x] (+ x 1)) [1 2]))|} in
   let ocaml_source =
-    Lg.Compiler.compile_string
-      {|(println (every? (fn [x] (+ x 1)) [1 2]))|}
-    |> expect_ok
+    compile_with_stdlib Lg.Target.Native "test/sequence_truthy_every.cljc"
+      source
   in
   assert_ocaml_runs "sequence_boolean_predicates_accept_truthy_results" "true\n"
     ocaml_source
@@ -34908,6 +34950,10 @@ let tests =
       test_generic_overload_signature_resolves_nested_type_parameters );
     ( "truthy signature type supports static source functions",
       test_truthy_signature_type_supports_static_source_functions );
+    ( "truthy callback returns are adapted for source functions",
+      test_truthy_callback_returns_are_adapted_for_source_functions );
+    ( "source callbacks use types from later collection arguments",
+      test_source_callbacks_use_types_from_later_collection_arguments );
     ( "generic map type variables use static operations",
       test_generic_map_type_variables_use_static_operations );
     ( "annotated set of closed sum stays static",

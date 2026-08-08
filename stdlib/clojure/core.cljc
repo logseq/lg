@@ -21,6 +21,14 @@
 (defn odd? [n]
   (not (even? n)))
 
+(defn every? [pred coll]
+  (loop [remaining (seq coll)]
+    (if remaining
+      (if (pred (nth remaining 0))
+        (recur (next remaining))
+        false)
+      true)))
+
 (defn not-every? [pred coll]
   (not (every? pred coll)))
 

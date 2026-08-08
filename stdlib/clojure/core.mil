@@ -11,6 +11,8 @@
 
 (signature clojure.core/even? :fn<int;bool>)
 (signature clojure.core/odd? :fn<int;bool>)
+(signature clojure.core/every? [value result]
+  :fn<fn<value;truthy<result>>;seqable<value>;bool>)
 (signature clojure.core/bit-clear :fn<int;int;int>)
 (signature clojure.core/bit-flip :fn<int;int;int>)
 (signature clojure.core/bit-set :fn<int;int;int>)

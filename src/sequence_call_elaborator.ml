@@ -21,7 +21,6 @@ type t = {
   compile_mapv : call;
   compile_reduce_kv : call;
   compile_some : call;
-  compile_sequence_bool_predicate : named_call;
   compile_map_call : call;
   compile_keep : call;
   compile_filter : call;
@@ -1554,52 +1553,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                           "some function type must match collection elements"
                     | _ -> Error.error "some expects a function"))))
       | _ -> Error.error "some expects function and collection"
-    and compile_sequence_bool_predicate scope env name arg_forms =
-      match arg_forms with
-    | [ fn_form; collection_form ] -> (
-          match compile_expr scope env collection_form with
-          | Error _ as error -> error
-          | Ok collection -> (
-              match Collection_capability.to_seq_expr env collection with
-              | Error _ -> Error.error (name ^ " expects a seqable value")
-              | Ok (inner, sequence) -> (
-                  match
-                    compile_function_arg_for_collection scope env inner fn_form
-                  with
-                  | Error _ as error -> error
-                  | Ok ({ ty = TFn ([ param_ty ], return_ty); _ } as predicate)
-                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
-                         ~actual:inner ->
-                      let predicate_expr =
-                        constrain_record_function_argument_expr predicate inner
-                      in
-                      let predicate_expr =
-                        if Types.equal return_ty TBool then predicate_expr
-                        else
-                          Semantic_ir.Fun
-                            ( [ Semantic_ir.PVar "item" ],
-                              truthiness_expression return_ty
-                                (Semantic_ir.Apply
-                                   (predicate_expr, [ Semantic_ir.Ident "item" ])) )
-                      in
-                      let result =
-                        apply "Lg_runtime.Runtime_seq.for_all"
-                          [ predicate_expr; sequence ]
-                      in
-                      Ok (typed_ir TBool result)
-                  | Ok { ty = TFn _; _ } ->
-                      let collection_name =
-                        match collection.ty with
-                        | TList _ -> "list"
-                        | TVector _ -> "vector"
-                        | TSet _ -> "set"
-                        | _ -> "sequence"
-                      in
-                      Error.error
-                      (name ^ " expects a predicate matching " ^ collection_name
-                     ^ " elements")
-                  | Ok _ -> Error.error (name ^ " expects a function"))))
-      | _ -> Error.error (name ^ " expects function and collection")
     and compile_map_call scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
@@ -2207,7 +2160,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     compile_mapv;
     compile_reduce_kv;
     compile_some;
-    compile_sequence_bool_predicate;
     compile_map_call;
     compile_keep;
     compile_filter;

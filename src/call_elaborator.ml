@@ -3826,9 +3826,6 @@ let create ~compile_expr =
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
-  let compile_sequence_bool_predicate =
-    sequence.compile_sequence_bool_predicate
-  in
   let compile_map_call = sequence.compile_map_call in
   let compile_keep = sequence.compile_keep in
   let compile_filter = sequence.compile_filter in
@@ -8881,8 +8878,6 @@ let create ~compile_expr =
     | "dorun" | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
-    | "every?" ->
-        compile_sequence_bool_predicate scope env name arg_forms
     | "map" -> compile_map_call scope env arg_forms
     | "keep" -> compile_keep scope env arg_forms
     | "filter" -> compile_filter scope env arg_forms
@@ -10315,22 +10310,84 @@ let create ~compile_expr =
           match contextual_parameter_tys with
           | None -> compile_args_for scope env arg_forms
           | Some parameter_tys ->
-              let rec compile acc parameter_tys forms =
-                match (parameter_tys, forms) with
-                | [], [] -> Ok (List.rev acc)
-                | expected :: parameter_tys, form :: forms ->
-                    let argument_env =
-                      match (expected, form) with
-                      | TFn _, FList (FSymbol "fn" :: _) ->
-                          Env.with_expected_type (Some expected) env
-                      | _ -> env
-                    in
-                    Result.bind (compile_expr scope argument_env form)
-                      (fun argument ->
-                        compile (argument :: acc) parameter_tys forms)
-                | _ -> assert false
+              let forms = Array.of_list arg_forms in
+              let parameters = Array.of_list parameter_tys in
+              let arguments = Array.make (Array.length forms) None in
+              let deferred_callback index =
+                match (parameters.(index), forms.(index)) with
+                | TFn _, FList (FSymbol "fn" :: _) -> true
+                | _ -> false
               in
-              compile [] parameter_tys arg_forms
+              let compile_argument expected form =
+                let form = contextual_callback_form expected form in
+                let argument_env =
+                  match (expected, form) with
+                  | TFn _, FList (FSymbol "fn" :: _) ->
+                      Env.with_expected_type (Some expected) env
+                  | _ -> env
+                in
+                match expected with
+                | TFn _ -> compile_function_arg scope argument_env form
+                | _ -> compile_expr scope argument_env form
+              in
+              let rec compile_non_callbacks index =
+                if index = Array.length forms then Ok ()
+                else if deferred_callback index then
+                  compile_non_callbacks (index + 1)
+                else
+                  Result.bind
+                    (compile_argument parameters.(index) forms.(index))
+                    (fun argument ->
+                      arguments.(index) <- Some argument;
+                      compile_non_callbacks (index + 1))
+              in
+              let infer_substitutions () =
+                let substitutions = ref [] in
+                Array.iteri
+                  (fun index argument ->
+                    match argument with
+                    | None -> ()
+                    | Some argument ->
+                        let expected = parameters.(index) in
+                        let inferred =
+                          match
+                            ( Types.seqable_constraint_element expected,
+                              Collection_capability.element_type env argument )
+                          with
+                          | Some expected_element, Some actual_element ->
+                              Type_solver.unify !substitutions expected_element
+                                actual_element
+                          | _ ->
+                              Ok
+                                (Types.infer_type_substitutions !substitutions
+                                   ~template:expected ~actual:argument.ty)
+                        in
+                        substitutions :=
+                          Result.value inferred ~default:!substitutions)
+                  arguments;
+                !substitutions
+              in
+              let rec compile_callbacks substitutions index =
+                if index = Array.length forms then Ok ()
+                else if not (deferred_callback index) then
+                  compile_callbacks substitutions (index + 1)
+                else
+                  let expected =
+                    Type_solver.apply substitutions parameters.(index)
+                  in
+                  Result.bind (compile_argument expected forms.(index))
+                    (fun argument ->
+                      arguments.(index) <- Some argument;
+                      compile_callbacks substitutions (index + 1))
+              in
+              let collect_arguments () =
+                arguments |> Array.to_list
+                |> List.map (function Some argument -> argument | None -> assert false)
+              in
+              Result.bind (compile_non_callbacks 0) (fun () ->
+                  let substitutions = infer_substitutions () in
+                  Result.map collect_arguments
+                    (compile_callbacks substitutions 0))
         in
         match compile_arguments with
         | Error _ as err -> err
@@ -11486,9 +11543,12 @@ let create ~compile_expr =
                                 | Some _ -> Ok (adapt_reduced_callback arg)
                                 | None -> (
                                     match (callback_expected_ty, arg.ty) with
-                                    | TFn _, TFn _
-                                      when function_has_host_int_return_boundary
-                                             callback_expected_ty arg.ty ->
+                                    | ( TFn (_, expected_return),
+                                        TFn (_, _) )
+                                      when has_capability_constraint
+                                             expected_return
+                                           || function_has_host_int_return_boundary
+                                                callback_expected_ty arg.ty ->
                                       adapt_value_to_type env
                                         callback_expected_ty arg
                                     | TFn (_, TBool), TFn (_, actual_return)
