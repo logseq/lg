@@ -10525,11 +10525,12 @@ let test_named_reducers_receive_contextual_accumulator_types () =
 (println (str (count kept-keys) ":" (pr-str flattened)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/named_reducers.cljc" source
+  in
   assert_ocaml_runs "named_reducers_receive_contextual_accumulator_types"
     "2:[1 2 3]\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  ignore (compile_with_stdlib Lg.Target.Melange "test/named_reducers.cljc" source)
 
 let test_count_supports_transient_collections () =
   let source =
@@ -19175,11 +19176,14 @@ let test_keyword_lookup_dispatches_nullable_static_maps () =
        (nil? (:answer (maybe-map false)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/nullable_static_maps.cljc" source
+  in
   assert_ocaml_runs "keyword_lookup_dispatches_nullable_static_maps"
     "true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/nullable_static_maps.cljc"
+       source)
 
 let test_get_dispatches_nullable_deftype_lookup_with_default () =
   let source =
@@ -19941,13 +19945,18 @@ let test_if_some_get_keeps_map_storage_non_nullable () =
 (println (count (:values result)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/non_nullable_map_storage.cljc"
+      source
+  in
   assert_ocaml_runs "if_some_get_keeps_map_storage_non_nullable" "2\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_with_stdlib Lg.Target.Melange
+       "test/non_nullable_map_storage.cljc" source);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Js_of_ocaml
+       "test/non_nullable_map_storage.cljc" source)
 
 let test_nullable_record_constraints_merge_across_branches () =
   let source =
@@ -20845,12 +20854,13 @@ let test_zipmap_stops_at_shortest_and_preserves_static_types () =
 (println (empty? (zipmap [] [])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/zipmap.cljc" source
+  in
   assert_ocaml_runs
     "zipmap_stops_at_shortest_and_preserves_static_types"
     "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+  ignore (compile_with_stdlib Lg.Target.Melange "test/zipmap.cljc" source)
 
 let test_map_accepts_callable_map_values () =
   let source =
@@ -26559,12 +26569,15 @@ let test_select_keys_accepts_runtime_seqable_key_collections () =
 (println (str (count dynamic-selection) ":" (get dynamic-selection '?a)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/select_keys_seqable.cljc" source
+  in
   assert_ocaml_runs "select_keys_accepts_runtime_seqable_key_collections"
     "2:1:3:false\n1:2\n0\n1:2\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
-  Lg.Compiler.compile_string
+    (compile_with_stdlib Lg.Target.Melange "test/select_keys_seqable.cljc"
+       source);
+  compile_with_stdlib_result Lg.Target.Native "test/bad_select_keys.cljc"
     {|(def bad (select-keys (zipmap ['?e] [1]) [1]))|}
   |> expect_error_contains "select-keys"
 
@@ -26614,11 +26627,15 @@ let test_select_keys_infers_generic_runtime_map_record_fields () =
        ":" (nil? absent)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/select_keys_generic_map.cljc"
+      source
+  in
   assert_ocaml_runs "select_keys_infers_generic_runtime_map_record_fields"
     "1:2:false\n0\n2:true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/select_keys_generic_map.cljc" source)
 
 let test_select_keys_projects_open_row_extension_fields () =
   let source =
@@ -29066,11 +29083,13 @@ let test_into_supports_typed_map_targets () =
        (= 0 (get result :seed))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/into_typed_maps.cljc" source
+  in
   assert_ocaml_runs "into_supports_typed_map_targets" "true:true:true:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/into_typed_maps.cljc" source)
 
 let test_into_accepts_inferred_seqable_parameters () =
   let source =
@@ -29545,12 +29564,15 @@ let test_reduce_accepts_static_map_entries () =
 (println (sum-entity-values entity))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/reduce_static_map.cljc" source
+  in
   assert_ocaml_runs "reduce_accepts_static_map_entries" "3\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_with_stdlib Lg.Target.Melange "test/reduce_static_map.cljc" source);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Js_of_ocaml "test/reduce_static_map.cljc"
+       source)
 
 let test_update_refines_empty_nested_vector_elements () =
   let source =

@@ -39,6 +39,7 @@
 (println (= 2 (count (core/drop-last 2 [1 2 3 4]))))
 (println (= 4 (first (core/reverse [1 2 3 4]))))
 (println (= 2 (count (core/reverse (hash-set 1 2)))))
+(println (= (Some 2) (get (core/zipmap [:a :b] [1 2]) :b)))
 (println (= 4 (core/bit-clear 5 0)))
 (println (= 7 (core/bit-set 5 1)))
 (println (= 7 (core/bit-flip 5 1)))

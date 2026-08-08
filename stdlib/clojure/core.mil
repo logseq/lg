@@ -45,3 +45,6 @@
 
 (signature clojure.core/reverse [value]
   :fn<seqable<value>;list<value>>)
+
+(signature clojure.core/zipmap [key value]
+  :fn<seqable<key>;seqable<value>;map<key;value>>)

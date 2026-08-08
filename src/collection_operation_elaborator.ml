@@ -28,7 +28,6 @@ type t = {
   compile_contains : call;
   compile_keys : call;
   compile_vals : call;
-  compile_zipmap : call;
 }
 
 let compile_args_for compile_expr scope env arg_forms =
@@ -3517,24 +3516,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     Error.error
                       ("vals expects a map, got " ^ Types.source_name target.ty)))
       | Ok _ -> Error.error "vals expects 1 arguments"
-    and compile_zipmap scope env arg_forms =
-      match compile_args_for scope env arg_forms with
-      | Error _ as error -> error
-      | Ok [ keys; values ] -> (
-          match
-            ( Collection_capability.to_seq_expr env keys,
-              Collection_capability.to_seq_expr env values )
-          with
-          | (Error _ as error), _ -> error
-          | _, (Error _ as error) -> error
-          | Ok (key_ty, key_sequence), Ok (value_ty, value_sequence) ->
-              Ok
-                (typed_ir (Types.dynamic_map key_ty value_ty)
-                   (Semantic_ir.Apply
-                      ( Semantic_ir.Ident
-                          (runtime_map_operation key_ty "zipmap"),
-                        [ key_sequence; value_sequence ] ))))
-      | Ok _ -> Error.error "zipmap expects 2 arguments"
   in
   {
     compile_list;
@@ -3557,5 +3538,4 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     compile_contains;
     compile_keys;
     compile_vals;
-    compile_zipmap;
   }

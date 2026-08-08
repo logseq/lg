@@ -1949,20 +1949,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _ -> Types.dynamic_constraint TUnknown
         in
         constrain_seqable element_ty params collection
-    | FList [ FSymbol operation; keys; values ]
-      when has_source_name operation "zipmap" ->
-        let key_ty, value_ty =
-          Option.value (Types.dynamic_map_types expected_ty)
-            ~default:
-              ( Types.dynamic_constraint TUnknown,
-                Types.dynamic_constraint TUnknown )
-        in
-        let constrain_collection element_ty params = function
-          | FSymbol name -> constrain_seqable element_ty params name
-          | form -> infer_form params form
-        in
-        Result.bind (constrain_collection key_ty params keys) (fun params ->
-            constrain_collection value_ty params values)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
            && (has_source_name operation "keys"
@@ -4005,15 +3991,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let key_ty = fresh_type_variable "map_key" in
         let value_ty = fresh_type_variable "map_value" in
         constrain_symbol (Types.dynamic_map key_ty value_ty) params name
-    | FList [ FSymbol operation; keys; values ]
-      when has_source_name operation "zipmap" ->
-        let dynamic = Types.dynamic_constraint TUnknown in
-        let constrain_collection params = function
-          | FSymbol name -> constrain_seqable dynamic params name
-          | form -> infer_form params form
-        in
-        Result.bind (constrain_collection params keys) (fun params ->
-            constrain_collection params values)
     | FList (FSymbol name :: arguments) when string_mem_assoc name params -> (
         let parameter_tys =
           List.mapi

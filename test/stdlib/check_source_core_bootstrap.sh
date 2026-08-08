@@ -12,7 +12,7 @@ done
 
 for name in \
   identity complement even? odd? not-any? not-every? \
-  split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse \
+  split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse zipmap \
   bit-clear bit-flip bit-set bit-test; do
   if ! grep -F "(defn $name" "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2

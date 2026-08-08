@@ -54,6 +54,19 @@
 (defn reverse [coll]
   (reduce (fn [result item] (conj result item)) (list) coll))
 
+(defn zipmap [keys values]
+  (loop [result {}
+         remaining-keys (seq keys)
+         remaining-values (seq values)]
+    (if remaining-keys
+      (if remaining-values
+        (recur
+          (assoc result (nth remaining-keys 0) (nth remaining-values 0))
+          (next remaining-keys)
+          (next remaining-values))
+        result)
+      result)))
+
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))
 

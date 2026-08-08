@@ -3810,7 +3810,6 @@ let create ~compile_expr =
   let compile_contains = collection.compile_contains in
   let compile_keys = collection.compile_keys in
   let compile_vals = collection.compile_vals in
-  let compile_zipmap = collection.compile_zipmap in
   let compile_sort_by = sequence.compile_sort_by in
   let compile_mapcat = sequence.compile_mapcat in
   let compile_repeatedly = sequence.compile_repeatedly in
@@ -8829,7 +8828,6 @@ let create ~compile_expr =
     | "contains?" -> compile_contains scope env arg_forms
     | "keys" -> compile_keys scope env arg_forms
     | "vals" -> compile_vals scope env arg_forms
-    | "zipmap" -> compile_zipmap scope env arg_forms
     | "transient" -> compile_transient scope env arg_forms
     | "persistent!" -> compile_persistent_bang scope env arg_forms
               | "hash-map" | "array-map" | "sorted-map" ->
