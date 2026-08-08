@@ -41,6 +41,8 @@
 (println (= 2 (count (core/reverse (hash-set 1 2)))))
 (println (= [1 0 2 0 3] (vec (core/interpose 0 [1 2 3]))))
 (println (= [1 2 1] (vec (core/dedupe [1 1 2 2 1]))))
+(println (= [1 2 3] (vec (core/distinct [1 2 1 3 2]))))
+(println (= ["a" "b"] (vec (core/distinct ["a" "a" "b"]))))
 (println (= (Some 2) (get (core/zipmap [:a :b] [1 2]) :b)))
 (println (= 4 (core/bit-clear 5 0)))
 (println (= 7 (core/bit-set 5 1)))

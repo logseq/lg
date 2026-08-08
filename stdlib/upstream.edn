@@ -48,6 +48,8 @@
     interpose {:status :ported}
     dedupe {:status :static-adaptation
             :reason :composed-from-partition-by-and-map-with-static-indexed-group-access}
+    distinct {:status :static-adaptation
+              :reason :preserves-existing-eager-static-semantics-with-a-typed-seen-set}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}}}
 

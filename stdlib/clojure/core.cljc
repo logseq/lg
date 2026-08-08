@@ -61,6 +61,23 @@
   (map (fn [values] (nth values 0))
        (partition-by (fn [value] value) coll)))
 
+(defn distinct [coll]
+  (let [remaining (seq coll)]
+    (if remaining
+      (let [item (nth remaining 0)]
+        (loop [seen (hash-set item)
+               result (list item)
+               remaining (next remaining)]
+          (if remaining
+            (let [item (nth remaining 0)]
+              (if (contains? seen item)
+                (recur seen result (next remaining))
+                (recur (conj seen item)
+                       (conj result item)
+                       (next remaining))))
+            (reverse result))))
+      (list))))
+
 (defn zipmap [keys values]
   (loop [result {}
          remaining-keys (seq keys)

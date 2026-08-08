@@ -8881,7 +8881,6 @@ let create ~compile_expr =
     | "map" -> compile_map_call scope env arg_forms
     | "keep" -> compile_keep scope env arg_forms
     | "filter" -> compile_filter scope env arg_forms
-    | "distinct" -> compile_distinct scope env arg_forms
     | "remove" | "take-while" | "drop-while" | "sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort-by" -> compile_sort_by scope env arg_forms
@@ -9869,32 +9868,6 @@ let create ~compile_expr =
                             [ sequence ] );
                       ] ))))
     | Ok _ -> Error.error "vec expects 1 arguments"
-  and compile_distinct scope env arg_forms =
-    match compile_args_for scope env arg_forms with
-    | Error _ as error -> error
-    | Ok [ collection ] -> (
-        match Collection_capability.to_seq_expr env collection with
-        | Error _ ->
-            Error.error
-              ("distinct expects a seqable value, got "
-             ^ Types.source_name collection.ty)
-        | Ok (inner, sequence) -> (
-            let left = typed_ir inner (Semantic_ir.Ident "left") in
-            let right = typed_ir inner (Semantic_ir.Ident "right") in
-            match Core_compare.compile ~env "=" [ left; right ] with
-            | Error _ as error -> error
-            | Ok equality ->
-                let equal =
-                  Semantic_ir.Fun
-                    ( [ Semantic_ir.PVar "left"; Semantic_ir.PVar "right" ],
-                      equality.semantic_expr )
-                in
-                Ok
-                  (typed_ir (TSeq inner)
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.distinct",
-                          [ equal; sequence ] )))))
-    | Ok _ -> Error.error "distinct expects 1 arguments"
   and compile_set scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as error -> error

@@ -34,8 +34,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 321; then
-  echo "compiler call dispatch changed: expected 321 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 320; then
+  echo "compiler call dispatch changed: expected 320 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -44,7 +44,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in boolean comp concat constantly cycle distinct doall dorun drop drop-while every-pred every? ffirst filter filterv fnil fnext get-in group-by interleave into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next nfirst nnext not-empty partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest rseq run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals vec", xs)
+    split("apply assoc-in boolean comp concat constantly cycle doall dorun drop drop-while every-pred every? ffirst filter filterv fnil fnext get-in group-by interleave into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next nfirst nnext not-empty partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest rseq run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals vec", xs)
     for (i in xs) blocked[xs[i]] = 1
     split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1

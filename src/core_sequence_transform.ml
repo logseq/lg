@@ -172,35 +172,6 @@ let take_drop_while name fn collection =
   | _, Ok _ -> Error.error (name ^ " expects a function")
   | _, Error _ -> Error.error (name ^ " expects a list, vector, or set")
 
-let distinct collection =
-  match collection_to_list_expr collection with
-  | Error _ -> Error.error "distinct expects a list, vector, or set"
-  | Ok (_inner, list_expr) ->
-      let body =
-        Semantic_ir.Match
-          ( Semantic_ir.Ident "xs",
-            [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-              ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                Semantic_ir.If
-                  ( apply "List.mem" [ Semantic_ir.Ident "item"; Semantic_ir.Ident "seen" ],
-                    apply "distinct"
-                      [ Semantic_ir.Ident "seen";
-                        Semantic_ir.Ident "acc";
-                        Semantic_ir.Ident "rest" ],
-                    apply "distinct"
-                      [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "seen");
-                        Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
-                        Semantic_ir.Ident "rest" ] ) ) ] )
-      in
-      let list_expr =
-        Semantic_ir.LetRec
-          ( "distinct",
-            [ Semantic_ir.PVar "seen"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-            body,
-            [ Semantic_ir.List []; Semantic_ir.List []; list_expr ] )
-      in
-      Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
-
 let sort collection =
   if Types.is_dynamic collection.ty then
     Ok
@@ -611,7 +582,6 @@ let compile name args =
   | "remove", [ fn; collection ] -> remove fn collection
   | ("take-while" | "drop-while"), [ fn; collection ] ->
       take_drop_while name fn collection
-  | "distinct", [ collection ] -> distinct collection
   | "sort", [ collection ] -> sort collection
   | "concat", [] -> Error.error "concat expects at least 1 collection"
   | "concat", collections -> concat collections
@@ -631,7 +601,7 @@ let compile name args =
   | "remove", _ -> Error.error "remove expects function and collection"
   | ("take-while" | "drop-while"), _ ->
       Error.error (name ^ " expects function and collection")
-  | ("distinct" | "sort" | "vec" | "set" | "dorun"
+  | ("sort" | "vec" | "set" | "dorun"
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
   | "repeat", _ -> Error.error "repeat expects value, or count and value"
