@@ -241,9 +241,23 @@
     difference {:status :static-adaptation
                 :reason :typed-binary-helper}
     subset? {:status :ported}
-    bubble-max-key {:status :deferred
-                    :reason :max-key-not-yet-source-defined}}
+    superset? {:status :ported}
+    select {:status :ported}
+    map-invert {:status :static-adaptation
+                :reason :persistent-reduce-kv-preserves-last-value-wins-semantics-without-a-transient-representation-boundary}
+    rename-keys {:status :static-adaptation
+                 :reason :two-typed-reduce-kv-passes-preserve-upstream-remove-before-rename-and-collision-semantics}
+    project {:status :blocked-static-typing
+             :reason :dependent-relation-map-projection-is-not-yet-source-expressible}
+    rename {:status :blocked-static-typing
+            :reason :dependent-relation-map-renaming-is-not-yet-source-expressible}
+    index {:status :blocked-static-typing
+           :reason :projected-map-keys-and-set-of-map-values-need-dependent-relation-types}
+    join {:status :blocked-static-typing
+          :reason :dependent-relational-map-shapes-and-merge-are-not-yet-source-expressible}
+    bubble-max-key {:status :static-adaptation
+                    :reason :typed-source-helper-preserves-the-upstream-maximal-selection-and-identity-removal-algorithm-but-public-variadic-operations-retain-binary-typed-reduction-until-nested-set-callback-instantiation-is-source-expressible}}
    :notes
    ["Binary algorithms and size-based branch order follow ClojureScript."
     "Typed binary helpers preserve one set element type across arguments and results."
-    "Variadic functions reduce through typed helpers instead of bubble-max-key until max-key is available from source stdlib."]}}}
+    "Variadic functions reduce through typed helpers because specializing bubble-max-key across nested set callbacks is not yet source-expressible."]}}}

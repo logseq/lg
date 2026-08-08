@@ -173,14 +173,21 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
         }
       }' >"$tmp/namespace-support"
 
+  printf '%b\n' \
+    'clojure.set/project\tblocked-static-typing\tdependent-relation-map-projection-is-not-yet-source-expressible' \
+    'clojure.set/rename\tblocked-static-typing\tdependent-relation-map-renaming-is-not-yet-source-expressible' \
+    'clojure.set/index\tblocked-static-typing\tprojected-map-keys-and-set-of-map-values-need-dependent-relation-types' \
+    'clojure.set/join\tblocked-static-typing\tdependent-relational-map-shapes-and-merge-are-not-yet-source-expressible' \
+    >>"$tmp/namespace-support"
+
   awk '
     /^  (clojure|cljs)\.[A-Za-z0-9_.-]+$/ {
       namespace = $1
       status = ""
     }
-    /:status :blocked/ {status = "blocked-static-typing"}
-    /:status :host-boundary/ {status = "host-boundary"}
-    /:status :deferred/ {status = "deferred"}
+    /:status :blocked([[:space:]}]|$)/ {status = "blocked-static-typing"}
+    /:status :host-boundary([[:space:]}]|$)/ {status = "host-boundary"}
+    /:status :deferred([[:space:]}]|$)/ {status = "deferred"}
     status != "" && /:reason :[A-Za-z0-9_.-]+/ {
       reason = $2
       sub(/^:/, "", reason)
@@ -229,8 +236,8 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
         split($2, qualified, "/")
         namespace = qualified[1]
         print "logseq-qualified-var-status\t" $2 "\t" \
-          namespace_status(namespace) "\t" $3 "\t" \
-          namespace_reason(namespace)
+          ($2 in support ? support[$2] : namespace_status(namespace)) "\t" $3 "\t" \
+          ($2 in reason ? reason[$2] : namespace_reason(namespace))
       }
     }
   ' "$tmp/namespace-support" "$tmp/logseq-counts" \

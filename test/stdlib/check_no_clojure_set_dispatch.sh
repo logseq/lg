@@ -33,7 +33,7 @@ if ! grep -F '5c6ef531604662afbb33dc1b553d7602634d9656' "$root/stdlib/upstream.e
   exit 1
 fi
 
-for definition in union intersection difference 'subset?'; do
+for definition in bubble-max-key union intersection difference select map-invert rename-keys 'subset?' 'superset?'; do
   if ! grep -F " $definition" "$root/stdlib/clojure/set.cljc" >/dev/null; then
     echo "clojure.set source is missing $definition" >&2
     exit 1

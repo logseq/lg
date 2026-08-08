@@ -14,6 +14,22 @@
 (println (pr-str (difference #{1 2 3 4} #{2} #{4})))
 (println (set/subset? #{1 2} #{1 2 3}))
 (println (set/subset? #{1 4} #{1 2 3}))
+(println (set/superset? #{1 2 3} #{1 2}))
+(println (not (set/superset? #{1 2} #{1 2 3})))
+(println (= #{1 3} (set/select odd? #{1 2 3 4})))
+(println (= {"a" :left "b" :right}
+            (set/map-invert {:left "a" :right "b"})))
+(println (= {1 "one" 2 "two"}
+            (set/map-invert {"one" 1 "two" 2})))
+(def renamed-collision
+  (set/rename-keys {:a 1 :b 2} {:a :b}))
+(println (and (= 1 (count renamed-collision))
+              (= (Some 1) (get renamed-collision :b))))
+(def renamed-missing
+  (set/rename-keys {:a 1 :b 2} {:a :c :missing :x}))
+(println (and (= 2 (count renamed-missing))
+              (= (Some 2) (get renamed-missing :b))
+              (= (Some 1) (get renamed-missing :c))))
 (println (pr-str (set/union #{"a"} #{"b"})))
 (println (string/join "," ["a" "b"]))
 (println (string/index-of "banana" "na" 3))

@@ -137,7 +137,13 @@ and the derived bit functions have no legacy compiler fallback. At the current c
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
-scope of the standard-library migration. The same checkout also reports
+scope of the standard-library migration. The aggregate `clojure.set` source
+namespace now provides `union`, `intersection`, `difference`, `subset?`,
+`superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
+references and all 221 observed qualified-var references resolve through the
+source artifact. The inventory records `project`, `rename`, `index`, and
+`join` as var-level static-typing blockers, so an unimplemented var cannot
+inherit the supported status of its namespace. The same checkout also reports
 `cljs.test` occurs 229 times and is explicitly blocked on analyzer-backed
 macros, dynamic test environments, and a closed report-event domain.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.

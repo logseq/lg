@@ -5,6 +5,18 @@
 
 (ns clojure.set)
 
+(defn- bubble-max-key [key-fn coll]
+  (let [maximal
+        (reduce
+         (fn [best candidate]
+           (if (> (key-fn candidate) (key-fn best))
+             candidate
+             best))
+         (nth coll 0)
+         (drop 1 coll))]
+    (cons maximal
+          (filter (fn [item] (not (identical? maximal item))) coll))))
+
 (defn- union-two [s1 s2]
   (if (< (count s1) (count s2))
     (reduce conj s2 s1)
@@ -57,3 +69,45 @@
   [set1 set2]
   (and (<= (count set1) (count set2))
        (every? (fn [value] (contains? set2 value)) set1)))
+
+(defn superset?
+  "Returns whether `set1` is a superset of `set2`."
+  [set1 set2]
+  (and (>= (count set1) (count set2))
+       (every? (fn [value] (contains? set1 value)) set2)))
+
+(defn select
+  "Returns the elements of `xset` for which `pred` is truthy."
+  [pred xset]
+  (reduce
+   (fn [result value]
+     (if (pred value) result (disj result value)))
+   xset
+   xset))
+
+(defn map-invert
+  "Returns a map whose values are the keys of `m` and whose keys are its values."
+  [m]
+  (reduce-kv
+   (fn [result key value]
+     (assoc result value key))
+   {}
+   m))
+
+(defn- remove-renamed-keys [m key-map]
+  (reduce-kv
+   (fn [result old _new]
+     (dissoc result old))
+   m
+   key-map))
+
+(defn rename-keys
+  "Returns `m` with keys renamed according to `key-map`."
+  [m key-map]
+  (reduce-kv
+   (fn [result old new]
+     (if-some [value (get m old)]
+       (assoc result new value)
+       result))
+   (remove-renamed-keys m key-map)
+   key-map))
