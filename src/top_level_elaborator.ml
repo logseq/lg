@@ -3159,8 +3159,6 @@ let rec compile scope env next_type = function
                 let result =
                   if String.starts_with ~prefix:"ocaml." module_name then
                     Require.add_ocaml_refer_bindings env scope module_name names
-                  else if module_name = "clojure.string" then
-                    Require.add_clojure_string_refer_bindings env scope names
                   else Require.add_lg_refer_bindings env scope module_name names
                 in
                 match result with

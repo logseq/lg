@@ -1,0 +1,28 @@
+(ns clojure.string)
+
+(signature clojure.string/blank? :fn<string;bool>)
+(signature clojure.string/capitalize :fn<string;string>)
+(signature clojure.string/ends-with? :fn<string;string;bool>)
+(signature clojure.string/includes? :fn<string;string;bool>)
+
+(signature clojure.string/index-of
+  :overload<fn<string;string;int>;fn<string;string;int;int>>)
+
+(signature clojure.string/join
+  :overload<fn<seqable<string>;string>;fn<string;seqable<string>;string>>)
+
+(signature clojure.string/last-index-of
+  :overload<fn<string;string;int>;fn<string;string;int;int>>)
+
+(signature clojure.string/lower-case :fn<string;string>)
+(signature clojure.string/re-quote-replacement :fn<string;string>)
+(signature clojure.string/replace :fn<string;string;string;string>)
+(signature clojure.string/replace-first :fn<string;string;string;string>)
+(signature clojure.string/reverse :fn<string;string>)
+(signature clojure.string/split-lines :fn<string;vector<string>>)
+(signature clojure.string/starts-with? :fn<string;string;bool>)
+(signature clojure.string/trim :fn<string;string>)
+(signature clojure.string/trim-newline :fn<string;string>)
+(signature clojure.string/triml :fn<string;string>)
+(signature clojure.string/trimr :fn<string;string>)
+(signature clojure.string/upper-case :fn<string;string>)

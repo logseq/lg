@@ -1,6 +1,8 @@
 (rule
  (targets clojure_set_bootstrap.ml clojure_set.state)
  (deps
+  ../../stdlib/clojure/string.mil
+  ../../stdlib/clojure/string.cljc
   ../../stdlib/clojure/set.mil
   ../../stdlib/clojure/set.cljc
   ../../bin/lg_cli.exe)
@@ -14,6 +16,8 @@
     native
     --compile-files-state
     clojure_set.state
+    %{dep:../../stdlib/clojure/string.mil}
+    %{dep:../../stdlib/clojure/string.cljc}
     %{dep:../../stdlib/clojure/set.mil}
     %{dep:../../stdlib/clojure/set.cljc}
     -o
@@ -127,6 +131,15 @@
   (source_tree ../../src))
  (action
   (run sh %{dep:check_no_clojure_set_dispatch.sh} ../..)))
+
+(rule
+ (alias source-namespace-migration)
+ (deps
+  check_source_namespace_migration.sh
+  ../../stdlib/upstream.edn
+  (source_tree ../../src))
+ (action
+  (run sh %{dep:check_source_namespace_migration.sh} ../..)))
 
 (alias
  (name runtest)

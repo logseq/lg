@@ -50,18 +50,6 @@ let add_core_alias_bindings env module_name alias =
 let core_namespace = function
   | module_name -> Core_namespaces.is_core_namespace module_name
 
-let add_clojure_string_refer_bindings env scope names =
-  let rec loop acc = function
-    | [] -> Ok acc
-    | name :: rest -> (
-        match List.assoc_opt name Core_string.bindings with
-        | Some binding ->
-            let target_key = Names.scoped_key scope name in
-            loop (Env.add target_key binding acc) rest
-        | None -> Error.error ("cannot refer unknown symbol clojure.string/" ^ name))
-  in
-  loop env names
-
 let namespace_bindings env module_name =
   let value_prefix = module_name ^ "/" in
   let record_prefix = "__record/" ^ module_name ^ "/" in
@@ -91,10 +79,23 @@ let ensure_namespace env module_name =
   else Ok env
 
 let add_lg_alias_bindings env module_name alias =
-  let bindings = namespace_bindings env module_name in
+  let source_bindings = namespace_bindings env module_name in
+  let source_value_names =
+    source_bindings
+    |> List.filter_map (function
+         | `Value name, _ -> Some name
+         | `Record _, _ -> None)
+  in
+  let primitive_bindings =
+    core_bindings module_name
+    |> List.filter (fun (name, _) ->
+           not (List.exists (String.equal name) source_value_names))
+    |> List.map (fun (name, binding) -> (`Value name, binding))
+  in
+  let bindings = source_bindings @ primitive_bindings in
   let macros = Env.namespace_macros module_name env in
   let inline_macros = Env.namespace_inline_macros module_name env in
-  if bindings = [] && macros = [] && inline_macros = [] then
+  if source_bindings = [] && macros = [] && inline_macros = [] then
     Error.error ("cannot require unknown namespace " ^ module_name)
   else
       let env =
@@ -123,7 +124,11 @@ let add_lg_refer_bindings env scope module_name names =
   let rec loop env = function
     | [] -> Ok env
     | name :: rest ->
-        let value = Env.find_opt (module_name ^ "/" ^ name) env in
+        let value =
+          match Env.find_opt (module_name ^ "/" ^ name) env with
+          | Some _ as value -> value
+          | None -> List.assoc_opt name (core_bindings module_name)
+        in
         let record =
           Env.find_opt (Resolver.record_type_key module_name name) env
         in

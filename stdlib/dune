@@ -1,6 +1,11 @@
 (rule
  (targets clojure_set_native.ml clojure_set_native.state)
- (deps clojure/set.mil clojure/set.cljc ../bin/lg_cli.exe)
+ (deps
+  clojure/string.mil
+  clojure/string.cljc
+  clojure/set.mil
+  clojure/set.cljc
+  ../bin/lg_cli.exe)
  (action
   (setenv
    LG_DISABLE_COMPILE_CACHE
@@ -11,6 +16,8 @@
     native
     --compile-files-state
     clojure_set_native.state
+    %{dep:clojure/string.mil}
+    %{dep:clojure/string.cljc}
     %{dep:clojure/set.mil}
     %{dep:clojure/set.cljc}
     -o
@@ -22,7 +29,12 @@
 
 (rule
  (targets clojure_set_melange.ml clojure_set_melange.state)
- (deps clojure/set.mil clojure/set.cljc ../bin/lg_cli.exe)
+ (deps
+  clojure/string.mil
+  clojure/string.cljc
+  clojure/set.mil
+  clojure/set.cljc
+  ../bin/lg_cli.exe)
  (action
   (setenv
    LG_DISABLE_COMPILE_CACHE
@@ -33,6 +45,8 @@
     melange
     --compile-files-state
     clojure_set_melange.state
+    %{dep:clojure/string.mil}
+    %{dep:clojure/string.cljc}
     %{dep:clojure/set.mil}
     %{dep:clojure/set.cljc}
     -o

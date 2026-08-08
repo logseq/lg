@@ -1,5 +1,7 @@
 (ns stdlib.clojure-set-app
-  (:require [clojure.set :as set :refer [difference]]))
+  (:require
+   [clojure.set :as set :refer [difference]]
+   [clojure.string :as string :refer [upper-case]]))
 
 (println (count (set/union)))
 (println (= #{1 2} (set/union #{1 2})))
@@ -9,3 +11,7 @@
 (println (set/subset? #{1 2} #{1 2 3}))
 (println (set/subset? #{1 4} #{1 2 3}))
 (println (pr-str (set/union #{"a"} #{"b"})))
+(println (string/join "," ["a" "b"]))
+(println (string/index-of "banana" "na" 3))
+(println (string/last-index-of "banana" "na" 3))
+(println (upper-case "logseq"))

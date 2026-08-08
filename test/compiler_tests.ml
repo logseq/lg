@@ -279,12 +279,17 @@ let read_file path =
       let length = in_channel_length ic in
       really_input_string ic length)
 
-let clojure_set_sources () =
-  [ "stdlib/clojure/set.mil"; "stdlib/clojure/set.cljc" ]
+let stdlib_sources () =
+  [
+    "stdlib/clojure/string.mil";
+    "stdlib/clojure/string.cljc";
+    "stdlib/clojure/set.mil";
+    "stdlib/clojure/set.cljc";
+  ]
   |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
 
-let compile_with_clojure_set target filename source =
-  let sources = clojure_set_sources () @ [ (filename, source) ] in
+let compile_with_stdlib target filename source =
+  let sources = stdlib_sources () @ [ (filename, source) ] in
   let _, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (source_filename, source_text) ->
@@ -297,6 +302,18 @@ let compile_with_clojure_set target filename source =
       (Lg.Compiler.empty_state, []) sources
   in
   reversed_outputs |> List.rev |> String.concat "\n"
+
+let compile_with_stdlib_result target filename source =
+  let state =
+    List.fold_left
+      (fun state (source_filename, source_text) ->
+        Lg.Compiler.compile_chunk_with_filename ~target
+          ~filename:source_filename state source_text
+        |> expect_ok |> fst)
+      Lg.Compiler.empty_state (stdlib_sources ())
+  in
+  Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
+  |> Result.map snd
 
 let rec source_files_under directory =
   Sys.readdir directory |> Array.to_list
@@ -3851,7 +3868,9 @@ let test_namespace_load_only_require_exposes_qualified_clojure_string () =
 (println (clojure.string/upper-case "ada"))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/clojure_string_load.cljc" source
+  in
   assert_ocaml_runs
     "namespace_load_only_require_exposes_qualified_clojure_string" "ADA\n"
     ocaml_source
@@ -4615,7 +4634,7 @@ let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
   ignore (compile Lg.Target.Melange)
 
 let current_datascript_sources () =
-  clojure_set_sources ()
+  stdlib_sources ()
   @ ([
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
@@ -9541,7 +9560,7 @@ let test_current_datascript_transaction_preserves_unique_identity_edges () =
   let compile target =
     let _, outputs =
       compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_unique_identity_edges.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -10214,7 +10233,7 @@ let test_current_datascript_transaction_rejects_invalid_inputs () =
   let compile target =
     let _, outputs =
       compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_invalid_inputs.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -10578,11 +10597,13 @@ let test_var_quote_resolves_static_function_values () =
 (println @#'Values/answer)
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/var_quote.cljc" source
+  in
   assert_ocaml_runs "var_quote_resolves_static_function_values"
     "42\nLG\n42\n43\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/var_quote.cljc" source)
 
 let test_var_quote_dereferences_qualified_chunk_values () =
   let compile target =
@@ -11313,7 +11334,9 @@ let test_datascript_schema_reads_regex_literals () =
 (println (first (clojure.string/split "db.install" #"\.")))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/schema_regex.cljc" source
+  in
   assert_ocaml_runs "datascript_schema_reads_regex_literals" "db\n" ocaml_source
 
 let test_re_matches_returns_clojure_match_values () =
@@ -14155,7 +14178,9 @@ let test_datascript_schema_constants_behavior () =
        ":" (some? (Datascript_schema/type? :db.type/ref))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/schema_constants.cljc" source
+  in
   assert_ocaml_runs "datascript_schema_constants_behavior" "12:true:true\n"
     ocaml_source
 
@@ -20384,7 +20409,9 @@ let test_clojure_string_module_batch_works () =
        (pr-str (str/split "a,b,c" ",")) ":" (pr-str (str/split-lines "a\nb"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/clojure_string_batch.cljc" source
+  in
   assert_ocaml_runs "clojure_string_module_batch_works"
     "ADA|ada|Ada|cba|hi|left|right|line|baNANA|baNAna|$1\n\
      true:true:true:true:2:4:[\"a\" \"b\" \"c\"]:[\"a\" \"b\"]\n"
@@ -20397,11 +20424,14 @@ let test_clojure_string_join_accepts_lazy_sequences () =
 (println (str/join "-" (map (fn [^:int value] (str value)) [1 2 3])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/clojure_string_join.cljc" source
+  in
   assert_ocaml_runs "clojure_string_join_accepts_lazy_sequences" "1-2-3\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/clojure_string_join.cljc"
+       source)
 
 let test_clojure_string_module_refer_works () =
   let source =
@@ -20410,11 +20440,13 @@ let test_clojure_string_module_refer_works () =
 (println (str (upper-case (trim " ada "))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/clojure_string_refer.cljc" source
+  in
   assert_ocaml_runs "clojure_string_module_refer_works" "ADA\n" ocaml_source
 
 let test_clojure_string_module_rejects_bad_args () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/clojure_string_bad_args.cljc"
     {|
 (require [clojure.string :as str])
 (def x (str/upper-case 1))
@@ -20422,7 +20454,8 @@ let test_clojure_string_module_rejects_bad_args () =
   |> expect_error_contains "str/upper-case called with incompatible arguments"
 
 let test_clojure_string_module_rejects_unknown_refer () =
-  Lg.Compiler.compile_string {|
+  compile_with_stdlib_result Lg.Target.Native
+    "test/clojure_string_unknown_refer.cljc" {|
 (require [clojure.string :refer [missing]])
 |}
   |> expect_error "cannot refer unknown symbol clojure.string/missing"
@@ -21408,12 +21441,12 @@ let test_generic_clojure_set_subset_constrains_parameters () =
 |}
   in
   let native_source =
-    compile_with_clojure_set Lg.Target.Native "app/set_subset.cljc" source
+    compile_with_stdlib Lg.Target.Native "app/set_subset.cljc" source
   in
   assert_ocaml_runs "generic_clojure_set_subset_constrains_parameters"
     "true\ntrue\n" native_source;
   ignore
-    (compile_with_clojure_set Lg.Target.Melange "app/set_subset.cljc" source);
+    (compile_with_stdlib Lg.Target.Melange "app/set_subset.cljc" source);
   let sequence_source =
     {|
 (ns app.sequence-subset
@@ -21433,7 +21466,7 @@ let test_generic_clojure_set_subset_constrains_parameters () =
             |> expect_ok
           in
           (state, ()))
-        (Lg.Compiler.empty_state, ()) (clojure_set_sources ())
+        (Lg.Compiler.empty_state, ()) (stdlib_sources ())
     in
     Lg.Compiler.compile_chunk_with_filename ~target
       ~filename:"app/sequence_subset.cljc" state sequence_source
@@ -25527,7 +25560,8 @@ let test_clojure_string_escape_rejects_untyped_first_class_use () =
 (println (escape "a<b" {\< "&lt;"}))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/clojure_string_escape_first_class.cljc" source
   |> expect_error_contains
        "str/escape cannot be used as an untyped first-class function"
 

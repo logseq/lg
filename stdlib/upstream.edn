@@ -1,10 +1,60 @@
 {:clojurescript
  {:repository "https://github.com/clojure/clojurescript"
   :commit "7ab3bc777a6d0ec38cb886461dc21a71db7b827a"
-  :license "EPL-1.0"}
+ :license "EPL-1.0"}
+
+ :aggregate-namespaces
+ [clojure.string clojure.set]
 
  :namespaces
- {clojure.set
+ {clojure.string
+  {:source "src/main/cljs/clojure/string.cljs"
+   :implementation "clojure/string.cljc"
+   :interface "clojure/string.mil"
+   :definitions
+   {blank? {:status :static-adaptation :reason :typed-host-string-primitive}
+    capitalize {:status :static-adaptation :reason :typed-host-string-primitive}
+    ends-with? {:status :static-adaptation :reason :typed-host-string-primitive}
+    includes? {:status :static-adaptation :reason :typed-host-string-primitive}
+    index-of {:status :static-adaptation :reason :typed-host-string-primitive}
+    join {:status :static-adaptation :reason :typed-sequence-host-primitive}
+    last-index-of {:status :static-adaptation :reason :typed-host-string-primitive}
+    lower-case {:status :static-adaptation :reason :typed-host-string-primitive}
+    re-quote-replacement {:status :static-adaptation :reason :host-regex-boundary}
+    replace {:status :static-adaptation :reason :host-regex-boundary}
+    replace-first {:status :static-adaptation :reason :host-regex-boundary}
+    reverse {:status :static-adaptation :reason :typed-host-string-primitive}
+    split {:status :host-primitive
+           :reason :string-or-regex-pattern-sum-not-yet-source-expressible}
+    split-lines {:status :static-adaptation :reason :typed-host-string-primitive}
+    starts-with? {:status :static-adaptation :reason :typed-host-string-primitive}
+    trim {:status :static-adaptation :reason :typed-host-string-primitive}
+    trim-newline {:status :static-adaptation :reason :typed-host-string-primitive}
+    triml {:status :static-adaptation :reason :typed-host-string-primitive}
+    trimr {:status :static-adaptation :reason :typed-host-string-primitive}
+    upper-case {:status :static-adaptation :reason :typed-host-string-primitive}}}
+
+  clojure.edn
+  {:source "src/main/cljs/cljs/reader.cljs"
+   :status :blocked
+   :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}
+
+  cljs.reader
+  {:source "src/main/cljs/cljs/reader.cljs"
+   :status :blocked
+   :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}
+
+  clojure.data
+  {:source "src/main/cljs/clojure/data.cljs"
+   :status :blocked
+   :reason :requires-closed-heterogeneous-clojure-value-domain}
+
+  clojure.walk
+  {:source "src/main/cljs/clojure/walk.cljs"
+   :status :blocked
+   :reason :requires-closed-heterogeneous-clojure-value-domain}
+
+  clojure.set
   {:source "src/main/cljs/clojure/set.cljs"
    :implementation "clojure/set.cljc"
    :interface "clojure/set.mil"

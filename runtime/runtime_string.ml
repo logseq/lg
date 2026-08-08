@@ -3,6 +3,9 @@ let is_whitespace = function
   | _ -> false
 
 let blank source = String.trim source = ""
+let trim source = String.trim source
+let lower_case source = String.lowercase_ascii source
+let upper_case source = String.uppercase_ascii source
 let ends_with source suffix = String.ends_with ~suffix source
 
 let index_of_from source needle start =
@@ -24,6 +27,9 @@ let includes source needle = index_of source needle >= 0
 let index_of_int source needle = index_of source needle
 let join separator (to_seq, values) =
   String.concat separator (List.of_seq (to_seq values))
+
+let join_seq separator values =
+  String.concat separator (List.of_seq values)
 
 let last_index_of_from source needle start =
   let needle_len = String.length needle in
