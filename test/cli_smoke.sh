@@ -151,10 +151,18 @@ mkdir -p "$cache_cli_root/bin" "$cache_compiler_dir"
 cp "$cli" "$cache_cli"
 cp "$source_compiler_dir/lg.cma" "$cache_compiler_dir/lg.cma"
 cp "$source_compiler_dir/lg.cmxa" "$cache_compiler_dir/lg.cmxa"
-chmod u+w "$cache_compiler_dir/lg.cmxa"
+cp "$source_compiler_dir/lg.a" "$cache_compiler_dir/lg.a"
+chmod u+w "$cache_compiler_dir/lg.cmxa" "$cache_compiler_dir/lg.a"
 
 LG_CACHE_DIR="$multi_dir/artifact-cache" \
   "$cache_cli" --compile-files "$math_source" "$main_source" -o "$multi_output"
+stable_artifact_stderr="$multi_dir/stable-artifact.stderr"
+printf 'changed-native-archive' >> "$cache_compiler_dir/lg.a"
+LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
+  "$cache_cli" --compile-files "$math_source" "$main_source" -o "$multi_output" \
+  2> "$stable_artifact_stderr"
+grep -q "compile cache hit: $main_source" "$stable_artifact_stderr"
+
 printf 'changed-native-compiler' >> "$cache_compiler_dir/lg.cmxa"
 LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
   "$cache_cli" --compile-files "$math_source" "$main_source" -o "$multi_output" \

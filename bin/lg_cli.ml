@@ -109,7 +109,7 @@ let compiler_cache_identity () =
     Filename.concat repo_root "_build/default/src"
   in
   let compiler_artifacts directory =
-    [ "lg.cmxa"; "lg.a"; "lg.cma" ]
+    [ "lg.cmxa"; "lg.cma" ]
     |> List.map (Filename.concat directory)
     |> List.filter Sys.file_exists
   in
