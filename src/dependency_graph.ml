@@ -516,81 +516,101 @@ let recursive_groups forms =
   |> List.map (List.sort Int.compare)
 
 let stable_order forms =
-    let providers, components = dependency_components forms in
-    let declaration_providers =
-      declaration_provider_indices (indexed_forms forms)
-    in
-    let dependencies index form =
-      let dependencies =
-        form_dependencies providers declaration_providers index form
-      in
-      dependencies
-    in
-    let component_of = Hashtbl.create (List.length forms) in
-    List.iteri
+  let providers, component_lists = dependency_components forms in
+  let declaration_providers =
+    declaration_provider_indices (indexed_forms forms)
+  in
+  let forms = Array.of_list forms in
+  let components =
+    component_lists
+    |> List.map (fun members ->
+           members |> List.map int_of_string |> List.sort Int.compare)
+    |> Array.of_list
+  in
+  let component_count = Array.length components in
+  let component_of = Array.make (Array.length forms) (-1) in
+  Array.iteri
+    (fun component members ->
+      List.iter (fun member -> component_of.(member) <- component) members)
+    components;
+  let component_dependencies =
+    Array.mapi
       (fun component members ->
-        List.iter
-          (fun member -> Hashtbl.add component_of (int_of_string member) component)
-          members)
-      components;
-    let component_dependencies =
-      List.mapi
-        (fun component members ->
-          members
-          |> List.concat_map (fun member ->
-                 let index = int_of_string member in
-                 let form = List.nth forms index in
-                 dependencies index form)
-          |> List.fold_left
-               (fun dependencies dependency ->
-                 let dependency_component = Hashtbl.find component_of dependency in
-                 if dependency_component = component then dependencies
-                 else Int_set.add dependency_component dependencies)
-               Int_set.empty)
-        components
-    in
-    let component_minimum component =
-      List.nth components component
-      |> List.map int_of_string |> List.fold_left min max_int
-    in
-    let rec release emitted remaining ordered =
-      if Int_set.is_empty remaining then List.rev ordered
-      else
-        let ready =
-          Int_set.elements remaining
-          |> List.filter (fun component ->
-                 Int_set.subset
-                   (List.nth component_dependencies component)
-                   emitted)
-          |> List.sort (fun left right ->
-                 Int.compare (component_minimum left) (component_minimum right))
-        in
-        match ready with
-        | [] -> failwith "dependency graph condensation must be acyclic"
-        | component :: _ ->
-            let members =
-              List.nth components component
-              |> List.map int_of_string |> List.sort Int.compare
-            in
-            release (Int_set.add component emitted)
-              (Int_set.remove component remaining)
-              (List.rev_append members ordered)
-    in
-    let order =
-      release Int_set.empty
-        (List.init (List.length components) Fun.id |> Int_set.of_list)
-        []
-    in
-    let is_namespace index =
-      match List.nth forms index with
-      | FList (FSymbol ("ns" | "namespace-scope") :: _) -> true
-      | _ -> false
-    in
-    let is_declaration index =
-      match List.nth forms index with
-      | FList (FSymbol "declare" :: _) -> true
-      | _ -> false
-    in
-    let namespaces, order = List.partition is_namespace order in
-    let declarations, order = List.partition is_declaration order in
-    namespaces @ declarations @ order
+        List.fold_left
+          (fun dependencies index ->
+            form_dependencies providers declaration_providers index forms.(index)
+            |> List.fold_left
+                 (fun dependencies dependency ->
+                   let dependency_component = component_of.(dependency) in
+                   if dependency_component = component then dependencies
+                   else Int_set.add dependency_component dependencies)
+                 dependencies)
+          Int_set.empty members)
+      components
+  in
+  let dependents = Array.make component_count [] in
+  Array.iteri
+    (fun component dependencies ->
+      Int_set.iter
+        (fun dependency ->
+          dependents.(dependency) <- component :: dependents.(dependency))
+        dependencies)
+    component_dependencies;
+  let remaining_dependencies =
+    Array.map Int_set.cardinal component_dependencies
+  in
+  let component_minimum =
+    Array.map
+      (function first :: _ -> first | [] -> assert false)
+      components
+  in
+  let module Ready = Set.Make (struct
+    type t = int * int
+
+    let compare (left_minimum, left) (right_minimum, right) =
+      match Int.compare left_minimum right_minimum with
+      | 0 -> Int.compare left right
+      | comparison -> comparison
+  end) in
+  let ready =
+    Array.fold_left
+      (fun ready component ->
+        if remaining_dependencies.(component) = 0 then
+          Ready.add (component_minimum.(component), component) ready
+        else ready)
+      Ready.empty (Array.init component_count Fun.id)
+  in
+  let rec release emitted_count ready ordered =
+    if Ready.is_empty ready then
+      if emitted_count = component_count then List.rev ordered
+      else failwith "dependency graph condensation must be acyclic"
+    else
+      let ((_, component) as entry) = Ready.min_elt ready in
+      let ready = Ready.remove entry ready in
+      let ready =
+        List.fold_left
+          (fun ready dependent ->
+            remaining_dependencies.(dependent) <-
+              remaining_dependencies.(dependent) - 1;
+            if remaining_dependencies.(dependent) = 0 then
+              Ready.add (component_minimum.(dependent), dependent) ready
+            else ready)
+          ready dependents.(component)
+      in
+      release (emitted_count + 1) ready
+        (List.rev_append components.(component) ordered)
+  in
+  let order = release 0 ready [] in
+  let is_namespace index =
+    match forms.(index) with
+    | FList (FSymbol ("ns" | "namespace-scope") :: _) -> true
+    | _ -> false
+  in
+  let is_declaration index =
+    match forms.(index) with
+    | FList (FSymbol "declare" :: _) -> true
+    | _ -> false
+  in
+  let namespaces, order = List.partition is_namespace order in
+  let declarations, order = List.partition is_declaration order in
+  namespaces @ declarations @ order

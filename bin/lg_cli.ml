@@ -12,6 +12,18 @@ let usage () =
      --run-files <input.cljc>... | --lsp";
   exit 2
 
+let tune_compiler_gc () =
+  let control = Gc.get () in
+  let minor_heap_size = 16 * 1024 * 1024 in
+  if control.minor_heap_size < minor_heap_size || control.space_overhead < 200
+  then
+    Gc.set
+      {
+        control with
+        minor_heap_size = max control.minor_heap_size minor_heap_size;
+        space_overhead = max control.space_overhead 200;
+      }
+
 let read_file path =
   let ic = open_in path in
   Fun.protect
@@ -643,6 +655,7 @@ let report_error (err : Lg.Compiler.compile_error) =
 
 let () =
   let target, mode = parse_args Sys.argv in
+  (match mode with Lsp -> () | _ -> tune_compiler_gc ());
   match mode with
   | Compile { input_path; output_path } -> (
       match compile_file target input_path with

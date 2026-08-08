@@ -1826,6 +1826,31 @@ let test_type_solver_unifies_deep_types_linearly () =
          "deep type unification repeatedly traversed nested subtrees: %.3fs"
          elapsed)
 
+let test_type_solver_adds_independent_substitutions_linearly () =
+  let open Lg.Types in
+  let substitution_count = 3_000 in
+  let started_at = Sys.time () in
+  let substitutions =
+    List.init substitution_count Fun.id
+    |> List.fold_left
+         (fun substitutions index ->
+           Lg.Type_solver.unify substitutions
+             (TVar ("value-" ^ string_of_int index)) TInt
+           |> Result.fold ~ok:Fun.id ~error:(fun _ ->
+                  failwith "independent substitutions must unify"))
+         []
+  in
+  let elapsed = Sys.time () -. started_at in
+  if
+    Lg.Type_solver.apply substitutions
+      (TVar ("value-" ^ string_of_int (substitution_count - 1)))
+    <> TInt
+  then failwith "the latest independent substitution must remain available";
+  if elapsed >= 0.1 then
+    failwith
+      (Printf.sprintf
+         "adding independent substitutions must be linear (%.3fs)" elapsed)
+
 let test_generic_record_calls_freshen_callee_type_variables () =
   let source =
     {|
@@ -25028,6 +25053,28 @@ let test_dependency_graph_orders_later_self_referred_macros_before_requires () =
   if not (position 1 < position 2) then
     failwith "a namespace require must load before its runtime consumer"
 
+let test_dependency_graph_scales_linearly_for_independent_forms () =
+  let open Lg.Ast in
+  let form_count = 3_000 in
+  let forms =
+    List.init form_count (fun index ->
+        FList
+          [
+            FSymbol "def";
+            FSymbol ("value-" ^ string_of_int index);
+            FInt index;
+          ])
+  in
+  let started_at = Sys.time () in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let elapsed = Sys.time () -. started_at in
+  if order <> List.init form_count Fun.id then
+    failwith "independent forms must retain source order";
+  if elapsed >= 1.0 then
+    failwith
+      (Printf.sprintf
+         "dependency ordering must scale to large source files (%.3fs)" elapsed)
+
 let test_stabilization_ast_skips_mutual_function_bodies () =
   let open Lg.Ast in
   let forms =
@@ -35447,6 +35494,8 @@ let tests =
       test_type_solver_preserves_shared_substitution_dags );
     ( "type solver unifies deep types linearly",
       test_type_solver_unifies_deep_types_linearly );
+    ( "type solver adds independent substitutions linearly",
+      test_type_solver_adds_independent_substitutions_linearly );
     ( "generic record calls freshen callee type variables",
       test_generic_record_calls_freshen_callee_type_variables );
     ( "static sequences adapt to option callback parameters",
@@ -37249,6 +37298,8 @@ let tests =
       test_dependency_graph_loads_requires_before_runtime_macro_consumers );
     ( "dependency graph orders later self referred macros before requires",
       test_dependency_graph_orders_later_self_referred_macros_before_requires );
+    ( "dependency graph scales linearly for independent forms",
+      test_dependency_graph_scales_linearly_for_independent_forms );
     ( "stabilization ast skips mutual function bodies",
       test_stabilization_ast_skips_mutual_function_bodies );
     ( "stabilization ast retains forward definition dependencies",

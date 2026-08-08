@@ -13,6 +13,12 @@ type conflict = {
 
 let next_metavariable = ref 0
 
+let variable_equal left right =
+  match (left, right) with
+  | Metavariable left, Metavariable right -> left = right
+  | Declared left, Declared right -> String.equal left right
+  | Metavariable _, Declared _ | Declared _, Metavariable _ -> false
+
 let fresh ?location () =
   let id = !next_metavariable in
   incr next_metavariable;
@@ -21,18 +27,12 @@ let fresh ?location () =
 let rec variable_assoc_opt variable = function
   | [] -> None
   | (candidate, value) :: rest ->
-      if candidate = variable then Some value
+      if variable_equal candidate variable then Some value
       else variable_assoc_opt variable rest
-
-let rec variable_remove_assoc variable = function
-  | [] -> []
-  | ((candidate, _) as entry) :: rest ->
-      if candidate = variable then rest
-      else entry :: variable_remove_assoc variable rest
 
 let rec variable_mem variable = function
   | [] -> false
-  | candidate :: _ when candidate = variable -> true
+  | candidate :: _ when variable_equal candidate variable -> true
   | _ :: rest -> variable_mem variable rest
 
 let map_preserving_identity map values =
@@ -156,8 +156,8 @@ let apply substitutions ty =
 
 let rec occurs variable ty =
   match ty with
-  | TMeta { id; _ } -> variable = Metavariable id
-  | TVar name -> variable = Declared name
+  | TMeta { id; _ } -> variable_equal variable (Metavariable id)
+  | TVar name -> variable_equal variable (Declared name)
   | TNullable inner | TArray inner | TRef inner | TList inner | TVector inner
   | TSet inner | TSeq inner ->
       occurs variable inner
@@ -195,17 +195,11 @@ let bind substitutions variable ty =
     | _ -> false
   in
   if same_variable then Ok substitutions
-  else if ty = TUnknown then Ok substitutions
-  else if occurs variable ty then Error { left = variable_ty; right = ty }
   else
-    let replacement = [ (variable, ty) ] in
-    Ok
-      ((variable, ty)
-      :: variable_remove_assoc variable
-           (List.map
-              (fun (existing_variable, existing) ->
-                (existing_variable, apply replacement existing))
-              substitutions))
+    match ty with
+    | TUnknown -> Ok substitutions
+    | _ when occurs variable ty -> Error { left = variable_ty; right = ty }
+    | _ -> Ok ((variable, ty) :: substitutions)
 
 let bind_meta substitutions meta ty =
   bind substitutions (Metavariable meta.id) ty
@@ -273,13 +267,7 @@ let rec is_open = function
       false
 
 let force substitutions variable ty =
-  let replacement = [ (variable, ty) ] in
-  (variable, ty)
-  :: variable_remove_assoc variable
-       (List.map
-          (fun (existing_variable, existing) ->
-            (existing_variable, apply replacement existing))
-          substitutions)
+  (variable, ty) :: substitutions
 
 let matching_fields left right =
   left

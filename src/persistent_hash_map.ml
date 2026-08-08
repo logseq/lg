@@ -38,26 +38,35 @@ module Make (Key : Key) = struct
   let bit_position hash shift = 1 lsl mask hash shift
 
   let bit_count value =
-    let rec count total value =
-      if value = 0 then total else count (total + 1) (value land (value - 1))
+    let value = value - ((value lsr 1) land 0x55555555) in
+    let value =
+      (value land 0x33333333) + ((value lsr 2) land 0x33333333)
     in
-    count 0 value
+    let value = (value + (value lsr 4)) land 0x0f0f0f0f in
+    let value = value + (value lsr 8) in
+    let value = value + (value lsr 16) in
+    value land 0x3f
 
   let slot_index bitmap bit = bit_count (bitmap land (bit - 1))
 
   let insert_slot slots index slot =
-    Array.init (Array.length slots + 1) (fun output_index ->
-        if output_index < index then slots.(output_index)
-        else if output_index = index then slot
-        else slots.(output_index - 1))
+    let length = Array.length slots in
+    let updated = Array.make (length + 1) slot in
+    Array.blit slots 0 updated 0 index;
+    Array.blit slots index updated (index + 1) (length - index);
+    updated
 
   let remove_slot slots index =
-    Array.init (Array.length slots - 1) (fun output_index ->
-        if output_index < index then slots.(output_index)
-        else slots.(output_index + 1))
+    let length = Array.length slots in
+    let updated = Array.make (length - 1) slots.(if index = 0 then 1 else 0) in
+    Array.blit slots 0 updated 0 index;
+    Array.blit slots (index + 1) updated index (length - index - 1);
+    updated
 
   let replace_slot slots index slot =
-    Array.mapi (fun current existing -> if current = index then slot else existing) slots
+    let updated = Array.copy slots in
+    updated.(index) <- slot;
+    updated
 
   let rec merge_leaves shift left right =
     if left.hash = right.hash then
