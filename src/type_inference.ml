@@ -1112,8 +1112,7 @@ let rec inferred_form_type params = function
           TSet first
       | _ -> TSet (Types.dynamic_constraint TUnknown))
   | FList [ FSymbol operation; _ ]
-    when String.equal operation "Array.length"
-         || has_source_name operation "alength" ->
+    when String.equal operation "Array.length" ->
       TInt
   | FList [ FSymbol operation; FSymbol array ]
     when has_source_name operation "aclone" -> (
@@ -1166,8 +1165,7 @@ let rec inferred_form_type params = function
       in
       result_type value (inferred_form_type params value) clauses
   | FList [ FSymbol operation; FSymbol array; _from; _to ]
-    when String.equal operation "Array.sub"
-         || has_source_name operation "aslice" -> (
+    when String.equal operation "Array.sub" -> (
       match string_assoc_opt array params with
       | Some (TArray _ as ty) | Some (TOcaml_app ("array", [ _ ]) as ty) -> ty
       | Some _ | None -> TArray TUnknown)
@@ -1892,8 +1890,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | FSymbol name -> constrain_seqable element_ty params name
         | collection -> infer_form params collection)
     | FList [ FSymbol operation; array; from; length ]
-      when (String.equal operation "Array.sub"
-           || has_source_name operation "aslice")
+      when String.equal operation "Array.sub"
            && (match expected_ty with
               | TArray _ | TOcaml_app ("array", [ _ ]) -> true
               | _ -> false) ->
@@ -2177,8 +2174,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   payload_ty
               | return_ty, _ -> return_ty
             in
+            let expected_return_ty =
+              match (expected_ty, parameter_tys, return_ty_for_unification) with
+              | ( TOcaml_app (name, [ element_ty; _ ]),
+                  [ TArray parameter_ty ],
+                  TSeq return_ty )
+                when String.equal name Types.seqable_constraint_name
+                     && Result.is_ok
+                          (Type_solver.unify [] parameter_ty return_ty) ->
+                  TSeq element_ty
+              | _ -> expected_ty
+            in
             match
-              Type_solver.unify [] return_ty_for_unification expected_ty
+              Type_solver.unify [] return_ty_for_unification expected_return_ty
             with
             | Error _ -> infer_form params form
             | Ok substitutions ->
@@ -2701,8 +2709,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (Types.seqable_constraint element_ty)
           params
     | FList [ FSymbol operation; array ]
-      when String.equal operation "array-seq"
-           || has_source_name operation "array-to-seq" ->
+      when String.equal operation "array-seq" ->
         infer_expected (TArray element_ty) params array
     | FList
         (FSymbol ("map" | "mapv") :: FSymbol "vector" :: collections)
@@ -4403,7 +4410,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | None -> infer_map ())
     | FList [ FSymbol operation; FSymbol array ]
       when String.equal operation "Array.length"
-           || has_source_name operation "alength"
            || has_source_name operation "aclone" ->
         let element_ty =
           match string_assoc_opt array params with
@@ -4432,8 +4438,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 Result.bind (infer_expected TInt params right) (fun params ->
                     infer_expected element_ty params key)))
     | FList [ FSymbol operation; FSymbol array; from; length ]
-      when String.equal operation "Array.sub"
-           || has_source_name operation "aslice" ->
+      when String.equal operation "Array.sub" ->
         let element_ty =
           match string_assoc_opt array params with
           | Some (TArray element_ty | TOcaml_app ("array", [ element_ty ])) ->

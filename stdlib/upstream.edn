@@ -91,6 +91,18 @@
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}
     shuffle {:status :static-adaptation
              :reason :source-wrapper-preserves-the-upstream-seqable-to-vector-contract-through-a-typed-fisher-yates-runtime-primitive}
+    alength {:status :static-adaptation
+             :reason :source-wrapper-for-the-upstream-public-array-length-api-through-a-polymorphic-typed-runtime-primitive}
+    acopy {:status :static-adaptation
+           :reason :lg-static-array-compatibility-helper-over-a-polymorphic-typed-runtime-blit-primitive}
+    aslice {:status :static-adaptation
+            :reason :lg-static-array-compatibility-helper-over-a-polymorphic-typed-runtime-slice-primitive}
+    aconcat {:status :static-adaptation
+             :reason :lg-static-array-compatibility-helper-over-a-polymorphic-typed-runtime-append-primitive}
+    array-to-seq {:status :static-adaptation
+                  :reason :lg-static-array-compatibility-helper-over-the-typed-runtime-sequence-boundary}
+    array-to-rseq {:status :static-adaptation
+                   :reason :lg-static-array-compatibility-helper-over-the-typed-reverse-sequence-boundary}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

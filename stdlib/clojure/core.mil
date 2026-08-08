@@ -20,6 +20,18 @@
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)
 (signature clojure.core/shuffle [value]
   :fn<seqable<value>;vector<value>>)
+(signature clojure.core/alength [array-element]
+  :fn<array<array-element>;int>)
+(signature clojure.core/acopy [array-element]
+  :fn<array<array-element>;int;int;array<array-element>;int;unit>)
+(signature clojure.core/aslice [array-element]
+  :fn<array<array-element>;int;int;array<array-element>>)
+(signature clojure.core/aconcat [array-element]
+  :fn<array<array-element>;array<array-element>;array<array-element>>)
+(signature clojure.core/array-to-seq [array-element]
+  :fn<array<array-element>;seq<array-element>>)
+(signature clojure.core/array-to-rseq [array-element]
+  :fn<array<array-element>;seq<array-element>>)
 
 (signature clojure.core/quot :fn<int;int;int>)
 (signature clojure.core/rem :fn<int;int;int>)

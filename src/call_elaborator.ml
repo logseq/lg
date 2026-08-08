@@ -6238,22 +6238,6 @@ let create ~compile_expr =
             Result.map (typed_ir expected)
               (adapt_value_to_type env expected comparator)
         | Ok _ -> Error.error "as-ordering expects a binary function")
-    | ("array-to-seq" | "array-to-rseq") as name -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ array ] -> (
-            match array_element_type array.ty with
-            | Some element_ty ->
-                let runtime_name =
-                  if name = "array-to-seq" then
-                    "Lg_runtime.Runtime_seq.of_array"
-                  else "Lg_runtime.Runtime_seq.of_array_rev"
-                in
-                Ok
-                  (typed_ir (TSeq element_ty)
-                     (apply runtime_name [ array.semantic_expr ]))
-            | None -> Error.error (name ^ " expects an OCaml array"))
-        | Ok _ -> Error.error (name ^ " expects 1 argument"))
     | ("seq-flat-map" | "seq-flat-map-rev") as name -> (
         match compile_args () with
         | Error _ as err -> err
@@ -6739,52 +6723,6 @@ let create ~compile_expr =
                                     ]))
             | None -> Error.error (name ^ " expects an OCaml array")))
         | Ok _ -> Error.error (name ^ " expects 3 arguments"))
-    | "alength" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ value ] -> (
-            match array_element_type value.ty with
-            | Some _ ->
-                Ok
-                  (typed_ir TInt
-                     (apply "Array.length" [ value.semantic_expr ]))
-            | None ->
-                Error.error
-                  ("alength expects an OCaml array, got "
-                 ^ Types.source_name value.ty))
-        | Ok _ -> Error.error "alength expects 1 argument")
-    | "acopy" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok
-                      [
-                        { ty = source_type; semantic_expr = source; _ };
-              { ty = TInt; semantic_expr = source_start; _ };
-              { ty = TInt; semantic_expr = source_end; _ };
-              { ty = target_type; semantic_expr = target; _ };
-                        { ty = TInt; semantic_expr = target_start; _ };
-                      ]
-          when compatible_array_types source_type target_type ->
-                      let source_start = source_start in
-                      let source_end = source_end in
-                      let target_start = target_start in
-                      let length =
-                        Semantic_ir.Infix ("-", source_end, source_start)
-                      in
-            Ok
-              (typed_ir TUnit
-                 (apply "Array.blit"
-                              [
-                                source;
-                                source_start;
-                                target;
-                                target_start;
-                                length;
-                              ]))
-        | Ok [ _; _; _; _; _ ] ->
-                      Error.error
-                        "acopy expects compatible arrays and int indexes"
-        | Ok _ -> Error.error "acopy expects 5 arguments")
     | "aclone" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -6808,49 +6746,6 @@ let create ~compile_expr =
               (pack_dynamic_value env dynamic argument)
         | Ok [ _ ] -> Error.error "aclone expects an OCaml array"
         | Ok _ -> Error.error "aclone expects 1 argument")
-    | "aslice" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok
-                      [
-                        { ty = array_type; semantic_expr = array; _ };
-              { ty = TInt; semantic_expr = from; _ };
-                        { ty = TInt; semantic_expr = to_; _ };
-                      ] -> (
-            match array_element_type array_type with
-            | Some element_ty ->
-                let length = Semantic_ir.Infix ("-", to_, from) in
-                Ok
-                  (typed_ir (TArray element_ty)
-                     (apply "Array.sub" [ array; from; length ]))
-            | None -> Error.error "aslice expects an OCaml array")
-                  | Ok _ ->
-                      Error.error "aslice expects an array and two int indexes")
-    | "aconcat" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok
-                      [
-                        { ty = left_type; semantic_expr = left; _ };
-                        { ty = right_type; semantic_expr = right; _ };
-                      ]
-          when compatible_array_types left_type right_type -> (
-                      match
-                        ( array_element_type left_type,
-                          array_element_type right_type )
-                      with
-            | Some left_ty, Some right_ty ->
-                let element_ty =
-                            if Types.equal left_ty TUnknown then right_ty
-                            else left_ty
-                in
-                Ok
-                  (typed_ir (TArray element_ty)
-                     (apply "Array.append" [ left; right ]))
-            | _ -> Error.error "aconcat expects compatible arrays")
-                  | Ok [ _; _ ] ->
-                      Error.error "aconcat expects compatible arrays"
-        | Ok _ -> Error.error "aconcat expects 2 arguments")
     | "amap" -> (
         match arg_forms with
         | [ fn_form; array_form ] -> (

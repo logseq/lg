@@ -12284,7 +12284,7 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
        (alength (append-children root root))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_record_array_fields_work_with_array_primitives"
     "3:2\n" ocaml_source
 
@@ -12844,11 +12844,11 @@ let test_array_mutation_uses_protocol_payload_storage () =
               (item-number (aget items 1))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "array_mutation_uses_protocol_payload_storage" "1:2\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_array_primitives_support_polymorphic_helpers () =
   let source =
@@ -12871,11 +12871,11 @@ let test_ocaml_array_primitives_support_polymorphic_helpers () =
        (alength converted-with-to-array)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "ocaml_array_primitives_support_polymorphic_helpers"
     "3:7:2:5:3\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_to_array_copies_static_vectors_directly () =
   let source =
@@ -13462,7 +13462,7 @@ let test_concise_standard_type_annotations () =
 (println (alength (:values holder-value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "concise_standard_type_annotations" "2\n" ocaml_source
 
 let test_volatile_nil_uses_contextual_option_reference_type () =
@@ -17156,11 +17156,11 @@ let test_generic_collection_returns_preserve_concrete_element_types () =
        (Array.length (:addresses (aget paired-empty 0)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_collection_returns_preserve_concrete_element_types"
     "true:true:true:true:true:true:0\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_print_method_defmethod_writes_custom_record_representations () =
   let source =
@@ -20629,6 +20629,40 @@ let test_source_range_shuffle_and_any_preserve_clojurescript_contracts () =
     {|(clojure.core/range "4")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_array_helpers_preserve_generic_array_types () =
+  let source =
+    {|
+(def array-length clojure.core/alength)
+(def copy-range clojure.core/acopy)
+(def slice-array clojure.core/aslice)
+(def append-arrays clojure.core/aconcat)
+(def forward-seq clojure.core/array-to-seq)
+(def reverse-seq clojure.core/array-to-rseq)
+(def ints (array 1 2 3))
+(def target (array 0 0 0 0))
+(copy-range ints 1 3 target 0)
+(def words (array "a" "b"))
+(println
+  (str (array-length ints) ":" (pr-str (forward-seq ints)) ":"
+       (pr-str (reverse-seq words)) ":"
+       (pr-str (forward-seq (slice-array ints 1 3))) ":"
+       (pr-str (forward-seq (append-arrays words (array "c")))) ":"
+       (pr-str (forward-seq target))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_array_helpers.cljc" source
+  in
+  assert_ocaml_runs "source_array_helpers_preserve_generic_array_types"
+    "3:(1 2 3):(\"b\" \"a\"):(2 3):(\"a\" \"b\" \"c\"):(2 3 0 0)\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_array_helpers.cljc"
+       source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_array_helpers_bad.cljc" {|(clojure.core/alength)|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -21010,13 +21044,13 @@ let test_doseq_prefers_reducible_over_seqable () =
 (println (str (deref total) ":" (deref seq-calls)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "doseq_prefers_reducible_over_seqable" "6:0\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source
     |> expect_ok)
 
 let test_doseq_preserves_generic_protocol_collection_elements () =
@@ -22402,7 +22436,7 @@ let test_ocaml_array_sequences_flat_map_lazily () =
          (array-to-rseq (array 1 2 3)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "ocaml_array_sequences_flat_map_lazily" "10:321\n"
     ocaml_source
 
@@ -35796,6 +35830,8 @@ let tests =
       test_source_string_index_helpers_preserve_arities );
     ( "source range shuffle and any preserve ClojureScript contracts",
       test_source_range_shuffle_and_any_preserve_clojurescript_contracts );
+    ( "source array helpers preserve generic array types",
+      test_source_array_helpers_preserve_generic_array_types );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);

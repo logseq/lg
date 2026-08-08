@@ -4,7 +4,8 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]
+  (:require [ocaml.Lg_runtime.Runtime_array :as runtime-array]
+            [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
             [ocaml.Lg_runtime.Runtime_seq :as runtime-seq]
@@ -48,6 +49,24 @@
 
 (defn shuffle [coll]
   (runtime-random/shuffle-seq (seq coll)))
+
+(defn alength [values]
+  (runtime-array/length values))
+
+(defn acopy [source source-start source-end target target-start]
+  (runtime-array/copy-range source source-start source-end target target-start))
+
+(defn aslice [values from to]
+  (runtime-array/slice values from to))
+
+(defn aconcat [left right]
+  (runtime-array/append left right))
+
+(defn array-to-seq [values]
+  (runtime-seq/of-array values))
+
+(defn array-to-rseq [values]
+  (runtime-seq/of-array-rev values))
 
 (defn quot [n d]
   (runtime-int/int-quot n d))
