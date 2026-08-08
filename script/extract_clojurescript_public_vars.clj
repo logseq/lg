@@ -1,0 +1,57 @@
+#!/usr/bin/env bb
+
+(require '[clojure.java.io :as io]
+         '[clojure.string :as string]
+         '[clojure.tools.reader :as reader]
+         '[clojure.tools.reader.reader-types :as reader-types])
+
+(def ^:private eof (Object.))
+
+(defn- read-forms [path features]
+  (with-open [input (io/reader path)]
+    (let [source (reader-types/indexing-push-back-reader input)]
+      (loop [forms []]
+        (let [form (binding [reader/*default-data-reader-fn* (fn [_tag] identity)
+                             reader/*alias-map* (delay {'ana 'cljs.analyzer})]
+                     (reader/read {:eof eof
+                                   :read-cond :allow
+                                   :features features}
+                                  source))]
+          (if (identical? eof form)
+            forms
+            (recur (conj forms form))))))))
+
+(defn- definition [namespace form]
+  (when (seq? form)
+    (let [operator (some-> form first str)
+          definition-name (second form)
+          private-operator? (contains? #{"defn-" "core/defn-"} operator)
+          private-name? (boolean (:private (meta definition-name)))
+          kind (cond
+                 (contains? #{"defn" "core/defn"} operator) "function"
+                 (contains? #{"defmacro" "core/defmacro"} operator) "macro"
+                 :else nil)]
+      (when (and kind
+                 (symbol? definition-name)
+                 (not private-operator?)
+                 (not private-name?))
+        [(str namespace "/" (name definition-name)) kind]))))
+
+(defn- top-level-definitions [namespace form]
+  (if (and (seq? form) (= 'do (first form)))
+    (mapcat #(top-level-definitions namespace %) (rest form))
+    (some-> (definition namespace form) vector)))
+
+(let [[namespace & paths] *command-line-args*]
+  (when (or (string/blank? namespace) (empty? paths))
+    (binding [*out* *err*]
+      (println "usage: extract_clojurescript_public_vars.clj NAMESPACE SOURCE..."))
+    (System/exit 2))
+  (->> paths
+       (mapcat (fn [path]
+                 (mapcat #(read-forms path %) [#{:cljs} #{:clj}])))
+       (mapcat #(top-level-definitions namespace %))
+       distinct
+       sort
+       (run! (fn [[qualified-name kind]]
+               (println (str qualified-name "\t" kind))))))

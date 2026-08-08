@@ -119,7 +119,119 @@ awk '
     }
     print "compiler-call\t" $0 "\t" classification "\t" reason
   }
-' "$tmp/compiler-calls"
+' "$tmp/compiler-calls" >"$tmp/compiler-status"
+
+cat "$tmp/compiler-status"
+
+bb "$lg_root/script/extract_stdlib_manifest_status.clj" \
+  "$lg_root/stdlib/upstream.edn" >"$tmp/manifest-status"
+
+if test -n "$clojurescript_root"; then
+  : >"$tmp/upstream-vars"
+  bb "$lg_root/script/extract_clojurescript_public_vars.clj" cljs.core \
+    "$clojurescript_root/src/main/cljs/cljs/core.cljs" \
+    "$clojurescript_root/src/main/clojure/cljs/core.cljc" \
+    >>"$tmp/upstream-vars"
+  for namespace_and_source in \
+    'clojure.string|src/main/cljs/clojure/string.cljs' \
+    'clojure.set|src/main/cljs/clojure/set.cljs' \
+    'clojure.data|src/main/cljs/clojure/data.cljs' \
+    'clojure.walk|src/main/cljs/clojure/walk.cljs' \
+    'clojure.edn|src/main/cljs/clojure/edn.cljs' \
+    'cljs.reader|src/main/cljs/cljs/reader.cljs' \
+    'cljs.pprint|src/main/cljs/cljs/pprint.cljs' \
+    'cljs.test|src/main/cljs/cljs/test.cljs' \
+    'cljs.spec.alpha|src/main/cljs/cljs/spec/alpha.cljs' \
+    'clojure.zip|src/main/cljs/clojure/zip.cljs'; do
+    namespace=${namespace_and_source%%|*}
+    source=${namespace_and_source#*|}
+    bb "$lg_root/script/extract_clojurescript_public_vars.clj" "$namespace" \
+      "$clojurescript_root/$source" >>"$tmp/upstream-vars"
+  done
+  bb "$lg_root/script/extract_clojurescript_public_vars.clj" cljs.pprint \
+    "$clojurescript_root/src/main/cljs/cljs/pprint.cljc" \
+    >>"$tmp/upstream-vars"
+  bb "$lg_root/script/extract_clojurescript_public_vars.clj" cljs.test \
+    "$clojurescript_root/src/main/cljs/cljs/test.cljc" \
+    >>"$tmp/upstream-vars"
+  LC_ALL=C sort -u "$tmp/upstream-vars" -o "$tmp/upstream-vars"
+  upstream_var_count=$(wc -l <"$tmp/upstream-vars" | tr -d ' ')
+  if test "$upstream_var_count" -ne 855; then
+    echo "ClojureScript public function/macro surface changed: expected 855 entries, found $upstream_var_count" >&2
+    echo "review the pinned upstream files and classifications before updating the count" >&2
+    exit 1
+  fi
+
+  : >"$tmp/source-vars"
+  bb "$lg_root/script/extract_clojurescript_public_vars.clj" cljs.core \
+    "$lg_root/stdlib/clojure/core.cljc" >>"$tmp/source-vars"
+  for namespace_and_source in \
+    'clojure.string|stdlib/clojure/string.cljc' \
+    'clojure.set|stdlib/clojure/set.cljc' \
+    'clojure.edn|stdlib/clojure/edn.cljc' \
+    'cljs.reader|stdlib/cljs/reader.cljc'; do
+    namespace=${namespace_and_source%%|*}
+    source=${namespace_and_source#*|}
+    bb "$lg_root/script/extract_clojurescript_public_vars.clj" "$namespace" \
+      "$lg_root/$source" >>"$tmp/source-vars"
+  done
+  LC_ALL=C sort -u "$tmp/source-vars" -o "$tmp/source-vars"
+
+  awk -F '\t' '{print "source-var\t" $1 "\t" $2}' \
+    "$tmp/source-vars" >"$tmp/upstream-status-input"
+  cat "$tmp/compiler-status" "$tmp/manifest-status" \
+    >>"$tmp/upstream-status-input"
+  awk -F '\t' '{print "upstream-var\t" $1 "\t" $2}' \
+    "$tmp/upstream-vars" >>"$tmp/upstream-status-input"
+
+  awk -F '\t' '
+    $1 == "source-var" {
+      source[$2 SUBSEP $3] = 1
+      next
+    }
+    $1 == "compiler-call" {
+      compiler_status[$2] = $3
+      compiler_reason[$2] = $4
+      next
+    }
+    $1 == "definition" {
+      definition_status[$2] = $3
+      definition_reason[$2] = $4
+      next
+    }
+    $1 == "namespace" {
+      namespace_status[$2] = $3
+      namespace_reason[$2] = $4
+      next
+    }
+    $1 == "upstream-var" {
+      qualified = $2
+      kind = $3
+      split(qualified, parts, "/")
+      namespace = parts[1]
+      name = substr(qualified, length(namespace) + 2)
+      status = "deferred"
+      reason = "not-yet-ported-or-statically-classified"
+      if ((qualified SUBSEP kind) in source) {
+        status = "source"
+        reason = "precompiled-lg-source"
+      } else if (qualified in definition_status) {
+        status = definition_status[qualified]
+        reason = definition_reason[qualified]
+      } else if (namespace == "cljs.core" && name in compiler_status) {
+        status = compiler_status[name]
+        reason = compiler_reason[name]
+      } else if (namespace in namespace_status &&
+                 (namespace_status[namespace] == "blocked-static-typing" ||
+                  namespace_status[namespace] == "host-boundary")) {
+        status = namespace_status[namespace]
+        reason = namespace_reason[namespace]
+      }
+      print "upstream-var\t" qualified "\t" kind "\t" status "\t" reason
+    }
+  ' "$tmp/upstream-status-input" \
+    | LC_ALL=C sort -t '	' -k2,2 -k3,3
+fi
 
 for namespace in \
   clojure.core cljs.core clojure.data clojure.edn cljs.reader clojure.string \

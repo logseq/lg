@@ -110,6 +110,19 @@ file's `ns` form and respects `.gitignore`; qualified-var counts are lexical
 occurrences after alias resolution, so they are a prioritization signal rather
 than a reachability analysis.
 
+When a pinned ClojureScript checkout is supplied, the report also contains an
+`upstream-var` row for every public function and macro read from the reviewed
+core and namespace sources. The extractor evaluates both Clojure and
+ClojureScript reader-conditional branches, handles tagged JavaScript literals,
+and excludes private definitions. The pinned surface currently contains 855
+function/macro entries, including 666 entries in `cljs.core`. Each row is
+classified independently as source, typed primitive, special form, host
+boundary, static-typing blocker, or deferred. A namespace's aggregate support
+does not make a missing public var appear supported. The current baseline is
+89 source entries, 175 typed primitives, 5 special forms, 12 host boundaries,
+206 static-typing blockers, and 368 deferred entries. The deferred set is the
+explicit queue for further source-port and compiler/macro-boundary review.
+
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
 commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify

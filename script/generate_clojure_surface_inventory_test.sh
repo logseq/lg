@@ -23,6 +23,37 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (cljs.core/identity 1)
 EOF
 
+mkdir -p "$tmp/clojurescript"
+cat >"$tmp/clojurescript/core.cljs" <<'EOF'
+(ns cljs.core)
+
+(defn public-function [x] x)
+(defn- private-function [x] x)
+(defn ^:private metadata-private-function [x] x)
+#?(:cljs (defn conditional-function [x] x))
+EOF
+cat >"$tmp/clojurescript/core.cljc" <<'EOF'
+(ns cljs.core)
+
+(core/defmacro public-macro [form] form)
+(core/defmacro ^:private private-macro [form] form)
+EOF
+
+bb "$root/script/extract_clojurescript_public_vars.clj" cljs.core \
+  "$tmp/clojurescript/core.cljs" "$tmp/clojurescript/core.cljc" \
+  >"$tmp/upstream-vars.tsv"
+
+awk -F '\t' '$1 == "cljs.core/public-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 == "cljs.core/conditional-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 == "cljs.core/public-macro" && $2 == "macro" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 ~ /private/ {found=1} END {exit found}' "$tmp/upstream-vars.tsv"
+
+bb "$root/script/extract_stdlib_manifest_status.clj" \
+  "$root/stdlib/upstream.edn" >"$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.set/union" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "namespace" && $2 == "cljs.test" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
 

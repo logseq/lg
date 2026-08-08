@@ -1,0 +1,33 @@
+#!/usr/bin/env bb
+
+(require '[clojure.edn :as edn]
+         '[clojure.java.io :as io])
+
+(defn- classification [status]
+  (case status
+    (:ported :static-adaptation) "source"
+    :host-primitive "host-boundary"
+    (:blocked :blocked-static-typing) "blocked-static-typing"
+    :host-boundary "host-boundary"
+    :deferred "deferred"
+    nil))
+
+(defn- reason [entry]
+  (name (or (:reason entry) (:status entry) :manifest-source)))
+
+(let [[path] *command-line-args*]
+  (when-not path
+    (binding [*out* *err*]
+      (println "usage: extract_stdlib_manifest_status.clj MANIFEST"))
+    (System/exit 2))
+  (let [manifest (-> path io/file slurp edn/read-string)]
+    (doseq [[namespace entry] (sort-by (comp str key) (:namespaces manifest))]
+      (let [status (or (classification (:status entry))
+                       (when (:implementation entry) "source-aggregate"))]
+        (when status
+          (println (str "namespace\t" namespace "\t" status "\t" (reason entry)))))
+      (doseq [[definition-name definition-entry]
+              (sort-by (comp str key) (:definitions entry))]
+        (when-let [status (classification (:status definition-entry))]
+          (println (str "definition\t" namespace "/" definition-name "\t"
+                        status "\t" (reason definition-entry))))))))
