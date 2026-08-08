@@ -35,6 +35,14 @@
   :fn<array<array-element>;seq<array-element>>)
 (signature clojure.core/asort! [array-element]
   :fn<fn<array-element;array-element;int>;array<array-element>;unit>)
+(signature clojure.core/booleans [value] :fn<value;value>)
+(signature clojure.core/bytes [value] :fn<value;value>)
+(signature clojure.core/chars [value] :fn<value;value>)
+(signature clojure.core/shorts [value] :fn<value;value>)
+(signature clojure.core/ints [value] :fn<value;value>)
+(signature clojure.core/floats [value] :fn<value;value>)
+(signature clojure.core/doubles [value] :fn<value;value>)
+(signature clojure.core/longs [value] :fn<value;value>)
 
 (signature clojure.core/quot :fn<int;int;int>)
 (signature clojure.core/rem :fn<int;int;int>)
@@ -90,6 +98,9 @@
 
 (signature clojure.core/split-at [value]
   :fn<int;seqable<value>;vector<seq<value>>>)
+
+(signature clojure.core/splitv-at [value]
+  :fn<int;seqable<value>;tuple<vector<value>;seq<value>>>)
 
 (signature clojure.core/split-with [value]
   :fn<fn<value;bool>;seqable<value>;vector<seq<value>>>)

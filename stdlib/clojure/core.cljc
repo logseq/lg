@@ -101,6 +101,15 @@
      :default
      (runtime-array/sort values compare)))
 
+(defn booleans [x] x)
+(defn bytes [x] x)
+(defn chars [x] x)
+(defn shorts [x] x)
+(defn ints [x] x)
+(defn floats [x] x)
+(defn doubles [x] x)
+(defn longs [x] x)
+
 (defn quot [n d]
   (runtime-int/int-quot n d))
 
@@ -237,6 +246,9 @@
 
 (defn split-at [n coll]
   [(take n coll) (drop n coll)])
+
+(defn splitv-at [n coll]
+  [(into [] (take n) coll) (drop n coll)])
 
 (defn split-with [pred coll]
   [(take-while pred coll) (drop-while pred coll)])

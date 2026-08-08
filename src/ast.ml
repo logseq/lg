@@ -34,18 +34,22 @@ type token = {
 
 type core_symbol =
   | Core_assoc
+  | Core_drop
   | Core_filter
   | Core_get
   | Core_map
   | Core_mapcat
+  | Core_take
   | Core_update
 
 let core_symbol_name = function
   | Core_assoc -> "assoc"
+  | Core_drop -> "drop"
   | Core_filter -> "filter"
   | Core_get -> "get"
   | Core_map -> "map"
   | Core_mapcat -> "mapcat"
+  | Core_take -> "take"
   | Core_update -> "update"
 
 let core_symbol_qualified_name symbol =

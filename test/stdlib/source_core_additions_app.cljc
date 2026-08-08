@@ -92,3 +92,32 @@
 (println (nil? (parse-boolean " false")))
 (println (= true (core/parse-boolean "true")))
 (println (= false (clojure.core/parse-boolean "false")))
+
+(def splitv core/splitv-at)
+(let [[prefix suffix] (splitv 2 [1 2 3 4])]
+  (println (= [1 2] prefix))
+  (println (= [3 4] (vec suffix))))
+(let [[prefix suffix] (splitv-at 0 [1 2])]
+  (println (= [] prefix))
+  (println (= [1 2] (vec suffix))))
+(let [[prefix suffix] (cljs.core/splitv-at -2 [1 2])]
+  (println (= [] prefix))
+  (println (= [1 2] (vec suffix))))
+(let [[prefix suffix] (clojure.core/splitv-at 5 [1 2])]
+  (println (= [1 2] prefix))
+  (println (= [] (vec suffix))))
+(let [[prefix suffix] (splitv-at 1 ["left" "right"])]
+  (println (= ["left"] prefix))
+  (println (= ["right"] (vec suffix))))
+
+(println (= [true false] (booleans [true false])))
+(println (= [1 2] (bytes [1 2])))
+(println (= ["a" "b"] (chars ["a" "b"])))
+(println (= [1 2] (shorts [1 2])))
+(println (= [1 2] (ints [1 2])))
+(println (= [1.5 2.5] (floats [1.5 2.5])))
+(println (= [1.5 2.5] (doubles [1.5 2.5])))
+(println (= [1 2] (longs [1 2])))
+(println (= "unchanged" (core/ints "unchanged")))
+(println (= [1 2] (into [] (take 2) [1 2 3])))
+(println (= [3] (into [] (drop 2) [1 2 3])))

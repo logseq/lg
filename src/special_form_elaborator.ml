@@ -535,13 +535,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     match expected_element with
     | Some element -> compile_expected element
     | None -> (
+    let expression_env = Env.with_expected_type None env in
     match forms with
     | [] ->
         Ok
           (typed_ir (TVector (Type_solver.fresh ()))
              (Semantic_ir.Ident "Rrbvec.empty"))
     | first :: rest -> (
-        match compile_expr scope env first with
+        match compile_expr scope expression_env first with
         | Error _ as err -> err
         | Ok first_expr ->
             let rec loop acc = function
@@ -674,7 +675,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         (adapt [] expressions)
                   )
               | form :: rest -> (
-                  match compile_expr scope env form with
+                  match compile_expr scope expression_env form with
                   | Error _ as err -> err
                   | Ok expr -> loop (expr :: acc) rest)
             in

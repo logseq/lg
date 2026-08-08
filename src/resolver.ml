@@ -12,6 +12,15 @@ let canonical_core_name name =
         (String.length name - String.length cljs_prefix)
   else name
 
+let canonical_core_binding_name scope env name =
+  let name = canonical_core_name name in
+  match String.split_on_char '/' name with
+  | [ alias; member ] -> (
+      match Env.resolve_namespace_alias ~scope alias env with
+      | Some ("clojure.core" | "cljs.core") -> "clojure.core/" ^ member
+      | Some _ | None -> name)
+  | _ -> name
+
 let lookup_type_declaration scope env type_name =
   let registry = Env.types env in
   let lookup owner local_name =
@@ -102,7 +111,7 @@ let lookup_record_type scope env type_name =
   | None -> local_lookup scope type_name
 
 let lookup_binding scope env name =
-  let name = canonical_core_name name in
+  let name = canonical_core_binding_name scope env name in
   match Env.find_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
   | None -> (

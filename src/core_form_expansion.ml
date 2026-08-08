@@ -62,6 +62,10 @@ let rec apply_transducer collection = function
       Ok (FList [ FCoreSymbol Core_map; function_form; collection ])
   | FList [ FSymbol "filter"; predicate_form ] ->
       Ok (FList [ FCoreSymbol Core_filter; predicate_form; collection ])
+  | FList [ FSymbol "take"; count ] ->
+      Ok (FList [ FCoreSymbol Core_take; count; collection ])
+  | FList [ FSymbol "drop"; count ] ->
+      Ok (FList [ FCoreSymbol Core_drop; count; collection ])
   | FList [ FSymbol ("take-while" as name); predicate_form ]
   | FList [ FSymbol ("drop-while" as name); predicate_form ] ->
       Ok (FList [ FSymbol name; predicate_form; collection ])
@@ -80,4 +84,4 @@ let rec apply_transducer collection = function
           Result.bind result (fun collection ->
               apply_transducer collection transducer))
         (Ok collection) transducers
-  | _ -> Error.error "transducers support map, filter, and cat"
+  | _ -> Error.error "transducers support map, filter, take, drop, and cat"

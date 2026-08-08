@@ -29225,6 +29225,63 @@ let test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls () =
            source
          |> expect_error_contains expected_error)
 
+let test_source_core_splitv_and_array_hint_identities () =
+  let source =
+    {|
+(ns source-core-splitv
+  (:require [cljs.core :as core]))
+(def split-parts core/splitv-at)
+(let [[prefix suffix] (split-parts 2 [1 2 3 4])]
+  (println (= [1 2] prefix))
+  (println (= [3 4] (vec suffix))))
+(let [[prefix suffix] (cljs.core/splitv-at -1 ["left" "right"])]
+  (println (= [] prefix))
+  (println (= ["left" "right"] (vec suffix))))
+(println (= [true false] (booleans [true false])))
+(println (= [1 2] (bytes [1 2])))
+(println (= ["a" "b"] (chars ["a" "b"])))
+(println (= [1 2] (shorts [1 2])))
+(println (= [1 2] (ints [1 2])))
+(println (= [1.5 2.5] (floats [1.5 2.5])))
+(println (= [1.5 2.5] (doubles [1.5 2.5])))
+(println (= [1 2] (longs [1 2])))
+(println (= "unchanged" (core/ints "unchanged")))
+(println (= [1 2] (into [] (take 2) [1 2 3])))
+(println (= [3] (into [] (drop 2) [1 2 3])))
+|}
+  in
+  let expected =
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_core_splitv_and_array_hints.cljc" source
+  in
+  assert_ocaml_runs "source_core_splitv_and_array_hint_identities" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_core_splitv_and_array_hints.cljc" source)
+
+let test_source_core_splitv_and_array_hint_identities_reject_bad_calls () =
+  let bad_calls =
+    [
+      "(splitv-at 1)";
+      "(splitv-at 1 [1] [2])";
+      "(splitv-at \"1\" [1 2])";
+      "(splitv-at 1 42)";
+    ]
+    @
+    ([ "booleans"; "bytes"; "chars"; "shorts"; "ints"; "floats"; "doubles"; "longs" ]
+    |> List.concat_map (fun name -> [ "(" ^ name ^ ")"; "(" ^ name ^ " 1 2)" ]))
+  in
+  bad_calls
+  |> List.iteri (fun index source ->
+         compile_with_stdlib_result Lg.Target.Native
+           (Printf.sprintf "test/source_core_splitv_bad_call_%d.cljc" index)
+           source
+         |> expect_error_contains "called with incompatible arguments")
+
 let test_common_higher_order_helpers () =
   let source =
     {|
@@ -37381,6 +37438,10 @@ let tests =
       test_source_core_map_entry_and_parse_boolean_helpers );
     ( "source core map-entry and parse-boolean helpers reject bad calls",
       test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls );
+    ( "source core splitv and array hint identities work",
+      test_source_core_splitv_and_array_hint_identities );
+    ( "source core splitv and array hint identities reject bad calls",
+      test_source_core_splitv_and_array_hint_identities_reject_bad_calls );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

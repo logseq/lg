@@ -125,9 +125,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 126 source entries, 175 typed
+macro surfaces. The current baseline is 135 source entries, 175 typed
 primitives, 5 special forms, 12 host boundaries, 158 static-typing blockers,
-44 out-of-scope Spec entries, and 335 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 326 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
@@ -155,8 +155,9 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
 `constantly`, `vec`, `max-key`, `min-key`, `frequencies`, `update-vals`,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, and the derived bit
-functions have
-no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
+functions, plus `splitv-at` and the ClojureScript array-hint identity functions
+`booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
+`longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining

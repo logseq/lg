@@ -2463,10 +2463,8 @@ let rec compile scope env next_type = function
               let binding =
                 match expr_form with
                 | FSymbol source_name -> (
-                    match
-                      Env.find_opt (Names.scoped_key scope source_name) env
-                    with
-                    | Some source_binding ->
+                    match Resolver.lookup_binding scope env source_name with
+                    | Ok source_binding ->
                         {
                           source_binding with
                           ocaml_name;
@@ -2475,7 +2473,7 @@ let rec compile scope env next_type = function
                           forward_declared = false;
                           dynamically_bindable = false;
                         }
-                    | None -> binding_of_expr ocaml_name expr)
+                    | Error _ -> binding_of_expr ocaml_name expr)
                 | _ -> binding_of_expr ocaml_name expr
               in
               let env = Env.add env_key binding env in

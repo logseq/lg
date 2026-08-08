@@ -20,7 +20,8 @@ for name in \
   second last \
   even? odd? every? ffirst fnext nfirst nnext not-any? not-every? \
   split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap \
-  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean \
+  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean splitv-at \
+  booleans bytes chars shorts ints floats doubles longs \
   bit-clear bit-flip bit-set bit-test; do
   if ! grep -F "(defn $name" "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2

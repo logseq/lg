@@ -4811,15 +4811,7 @@ let create ~compile_expr =
             | None -> Error.error ("unknown field " ^ keyword))
         | _ -> Error.error "mutable field assignment expects a deftype value")
   and compile_call scope env name arg_forms =
-    let name = Resolver.canonical_core_name name in
-    let name =
-      match String.split_on_char '/' name with
-      | [ alias; member ] -> (
-          match Env.resolve_namespace_alias ~scope alias env with
-          | Some ("clojure.core" | "cljs.core") -> "clojure.core/" ^ member
-      | Some _ | None -> name)
-      | _ -> name
-    in
+    let name = Resolver.canonical_core_binding_name scope env name in
     let member_name =
       match String.rindex_opt name '/' with
       | None -> name
@@ -10297,7 +10289,7 @@ let create ~compile_expr =
                   match (expected, form) with
                   | TFn _, FList (FSymbol "fn" :: _) ->
                       Env.with_expected_type (Some expected) env
-                  | _ -> env
+                  | _ -> Env.with_expected_type None env
                 in
                 match expected with
                 | TFn _ -> compile_function_arg scope argument_env form
