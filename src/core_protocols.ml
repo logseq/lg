@@ -31,6 +31,7 @@ let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
 let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
+let lookup_id = Protocol_id.create ~owner:[] ~name:"ILookup"
 let collection_id = Protocol_id.create ~owner:[] ~name:"ICollection"
 let associative_id = Protocol_id.create ~owner:[] ~name:"IAssociative"
 let find_id = Protocol_id.create ~owner:[] ~name:"IFind"
@@ -59,15 +60,12 @@ let add_or_fail result =
   | Ok registry -> registry
   | Error error -> failwith error.Error.message
 
+let signature method_id param_tys return_ty =
+  { Protocol_registry.method_id; method_ty = TFn (param_tys, return_ty) }
+
 let declare_seqable registry =
   Protocol_registry.declare seqable_id
-    [
-      {
-        Protocol_registry.method_id = seq_method_id;
-        param_tys = [ TUnknown ];
-        return_ty = TUnknown;
-      };
-    ]
+    [ signature seq_method_id [ TUnknown ] TUnknown ]
     registry
   |> add_or_fail
 
@@ -93,13 +91,7 @@ let add_edn_seqable registry =
 
 let declare_reducible registry =
   Protocol_registry.declare reducible_id
-    [
-      {
-        Protocol_registry.method_id = reduce_method_id;
-        param_tys = [ TUnknown; TUnknown; TUnknown ];
-        return_ty = TUnknown;
-      };
-    ]
+    [ signature reduce_method_id [ TUnknown; TUnknown; TUnknown ] TUnknown ]
     registry
   |> add_or_fail
 
@@ -114,13 +106,7 @@ let add_reducible receiver ocaml_name registry =
 
 let declare_counted registry =
   Protocol_registry.declare counted_id
-    [
-      {
-        Protocol_registry.method_id = count_method_id;
-        param_tys = [ TUnknown ];
-        return_ty = TInt;
-      };
-    ]
+    [ signature count_method_id [ TUnknown ] TInt ]
     registry
   |> add_or_fail
 
@@ -134,26 +120,14 @@ let add_counted receiver ocaml_name registry =
 
 let declare_indexed registry =
   Protocol_registry.declare indexed_id
-    [
-      {
-        Protocol_registry.method_id = nth_method_id;
-        param_tys = [ TUnknown; TInt ];
-        return_ty = TUnknown;
-      };
-    ]
+    [ signature nth_method_id [ TUnknown; TInt ] TUnknown ]
     registry
   |> add_or_fail
 
 let declare_emptyable registry =
   let receiver = TVar "emptyable_receiver" in
   Protocol_registry.declare emptyable_id
-    [
-      {
-        Protocol_registry.method_id = empty_method_id;
-        param_tys = [ receiver ];
-        return_ty = receiver;
-      };
-    ]
+    [ signature empty_method_id [ receiver ] receiver ]
     registry
   |> add_or_fail
 
@@ -170,76 +144,38 @@ let declare_collection_lifecycle_protocols registry =
   let receiver = TVar "equiv_receiver" in
   registry
   |> Protocol_registry.declare equiv_id
-       [
-         {
-           Protocol_registry.method_id = method_id equiv_id "-equiv";
-           param_tys = [ receiver; receiver ];
-           return_ty = TBool;
-         };
-       ]
+       [ signature (method_id equiv_id "-equiv") [ receiver; receiver ] TBool ]
   |> add_or_fail
   |> Protocol_registry.declare hash_id
-       [
-         {
-           Protocol_registry.method_id = method_id hash_id "-hash";
-           param_tys = [ TUnknown ];
-           return_ty = TInt;
-         };
-       ]
+       [ signature (method_id hash_id "-hash") [ TUnknown ] TInt ]
   |> add_or_fail
   |> Protocol_registry.declare reversible_id
-       [
-         {
-           Protocol_registry.method_id = method_id reversible_id "-rseq";
-           param_tys = [ TUnknown ];
-           return_ty = TUnknown;
-         };
-       ]
+       [ signature (method_id reversible_id "-rseq") [ TUnknown ] TUnknown ]
   |> add_or_fail
   |> Protocol_registry.declare editable_id
        [
-         {
-           Protocol_registry.method_id = method_id editable_id "-as-transient";
-           param_tys = [ TUnknown ];
-           return_ty = TUnknown;
-         };
+         signature (method_id editable_id "-as-transient") [ TUnknown ]
+           TUnknown;
        ]
   |> add_or_fail
   |> Protocol_registry.declare transient_collection_id
        [
-         {
-           Protocol_registry.method_id =
-             method_id transient_collection_id "-conj!";
-           param_tys = [ TUnknown; TUnknown ];
-           return_ty = TUnknown;
-         };
-         {
-           Protocol_registry.method_id =
-             method_id transient_collection_id "-persistent!";
-           param_tys = [ TUnknown ];
-           return_ty = TUnknown;
-         };
+         signature (method_id transient_collection_id "-conj!")
+           [ TUnknown; TUnknown ] TUnknown;
+         signature (method_id transient_collection_id "-persistent!")
+           [ TUnknown ] TUnknown;
        ]
   |> add_or_fail
   |> Protocol_registry.declare transient_set_id
        [
-         {
-           Protocol_registry.method_id = method_id transient_set_id "-disjoin!";
-           param_tys = [ TUnknown; TUnknown ];
-           return_ty = TUnknown;
-         };
+         signature (method_id transient_set_id "-disjoin!")
+           [ TUnknown; TUnknown ] TUnknown;
        ]
   |> add_or_fail
 
 let declare_deref registry =
   Protocol_registry.declare deref_id
-    [
-      {
-        Protocol_registry.method_id = method_id deref_id "-deref";
-        param_tys = [ TUnknown ];
-        return_ty = TUnknown;
-      };
-    ]
+    [ signature (method_id deref_id "-deref") [ TUnknown ] TUnknown ]
     registry
   |> add_or_fail
 
@@ -247,12 +183,8 @@ let declare_compare_and_set registry =
   let value = TVar "atom_value" in
   Protocol_registry.declare atom_id
     [
-      {
-        Protocol_registry.method_id =
-          method_id atom_id "-compare-and-set!";
-        param_tys = [ TUnknown; value; value ];
-        return_ty = TBool;
-      };
+      signature (method_id atom_id "-compare-and-set!")
+        [ TUnknown; value; value ] TBool;
     ]
     registry
   |> add_or_fail
@@ -260,13 +192,7 @@ let declare_compare_and_set registry =
 let declare_reset registry =
   let value = TVar "reset_value" in
   Protocol_registry.declare reset_id
-    [
-      {
-        Protocol_registry.method_id = method_id reset_id "-reset!";
-        param_tys = [ TUnknown; value ];
-        return_ty = value;
-      };
-    ]
+    [ signature (method_id reset_id "-reset!") [ TUnknown; value ] value ]
     registry
   |> add_or_fail
 
@@ -274,11 +200,8 @@ let declare_swap registry =
   let value = TVar "swap_value" in
   Protocol_registry.declare swap_id
     [
-      {
-        Protocol_registry.method_id = method_id swap_id "-swap!";
-        param_tys = [ TUnknown; TFn ([ value ], value) ];
-        return_ty = value;
-      };
+      signature (method_id swap_id "-swap!")
+        [ TUnknown; TFn ([ value ], value) ] value;
     ]
     registry
   |> add_or_fail
@@ -287,33 +210,18 @@ let declare_data_protocols registry =
   let dynamic = Types.dynamic_constraint TUnknown in
   registry
   |> Protocol_registry.declare equality_partition_id
-       [
-         {
-           Protocol_registry.method_id = equality_partition_method_id;
-           param_tys = [ dynamic ];
-           return_ty = TKeyword;
-         };
-       ]
+       [ signature equality_partition_method_id [ dynamic ] TKeyword ]
   |> add_or_fail
   |> Protocol_registry.declare diff_id
-       [
-         {
-           Protocol_registry.method_id = diff_method_id;
-           param_tys = [ dynamic; dynamic ];
-           return_ty = dynamic;
-         };
-       ]
+       [ signature diff_method_id [ dynamic; dynamic ] dynamic ]
   |> add_or_fail
 
 let declare_comparable_protocol registry =
   registry
   |> Protocol_registry.declare comparable_id
        [
-         {
-           Protocol_registry.method_id = method_id comparable_id "-compare";
-           param_tys = [ TUnknown; TUnknown ];
-           return_ty = TInt;
-         };
+         signature (method_id comparable_id "-compare")
+           [ TUnknown; TUnknown ] TInt;
        ]
   |> add_or_fail
 
@@ -324,79 +232,68 @@ let declare_map_protocols registry =
   let map_ty = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
   let metadata_ty = TOcaml "Lg_edn_backend.t" in
   registry
-  |> Protocol_registry.declare collection_id
+  |> Protocol_registry.declare lookup_id
        [
          {
-           Protocol_registry.method_id = method_id collection_id "-conj";
-           param_tys = [ map_ty; TTuple [ key; value ] ];
-           return_ty = map_ty;
+           Protocol_registry.method_id = method_id lookup_id "-lookup";
+           method_ty =
+             TOverloaded_fn
+               [
+                 {
+                   fixed_params = [ map_ty; key ];
+                   rest_param = None;
+                   return_ty = TOcaml_app ("option", [ value ]);
+                 };
+                 {
+                   fixed_params = [ map_ty; key; value ];
+                   rest_param = None;
+                   return_ty = value;
+                 };
+               ];
          };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare collection_id
+       [
+         signature (method_id collection_id "-conj")
+           [ map_ty; TTuple [ key; value ] ] map_ty;
        ]
   |> add_or_fail
   |> Protocol_registry.declare associative_id
        [
-         {
-           Protocol_registry.method_id =
-             method_id associative_id "-contains-key?";
-           param_tys = [ map_ty; key ];
-           return_ty = TBool;
-         };
-         {
-           Protocol_registry.method_id = method_id associative_id "-assoc";
-           param_tys = [ map_ty; key; value ];
-           return_ty = map_ty;
-         };
+         signature (method_id associative_id "-contains-key?")
+           [ map_ty; key ] TBool;
+         signature (method_id associative_id "-assoc")
+           [ map_ty; key; value ] map_ty;
        ]
   |> add_or_fail
   |> Protocol_registry.declare find_id
        [
-         {
-           Protocol_registry.method_id = method_id find_id "-find";
-           param_tys = [ map_ty; key ];
-           return_ty = TOcaml_app ("option", [ TTuple [ key; value ] ]);
-         };
+         signature (method_id find_id "-find") [ map_ty; key ]
+           (TOcaml_app ("option", [ TTuple [ key; value ] ]));
        ]
   |> add_or_fail
   |> Protocol_registry.declare map_id
-       [
-         {
-           Protocol_registry.method_id = method_id map_id "-dissoc";
-           param_tys = [ map_ty; key ];
-           return_ty = map_ty;
-         };
-       ]
+       [ signature (method_id map_id "-dissoc") [ map_ty; key ] map_ty ]
   |> add_or_fail
   |> Protocol_registry.declare kv_reduce_id
        [
-         {
-           Protocol_registry.method_id =
-             method_id kv_reduce_id "-kv-reduce";
-           param_tys =
-             [
-               map_ty;
-               TFn ([ accumulator; key; value ], accumulator);
-               accumulator;
-             ];
-           return_ty = accumulator;
-         };
+         signature (method_id kv_reduce_id "-kv-reduce")
+           [
+             map_ty;
+             TFn ([ accumulator; key; value ], accumulator);
+             accumulator;
+           ]
+           accumulator;
        ]
   |> add_or_fail
   |> Protocol_registry.declare meta_id
-       [
-         {
-           Protocol_registry.method_id = method_id meta_id "-meta";
-           param_tys = [ map_ty ];
-           return_ty = metadata_ty;
-         };
-       ]
+       [ signature (method_id meta_id "-meta") [ map_ty ] metadata_ty ]
   |> add_or_fail
   |> Protocol_registry.declare with_meta_id
        [
-         {
-           Protocol_registry.method_id = method_id with_meta_id "-with-meta";
-           param_tys = [ map_ty; metadata_ty ];
-           return_ty = map_ty;
-         };
+         signature (method_id with_meta_id "-with-meta")
+           [ map_ty; metadata_ty ] map_ty;
        ]
   |> add_or_fail
 
@@ -406,14 +303,34 @@ let add_runtime_map_protocols registry =
   let accumulator = TVar "map_accumulator" in
   let map_ty = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
   let metadata_ty = TOcaml "Lg_edn_backend.t" in
-  let add protocol_id method_name ocaml_name ty registry =
-    let binding = Types.binding ~protocol_id ocaml_name ty in
+  let add ?(overload_targets = []) protocol_id method_name ocaml_name ty
+      registry =
+    let binding =
+      Types.binding ~protocol_id ~overload_targets ocaml_name ty
+    in
     Protocol_registry.add_implementation protocol_id
       (method_id protocol_id method_name)
       runtime_map_receiver binding registry
     |> add_or_fail
   in
   registry
+  |> add
+       ~overload_targets:
+         [ "Lg_runtime.Runtime_map.lookup"; "Lg_runtime.Runtime_map.lookup_default" ]
+       lookup_id "-lookup" "Lg_runtime.Runtime_map.lookup"
+       (TOverloaded_fn
+          [
+            {
+              fixed_params = [ map_ty; key ];
+              rest_param = None;
+              return_ty = TOcaml_app ("option", [ value ]);
+            };
+            {
+              fixed_params = [ map_ty; key; value ];
+              rest_param = None;
+              return_ty = value;
+            };
+          ])
   |> add collection_id "-conj" "Lg_runtime.Runtime_map.conj_entry"
        (TFn ([ map_ty; TTuple [ key; value ] ], map_ty))
   |> add associative_id "-contains-key?" "Lg_runtime.Runtime_map.contains_key"

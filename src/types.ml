@@ -1176,8 +1176,17 @@ let instantiate_receiver_method_type receiver_ty method_ty =
         TOcaml_app ("option", [ specialize_return value_ty return_ty ])
     | return_ty -> return_ty
   in
-  match method_ty with
-  | TFn (template_receiver :: _, _) ->
+  let template_receiver =
+    match method_ty with
+    | TFn (template_receiver :: _, _) -> Some template_receiver
+    | TOverloaded_fn ({ fixed_params = template_receiver :: _; _ } :: _) ->
+        Some template_receiver
+    | TFn ([], _) | TOverloaded_fn []
+    | TOverloaded_fn ({ fixed_params = []; _ } :: _) | _ ->
+        None
+  in
+  match template_receiver with
+  | Some template_receiver ->
       let receiver_value_ty =
         match template_receiver with
         | TNamed_record { type_parameters = [ parameter ]; _ } ->
@@ -1211,8 +1220,25 @@ let instantiate_receiver_method_type receiver_ty method_ty =
                    (function TUnknown -> value_ty | ty -> ty)
                    parameters,
               specialize_return value_ty return_ty )
+      | Some value_ty, TOverloaded_fn arities ->
+          TOverloaded_fn
+            (List.map
+               (fun arity ->
+                 match arity.fixed_params with
+                 | receiver :: parameters ->
+                     {
+                       arity with
+                       fixed_params =
+                         receiver
+                         :: List.map
+                              (function TUnknown -> value_ty | ty -> ty)
+                              parameters;
+                       return_ty = specialize_return value_ty arity.return_ty;
+                     }
+                 | [] -> arity)
+               arities)
       | _ -> method_ty)
-  | _ -> method_ty
+  | None -> method_ty
 let rec idents_in_conversion names = function
   | Semantic_ir.Ident name -> name :: names
   | Semantic_ir.Typed (_, value)

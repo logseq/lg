@@ -391,6 +391,30 @@ let rec protocol_witness_constraint_type receiver_ty = function
       in
       TFn
         (parameters, protocol_witness_constraint_type receiver_ty return_type)
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             let fixed_params =
+               match arity.fixed_params with
+               | _receiver :: rest ->
+                   pattern_constraint_type
+                     (Types.constraint_value_type receiver_ty)
+                   :: List.map
+                        (protocol_witness_constraint_type receiver_ty)
+                        rest
+               | [] -> []
+             in
+             {
+               fixed_params;
+               rest_param =
+                 Option.map
+                   (protocol_witness_constraint_type receiver_ty)
+                   arity.rest_param;
+               return_ty =
+                 protocol_witness_constraint_type receiver_ty arity.return_ty;
+             })
+           arities)
   | ty -> ty
 
 and pattern_constraint_type = function
@@ -419,6 +443,17 @@ and pattern_constraint_type = function
       TFn
         ( List.map pattern_constraint_type parameters,
           pattern_constraint_type return_type )
+  | TOverloaded_fn arities ->
+      TOverloaded_fn
+        (List.map
+           (fun arity ->
+             {
+               fixed_params =
+                 List.map pattern_constraint_type arity.fixed_params;
+               rest_param = Option.map pattern_constraint_type arity.rest_param;
+               return_ty = pattern_constraint_type arity.return_ty;
+             })
+           arities)
   | TNamed_record record ->
       TNamed_record
         {

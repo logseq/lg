@@ -24,8 +24,7 @@ module Method_lookup_map = Map.Make (Method_lookup_key)
 
 type method_signature = {
   method_id : Method_id.t;
-  param_tys : Types.ty list;
-  return_ty : Types.ty;
+  method_ty : Types.ty;
 }
 
 type declaration = {
@@ -292,14 +291,9 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
                 Method_map.add method_id
                     {
                       method_id;
-                    param_tys =
-                      List.map
-                        (Types.remap_module_type ~from_path:from_module
-                           ~to_path:to_module)
-                        signature.param_tys;
-                    return_ty =
-                      Types.remap_module_type ~from_path:from_module
-                        ~to_path:to_module signature.return_ty;
+                      method_ty =
+                        Types.remap_module_type ~from_path:from_module
+                          ~to_path:to_module signature.method_ty;
                   }
                   methods)
               declaration.methods Method_map.empty

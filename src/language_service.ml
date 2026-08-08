@@ -1183,8 +1183,7 @@ let method_semantic_hover analysis method_id =
          Protocol_registry.Method_map.find_opt method_id declaration.methods
          |> Option.map (fun (signature : Protocol_registry.method_signature) ->
                 Method_id.name method_id ^ " : "
-                ^ Types.ocaml_name
-                    (Types.TFn (signature.param_tys, signature.return_ty))))
+                ^ Types.ocaml_name signature.method_ty))
 
 let semantic_hover analysis occurrence source_name =
   let contents =

@@ -1375,17 +1375,58 @@ let rec compile scope env next_type = function
                         in
                         let ocaml_name = Names.sanitize_name source_name in
                         let method_ty =
+                          let method_ty =
+                            match marker.ty with
+                            | TOverloaded_fn arities ->
+                                arities
+                                |> List.find_opt (fun (candidate : fn_arity) ->
+                                       Option.is_none candidate.rest_param
+                                       && List.length candidate.fixed_params
+                                          = arity)
+                                |> Option.map (fun candidate ->
+                                       TFn
+                                         ( candidate.fixed_params,
+                                           candidate.return_ty ))
+                                |> Option.value ~default:marker.ty
+                            | method_ty -> method_ty
+                          in
                           Types.instantiate_receiver_method_type receiver_ty
-                            marker.ty
+                            method_ty
                         in
                         let binding =
                           Types.binding ~forward_declared:true ocaml_name
                             method_ty
                         in
-                        (match
-                           Protocol_elaborator.add_implementation env method_name
-                             receiver_ty marker binding
-                         with
+                        let implementation =
+                          match marker.ty with
+                          | TOverloaded_fn arities ->
+                              let overload_targets =
+                                List.map
+                                  (fun (candidate : fn_arity) ->
+                                    Expression_support.deftype_method_name record
+                                      method_name
+                                      (List.length candidate.fixed_params)
+                                    |> Names.sanitize_name)
+                                  arities
+                              in
+                              Types.binding ~forward_declared:true
+                                ~overload_targets ocaml_name
+                                (Types.instantiate_receiver_method_type
+                                   receiver_ty marker.ty)
+                          | _ -> binding
+                        in
+                        let registered =
+                          match marker.ty with
+                          | TOverloaded_fn _
+                            when Option.is_some
+                                   (Protocol.lookup_marker_impl env marker
+                                      method_name receiver_ty) ->
+                              Ok env
+                          | _ ->
+                              Protocol_elaborator.add_implementation env
+                                method_name receiver_ty marker implementation
+                        in
+                        (match registered with
                         | Error _ as error -> error
                         | Ok env ->
                             predeclare_methods env (ocaml_name :: names)
@@ -1634,6 +1675,9 @@ let rec compile scope env next_type = function
                               method_name
                           with
                           | Error _ as error -> error
+                          | Ok ({ ty = TOverloaded_fn _; _ } as marker) ->
+                              Protocol_elaborator.update_overloaded_implementation
+                                env method_name receiver_ty marker binding
                           | Ok marker ->
                               Protocol_elaborator.add_implementation env
                                 method_name receiver_ty marker binding)

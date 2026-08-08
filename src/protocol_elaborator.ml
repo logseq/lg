@@ -14,8 +14,7 @@ let define ?location scope env protocol_name method_forms =
           (fun (signature : Protocol_registry.method_signature) ->
             {
               signature with
-              param_tys = List.map resolve_type signature.param_tys;
-              return_ty = resolve_type signature.return_ty;
+              method_ty = resolve_type signature.method_ty;
             })
           signatures
       in
@@ -97,6 +96,57 @@ let add_implementation ?location env method_name receiver_ty marker binding =
                     method_id receiver_id binding)
           in
           Ok (Env.with_protocol_evidence protocol_evidence env))
+
+let update_overloaded_implementation env method_name receiver_ty
+    (marker : binding) (binding : binding) =
+  match
+    ( marker.protocol_id,
+      Protocol.registry_receiver_id receiver_ty,
+      binding.ty )
+  with
+  | Some protocol_id, Some receiver_id, TFn (parameters, return_ty) ->
+      let method_id = Protocol.method_id protocol_id method_name in
+      let update registry =
+        match
+          Protocol_registry.find_implementation protocol_id method_id
+            receiver_id registry
+        with
+        | Some ({ ty = TOverloaded_fn arities; _ } as implementation) ->
+            let argument_count = List.length parameters in
+            let arities =
+              List.map
+                (fun arity ->
+                  if
+                    Option.is_none arity.rest_param
+                    && List.length arity.fixed_params = argument_count
+                  then
+                    {
+                      fixed_params = parameters;
+                      rest_param = None;
+                      return_ty;
+                    }
+                  else arity)
+                arities
+            in
+            Protocol_registry.replace_implementation protocol_id method_id
+              receiver_id
+              {
+                implementation with
+                ty = TOverloaded_fn arities;
+                forward_declared = false;
+              }
+              registry
+        | Some _ | None -> registry
+      in
+      let env = Env.with_protocols (update (Env.protocols env)) env in
+      Ok
+        (Env.with_protocol_evidence
+           (Option.map update (Env.protocol_evidence env))
+           env)
+  | _ ->
+      Error.error
+        ("multi-arity protocol implementation " ^ method_name
+       ^ " must compile to a fixed-arity function")
 
 let compile_defprotocol ?location scope env next_type protocol_name method_forms =
   match define ?location scope env protocol_name method_forms with
@@ -198,6 +248,51 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
   match protocol_receiver_type scope env receiver_form with
   | Error _ as err -> err
   | Ok receiver_ty ->
+      let select_method_arity (marker : binding) argument_count =
+        match marker.ty with
+        | TOverloaded_fn arities ->
+            arities
+            |> List.find_opt (fun arity ->
+                   Option.is_none arity.rest_param
+                   && List.length arity.fixed_params = argument_count)
+            |> Option.map (fun arity ->
+                   {
+                     marker with
+                     ty = TFn (arity.fixed_params, arity.return_ty);
+                   })
+        | TFn (parameters, _) when List.length parameters = argument_count ->
+            Some marker
+        | _ -> None
+      in
+      let implementation_name method_name argument_count overloaded =
+        let base =
+          Protocol.impl_ocaml_name scope protocol_name method_name receiver_ty
+        in
+        if overloaded then base ^ "_" ^ string_of_int argument_count else base
+      in
+      let overloaded_implementation (marker : binding) method_name =
+        match marker.ty with
+        | TOverloaded_fn arities ->
+            let overload_targets =
+              List.map
+                (fun arity ->
+                  implementation_name method_name
+                    (List.length arity.fixed_params)
+                    true)
+                arities
+            in
+            let ocaml_name =
+              match overload_targets with
+              | ocaml_name :: _ -> ocaml_name
+              | [] ->
+                  Protocol.impl_ocaml_name scope protocol_name method_name
+                    receiver_ty
+            in
+            Some
+              (Types.binding ~overload_targets ocaml_name
+                 (Types.instantiate_receiver_method_type receiver_ty marker.ty))
+        | _ -> None
+      in
       let rec form_mentions name = function
         | FSymbol candidate -> candidate = name
         | FList forms | FVector forms ->
@@ -238,19 +333,31 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
         | FList (((FSymbol method_name) as name_form) :: params :: body_forms) -> (
             match marker scope env protocol_name method_name with
             | Error _ as err -> err
-            | Ok marker -> (
+            | Ok protocol_marker -> (
                 match Protocol.annotate_receiver receiver_ty params with
                 | Error _ as err -> err
                 | Ok params -> (
                     let body_forms = bind_record_fields params body_forms in
-                    let param_type_overrides =
-                      protocol_parameter_overrides receiver_ty marker.ty
-                    in
-                    match
-                      Expression_elaborator.compile_fn ~param_type_overrides scope env params body_forms
-                    with
-                    | Error _ as err -> err
-                    | Ok expr -> (
+                    match Type_annotation.parse_params params with
+                    | Error _ as error -> error
+                    | Ok parsed_params ->
+                      let argument_count = List.length parsed_params in
+                      (match select_method_arity protocol_marker argument_count with
+                      | None ->
+                          Error.error
+                            (method_name
+                           ^ " called with unsupported protocol method arity "
+                           ^ string_of_int argument_count)
+                      | Some marker ->
+                        let param_type_overrides =
+                          protocol_parameter_overrides receiver_ty marker.ty
+                        in
+                        match
+                          Expression_elaborator.compile_fn ~param_type_overrides
+                            scope env params body_forms
+                        with
+                        | Error _ as err -> err
+                        | Ok expr -> (
                         match (marker.ty, expr.ty) with
                         | TFn (expected_params, _), TFn (actual_params, _)
                           when List.length expected_params <> List.length actual_params ->
@@ -311,9 +418,14 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                     ("protocol method " ^ method_name ^ " must return "
                                    ^ source_name expected_ret)
                                   | None -> (
+                                  let overloaded =
+                                    match protocol_marker.ty with
+                                    | TOverloaded_fn _ -> true
+                                    | _ -> false
+                                  in
                                   let ocaml_name =
-                                    Protocol.impl_ocaml_name scope protocol_name
-                                      method_name receiver_ty
+                                    implementation_name method_name
+                                      argument_count overloaded
                                   in
                                   let binding =
                                     Expression_support.binding_of_expr
@@ -327,11 +439,39 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                       { binding with return_param_index = Some 0 }
                                     else binding
                                   in
-                                  (match
-                                     add_implementation
-                                       ?location:(Source_context.find name_form) env
-                                       method_name receiver_ty marker binding
-                                   with
+                                  let register env =
+                                    match
+                                      overloaded_implementation protocol_marker
+                                        method_name
+                                    with
+                                    | None ->
+                                        add_implementation
+                                          ?location:
+                                            (Source_context.find name_form)
+                                          env method_name receiver_ty marker
+                                          binding
+                                    | Some implementation ->
+                                        let existing =
+                                          Protocol.lookup_marker_impl env
+                                            protocol_marker method_name
+                                            receiver_ty
+                                        in
+                                        let added =
+                                          match existing with
+                                          | Some _ -> Ok env
+                                          | None ->
+                                              add_implementation
+                                                ?location:
+                                                  (Source_context.find name_form)
+                                                env method_name receiver_ty
+                                                protocol_marker implementation
+                                        in
+                                        Result.bind added (fun env ->
+                                            update_overloaded_implementation env
+                                              method_name receiver_ty
+                                              protocol_marker binding)
+                                  in
+                                  (match register env with
                                   | Error _ as err -> err
                                   | Ok env ->
                                       let declared_names =
@@ -382,7 +522,7 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                       Ok
                                         ( env,
                                           item )))))
-                        | _ -> Error.error "protocol method did not compile to a function"))))
+                        | _ -> Error.error "protocol method did not compile to a function")))))
         | _ -> Error.error "extend-type methods must be (method-name [params] body)"
       in
       let rec loop implementation_names env items = function
@@ -456,7 +596,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                         | Error _ as error -> error
                         | Ok env ->
                             predeclare_exact env evidence_env
-                              (binding.ocaml_name :: names) rest))
+                              (binding.ocaml_name
+                              :: binding.overload_targets @ names)
+                              rest))
                 | None, _ | _, None ->
                     Error.error
                       ("protocol implementations do not support receiver type "

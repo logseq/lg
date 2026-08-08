@@ -363,11 +363,16 @@ The currently accepted measured representation optimizations are narrow:
   contract required by DataScript relation bindings without participating in
   lookup. Metadata is stored once on the map root so `assoc`, `dissoc`, and
   `empty` preserve the ClojureScript metadata contract. The runtime map has
-  static registry implementations for ClojureScript's `ICollection`,
-  `IAssociative`, `IFind`, `IMap`, `IKVReduce`, `IMeta`, and `IWithMeta`, in
-  addition to its seq, count, and empty capabilities. `ILookup` remains a
-  compiler-known typed operation until the protocol registry can represent
-  both upstream arities under one method identity; `IEquiv` and `IHash` remain
+  static registry implementations for ClojureScript's `ILookup`,
+  `ICollection`, `IAssociative`, `IFind`, `IMap`, `IKVReduce`, `IMeta`, and
+  `IWithMeta`, in addition to its seq, count, and empty capabilities. Protocol
+  method signatures retain all fixed arities under one method identity, and
+  each implementation records one statically typed target per arity. Map
+  `-lookup` therefore dispatches through the ordinary protocol registry for
+  both its nullable two-argument result and its concrete three-argument
+  default result. A protocol witness stores an overload bundle in that method's
+  single witness slot, so generic protocol-constrained functions select the
+  same fixed arity without dynamic packing. `IEquiv` and `IHash` remain
   compiler-elaborated so their key and value operations stay statically typed.
 - DataScript identifier comparison checks namespace and name slices in place
   instead of allocating substrings. Separator handling and lexical ordering

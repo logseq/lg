@@ -16,6 +16,24 @@ let constrained_argument_counter = ref 0
 let function_adapter_counter = ref 0
 let row_argument_counter = ref 0
 
+let select_binding_arity (binding : binding) argument_count =
+  match binding.ty with
+  | TOverloaded_fn arities ->
+      arities
+      |> List.mapi (fun index arity -> (index, arity))
+      |> List.find_opt (fun (_, arity) ->
+             Option.is_none arity.rest_param
+             && List.length arity.fixed_params = argument_count)
+      |> Option.map (fun (index, arity) ->
+             {
+               binding with
+               ocaml_name =
+                 List.nth_opt binding.overload_targets index
+                 |> Option.value ~default:binding.ocaml_name;
+               ty = TFn (arity.fixed_params, arity.return_ty);
+             })
+  | _ -> Some binding
+
 let is_identity_conversion name expression =
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident candidate -> String.equal candidate name
@@ -1303,8 +1321,52 @@ let rec pack_constrained_value ?row_type_name env expected argument =
               (witness_method_types rest)
         | _ -> Error.error "invalid protocol witness type"
       in
-      let adapt_witness_method expected_ty (implementation : binding) =
+      let rec adapt_witness_method expected_ty (implementation : binding) =
         match (expected_ty, implementation.ty) with
+        | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
+            let stored_fn_type (arity : fn_arity) =
+              let parameters =
+                match arity.rest_param with
+                | None -> arity.fixed_params
+                | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
+              in
+              TFn (parameters, arity.return_ty)
+            in
+            let find_actual (expected : fn_arity) =
+              actual_arities
+              |> List.mapi (fun index actual -> (index, actual))
+              |> List.find_opt (fun (_, (actual : fn_arity)) ->
+                     List.length actual.fixed_params
+                     = List.length expected.fixed_params
+                     && Option.is_some actual.rest_param
+                        = Option.is_some expected.rest_param)
+            in
+            let rec adapt_arities adapted = function
+              | [] -> Ok (witness_storage (List.rev adapted))
+              | expected :: rest -> (
+                  match find_actual expected with
+                  | None ->
+                      Error.error
+                        "protocol witness implementation is missing an arity"
+                  | Some (index, actual) -> (
+                      match List.nth_opt implementation.overload_targets index with
+                      | None ->
+                          Error.error
+                            "protocol witness implementation is missing an overload target"
+                      | Some ocaml_name ->
+                          let selected =
+                            {
+                              implementation with
+                              ocaml_name;
+                              ty = stored_fn_type actual;
+                            }
+                          in
+                          Result.bind
+                            (adapt_witness_method (stored_fn_type expected) selected)
+                            (fun adapted_method ->
+                              adapt_arities (adapted_method :: adapted) rest)))
+            in
+            adapt_arities [] expected_arities
         | ( TFn (expected_params, expected_return),
             TFn (actual_params, actual_return) )
           when List.length expected_params = List.length actual_params ->
@@ -6192,53 +6254,6 @@ let create ~compile_expr =
                   | Ok [] ->
                       Error.error (method_name ^ " expects a host receiver"))
     | ".valAt" -> java_interop_error ".valAt"
-    | "-lookup" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ target; key ] when Types.is_dynamic target.ty ->
-            Result.map
-              (fun key ->
-                typed_ir target.ty
-                  (Semantic_ir.Apply
-                               ( Semantic_ir.Ident
-                                   "Lg_runtime.Runtime_dynamic.get",
-                       [ target.semantic_expr; key ] )))
-              (pack_dynamic_value env target.ty key)
-                  | Ok [ target; key; default ] when Types.is_dynamic target.ty
-                    -> (
-            match
-              ( pack_dynamic_value env target.ty key,
-                pack_dynamic_value env target.ty default )
-            with
-            | (Error _ as error), _ | _, (Error _ as error) -> error
-            | Ok key, Ok default ->
-                Ok
-                  (typed_ir target.ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_dynamic.get_default",
-                          [ target.semantic_expr; key; default ] ))))
-        | Ok [ target; key ] ->
-            Ok
-              (typed_ir (TNullable TUnknown)
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident
-                        (runtime_map_lookup_operation target.ty key.ty
-                           "get_option"),
-                      [ target.semantic_expr; key.semantic_expr ] )))
-        | Ok [ target; key; default ] ->
-            Ok
-              (typed_ir (TNullable TUnknown)
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident
-                        (runtime_map_lookup_operation target.ty key.ty
-                           "get_option_default"),
-                      [
-                        target.semantic_expr;
-                        key.semantic_expr;
-                        default.semantic_expr;
-                      ] )))
-        | Ok _ -> Error.error "-lookup expects 2 or 3 arguments")
     | ".containsKey" -> java_interop_error ".containsKey"
     | ".entryAt" -> java_interop_error ".entryAt"
     | "-contains-key?" -> compile_contains scope env arg_forms
@@ -11069,6 +11084,62 @@ let create ~compile_expr =
                                           |> Result.value
                                                ~default:substitutions
                                       | None, _ | _, None -> substitutions)
+                                  | ( TOverloaded_fn expected_arities,
+                                      TOverloaded_fn actual_arities ) ->
+                                      List.fold_left
+                                        (fun substitutions expected_arity ->
+                                          match
+                                            List.find_opt
+                                              (fun actual_arity ->
+                                                List.length
+                                                  actual_arity.fixed_params
+                                                = List.length
+                                                    expected_arity.fixed_params
+                                                && Option.is_some
+                                                     actual_arity.rest_param
+                                                   = Option.is_some
+                                                       expected_arity.rest_param)
+                                              actual_arities
+                                          with
+                                          | None -> substitutions
+                                          | Some actual_arity ->
+                                              let expected_parameters =
+                                                List.tl
+                                                  expected_arity.fixed_params
+                                              in
+                                              let actual_parameters =
+                                                List.tl actual_arity.fixed_params
+                                              in
+                                              let substitutions =
+                                                Type_solver.unify_lists
+                                                  substitutions
+                                                  expected_parameters
+                                                  actual_parameters
+                                                |> Result.value
+                                                     ~default:substitutions
+                                              in
+                                              let substitutions =
+                                                match
+                                                  ( expected_arity.rest_param,
+                                                    actual_arity.rest_param )
+                                                with
+                                                | Some expected, Some actual ->
+                                                    Type_solver.unify
+                                                      substitutions expected
+                                                      actual
+                                                    |> Result.value
+                                                         ~default:substitutions
+                                                | None, None
+                                                | Some _, None
+                                                | None, Some _ ->
+                                                    substitutions
+                                              in
+                                              Type_solver.unify substitutions
+                                                expected_arity.return_ty
+                                                actual_arity.return_ty
+                                              |> Result.value
+                                                   ~default:substitutions)
+                                        substitutions expected_arities
                                   | _ -> substitutions)
                                 substitutions expected_methods implementations
                           | Some _, Some _ | None, _ | _, None ->
@@ -12058,7 +12129,16 @@ let create ~compile_expr =
     else
       match Protocol.lookup_marker scope env name with
       | None -> Error.error ("unknown function " ^ name)
+      | Some marker
+        when Option.is_none
+               (select_binding_arity marker (List.length arg_forms)) ->
+          Error.error
+            (name ^ " called with unsupported protocol method arity "
+           ^ string_of_int (List.length arg_forms))
       | Some marker -> (
+          let marker =
+            Option.get (select_binding_arity marker (List.length arg_forms))
+          in
           let argument_env = Env.with_expected_type None env in
           let expected_params =
             match marker.ty with
@@ -12235,6 +12315,24 @@ let create ~compile_expr =
                                              witness_ty)
                                           (fun methods ->
                                             List.nth_opt methods position))
+                                  in
+                                  let method_expr, witness_method_ty =
+                                    match witness_method_ty with
+                                    | Some (TOverloaded_fn arities) -> (
+                                        match
+                                          select_overloaded_arity arities
+                                            (List.length args)
+                                        with
+                                        | Some (index, arity) ->
+                                            ( overloaded_projection method_expr
+                                                index,
+                                              Some
+                                                (TFn
+                                                   ( arity.fixed_params,
+                                                     arity.return_ty )) )
+                                        | None -> (method_expr, witness_method_ty))
+                                    | Some _ | None ->
+                                        (method_expr, witness_method_ty)
                                   in
                                   let witness_return_ty =
                                     match marker.ty with
@@ -12458,6 +12556,10 @@ let create ~compile_expr =
                                 ("no protocol implementation for " ^ name
                                ^ " and " ^ source_name receiver.ty)
                           | Some impl -> (
+                              let impl =
+                                select_binding_arity impl (List.length args)
+                                |> Option.value ~default:impl
+                              in
                               let impl_ty =
                                 match impl.ty with
                                 | TFn (param_tys, return_ty)

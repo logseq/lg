@@ -6,8 +6,7 @@ module Env = Compiler_environment
 type method_signature = {
   method_id : Method_id.t;
   method_name : string;
-  param_tys : ty list;
-  return_ty : ty;
+  method_ty : ty;
 }
 
 let method_id protocol_id method_name =
@@ -29,7 +28,7 @@ let method_basename name =
 
 let marker_binding protocol_id signature =
   Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
-    (TFn (signature.param_tys, signature.return_ty))
+    signature.method_ty
 
 let resolve_protocol_id ~scope env protocol_id =
   let registry = Env.protocols env in
@@ -153,7 +152,7 @@ let constraint_type scope env protocol_name =
                declaration.methods
                |> Protocol_registry.Method_map.bindings
                |> List.map (fun (_, (signature : Protocol_registry.method_signature)) ->
-                      TFn (signature.param_tys, signature.return_ty))
+                      signature.method_ty)
              in
              Types.protocol_constraint protocol_id method_types TUnknown)
 
@@ -167,10 +166,10 @@ let instantiate_receiver_binding receiver_ty (implementation : binding) =
 let apply_method_signature
     (signature : Protocol_registry.method_signature)
     (implementation : binding) =
-  match implementation.ty with
-  | TFn (parameters, (TUnknown | TMeta _ | TVar _))
-    when not (Types.equal signature.return_ty TUnknown) ->
-      { implementation with ty = TFn (parameters, signature.return_ty) }
+  match (signature.method_ty, implementation.ty) with
+  | TFn (_, declared_return), TFn (parameters, (TUnknown | TMeta _ | TVar _))
+    when not (Types.equal declared_return TUnknown) ->
+      { implementation with ty = TFn (parameters, declared_return) }
   | _ -> implementation
 
 let witness_implementations env protocol_id receiver_ty =
@@ -337,17 +336,50 @@ let common_method_return env protocol_id method_name =
 let refine_marker_signature env protocol_id target_method_id
     (signature : Protocol_registry.method_signature) =
   let registry = Env.protocols env in
-  let target_param_tys =
-    List.map
-      (function TUnknown -> Type_solver.fresh () | ty -> ty)
-      signature.param_tys
+  let refine_arity use_common_return (arity : fn_arity) =
+    let fixed_params =
+      List.map
+        (function TUnknown -> Type_solver.fresh () | ty -> ty)
+        arity.fixed_params
+    in
+    let return_ty =
+      match arity.return_ty with
+      | TUnknown | TMeta _ when use_common_return ->
+          common_method_return env protocol_id
+            (Method_id.name target_method_id)
+          |> Option.value ~default:(Type_solver.fresh ())
+      | TUnknown | TMeta _ -> Type_solver.fresh ()
+      | ty -> ty
+    in
+    { arity with fixed_params; return_ty }
   in
-  let return_ty =
-    match signature.return_ty with
-    | TUnknown | TMeta _ ->
-        common_method_return env protocol_id
-          (Method_id.name target_method_id)
-        |> Option.value ~default:(Type_solver.fresh ())
+  let target_method_ty =
+    match signature.method_ty with
+    | TFn (param_tys, return_ty) ->
+        let arity =
+          refine_arity true
+            { fixed_params = param_tys; rest_param = None; return_ty }
+        in
+        TFn (arity.fixed_params, arity.return_ty)
+    | TOverloaded_fn arities ->
+        TOverloaded_fn (List.map (refine_arity false) arities)
+    | ty -> ty
+  in
+  let first_receiver = function
+    | TFn (receiver :: _, _) -> Some receiver
+    | TOverloaded_fn ({ fixed_params = receiver :: _; _ } :: _) -> Some receiver
+    | _ -> None
+  in
+  let with_receiver receiver = function
+    | TFn (_ :: params, return_ty) -> TFn (receiver :: params, return_ty)
+    | TOverloaded_fn arities ->
+        TOverloaded_fn
+          (List.map
+             (fun arity ->
+               match arity.fixed_params with
+               | _ :: params -> { arity with fixed_params = receiver :: params }
+               | [] -> arity)
+             arities)
     | ty -> ty
   in
   let receiver_constraint =
@@ -356,49 +388,24 @@ let refine_marker_signature env protocol_id target_method_id
            declaration.methods
            |> Protocol_registry.Method_map.bindings
            |> List.map
-                (fun
-                  ( candidate_method_id,
-                    (method_ : Protocol_registry.method_signature) )
-                ->
-                  let param_tys =
-                    if
-                      String.equal
-                        (Method_id.name candidate_method_id)
-                        (Method_id.name target_method_id)
-                    then target_param_tys
-                    else method_.param_tys
-                  in
-                  let return_ty =
-                    if
-                      String.equal
-                        (Method_id.name candidate_method_id)
-                        (Method_id.name target_method_id)
-                    then return_ty
-                    else
-                    match method_.return_ty with
-                    | TUnknown | TMeta _ ->
-                        common_method_return env protocol_id
-                          (Method_id.name candidate_method_id)
-                        |> Option.value ~default:method_.return_ty
-                    | return_ty -> return_ty
-                  in
-                  TFn (param_tys, return_ty))
+                (fun (candidate_method_id, method_) ->
+                  if Method_id.equal candidate_method_id target_method_id then
+                    target_method_ty
+                  else method_.Protocol_registry.method_ty)
            |> fun methods ->
-           let receiver_value_ty =
-             match target_param_tys with
-             | (TVar _ as receiver) :: _ -> receiver
-             | _ -> TUnknown
-           in
-           Types.protocol_constraint protocol_id methods receiver_value_ty)
+             let receiver_value_ty =
+               match first_receiver target_method_ty with
+               | Some (TVar _ as receiver) -> receiver
+               | _ -> TUnknown
+             in
+             Types.protocol_constraint protocol_id methods receiver_value_ty)
   in
-  let param_tys =
-    target_param_tys
-    |> List.mapi (fun index declared ->
-           if index = 0 then
-             Option.value receiver_constraint ~default:declared
-           else declared)
+  let method_ty =
+    match receiver_constraint with
+    | Some receiver -> with_receiver receiver target_method_ty
+    | None -> target_method_ty
   in
-  { signature with param_tys; return_ty }
+  { signature with method_ty }
 
 let lookup_marker scope env method_name =
   let registry = Env.protocols env in
@@ -410,11 +417,7 @@ let lookup_marker scope env method_name =
              refine_marker_signature env protocol_id method_id signature
            in
            marker_binding protocol_id
-             { method_id;
-               method_name;
-               param_tys = signature.param_tys;
-               return_ty = signature.return_ty;
-             })
+             { method_id; method_name; method_ty = signature.method_ty })
   in
   match List.rev (String.split_on_char '/' method_name) with
     | method_name :: protocol_name :: reversed_owner ->
@@ -480,12 +483,7 @@ let lookup_protocol_marker ?(refine = true) scope env protocol_name method_name 
           in
           Some
             (marker_binding id
-               {
-                 method_id;
-                 method_name;
-                 param_tys = signature.param_tys;
-                 return_ty = signature.return_ty;
-               })
+               { method_id; method_name; method_ty = signature.method_ty })
       | None -> None)
 
 let lookup_impl env protocol_id method_name receiver_ty =
@@ -701,30 +699,60 @@ let marker_has_protocol_id (marker : binding) protocol_id =
     marker.protocol_id
 
 let parse_method_signature = function
-  | FList [ FSymbol method_name; params ]
-  | FList [ FSymbol method_name; params; FKeyword _ ] as method_form -> (
-      let return_ty =
-        match method_form with
-        | FList [ _; _; FKeyword return_keyword ] ->
-            Type_annotation.of_keyword return_keyword
-        | _ -> Ok TUnknown
+  | FList (FSymbol method_name :: forms) ->
+      let forms =
+        match List.rev forms with
+        | FString _ :: rest -> List.rev rest
+        | _ -> forms
       in
-      match (Type_annotation.parse_params params, return_ty) with
-      | (Error _ as err), _ -> err
-      | _, (Error _ as err) -> err
-      | Ok params, Ok return_ty ->
-          if params = [] then Error.error "protocol methods must have a receiver parameter"
-          else
-            Ok
-              {
-                method_id = Method_id.create ~owner:[] ~name:method_name;
-                method_name;
-                param_tys = List.map snd params;
-                return_ty;
-              })
+      let parameter_forms, return_ty =
+        match List.rev forms with
+        | FKeyword return_keyword :: rest ->
+            (List.rev rest, Type_annotation.of_keyword return_keyword)
+        | _ -> (forms, Ok TUnknown)
+      in
+      Result.bind return_ty (fun return_ty ->
+          let rec parse arities seen = function
+            | [] ->
+                let arities = List.rev arities in
+                let method_ty =
+                  match arities with
+                  | [ arity ] -> TFn (arity.fixed_params, arity.return_ty)
+                  | arities -> TOverloaded_fn arities
+                in
+                Ok
+                  {
+                    method_id = Method_id.create ~owner:[] ~name:method_name;
+                    method_name;
+                    method_ty;
+                  }
+            | (FVector _ as params) :: rest ->
+                Result.bind (Type_annotation.parse_params params) (fun params ->
+                    let fixed_params = List.map snd params in
+                    if fixed_params = [] then
+                      Error.error
+                        "protocol methods must have a receiver parameter"
+                    else
+                      let count = List.length fixed_params in
+                      if List.mem count seen then
+                        Error.error
+                          ("protocol method " ^ method_name
+                         ^ " declares duplicate arity " ^ string_of_int count)
+                      else
+                        parse
+                          ({ fixed_params; rest_param = None; return_ty }
+                          :: arities)
+                          (count :: seen) rest)
+            | _ :: _ ->
+                Error.error
+                  "protocol method arities must be parameter vectors"
+          in
+          if parameter_forms = [] then
+            Error.error "protocol methods must declare at least one arity"
+          else parse [] [] parameter_forms)
   | _ ->
       Error.error
-        "defprotocol methods must be (method-name [params]) or (method-name [params] :return-type)"
+        "defprotocol methods must be (method-name [params]...)"
 
 let defprotocol scope protocol_name method_forms =
   let id = protocol_id scope protocol_name in
@@ -745,8 +773,7 @@ let defprotocol scope protocol_name method_forms =
             let registry_signature : Protocol_registry.method_signature =
               {
                 method_id = signature.method_id;
-                param_tys = signature.param_tys;
-                return_ty = signature.return_ty;
+                method_ty = signature.method_ty;
               }
             in
             loop (signature.method_name :: seen)

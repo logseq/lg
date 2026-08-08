@@ -675,6 +675,7 @@ let test_hash_map_satisfies_collection_protocols () =
     (satisfies? ISeqable values) ":"
     (satisfies? ICounted values) ":"
     (satisfies? IEmptyableCollection values) ":"
+    (satisfies? ILookup values) ":"
     (satisfies? ICollection values) ":"
     (satisfies? IAssociative values) ":"
     (satisfies? IFind values) ":"
@@ -688,13 +689,15 @@ let test_hash_map_satisfies_collection_protocols () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   assert_ocaml_runs "hash_map_satisfies_collection_protocols"
-    "true:true:true:true:true:true:true:true:true:true\n" ocaml_source
+    "true:true:true:true:true:true:true:true:true:true:true\n" ocaml_source
 
 let test_hash_map_protocol_methods_dispatch_statically () =
   let source =
     {|
 (defn make-map [^:keyword key]
   {key 1})
+(defn lookup-or [mapping key default]
+  (-lookup mapping key default))
 (def values (make-map :a))
 (def associated (-assoc values :b 2))
 (def conjoined
@@ -705,9 +708,13 @@ let test_hash_map_protocol_methods_dispatch_statically () =
 (def metadata-value (meta (with-meta values {:source "protocol"})))
 (def retagged (-with-meta values metadata-value))
 (def ^:string metadata-source (:source (-meta retagged)))
+(def looked-up (if-let [value (-lookup associated :b)] value 0))
 (println
   (str
     (-contains-key? associated :b) ":"
+    looked-up ":"
+    (-lookup values :missing 9) ":"
+    (lookup-or values :missing 10) ":"
     (nil? (-find associated :b)) ":"
     (count (-dissoc associated :a)) ":"
     (:c conjoined) ":"
@@ -721,7 +728,7 @@ let test_hash_map_protocol_methods_dispatch_statically () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   assert_ocaml_runs "hash_map_protocol_methods_dispatch_statically"
-    "true:false:1:3:3:protocol\n" ocaml_source
+    "true:2:9:10:false:1:3:3:protocol\n" ocaml_source
 
 let test_hash_map_is_callable_as_lookup_function () =
   let source =
@@ -3349,8 +3356,8 @@ let test_typed_protocol_and_module_registries () =
   let signature : Lg.Protocol_registry.method_signature =
     {
       method_id;
-      param_tys = [ Lg.Types.TUnknown ];
-      return_ty = Lg.Types.TString;
+      method_ty =
+        Lg.Types.TFn ([ Lg.Types.TUnknown ], Lg.Types.TString);
     }
   in
   let registry =
@@ -3359,7 +3366,7 @@ let test_typed_protocol_and_module_registries () =
     |> expect_ok
   in
   (match Lg.Protocol_registry.find_method protocol method_id registry with
-  | Some found when found.return_ty = Lg.Types.TString -> ()
+  | Some { method_ty = Lg.Types.TFn (_, Lg.Types.TString); _ } -> ()
   | _ -> failwith "typed protocol method lookup failed");
   (match Lg.Protocol_registry.declare protocol [ signature ] registry with
   | Error _ -> ()
@@ -3404,8 +3411,7 @@ let test_protocol_satisfaction_uses_stabilized_evidence () =
   let signature : Lg.Protocol_registry.method_signature =
     {
       method_id;
-      param_tys = [ Lg.Types.TUnknown ];
-      return_ty = Lg.Types.TBool;
+      method_ty = Lg.Types.TFn ([ Lg.Types.TUnknown ], Lg.Types.TBool);
     }
   in
   let current =
@@ -3442,7 +3448,7 @@ let test_protocol_elaboration_populates_typed_registry () =
     Lg.Protocol_registry.find_method protocol method_id
       (Lg.Compiler_environment.protocols state.env)
   with
-  | Some signature when signature.return_ty = Lg.Types.TString -> ()
+  | Some { method_ty = Lg.Types.TFn (_, Lg.Types.TString); _ } -> ()
   | _ -> failwith "defprotocol must populate the typed protocol registry"
 
 let test_protocol_implementation_populates_typed_registry () =
@@ -23881,7 +23887,60 @@ let test_deftype_protocol_methods_support_multiple_arities () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "deftype_protocol_methods_support_multiple_arities" "42:7\n"
-    ocaml_source
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_protocol_methods_support_multiple_arities () =
+  let source =
+    {|
+(defprotocol LookupProtocol
+  (lookup-value [receiver key] [receiver key not-found]))
+(defn lookup-or [receiver key not-found]
+  (lookup-value receiver key not-found))
+(deftype LookupBox [value]
+  LookupProtocol
+  (lookup-value
+    ([_ key] (if (= key :value) value nil))
+    ([_ key not-found] (if (= key :value) value not-found))))
+(def box (LookupBox. 42))
+(println
+  (str
+    (lookup-value box :value) ":"
+    (lookup-value box :missing 7) ":"
+    (lookup-or box :missing 11)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "multi-arity protocol dispatch must remain static";
+  assert_ocaml_runs "declared_protocol_methods_support_multiple_arities"
+    "42:7:11\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_protocol_methods_reject_unsupported_arity () =
+  {|
+(defprotocol LookupProtocol
+  (lookup-value [receiver key] [receiver key not-found]))
+(deftype LookupBox [value]
+  LookupProtocol
+  (lookup-value
+    ([_ key] value)
+    ([_ key not-found] not-found)))
+(lookup-value (LookupBox. 42))
+|}
+  |> Lg.Compiler.compile_string
+  |> expect_error
+       "lookup-value called with unsupported protocol method arity 1"
+
+let test_declared_protocol_methods_reject_duplicate_arity () =
+  {|
+(defprotocol LookupProtocol
+  (lookup-value [receiver key] [receiver other]))
+|}
+  |> Lg.Compiler.compile_string
+  |> expect_error "protocol method lookup-value declares duplicate arity 2"
 
 let test_macros_preserve_nested_parameter_type_hints () =
   let source =
@@ -36642,6 +36701,12 @@ let tests =
       test_rseq_dispatches_to_reversible_protocol );
     ( "deftype protocol methods support multiple arities",
       test_deftype_protocol_methods_support_multiple_arities );
+    ( "declared protocol methods support multiple arities",
+      test_declared_protocol_methods_support_multiple_arities );
+    ( "declared protocol methods reject unsupported arity",
+      test_declared_protocol_methods_reject_unsupported_arity );
+    ( "declared protocol methods reject duplicate arity",
+      test_declared_protocol_methods_reject_duplicate_arity );
     ( "macros preserve nested parameter type hints",
       test_macros_preserve_nested_parameter_type_hints );
     ( "protocol calls recover structurally inferred named records",
