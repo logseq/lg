@@ -31,7 +31,8 @@ let project_include_dirs () =
           Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
         ]
 
-let include_dirs () = env_include_dirs () @ project_include_dirs ()
+let base_include_dirs = lazy (env_include_dirs () @ project_include_dirs ())
+let include_dirs () = Lazy.force base_include_dirs
 let package_include_dirs = ref []
 let initialized_include_dirs = ref None
 let active_include_dirs () = include_dirs () @ !package_include_dirs
@@ -39,7 +40,7 @@ let active_include_dirs () = include_dirs () @ !package_include_dirs
 let ensure_initialized () =
   let dirs = active_include_dirs () in
   if !initialized_include_dirs <> Some dirs then (
-    Lg_compiler_support.Ocaml_value.init dirs;
+    ignore (Lg_compiler_support.Ocaml_value.init dirs);
     initialized_include_dirs := Some dirs)
 
 let add_include_dirs dirs =

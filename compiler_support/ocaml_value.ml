@@ -16,6 +16,7 @@ type constructor_type = {
 }
 
 let initialized = ref false
+let initial_env_cache = ref None
 
 let init include_dirs =
   let uses_melange =
@@ -35,7 +36,13 @@ let init include_dirs =
         List.sort_uniq String.compare (include_dirs @ !Clflags.include_dirs);
     Compmisc.init_path ();
     initialized := true);
-  List.iter (fun dir -> Load_path.add_dir ~hidden:false dir) include_dirs
+  match !initial_env_cache with
+  | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
+  | Some _ | None ->
+      List.iter (fun dir -> Load_path.add_dir ~hidden:false dir) include_dirs;
+      let env = Compmisc.initial_env () in
+      initial_env_cache := Some (include_dirs, env);
+      env
 
 let argument_label = function
   | Asttypes.Nolabel -> Unlabelled
@@ -59,11 +66,10 @@ let exception_message exn =
 
 let lookup ~include_dirs name =
   try
-    init include_dirs;
+    let env = init include_dirs in
     match Longident.unflatten (String.split_on_char '.' name) with
     | None -> Error ("invalid OCaml value name " ^ name)
     | Some longident ->
-        let env = Compmisc.initial_env () in
         let _, description =
           Env.lookup_value ~use:false ~loc:Location.none longident env
         in
@@ -72,11 +78,10 @@ let lookup ~include_dirs name =
 
 let lookup_constructor ~include_dirs name =
   try
-    init include_dirs;
+    let env = init include_dirs in
     match Longident.unflatten (String.split_on_char '.' name) with
     | None -> Error ("invalid OCaml constructor name " ^ name)
     | Some longident ->
-        let env = Compmisc.initial_env () in
         let description =
           Env.lookup_constructor ~use:false ~loc:Location.none Env.Positive
             longident env
@@ -88,11 +93,10 @@ let lookup_constructor ~include_dirs name =
 
 let lookup_label ~include_dirs name =
   try
-    init include_dirs;
+    let env = init include_dirs in
     match Longident.unflatten (String.split_on_char '.' name) with
     | None -> Error ("invalid OCaml record field name " ^ name)
     | Some longident ->
-        let env = Compmisc.initial_env () in
         let description =
           Env.lookup_label ~use:false ~loc:Location.none Env.Projection longident
             env

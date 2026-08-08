@@ -32,6 +32,11 @@
   rrbvec))
 
 (test
+ (name compiler_support_performance_tests)
+ (modules compiler_support_performance_tests)
+ (libraries lg.compiler_support))
+
+(test
  (name lgc_target_tests)
  (modules lgc_target_tests)
  (libraries lg))

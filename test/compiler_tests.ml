@@ -1803,6 +1803,29 @@ let test_type_solver_preserves_shared_substitution_dags () =
       (Printf.sprintf
          "shared type substitution must be linear, but took %.3fs" elapsed)
 
+let test_type_solver_unifies_deep_types_linearly () =
+  let open Lg.Types in
+  let depth = 4_000 in
+  let rec nest remaining leaf =
+    if remaining = 0 then leaf else TVector (nest (remaining - 1) leaf)
+  in
+  let left = nest depth TInt in
+  let right = nest depth TInt in
+  let started_at = Sys.time () in
+  (match
+     Lg.Type_solver.infer
+       [ (Lg.Type_solver.Declared "unrelated", TString) ]
+       ~template:left ~actual:right
+   with
+  | Ok _ -> ()
+  | Error _ -> failwith "equivalent nested types must unify");
+  let elapsed = Sys.time () -. started_at in
+  if elapsed > 0.10 then
+    failwith
+      (Printf.sprintf
+         "deep type unification repeatedly traversed nested subtrees: %.3fs"
+         elapsed)
+
 let test_generic_record_calls_freshen_callee_type_variables () =
   let source =
     {|
@@ -35317,6 +35340,8 @@ let tests =
       test_type_solver_applies_deep_substitutions_linearly );
     ( "type solver preserves shared substitution DAGs",
       test_type_solver_preserves_shared_substitution_dags );
+    ( "type solver unifies deep types linearly",
+      test_type_solver_unifies_deep_types_linearly );
     ( "generic record calls freshen callee type variables",
       test_generic_record_calls_freshen_callee_type_variables );
     ( "static sequences adapt to option callback parameters",

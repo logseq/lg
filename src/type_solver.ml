@@ -35,34 +35,34 @@ let rec variable_mem variable = function
   | candidate :: _ when candidate = variable -> true
   | _ :: rest -> variable_mem variable rest
 
-module Type_identity_table = Hashtbl.Make (struct
-  type t = ty
-
-  let equal left right = left == right
-  let hash = Hashtbl.hash
-end)
-
-let rec map_preserving_identity map = function
-  | [] as values -> values
-  | head :: tail as values ->
-      let mapped_head = map head in
-      let mapped_tail = map_preserving_identity map tail in
-      if mapped_head == head && mapped_tail == tail then values
-      else mapped_head :: mapped_tail
+let map_preserving_identity map values =
+  let rec find_mapped value = function
+    | [] -> None
+    | (candidate, mapped) :: rest ->
+        if candidate == value then Some mapped else find_mapped value rest
+  in
+  let rec map_values mapped_values = function
+    | [] as values -> values
+    | head :: tail as values ->
+        let mapped_head =
+          match find_mapped head mapped_values with
+          | Some mapped -> mapped
+          | None -> map head
+        in
+        let mapped_tail =
+          map_values ((head, mapped_head) :: mapped_values) tail
+        in
+        if mapped_head == head && mapped_tail == tail then values
+        else mapped_head :: mapped_tail
+  in
+  map_values [] values
 
 let apply substitutions ty =
   match substitutions with
   | [] -> ty
   | _ ->
-      let cache = Type_identity_table.create 32 in
       let visiting = ref [] in
-      let rec apply_ty ty =
-        match Type_identity_table.find_opt cache ty with
-        | Some mapped -> mapped
-        | None ->
-            let mapped = apply_uncached ty in
-            Type_identity_table.add cache ty mapped;
-            mapped
+      let rec apply_ty ty = apply_uncached ty
       and apply_replacement variable original replacement =
         if variable_mem variable !visiting then original
         else
@@ -289,9 +289,25 @@ let matching_fields left right =
                 left_field.keyword = right_field.keyword)
          |> Option.map (fun right_field -> (left_field.ty, right_field.ty)))
 
+let resolve_head substitutions ty =
+  let rec resolve visiting ty =
+    let resolve_variable variable =
+      if variable_mem variable visiting then ty
+      else
+        match variable_assoc_opt variable substitutions with
+        | None -> ty
+        | Some replacement -> resolve (variable :: visiting) replacement
+    in
+    match ty with
+    | TMeta meta -> resolve_variable (Metavariable meta.id)
+    | TVar name -> resolve_variable (Declared name)
+    | _ -> ty
+  in
+  resolve [] ty
+
 let rec unify substitutions left right =
-  let left = apply substitutions left in
-  let right = apply substitutions right in
+  let left = resolve_head substitutions left in
+  let right = resolve_head substitutions right in
   if left == right then Ok substitutions
   else
     match (left, right) with
