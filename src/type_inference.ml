@@ -1963,14 +1963,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             infer_expected
               (if Types.equal index_ty TFloat then TFloat else TInt)
               params index)
-    | FList [ FSymbol operation; FSymbol collection ]
-      when has_source_name operation "vec" ->
-        let element_ty =
-          match expected_ty with
-          | TVector inner -> inner
-          | _ -> Types.dynamic_constraint TUnknown
-        in
-        constrain_seqable element_ty params collection
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
            && (has_source_name operation "keys"
@@ -4599,9 +4591,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol
           (TSeq (fresh_type_variable "seq_uncons_element"))
           params collection
-    | FList
-        [ FSymbol "vec"; FSymbol collection ] ->
-        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList
         [
           FSymbol

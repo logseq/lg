@@ -126,6 +126,9 @@
 (signature clojure.core/zipmap [key value]
   :fn<seqable<key>;seqable<value>;map<key;value>>)
 
+(signature clojure.core/vec [value]
+  :fn<seqable<value>;vector<value>>)
+
 (signature clojure.core/comparator [value result]
   :fn<fn<value;value;truthy<result>>;fn<value;value;int>>)
 

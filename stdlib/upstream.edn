@@ -15,6 +15,8 @@
    {identity {:status :ported}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}
+    constantly {:status :static-adaptation
+                :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}
     not {:status :ported}
     reduced {:status :static-adaptation
@@ -139,6 +141,8 @@
               :reason :preserves-existing-eager-static-semantics-with-a-typed-seen-set}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
+    vec {:status :static-adaptation
+         :reason :typed-seqable-source-wrapper-realizes-elements-into-the-lg-rrb-vector-representation}
     comparator {:status :ported}
     max-key {:status :static-adaptation
              :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}

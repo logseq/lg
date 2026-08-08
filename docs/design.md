@@ -651,6 +651,12 @@ adapter beside the original collection; it must not erase a `vector<T>`,
 `list<T>`, `array<T>`, or another statically supported collection to dynamic
 storage while instantiating the signature.
 
+Anonymous `fn` forms support the same fixed and final variadic clause layout as
+multi-arity `defn`. Each clause lowers to a readable local OCaml function and
+the value carries one static overload bundle. A variadic clause has one
+homogeneous rest element type; ignored arguments do not justify a dynamic rest
+sequence.
+
 Static scalar operations must also stay in static runtime modules. For example,
 integer `mod` uses `Runtime_int`, not `Runtime_dynamic`, even when preserving
 Clojure's signed-modulus semantics.

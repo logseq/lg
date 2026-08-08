@@ -4,7 +4,8 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Lg_runtime.Runtime_array :as runtime-array]
+  (:require [ocaml.Rrbvec :as rrb-vector]
+            [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
@@ -19,6 +20,13 @@
 (defn complement [f]
   (fn [x]
     (not (f x))))
+
+(defn constantly [x]
+  (fn
+    ([] x)
+    ([_arg] x)
+    ([_left _right] x)
+    ([_left _right & _args] x)))
 
 (defn boolean [x]
   (if x true false))
@@ -286,6 +294,9 @@
           (next remaining-values))
         result)
       result)))
+
+(defn vec [coll]
+  (rrb-vector/of-list (runtime-seq/to-list (seq coll))))
 
 (defn comparator
   "Returns a comparator that orders `x` and `y` using `pred`."

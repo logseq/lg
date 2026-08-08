@@ -4109,7 +4109,6 @@ let create ~compile_expr =
   let compile_apply = functions.compile_apply in
   let compile_comp = functions.compile_comp in
   let compile_partial = functions.compile_partial in
-  let compile_constantly = functions.compile_constantly in
   let compile_predicate_combinator = functions.compile_predicate_combinator in
   let compile_juxt = functions.compile_juxt in
   let compile_distinct_question = comparisons.compile_distinct_question in
@@ -8879,7 +8878,6 @@ let create ~compile_expr =
     | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "mapcat" -> compile_mapcat scope env arg_forms
-    | "vec" -> compile_vec scope env arg_forms
     | "set" -> compile_set scope env arg_forms
     | "repeat" ->
         compile_sequence_transform_call scope env name arg_forms
@@ -8905,7 +8903,6 @@ let create ~compile_expr =
         | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
-    | "constantly" -> compile_constantly scope env arg_forms
               | "every-pred" ->
                   compile_predicate_combinator scope env "every-pred" arg_forms
     | "some-fn" -> compile_some_fn scope env arg_forms
@@ -9890,49 +9887,6 @@ let create ~compile_expr =
         match compile_args_for scope env arg_forms with
         | Error _ as err -> err
         | Ok args -> Core_sequence_transform.compile name args)
-  and compile_vec scope env arg_forms =
-    match compile_args_for scope env arg_forms with
-    | Error _ as error -> error
-    | Ok [ collection ]
-      when Types.equal collection.ty TUnknown
-           || match collection.ty with TMeta _ | TVar _ -> true | _ -> false ->
-        let dynamic = Types.dynamic_constraint TUnknown in
-        Result.map
-          (fun collection ->
-            typed_ir (TVector dynamic)
-              (Semantic_ir.Apply
-                 ( Semantic_ir.Ident "Rrbvec.of_list",
-                   [
-                     Semantic_ir.Apply
-                       ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
-                         [
-                           Semantic_ir.Apply
-                             ( Semantic_ir.Ident
-                                 "Lg_runtime.Runtime_dynamic.to_seq",
-                               [ collection ] );
-                         ] );
-                   ] )))
-          (pack_dynamic_value env dynamic collection)
-    | Ok [ collection ] -> (
-        match Collection_capability.to_seq_expr env collection with
-        | Error _ ->
-            Error.error
-              ("vec expects a seqable value, got "
-             ^ Types.source_name collection.ty)
-        | Ok (inner, sequence) ->
-            let inner =
-              Collection_capability.resolve_callback_record env inner
-            in
-            Ok
-              (typed_ir (TVector inner)
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Rrbvec.of_list",
-                      [
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
-                            [ sequence ] );
-                      ] ))))
-    | Ok _ -> Error.error "vec expects 1 arguments"
   and compile_set scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as error -> error

@@ -28,6 +28,7 @@ let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
 let callable_expression_counter = ref 0
 let dotimes_counter = ref 0
+let multi_arity_fn_counter = ref 0
 
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
@@ -195,6 +196,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList
       (FSymbol "fn" :: FSymbol name :: (FVector _ as params) :: body_forms) ->
       compile_named_fn scope env name params body_forms
+  | FList (FSymbol "fn" :: (FList _ as first_clause) :: remaining_clauses) ->
+      compile_multi_arity_fn scope env (first_clause :: remaining_clauses)
   | FList (FSymbol "fn" :: params :: body_forms) ->
       compile_fn scope env params body_forms
   | FList (FSymbol "new" :: FSymbol type_name :: args) ->
@@ -2035,6 +2038,28 @@ and prepare_inferred_recursive_fn_with_return ~ocaml_name scope env source_name
 
 and fn_code ?(row_param_type_names = []) parts =
   Function_elaborator.fn_code ~row_param_type_names parts
+
+and compile_multi_arity_fn scope env clauses =
+  incr multi_arity_fn_counter;
+  let name = "__lg_anonymous_fn_" ^ string_of_int !multi_arity_fn_counter in
+  match prepare_multi_arity_fn ~ocaml_name:name scope env name clauses with
+  | Error _ as err -> err
+  | Ok prepared ->
+      let bindings =
+        List.map
+          (fun clause ->
+            let function_ =
+              fn_code ~row_param_type_names:clause.row_param_types clause.parts
+            in
+            (Semantic_ir.PVar clause.target_name, function_.semantic_expr))
+          prepared.clauses
+      in
+      Ok
+        {
+          prepared.expr with
+          semantic_expr =
+            Semantic_ir.Let (bindings, prepared.expr.semantic_expr);
+        }
 
 and compile_fn ?(param_type_overrides = []) scope env params body_forms =
   let expected_type = Env.expected_type env in

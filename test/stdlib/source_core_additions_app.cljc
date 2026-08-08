@@ -49,3 +49,19 @@
                      "same" "second")))
 (println (= 7 (core/max-key identity 7)))
 (println (= 2 (clojure.core/min-key identity 9 4 2 8)))
+
+(def always-ready (constantly :ready))
+(println (= :ready (always-ready)))
+(println (= :ready (always-ready 1)))
+(println (= :ready (always-ready "left" true)))
+(println (= :ready (always-ready 1 2 3 4)))
+(println (= "core" ((core/constantly "core") 1 2 3)))
+(println (= [1 2] ((clojure.core/constantly [1 2]) :ignored)))
+
+(println (= [1 2 3] (vec (list 1 2 3))))
+(println (= [1 2 3] (vec [1 2 3])))
+(println (= ["a" "b"] (core/vec (seq ["a" "b"]))))
+(println (= [] (clojure.core/vec (list))))
+(defn realize-strings [values]
+  (vec values))
+(println (= ["left" "right"] (realize-strings ["left" "right"])))

@@ -13,7 +13,6 @@ type t = {
   compile_apply : call;
   compile_comp : call;
   compile_partial : call;
-  compile_constantly : call;
   compile_predicate_combinator : named_call;
   compile_juxt : call;
 }
@@ -733,27 +732,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | _ -> Error.error "partial expects a function"))
       | _ -> Error.error "partial expects a function"
     
-    and compile_constantly scope env arg_forms =
-      match compile_args_for scope env arg_forms with
-      | Error _ as err -> err
-      | Ok [ value ] ->
-          let arity : fn_arity =
-            {
-              fixed_params = [];
-              rest_param = Some (Types.dynamic_constraint TUnknown);
-              return_ty = value.ty;
-            }
-          in
-          Ok
-            (typed_ir (TOverloaded_fn [ arity ])
-               (Semantic_ir.Tuple
-                  [
-                    Semantic_ir.Fun
-                      ([ Semantic_ir.PAny ], value.semantic_expr);
-                    Semantic_ir.Unit;
-                  ]))
-      | Ok _ -> Error.error "constantly expects 1 arguments"
-    
     and compile_predicate_combinator scope env name arg_forms =
       let compile_fns =
         arg_forms
@@ -872,7 +850,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     compile_apply;
     compile_comp;
     compile_partial;
-    compile_constantly;
     compile_predicate_combinator;
     compile_juxt;
   }

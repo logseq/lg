@@ -3736,7 +3736,7 @@ let test_compiler_phases_have_explicit_boundaries () =
         in
         if list.ty <> Lg.Types.TList Lg.Types.TInt then
           failwith "collection operation elaboration should have one owner";
-        let constant =
+        let composed =
           let operations =
             Lg.Function_combinator_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
@@ -3746,12 +3746,12 @@ let test_compiler_phases_have_explicit_boundaries () =
               ~pack_constrained_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
           in
-        operations.compile_constantly "" Lg.Compiler_environment.empty
-          [ Lg.Ast.FInt 1 ]
+        operations.compile_comp "" Lg.Compiler_environment.empty
+          [ Lg.Ast.FSymbol "inc" ]
           |> expect_ok
         in
-      (match constant.ty with
-      | Lg.Types.TOverloaded_fn _ -> ()
+      (match composed.ty with
+      | Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TInt) -> ()
       | _ ->
         failwith "core higher-order call elaboration should have one owner";
       );
@@ -14804,7 +14804,10 @@ let test_recursive_return_hint_types_higher_order_self_calls () =
          (Leaf (record item (value 2)))]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/recursive_return_hint_higher_order.cljc" source
+  in
   assert_ocaml_runs "recursive_return_hint_types_higher_order_self_calls"
     "2\n" ocaml_source
 
@@ -16066,24 +16069,17 @@ let test_protocol_methods_use_static_witnesses_for_concrete_parameters () =
     (generic-identifier (Datom. 13 true))))
 |}
   in
-  let state, provider_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
-  in
-  let _state, consumer_ocaml =
-    Lg.Compiler.compile_chunk state consumer |> expect_ok
+  let native_source =
+    compile_chunks_with_stdlib Lg.Target.Native
+      [ ("app/db_provider.cljc", provider); ("app/db_consumer.cljc", consumer) ]
   in
   assert_ocaml_runs
     "protocol_methods_use_static_witnesses_for_concrete_parameters"
     "42:-7:9:11:[5]:[8 -9]:13\n"
-    (provider_ocaml ^ "\n" ^ consumer_ocaml);
-  let state, _ =
-    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
-      Lg.Compiler.empty_state provider
-    |> expect_ok
-  in
+    native_source;
   ignore
-    (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
-    |> expect_ok)
+    (compile_chunks_with_stdlib Lg.Target.Melange
+       [ ("app/db_provider.cljc", provider); ("app/db_consumer.cljc", consumer) ])
 
 let test_extend_type_methods_use_their_static_receiver_witnesses () =
   let source =
@@ -18200,11 +18196,14 @@ let test_cond_thread_preserves_guarded_seqable_aliases () =
 (println true)
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cond_thread_seqable.cljc" source
+  in
   assert_ocaml_runs "cond_thread_preserves_guarded_seqable_aliases"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/cond_thread_seqable.cljc"
+       source)
 
 let test_vec_requires_a_statically_typed_wrapper () =
   let util_source =
@@ -21708,12 +21707,14 @@ let test_vec_realizes_for_over_static_map_entries () =
      (pr-str (transient-realize-values [1 2]))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/vec_for.cljc" source
+  in
   assert_ocaml_runs "vec_realizes_for_over_static_map_entries"
     "true\ntrue\ntrue\ntrue\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/vec_for.cljc" source)
 
 let test_for_supports_when_clauses () =
   let source =
@@ -23519,13 +23520,16 @@ let test_named_record_parameters_preserve_seqability () =
 (println (pr-str (vec-values value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/named_record_seqable.cljc" source
+  in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "named record Seqability must remain static";
   assert_ocaml_runs "named_record_parameters_preserve_seqability" "[1 2 3]\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/named_record_seqable.cljc"
+       source)
 
 let test_parameterized_record_parameters_preserve_seqability () =
   let source =
@@ -25109,7 +25113,10 @@ let test_recursive_collection_result_specializes_self_calls () =
 (print "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/recursive_collection_result.cljc" source
+  in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "recursive closed collections must remain statically typed";
   assert_ocaml_runs "recursive_collection_result_specializes_self_calls" "ok"
@@ -25144,7 +25151,9 @@ let test_grouped_records_preserve_constructor_type () =
 (print "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/grouped_records.cljc" source
+  in
   assert_ocaml_runs "grouped_records_preserve_constructor_type" "ok"
     ocaml_source
 
@@ -25559,12 +25568,13 @@ let test_for_let_shadowing_replaces_nominal_collection_type () =
 |}
   in
   let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+    compile_with_stdlib Lg.Target.Native "test/for_let_shadowing.cljc" source
   in
   assert_ocaml_runs "for_let_shadowing_replaces_nominal_collection_type"
     "rule\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/for_let_shadowing.cljc"
+       source)
 
 let test_symbol_predicate_narrows_later_and_operands () =
   let source =
@@ -27343,11 +27353,14 @@ let test_remove_preserves_nested_pair_element_types () =
 (println (count (remove-pairs [] [])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/remove_nested_pairs.cljc" source
+  in
   assert_ocaml_runs "remove_preserves_nested_pair_element_types"
     "[1 7]\ntrue\n0\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/remove_nested_pairs.cljc"
+       source)
 
 let test_nested_destructuring_preserves_static_sequence_elements () =
   let source =
@@ -27665,11 +27678,14 @@ let test_map_indexed_infers_generic_seqable_parameters () =
 (println (empty? (indexed-sums [])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/map_indexed_generic.cljc" source
+  in
   assert_ocaml_runs "map_indexed_infers_generic_seqable_parameters"
     "[10 21 32]\n[4 6]\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/map_indexed_generic.cljc"
+       source)
 
 let test_mapv_infers_destructured_callback_parameters () =
   let source =
@@ -28993,13 +29009,16 @@ let test_mapcat_infers_unannotated_collection_parameters () =
 (println (count (flatten-values [1 2 3])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/mapcat_unannotated.cljc" source
+  in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "mapcat collection parameters must remain statically typed";
   assert_ocaml_runs "mapcat_infers_unannotated_collection_parameters" "3\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/mapcat_unannotated.cljc"
+       source)
 
 let test_sort_by_preserves_static_record_element_types () =
   let source =
@@ -30147,11 +30166,15 @@ let test_filter_accepts_static_callable_record_fields () =
 (println (pr-str (vec (filter (:pred filter-value) [1 2 3]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/filter_callable_field.cljc"
+      source
+  in
   assert_ocaml_runs "filter_accepts_static_callable_record_fields" "[2 3]\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/filter_callable_field.cljc"
+       source)
 
 let test_sequence_operations_accept_host_optional_collections () =
   let source =
@@ -30160,11 +30183,13 @@ let test_sequence_operations_accept_host_optional_collections () =
 (println (pr-str (vec (filter (fn [value] (> value 1)) values))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/optional_sequence.cljc" source
+  in
   assert_ocaml_runs "sequence_operations_accept_host_optional_collections"
     "[2 3]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/optional_sequence.cljc" source)
 
 let test_reduce_infers_seqable_record_fields () =
   let source =
@@ -34646,7 +34671,7 @@ let test_parsetree_backend_builds_native_collection_match_expressions () =
   expect_structured_value_expression {|(def result (rest (list 1 2 3)))|}
 
 let test_parsetree_backend_builds_native_function_combinator_expressions () =
-  expect_structured_value_expression {|(def result (constantly 42))|}
+  expect_structured_value_expression {|(def result (comp inc inc))|}
 
 let test_parsetree_backend_builds_native_partial_expressions () =
   expect_structured_value_expression {|(def add-ten (partial + 10))|}
@@ -34676,7 +34701,6 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
     [
       {|(def result (sort [3 1 2]))|};
       {|(def result (concat [1 2] (list 3 4)))|};
-      {|(def result (vec (list 1 2)))|};
       {|(def result (set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
       {|(def result (interleave [1 2] (list 3 4)))|};
