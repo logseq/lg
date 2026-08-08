@@ -1,8 +1,20 @@
-module Symbol_map = Map.Make (Symbol_id)
+module Symbol_map = Persistent_hash_map.Make (struct
+  type t = Symbol_id.t
+
+  let equal = Symbol_id.equal
+  let hash = Hashtbl.hash
+end)
+module String_map = Persistent_hash_map.Make (struct
+  type t = string
+
+  let equal = String.equal
+  let hash = Hashtbl.hash
+end)
 
 type t = {
   target : Target.t;
   symbols : Types.binding Symbol_map.t;
+  bindings_by_name : (Symbol_id.t * Types.binding) list String_map.t;
   protocols : Protocol_registry.t;
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
@@ -22,6 +34,7 @@ let empty =
   {
     target = Target.default;
     symbols = Symbol_map.empty;
+    bindings_by_name = String_map.empty;
     protocols = Core_protocols.initial_registry;
     protocol_evidence = None;
     modules = Module_registry.empty;
@@ -47,13 +60,41 @@ let find_opt name env =
 
 let mem name env = Symbol_map.mem (Symbol_id.of_string name) env.symbols
 
-let remove name env =
-  { env with symbols = Symbol_map.remove (Symbol_id.of_string name) env.symbols }
+let remove_indexed_binding id bindings_by_name =
+  String_map.update (Symbol_id.name id)
+    (function
+      | None -> None
+      | Some bindings -> (
+          match
+            List.filter (fun (candidate, _) -> not (Symbol_id.equal candidate id))
+              bindings
+          with
+          | [] -> None
+          | bindings -> Some bindings))
+    bindings_by_name
 
-let add name binding env =
+let remove name env =
+  let id = Symbol_id.of_string name in
   {
     env with
-    symbols = Symbol_map.add (Symbol_id.of_string name) binding env.symbols;
+    symbols = Symbol_map.remove id env.symbols;
+    bindings_by_name = remove_indexed_binding id env.bindings_by_name;
+  }
+
+let add name binding env =
+  let id = Symbol_id.of_string name in
+  let bindings_by_name = remove_indexed_binding id env.bindings_by_name in
+  let bindings_by_name =
+    String_map.update (Symbol_id.name id)
+      (function
+        | None -> Some [ (id, binding) ]
+        | Some bindings -> Some ((id, binding) :: bindings))
+      bindings_by_name
+  in
+  {
+    env with
+    symbols = Symbol_map.add id binding env.symbols;
+    bindings_by_name;
   }
 
 let add_bindings bindings env =
@@ -76,6 +117,15 @@ let filter_map f env =
       match f name binding with None -> result | Some value -> value :: result)
     env []
   |> List.rev
+
+let find_map f env =
+  Symbol_map.find_map
+    (fun id binding -> f (Symbol_id.to_string id) binding)
+    env.symbols
+
+let bindings_named name env =
+  String_map.find_opt name env.bindings_by_name
+  |> Option.value ~default:[] |> List.map snd
 
 let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }

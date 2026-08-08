@@ -57,15 +57,16 @@ let lookup_record_type scope env type_name =
     | None ->
         let prefix = "__record/" ^ owner ^ "/" in
         let records =
-          Env.to_bindings env
-          |> List.filter_map (fun (key, (binding : binding)) ->
-                 if String.starts_with ~prefix key then
-                   match binding.ty with
-                   | TNamed_record record
-                     when String.equal record.type_name local_name ->
-                       Some record
-                   | _ -> None
-                 else None)
+          Env.filter_map
+            (fun key (binding : binding) ->
+              if String.starts_with ~prefix key then
+                match binding.ty with
+                | TNamed_record record
+                  when String.equal record.type_name local_name ->
+                    Some record
+                | _ -> None
+              else None)
+            env
         in
         (match records with
         | [ record ] -> Ok record
@@ -116,12 +117,15 @@ let binding_owner key =
 let check_emitted_name_collision env ~source_key ~ocaml_name =
   let owner = binding_owner source_key in
   match
-    List.find_opt
-      (fun (key, (binding : binding)) ->
-        (not (String.starts_with ~prefix:"__" key))
-        && key <> source_key && binding_owner key = owner
-        && binding.ocaml_name = ocaml_name)
-      (Env.to_bindings env)
+    Env.find_map
+      (fun key (binding : binding) ->
+        if
+          (not (String.starts_with ~prefix:"__" key))
+          && key <> source_key && binding_owner key = owner
+          && binding.ocaml_name = ocaml_name
+        then Some (key, binding)
+        else None)
+      env
   with
   | None -> Ok ()
   | Some (existing_key, _) ->
@@ -142,17 +146,18 @@ let starts_with_uppercase name =
 
 let opened_ocaml_call_target scope env function_name =
   let prefix = "__opened/" ^ scope ^ "/" in
-  Env.to_bindings env
-  |> List.find_map (fun (key, (binding : binding)) ->
-         if String.starts_with ~prefix key then
-           match binding.host_reference with
-           | Some (Ocaml_module module_path) ->
-               let target = module_path ^ "." ^ Names.sanitize_name function_name in
-               (match Ocaml_signature.value_signature target with
-               | Ok _ -> Some target
-               | Error _ -> None)
-           | _ -> None
-         else None)
+  Env.find_map
+    (fun key (binding : binding) ->
+      if String.starts_with ~prefix key then
+        match binding.host_reference with
+        | Some (Ocaml_module module_path) ->
+            let target = module_path ^ "." ^ Names.sanitize_name function_name in
+            (match Ocaml_signature.value_signature target with
+            | Ok _ -> Some target
+            | Error _ -> None)
+        | _ -> None
+      else None)
+    env
 
 let ocaml_call_target scope env function_name =
   match lookup_host_reference scope env function_name with

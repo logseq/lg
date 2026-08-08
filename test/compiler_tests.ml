@@ -3687,6 +3687,84 @@ let test_compiler_phases_have_explicit_boundaries () =
         | _ -> failwith "semantic lowering should produce backend IR")
     | _ -> failwith "top-level elaboration should have one owner"
 
+let test_compiler_environment_finds_bindings_without_materializing_all () =
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "ordinary/value"
+         (Lg.Types.binding "ordinary_value" Lg.Types.TInt)
+    |> Lg.Compiler_environment.add "target/value"
+         (Lg.Types.binding "target_value" Lg.Types.TString)
+  in
+  match
+    Lg.Compiler_environment.find_map
+      (fun name binding -> if name = "target/value" then Some binding else None)
+      env
+  with
+  | Some binding when binding.Lg.Types.ty = Lg.Types.TString -> ()
+  | _ -> failwith "environment find_map must return the matching binding"
+
+let test_compiler_environment_indexes_bindings_by_local_name () =
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "first/Value"
+         (Lg.Types.binding "first_value" Lg.Types.TInt)
+    |> Lg.Compiler_environment.add "second/Value"
+         (Lg.Types.binding "second_value" Lg.Types.TString)
+    |> Lg.Compiler_environment.add "second/Other"
+         (Lg.Types.binding "second_other" Lg.Types.TBool)
+  in
+  let types =
+    Lg.Compiler_environment.bindings_named "Value" env
+    |> List.map (fun (binding : Lg.Types.binding) -> binding.ty)
+    |> List.sort_uniq Stdlib.compare
+  in
+  if types <> [ Lg.Types.TInt; Lg.Types.TString ] then
+    failwith "local-name binding index must include every matching namespace"
+
+let test_persistent_hash_map_shares_updates_and_handles_collisions () =
+  let module Collision_map = Lg.Persistent_hash_map.Make (struct
+    type t = string
+
+    let equal = String.equal
+    let hash _ = 7
+  end) in
+  let empty = Collision_map.empty in
+  let first = Collision_map.add "first" 1 empty in
+  let second = Collision_map.add "second" 2 first in
+  if Collision_map.find_opt "first" first <> Some 1 then
+    failwith "persistent update must preserve the previous root";
+  if Collision_map.find_opt "second" second <> Some 2 then
+    failwith "hash collision lookup must retain the second value";
+  let removed = Collision_map.remove "first" second in
+  if Collision_map.mem "first" removed then
+    failwith "persistent hash map removal must remove only the requested key";
+  if Collision_map.find_opt "second" removed <> Some 2 then
+    failwith "persistent hash map removal must preserve collision peers";
+  let module Int_map = Lg.Persistent_hash_map.Make (struct
+    type t = int
+
+    let equal = Int.equal
+    let hash value = value
+  end) in
+  let populated =
+    List.init 512 Fun.id
+    |> List.fold_left (fun map key -> Int_map.add key (key * 2) map) Int_map.empty
+  in
+  List.iter
+    (fun key ->
+      if Int_map.find_opt key populated <> Some (key * 2) then
+        failwith "bitmap-indexed lookup must retain every branch")
+    (List.init 512 Fun.id);
+  let odds =
+    List.init 256 (fun index -> index * 2)
+    |> List.fold_left (fun map key -> Int_map.remove key map) populated
+  in
+  List.iter
+    (fun key ->
+      if Int_map.mem key odds <> (key mod 2 = 1) then
+        failwith "bitmap-indexed removal must preserve unrelated branches")
+    (List.init 512 Fun.id)
+
 let test_semantic_ast_preserves_nested_types () =
   let expression =
     Lg.Expression_elaborator.compile_expr "" Lg.Compiler_environment.empty
@@ -34871,6 +34949,12 @@ let tests =
       test_typed_environment_replaces_top_level_bindings );
     ( "compiler phases have explicit boundaries",
       test_compiler_phases_have_explicit_boundaries );
+    ( "compiler environment finds bindings without materializing all",
+      test_compiler_environment_finds_bindings_without_materializing_all );
+    ( "compiler environment indexes bindings by local name",
+      test_compiler_environment_indexes_bindings_by_local_name );
+    ( "persistent hash map shares updates and handles collisions",
+      test_persistent_hash_map_shares_updates_and_handles_collisions );
     ( "semantic AST preserves nested types",
       test_semantic_ast_preserves_nested_types );
     ( "source node identity reaches parsetree",

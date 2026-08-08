@@ -1413,16 +1413,12 @@ let lookup_function_ty scope env name =
                 when is_constructor_name name
                      && not (List.mem name [ "Some"; "None"; "Ok"; "Error" ]) ->
                   let candidates =
-                    let suffix = "/" ^ name in
-                    Env.to_bindings env
-                    |> List.filter_map
-                         (fun (key, (binding : binding)) ->
-                           if String.ends_with ~suffix key then
-                             match binding.ty with
-                             | TFn (_, (TOcaml _ | TOcaml_app _)) ->
-                                 Some binding.ty
-                             | _ -> None
-                           else None)
+                    Env.bindings_named name env
+                    |> List.filter_map (fun (binding : binding) ->
+                           match binding.ty with
+                           | TFn (_, (TOcaml _ | TOcaml_app _)) ->
+                               Some binding.ty
+                           | _ -> None)
                     |> List.sort_uniq Stdlib.compare
                   in
                   (match candidates with

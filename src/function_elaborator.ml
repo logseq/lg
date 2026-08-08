@@ -266,13 +266,14 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
                 TOcaml (Type_registry.emitted_name ~scope:owner type_name)
               else TOcaml type_name
           | Some { kind = Record; _ } | None ->
-              Env.to_bindings env
-              |> List.find_map (fun (_, (binding : binding)) ->
+              Env.find_map
+                (fun _ (binding : binding) ->
                      match binding.ty with
                      | TNamed_record record
                        when String.equal record.type_name source_name ->
                        Some (TNamed_record record)
                      | _ -> None)
+                env
               |> Option.value ~default:ty))
   | TRecord fields -> (
       let fields =

@@ -2013,10 +2013,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       else
         match Semantic_ir.unlocated expression with
         | Semantic_ir.Apply (Semantic_ir.Ident name, _) ->
-            Env.to_bindings env
-            |> List.exists (fun (_, (binding : binding)) ->
-                   binding.never_returns
-                   && String.equal binding.ocaml_name name)
+            Env.find_map
+              (fun _ (binding : binding) ->
+                if
+                  binding.never_returns
+                  && String.equal binding.ocaml_name name
+                then Some ()
+                else None)
+              env
+            |> Option.is_some
         | _ -> false
     in
     let compatible_try_type body handlers =

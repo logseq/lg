@@ -324,6 +324,13 @@ dependency normalization.
 - macros, inline macros, macro functions, and macro values;
 - contextual expected type.
 
+Symbol bindings and the local-name constructor index use a persistent
+bitmap-indexed hash trie ported from ClojureScript's `PersistentHashMap` and
+`BitmapIndexedNode` control flow. Exact lookup and path-copying updates avoid
+materializing the complete environment, while the secondary local-name index
+avoids scanning every namespace for constructor candidates. Both indexes share
+the immutable binding and type payloads.
+
 `Compiler_state.t` adds:
 
 - current scope;
