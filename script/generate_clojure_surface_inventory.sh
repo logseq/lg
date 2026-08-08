@@ -272,9 +272,27 @@ clojure.walk/prewalk|host-boundary
 clojure.walk/postwalk|host-boundary
 EOF
 
-grep -rhoE 'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
-  "$lg_root/src" \
-  | LC_ALL=C sort -u \
+stdlib_sources=$(rg --files "$lg_root/stdlib" -g '*.cljc')
+sed -n \
+  's/.*\[ocaml\.\(Lg_runtime\.Runtime_[A-Za-z0-9_]*\) :as \([A-Za-z0-9_-]*\)\].*/\1\	\2/p' \
+  $stdlib_sources >"$tmp/stdlib-runtime-aliases"
+
+(
+  grep -rhoE 'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
+    "$lg_root/src" "$lg_root/stdlib"
+  while IFS="$(printf '\t')" read -r module alias; do
+    rg -o --no-filename "${alias}/[a-z][A-Za-z0-9_!?-]*" \
+      $stdlib_sources \
+      | awk -v module="$module" '{
+          member = $0
+          sub(/^[^\/]*\//, "", member)
+          gsub(/-/, "_", member)
+          gsub(/\?/, "_question", member)
+          gsub(/!/, "_bang", member)
+          print module "." member
+        }'
+  done <"$tmp/stdlib-runtime-aliases"
+) | LC_ALL=C sort -u \
   | awk '{print "runtime-primitive\t" $0 "\ttyped-primitive-boundary"}'
 
 if test -n "$logseq_root" && test -d "$logseq_root"; then

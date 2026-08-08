@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core]))
+  (:require [cljs.core :as core :refer [parse-uuid]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -121,3 +121,18 @@
 (println (= "unchanged" (core/ints "unchanged")))
 (println (= [1 2] (into [] (take 2) [1 2 3])))
 (println (= [3] (into [] (drop 2) [1 2 3])))
+
+(def uuid-pattern
+  #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+(println (boolean (re-matches uuid-pattern (str (random-uuid)))))
+(println (boolean (re-matches uuid-pattern (str (core/random-uuid)))))
+(println (= "550e8400-e29b-41d4-a716-446655440000"
+            (when-some [parsed (parse-uuid "550e8400-e29b-41d4-a716-446655440000")]
+              (str parsed))))
+(println (= "550e8400-e29b-41d4-a716-446655440000"
+            (when-some [parsed (cljs.core/parse-uuid "550E8400-E29B-41D4-A716-446655440000")]
+              (str parsed))))
+(println (nil? (clojure.core/parse-uuid "not-a-uuid")))
+(println (<= 0.0 (system-time)))
+(println (<= 0.0 (core/system-time)))
+(println (<= 0.0 (clojure.core/system-time)))

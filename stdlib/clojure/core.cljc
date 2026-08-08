@@ -13,7 +13,10 @@
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
             [ocaml.Lg_runtime.Runtime_seq :as runtime-seq]
             [ocaml.Lg_runtime.Runtime_static_value :as runtime-static-value]
-            [ocaml.Lg_runtime.Runtime_string :as runtime-string]))
+            [ocaml.Lg_runtime.Runtime_string :as runtime-string]
+            [ocaml.Lg_runtime.Runtime_time :as runtime-time]
+            [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
+            [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
 
 (defn identity [x]
   x)
@@ -166,6 +169,35 @@
 
 (defn rand-nth [coll]
   (nth coll (rand-int (count coll))))
+
+(defn- random-uuid-quad-hex []
+  (let [unpadded-hex (int-to-string-radix (rand-int 65536) 16)]
+    (case (count unpadded-hex)
+      1 (str "000" unpadded-hex)
+      2 (str "00" unpadded-hex)
+      3 (str "0" unpadded-hex)
+      unpadded-hex)))
+
+(defn random-uuid []
+  (let [version-hex
+        (int-to-string-radix
+         (bit-or 0x4000 (bit-and 0x0fff (rand-int 65536))) 16)
+        variant-hex
+        (int-to-string-radix
+         (bit-or 0x8000 (bit-and 0x3fff (rand-int 65536))) 16)]
+    (uuid
+     (str (random-uuid-quad-hex) (random-uuid-quad-hex) "-"
+          (random-uuid-quad-hex) "-" version-hex "-" variant-hex "-"
+          (random-uuid-quad-hex) (random-uuid-quad-hex)
+          (random-uuid-quad-hex)))))
+
+(defn parse-uuid [source]
+  (when (runtime-uuid/valid-string source)
+    (uuid source)))
+
+(defn system-time []
+  #?(:melange (runtime-time-melange/now)
+     :default (runtime-time/now)))
 
 (defn bit-shift-right-zero-fill [x n]
   (runtime-int/logical-shift-right x n))

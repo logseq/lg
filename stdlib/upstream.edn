@@ -79,6 +79,12 @@
     rand-int {:status :static-adaptation
               :reason :source-wrapper-over-the-typed-runtime-random-primitive}
     rand-nth {:status :ported}
+    random-uuid {:status :static-adaptation
+                 :reason :source-port-preserves-upstream-version-four-and-variant-bit-layout-through-the-target-specific-typed-uuid-primitive}
+    parse-uuid {:status :static-adaptation
+                :reason :source-port-preserves-the-upstream-strict-uuid-grammar-through-a-boolean-typed-validator-because-regex-match-values-have-a-heterogeneous-host-boundary}
+    system-time {:status :static-adaptation
+                 :reason :source-wrapper-uses-performance-now-on-melange-and-process-cpu-milliseconds-on-native-through-target-specific-typed-time-primitives}
     bit-shift-right-zero-fill {:status :static-adaptation
                                :reason :source-wrapper-over-the-typed-runtime-logical-shift-primitive}
     bit-and-not {:status :static-adaptation

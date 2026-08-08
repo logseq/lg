@@ -5237,7 +5237,11 @@ let create ~compile_expr =
                                       "Lg_runtime.Runtime_uuid.of_string",
                           [ value.semantic_expr ] )))
             | Target.Melange | Target.Js_of_ocaml ->
-                Ok (typed_ir TString value.semantic_expr))
+                Ok
+                  (typed_ir TString
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "String.lowercase_ascii",
+                          [ value.semantic_expr ] ))))
         | Ok _ -> Error.error "uuid expects a string"
         | Error _ as error -> error)
     | "__type-hint" -> (

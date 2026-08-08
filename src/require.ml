@@ -167,19 +167,25 @@ let add_lg_alias_bindings env module_name alias =
       |> fun env -> Ok env
 
 let add_lg_refer_bindings env scope module_name names =
+  let source_module_name =
+    if String.equal module_name "cljs.core" then "clojure.core"
+    else module_name
+  in
   let rec loop env = function
     | [] -> Ok env
     | name :: rest ->
         let value =
-          match Env.find_opt (module_name ^ "/" ^ name) env with
+          match Env.find_opt (source_module_name ^ "/" ^ name) env with
           | Some _ as value -> value
           | None -> List.assoc_opt name (core_bindings module_name)
         in
         let record =
-          Env.find_opt (Resolver.record_type_key module_name name) env
+          Env.find_opt (Resolver.record_type_key source_module_name name) env
         in
-        let macro = Env.find_macro ~scope:module_name name env in
-        let inline_macro = Env.find_inline_macro ~scope:module_name name env in
+        let macro = Env.find_macro ~scope:source_module_name name env in
+        let inline_macro =
+          Env.find_inline_macro ~scope:source_module_name name env
+        in
         if
           Option.is_none value && Option.is_none record
           && Option.is_none macro && Option.is_none inline_macro
