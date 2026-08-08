@@ -46,6 +46,8 @@
     reverse {:status :static-adaptation
              :reason :uses-upstream-reduce-path-without-reversible-protocol-fast-path}
     interpose {:status :ported}
+    dedupe {:status :static-adaptation
+            :reason :composed-from-partition-by-and-map-with-static-indexed-group-access}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}}}
 

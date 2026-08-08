@@ -8882,7 +8882,7 @@ let create ~compile_expr =
     | "keep" -> compile_keep scope env arg_forms
     | "filter" -> compile_filter scope env arg_forms
     | "distinct" -> compile_distinct scope env arg_forms
-    | "remove" | "take-while" | "drop-while" | "dedupe" | "sort" ->
+    | "remove" | "take-while" | "drop-while" | "sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort-by" -> compile_sort_by scope env arg_forms
     | "group-by" -> compile_group_by scope env arg_forms

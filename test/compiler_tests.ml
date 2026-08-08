@@ -20683,6 +20683,16 @@ let test_partition_by_keyword_infers_seqable_record_parameters () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_partition_by_emits_nonrecursive_finish_helper () =
+  let source =
+    {|(println (count (partition-by (fn [value] value) [1 1 2])))|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "let rec finish" then
+    failwith "partition-by finish helper must not be emitted as recursive";
+  assert_ocaml_runs "partition_by_emits_nonrecursive_finish_helper" "2\n"
+    ocaml_source
+
 let test_doseq_prefers_reducible_over_seqable () =
   let source =
     {|
@@ -21765,7 +21775,7 @@ let test_batched_sequence_functions_work () =
   assert_ocaml_runs "batched_sequence_functions_work"
     "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 \
      2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 \
-     6):[1 2 1]:(10 21):[1 3]:[2 3]:31:2:true\n"
+     6):(1 2 1):(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
 
 let test_thread_last_inferred_functions_pass_collections_to_take_while () =
@@ -35489,6 +35499,8 @@ let tests =
       test_batched_predicate_collection_core_functions_work );
     ( "partition-by keyword infers seqable record parameters",
       test_partition_by_keyword_infers_seqable_record_parameters );
+    ( "partition-by emits a nonrecursive finish helper",
+      test_partition_by_emits_nonrecursive_finish_helper );
     ( "batched predicate/collection core functions reject bad counts",
       test_batched_predicate_collection_core_functions_reject_bad_counts );
     ( "batched predicate/collection core functions reject bad predicates",

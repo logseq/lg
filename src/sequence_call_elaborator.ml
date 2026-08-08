@@ -1070,28 +1070,31 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   in
                   Ok
                     (typed_ir (TList (TList inner))
-                       (Semantic_ir.LetRecIn
-                          ( "finish",
-                          [
-                            Semantic_ir.PVar "groups";
-                            Semantic_ir.PVar "current";
-                          ],
-                            finish_body,
+                       (Semantic_ir.Let
+                          ( [
+                              ( Semantic_ir.PVar "finish",
+                                Semantic_ir.Fun
+                                  ( [
+                                      Semantic_ir.PVar "groups";
+                                      Semantic_ir.PVar "current";
+                                    ],
+                                    finish_body ) );
+                            ],
                             Semantic_ir.LetRec
                               ( "partition",
-                              [
-                                Semantic_ir.PVar "groups";
+                                [
+                                  Semantic_ir.PVar "groups";
                                   Semantic_ir.PVar "current";
                                   Semantic_ir.PVar "current_key";
-                                Semantic_ir.PVar "xs";
-                              ],
+                                  Semantic_ir.PVar "xs";
+                                ],
                                 partition_body,
-                              [
-                                Semantic_ir.List [];
+                                [
+                                  Semantic_ir.List [];
                                   Semantic_ir.List [];
                                   Semantic_ir.Constructor ("None", None);
-                                list_expr;
-                              ] ) )))
+                                  list_expr;
+                                ] ) )))
             | TFn _ ->
                 Error.error
                   "partition-by function type does not match collection"

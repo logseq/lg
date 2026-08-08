@@ -57,6 +57,10 @@
 (defn interpose [separator coll]
   (drop 1 (interleave (repeat separator) coll)))
 
+(defn dedupe [coll]
+  (map (fn [values] (nth values 0))
+       (partition-by (fn [value] value) coll)))
+
 (defn zipmap [keys values]
   (loop [result {}
          remaining-keys (seq keys)
