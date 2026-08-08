@@ -598,7 +598,7 @@ module Lg_frontend : FRONTEND = struct
             Error (normalize_error_location filename line_starts error)
         | Ok original_located_ast -> (
             match lower_namespace original_located_ast with
-            | Error error ->
+            | Error (error : Error.t) ->
                 Error (normalize_error_location filename line_starts error)
             | Ok target_located_ast -> (
                 match
@@ -988,7 +988,59 @@ let recursive_definition_ast ast =
       | Some [] -> assert false)
     ast
 
-let stabilize_typecheck ?compile_evidence ~compile
+let affected_stabilization_forms ast evidence_ast changed_names =
+  let module Names = Set.Make (String) in
+  let add_name_variants names name =
+    let names = Names.add name names in
+    match String.rindex_opt name '/' with
+    | None -> names
+    | Some separator ->
+        Names.add
+          (String.sub name (separator + 1)
+             (String.length name - separator - 1))
+          names
+  in
+  let intersects names candidates =
+    List.exists
+      (fun candidate ->
+        not (Names.is_empty (Names.inter names (add_name_variants Names.empty candidate))))
+      candidates
+  in
+  let affected_names =
+    List.fold_left add_name_variants Names.empty changed_names
+  in
+  let indexed =
+    List.map2
+      (fun original evidence ->
+        ( original,
+          evidence,
+          List.sort_uniq String.compare
+            (Dependency_graph.provided_names original
+            @ Dependency_graph.provided_names evidence),
+          List.sort_uniq String.compare
+            (Dependency_graph.dependency_symbols original
+            @ Dependency_graph.dependency_symbols evidence) ))
+      ast evidence_ast
+  in
+  let can_recompile = function
+    | Ast.FList
+        (Ast.FSymbol
+          ( "def" | "defonce" | "defn" | "defn-" | "defmacro"
+          | "recursive-definition-group" )
+        :: _) ->
+        true
+    | _ -> false
+  in
+  indexed
+  |> List.filter_map (fun (original, evidence, provided, dependencies) ->
+         if
+           provided <> [] && can_recompile original
+           && (intersects affected_names provided
+              || intersects affected_names dependencies)
+         then Some evidence
+         else None)
+
+let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     ~(initial_state : Compiler_state.t) ast =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
   let compile_pass compiler pass state =
@@ -1019,6 +1071,15 @@ let stabilize_typecheck ?compile_evidence ~compile
         left_name = right_name
         && binding_abi_equal left_binding right_binding)
       left right
+  in
+  let changed_declaration_names previous next =
+    next
+    |> List.filter_map (fun (name, binding) ->
+           match List.assoc_opt name previous with
+           | Some previous_binding
+             when binding_abi_equal previous_binding binding ->
+               None
+           | Some _ | None -> Some name)
   in
   let report_changed_declarations previous next =
     if report_timings then
@@ -1137,13 +1198,37 @@ let stabilize_typecheck ?compile_evidence ~compile
                   next_declarations next_protocols
               )
   in
-  let rec continue remaining pass declarations protocol_evidence =
+  let rec continue remaining pass declarations protocol_evidence
+      (evidence_base : Compiler_state.t) changed_names =
     if remaining = 0 then
       Error.error "type evidence did not stabilize after 16 passes"
     else
+      let full_state = seeded_state declarations protocol_evidence in
+      let subset_state =
+        {
+          evidence_base with
+          items = initial_state.items;
+          env =
+            evidence_base.env
+            |> Compiler_environment.add_bindings declarations
+            |> Compiler_environment.with_protocol_evidence
+                 (Some protocol_evidence);
+        }
+      in
+      let compiler _state =
+        match compile_evidence_subset with
+        | None -> evidence_compile full_state
+        | Some compile_subset -> (
+            match compile_subset changed_names subset_state with
+            | Ok _ as result -> result
+            | Error error ->
+                if report_timings then
+                  Printf.eprintf "lg: stabilization subset fallback: %s\n%!"
+                    error.Error.message;
+                evidence_compile full_state)
+      in
       match
-        compile_pass evidence_compile pass
-          (seeded_state declarations protocol_evidence)
+        compile_pass compiler pass full_state
       with
       | Error _ as error -> error
       | Ok ((next_state : Compiler_state.t), items) ->
@@ -1156,8 +1241,11 @@ let stabilize_typecheck ?compile_evidence ~compile
               next_protocols (next_state, items)
           else (
             report_changed_declarations declarations next_declarations;
+            let changed_names =
+              changed_declaration_names declarations next_declarations
+            in
             continue (remaining - 1) (pass + 1) next_declarations
-              next_protocols
+              next_protocols evidence_base changed_names
           )
   in
   match compile_pass initial_compile 1 initial_state with
@@ -1172,7 +1260,8 @@ let stabilize_typecheck ?compile_evidence ~compile
         finish 15 2 first_declarations first_protocols first_result
       else (
         report_changed_declarations initial_declarations first_declarations;
-        continue 15 2 first_declarations first_protocols)
+        continue 15 2 first_declarations first_protocols first_state
+          (changed_declaration_names initial_declarations first_declarations))
 
 let typecheck (parsed : parser_result) =
   let parsed = stabilize_dependencies parsed in
@@ -1196,10 +1285,26 @@ let typecheck (parsed : parser_result) =
             (fun state ->
               Source_context.with_source_unit parsed.source_unit (fun () ->
                   Source_context.with_locations parsed.form_locations (fun () ->
-                      Typecheck.compile_forms_incremental state evidence_ast)))
+                  Typecheck.compile_forms_incremental state evidence_ast)))
+      in
+      let compile_evidence_subset =
+        Option.map
+          (fun _ changed_names state ->
+            let forms =
+              affected_stabilization_forms parsed.ast evidence_ast
+                changed_names
+            in
+            if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+              Printf.eprintf "lg: stabilization subset: %d forms\n%!"
+                (List.length forms);
+            Source_context.with_source_unit parsed.source_unit (fun () ->
+                Source_context.with_locations parsed.form_locations (fun () ->
+                    Typecheck.compile_forms_incremental state forms)))
+          compile_evidence
       in
       match
-        stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
+        stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
+          ~initial_state parsed.ast
       with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->
@@ -1246,8 +1351,24 @@ let typecheck_incremental state (parsed : parser_result) =
                       Typecheck.compile_forms_incremental typecheck_state
                         evidence_ast)))
       in
+      let compile_evidence_subset =
+        Option.map
+          (fun _ changed_names typecheck_state ->
+            let forms =
+              affected_stabilization_forms parsed.ast evidence_ast
+                changed_names
+            in
+            if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+              Printf.eprintf "lg: stabilization subset: %d forms\n%!"
+                (List.length forms);
+            Source_context.with_source_unit parsed.source_unit (fun () ->
+                Source_context.with_locations parsed.form_locations (fun () ->
+                    Typecheck.compile_forms_incremental typecheck_state forms)))
+          compile_evidence
+      in
       match
-        stabilize_typecheck ?compile_evidence ~compile ~initial_state parsed.ast
+        stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
+          ~initial_state parsed.ast
       with
       | Error _ as err -> err
       | Ok (typecheck_state, items) ->

@@ -9,6 +9,7 @@
     :host-primitive "host-boundary"
     (:blocked :blocked-static-typing) "blocked-static-typing"
     :host-boundary "host-boundary"
+    :out-of-scope "out-of-scope"
     :deferred "deferred"
     nil))
 

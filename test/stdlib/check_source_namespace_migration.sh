@@ -16,7 +16,7 @@ for namespace in clojure.edn cljs.reader clojure.string; do
   fi
 done
 
-for namespace in clojure.data clojure.walk cljs.test cljs.spec.alpha clojure.zip; do
+for namespace in clojure.data clojure.walk cljs.test clojure.zip; do
   if ! grep -F "  $namespace" "$root/stdlib/upstream.edn" >/dev/null; then
     echo "$namespace is missing a concrete Logseq migration classification" >&2
     exit 1
@@ -24,7 +24,7 @@ for namespace in clojure.data clojure.walk cljs.test cljs.spec.alpha clojure.zip
 done
 
 
-for namespace in clojure.test clojure.spec.alpha clojure.pprint; do
+for namespace in clojure.test clojure.pprint; do
   if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
     | grep -F ':status :host-boundary' >/dev/null; then
     echo "$namespace is missing a concrete host-boundary status" >&2
@@ -32,10 +32,18 @@ for namespace in clojure.test clojure.spec.alpha clojure.pprint; do
   fi
 done
 
-for namespace in clojure.data clojure.walk cljs.test cljs.spec.alpha clojure.zip; do
+for namespace in clojure.data clojure.walk cljs.test clojure.zip; do
   if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
     | grep -F ':status :blocked' >/dev/null; then
     echo "$namespace is missing a concrete blocked status" >&2
+    exit 1
+  fi
+done
+
+for namespace in cljs.spec.alpha clojure.spec.alpha; do
+  if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':status :out-of-scope' >/dev/null; then
+    echo "$namespace is missing its excluded project scope status" >&2
     exit 1
   fi
 done

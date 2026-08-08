@@ -79,6 +79,11 @@
     rand-nth {:status :ported}
     bit-shift-right-zero-fill {:status :static-adaptation
                                :reason :source-wrapper-over-the-typed-runtime-logical-shift-primitive}
+    bit-and-not {:status :static-adaptation
+                 :reason :variadic-source-port-reduces-through-a-statically-typed-binary-helper}
+    unsigned-bit-shift-right {:status :static-adaptation
+                              :reason :source-alias-of-the-existing-typed-logical-shift-wrapper}
+    bit-count {:status :ported}
     second {:status :ported}
     last {:status :static-adaptation
           :reason :preserves-the-upstream-linear-next-loop-using-static-empty-sequence-truthiness}
@@ -133,7 +138,14 @@
     distinct {:status :static-adaptation
               :reason :preserves-existing-eager-static-semantics-with-a-typed-seen-set}
     zipmap {:status :static-adaptation
-            :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}}}
+            :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
+    comparator {:status :ported}
+    frequencies {:status :static-adaptation
+                 :reason :persistent-reduce-preserves-upstream-counting-semantics-without-a-transient-representation-boundary}
+    update-vals {:status :static-adaptation
+                 :reason :persistent-reduce-kv-preserves-key-value-transformation-and-typed-map-metadata-without-a-transient-representation-boundary}
+    update-keys {:status :static-adaptation
+                 :reason :persistent-reduce-kv-preserves-key-transformation-collision-and-typed-map-metadata-semantics-without-a-transient-representation-boundary}}}
 
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
@@ -196,8 +208,8 @@
 
   cljs.spec.alpha
   {:source "src/main/cljs/cljs/spec/alpha.cljs"
-   :status :blocked
-   :reason :requires-macro-analyzer-integration-and-a-closed-recursive-spec-and-explain-data-domain}
+   :status :out-of-scope
+   :reason :excluded-by-project-scope}
 
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
@@ -221,8 +233,8 @@
 
   clojure.spec.alpha
   {:source :jvm-only
-   :status :host-boundary
-   :reason :jvm-only-spec-namespace-is-outside-the-clojurescript-source-baseline}
+   :status :out-of-scope
+   :reason :excluded-by-project-scope}
 
   clojure.pprint
   {:source :jvm-only

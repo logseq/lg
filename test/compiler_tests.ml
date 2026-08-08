@@ -62,6 +62,10 @@ let count_generated_anonymous_record_types source =
          | Some _ | None -> count)
        0
 
+let maximum_line_length source =
+  source |> String.split_on_char '\n'
+  |> List.fold_left (fun longest line -> max longest (String.length line)) 0
+
 let substring_index text expected =
   let expected_len = String.length expected in
   let rec loop index =
@@ -279,68 +283,85 @@ let read_file path =
       let length = in_channel_length ic in
       really_input_string ic length)
 
-let stdlib_sources () =
-  [
-    "stdlib/clojure/core.mil";
-    "stdlib/clojure/core.cljc";
-    "stdlib/clojure/string.mil";
-    "stdlib/clojure/string.cljc";
-    "stdlib/clojure/edn.mil";
-    "stdlib/clojure/edn.cljc";
-    "stdlib/cljs/reader.mil";
-    "stdlib/cljs/reader.cljc";
-    "stdlib/clojure/set.mil";
-    "stdlib/clojure/set.cljc";
-  ]
-  |> List.map (fun path -> (path, read_file (Filename.concat (repo_root ()) path)))
+let stdlib_sources =
+  let cached =
+    lazy
+      ([
+         "stdlib/clojure/core.mil";
+         "stdlib/clojure/core.cljc";
+         "stdlib/clojure/string.mil";
+         "stdlib/clojure/string.cljc";
+         "stdlib/clojure/edn.mil";
+         "stdlib/clojure/edn.cljc";
+         "stdlib/cljs/reader.mil";
+         "stdlib/cljs/reader.cljc";
+         "stdlib/clojure/set.mil";
+         "stdlib/clojure/set.cljc";
+       ]
+      |> List.map (fun path ->
+             (path, read_file (Filename.concat (repo_root ()) path))))
+  in
+  fun () -> Lazy.force cached
 
 let stdlib_source_texts () = List.map snd (stdlib_sources ())
 
+type compiled_stdlib = {
+  state : Lg.Compiler.state;
+  ocaml_source : string;
+}
+
+let compiled_stdlib_cache = ref []
+
+let compiled_stdlib target =
+  let target_name = Lg.Target.to_string target in
+  match List.assoc_opt target_name !compiled_stdlib_cache with
+  | Some cached -> cached
+  | None ->
+      let state, reversed_outputs =
+        List.fold_left
+          (fun (state, outputs) (source_filename, source_text) ->
+            let state, output =
+              Lg.Compiler.compile_chunk_with_filename ~target
+                ~filename:source_filename state source_text
+              |> expect_ok
+            in
+            (state, output :: outputs))
+          (Lg.Compiler.empty_state, []) (stdlib_sources ())
+      in
+      let cached =
+        {
+          state;
+          ocaml_source =
+            reversed_outputs |> List.rev |> String.concat "\n";
+        }
+      in
+      compiled_stdlib_cache :=
+        (target_name, cached) :: !compiled_stdlib_cache;
+      cached
+
 let compile_with_stdlib target filename source =
-  let sources = stdlib_sources () @ [ (filename, source) ] in
-  let _, reversed_outputs =
-    List.fold_left
-      (fun (state, outputs) (source_filename, source_text) ->
-        let state, output =
-          Lg.Compiler.compile_chunk_with_filename ~target
-            ~filename:source_filename state source_text
-          |> expect_ok
-        in
-        (state, output :: outputs))
-      (Lg.Compiler.empty_state, []) sources
+  let stdlib = compiled_stdlib target in
+  let _, output =
+    Lg.Compiler.compile_chunk_with_filename ~target ~filename stdlib.state
+      source
+    |> expect_ok
   in
-  reversed_outputs |> List.rev |> String.concat "\n"
+  String.concat "\n" [ stdlib.ocaml_source; output ]
 
 let compile_with_stdlib_result target filename source =
-  let state =
-    List.fold_left
-      (fun state (source_filename, source_text) ->
-        Lg.Compiler.compile_chunk_with_filename ~target
-          ~filename:source_filename state source_text
-        |> expect_ok |> fst)
-      Lg.Compiler.empty_state (stdlib_sources ())
-  in
-  Lg.Compiler.compile_chunk_with_filename ~target ~filename state source
+  let stdlib = compiled_stdlib target in
+  Lg.Compiler.compile_chunk_with_filename ~target ~filename stdlib.state source
   |> Result.map snd
 
 let compile_string_with_stdlib ?(target = Lg.Target.default) source =
-  let state, reversed_outputs =
-    List.fold_left
-      (fun (state, outputs) (source_filename, source_text) ->
-        let state, output =
-          Lg.Compiler.compile_chunk_with_filename ~target
-            ~filename:source_filename state source_text
-          |> expect_ok
-        in
-        (state, output :: outputs))
-      (Lg.Compiler.empty_state, []) (stdlib_sources ())
-  in
+  let stdlib = compiled_stdlib target in
   Lg.Compiler.compile_chunk_with_filename ~target
-    ~filename:"test/source_core_program.cljc" state source
+    ~filename:"test/source_core_program.cljc" stdlib.state source
   |> Result.map (fun (_, output) ->
-         String.concat "\n" (List.rev (output :: reversed_outputs)))
+         String.concat "\n" [ stdlib.ocaml_source; output ])
 
 let compile_chunks_with_stdlib target sources =
+  let stdlib = compiled_stdlib target in
   let _, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (source_filename, source_text) ->
@@ -350,9 +371,15 @@ let compile_chunks_with_stdlib target sources =
           |> expect_ok
         in
         (state, output :: outputs))
-      (Lg.Compiler.empty_state, []) (stdlib_sources () @ sources)
+      (stdlib.state, [ stdlib.ocaml_source ]) sources
   in
   reversed_outputs |> List.rev |> String.concat "\n"
+
+let test_compiler_tests_reuse_precompiled_stdlib_state () =
+  let first = compiled_stdlib Lg.Target.Native in
+  let second = compiled_stdlib Lg.Target.Native in
+  if first != second then
+    failwith "compiler tests must reuse one precompiled stdlib state per target"
 
 let rec source_files_under directory =
   Sys.readdir directory |> Array.to_list
@@ -4720,38 +4747,78 @@ let current_datascript_sources () =
     |> List.map (fun path ->
            (path, read_file (Filename.concat (repo_root ()) path))))
 
-let compile_datascript_sources ?(check_ocaml = true) target initial_state
-    sources =
+type datascript_chunk_cache_entry = {
+  target_name : string;
+  check_ocaml : bool;
+  input_state : Lg.Compiler.state;
+  filename : string;
+  source_digest : string;
+  output_state : Lg.Compiler.state;
+  output : string;
+}
+
+let datascript_chunk_cache = ref []
+
+let compile_datascript_sources ?(check_ocaml = true) target initial_state sources =
+  let target_name = Lg.Target.to_string target in
   let state, reversed_outputs =
     List.fold_left
       (fun (state, outputs) (filename, source) ->
         let state, output =
-          let compiled =
-            if check_ocaml then
-              Lg.Compiler.compile_chunk_with_filename ~target ~filename state
-                source
-            else
-              Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-                ~check_ocaml:false ~filename state source
-              |> Result.map (fun (state, (compilation : Lg.Compiler.compilation)) ->
-                     (state, compilation.ocaml_source))
-          in
-          match compiled with
-          | Ok compiled -> compiled
-          | Error (error : Lg.Compiler.compile_error) ->
-              let location =
-                match error.location with
-                | None -> ""
-                | Some location ->
-                    Printf.sprintf " at %s:%d:%d"
-                      location.Location.loc_start.Lexing.pos_fname
-                      location.Location.loc_start.Lexing.pos_lnum
-                      (location.Location.loc_start.Lexing.pos_cnum
-                      - location.Location.loc_start.Lexing.pos_bol)
+          let source_digest = Digest.to_hex (Digest.string source) in
+          match
+            List.find_opt
+              (fun cached ->
+                cached.input_state == state
+                && cached.check_ocaml = check_ocaml
+                && String.equal cached.target_name target_name
+                && String.equal cached.filename filename
+                && String.equal cached.source_digest source_digest)
+              !datascript_chunk_cache
+          with
+          | Some cached -> (cached.output_state, cached.output)
+          | None ->
+              let compiled =
+                if check_ocaml then
+                  Lg.Compiler.compile_chunk_with_filename ~target ~filename state
+                    source
+                else
+                  Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+                    ~check_ocaml:false ~filename state source
+                  |> Result.map
+                       (fun (state, (compilation : Lg.Compiler.compilation)) ->
+                         (state, compilation.ocaml_source))
               in
-              failwith
-                (Printf.sprintf "failed to compile %s for %s%s: %s" filename
-                   (Lg.Target.to_string target) location error.message)
+              let output_state, output =
+                match compiled with
+                | Ok compiled -> compiled
+                | Error (error : Lg.Compiler.compile_error) ->
+                    let location =
+                      match error.location with
+                      | None -> ""
+                      | Some location ->
+                          Printf.sprintf " at %s:%d:%d"
+                            location.Location.loc_start.Lexing.pos_fname
+                            location.Location.loc_start.Lexing.pos_lnum
+                            (location.Location.loc_start.Lexing.pos_cnum
+                            - location.Location.loc_start.Lexing.pos_bol)
+                    in
+                    failwith
+                      (Printf.sprintf "failed to compile %s for %s%s: %s"
+                         filename target_name location error.message)
+              in
+              datascript_chunk_cache :=
+                {
+                  target_name;
+                  check_ocaml;
+                  input_state = state;
+                  filename;
+                  source_digest;
+                  output_state;
+                  output;
+                }
+                :: !datascript_chunk_cache;
+              (output_state, output)
         in
         (state, output :: outputs))
       (initial_state, []) sources
@@ -9079,8 +9146,8 @@ let test_current_datascript_transaction_accepts_closed_raw_datoms () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_closed_entries.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -9204,8 +9271,8 @@ let test_current_datascript_transaction_supports_reverse_refs () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_reverse_refs.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -9312,8 +9379,8 @@ let test_current_datascript_transaction_supports_operation_vectors () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_operation_vectors.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -9467,8 +9534,8 @@ let test_current_datascript_transaction_resolves_tempids_and_upserts () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_tempids_upserts.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -9625,7 +9692,7 @@ let test_current_datascript_transaction_preserves_unique_identity_edges () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
         (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_unique_identity_edges.cljc", source) ])
     in
@@ -9801,8 +9868,8 @@ let test_current_datascript_transaction_resolves_current_tx_and_preserves_order 
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_current_tx_order.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -9956,8 +10023,8 @@ let test_current_datascript_transaction_cascades_components () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_components.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -10105,8 +10172,8 @@ let test_current_datascript_transaction_maintains_tuples () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_tuples.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -10238,8 +10305,8 @@ let test_current_datascript_transaction_runs_transaction_functions () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
-        (providers
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
+        (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_functions.cljc", source) ])
     in
     String.concat "\n" outputs
@@ -10298,7 +10365,7 @@ let test_current_datascript_transaction_rejects_invalid_inputs () =
   in
   let compile target =
     let _, outputs =
-      compile_datascript_sources target Lg.Compiler.empty_state
+      compile_datascript_sources ~check_ocaml:false target Lg.Compiler.empty_state
         (stdlib_sources () @ providers
         @ [ ("test/datascript/transaction_invalid_inputs.cljc", source) ])
     in
@@ -22187,16 +22254,51 @@ let test_sort_accepts_dynamic_collections () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_metadata_maps_reject_static_value_erasure () =
+let test_metadata_maps_preserve_closed_edn_values_statically () =
   let source =
     {|
-(defn attach-source [obj source]
+(ns metadata.closed-values)
+(defn attach-source [obj ^:vector<int> source]
   (with-meta obj {:source source}))
-(println (pr-str (:source (meta (attach-source {:x 1} [1 2])))))
+(def ^:vector<int> attached-source
+  (:source (meta (attach-source {:x 1} [1 2]))))
+(println (= attached-source [1 2]))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains "cannot cross a dynamic boundary"
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "typed map metadata must not cross Runtime_dynamic";
+  assert_ocaml_runs "metadata_maps_preserve_closed_edn_values_statically"
+    "true\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_generated_ml_preserves_readable_names_and_layout () =
+  let source =
+    {|
+(ns readable.output)
+(defn descriptive-public-function-name [values]
+  (reduce
+    (fn [total value]
+      (if (< value 10)
+        (+ total value)
+        total))
+    0
+    values))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring ocaml_source
+         "readable_output_descriptive_public_function_name")
+  then failwith "generated ML must preserve descriptive public binding names";
+  let longest = maximum_line_length ocaml_source in
+  if longest > 160 then
+    failwith
+      (Printf.sprintf
+         "generated ML must wrap nested expressions; longest line is %d characters"
+         longest)
 
 let test_logical_or_preserves_nullable_closed_sum_results () =
   let source =
@@ -27831,17 +27933,9 @@ let test_defrecord_protocol_methods_bind_each_used_field_once () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  let marker_index =
-    expect_substring_index ocaml_source "record-method-marker"
-  in
-  let line_start = String.rindex_from ocaml_source marker_index '\n' + 1 in
-  let line_end = String.index_from ocaml_source marker_index '\n' in
-  let method_source =
-    String.sub ocaml_source line_start (line_end - line_start)
-  in
-  if count_substring method_source ").left" <> 1 then
+  if count_substring ocaml_source ").left" <> 1 then
     failwith "defrecord protocol method bound left more than once";
-  if count_substring method_source ").right" <> 1 then
+  if count_substring ocaml_source ").right" <> 1 then
     failwith "defrecord protocol method bound right more than once";
   assert_ocaml_runs "defrecord_protocol_methods_bind_each_used_field_once"
     "record-method-marker\n42\n" ocaml_source
@@ -34293,6 +34387,8 @@ let tests =
       test_discarded_pure_values_are_elided );
     ( "compiler test directory avoids existing PID directory",
       test_test_directory_avoids_existing_pid_directory );
+    ( "compiler tests reuse precompiled stdlib state",
+      test_compiler_tests_reuse_precompiled_stdlib_state );
     ( "records, assoc, and dissoc generate typed OCaml",
       test_records_assoc_and_dissoc );
     ( "assoc rejects changing an existing field type",
@@ -35999,8 +36095,10 @@ let tests =
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
     ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
-    ( "metadata maps reject static value erasure",
-      test_metadata_maps_reject_static_value_erasure );
+    ( "metadata maps preserve closed EDN values statically",
+      test_metadata_maps_preserve_closed_edn_values_statically );
+    ( "generated ML preserves readable names and layout",
+      test_generated_ml_preserves_readable_names_and_layout );
     ( "logical or preserves nullable closed sum results",
       test_logical_or_preserves_nullable_closed_sum_results );
     ("match coerces nullable branches", test_match_coerces_nullable_branches);

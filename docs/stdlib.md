@@ -71,6 +71,12 @@ boundary, and results convert back to the statically selected concrete module.
 Element types remain unified across all inputs and outputs. This boundary does
 not use `Runtime_dynamic.t`, `Obj.magic`, or a source-visible conversion API.
 
+Persistent maps carry metadata as a closed `Lg_edn_backend.t` value. `with-meta`
+accepts statically representable EDN metadata maps, `meta` returns that closed
+value, and persistent `assoc`/`dissoc` operations preserve it. Source ports such
+as `update-keys` and `update-vals` therefore retain map metadata on Native and
+Melange without converting the map or metadata through `Runtime_dynamic.t`.
+
 ## Porting another namespace
 
 1. Inventory the namespace and transitive namespace dependencies in the Logseq
@@ -117,18 +123,20 @@ ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 and excludes private definitions. The pinned surface currently contains 855
 function/macro entries, including 666 entries in `cljs.core`. Each row is
 classified independently as source, typed primitive, special form, host
-boundary, static-typing blocker, or deferred. A namespace's aggregate support
-does not make a missing public var appear supported. The current baseline is
-89 source entries, 175 typed primitives, 5 special forms, 12 host boundaries,
-206 static-typing blockers, and 368 deferred entries. The deferred set is the
+boundary, static-typing blocker, out of scope, or deferred. A namespace's
+aggregate support does not make a missing public var appear supported. Manifest entries for
+`clojure.core` also classify the corresponding `cljs.core` function and inline
+macro surfaces. The current baseline is 118 source entries, 175 typed
+primitives, 5 special forms, 12 host boundaries, 162 static-typing blockers,
+44 out-of-scope Spec entries, and 339 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
 commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify
 each observed dependency as `source-aggregate`, `source-core-alias`,
-`blocked-static-typing`, or `unsupported`; the final field is a machine-readable
-reason. This makes unsupported namespaces visible without confusing test and
+`blocked-static-typing`, `out-of-scope`, or `unsupported`; the final field is a
+machine-readable reason. This makes unsupported namespaces visible without confusing test and
 build-time libraries with source namespaces that LG already provides.
 
 The generator pins the reviewed compiler dispatch count and fails when that
@@ -145,7 +153,9 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `even?`,
 `subs`, `int-to-string-radix`, `any?`, `range`, `shuffle`, `alength`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
-and the derived bit functions have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
+`bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
+`frequencies`, `update-vals`, `update-keys`, and the derived bit functions have
+no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
@@ -164,9 +174,9 @@ macros, dynamic test environments, and a closed report-event domain.
 readable and display printing need distinct static printer witnesses;
 `clojure.pprint` occurs 14 times and is a JVM-only host boundary. `clojure.zip`
 occurs 3 times and is blocked on its public heterogeneous location vectors and
-metadata-held generic callbacks. `cljs.spec.alpha` is blocked on analyzer macro
-integration and a closed recursive spec/explain-data domain, while the
-`clojure.spec.alpha` references are JVM-only. `clojure.walk` and `clojure.data` remain explicitly blocked because
+metadata-held generic callbacks. `cljs.spec.alpha` and `clojure.spec.alpha`
+are explicitly out of scope; their Logseq references remain visible in the
+inventory but do not count against migration completion. `clojure.walk` and `clojure.data` remain explicitly blocked because
 their upstream algorithms traverse heterogeneous Clojure trees; a valid port
 must use a closed value domain rather than the existing `Runtime_dynamic.t`
 boundary.

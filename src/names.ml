@@ -110,9 +110,8 @@ let compact_digest name =
   Bytes.unsafe_to_string encoded
 
 let compact_source_binding name =
-  if String.length name > 24 then
-    "g" ^ compact_digest name
-  else name
+  if String.length name <= 96 then name
+  else String.sub name 0 80 ^ "_" ^ compact_digest name
 
 let ocaml_binding_name scope name =
   let candidate =
@@ -184,9 +183,7 @@ let compact_runtime_source source =
     source compact_runtime_aliases
 
 let compact_generated_name name =
-  if String.starts_with ~prefix:"__lg_" name then
-    "l" ^ compact_digest name
-  else name
+  name
 
 let compact_generated_source source =
   let source_length = String.length source in

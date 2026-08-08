@@ -1439,7 +1439,7 @@ let print_implementation structure =
   let structure = mapper.structure mapper structure in
   let buffer = Buffer.create 4096 in
   let formatter = Format.formatter_of_buffer buffer in
-  Format.pp_set_margin formatter 1_000_000;
+  Format.pp_set_margin formatter 100;
   Format.fprintf formatter "%a@." Pprintast.structure structure;
   Format.pp_print_flush formatter ();
   let source = Buffer.contents buffer in

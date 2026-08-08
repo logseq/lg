@@ -1111,6 +1111,14 @@ let lookup_function scope env name =
       (TFn (parameter_tys, return_ty))
       (Semantic_ir.Ident ("Lg_runtime.Runtime_int." ^ runtime_name))
   in
+  let static_int_comparison operator =
+    typed_ir
+      (TFn ([ TInt; TInt ], TBool))
+      (Semantic_ir.Fun
+         ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
+           Semantic_ir.Infix
+             (operator, Semantic_ir.Ident "a", Semantic_ir.Ident "b") ))
+  in
   match lookup_binding scope env name with
   | Ok binding ->
       Ok (typed_ir binding.ty (binding_value_expression binding))
@@ -1151,6 +1159,8 @@ let lookup_function scope env name =
                   ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
                     Semantic_ir.Infix
                       ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+      | ("<" | "<=" | ">" | ">=") as operator ->
+          Ok (static_int_comparison operator)
       | "inc" ->
           Ok (static_int_function [ TInt ] TInt "int_inc")
       | "dec" ->

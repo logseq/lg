@@ -777,6 +777,122 @@ let pack_dynamic_value _env expected_dynamic argument =
              conversion = argument.semantic_expr;
            })
 
+let rec pack_metadata_expression ty expression =
+  let convert name =
+    Ok
+      (Semantic_ir.Apply
+         (Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name), [ expression ]))
+  in
+  match Types.constraint_value_type ty with
+  | TNil ->
+      Ok
+        (Semantic_ir.Sequence
+           [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+  | TBool -> convert "of_bool"
+  | TInt | TOcaml "int" -> convert "of_int"
+  | TFloat -> convert "of_float"
+  | TChar -> convert "of_char"
+  | TString -> convert "of_string"
+  | TRegex -> convert "of_regex"
+  | TSymbol -> convert "of_symbol"
+  | TKeyword -> convert "of_keyword"
+  | TOcaml "Lg_edn_backend.t" -> Ok expression
+  | TList element_ty ->
+      Result.map
+        (fun mapper ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_list",
+              [ mapper; expression ] ))
+        (metadata_mapper element_ty)
+  | TSeq element_ty ->
+      Result.map
+        (fun mapper ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_seq",
+              [ mapper; expression ] ))
+        (metadata_mapper element_ty)
+  | TVector element_ty ->
+      Result.map
+        (fun mapper ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_vector",
+              [ mapper; expression ] ))
+        (metadata_mapper element_ty)
+  | TArray element_ty | TOcaml_app ("array", [ element_ty ]) ->
+      Result.map
+        (fun mapper ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_array",
+              [ mapper; expression ] ))
+        (metadata_mapper element_ty)
+  | TSet element_ty -> (
+      match (metadata_mapper element_ty, Types.set_module_name element_ty) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok mapper, Ok set_module ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_set",
+                 [
+                   mapper;
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident (set_module ^ ".elements"),
+                       [ expression ] );
+                 ] )))
+  | TNullable element_ty | TOcaml_app ("option", [ element_ty ]) ->
+      let value_name = "__lg_metadata_optional_value" in
+      Result.map
+        (fun packed ->
+          Semantic_ir.Match
+            ( expression,
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar value_name)),
+                  packed );
+              ] ))
+        (pack_metadata_expression element_ty (Semantic_ir.Ident value_name))
+  | map_ty -> (
+      match Types.dynamic_map_types map_ty with
+      | Some (key_ty, value_ty) -> (
+          match (metadata_mapper key_ty, metadata_mapper value_ty) with
+          | (Error _ as error), _ | _, (Error _ as error) -> error
+          | Ok key_mapper, Ok value_mapper ->
+              Ok
+                (Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_map",
+                     [ key_mapper; value_mapper; expression ] )))
+      | None ->
+          Error.error
+            ("metadata requires a closed EDN-compatible static value; got "
+            ^ Types.source_name ty))
+
+and metadata_mapper ty =
+  let value_name = "__lg_metadata_value" in
+  Result.map
+    (fun body ->
+      Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], body))
+    (pack_metadata_expression ty (Semantic_ir.Ident value_name))
+
+let unpack_metadata_expression ty expression =
+  let convert name =
+    Ok
+      (Semantic_ir.Apply
+         (Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name), [ expression ]))
+  in
+  match Types.constraint_value_type ty with
+  | TBool -> convert "bool_value"
+  | TInt | TOcaml "int" -> convert "int_value"
+  | TFloat -> convert "float_value"
+  | TString -> convert "string_value"
+  | TChar -> convert "char_value"
+  | TSymbol -> convert "symbol_value"
+  | TKeyword -> convert "keyword_value"
+  | TOcaml "Lg_edn_backend.t" -> Ok expression
+  | ty ->
+      Error.error
+        ("metadata lookup cannot decode " ^ Types.source_name ty)
+
 let rec constrained_storage_type expected actual =
   match Types.dynamic_constraint_info expected with
   | Some _ -> expected
@@ -2945,6 +3061,15 @@ let rec compile_record_iequiv_pair scope env left right =
 let compile_equality scope env name args =
   let compile_pair left right =
     let fallback () = Core_compare.compile ~env "=" [ left; right ] in
+    let metadata_pair metadata other =
+      match pack_metadata_expression other.ty other.semantic_expr with
+      | Error _ -> fallback ()
+      | Ok other ->
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Infix
+                  ("=", metadata.semantic_expr, other)))
+    in
     let dynamic_pair dynamic other =
       match pack_dynamic_value env dynamic.ty other with
       | Error _ -> fallback ()
@@ -2956,7 +3081,13 @@ let compile_equality scope env name args =
                     [ dynamic.semantic_expr; other ] )))
     in
     let result =
-      if Types.is_dynamic left.ty && not (Types.is_dynamic right.ty) then
+      if Types.equal left.ty (TOcaml "Lg_edn_backend.t")
+         && not (Types.equal right.ty (TOcaml "Lg_edn_backend.t"))
+      then metadata_pair left right
+      else if Types.equal right.ty (TOcaml "Lg_edn_backend.t")
+              && not (Types.equal left.ty (TOcaml "Lg_edn_backend.t"))
+      then metadata_pair right left
+      else if Types.is_dynamic left.ty && not (Types.is_dynamic right.ty) then
         dynamic_pair left right
       else if Types.is_dynamic right.ty && not (Types.is_dynamic left.ty) then
         dynamic_pair right left
@@ -4156,6 +4287,44 @@ let create ~compile_expr =
         with
         | (Error _ as error), _ -> error
         | _, (Error _ as error) -> error
+        | Ok target, Ok _key
+          when Types.equal target.ty (TOcaml "Lg_edn_backend.t") -> (
+            match key_form with
+            | FKeyword keyword ->
+                let found =
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.find_keyword",
+                      [ Semantic_ir.String keyword; target.semantic_expr ] )
+                in
+                let expected =
+                  Env.expected_type env
+                  |> Option.value ~default:(TOcaml "Lg_edn_backend.t")
+                in
+                (match optional_payload expected with
+                | Some payload_ty ->
+                    let value_name = "__lg_metadata_lookup_value" in
+                    Result.map
+                      (fun decoded ->
+                        typed_ir expected
+                          (Semantic_ir.Match
+                             ( found,
+                               [
+                                 ( Semantic_ir.PConstructor ("None", None),
+                                   Semantic_ir.Constructor ("None", None) );
+                                 ( Semantic_ir.PConstructor
+                                     ("Some", Some (Semantic_ir.PVar value_name)),
+                                   Semantic_ir.Constructor
+                                     ("Some", Some decoded) );
+                               ] )))
+                      (unpack_metadata_expression payload_ty
+                         (Semantic_ir.Ident value_name))
+                | None ->
+                    Result.map
+                      (fun decoded -> typed_ir expected decoded)
+                      (unpack_metadata_expression expected
+                         (Semantic_ir.Apply
+                            (Semantic_ir.Ident "Option.get", [ found ]))))
+            | _ -> Error.error "EDN metadata lookup requires a keyword key")
         | Ok target, Ok key when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
             match pack_dynamic_value env expected key with
@@ -4532,6 +4701,8 @@ let create ~compile_expr =
           Error.error
             "transduce expects a transducer, reducer, initial value, and \
              collection"
+    else if member_name = "with-meta" || member_name = "meta" then
+      compile_metadata_call scope env member_name arg_forms
     else
     let qualified_core = String.starts_with ~prefix:"clojure.core/" name in
     let name =
@@ -8985,36 +9156,105 @@ let create ~compile_expr =
                   (List.map fst sequences))
   and compile_metadata_call scope env name arg_forms =
     let dynamic_ty = Types.dynamic_constraint TUnknown in
+    let expression_env = Env.with_expected_type None env in
+    let compile_literal_map entries =
+      let rec compile_entries compiled = function
+        | [] -> Ok (List.rev compiled)
+        | (key_form, value_form) :: rest -> (
+            match
+              ( compile_expr scope expression_env key_form,
+                compile_expr scope expression_env value_form )
+            with
+            | (Error _ as error), _ | _, (Error _ as error) -> error
+            | Ok key, Ok value ->
+                compile_entries ((key, value) :: compiled) rest)
+      in
+      Result.bind (compile_entries [] entries) (fun entries ->
+          let homogeneous_type select =
+            match List.map select entries with
+            | [] -> Ok TUnknown
+            | first :: rest
+              when List.for_all (fun ty -> Types.equal first ty) rest ->
+                Ok first
+            | _ ->
+                Error.error
+                  "metadata-bearing maps require homogeneous static key and value types"
+          in
+          match
+            ( homogeneous_type (fun (key, _value) -> key.ty),
+              homogeneous_type (fun (_key, value) -> value.ty) )
+          with
+          | (Error _ as error), _ | _, (Error _ as error) -> error
+          | Ok key_ty, Ok value_ty ->
+              let expression =
+                List.fold_left
+                  (fun map (key, value) ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                        [ map; key.semantic_expr; value.semantic_expr ] ))
+                  (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty") entries
+              in
+              Ok (typed_ir (Types.dynamic_map key_ty value_ty) expression))
+    in
+    let compile_metadata_operand = function
+      | FMap entries -> compile_literal_map entries
+      | form -> compile_expr scope env form
+    in
+    let compile_metadata_target = function
+      | FMap entries -> compile_literal_map entries
+      | form -> compile_expr scope expression_env form
+    in
+    let compile_metadata_payload = function
+      | FMap entries ->
+          let rec compile_entries compiled = function
+            | [] ->
+                Ok
+                  (typed_ir (TOcaml "Lg_edn_backend.t")
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_metadata.of_entries",
+                          [ Semantic_ir.List (List.rev compiled) ] )))
+            | (key_form, value_form) :: rest -> (
+                match
+                  ( compile_expr scope expression_env key_form,
+                    compile_expr scope expression_env value_form )
+                with
+                | (Error _ as error), _ | _, (Error _ as error) -> error
+                | Ok key, Ok value -> (
+                    match
+                      ( pack_metadata_expression key.ty key.semantic_expr,
+                        pack_metadata_expression value.ty value.semantic_expr )
+                    with
+                    | (Error _ as error), _ | _, (Error _ as error) -> error
+                    | Ok key, Ok value ->
+                        compile_entries
+                          (Semantic_ir.Tuple [ key; value ] :: compiled)
+                          rest))
+          in
+          compile_entries [] entries
+      | form -> compile_expr scope expression_env form
+    in
     match (name, arg_forms) with
     | "with-meta", [ value_form; metadata_form ] -> (
         match
-          ( compile_expr scope env value_form,
-            compile_expr scope env metadata_form )
+          ( compile_metadata_operand value_form,
+            compile_metadata_payload metadata_form )
         with
         | (Error _ as error), _ -> error
         | _, (Error _ as error) -> error
-        | Ok ({ ty = TNamed_record record; _ } as value), Ok metadata -> (
-            match
-              pack_dynamic_value env dynamic_ty metadata,
-              Structural_map.extension_assoc value record.fields
-                Types.record_metadata_key
-                (Semantic_ir.Ident "__lg_record_metadata")
-            with
-            | Error _ as error, _ -> error
-            | Ok _, None ->
-                Error.error "with-meta record requires an extension map"
-            | Ok metadata, Some record_with_metadata ->
-                Ok
-                  {
-                    record_with_metadata with
-                    semantic_expr =
-                      Semantic_ir.Let
-                        ( [
-                            ( Semantic_ir.PVar "__lg_record_metadata",
-                              metadata );
-                          ],
-                          record_with_metadata.semantic_expr );
-                  })
+        | Ok { ty = TNamed_record _; _ }, Ok _ ->
+            Error.error
+              "records cannot cross a dynamic boundary; define a closed sum type containing the supported records"
+        | Ok value, Ok metadata
+          when Option.is_some (Types.dynamic_map_types value.ty) ->
+            Result.map
+              (fun metadata ->
+                typed_ir value.ty
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_map.with_metadata",
+                       [ value.semantic_expr; metadata ] )))
+              (pack_metadata_expression metadata.ty metadata.semantic_expr)
         | Ok value, Ok metadata -> (
             match
               ( pack_dynamic_value env dynamic_ty value,
@@ -9030,7 +9270,7 @@ let create ~compile_expr =
                             "Lg_runtime.Runtime_dynamic.with_metadata",
                           [ value; metadata ] )))))
     | "meta", [ value_form ] -> (
-        match compile_expr scope env value_form with
+        match compile_metadata_target value_form with
         | Error _ as error -> error
         | Ok ({ ty = TNamed_record record; _ } as value) -> (
             match
@@ -9042,6 +9282,12 @@ let create ~compile_expr =
                 Ok
                   (typed_ir dynamic_ty
                      (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")))
+        | Ok value when Option.is_some (Types.dynamic_map_types value.ty) ->
+            Ok
+              (typed_ir (TOcaml "Lg_edn_backend.t")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_map.metadata",
+                      [ value.semantic_expr ] )))
         | Ok value -> (
             match pack_dynamic_value env dynamic_ty value with
             | Error _ as error -> error

@@ -12,6 +12,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
             [clojure.set :refer [union]]
             [clojure.walk :as walk]
             [cljs.pprint :as pprint]
+            [cljs.spec.alpha :as spec]
             [clojure.zip :as zip]))
 
 (string/upper-case "logseq")
@@ -19,6 +20,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (clojure.set/project #{} [])
 (walk/postwalk identity {})
 (pprint/pprint "value")
+(spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
 EOF
@@ -53,6 +55,7 @@ bb "$root/script/extract_stdlib_manifest_status.clj" \
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/union" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.test" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "namespace" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
@@ -83,8 +86,10 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.string" && $3 == 
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.set" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.walk" && $3 == "blocked-static-typing" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "readable-and-display-printing-require-distinct-static-printer-witnesses" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "excluded-by-project-scope" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "public-heterogeneous-location-vectors-and-metadata-held-generic-callbacks-require-a-closed-zipper-domain" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.walk/postwalk" && $3 == "blocked-static-typing" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "dependent-relation-map-projection-is-not-yet-source-expressible" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.zip/root" && $3 == "blocked-static-typing" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.core/identity" && $3 == "source-core-alias" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.spec.alpha/valid?" && $3 == "out-of-scope" && $4 == 1 && $5 == "excluded-by-project-scope" {found=1} END {exit !found}' "$tmp/inventory.tsv"

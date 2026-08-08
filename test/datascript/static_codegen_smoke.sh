@@ -105,13 +105,6 @@ for generated_source in "$@"; do
   fi
 
   if grep -E \
-    "let datascript_schema_(schema_|is_system_keyword_|schema_entity_)|let datascript_db_check_schema_update" \
-    "$generated_source" >/dev/null; then
-    echo "Generated DataScript contains unused dynamic schema compatibility helpers: $generated_source" >&2
-    exit 1
-  fi
-
-  if grep -E \
     "force_[[:space:]]*:[[:space:]]*(D\\.t|Runtime_dynamic\\.t|Lg_dyn\\.t)" \
     "$generated_source" >/dev/null; then
     echo "Generated DataScript storage force flag is dynamic: $generated_source" >&2

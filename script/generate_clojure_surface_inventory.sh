@@ -197,6 +197,11 @@ if test -n "$clojurescript_root"; then
     $1 == "definition" {
       definition_status[$2] = $3
       definition_reason[$2] = $4
+      if (index($2, "clojure.core/") == 1) {
+        core_alias = "cljs.core/" substr($2, length("clojure.core/") + 1)
+        definition_status[core_alias] = $3
+        definition_reason[core_alias] = $4
+      }
       next
     }
     $1 == "namespace" {
@@ -223,7 +228,8 @@ if test -n "$clojurescript_root"; then
         reason = compiler_reason[name]
       } else if (namespace in namespace_status &&
                  (namespace_status[namespace] == "blocked-static-typing" ||
-                  namespace_status[namespace] == "host-boundary")) {
+                  namespace_status[namespace] == "host-boundary" ||
+                  namespace_status[namespace] == "out-of-scope")) {
         status = namespace_status[namespace]
         reason = namespace_reason[namespace]
       }
@@ -299,6 +305,7 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
     }
     /:status :blocked([[:space:]}]|$)/ {status = "blocked-static-typing"}
     /:status :host-boundary([[:space:]}]|$)/ {status = "host-boundary"}
+    /:status :out-of-scope([[:space:]}]|$)/ {status = "out-of-scope"}
     /:status :deferred([[:space:]}]|$)/ {status = "deferred"}
     status != "" && /:reason :[A-Za-z0-9_.-]+/ {
       reason = $2

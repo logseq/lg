@@ -146,6 +146,33 @@
 (defn bit-shift-right-zero-fill [x n]
   (runtime-int/logical-shift-right x n))
 
+(defn- bit-and-not-two [x y]
+  (bit-and x (bit-not y)))
+
+(defn bit-and-not
+  "Returns the bitwise intersection of `x` with the complements of the remaining arguments."
+  ([x y]
+   (bit-and-not-two x y))
+  ([x y & more]
+   (reduce bit-and-not-two (bit-and-not-two x y) more)))
+
+(defn unsigned-bit-shift-right
+  "Returns `x` shifted right by `n` bits without sign extension."
+  [x n]
+  (bit-shift-right-zero-fill x n))
+
+(defn bit-count
+  "Returns the number of set bits in `value`."
+  [value]
+  (let [value (- value
+                 (bit-and (bit-shift-right value 1) 0x55555555))
+        value (+ (bit-and value 0x33333333)
+                 (bit-and (bit-shift-right value 2) 0x33333333))]
+    (bit-shift-right
+     (* (bit-and (+ value (bit-shift-right value 4)) 0xF0F0F0F)
+        0x1010101)
+     24)))
+
 (defn second [coll]
   (first (next coll)))
 
@@ -259,6 +286,45 @@
           (next remaining-values))
         result)
       result)))
+
+(defn comparator
+  "Returns a comparator that orders `x` and `y` using `pred`."
+  [pred]
+  (fn [x y]
+    (if (pred x y)
+      -1
+      (if (pred y x) 1 0))))
+
+(defn frequencies
+  "Returns a map from each distinct item in `coll` to its occurrence count."
+  [coll]
+  (reduce
+   (fn [counts value]
+     (assoc counts value (inc (get counts value 0))))
+   {}
+   coll))
+
+(defn update-vals
+  "Returns `m` with `f` applied to every value."
+  [m f]
+  (with-meta
+    (reduce-kv
+     (fn [result key value]
+       (assoc result key (f value)))
+     {}
+     m)
+    (meta m)))
+
+(defn update-keys
+  "Returns `m` with `f` applied to every key."
+  [m f]
+  (with-meta
+    (reduce-kv
+     (fn [result key value]
+       (assoc result (f key) value))
+     {}
+     m)
+    (meta m)))
 
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))

@@ -7,6 +7,7 @@ type ('key, 'value) t = {
   index : 'key node;
   entries : ('key * 'value) option Rrbvec.t;
   size : int;
+  metadata : Lg_edn_backend.t option;
 }
 
 type 'key operations = {
@@ -14,7 +15,7 @@ type 'key operations = {
   equal : 'key -> 'key -> bool;
 }
 
-let empty = { index = Empty; entries = Rrbvec.empty; size = 0 }
+let empty = { index = Empty; entries = Rrbvec.empty; size = 0; metadata = None }
 
 let dynamic_key_equal left right =
   Runtime_dynamic.equal left right || Runtime_dynamic.equal right left
@@ -166,6 +167,7 @@ let assoc_by_hash operations map key key_hash value =
             key key_hash position;
         entries;
         size = map.size + 1;
+        metadata = map.metadata;
       }
 
 let assoc_by operations map key value =
@@ -203,6 +205,7 @@ let assoc_small_string map key value =
             entries =
               Rrbvec.push_back map.entries (Some (key, value));
             size = map.size + 1;
+            metadata = map.metadata;
           })
 
 let of_list entries =
@@ -279,6 +282,7 @@ let dissoc_by operations map key =
               remove_position operations map.index key);
         entries = Rrbvec.set map.entries position None;
         size = map.size - 1;
+        metadata = map.metadata;
       }
 
 let dissoc map key = dissoc_by generic_operations map key
@@ -346,6 +350,15 @@ let select_options lookup keys =
     empty keys
 
 let count map = map.size
+
+let with_metadata map metadata =
+  let metadata =
+    match metadata with Lg_edn_backend.Nil -> None | metadata -> Some metadata
+  in
+  { map with metadata }
+
+let metadata map =
+  Option.value map.metadata ~default:Lg_edn_backend.Nil
 
 let fold_left fn accumulator map =
   Rrbvec.fold_left

@@ -19,6 +19,109 @@
     %{target}))))
 
 (rule
+ (target source_core_additions_app_chunk.ml)
+ (deps
+  source_core_additions_app.cljc
+  ../../stdlib/lg_stdlib_native.state
+  ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    native
+    --compile-chunk-from
+    %{dep:../../stdlib/lg_stdlib_native.state}
+    %{dep:source_core_additions_app.cljc}
+    -o
+    %{target}))))
+
+(rule
+ (target source_core_additions_native.ml)
+ (deps ../../stdlib/lg_stdlib_native.ml source_core_additions_app_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:source_core_additions_app_chunk.ml})))))
+
+(executable
+ (name source_core_additions_native)
+ (modules source_core_additions_native)
+ (flags
+  (:standard -w -32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_additions.actual)
+ (deps source_core_additions_native.exe source_core_additions.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:source_core_additions_native.exe}))
+   (diff %{dep:source_core_additions.expected} %{target}))))
+
+(rule
+ (target source_core_additions_app_melange_chunk.ml)
+ (deps
+  source_core_additions_app.cljc
+  ../../stdlib/lg_stdlib_melange.state
+  ../../bin/lg_cli.exe)
+ (action
+  (setenv
+   LG_DISABLE_COMPILE_CACHE
+   1
+   (run
+    %{exe:../../bin/lg_cli.exe}
+    --target
+    melange
+    --compile-chunk-from
+    %{dep:../../stdlib/lg_stdlib_melange.state}
+    %{dep:source_core_additions_app.cljc}
+    -o
+    %{target}))))
+
+(rule
+ (target source_core_additions_melange.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.ml
+  source_core_additions_app_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:source_core_additions_app_melange_chunk.ml})))))
+
+(melange.emit
+ (target source-core-additions-melange)
+ (alias source-core-additions-melange)
+ (module_systems es6)
+ (modules source_core_additions_melange)
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_additions_melange.actual)
+ (deps
+  (alias source-core-additions-melange)
+  source-core-additions-melange/test/stdlib/source_core_additions_melange.js
+  source_core_additions.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run
+     node
+     %{dep:source-core-additions-melange/test/stdlib/source_core_additions_melange.js}))
+   (diff %{dep:source_core_additions.expected} %{target}))))
+
+(rule
  (target clojure_set_native.ml)
  (deps ../../stdlib/lg_stdlib_native.ml clojure_set_app_chunk.ml)
  (action

@@ -1076,6 +1076,32 @@ let rec inferred_form_type params = function
           TFn (parameter_tys, TOcaml "int")
       | _ -> TUnknown)
   | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
+  | FList
+      [
+        FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+        FMap pairs;
+        _metadata;
+      ] ->
+      let homogeneous_type forms =
+        match List.map (inferred_form_type params) forms with
+        | [] -> TUnknown
+        | first :: rest
+          when List.for_all (fun ty -> Types.equal first ty) rest ->
+            first
+        | _ -> TUnknown
+      in
+      let keys, values = List.split pairs in
+      Types.dynamic_map (homogeneous_type keys) (homogeneous_type values)
+  | FList
+      [
+        FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+        value;
+        _metadata;
+      ] ->
+      inferred_form_type params value
+  | FList
+      [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); _value ] ->
+      TOcaml "Lg_edn_backend.t"
   | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
   | FList [ FSymbol "first"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
@@ -3848,17 +3874,20 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   | _ -> TNullable payload_ty
                 in
                 infer_expected expected_ty params option_form))
-    | FList [ FSymbol "with-meta"; FSymbol value; metadata ] -> (
-        match
-          constrain_symbol (Types.dynamic_constraint TUnknown) params value
-        with
-        | Error _ as error -> error
-        | Ok params ->
-            infer_expected (Types.dynamic_constraint TUnknown) params metadata)
+    | FList
+        [
+          FSymbol
+            ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+          value;
+          metadata;
+        ] ->
+        Result.bind (infer_form params value) (fun params ->
+            infer_form params metadata)
     | (FList (FSymbol ("and" | "or") :: _) as form) ->
         infer_truthy params form
-    | FList [ FSymbol "meta"; FSymbol value ] ->
-        constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList
+        [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); value ] ->
+        infer_form params value
     | FList [ FSymbol predicate; FSymbol value ]
       when has_source_name predicate "symbol?" ->
         constrain_symbol_predicate params value

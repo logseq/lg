@@ -56,6 +56,9 @@
 (signature clojure.core/rand-nth [value]
   :fn<seqable<value>;value>)
 (signature clojure.core/bit-shift-right-zero-fill :fn<int;int;int>)
+(signature clojure.core/bit-and-not-two :fn<int;int;int>)
+(signature clojure.core/unsigned-bit-shift-right :fn<int;int;int>)
+(signature clojure.core/bit-count :fn<int;int>)
 (signature clojure.core/second [value]
   :fn<seqable<value>;option<value>>)
 (signature clojure.core/last [value]
@@ -122,5 +125,17 @@
 
 (signature clojure.core/zipmap [key value]
   :fn<seqable<key>;seqable<value>;map<key;value>>)
+
+(signature clojure.core/comparator [value result]
+  :fn<fn<value;value;truthy<result>>;fn<value;value;int>>)
+
+(signature clojure.core/frequencies [value]
+  :fn<seqable<value>;map<value;int>>)
+
+(signature clojure.core/update-vals [key value result]
+  :fn<map<key;value>;fn<value;result>;map<key;result>>)
+
+(signature clojure.core/update-keys [key value result]
+  :fn<map<key;value>;fn<key;result>;map<result;value>>)
 
 (signature clojure.core/hash-combine :fn<int;int;int>)
