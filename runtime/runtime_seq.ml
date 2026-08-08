@@ -132,10 +132,12 @@ let interleave sequences =
   in
   next [] sequences
 
-let take count sequence = sequence |> Seq.take count |> memoize
+let take count sequence =
+  if count <= 0 then Seq.empty else sequence |> Seq.take count |> memoize
 
 let drop count sequence =
-  if count = 1 then
+  if count <= 0 then sequence
+  else if count = 1 then
     match sequence () with Seq.Nil -> Seq.empty | Seq.Cons (_, rest) -> rest
   else sequence |> Seq.drop count |> memoize
 

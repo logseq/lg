@@ -15,6 +15,16 @@ let test_single_sequence_concat_reuses_its_input () =
   let source = Seq.return 1 in
   assert (Sequence.concat [ source ] == source)
 
+let test_take_returns_empty_for_non_positive_counts () =
+  let source = Sequence.repeat "value" in
+  assert (Sequence.is_empty (Sequence.take 0 source));
+  assert (Sequence.is_empty (Sequence.take (-2) source))
+
+let test_drop_preserves_sequence_for_non_positive_counts () =
+  let source = Sequence.of_list [ 1; 2; 3 ] in
+  assert (Sequence.to_list (Sequence.drop 0 source) = [ 1; 2; 3 ]);
+  assert (Sequence.to_list (Sequence.drop (-2) source) = [ 1; 2; 3 ])
+
 let concat_pipeline_allocations count =
   Gc.full_major ();
   let before = Gc.allocated_bytes () in
@@ -44,5 +54,7 @@ let test_concat_pipeline_allocates_linearly () =
 
 let () =
   test_single_sequence_concat_reuses_its_input ();
+  test_take_returns_empty_for_non_positive_counts ();
+  test_drop_preserves_sequence_for_non_positive_counts ();
   test_concat_does_not_accumulate_empty_suffixes ();
   test_concat_pipeline_allocates_linearly ()

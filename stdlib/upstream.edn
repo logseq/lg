@@ -135,6 +135,7 @@
     reverse {:status :static-adaptation
              :reason :uses-upstream-reduce-path-without-reversible-protocol-fast-path}
     interpose {:status :ported}
+    replicate {:status :ported}
     dedupe {:status :static-adaptation
             :reason :composed-from-partition-by-and-map-with-static-indexed-group-access}
     distinct {:status :static-adaptation

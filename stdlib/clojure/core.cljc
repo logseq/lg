@@ -261,6 +261,9 @@
 (defn interpose [separator coll]
   (drop 1 (interleave (repeat separator) coll)))
 
+(defn replicate [n x]
+  (take n (repeat x)))
+
 (defn dedupe [coll]
   (map (fn [values] (nth values 0))
        (partition-by (fn [value] value) coll)))

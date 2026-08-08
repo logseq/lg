@@ -117,6 +117,9 @@
 (signature clojure.core/interpose [value]
   :fn<value;seqable<value>;seq<value>>)
 
+(signature clojure.core/replicate [value]
+  :fn<int;value;seq<value>>)
+
 (signature clojure.core/dedupe [value]
   :fn<seqable<value>;seq<value>>)
 

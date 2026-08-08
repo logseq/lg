@@ -65,3 +65,8 @@
 (defn realize-strings [values]
   (vec values))
 (println (= ["left" "right"] (realize-strings ["left" "right"])))
+
+(println (= ["x" "x" "x"] (replicate 3 "x")))
+(println (= [] (replicate 0 :ignored)))
+(println (= [] (core/replicate -2 :ignored)))
+(println (= [7 7] (clojure.core/replicate 2 7)))
