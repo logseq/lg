@@ -10828,7 +10828,7 @@ let create ~compile_expr =
                          | _ -> false)
                     param_tys actual_tys
                 in
-                let unify_argument substitutions template actual =
+                let rec unify_argument substitutions template actual =
                   match
                     ( Types.seqable_constraint_info template,
                       Types.seqable_constraint_info actual,
@@ -10838,7 +10838,7 @@ let create ~compile_expr =
                       None,
                       Some actual_element ) ->
                       (match
-                         Type_solver.unify substitutions expected_element
+                         unify_argument substitutions expected_element
                            actual_element
                        with
                       | Error _ as error -> error

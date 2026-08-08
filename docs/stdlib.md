@@ -26,7 +26,7 @@ have the following meanings:
 
 The first port is `clojure.set`, based on ClojureScript
 `src/main/cljs/clojure/set.cljs` at commit
-`7ab3bc777a6d0ec38cb886461dc21a71db7b827a`. Its size-based binary algorithms
+`5c6ef531604662afbb33dc1b553d7602634d9656`. Its size-based binary algorithms
 and branch order follow upstream. The variadic definitions reduce through
 typed binary helpers because LG cannot yet express the upstream `max-key`
 dependency and variadic rest relationship in one source signature.
@@ -99,7 +99,7 @@ needed by several ports, not a dispatch branch for one public var name.
 Run the inventory from the repository root:
 
 ```sh
-script/generate_clojure_surface_inventory.sh . ../logseq
+script/generate_clojure_surface_inventory.sh . ../logseq ../clojurescript
 ```
 
 The tab-separated output records the pinned ClojureScript commit, every string
@@ -109,6 +109,14 @@ namespace/qualified-var usage. The Logseq reader resolves aliases from each
 file's `ns` form and respects `.gitignore`; qualified-var counts are lexical
 occurrences after alias resolution, so they are a prioritization signal rather
 than a reachability analysis.
+
+When the optional ClojureScript checkout is supplied, its `HEAD` must match the
+commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
+commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify
+each observed dependency as `source-aggregate`, `source-core-alias`,
+`blocked-static-typing`, or `unsupported`; the final field is a machine-readable
+reason. This makes unsupported namespaces visible without confusing test and
+build-time libraries with source namespaces that LG already provides.
 
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
@@ -126,7 +134,13 @@ and the derived bit functions have no legacy compiler fallback. At the current c
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
-scope of the standard-library migration.
+scope of the standard-library migration. The same checkout also reports
+`cljs.test` 229 times, `clojure.test` 51 times, `cljs.pprint` 15 times,
+`clojure.pprint` 14 times, and `clojure.zip` 3 times as unsupported aggregate
+namespaces. `clojure.walk` and `clojure.data` remain explicitly blocked because
+their upstream algorithms traverse heterogeneous Clojure trees; a valid port
+must use a closed value domain rather than the existing `Runtime_dynamic.t`
+boundary.
 
 The architecture tests in `test/stdlib` enforce that `clojure.set` is no
 longer classified as compiler-owned and that source-owned core functions have

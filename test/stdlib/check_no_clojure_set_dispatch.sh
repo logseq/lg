@@ -28,7 +28,7 @@ if grep -E 'has_source_name operation "(subset\?|union|intersection|difference)"
   exit 1
 fi
 
-if ! grep -F '7ab3bc777a6d0ec38cb886461dc21a71db7b827a' "$root/stdlib/upstream.edn" >/dev/null; then
+if ! grep -F '5c6ef531604662afbb33dc1b553d7602634d9656' "$root/stdlib/upstream.edn" >/dev/null; then
   echo "clojure.set is missing its pinned ClojureScript provenance" >&2
   exit 1
 fi

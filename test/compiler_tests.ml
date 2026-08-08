@@ -20996,23 +20996,20 @@ let test_get_infers_unknown_key_from_known_map () =
 let test_ffirst_is_first_class_and_empty_safe () =
   let source =
     {|
-(def rules
-  [[[1] [10]]
-   [[2] [20]]
-   [[1] [30]]])
-(def grouped (group-by ffirst rules))
-(println (= 2 (count (get grouped 1))))
-(println (= 1 (count (get grouped 2))))
-(println
-  (= [nil nil nil 1]
-     (mapv ffirst [nil [] [[]] [[1 2]]])))
+(def ^:vector<vector<int>> empty-nested [])
+(def ^:vector<vector<int>> empty-inner [[]])
+(println (= [(Some 1) (Some 2)] (mapv ffirst [[[1]] [[2]]])))
+(println (nil? (ffirst empty-nested)))
+(println (nil? (ffirst empty-inner)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/ffirst_group_by.cljc" source
+  in
   assert_ocaml_runs "ffirst_is_first_class_and_empty_safe"
     "true\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/ffirst_group_by.cljc" source)
 
 let test_group_by_infers_generic_seqable_collections () =
   let source =

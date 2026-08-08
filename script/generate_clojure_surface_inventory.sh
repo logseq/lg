@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if test "$#" -lt 1 || test "$#" -gt 2; then
-  echo "usage: $0 LG_ROOT [LOGSEQ_ROOT]" >&2
+if test "$#" -lt 1 || test "$#" -gt 3; then
+  echo "usage: $0 LG_ROOT [LOGSEQ_ROOT] [CLOJURESCRIPT_ROOT]" >&2
   exit 2
 fi
 
@@ -10,6 +10,10 @@ lg_root=$(CDPATH= cd -- "$1" && pwd)
 logseq_root=${2-}
 if test -n "$logseq_root"; then
   logseq_root=$(CDPATH= cd -- "$logseq_root" && pwd)
+fi
+clojurescript_root=${3-}
+if test -n "$clojurescript_root"; then
+  clojurescript_root=$(CDPATH= cd -- "$clojurescript_root" && pwd)
 fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
@@ -25,6 +29,15 @@ fi
 upstream_commit=$(sed -n 's/.*:commit "\([0-9a-f][0-9a-f]*\)".*/\1/p' \
   "$lg_root/stdlib/upstream.edn" | head -1)
 printf 'meta\tclojurescript-commit\t%s\n' "$upstream_commit"
+
+if test -n "$clojurescript_root"; then
+  checkout_commit=$(git -C "$clojurescript_root" rev-parse HEAD)
+  printf 'meta\tclojurescript-checkout-commit\t%s\n' "$checkout_commit"
+  if test "$checkout_commit" != "$upstream_commit"; then
+    echo "ClojureScript checkout does not match stdlib/upstream.edn: expected $upstream_commit, found $checkout_commit" >&2
+    exit 1
+  fi
+fi
 
 # Parse the OCaml AST and select the largest `match name with` expression. This
 # avoids treating string patterns from nested type/argument matches as public
@@ -58,7 +71,7 @@ awk '
     split("doall dorun run!", xs)
     for (i in xs) blocked_reason[xs[i]] = "sequence-realization-and-effect-order-remain-a-compiler-runtime-boundary"
     blocked_reason["filterv"] = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
-    blocked_reason["group-by"] = "generic-key-and-seqable-callback-capability-projection-is-not-yet-source-safe"
+    blocked_reason["group-by"] = "nested-seqable-callback-capability-projection-conflates-logical-items-with-witness-storage"
     blocked_reason["into"] = "target-collection-representation-and-transducer-overload-require-dependent-types"
     split("max max-key min min-key", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-comparable-types-and-key-callback-overloads-are-not-source-expressible"
@@ -97,12 +110,12 @@ awk '
         print "missing concrete blocker reason for " $0 > "/dev/stderr"
         exit 1
       }
-    } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
-      classification = "host-boundary"
-      reason = "host-interop-or-runtime-effect-boundary"
     } else if (primitive[$0]) {
       classification = "typed-primitive"
       reason = "static-scalar-primitive"
+    } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
+      classification = "host-boundary"
+      reason = "host-interop-or-runtime-effect-boundary"
     }
     print "compiler-call\t" $0 "\t" classification "\t" reason
   }
@@ -144,6 +157,33 @@ grep -rhoE 'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
   | awk '{print "runtime-primitive\t" $0 "\ttyped-primitive-boundary"}'
 
 if test -n "$logseq_root" && test -d "$logseq_root"; then
+  if git -C "$logseq_root" rev-parse HEAD >"$tmp/logseq-commit" 2>/dev/null; then
+    printf 'meta\tlogseq-commit\t%s\n' "$(sed -n '1p' "$tmp/logseq-commit")"
+  fi
+  sed -n '/:aggregate-namespaces/,/]/p' "$lg_root/stdlib/upstream.edn" \
+    | tr ' []' '\n' \
+    | awk '/^(clojure|cljs)\./ {
+        print $1 "\tsource-aggregate\taggregate-stdlib"
+        if ($1 == "clojure.core") {
+          print "cljs.core\tsource-core-alias\tautomatic-core-alias"
+        }
+      }' >"$tmp/namespace-support"
+
+  awk '
+    /^  (clojure|cljs)\.[A-Za-z0-9_.-]+$/ {
+      namespace = $1
+      blocked = 0
+    }
+    /:status :blocked/ {blocked = 1}
+    blocked && /:reason :[A-Za-z0-9_.-]+/ {
+      reason = $2
+      sub(/^:/, "", reason)
+      sub(/[^A-Za-z0-9_.-].*$/, "", reason)
+      print namespace "\tblocked-static-typing\t" reason
+      blocked = 0
+    }
+  ' "$lg_root/stdlib/upstream.edn" >>"$tmp/namespace-support"
+
   (
     cd "$logseq_root"
     rg --files -0 -g '*.clj' -g '*.cljs' -g '*.cljc' \
@@ -159,5 +199,34 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
           print "logseq-qualified-var\t" $3 "\t" $1
         }
       ' \
-    | LC_ALL=C sort -t '	' -k1,1 -k3,3nr -k2,2 || true
+    | LC_ALL=C sort -t '	' -k1,1 -k3,3nr -k2,2 \
+    >"$tmp/logseq-counts" || true
+
+  awk -F '\t' '
+    FNR == NR {
+      support[$1] = $2
+      reason[$1] = $3
+      next
+    }
+    function namespace_status(namespace) {
+      return namespace in support ? support[namespace] : "unsupported"
+    }
+    function namespace_reason(namespace) {
+      return namespace in reason ? reason[namespace] : "not-in-aggregate-or-blocked-manifest"
+    }
+    {
+      print
+      if ($1 == "logseq-namespace") {
+        print "logseq-namespace-status\t" $2 "\t" namespace_status($2) \
+          "\t" $3 "\t" namespace_reason($2)
+      } else if ($1 == "logseq-qualified-var") {
+        split($2, qualified, "/")
+        namespace = qualified[1]
+        print "logseq-qualified-var-status\t" $2 "\t" \
+          namespace_status(namespace) "\t" $3 "\t" \
+          namespace_reason(namespace)
+      }
+    }
+  ' "$tmp/namespace-support" "$tmp/logseq-counts" \
+    | LC_ALL=C sort -t '	' -k1,1 -k2,2
 fi

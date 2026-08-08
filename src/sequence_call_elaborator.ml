@@ -473,6 +473,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
             compile_deferred_call ()
         | Ok function_ when is_callable_map_type function_.ty ->
             compile_deferred_call ()
+        | Ok
+            {
+              ty = TFn ([ parameter_ty ], _);
+              _;
+            }
+          when Option.is_some (Types.seqable_constraint_info parameter_ty) ->
+            compile_deferred_call ()
         | Ok function_ -> adapt_set_callable function_
         | Error _ -> compile_deferred_call ())
     | form ->

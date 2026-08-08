@@ -1,6 +1,6 @@
 {:clojurescript
  {:repository "https://github.com/clojure/clojurescript"
-  :commit "7ab3bc777a6d0ec38cb886461dc21a71db7b827a"
+  :commit "5c6ef531604662afbb33dc1b553d7602634d9656"
  :license "EPL-1.0"}
 
  :aggregate-namespaces
