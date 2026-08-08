@@ -52,6 +52,12 @@ let last_index_of_int source needle = last_index_of source needle
 
 let length source = String.length source
 
+let substring_from source start =
+  String.sub source start (String.length source - start)
+
+let substring_range source start stop =
+  String.sub source start (stop - start)
+
 let replace source match_value replacement =
   let match_len = String.length match_value in
   if match_len = 0 then source

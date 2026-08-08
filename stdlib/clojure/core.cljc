@@ -6,7 +6,8 @@
 (ns clojure.core
   (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
-            [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
+            [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
+            [ocaml.Lg_runtime.Runtime_string :as runtime-string]))
 
 (defn identity [x]
   x)
@@ -23,6 +24,15 @@
 
 (defn reduced [x]
   (runtime-reduced/reduced x))
+
+(defn subs
+  ([source start]
+   (runtime-string/substring-from source start))
+  ([source start end]
+   (runtime-string/substring-range source start end)))
+
+(defn int-to-string-radix [value radix]
+  (runtime-string/int-to-string-radix value radix))
 
 (defn quot [n d]
   (runtime-int/int-quot n d))

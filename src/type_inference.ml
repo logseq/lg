@@ -4620,10 +4620,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
              (fresh_type_variable
                 ("sequence_" ^ Names.sanitize_name operation ^ "_element")))
           params collection
-    | FList [ FSymbol "int-to-string-radix"; value; radix ] -> (
-        match infer_expected TInt params value with
-        | Error _ as err -> err
-        | Ok params -> infer_expected TInt params radix)
     | FList [ FSymbol "re-matches"; expression; source ] -> (
         match infer_expected TRegex params expression with
         | Error _ as error -> error

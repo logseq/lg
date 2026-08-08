@@ -5040,19 +5040,6 @@ let create ~compile_expr =
                                       Types.ocaml_name hinted_type );
                   })))
         | _ -> Error.error "type hint expects metadata and a value")
-    | "int-to-string-radix" -> (
-        match compile_args () with
-        | Ok [ value; radix ]
-                    when Types.equal value.ty TInt && Types.equal radix.ty TInt
-                    ->
-            Ok
-              (typed_ir TString
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident
-                        "Lg_runtime.Runtime_string.int_to_string_radix",
-                      [ value.semantic_expr; radix.semantic_expr ] )))
-        | Ok _ -> Error.error "int-to-string-radix expects an int and radix"
-        | Error _ as error -> error)
     | ".toByteArray" -> (
         match compile_args () with
         | Ok [ output ] when Types.equal output.ty (TOcaml "Buffer.t") ->
@@ -8430,7 +8417,6 @@ let create ~compile_expr =
                       [ Semantic_ir.String "unreachable symbol branch" ] )))
         | Ok _ ->
             Error.error "internal symbol narrowing expects 1 argument")
-    | "subs" -> compile_subs scope env arg_forms
     | "max" | "min" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -10095,53 +10081,6 @@ let create ~compile_expr =
     | _ ->
         Error.error
           "update-in expects target, path, function, and optional arguments"
-  and compile_subs scope env arg_forms =
-    let host_index expression = expression in
-    let prepare expected argument error =
-      if Types.equal argument.ty expected then Ok argument.semantic_expr
-      else if Types.is_dynamic argument.ty then
-        dynamic_unpack env expected argument.semantic_expr
-      else Error.error error
-    in
-    let substring source start stop =
-      let source_name = "__lg_subs_source" in
-      let source_value = Semantic_ir.Ident source_name in
-      let length =
-        match stop with
-        | None ->
-                        Semantic_ir.Infix
-                          ( "-",
-                            Semantic_ir.Apply
-                  (Semantic_ir.Ident "String.length", [ source_value ]),
-                start )
-        | Some stop -> Semantic_ir.Infix ("-", stop, start)
-      in
-      Semantic_ir.Let
-        ( [ (Semantic_ir.PVar source_name, source) ],
-          Semantic_ir.Apply
-            (Semantic_ir.Ident "String.sub", [ source_value; start; length ]) )
-    in
-    match compile_args_for scope env arg_forms with
-    | Error _ as err -> err
-    | Ok [ source; start ] ->
-        Result.bind (prepare TString source "subs expects a string")
-          (fun source ->
-            Result.map
-              (fun start ->
-                typed_ir TString (substring source (host_index start) None))
-              (prepare TInt start "subs indexes must be int"))
-    | Ok [ source; start; stop ] ->
-        Result.bind (prepare TString source "subs expects a string")
-          (fun source ->
-            Result.bind (prepare TInt start "subs indexes must be int")
-              (fun start ->
-                Result.map
-                  (fun stop ->
-                    typed_ir TString
-                      (substring source (host_index start)
-                         (Some (host_index stop))))
-                  (prepare TInt stop "subs indexes must be int")))
-    | Ok _ -> Error.error "subs expects string, start, and optional end"
   and compile_function_arg scope env form =
     let compiled =
       match form with

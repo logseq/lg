@@ -82,6 +82,10 @@
     second {:status :ported}
     last {:status :static-adaptation
           :reason :preserves-the-upstream-linear-next-loop-using-static-empty-sequence-truthiness}
+    subs {:status :static-adaptation
+          :reason :preserves-the-upstream-two-and-three-argument-api-through-typed-runtime-string-substring-primitives}
+    int-to-string-radix {:status :static-adaptation
+                         :reason :typed-runtime-string-replacement-for-the-clojurescript-number-to-string-radix-host-call}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

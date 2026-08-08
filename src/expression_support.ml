@@ -1080,7 +1080,6 @@ let untyped_first_class_function_error = function
     | "some?"
     | "str"
     | "string?"
-    | "subs"
     | "symbol?"
     | "to-array"
     | "transient"
