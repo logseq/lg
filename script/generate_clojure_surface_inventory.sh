@@ -60,6 +60,8 @@ awk '
     } else if (blocked[$0]) {
       classification = "blocked-static-typing"
       reason = "requires-variadic-dependent-lazy-or-capability-type-support"
+      if ($0 == "filterv")
+        reason = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
     } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
       classification = "host-boundary"
       reason = "host-interop-or-runtime-effect-boundary"
