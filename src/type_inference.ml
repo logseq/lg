@@ -1140,26 +1140,6 @@ let rec inferred_form_type params = function
   | FList [ FSymbol operation; _ ]
     when String.equal operation "Array.length" ->
       TInt
-  | FList (FSymbol operation :: _)
-    when has_source_name operation "array-binary-search-left"
-         || has_source_name operation "array-binary-search-right" ->
-      TFloat
-  | FList [ FSymbol operation; collection ]
-    when has_source_name operation "array-from" ->
-      let collection_ty = inferred_form_type params collection in
-      let element_ty =
-        match collection_ty with
-        | TArray element_ty | TList element_ty | TVector element_ty
-        | TSet element_ty | TSeq element_ty ->
-            element_ty
-        | collection_ty ->
-            Types.seqable_constraint_element collection_ty
-            |> Option.value
-                 ~default:
-                   (if Types.is_dynamic collection_ty then collection_ty
-                    else TUnknown)
-      in
-      TArray element_ty
   | FList
       (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses) ->
       let thread value step =
@@ -1902,15 +1882,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             Result.bind infer_target (fun params ->
                 infer_assoc ~constrain_assigned:false params target pairs))
-    | FList [ FSymbol name; collection ]
-      when has_source_name name "array-from"
-           && (match expected_ty with TArray _ -> true | _ -> false) -> (
-        let element_ty =
-          match expected_ty with TArray element_ty -> element_ty | _ -> assert false
-        in
-        match collection with
-        | FSymbol name -> constrain_seqable element_ty params name
-        | collection -> infer_form params collection)
     | FList [ FSymbol operation; array; from; length ]
       when String.equal operation "Array.sub"
            && (match expected_ty with
@@ -4447,25 +4418,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _ -> fresh_type_variable ("array_" ^ Names.sanitize_name array)
         in
         constrain_symbol (TArray element_ty) params array
-    | FList [ FSymbol operation; comparator; array; right; key ]
-      when has_source_name operation "array-binary-search-left"
-           || has_source_name operation "array-binary-search-right" ->
-        let element_ty =
-          match inferred_form_type params array with
-          | TArray element_ty | TOcaml_app ("array", [ element_ty ]) ->
-              element_ty
-          | _ -> fresh_type_variable "array_binary_search_element"
-        in
-        let comparator_return_ty = TOcaml "int" in
-        Result.bind (infer_expected (TArray element_ty) params array)
-          (fun params ->
-            Result.bind
-              (infer_expected
-                 (TFn ([ element_ty; element_ty ], comparator_return_ty))
-                 params comparator)
-              (fun params ->
-                Result.bind (infer_expected TInt params right) (fun params ->
-                    infer_expected element_ty params key)))
     | FList [ FSymbol operation; FSymbol array; from; length ]
       when String.equal operation "Array.sub" ->
         let element_ty =

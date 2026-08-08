@@ -21041,11 +21041,31 @@ let test_batched_core_functions_reject_bad_arities () =
   |> expect_error_contains "called with incompatible arguments";
   compile_with_stdlib_result Lg.Target.Native "test/bad_realized_arity.cljc"
     {|(def x (realized?))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_array_from_arity.cljc"
+    {|(def x (array-from [1] [2]))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_binary_search_arity.cljc"
+    {|
+(defn compare-values [^:int left ^:int right] (compare left right))
+(def x (array-binary-search-left compare-values (array 1) 0))
+|}
   |> expect_error_contains "called with incompatible arguments"
 
 let test_source_realized_rejects_non_future_values () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_realized_value.cljc"
     {|(def x (realized? 1))|}
+  |> expect_error_contains "expected of type"
+
+let test_source_array_helpers_reject_incompatible_values () =
+  compile_with_stdlib_result Lg.Target.Native "test/bad_array_from_value.cljc"
+    {|(def x (array-from 1))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_binary_search_array.cljc"
+    {|
+(defn compare-values [^:int left ^:int right] (compare left right))
+(def x (array-binary-search-left compare-values [1 2] 1 1))
+|}
   |> expect_error_contains "expected of type"
 
 let test_batched_core_functions_infer_int_params () =
@@ -23301,7 +23321,7 @@ let test_ocaml_uncurried_call_emits_melange_direct_application () =
   |> expect_error_contains
        "uncurried-call expects a binary function and two compatible arguments"
 
-let test_melange_array_binary_search_uses_native_indices () =
+let test_source_array_binary_search_uses_native_indices () =
   let source =
     {|
 (def values (array-values 1 3 5 7))
@@ -23314,21 +23334,21 @@ let test_melange_array_binary_search_uses_native_indices () =
 |}
   in
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
-  List.iter
-    (fun helper ->
-      if not (string_contains_substring melange_source helper) then
-        failwith ("expected Melange array binary search helper " ^ helper))
-    [
-      "Lg_runtime.Runtime_array_melange.binary_search_left";
-      "Lg_runtime.Runtime_array_melange.binary_search_right";
-    ];
+  if
+    string_contains_substring melange_source
+      "Lg_runtime.Runtime_array_melange.binary_search"
+  then failwith "source binary search must not call the legacy runtime algorithm";
   if string_contains_substring melange_source "Int64.to_float" then
     failwith "Melange binary search results must remain host indexes";
-  Lg.Compiler.compile_string
-    {|(array-binary-search-left compare [1 2] 1 1)|}
-  |> expect_error_contains "array-binary-search-left expects an OCaml array"
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_binary_search_bad_array.cljc"
+    {|
+(defn compare-values [^:int left ^:int right] (compare left right))
+(array-binary-search-left compare-values [1 2] 1 1)
+|}
+  |> expect_error_contains "expected of type"
 
 let test_ordering_values_use_ocaml_int_inputs_and_results () =
   let source =
@@ -31098,12 +31118,12 @@ let test_higher_order_mapv_wrappers_preserve_nominal_element_types () =
 (println (:value (unsafe-aget items 0)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "higher_order_mapv_wrappers_preserve_nominal_element_types" "42\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_map_value_parameters_support_guarded_sequence_use () =
   let source =
@@ -37087,6 +37107,8 @@ let tests =
       test_batched_core_functions_reject_bad_arities );
     ( "source realized? rejects non-future values",
       test_source_realized_rejects_non_future_values );
+    ( "source array helpers reject incompatible values",
+      test_source_array_helpers_reject_incompatible_values );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",
@@ -37270,8 +37292,8 @@ let tests =
       test_ocaml_array_sequences_flat_map_lazily );
     ( "OCaml uncurried call runs fixed-arity callbacks",
       test_ocaml_uncurried_call_emits_melange_direct_application );
-    ( "Melange array binary search uses native indices",
-      test_melange_array_binary_search_uses_native_indices );
+    ( "source array binary search uses native indices",
+      test_source_array_binary_search_uses_native_indices );
     ( "ordering values use OCaml int inputs and results",
       test_ordering_values_use_ocaml_int_inputs_and_results );
     ( "Melange binary search consumes static orderings",

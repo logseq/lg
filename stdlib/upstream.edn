@@ -86,6 +86,8 @@
                       :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
     unchecked-negate-int {:status :static-adaptation
                           :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
+    rand {:status :blocked-static-typing
+          :reason :same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type-without-narrowing-the-existing-public-api}
     rand-int {:status :static-adaptation
               :reason :source-wrapper-over-the-typed-runtime-random-primitive}
     rand-nth {:status :ported}
@@ -168,6 +170,12 @@
               :reason :source-port-copies-a-statically-typed-seqable-through-the-polymorphic-runtime-array-boundary}
     into-array {:status :static-adaptation
                 :reason :source-port-supports-the-upstream-one-argument-seqable-copy-arity-while-the-two-argument-runtime-type-tag-arity-remains-outside-the-static-source-language}
+    array-from {:status :static-adaptation
+                :reason :lg-datascript-source-compatibility-alias-copies-any-statically-typed-seqable-through-to-array}
+    array-binary-search-left {:status :static-adaptation
+                              :reason :lg-datascript-source-extension-preserves-the-existing-left-bound-binary-search-loop-with-static-array-comparator-and-key-types}
+    array-binary-search-right {:status :static-adaptation
+                               :reason :lg-datascript-source-extension-preserves-the-existing-right-bound-binary-search-loop-with-static-array-comparator-and-key-types}
     amap {:status :ported
           :reason :source-macro-preserves-the-upstream-four-argument-clone-loop-and-element-update-contract}
     asort! {:status :static-adaptation

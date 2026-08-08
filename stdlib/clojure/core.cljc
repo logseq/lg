@@ -185,6 +185,29 @@
 (defn into-array [coll]
   (to-array coll))
 
+(defn array-from [coll]
+  (to-array coll))
+
+(defn array-binary-search-left [compare values right key]
+  (loop [left 0
+         right right]
+    (if (> left right)
+      (double left)
+      (let [middle (+ left (/ (- right left) 2))]
+        (if (< (compare (aget values middle) key) 0)
+          (recur (inc middle) right)
+          (recur left (dec middle)))))))
+
+(defn array-binary-search-right [compare values right key]
+  (loop [left 0
+         right right]
+    (if (> left right)
+      (double left)
+      (let [middle (+ left (/ (- right left) 2))]
+        (if (> (compare (aget values middle) key) 0)
+          (recur left (dec middle))
+          (recur (inc middle) right))))))
+
 (defmacro amap [values index result expression]
   `(let [values# ~values
          length# (alength values#)

@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
+  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -277,6 +277,25 @@
 (println (empty? (array-seq conversion-source-array 3)))
 (println (= 2 (alength (core/to-array [1 2]))))
 (println (= 9 (first (core/array-seq (core/into-array [9])))))
+
+(def copy-array array-from)
+(def copied-integers (copy-array [1 3 5 7]))
+(def original-copy-source (array 4 5 6))
+(def copied-source (core/array-from original-copy-source))
+(aset copied-source 0 9)
+(println (= 4 (aget original-copy-source 0)))
+(println (= 9 (aget copied-source 0)))
+(def copied-strings (clojure.core/array-from ["a" "b"]))
+(println (= "b" (aget copied-strings 1)))
+
+(defn compare-integers [left right]
+  (compare left right))
+(defn compare-strings [left right]
+  (compare left right))
+(def source-search-left array-binary-search-left)
+(println (= 2.0 (source-search-left compare-integers copied-integers 3 4)))
+(println (= 3.0 (core/array-binary-search-right compare-integers copied-integers 3 5)))
+(println (= 1.0 (clojure.core/array-binary-search-left compare-strings copied-strings 1 "b")))
 
 (def source-increment inc)
 (def source-decrement dec)

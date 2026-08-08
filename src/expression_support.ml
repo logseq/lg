@@ -1083,7 +1083,6 @@ let untyped_first_class_function_error = function
     | "update"
     | "vec"
     | "vector"
-    | "array-from"
     | "boolean?" ) as name ->
       Some (untyped_first_class_collection_function_error name)
   | ( "clojure.core/dissoc"

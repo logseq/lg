@@ -71,6 +71,10 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/bit-shift-right" && $3 ==
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ratio?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/decimal?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/realized?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/array-from" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/array-binary-search-left" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/array-binary-search-right" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/rand" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/distinct?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/not=" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-long" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -90,6 +94,7 @@ awk -F '\t' '$1 == "compiler-call" && ($2 == "identity" || $3 == "source-shadowe
 awk -F '\t' '$1 == "compiler-call" && $2 == "+" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "-" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "rand" && $3 == "blocked-static-typing" && $4 == "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '
   $1 == "compiler-call" && $3 == "blocked-static-typing" &&
   ($4 == "" || $4 == "requires-variadic-dependent-lazy-or-capability-type-support") {

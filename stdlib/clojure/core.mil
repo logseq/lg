@@ -65,6 +65,12 @@
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/into-array [value]
   :fn<seqable<value>;array<value>>)
+(signature clojure.core/array-from [value]
+  :fn<seqable<value>;array<value>>)
+(signature clojure.core/array-binary-search-left [element key]
+  :fn<fn<element;key;int>;array<element>;int;key;float>)
+(signature clojure.core/array-binary-search-right [element key]
+  :fn<fn<element;key;int>;array<element>;int;key;float>)
 (signature clojure.core/asort! [array-element]
   :fn<fn<array-element;array-element;int>;array<array-element>;unit>)
 (signature clojure.core/booleans [value] :fn<value;value>)
