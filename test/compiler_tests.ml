@@ -29178,6 +29178,53 @@ let test_function_helpers () =
   in
   assert_ocaml_runs "function_helpers" "18:7:ok:ok:ok:6:6:true\n" ocaml_source
 
+let test_source_core_map_entry_and_parse_boolean_helpers () =
+  let source =
+    {|
+(defn last-keyword-key [^:map<keyword;int> entries]
+  (reduce (fn [_result entry] (key entry)) :missing entries))
+(def qualified-cljs-key cljs.core/key)
+(def qualified-clojure-val clojure.core/val)
+(defn last-string-key [^:map<string;bool> entries]
+  (reduce (fn [_result entry] (qualified-cljs-key entry)) "missing" entries))
+(defn last-int-value [^:map<keyword;int> entries]
+  (reduce (fn [_result entry] (val entry)) 0 entries))
+(defn last-bool-value [^:map<string;bool> entries]
+  (reduce (fn [_result entry] (qualified-clojure-val entry)) false entries))
+(println (= :left (last-keyword-key {:left 7})))
+(println (= 7 (last-int-value {:left 7})))
+(println (= "name" (last-string-key {"name" true})))
+(println (= true (last-bool-value {"name" true})))
+(println (= true (parse-boolean "true")))
+(println (= false (parse-boolean "false")))
+(println (nil? (parse-boolean "TRUE")))
+|}
+  in
+  let expected = "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_core_map_entry_and_parse_boolean.cljc" source
+  in
+  assert_ocaml_runs "source_core_map_entry_and_parse_boolean_helpers" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_core_map_entry_and_parse_boolean.cljc" source)
+
+let test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls () =
+  [
+    ("(key)", "called with incompatible arguments");
+    ("(val 1 2)", "called with incompatible arguments");
+    ("(key 42)", "OCaml typecheck failed");
+    ("(parse-boolean)", "called with incompatible arguments");
+    ("(parse-boolean true)", "called with incompatible arguments");
+  ]
+  |> List.iteri (fun index (source, expected_error) ->
+         compile_with_stdlib_result Lg.Target.Native
+           (Printf.sprintf "test/source_core_helper_bad_call_%d.cljc" index)
+           source
+         |> expect_error_contains expected_error)
+
 let test_common_higher_order_helpers () =
   let source =
     {|
@@ -37330,6 +37377,10 @@ let tests =
       test_destructuring_rejects_bad_or_defaults );
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
+    ( "source core map-entry and parse-boolean helpers work",
+      test_source_core_map_entry_and_parse_boolean_helpers );
+    ( "source core map-entry and parse-boolean helpers reject bad calls",
+      test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

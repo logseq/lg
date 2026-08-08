@@ -4811,6 +4811,7 @@ let create ~compile_expr =
             | None -> Error.error ("unknown field " ^ keyword))
         | _ -> Error.error "mutable field assignment expects a deftype value")
   and compile_call scope env name arg_forms =
+    let name = Resolver.canonical_core_name name in
     let name =
       match String.split_on_char '/' name with
       | [ alias; member ] -> (

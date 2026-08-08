@@ -4,7 +4,8 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Rrbvec :as rrb-vector]
+  (:require [ocaml.Stdlib :as stdlib]
+            [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
@@ -45,6 +46,12 @@
 
 (defn int-to-string-radix [value radix]
   (runtime-string/int-to-string-radix value radix))
+
+(defn parse-boolean [source]
+  (case source
+    "true" true
+    "false" false
+    nil))
 
 (defn any? [x]
   (runtime-static-value/consume x)
@@ -297,6 +304,12 @@
           (next remaining-values))
         result)
       result)))
+
+(defn key [map-entry]
+  (stdlib/fst map-entry))
+
+(defn val [map-entry]
+  (stdlib/snd map-entry))
 
 (defn vec [coll]
   (rrb-vector/of-list (runtime-seq/to-list (seq coll))))

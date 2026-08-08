@@ -93,6 +93,8 @@
           :reason :preserves-the-upstream-two-and-three-argument-api-through-typed-runtime-string-substring-primitives}
     int-to-string-radix {:status :static-adaptation
                          :reason :typed-runtime-string-replacement-for-the-clojurescript-number-to-string-radix-host-call}
+    parse-boolean {:status :static-adaptation
+                   :reason :non-string-input-is-rejected-statically-while-valid-string-control-flow-matches-upstream}
     any? {:status :ported}
     range {:status :static-adaptation
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}
@@ -142,6 +144,10 @@
               :reason :preserves-existing-eager-static-semantics-with-a-typed-seen-set}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
+    key {:status :static-adaptation
+         :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
+    val {:status :static-adaptation
+         :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
     vec {:status :static-adaptation
          :reason :typed-seqable-source-wrapper-realizes-elements-into-the-lg-rrb-vector-representation}
     comparator {:status :ported}

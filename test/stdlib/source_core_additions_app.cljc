@@ -70,3 +70,25 @@
 (println (= [] (replicate 0 :ignored)))
 (println (= [] (core/replicate -2 :ignored)))
 (println (= [7 7] (clojure.core/replicate 2 7)))
+
+(defn last-keyword-key [^:map<keyword;int> entries]
+  (reduce (fn [_result entry] (key entry)) :missing entries))
+(def qualified-cljs-key cljs.core/key)
+(def qualified-clojure-val clojure.core/val)
+(defn last-string-key [^:map<string;bool> entries]
+  (reduce (fn [_result entry] (qualified-cljs-key entry)) "missing" entries))
+(defn last-int-value [^:map<keyword;int> entries]
+  (reduce (fn [_result entry] (val entry)) 0 entries))
+(defn last-bool-value [^:map<string;bool> entries]
+  (reduce (fn [_result entry] (qualified-clojure-val entry)) false entries))
+(println (= :left (last-keyword-key {:left 7})))
+(println (= 7 (last-int-value {:left 7})))
+(println (= "name" (last-string-key {"name" true})))
+(println (= true (last-bool-value {"name" true})))
+
+(println (= true (parse-boolean "true")))
+(println (= false (parse-boolean "false")))
+(println (nil? (parse-boolean "TRUE")))
+(println (nil? (parse-boolean " false")))
+(println (= true (core/parse-boolean "true")))
+(println (= false (clojure.core/parse-boolean "false")))

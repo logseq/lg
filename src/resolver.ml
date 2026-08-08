@@ -4,6 +4,14 @@ module Env = Compiler_environment
 
 let record_type_key scope type_name = "__record/" ^ scope ^ "/" ^ type_name
 
+let canonical_core_name name =
+  let cljs_prefix = "cljs.core/" in
+  if String.starts_with ~prefix:cljs_prefix name then
+    "clojure.core/"
+    ^ String.sub name (String.length cljs_prefix)
+        (String.length name - String.length cljs_prefix)
+  else name
+
 let lookup_type_declaration scope env type_name =
   let registry = Env.types env in
   let lookup owner local_name =
@@ -94,6 +102,7 @@ let lookup_record_type scope env type_name =
   | None -> local_lookup scope type_name
 
 let lookup_binding scope env name =
+  let name = canonical_core_name name in
   match Env.find_opt (Names.scoped_key scope name) env with
   | Some (binding : binding) -> Ok binding
   | None -> (
