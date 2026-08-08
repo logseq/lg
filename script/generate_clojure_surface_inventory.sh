@@ -1,0 +1,106 @@
+#!/bin/sh
+set -eu
+
+if test "$#" -lt 1 || test "$#" -gt 2; then
+  echo "usage: $0 LG_ROOT [LOGSEQ_ROOT]" >&2
+  exit 2
+fi
+
+lg_root=$(CDPATH= cd -- "$1" && pwd)
+logseq_root=${2-}
+if test -n "$logseq_root"; then
+  logseq_root=$(CDPATH= cd -- "$logseq_root" && pwd)
+fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+call_elaborator="$lg_root/src/call_elaborator.ml"
+core_namespaces="$lg_root/src/core_namespaces.ml"
+
+if ! test -f "$call_elaborator" || ! test -f "$core_namespaces"; then
+  echo "LG_ROOT must contain src/call_elaborator.ml and src/core_namespaces.ml" >&2
+  exit 2
+fi
+
+upstream_commit=$(sed -n 's/.*:commit "\([0-9a-f][0-9a-f]*\)".*/\1/p' \
+  "$lg_root/stdlib/upstream.edn" | head -1)
+printf 'meta\tclojurescript-commit\t%s\n' "$upstream_commit"
+
+# Parse the OCaml AST and select the largest `match name with` expression. This
+# avoids treating string patterns from nested type/argument matches as public
+# compiler dispatch names.
+ocaml -I +compiler-libs ocamlcommon.cma \
+  "$lg_root/script/extract_ocaml_string_dispatch.ml" "$call_elaborator" \
+  >"$tmp/compiler-calls"
+
+awk '
+  BEGIN {
+    split("binding with-open with-out-str reify assert delay set! throw", xs)
+    for (i in xs) special[xs[i]] = 1
+    split("identity constantly complement comp partial fnil every-pred some-fn juxt not-any? not-every? even? odd?", xs)
+    for (i in xs) portable[xs[i]] = 1
+    split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
+    for (i in xs) primitive[xs[i]] = 1
+  }
+  {
+    classification = "needs-review"
+    if (special[$0]) classification = "special-form"
+    else if (portable[$0]) classification = "source-portable"
+    else if (primitive[$0]) classification = "typed-primitive"
+    else if ($0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/)
+      classification = "host-boundary"
+    print "compiler-call\t" $0 "\t" classification
+  }
+' "$tmp/compiler-calls"
+
+for namespace in clojure.core cljs.core clojure.data clojure.edn cljs.reader clojure.string clojure.set clojure.walk; do
+  ownership=manifest-only
+  if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
+    ownership=compiler-owned
+  elif test "$namespace" = clojure.string; then
+    ownership=source-with-primitive-boundary
+  elif test "$namespace" = clojure.set; then
+    ownership=source
+  elif grep -F "\"$namespace\"" "$core_namespaces" >/dev/null; then
+    ownership=compiler-owned
+  fi
+  printf 'namespace\t%s\t%s\n' "$namespace" "$ownership"
+done
+
+while IFS='|' read -r var classification; do
+  printf 'namespace-var\t%s\t%s\n' "$var" "$classification"
+done <<'EOF'
+clojure.data/diff|host-boundary
+clojure.edn/read-string|host-boundary
+clojure.edn/register-tag-parser!|host-boundary
+cljs.reader/read-string|host-boundary
+cljs.reader/register-tag-parser!|host-boundary
+clojure.string/split|host-boundary
+clojure.walk/walk|host-boundary
+clojure.walk/prewalk|host-boundary
+clojure.walk/postwalk|host-boundary
+EOF
+
+grep -rhoE 'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
+  "$lg_root/src" \
+  | LC_ALL=C sort -u \
+  | awk '{print "runtime-primitive\t" $0 "\ttyped-primitive-boundary"}'
+
+if test -n "$logseq_root" && test -d "$logseq_root"; then
+  (
+    cd "$logseq_root"
+    rg --files -0 -g '*.clj' -g '*.cljs' -g '*.cljc' \
+      | xargs -0 -n 100 bb "$lg_root/script/clojure_namespace_inventory.clj"
+  ) \
+    | LC_ALL=C sort \
+    | uniq -c \
+    | awk '
+        $2 == "namespace" {
+          print "logseq-namespace\t" $3 "\t" $1
+        }
+        $2 == "qualified-var" {
+          print "logseq-qualified-var\t" $3 "\t" $1
+        }
+      ' \
+    | LC_ALL=C sort -t '	' -k1,1 -k3,3nr -k2,2 || true
+fi

@@ -78,6 +78,32 @@ followed by the library namespaces that appear most often in the selected
 Logseq migration slice. Compiler changes should add general language support
 needed by several ports, not a dispatch branch for one public var name.
 
+## Auditable surface inventory
+
+Run the inventory from the repository root:
+
+```sh
+script/generate_clojure_surface_inventory.sh . ../logseq
+```
+
+The tab-separated output records the pinned ClojureScript commit, every string
+alternative in the compiler's main call dispatcher, compiler-owned namespace
+vars, referenced runtime primitive boundaries, and Logseq standard-library
+namespace/qualified-var usage. The Logseq reader resolves aliases from each
+file's `ns` form and respects `.gitignore`; qualified-var counts are lexical
+occurrences after alias resolution, so they are a prioritization signal rather
+than a reachability analysis.
+
+The inventory uses `needs-review` deliberately. Completion requires reducing
+that count to zero by classifying each entry as `source-portable`,
+`special-form`, `typed-primitive`, or `host-boundary`, then moving every
+`source-portable` entry out of name-based compiler dispatch. At the current
+checkpoint, the Logseq tree requires `clojure.string` 391 times,
+`clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
+`cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
+reader/walk/data boundaries visible instead of treating `clojure.set` as the
+scope of the standard-library migration.
+
 The architecture test in `test/stdlib` enforces that `clojure.set` is no longer
 classified as compiler-owned and that its public functions have no name-based
 call elaboration or inference path.

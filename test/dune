@@ -4238,6 +4238,17 @@
    sh
    %{dep:../script/check_datascript_ocaml_benchmark_result_test.sh})))
 
+(rule
+ (alias runtest)
+ (deps
+  ../script/generate_clojure_surface_inventory_test.sh
+  ../script/generate_clojure_surface_inventory.sh
+  ../script/extract_ocaml_string_dispatch.ml
+  ../script/clojure_namespace_inventory.clj
+  (source_tree ../src))
+ (action
+  (run sh %{dep:../script/generate_clojure_surface_inventory_test.sh})))
+
 (alias
  (name datascript-upstream)
  (deps
