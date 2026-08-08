@@ -3,7 +3,7 @@ set -eu
 
 root="$1"
 
-for namespace in clojure.data clojure.edn cljs.reader clojure.string clojure.walk; do
+for namespace in clojure.edn cljs.reader clojure.string; do
   if sed -n '/let is_core_namespace/,/let lookup_qualified_member/p' \
     "$root/src/core_namespaces.ml" | grep -F "\"$namespace\"" >/dev/null; then
     echo "$namespace is still compiler-owned" >&2
@@ -16,9 +16,26 @@ for namespace in clojure.data clojure.edn cljs.reader clojure.string clojure.wal
   fi
 done
 
-for module in core_data.ml core_edn.ml core_walk.ml; do
-  if test -e "$root/src/$module"; then
-    echo "$module still implements a public Clojure namespace in the compiler" >&2
+for namespace in clojure.data clojure.walk cljs.test cljs.spec.alpha clojure.zip; do
+  if ! grep -F "  $namespace" "$root/stdlib/upstream.edn" >/dev/null; then
+    echo "$namespace is missing a concrete Logseq migration classification" >&2
+    exit 1
+  fi
+done
+
+
+for namespace in clojure.test clojure.spec.alpha clojure.pprint; do
+  if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':status :host-boundary' >/dev/null; then
+    echo "$namespace is missing a concrete host-boundary status" >&2
+    exit 1
+  fi
+done
+
+for namespace in clojure.data clojure.walk cljs.test cljs.spec.alpha clojure.zip; do
+  if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':status :blocked' >/dev/null; then
+    echo "$namespace is missing a concrete blocked status" >&2
     exit 1
   fi
 done

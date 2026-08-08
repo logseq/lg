@@ -164,6 +164,16 @@
    :status :blocked
    :reason :readable-and-display-printing-require-distinct-static-printer-witnesses}
 
+  cljs.test
+  {:source "src/main/cljs/cljs/test.cljc"
+   :status :blocked
+   :reason :requires-analyzer-backed-macro-expansion-dynamic-test-environments-and-closed-report-event-sums}
+
+  cljs.spec.alpha
+  {:source "src/main/cljs/cljs/spec/alpha.cljs"
+   :status :blocked
+   :reason :requires-macro-analyzer-integration-and-a-closed-recursive-spec-and-explain-data-domain}
+
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :status :blocked
@@ -173,6 +183,26 @@
   {:source "src/main/cljs/clojure/walk.cljs"
    :status :blocked
    :reason :requires-closed-heterogeneous-clojure-value-domain}
+
+  clojure.zip
+  {:source "src/main/cljs/clojure/zip.cljs"
+   :status :blocked
+   :reason :public-heterogeneous-location-vectors-and-metadata-held-generic-callbacks-require-a-closed-zipper-domain}
+
+  clojure.test
+  {:source :jvm-only
+   :status :host-boundary
+   :reason :jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline}
+
+  clojure.spec.alpha
+  {:source :jvm-only
+   :status :host-boundary
+   :reason :jvm-only-spec-namespace-is-outside-the-clojurescript-source-baseline}
+
+  clojure.pprint
+  {:source :jvm-only
+   :status :host-boundary
+   :reason :jvm-only-pprint-namespace-is-outside-the-clojurescript-source-baseline}
 
   clojure.set
   {:source "src/main/cljs/clojure/set.cljs"

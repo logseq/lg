@@ -238,5 +238,6 @@
   (alias aggregate-stdlib-consumer)
   (alias datascript-aggregate-stdlib)
   (alias no-source-core-fallbacks)
+  (alias source-namespace-migration)
   (alias source-string-bootstrap)
   (alias ../../stdlib/stdlib-melange)))

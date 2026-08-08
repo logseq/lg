@@ -135,11 +135,16 @@ and the derived bit functions have no legacy compiler fallback. At the current c
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same checkout also reports
-`cljs.test` 229 times and `clojure.test` 51 times as unsupported aggregate
-namespaces. `cljs.pprint` occurs 15 times and is explicitly blocked because
+`cljs.test` occurs 229 times and is explicitly blocked on analyzer-backed
+macros, dynamic test environments, and a closed report-event domain.
+`clojure.test` occurs 51 times and is classified as a JVM-only host boundary.
+`cljs.pprint` occurs 15 times and is explicitly blocked because
 readable and display printing need distinct static printer witnesses;
-`clojure.pprint` occurs 14 times and `clojure.zip` 3 times as unsupported
-aggregate namespaces. `clojure.walk` and `clojure.data` remain explicitly blocked because
+`clojure.pprint` occurs 14 times and is a JVM-only host boundary. `clojure.zip`
+occurs 3 times and is blocked on its public heterogeneous location vectors and
+metadata-held generic callbacks. `cljs.spec.alpha` is blocked on analyzer macro
+integration and a closed recursive spec/explain-data domain, while the
+`clojure.spec.alpha` references are JVM-only. `clojure.walk` and `clojure.data` remain explicitly blocked because
 their upstream algorithms traverse heterogeneous Clojure trees; a valid port
 must use a closed value domain rather than the existing `Runtime_dynamic.t`
 boundary.

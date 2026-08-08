@@ -121,7 +121,10 @@ awk '
   }
 ' "$tmp/compiler-calls"
 
-for namespace in clojure.core cljs.core clojure.data clojure.edn cljs.reader clojure.string clojure.set clojure.walk; do
+for namespace in \
+  clojure.core cljs.core clojure.data clojure.edn cljs.reader clojure.string \
+  clojure.set clojure.walk cljs.pprint cljs.test cljs.spec.alpha clojure.zip \
+  clojure.test clojure.spec.alpha clojure.pprint; do
   ownership=manifest-only
   if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
     ownership=compiler-owned
@@ -173,15 +176,17 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
   awk '
     /^  (clojure|cljs)\.[A-Za-z0-9_.-]+$/ {
       namespace = $1
-      blocked = 0
+      status = ""
     }
-    /:status :blocked/ {blocked = 1}
-    blocked && /:reason :[A-Za-z0-9_.-]+/ {
+    /:status :blocked/ {status = "blocked-static-typing"}
+    /:status :host-boundary/ {status = "host-boundary"}
+    /:status :deferred/ {status = "deferred"}
+    status != "" && /:reason :[A-Za-z0-9_.-]+/ {
       reason = $2
       sub(/^:/, "", reason)
       sub(/[^A-Za-z0-9_.-].*$/, "", reason)
-      print namespace "\tblocked-static-typing\t" reason
-      blocked = 0
+      print namespace "\t" status "\t" reason
+      status = ""
     }
   ' "$lg_root/stdlib/upstream.edn" >>"$tmp/namespace-support"
 
