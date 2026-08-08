@@ -27,6 +27,8 @@
 (println (core/every? (fn [x] (+ x 1)) [1 2]))
 (println (core/every? (fn [x] (> x 0)) (hash-set 1 2)))
 (println (not (core/every? (fn [x] (> x 1)) [1 2])))
+(println (= [3 4] (core/fnext [[1 2] [3 4]])))
+(println (= [[3 4]] (vec (core/nnext [[1 2] [2 3] [3 4]]))))
 (println (core/even? 8))
 (println (odd? 9))
 (println (core/not-every? (fn [x] (> x 0)) [1 -1]))

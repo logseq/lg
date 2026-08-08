@@ -29,6 +29,12 @@
         false)
       true)))
 
+(defn fnext [coll]
+  (first (next coll)))
+
+(defn nnext [coll]
+  (next (next coll)))
+
 (defn not-every? [pred coll]
   (not (every? pred coll)))
 

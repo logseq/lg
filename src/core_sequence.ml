@@ -30,13 +30,6 @@ let compile env name args =
           match first_expr env collection with
           | Error _ as err -> err
           | Ok first -> first_expr env first))
-  | "fnext" -> (
-      match one_arg name args with
-      | Error _ as err -> err
-      | Ok collection -> (
-          match next_expr env collection with
-          | Error _ as err -> err
-          | Ok next -> first_expr env next))
   | "nfirst" -> (
       match one_arg name args with
       | Error _ as err -> err
@@ -44,13 +37,6 @@ let compile env name args =
           match first_expr env collection with
           | Error _ as err -> err
           | Ok first -> next_expr env first))
-  | "nnext" -> (
-      match one_arg name args with
-      | Error _ as err -> err
-      | Ok collection -> (
-          match next_expr env collection with
-          | Error _ as err -> err
-          | Ok next -> next_expr env next))
   | "rseq" -> (
       match one_arg name args with
       | Error _ as err -> err
