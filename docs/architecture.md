@@ -552,8 +552,19 @@ compiler-libs environment across chunks.
 - OCaml version;
 - compiler artifacts or executable digest;
 - target;
+- the content digest of a restored saved state, when compilation resumes from
+  one;
 - previous prefix key;
 - input path and source.
+
+Both fresh and saved-state compilation cache every source prefix. A fully warm
+saved-state build reads the cached generated source and final cacheable state
+without reconstructing the compiler-libs environment. Saved-state chunks already
+defer OCaml checking to the generated compilation unit, so a partial cache miss
+continues from the cached semantic state after registering the required package
+include directories; it does not parse the preceding generated sources. Fresh
+compilation restores its compiler-libs environment lazily at the first cache
+miss, using the preceding generated sources.
 
 The compiler-libs environment itself is removed from the cacheable state and
 reconstructed by parsing and typechecking cached OCaml sources.

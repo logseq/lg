@@ -36,7 +36,10 @@ type cached_prefix_output = {
   compilation : Lg.Compiler.compilation;
 }
 
-type compiler_state = Live of Lg.Compiler.state | Cached of string
+type compiler_state =
+  | Live of Lg.Compiler.state
+  | Restorable of Lg.Compiler.state
+  | Cached of string
 
 type saved_compilation_state = {
   target : Lg.Target.t;
@@ -117,6 +120,17 @@ let next_prefix_key ~target previous_key input_path source =
   Digest.string
     (String.concat "\000"
        [ previous_key; Lg.Target.to_string target; input_path; source ])
+  |> Digest.to_hex
+
+let saved_state_prefix_key ~target state_path =
+  Digest.string
+    (String.concat "\000"
+       [
+         compiler_cache_identity ();
+         "saved-state";
+         Lg.Target.to_string target;
+         Digest.to_hex (Digest.file state_path);
+       ])
   |> Digest.to_hex
 
 let cache_path key suffix =
@@ -416,14 +430,24 @@ let concatenate_compilation_outputs outputs =
   outputs |> List.rev |> String.concat "\n"
 
 let read_compiler_state = function
-  | Live state -> Ok state
+  | Live state | Restorable state -> Ok state
   | Cached key -> read_cached_prefix_state key
 
 let resume_compiler_state ~target ~packages ~sources = function
   | Live state -> Ok state
+  | Restorable state ->
+      Lg.Compiler.restore_ocaml_environment ~target ~packages state sources
   | Cached key ->
       Result.bind (read_cached_prefix_state key) (fun state ->
           Lg.Compiler.restore_ocaml_environment ~target ~packages state sources)
+
+let resume_saved_compiler_state ~target ~packages = function
+  | Live state -> Ok state
+  | Restorable state ->
+      Lg.Compiler.restore_ocaml_environment ~target ~packages state []
+  | Cached key ->
+      Result.bind (read_cached_prefix_state key) (fun state ->
+          Lg.Compiler.restore_ocaml_environment ~target ~packages state [])
 
 let compile_files target input_paths =
   let rec loop prefix_key compiler_state packages outputs diagnostics =
@@ -545,27 +569,58 @@ let compile_files_from_saved_state target state_path input_paths =
     Result.bind
       (read_sources [] saved.packages input_paths)
       (fun (sources, packages) ->
-        Result.bind
-          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
-             [])
-          (fun state ->
-            let rec compile state outputs diagnostics = function
-              | [] ->
-                  Ok
-                    ( state,
-                      packages,
-                      concatenate_compilation_outputs (List.rev outputs),
-                      List.concat (List.rev diagnostics) )
-              | (input_path, source) :: rest ->
+        let rec compile prefix_key compiler_state outputs diagnostics =
+          function
+          | [] ->
+              Result.map
+                (fun state ->
+                  ( state,
+                    packages,
+                    concatenate_compilation_outputs (List.rev outputs),
+                    List.concat (List.rev diagnostics) ))
+                (read_compiler_state compiler_state)
+          | (input_path, source) :: rest -> (
+              let prefix_key =
+                next_prefix_key ~target prefix_key input_path source
+              in
+              match read_cached_prefix_output prefix_key with
+              | Some cached ->
+                  report_cache_hit input_path;
+                  compile prefix_key (Cached prefix_key)
+                    (cached.compilation.ocaml_source :: outputs)
+                    (cached.compilation.diagnostics :: diagnostics)
+                    rest
+              | None ->
                   Result.bind
-                    (Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-                       ~target ~filename:input_path ~check_ocaml:false state source)
-                    (fun (state, compilation) ->
-                      compile state (compilation.ocaml_source :: outputs)
-                        (compilation.diagnostics :: diagnostics)
-                        rest)
-            in
-            compile state [] [] sources))
+                    (resume_saved_compiler_state ~target ~packages compiler_state)
+                    (fun state ->
+                      if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
+                        Printf.eprintf "lg: compiling %s\n%!" input_path;
+                      let started_at = Sys.time () in
+                      match
+                        Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+                          ~target ~filename:input_path ~check_ocaml:false state
+                          source
+                      with
+                      | Error _ as err -> err
+                      | Ok (state, compilation) ->
+                          if
+                            Sys.time () -. started_at
+                            >= compile_cache_min_seconds ()
+                          then
+                            write_cached_prefix prefix_key state
+                              {
+                                source_packages = [];
+                                compilation;
+                              };
+                          compile prefix_key (Live state)
+                            (compilation.ocaml_source :: outputs)
+                            (compilation.diagnostics :: diagnostics)
+                            rest))
+        in
+        compile
+          (saved_state_prefix_key ~target state_path)
+          (Restorable saved.state) [] [] sources)
 
 let infer_interface target input_path =
   let source = read_file input_path in

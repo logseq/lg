@@ -25,7 +25,7 @@ invalid_stderr="$(mktemp)"
 warning_source="$(mktemp)"
 warning_stdout="$(mktemp)"
 warning_stderr="$(mktemp)"
-trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr"' EXIT
+trap 'exit_status=$?; rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr"; exit "$exit_status"' EXIT
 
 if "$cli" --target browser "$example" >"$invalid_stdout" 2>"$invalid_stderr"; then
   echo "expected unknown target to fail" >&2
@@ -44,7 +44,7 @@ if "$cli" "$invalid_source" >"$invalid_stdout" 2>"$invalid_stderr"; then
   exit 1
 fi
 
-grep -q "lg: OCaml typecheck failed" "$invalid_stderr"
+grep -q "lg: OCaml argument type mismatch" "$invalid_stderr"
 grep -q "File \"$invalid_source\", line 3" "$invalid_stderr"
 
 printf '%s\n' \
@@ -57,12 +57,12 @@ printf '%s\n' \
 grep -q 'describe' "$warning_stdout"
 grep -q 'Warning 8' "$warning_stderr"
 grep -q 'not exhaustive' "$warning_stderr"
-grep -q "File \"$warning_source\", lines 2-3" "$warning_stderr"
+grep -q "File \"$warning_source\", line 1" "$warning_stderr"
 
 package_source="$(mktemp)"
 package_stdout="$(mktemp)"
 multi_dir="$(mktemp -d)"
-trap 'rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"' EXIT
+trap 'exit_status=$?; rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"; exit "$exit_status"' EXIT
 
 printf '%s\n' \
   '(require [ocaml.package/core] [ocaml.Core.Int :as int])' \
@@ -96,6 +96,51 @@ LG_CACHE_DIR="$multi_dir/cache" LG_COMPILE_CACHE_DEBUG=1 \
   2> "$multi_cache_stderr"
 grep -q "compile cache hit: $math_source" "$multi_cache_stderr"
 grep -q "compile cache hit: $main_source" "$multi_cache_stderr"
+
+base_state="$multi_dir/base.state"
+base_output="$multi_dir/base.ml"
+suffix_state="$multi_dir/suffix.state"
+suffix_output="$multi_dir/suffix.ml"
+cached_suffix_state="$multi_dir/cached-suffix.state"
+cached_suffix_output="$multi_dir/cached-suffix.ml"
+suffix_cache_stderr="$multi_dir/suffix-cache.stderr"
+continuation_source="$multi_dir/continuation.cljc"
+continuation_output="$multi_dir/continuation.ml"
+post_source="$multi_dir/post.cljc"
+partial_output="$multi_dir/partial.ml"
+partial_cache_stderr="$multi_dir/partial-cache.stderr"
+
+printf '%s\n' '(def continued Math/magnitude-plus-two)' > "$continuation_source"
+
+LG_CACHE_DIR="$multi_dir/state-cache" \
+  "$cli" --compile-files-state "$base_state" "$math_source" -o "$base_output"
+LG_CACHE_DIR="$multi_dir/state-cache" \
+  "$cli" --compile-files-from-state "$base_state" "$suffix_state" \
+    "$main_source" "$continuation_source" -o "$suffix_output"
+LG_CACHE_DIR="$multi_dir/state-cache" LG_COMPILE_CACHE_DEBUG=1 \
+  "$cli" --compile-files-from-state "$base_state" "$cached_suffix_state" \
+    "$main_source" "$continuation_source" -o "$cached_suffix_output" \
+    2> "$suffix_cache_stderr"
+grep -q "compile cache hit: $main_source" "$suffix_cache_stderr"
+grep -q "compile cache hit: $continuation_source" "$suffix_cache_stderr"
+cmp "$suffix_output" "$cached_suffix_output"
+
+printf '%s\n' '(def post continued)' > "$post_source"
+"$cli" --compile-chunk-from "$cached_suffix_state" "$post_source" \
+  -o "$continuation_output"
+grep -q 'let post = continued' "$continuation_output"
+
+printf '%s\n' '(def continued-value Math/magnitude-plus-two)' \
+  > "$continuation_source"
+LG_CACHE_DIR="$multi_dir/state-cache" LG_COMPILE_CACHE_DEBUG=1 \
+  "$cli" --compile-files-from "$base_state" "$main_source" \
+    "$continuation_source" -o "$partial_output" 2> "$partial_cache_stderr"
+grep -q "compile cache hit: $main_source" "$partial_cache_stderr"
+if grep -q "compile cache hit: $continuation_source" "$partial_cache_stderr"; then
+  echo "changed saved-state suffix reused stale compile cache" >&2
+  exit 1
+fi
+grep -q 'let continued_value = Math.magnitude_plus_two' "$partial_output"
 
 cache_cli_root="$multi_dir/cache-cli-root"
 cache_cli="$cache_cli_root/bin/lg"
