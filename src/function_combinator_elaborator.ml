@@ -13,9 +13,7 @@ type t = {
   compile_apply : call;
   compile_comp : call;
   compile_partial : call;
-  compile_identity : call;
   compile_constantly : call;
-  compile_complement : call;
   compile_predicate_combinator : named_call;
   compile_juxt : call;
 }
@@ -735,12 +733,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | _ -> Error.error "partial expects a function"))
       | _ -> Error.error "partial expects a function"
     
-    and compile_identity scope env arg_forms =
-      match compile_args_for scope env arg_forms with
-      | Error _ as err -> err
-      | Ok [ arg ] -> Ok arg
-      | Ok _ -> Error.error "identity expects 1 arguments"
-    
     and compile_constantly scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
@@ -762,27 +754,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   ]))
       | Ok _ -> Error.error "constantly expects 1 arguments"
     
-    and compile_complement scope env arg_forms =
-      match arg_forms with
-      | [ fn_form ] -> (
-          match compile_function_arg scope env fn_form with
-          | Error _ as err -> err
-          | Ok fn -> (
-              match fn.ty with
-              | TFn ([ arg_ty ], TBool) ->
-                  Ok
-                  (typed_ir
-                     (TFn ([ arg_ty ], TBool))
-                       (Semantic_ir.Fun
-                          ( [ Semantic_ir.PVar "x" ],
-                            Semantic_ir.Prefix
-                            ( "not",
-                              Semantic_ir.Apply
-                                (fn.semantic_expr, [ Semantic_ir.Ident "x" ]) )
-                        )))
-              | TFn _ -> Error.error "complement expects a predicate"
-              | _ -> Error.error "complement expects a function"))
-      | _ -> Error.error "complement expects 1 function"
     and compile_predicate_combinator scope env name arg_forms =
       let compile_fns =
         arg_forms
@@ -901,9 +872,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     compile_apply;
     compile_comp;
     compile_partial;
-    compile_identity;
     compile_constantly;
-    compile_complement;
     compile_predicate_combinator;
     compile_juxt;
   }

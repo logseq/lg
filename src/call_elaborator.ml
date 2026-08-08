@@ -3833,9 +3833,7 @@ let create ~compile_expr =
   let compile_apply = functions.compile_apply in
   let compile_comp = functions.compile_comp in
   let compile_partial = functions.compile_partial in
-  let compile_identity = functions.compile_identity in
   let compile_constantly = functions.compile_constantly in
-  let compile_complement = functions.compile_complement in
   let compile_predicate_combinator = functions.compile_predicate_combinator in
   let compile_juxt = functions.compile_juxt in
   let compile_distinct_question = comparisons.compile_distinct_question in
@@ -8336,24 +8334,6 @@ let create ~compile_expr =
                                (operator, arg.semantic_expr, zero)))
               zero
         | Ok _ -> Error.error (predicate ^ " expects 1 arguments"))
-    | "even?" ->
-        compile_int_unary_call scope env name
-          (fun expression ->
-            Semantic_ir.Infix
-              ( "=",
-                Semantic_ir.Infix ("mod", expression, Semantic_ir.Int 2),
-                Semantic_ir.Int 0 ))
-          arg_forms
-        |> Result.map (fun expr -> { expr with ty = TBool })
-    | "odd?" ->
-        compile_int_unary_call scope env name
-          (fun expression ->
-            Semantic_ir.Infix
-              ( "<>",
-                Semantic_ir.Infix ("mod", expression, Semantic_ir.Int 2),
-                Semantic_ir.Int 0 ))
-          arg_forms
-        |> Result.map (fun expr -> { expr with ty = TBool })
     | "str" -> (
         let printable_env =
           Env.with_expected_type
@@ -8904,7 +8884,7 @@ let create ~compile_expr =
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
     | "reverse" -> compile_collection_call scope env name arg_forms
-    | "every?" | "not-any?" | "not-every?" ->
+    | "every?" ->
         compile_sequence_bool_predicate scope env name arg_forms
     | "map" -> compile_map_call scope env arg_forms
     | "keep" -> compile_keep scope env arg_forms
@@ -8942,9 +8922,7 @@ let create ~compile_expr =
         | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
-    | "identity" -> compile_identity scope env arg_forms
     | "constantly" -> compile_constantly scope env arg_forms
-    | "complement" -> compile_complement scope env arg_forms
               | "every-pred" ->
                   compile_predicate_combinator scope env "every-pred" arg_forms
     | "some-fn" -> compile_some_fn scope env arg_forms

@@ -1676,25 +1676,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                 (Semantic_ir.Apply
                                    (predicate_expr, [ Semantic_ir.Ident "item" ])) )
                       in
-                      let predicate_expr =
-                        if name = "not-any?" then
-                          Semantic_ir.Fun
-                            ( [ Semantic_ir.PVar "item" ],
-                              Semantic_ir.Prefix
-                                ( "not",
-                                  Semantic_ir.Apply
-                                  (predicate_expr, [ Semantic_ir.Ident "item" ])
-                              ) )
-                        else predicate_expr
-                      in
                       let result =
                         apply "Lg_runtime.Runtime_seq.for_all"
                           [ predicate_expr; sequence ]
-                      in
-                      let result =
-                        if name = "not-every?" then
-                          Semantic_ir.Prefix ("not", result)
-                        else result
                       in
                       Ok (typed_ir TBool result)
                   | Ok { ty = TFn _; _ } ->

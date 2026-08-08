@@ -1032,7 +1032,6 @@ let untyped_first_class_function_error = function
     | "array-map"
     | "assoc"
     | "compare"
-    | "complement"
     | "conj"
     | "contains?"
     | "count"
@@ -1043,7 +1042,6 @@ let untyped_first_class_function_error = function
     | "get"
     | "hash-map"
     | "identical?"
-    | "identity"
     | "integer?"
     | "into-array"
     | "keyword"
@@ -1160,8 +1158,6 @@ let lookup_function scope env name =
       | "zero?" -> Ok (static_int_function [ TInt ] TBool "int_zero")
       | "pos?" -> Ok (static_int_function [ TInt ] TBool "int_positive")
       | "neg?" -> Ok (static_int_function [ TInt ] TBool "int_negative")
-      | "even?" -> Ok (static_int_function [ TInt ] TBool "int_even")
-      | "odd?" -> Ok (static_int_function [ TInt ] TBool "int_odd")
       | "rand-int" ->
           Ok
             (typed_ir

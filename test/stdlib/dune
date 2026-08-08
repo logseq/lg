@@ -133,6 +133,18 @@
   (run sh %{dep:check_no_source_core_bit_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-fallbacks)
+ (deps
+  check_no_source_core_fallbacks.sh
+  ../../src/call_elaborator.ml
+  ../../src/expression_support.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/sequence_call_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_fallbacks.sh} ../..)))
+
+(rule
  (alias aggregate-stdlib-consumer)
  (deps
   check_aggregate_stdlib_consumer.sh
@@ -215,4 +227,5 @@
  (deps
   (alias aggregate-stdlib-consumer)
   (alias datascript-aggregate-stdlib)
+  (alias no-source-core-fallbacks)
   (alias ../../stdlib/stdlib-melange)))

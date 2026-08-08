@@ -3861,7 +3861,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
         [
-          FSymbol ("every?" | "not-any?" | "not-every?");
+          FSymbol "every?";
           FSymbol predicate;
           FSymbol collection;
         ] ->
@@ -3956,7 +3956,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             let identity_ty =
               if not (Type_solver.is_open left_ty) then left_ty
               else if not (Type_solver.is_open right_ty) then right_ty
-              else fresh_type_variable "identity"
+              else fresh_type_variable "identical-value"
             in
             infer_expected_all identity_ty params [ left; right ])
     | FList [ FSymbol "int"; FSymbol value ] ->
@@ -5221,7 +5221,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ( "inc" | "dec" | "zero?" | "pos?" | "neg?" | "even?" | "odd?"
+            ( "inc" | "dec" | "zero?" | "pos?" | "neg?"
             | "nat-int?" | "pos-int?" | "neg-int?" | "bit-not" | "unchecked-inc"
             | "unchecked-inc-int" | "unchecked-dec" | "unchecked-dec-int"
             | "unchecked-negate" | "unchecked-negate-int" );

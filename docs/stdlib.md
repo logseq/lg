@@ -115,13 +115,17 @@ surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
-language gains the required capability, variadic, or higher-order relation. At the current
-checkpoint, the Logseq tree requires `clojure.string` 391 times,
+language gains the required capability, variadic, or higher-order relation.
+The current 333-name compiler dispatch inventory has zero `source-shadowed`
+entries: the source definitions of `identity`, `complement`, `even?`, `odd?`,
+`not-any?`, `not-every?`, and the derived bit functions have no legacy
+compiler fallback. At the current checkpoint, the Logseq tree requires
+`clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration.
 
-The architecture test in `test/stdlib` enforces that `clojure.set` is no longer
-classified as compiler-owned and that its public functions have no name-based
-call elaboration or inference path.
+The architecture tests in `test/stdlib` enforce that `clojure.set` is no
+longer classified as compiler-owned and that source-owned core functions have
+no name-based call elaboration or inference path.

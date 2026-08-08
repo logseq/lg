@@ -1752,11 +1752,14 @@ let test_equality_supports_different_sequential_representations () =
 (println (= (list 1 2) [1 2]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/equality_sequences.cljc" source
+  in
   assert_ocaml_runs "equality_supports_different_sequential_representations"
     "true\ntrue\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/equality_sequences.cljc"
+       source)
 
 let test_external_record_sets_use_polymorphic_comparison () =
   match Lg.Types.set_module_name (Lg.Types.TOcaml "__lg_record:Item") with
@@ -3558,7 +3561,7 @@ let test_compiler_phases_have_explicit_boundaries () =
         in
         if list.ty <> Lg.Types.TList Lg.Types.TInt then
           failwith "collection operation elaboration should have one owner";
-        let identity =
+        let constant =
           let operations =
             Lg.Function_combinator_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
@@ -3568,12 +3571,15 @@ let test_compiler_phases_have_explicit_boundaries () =
               ~pack_constrained_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
           in
-        operations.compile_identity "" Lg.Compiler_environment.empty
+        operations.compile_constantly "" Lg.Compiler_environment.empty
           [ Lg.Ast.FInt 1 ]
           |> expect_ok
         in
-      if identity.ty <> Lg.Types.TInt then
+      (match constant.ty with
+      | Lg.Types.TOverloaded_fn _ -> ()
+      | _ ->
         failwith "core higher-order call elaboration should have one owner";
+      );
         let context =
           Lg.Elaboration_context.create
             ~compile_expr:Lg.Expression_elaborator.compile_expr
@@ -13595,11 +13601,13 @@ let test_array_packing_reuses_static_element_arrays () =
 (println (count (:values (rows (array 1)))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/array_packing.cljc" source
+  in
   assert_ocaml_runs "array_packing_reuses_static_element_arrays"
     "1\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/array_packing.cljc" source)
 
 let test_fn_predicate_recognizes_static_functions () =
   let source =
@@ -13733,8 +13741,9 @@ let test_float_numeric_core_coerces_mixed_numbers () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "float_numeric_core_coerces_mixed_numbers" "true:2.\n"
     ocaml_source;
-  Lg.Compiler.compile_string {|(def bad (even? 2.0))|}
-  |> expect_error "expected int arguments for even?"
+  compile_with_stdlib_result Lg.Target.Native "test/even_float.cljc"
+    {|(def bad (even? 2.0))|}
+  |> expect_error_contains "even? called with incompatible arguments"
 
 let test_ocaml_record_values_compile_through_source_backend () =
   let source =
@@ -20185,7 +20194,9 @@ let test_batched_core_functions_work () =
        (seqable? "abc") ":" (seqable? 1) ":" (counted? user) ":" (counted? f)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/batched_core.cljc" source
+  in
   if
     string_contains_substring ocaml_source
       "Lg_runtime.Runtime_dynamic.clojure_mod"
@@ -20585,7 +20596,9 @@ let test_batched_predicate_collection_core_functions_work () =
 (run! (fn [^:int x] (println (str "item:" x))) [1 2])
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/predicate_collection.cljc" source
+  in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
     "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 \
      2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:[1 2]:[3 4 5]:[1 2 3]:[4 5]:3:2:2:done:[1 \
@@ -20900,7 +20913,9 @@ let test_group_by_infers_generic_seqable_collections () =
 (println (= 2 (count (get grouped true))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/group_by_generic.cljc" source
+  in
   if
     string_contains_substring native_source
       "Lg_runtime.Runtime_dynamic.group_by"
@@ -20908,7 +20923,7 @@ let test_group_by_infers_generic_seqable_collections () =
   assert_ocaml_runs "group_by_infers_generic_seqable_collections" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/group_by_generic.cljc" source)
 
 let test_group_by_unpacks_generic_seqable_items () =
   let source =
@@ -20963,11 +20978,13 @@ let test_filterv_filters_static_vectors_directly () =
 (println (str (= values [1 2 3 4]) ":" (= filtered [1 3])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/filterv_static.cljc" source
+  in
   assert_ocaml_runs "filterv_filters_static_vectors_directly" "true:true\n"
     native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_with_stdlib Lg.Target.Melange "test/filterv_static.cljc" source
   in
   if
     (not (string_contains_substring melange_source "V.filter"))
@@ -21042,13 +21059,15 @@ let test_for_supports_when_clauses () =
       (+ x y))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/for_when.cljc" source
+  in
   assert_ocaml_runs "for_supports_when_clauses" "(2 4)\n(11 13)\n(21)\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_with_stdlib Lg.Target.Melange "test/for_when.cljc" source);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Js_of_ocaml "test/for_when.cljc" source)
 
 let test_merge_rejects_untyped_map_parameters () =
   let source =
@@ -21708,7 +21727,9 @@ let test_batched_sequence_functions_work () =
        (nil? (not-empty []))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/batched_sequences.cljc" source
+  in
   assert_ocaml_runs "batched_sequence_functions_work"
     "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 \
      2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 \
@@ -21842,7 +21863,9 @@ let test_lazy_filter_realizes_only_enough_source_values () =
 (println (deref calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/lazy_filter.cljc" source
+  in
   assert_ocaml_runs "lazy_filter_realizes_only_enough_source_values"
     "0\n2\n2\n2\n2\n4\n4\n" ocaml_source
 
@@ -25547,9 +25570,11 @@ let test_function_maps_require_a_closed_sum_for_logical_functions () =
 (println (keep-value 7))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "identity cannot be used as an untyped first-class function"
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/source_identity_value.cljc" source
+  in
+  assert_ocaml_runs "source_identity_is_a_typed_first_class_function" "7\n"
+    ocaml_source
 
 let test_collection_core_functions_reject_untyped_first_class_use () =
   let source =
@@ -26631,11 +26656,13 @@ let test_keep_drops_only_nil_across_generic_seqables () =
 (println (empty? (keep inc [])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/keep_even.cljc" source
+  in
   assert_ocaml_runs "keep_drops_only_nil_across_generic_seqables"
     "[2 4]\n4\n[false]\n[2 3]\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/keep_even.cljc" source)
 
 let test_map_indexed_infers_generic_seqable_parameters () =
   let source =
@@ -26671,11 +26698,13 @@ let test_mapv_infers_destructured_callback_parameters () =
 (println (empty? (transform {:values []} {})))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/mapv_destructured.cljc" source
+  in
   assert_ocaml_runs "mapv_infers_destructured_callback_parameters"
     "true\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/mapv_destructured.cljc" source)
 
 let test_destructured_defaults_specialize_overloaded_function_values () =
   let source =
@@ -27938,7 +27967,9 @@ let test_function_helpers () =
               (empty-tuples? {:tuples []})))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/function_helpers.cljc" source
+  in
   assert_ocaml_runs "function_helpers" "18:7:ok:ok:ok:6:6:true\n" ocaml_source
 
 let test_common_higher_order_helpers () =
@@ -27969,7 +28000,9 @@ let test_common_higher_order_helpers () =
        (pr-str (sort [:db/id :normal :a/z :a/a]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/higher_order_helpers.cljc" source
+  in
   assert_ocaml_runs "common_higher_order_helpers"
     "(1 2 2 3 3 4):(1 2 2 3):(3 2 1):true:false:true:false:false:true:[9 10 \
      11]:15:10:true:false:-1:1:4:1:(:normal :a/a :a/z :db/id)\n"
@@ -28100,7 +28133,7 @@ let test_common_higher_order_helpers_reject_bad_predicates () =
   |> expect_error "every-pred expects predicates with the same argument type"
 
 let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/mixed_juxt.cljc"
     {|(def f (juxt (fn [x] (+ x 1)) (fn [x] (even? x))))|}
   |> expect_error "juxt functions must return the same type"
 
@@ -28629,7 +28662,9 @@ let test_set_sequence_core_api () =
 (println (str all-positive? ":" none-large? ":" not-all-greater-than-one? ":" total))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/set_sequence.cljc" source
+  in
   assert_ocaml_runs "set_sequence_core_api" "true:true:true:6\n" ocaml_source
 
 let test_set_sequence_predicates_accept_truthy_results () =
@@ -28764,7 +28799,9 @@ let test_sequence_boolean_predicates () =
               (not-every? (fn [x] (> x 1)) ys)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/sequence_predicates.cljc" source
+  in
   assert_ocaml_runs "sequence_boolean_predicates" "true:true:true\n"
     ocaml_source
 
