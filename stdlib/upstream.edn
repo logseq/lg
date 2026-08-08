@@ -15,6 +15,7 @@
    {identity {:status :ported}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-predicate-complement}
+    boolean {:status :ported}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}

@@ -11257,7 +11257,9 @@ let test_user_macros_receive_portable_namespace_environment () =
 (println (str answer ":" (annotated)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/portable_macro_env.cljc" source
+  in
   assert_ocaml_runs "user_macros_receive_portable_namespace_environment"
     "42:7\n" ocaml_source
 
@@ -11416,11 +11418,14 @@ let test_contains_callbacks_use_static_membership_witnesses () =
 (println (boolean (schema-entity? {:other 1})))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/contains_callbacks.cljc" source
+  in
   assert_ocaml_runs "contains_callbacks_use_static_membership_witnesses"
     "true\nfalse\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/contains_callbacks.cljc"
+       source)
 
 let test_anonymous_function_rewrites_placeholders_inside_maps () =
   let source =
@@ -14352,6 +14357,21 @@ let test_generic_overload_signature_resolves_nested_type_parameters () =
   assert_ocaml_runs
     "generic_overload_signature_resolves_nested_type_parameters" "(1 2)\n"
     ocaml_source
+
+let test_truthy_signature_type_supports_static_source_functions () =
+  let source =
+    {|
+(signature truthy-value [value]
+  :fn<truthy<value>;bool>)
+(defn truthy-value [value]
+  (if value true false))
+(println (truthy-value 0))
+(println (truthy-value nil))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "truthy_signature_type_supports_static_source_functions"
+    "true\nfalse\n" ocaml_source
 
 let test_generic_map_type_variables_use_static_operations () =
   let source =
@@ -29149,11 +29169,15 @@ let test_take_while_transducers_compile_and_truncate_sequences () =
 (println (str (boolean xf) ":" (pr-str values)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/take_while_transducers.cljc"
+      source
+  in
   assert_ocaml_runs "take_while_transducers_compile_and_truncate_sequences"
     "true:[1 2]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/take_while_transducers.cljc" source)
 
 let test_into_applies_composed_transducers () =
   let source =
@@ -33601,7 +33625,6 @@ let test_parsetree_backend_builds_native_scalar_expressions () =
   List.iter expect_structured_value_expression
     [
       {|(def answer 42)|};
-      {|(def result (boolean 1))|};
       {|(def result (integer? 1))|};
       {|(def result (name :user/name))|};
       {|(def result (namespace :user/name))|};
@@ -34883,6 +34906,8 @@ let tests =
       test_annotated_multi_arity_defn_constrains_each_clause );
     ( "generic overload signature resolves nested type parameters",
       test_generic_overload_signature_resolves_nested_type_parameters );
+    ( "truthy signature type supports static source functions",
+      test_truthy_signature_type_supports_static_source_functions );
     ( "generic map type variables use static operations",
       test_generic_map_type_variables_use_static_operations );
     ( "annotated set of closed sum stays static",

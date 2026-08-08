@@ -974,9 +974,14 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       in
       let value_name = "__lg_truthy_value" in
       let value = Semantic_ir.Ident value_name in
+      let pattern =
+        if Expression_support.truthiness_needs_value witness_value_ty then
+          Semantic_ir.PVar value_name
+        else Semantic_ir.PAny
+      in
       let witness =
         Semantic_ir.Fun
-          ( [ Semantic_ir.PVar value_name ],
+          ( [ pattern ],
             Expression_support.truthiness_expression witness_value_ty value )
       in
       Result.map
@@ -8223,7 +8228,7 @@ let create ~compile_expr =
                           "instance? requires a statically known record type; match a closed sum type")
                   ))
         | _ -> Error.error "instance? expects a record type and value")
-              | "integer?" | "nat-int?" | "pos-int?" | "neg-int?" | "boolean"
+              | "integer?" | "nat-int?" | "pos-int?" | "neg-int?"
               | "bit-shift-right-zero-fill" | "unchecked-add"
               | "unchecked-add-int" | "unchecked-subtract"
               | "unchecked-subtract-int" | "unchecked-multiply"

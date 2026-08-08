@@ -95,6 +95,17 @@ let rec truthiness_expression ty expression =
           ] )
   | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
 
+let truthiness_needs_value ty =
+  Types.is_dynamic ty
+  || Option.is_some (Types.truthy_constraint_info ty)
+  ||
+  match ty with
+  | TBool | TNullable _ | TOcaml_app ("option", [ _ ]) | TOcaml "option"
+  | TSeq _ ->
+      true
+  | TOcaml_app (name, [ _ ]) -> name = Types.next_seq_type_name
+  | _ -> false
+
 let nil_predicate_needs_value ty =
   Option.is_some (Types.nil_predicate_constraint_info ty)
   || Types.is_dynamic ty

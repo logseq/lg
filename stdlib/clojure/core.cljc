@@ -12,6 +12,9 @@
   (fn [x]
     (not (f x))))
 
+(defn boolean [x]
+  (if x true false))
+
 (defn even? [n]
   (zero? (bit-and n 1)))
 

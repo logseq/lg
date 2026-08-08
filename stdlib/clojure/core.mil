@@ -6,6 +6,9 @@
 (signature clojure.core/complement [value]
   :fn<fn<value;bool>;fn<value;bool>>)
 
+(signature clojure.core/boolean [value]
+  :fn<truthy<value>;bool>)
+
 (signature clojure.core/even? :fn<int;bool>)
 (signature clojure.core/odd? :fn<int;bool>)
 (signature clojure.core/bit-clear :fn<int;int;int>)

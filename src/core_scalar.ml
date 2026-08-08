@@ -41,15 +41,6 @@ let int_binary name args build_code =
       | Error _ as err -> err
       | Ok () -> Ok (build_code left.semantic_expr right.semantic_expr))
 
-let compile_boolean name args =
-  match one_arg name args with
-  | Error _ as err -> err
-  | Ok arg ->
-      Ok
-        (typed_ir TBool
-           (Expression_support.truthiness_expression arg.ty
-              arg.semantic_expr))
-
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 let string_length expr = apply "String.length" [ expr ]
 let string_get expr index = apply "String.get" [ expr; index ]
@@ -286,7 +277,6 @@ let compile name args =
   | "neg-int?" ->
       int_predicate name args (fun expr ->
           Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
-  | "boolean" -> compile_boolean name args
   | "bit-shift-right-zero-fill" ->
       int_binary name args (fun left right ->
           typed_ir TInt

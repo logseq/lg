@@ -163,6 +163,10 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (Types.seqable_constraint inner)
                       | _ -> Error.error "seqable expects one type argument"
+                    else if name = "truthy" then
+                      match args with
+                      | [ inner ] -> Ok (Types.truthy_constraint inner)
+                      | _ -> Error.error "truthy expects one type argument"
                     else if name = "map" then
                       match args with
                       | [ key; value ] -> Ok (Types.dynamic_map key value)

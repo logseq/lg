@@ -22,6 +22,8 @@
 (println (identity 42))
 (println (clojure.core/identity "core"))
 (println ((core/complement (fn [x] (> x 0))) -1))
+(println (core/boolean 0))
+(println (not (core/boolean nil)))
 (println (core/even? 8))
 (println (odd? 9))
 (println (core/not-every? (fn [x] (> x 0)) [1 -1]))
