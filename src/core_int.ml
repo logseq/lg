@@ -109,24 +109,3 @@ let compile_min_max name args =
         in
         Ok (typed_ir TInt expression)
       else Error.error ("expected int arguments for " ^ name)
-
-let compile_variadic_bitwise name args =
-  match args with
-  | [] -> Error.error (name ^ " expects at least 1 arguments")
-  | _ ->
-      if List.for_all (fun arg -> accepts_int arg.ty) args then
-        let operator =
-          match name with
-          | "bit-and" -> "land"
-          | "bit-or" -> "lor"
-          | "bit-xor" -> "lxor"
-          | _ -> assert false
-        in
-        let expression =
-          match args with
-          | [] -> assert false
-          | first :: rest ->
-              fold_infix operator first rest
-        in
-        Ok (typed_ir TInt expression)
-      else Error.error ("expected int arguments for " ^ name)

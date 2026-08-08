@@ -45,8 +45,41 @@
 (defn dec [x]
   (- x 1))
 
+(defn- bit-and-two [x y]
+  (runtime-int/bit-and x y))
+
+(defn bit-and
+  ([x y]
+   (bit-and-two x y))
+  ([x y & more]
+   (reduce bit-and-two (bit-and-two x y) more)))
+
+(defn- bit-or-two [x y]
+  (runtime-int/bit-or x y))
+
+(defn bit-or
+  ([x y]
+   (bit-or-two x y))
+  ([x y & more]
+   (reduce bit-or-two (bit-or-two x y) more)))
+
+(defn- bit-xor-two [x y]
+  (runtime-int/bit-xor x y))
+
+(defn bit-xor
+  ([x y]
+   (bit-xor-two x y))
+  ([x y & more]
+   (reduce bit-xor-two (bit-xor-two x y) more)))
+
+(defn bit-shift-left [x n]
+  (runtime-int/shift-left x n))
+
+(defn bit-shift-right [x n]
+  (runtime-int/shift-right x n))
+
 (defn bit-not [x]
-  (bit-xor x -1))
+  (bit-xor-two x -1))
 
 (defn reduced [x]
   (runtime-reduced/reduced x))

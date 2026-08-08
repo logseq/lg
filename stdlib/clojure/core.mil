@@ -12,6 +12,17 @@
   :fn<truthy<value>;bool>)
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
+(signature clojure.core/bit-and-two :fn<int;int;int>)
+(signature clojure.core/bit-and
+  :overload<fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/bit-or-two :fn<int;int;int>)
+(signature clojure.core/bit-or
+  :overload<fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/bit-xor-two :fn<int;int;int>)
+(signature clojure.core/bit-xor
+  :overload<fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/bit-shift-left :fn<int;int;int>)
+(signature clojure.core/bit-shift-right :fn<int;int;int>)
 (signature clojure.core/bit-not :fn<int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)

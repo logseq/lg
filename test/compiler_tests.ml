@@ -21003,6 +21003,12 @@ let test_batched_core_functions_reject_non_int_arguments () =
   |> expect_error_contains "called with incompatible arguments";
   compile_with_stdlib_result Lg.Target.Native "test/bad_bit_not.cljc"
     {|(def x (bit-not "0"))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_or.cljc"
+    {|(def x (bit-or 1 "2"))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_shift.cljc"
+    {|(def x (bit-shift-left 1 "2"))|}
   |> expect_error_contains "called with incompatible arguments"
 
 let test_batched_core_functions_reject_bad_arities () =
@@ -21017,6 +21023,15 @@ let test_batched_core_functions_reject_bad_arities () =
   |> expect_error_contains "called with incompatible arguments";
   compile_with_stdlib_result Lg.Target.Native "test/bad_bit_not_arity.cljc"
     {|(def x (bit-not))|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_and_arity.cljc"
+    {|(def x (bit-and 1))|}
+  |> expect_error_contains "unsupported arity 1";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_xor_arity.cljc"
+    {|(def x (bit-xor))|}
+  |> expect_error_contains "unsupported arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_bit_shift_arity.cljc"
+    {|(def x (bit-shift-right 1))|}
   |> expect_error_contains "called with incompatible arguments"
 
 let test_batched_core_functions_infer_int_params () =
@@ -21026,7 +21041,7 @@ let test_batched_core_functions_infer_int_params () =
 (def bad (shifted "1"))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native "test/infer_shifted.cljc" source
   |> expect_error_contains "shifted called with incompatible arguments"
 
 let test_batched_numeric_scalar_core_functions_work () =
@@ -35240,7 +35255,7 @@ let test_parsetree_backend_builds_native_cond_expressions () =
 
 let test_parsetree_backend_builds_native_integer_expressions () =
   expect_structured_value_expression
-    {|(def result (bit-or (+ 1 2) (bit-shift-left 1 2)))|}
+    {|(def result (+ (* 1 2) 3))|}
 
 let test_parsetree_backend_builds_native_comparison_expressions () =
   expect_structured_value_expression {|(def result (< 1 2 3))|}

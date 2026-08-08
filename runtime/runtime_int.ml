@@ -22,8 +22,6 @@ let clojure_mod left right =
 
 let int_quot = ( / )
 let int_rem = ( mod )
-let int_inc value = value + 1
-let int_dec value = value - 1
 let int_max = Stdlib.max
 let int_min = Stdlib.min
 let int_zero value = value = 0
@@ -31,6 +29,11 @@ let int_positive value = value > 0
 let int_negative value = value < 0
 let int_even value = value mod 2 = 0
 let int_odd value = value mod 2 <> 0
+let bit_and left right = left land right
+let bit_or left right = left lor right
+let bit_xor left right = left lxor right
+let shift_left value count = value lsl count
+let shift_right value count = value asr count
 let logical_shift_right value count = value lsr count
 
 let format_hex value width =

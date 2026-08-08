@@ -8402,14 +8402,6 @@ let create ~compile_expr =
             Core_float.compile_min_max name
               (List.map Core_float.widen_to_float args)
         | Ok args -> Core_int.compile_min_max name args)
-              | "bit-and" | "bit-or" | "bit-xor" -> (
-                  match compile_args () with
-        | Error _ as err -> err
-        | Ok args -> Core_int.compile_variadic_bitwise name args)
-              | "bit-shift-left" | "bit-shift-right" -> (
-                  match compile_args () with
-        | Error _ as err -> err
-        | Ok args -> Core_int.compile_binary name args)
     | "hash" -> (
         match compile_args () with
         | Error _ as error -> error

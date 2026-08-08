@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? bit-not dec hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid special-symbol? symbol-identical?]]))
+  (:require [cljs.core :as core :refer [NaN? bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid special-symbol? symbol-identical?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -290,3 +290,14 @@
 (println (= 40 (clojure.core/dec 41)))
 (println (= -43 (core/bit-not 42)))
 (println (= [2 3 4] (vec (map inc [1 2 3]))))
+
+(def source-bit-or bit-or)
+(println (= 3 (bit-and 15 7 3)))
+(println (= 15 (bit-or 1 2 4 8)))
+(println (= 9 (bit-xor 15 3 5)))
+(println (= 10 (source-bit-or 8 2)))
+(println (= 0 (reduce bit-xor 0 [1 2 3])))
+(println (= 48 (bit-shift-left 3 4)))
+(println (= -4 (bit-shift-right -16 2)))
+(println (= 10 (core/bit-shift-left 5 1)))
+(println (= 6 (clojure.core/bit-and 7 6)))

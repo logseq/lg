@@ -5122,9 +5122,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         infer_expected_all expected_ty params args
     | FList
-        (FSymbol ("bit-and" | "bit-or" | "bit-xor") :: args) ->
-        infer_expected_all TInt params args
-    | FList
         [
           FSymbol
             ( "zero?" | "pos?" | "neg?" | "nat-int?" | "pos-int?"
@@ -5146,16 +5143,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           else TInt
         in
         infer_expected expected_ty params arg
-    | FList
-        [
-          FSymbol
-            ("bit-shift-left" | "bit-shift-right");
-          left;
-          right;
-        ] -> (
-        match infer_expected TInt params left with
-        | Error _ as err -> err
-        | Ok params -> infer_expected TInt params right)
     | FList (FSymbol ("==" | "<" | "<=" | ">" | ">=") :: args) ->
         let expected_ty =
           if
