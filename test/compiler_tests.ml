@@ -10824,14 +10824,25 @@ let test_cross_module_extend_protocol_preserves_record_extension_field () =
 |}
   in
   let compile target =
-    let state, record_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state record_source
-      |> expect_ok
+    let sources =
+      stdlib_sources ()
+      @ [
+          ("test/protocol_records.cljc", record_source);
+          ("test/protocol_extension.cljc", extension_source);
+        ]
     in
-    let _, extension_ocaml =
-      Lg.Compiler.compile_chunk ~target state extension_source |> expect_ok
+    let _, outputs =
+      List.fold_left
+        (fun (state, outputs) (filename, source) ->
+          let state, output =
+            Lg.Compiler.compile_chunk_with_filename ~target ~filename state
+              source
+            |> expect_ok
+          in
+          (state, output :: outputs))
+        (Lg.Compiler.empty_state, []) sources
     in
-    record_ocaml ^ "\n" ^ extension_ocaml
+    outputs |> List.rev |> String.concat "\n"
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs
@@ -17858,11 +17869,15 @@ let test_extend_protocol_keeps_parameter_positions_independent () =
 (println (= [1 2] (-post-process (FindColl.) nil [[1] [2]])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/extend_protocol_parameter_positions.cljc" source
+  in
   assert_ocaml_runs "extend_protocol_keeps_parameter_positions_independent"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/extend_protocol_parameter_positions.cljc" source)
 
 let test_cond_thread_preserves_guarded_seqable_aliases () =
   let source =

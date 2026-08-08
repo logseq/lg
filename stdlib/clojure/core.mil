@@ -13,8 +13,12 @@
 (signature clojure.core/odd? :fn<int;bool>)
 (signature clojure.core/every? [value result]
   :fn<fn<value;truthy<result>>;seqable<value>;bool>)
+(signature clojure.core/ffirst [value]
+  :fn<seqable<seqable<value>>;option<value>>)
 (signature clojure.core/fnext [value]
   :fn<seqable<value>;option<value>>)
+(signature clojure.core/nfirst [value]
+  :fn<seqable<seqable<value>>;seq<value>>)
 (signature clojure.core/nnext [value]
   :fn<seqable<value>;seq<value>>)
 (signature clojure.core/bit-clear :fn<int;int;int>)

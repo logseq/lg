@@ -23,20 +23,6 @@ let compile env name args =
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> next_expr env collection)
-  | "ffirst" -> (
-      match one_arg name args with
-      | Error _ as err -> err
-      | Ok collection -> (
-          match first_expr env collection with
-          | Error _ as err -> err
-          | Ok first -> first_expr env first))
-  | "nfirst" -> (
-      match one_arg name args with
-      | Error _ as err -> err
-      | Ok collection -> (
-          match first_expr env collection with
-          | Error _ as err -> err
-          | Ok first -> next_expr env first))
   | "rseq" -> (
       match one_arg name args with
       | Error _ as err -> err

@@ -21,7 +21,10 @@
     odd? {:status :ported}
     every? {:status :static-adaptation
             :reason :uses-static-sequence-truthiness-and-indexed-access-after-the-upstream-nonempty-check}
+    ffirst {:status :ported}
     fnext {:status :ported}
+    nfirst {:status :static-adaptation
+            :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}
     nnext {:status :static-adaptation
            :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}
     bit-clear {:status :static-adaptation

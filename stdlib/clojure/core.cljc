@@ -29,8 +29,14 @@
         false)
       true)))
 
+(defn ffirst [coll]
+  (first (first coll)))
+
 (defn fnext [coll]
   (first (next coll)))
+
+(defn nfirst [coll]
+  (next (first coll)))
 
 (defn nnext [coll]
   (next (next coll)))

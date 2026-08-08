@@ -8861,7 +8861,7 @@ let create ~compile_expr =
                   compile_collection_call scope env name arg_forms
     | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
-              | "next" | "ffirst" | "nfirst" -> (
+              | "next" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)

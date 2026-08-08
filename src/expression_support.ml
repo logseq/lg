@@ -1049,7 +1049,6 @@ let untyped_first_class_function_error = function
     | "dissoc"
     | "empty?"
     | "false?"
-    | "ffirst"
     | "get"
     | "hash-map"
     | "identical?"
