@@ -57,7 +57,9 @@ for namespace in clojure.core cljs.core clojure.data clojure.edn cljs.reader clo
   ownership=manifest-only
   if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
     ownership=compiler-owned
-  elif test "$namespace" = clojure.string; then
+  elif test "$namespace" = clojure.string \
+    || test "$namespace" = clojure.edn \
+    || test "$namespace" = cljs.reader; then
     ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.set; then
     ownership=source
@@ -71,9 +73,9 @@ while IFS='|' read -r var classification; do
   printf 'namespace-var\t%s\t%s\n' "$var" "$classification"
 done <<'EOF'
 clojure.data/diff|host-boundary
-clojure.edn/read-string|host-boundary
+clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
-cljs.reader/read-string|host-boundary
+cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 clojure.string/split|host-boundary
 clojure.walk/walk|host-boundary

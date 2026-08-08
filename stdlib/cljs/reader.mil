@@ -1,0 +1,4 @@
+(ns cljs.reader)
+
+(signature cljs.reader/read-string
+  :fn<string;Lg_edn_backend.t>)

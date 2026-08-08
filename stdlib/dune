@@ -5,6 +5,10 @@
   clojure/core.cljc
   clojure/string.mil
   clojure/string.cljc
+  clojure/edn.mil
+  clojure/edn.cljc
+  cljs/reader.mil
+  cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
   ../bin/lg_cli.exe)
@@ -22,6 +26,10 @@
     %{dep:clojure/core.cljc}
     %{dep:clojure/string.mil}
     %{dep:clojure/string.cljc}
+    %{dep:clojure/edn.mil}
+    %{dep:clojure/edn.cljc}
+    %{dep:cljs/reader.mil}
+    %{dep:cljs/reader.cljc}
     %{dep:clojure/set.mil}
     %{dep:clojure/set.cljc}
     -o
@@ -38,6 +46,10 @@
   clojure/core.cljc
   clojure/string.mil
   clojure/string.cljc
+  clojure/edn.mil
+  clojure/edn.cljc
+  cljs/reader.mil
+  cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
   ../bin/lg_cli.exe)
@@ -55,6 +67,10 @@
     %{dep:clojure/core.cljc}
     %{dep:clojure/string.mil}
     %{dep:clojure/string.cljc}
+    %{dep:clojure/edn.mil}
+    %{dep:clojure/edn.cljc}
+    %{dep:cljs/reader.mil}
+    %{dep:cljs/reader.cljc}
     %{dep:clojure/set.mil}
     %{dep:clojure/set.cljc}
     -o

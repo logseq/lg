@@ -3048,10 +3048,8 @@ let rec compile scope env next_type = function
           env
       in
       let env =
-        match List.assoc_opt "read-string" Core_edn.bindings with
-        | Some binding ->
-            Env.add (Names.scoped_key namespace_name "read-string") binding env
-        | None -> env
+        Env.add (Names.scoped_key namespace_name "read-string")
+          Core_edn.read_string_binding env
       in
       Ok
         (namespace_name, env, next_type, Comment ("namespace " ^ namespace_name))

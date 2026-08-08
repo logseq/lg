@@ -5,6 +5,10 @@
   ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
+  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.cljc
+  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.cljc
   ../stdlib/clojure/set.mil
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
@@ -59,6 +63,10 @@
    %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
+   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.cljc}
+   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.cljc}
    %{dep:../stdlib/clojure/set.mil}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
@@ -106,6 +114,10 @@
   ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
+  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.cljc
+  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.cljc
   ../stdlib/clojure/set.mil
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
@@ -157,6 +169,10 @@
    %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
+   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.cljc}
+   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.cljc}
    %{dep:../stdlib/clojure/set.mil}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}

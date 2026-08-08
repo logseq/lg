@@ -1,8 +1,11 @@
 (ns stdlib.clojure-set-app
   (:require
    [clojure.core :as core :refer [odd?]]
+   [clojure.edn :as edn]
    [clojure.set :as set :refer [difference]]
-   [clojure.string :as string :refer [upper-case]]))
+   [clojure.string :as string :refer [upper-case]]
+   [cljs.reader :as reader]
+   [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (println (count (set/union)))
 (println (= #{1 2} (set/union #{1 2})))
@@ -23,3 +26,9 @@
 (println (odd? 9))
 (println (core/not-every? (fn [x] (> x 0)) [1 -1]))
 (println (core/not-any? (fn [x] (< x 0)) [1 2]))
+(println (= "{:answer 42}"
+            (runtime-edn/write-string
+             (edn/read-string "{:answer 42}"))))
+(println (= "[1 2]"
+            (runtime-edn/write-string
+             (reader/read-string "[1 2]"))))

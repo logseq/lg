@@ -285,6 +285,10 @@ let stdlib_sources () =
     "stdlib/clojure/core.cljc";
     "stdlib/clojure/string.mil";
     "stdlib/clojure/string.cljc";
+    "stdlib/clojure/edn.mil";
+    "stdlib/clojure/edn.cljc";
+    "stdlib/cljs/reader.mil";
+    "stdlib/cljs/reader.cljc";
     "stdlib/clojure/set.mil";
     "stdlib/clojure/set.cljc";
   ]
@@ -1249,11 +1253,13 @@ let test_doseq_map_entry_destructuring_preserves_map_values () =
 (print-fields (edn/read-string "{}"))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/doseq_map_entry.cljc" source
+  in
   assert_ocaml_runs "doseq_map_entry_destructuring_preserves_map_values"
     ":name:true\n:age:false\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/doseq_map_entry.cljc" source)
 
 let test_compare_rejects_implicit_dynamic_seqable_storage () =
   Lg.Compiler.compile_string
@@ -4264,7 +4270,7 @@ let test_jvm_lookup_hints_are_rejected () =
 (println (= 42 (lookup-value (edn/read-string "{:answer 42}") :answer)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native "test/jvm_lookup_hint.cljc" source
   |> expect_error_contains
        "Java interop is not supported; use static LG types and functions (.valAt)"
 
@@ -4337,11 +4343,13 @@ let test_clojure_edn_read_string_behaves_on_native_and_melange () =
      (runtime-edn/write-string restored-schema)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/clojure_edn.cljc" source
+  in
   assert_ocaml_runs "clojure_edn_read_string_behaves_on_native_and_melange"
     "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/clojure_edn.cljc" source)
 
 let test_external_overloaded_functions_require_a_static_wrapper () =
   let source =
@@ -4352,7 +4360,8 @@ let test_external_overloaded_functions_require_a_static_wrapper () =
 (println (= 42 ((get readers "edn") "42")))
 |}
   in
-  Lg.Compiler.compile_string source |> expect_error_contains "is not callable"
+  compile_with_stdlib_result Lg.Target.Native "test/edn_functions.cljc" source
+  |> expect_error_contains "is not callable"
 
 let test_cljs_reader_registered_tag_parsers_affect_read_string () =
   let source =
@@ -4381,11 +4390,13 @@ let test_cljs_reader_registered_tag_parsers_affect_read_string () =
        (reader/read-string "#app/point [3 4]"))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cljs_reader_tags.cljc" source
+  in
   assert_ocaml_runs "cljs_reader_registered_tag_parsers_affect_read_string"
     "true\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/cljs_reader_tags.cljc" source)
 
 let test_clojure_edn_read_string_rejects_invalid_collections () =
   let source =
@@ -4404,11 +4415,13 @@ let test_clojure_edn_read_string_rejects_invalid_collections () =
 (println (invalid-edn? "#{1 1}"))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/invalid_edn.cljc" source
+  in
   assert_ocaml_runs "clojure_edn_read_string_rejects_invalid_collections"
     "true\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/invalid_edn.cljc" source)
 
 let test_clojure_edn_read_string_supports_symbolic_numbers () =
   let source =
@@ -4429,11 +4442,13 @@ let test_clojure_edn_read_string_supports_symbolic_numbers () =
 (println (neg? negative-infinity))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/symbolic_edn.cljc" source
+  in
   assert_ocaml_runs "clojure_edn_read_string_supports_symbolic_numbers"
     "true\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/symbolic_edn.cljc" source)
 
 let test_melange_transit_api_compiles_for_native_and_melange () =
   let source =
@@ -10574,13 +10589,15 @@ let test_volatile_transient_maps_specialize_from_vswap () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nth_rejects_non_integer_indexes () =
-  Lg.Compiler.compile_string
+  let source =
     {|
 (ns app.dynamic-nth
   (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
 (defn read-index [source] (edn/read-string source))
 (nth ["zero" "one"] (read-index "1"))
 |}
+  in
+  compile_with_stdlib_result Lg.Target.Native "test/dynamic_nth.cljc" source
   |> expect_error_contains "nth index must be int"
 
 let test_var_quote_resolves_static_function_values () =
@@ -18249,12 +18266,14 @@ let test_melange_array_dot_map_uses_static_array_map () =
 (println (count invoked))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/array_dot_map.cljc" source
+  in
   assert_ocaml_runs "melange_array_dot_map_uses_static_array_map"
     "true\n1\n"
     native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_with_stdlib Lg.Target.Melange "test/array_dot_map.cljc" source
   in
   if
     not
@@ -20754,17 +20773,21 @@ let test_vals_support_generic_and_empty_maps_and_reject_open_edn_values () =
 (println (empty? (vals (hash-map))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/vals_maps.cljc" source
+  in
   assert_ocaml_runs "vals_support_generic_and_empty_maps" "true\ntrue\ntrue\n"
     native_source;
-  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  ignore (compile_with_stdlib Lg.Target.Melange "test/vals_maps.cljc" source);
   let reject_open_edn target =
-    Lg.Compiler.compile_string ~target
+    let source =
       {|
 (ns app.dynamic-vals
   (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
 (vals (edn/read-string "{:a 1 :b 2}"))
 |}
+    in
+    compile_with_stdlib_result target "test/dynamic_vals.cljc" source
     |> expect_error_contains "vals expects a map"
   in
   reject_open_edn Lg.Target.Native;
@@ -20811,11 +20834,13 @@ let test_map_accepts_callable_map_values () =
 (println (= -1 (zipped-attrs :z -1)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/callable_map.cljc" source
+  in
   assert_ocaml_runs "map_accepts_callable_map_values"
     "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/callable_map.cljc" source)
 
 let test_get_infers_unknown_key_from_known_map () =
   let source =
@@ -20892,11 +20917,13 @@ let test_group_by_unpacks_generic_seqable_items () =
 (println (= 2 (count (get grouped (edn/read-string "1")))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/group_by_capability.cljc" source
+  in
   assert_ocaml_runs "group_by_unpacks_generic_seqable_items" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/group_by_capability.cljc" source)
 
 let test_filterv_contextualizes_generic_seqable_items () =
   let source =
@@ -20913,11 +20940,13 @@ let test_filterv_contextualizes_generic_seqable_items () =
          (edn/read-string "[[1 2] [nil 3] [4 5]]")))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/filterv_capability.cljc" source
+  in
   assert_ocaml_runs "filterv_contextualizes_generic_seqable_items" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/filterv_capability.cljc" source)
 
 let test_filterv_filters_static_vectors_directly () =
   let source =

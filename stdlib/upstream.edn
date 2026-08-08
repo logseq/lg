@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.set]
+ [clojure.core clojure.string clojure.edn cljs.reader clojure.set]
 
  :namespaces
  {clojure.core
@@ -50,13 +50,23 @@
 
   clojure.edn
   {:source "src/main/cljs/cljs/reader.cljs"
-   :status :blocked
-   :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}
+   :implementation "clojure/edn.cljc"
+   :interface "clojure/edn.mil"
+   :definitions
+   {read-string {:status :static-adaptation
+                 :reason :typed-host-edn-reader-primitive}
+    register-tag-parser! {:status :host-primitive
+                          :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}}}
 
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
-   :status :blocked
-   :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}
+   :implementation "cljs/reader.cljc"
+   :interface "cljs/reader.mil"
+   :definitions
+   {read-string {:status :static-adaptation
+                 :reason :typed-host-edn-reader-primitive}
+    register-tag-parser! {:status :host-primitive
+                          :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}}}
 
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
