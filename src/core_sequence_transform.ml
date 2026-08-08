@@ -483,34 +483,6 @@ let partition name size collection =
         in
         Ok (typed_ir (TList (TList inner)) expr)
 
-let butlast collection =
-  if Types.is_dynamic collection.ty then
-    Ok
-      (typed_ir collection.ty
-         (apply "Lg_runtime.Runtime_dynamic.butlast"
-            [ collection.semantic_expr ]))
-  else match collection_to_list_expr collection with
-  | Error _ -> Error.error "butlast expects a collection"
-  | Ok (_inner, list_expr) ->
-      let body =
-        Semantic_ir.Match
-          ( Semantic_ir.Ident "xs",
-            [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-              (Semantic_ir.PList [ Semantic_ir.PAny ], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-              ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                apply "butlast"
-                  [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
-                    Semantic_ir.Ident "rest" ] ) ] )
-      in
-      let list_expr =
-        Semantic_ir.LetRec
-          ( "butlast",
-            [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-            body,
-            [ Semantic_ir.List []; list_expr ] )
-      in
-      Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
-
 let take_drop_last name count collection =
   if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
   else
@@ -580,19 +552,6 @@ let take_nth count collection =
               [ Semantic_ir.Int 0; Semantic_ir.List []; list_expr ] )
         in
         Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
-
-let bounded_count limit collection =
-  if not (Types.equal limit.ty TInt) then Error.error "bounded-count limit must be int"
-  else
-    match collection_to_list_expr collection with
-    | Error _ -> Error.error "bounded-count expects a collection"
-    | Ok (_inner, list_expr) ->
-        Ok
-          (typed_ir TInt
-             (apply "min"
-                [ limit.semantic_expr;
-                  apply "List.length" [ list_expr ];
-                ]))
 
 let dorun collection =
   match collection_to_list_expr collection with
@@ -762,11 +721,9 @@ let compile name args =
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
       partition name size collection
-  | "butlast", [ collection ] -> butlast collection
   | ("take-last" | "drop-last"), [ count; collection ] ->
       take_drop_last name count collection
   | "take-nth", [ count; collection ] -> take_nth count collection
-  | "bounded-count", [ limit; collection ] -> bounded_count limit collection
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
   | "into", [ target; source ] -> into target source
@@ -774,7 +731,7 @@ let compile name args =
   | "remove", _ -> Error.error "remove expects function and collection"
   | ("take-while" | "drop-while"), _ ->
       Error.error (name ^ " expects function and collection")
-  | ("distinct" | "dedupe" | "sort" | "vec" | "set" | "butlast" | "dorun"
+  | ("distinct" | "dedupe" | "sort" | "vec" | "set" | "dorun"
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
   | "repeat", _ -> Error.error "repeat expects value, or count and value"
@@ -785,6 +742,5 @@ let compile name args =
   | ("take-last" | "drop-last"), _ ->
       Error.error (name ^ " expects count and collection")
   | "take-nth", _ -> Error.error "take-nth expects n and collection"
-  | "bounded-count", _ -> Error.error "bounded-count expects limit and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

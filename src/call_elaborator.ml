@@ -8859,7 +8859,7 @@ let create ~compile_expr =
                       compile_sequence_transform_call scope env name arg_forms)
               | "take" | "drop" ->
                   compile_collection_call scope env name arg_forms
-    | "butlast" | "take-last" | "drop-last" | "take-nth" ->
+    | "take-last" | "drop-last" | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
               | "next" | "nthrest" | "ffirst" | "fnext" | "nfirst"
               | "nnext" -> (
@@ -8876,7 +8876,7 @@ let create ~compile_expr =
         | Ok _ -> Error.error "rseq expects 1 arguments")
     | "some" -> compile_some scope env arg_forms
     | "partition-by" -> compile_partition_by scope env arg_forms
-    | "bounded-count" | "dorun" | "doall" ->
+    | "dorun" | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
     | "reverse" -> compile_collection_call scope env name arg_forms

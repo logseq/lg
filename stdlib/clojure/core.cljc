@@ -33,6 +33,12 @@
 (defn nthnext [coll n]
   (drop n coll))
 
+(defn bounded-count [n coll]
+  (count (take n coll)))
+
+(defn butlast [coll]
+  (take (dec (count coll)) coll))
+
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))
 

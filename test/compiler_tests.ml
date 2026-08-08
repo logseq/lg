@@ -20600,8 +20600,8 @@ let test_batched_predicate_collection_core_functions_work () =
     compile_with_stdlib Lg.Target.Native "test/predicate_collection.cljc" source
   in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
-    "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 \
-     2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
+    "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:(1 \
+     2 3 4):[4 5]:[1 2 3]:[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
      2 3 4 5]\n\
      item:1\n\
      item:2\n"
@@ -33694,7 +33694,6 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (interleave [1 2] (list 3 4)))|};
       {|(def result (partition 2 [1 2 3]))|};
       {|(def result (partition-all 2 [1 2 3]))|};
-      {|(def result (bounded-count 2 [1 2 3]))|};
       {|(def result (dorun [1 2 3]))|};
     ]
 
