@@ -12458,7 +12458,25 @@ let create ~compile_expr =
                                 ("no protocol implementation for " ^ name
                                ^ " and " ^ source_name receiver.ty)
                           | Some impl -> (
-                              match impl.ty with
+                              let impl_ty =
+                                match impl.ty with
+                                | TFn (param_tys, return_ty)
+                                  when List.length param_tys = List.length args
+                                  ->
+                                    List.fold_left2
+                                      (fun substitutions expected argument ->
+                                        Result.bind substitutions
+                                          (fun substitutions ->
+                                            Type_solver.unify substitutions
+                                              expected argument.ty))
+                                      (Ok []) param_tys args
+                                    |> Result.map (fun substitutions ->
+                                           Type_solver.apply substitutions
+                                             (TFn (param_tys, return_ty)))
+                                    |> Result.value ~default:impl.ty
+                                | _ -> impl.ty
+                              in
+                              match impl_ty with
                               | TFn (param_tys, ret)
                                 when List.length param_tys = List.length args
                                      && List.for_all2
@@ -12511,7 +12529,7 @@ let create ~compile_expr =
                                       expected ("
                                    ^ String.concat ", "
                                        (List.map Types.source_name
-                                          (match impl.ty with
+                                          (match impl_ty with
                                           | TFn (parameters, _) -> parameters
                                           | _ -> []))
                                    ^ "), got ("

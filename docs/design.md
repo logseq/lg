@@ -362,7 +362,13 @@ The currently accepted measured representation optimizations are narrow:
   lookup. A structurally shared sequence spine preserves the insertion-order
   contract required by DataScript relation bindings without participating in
   lookup. Metadata is stored once on the map root so `assoc`, `dissoc`, and
-  `empty` preserve the ClojureScript metadata contract.
+  `empty` preserve the ClojureScript metadata contract. The runtime map has
+  static registry implementations for ClojureScript's `ICollection`,
+  `IAssociative`, `IFind`, `IMap`, `IKVReduce`, `IMeta`, and `IWithMeta`, in
+  addition to its seq, count, and empty capabilities. `ILookup` remains a
+  compiler-known typed operation until the protocol registry can represent
+  both upstream arities under one method identity; `IEquiv` and `IHash` remain
+  compiler-elaborated so their key and value operations stay statically typed.
 - DataScript identifier comparison checks namespace and name slices in place
   instead of allocating substrings. Separator handling and lexical ordering
   remain identical.

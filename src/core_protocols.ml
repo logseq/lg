@@ -31,6 +31,13 @@ let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
 let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
+let collection_id = Protocol_id.create ~owner:[] ~name:"ICollection"
+let associative_id = Protocol_id.create ~owner:[] ~name:"IAssociative"
+let find_id = Protocol_id.create ~owner:[] ~name:"IFind"
+let map_id = Protocol_id.create ~owner:[] ~name:"IMap"
+let kv_reduce_id = Protocol_id.create ~owner:[] ~name:"IKVReduce"
+let meta_id = Protocol_id.create ~owner:[] ~name:"IMeta"
+let with_meta_id = Protocol_id.create ~owner:[] ~name:"IWithMeta"
 
 let data_owner = [ "clojure.data" ]
 
@@ -310,6 +317,127 @@ let declare_comparable_protocol registry =
        ]
   |> add_or_fail
 
+let declare_map_protocols registry =
+  let key = TVar "map_key" in
+  let value = TVar "map_value" in
+  let accumulator = TVar "map_accumulator" in
+  let map_ty = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
+  let metadata_ty = TOcaml "Lg_edn_backend.t" in
+  registry
+  |> Protocol_registry.declare collection_id
+       [
+         {
+           Protocol_registry.method_id = method_id collection_id "-conj";
+           param_tys = [ map_ty; TTuple [ key; value ] ];
+           return_ty = map_ty;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare associative_id
+       [
+         {
+           Protocol_registry.method_id =
+             method_id associative_id "-contains-key?";
+           param_tys = [ map_ty; key ];
+           return_ty = TBool;
+         };
+         {
+           Protocol_registry.method_id = method_id associative_id "-assoc";
+           param_tys = [ map_ty; key; value ];
+           return_ty = map_ty;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare find_id
+       [
+         {
+           Protocol_registry.method_id = method_id find_id "-find";
+           param_tys = [ map_ty; key ];
+           return_ty = TOcaml_app ("option", [ TTuple [ key; value ] ]);
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare map_id
+       [
+         {
+           Protocol_registry.method_id = method_id map_id "-dissoc";
+           param_tys = [ map_ty; key ];
+           return_ty = map_ty;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare kv_reduce_id
+       [
+         {
+           Protocol_registry.method_id =
+             method_id kv_reduce_id "-kv-reduce";
+           param_tys =
+             [
+               map_ty;
+               TFn ([ accumulator; key; value ], accumulator);
+               accumulator;
+             ];
+           return_ty = accumulator;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare meta_id
+       [
+         {
+           Protocol_registry.method_id = method_id meta_id "-meta";
+           param_tys = [ map_ty ];
+           return_ty = metadata_ty;
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare with_meta_id
+       [
+         {
+           Protocol_registry.method_id = method_id with_meta_id "-with-meta";
+           param_tys = [ map_ty; metadata_ty ];
+           return_ty = map_ty;
+         };
+       ]
+  |> add_or_fail
+
+let add_runtime_map_protocols registry =
+  let key = TVar "map_key" in
+  let value = TVar "map_value" in
+  let accumulator = TVar "map_accumulator" in
+  let map_ty = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
+  let metadata_ty = TOcaml "Lg_edn_backend.t" in
+  let add protocol_id method_name ocaml_name ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
+      runtime_map_receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add collection_id "-conj" "Lg_runtime.Runtime_map.conj_entry"
+       (TFn ([ map_ty; TTuple [ key; value ] ], map_ty))
+  |> add associative_id "-contains-key?" "Lg_runtime.Runtime_map.contains_key"
+       (TFn ([ map_ty; key ], TBool))
+  |> add associative_id "-assoc" "Lg_runtime.Runtime_map.assoc"
+       (TFn ([ map_ty; key; value ], map_ty))
+  |> add find_id "-find" "Lg_runtime.Runtime_map.find_entry"
+       (TFn
+          ([ map_ty; key ], TOcaml_app ("option", [ TTuple [ key; value ] ])))
+  |> add map_id "-dissoc" "Lg_runtime.Runtime_map.dissoc"
+       (TFn ([ map_ty; key ], map_ty))
+  |> add kv_reduce_id "-kv-reduce" "Lg_runtime.Runtime_map.kv_reduce_protocol"
+       (TFn
+          ( [
+              map_ty;
+              TFn ([ accumulator; key; value ], accumulator);
+              accumulator;
+            ],
+            accumulator ))
+  |> add meta_id "-meta" "Lg_runtime.Runtime_map.metadata"
+       (TFn ([ map_ty ], metadata_ty))
+  |> add with_meta_id "-with-meta" "Lg_runtime.Runtime_map.with_metadata"
+       (TFn ([ map_ty; metadata_ty ], map_ty))
+
 let add_indexed receiver ocaml_name registry =
   let binding =
     Types.binding ~protocol_id:indexed_id ocaml_name
@@ -377,6 +505,7 @@ let initial_registry =
   |> declare_collection_lifecycle_protocols |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
+  |> declare_map_protocols |> add_runtime_map_protocols
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =

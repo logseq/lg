@@ -674,12 +674,54 @@ let test_hash_map_satisfies_collection_protocols () =
   (str
     (satisfies? ISeqable values) ":"
     (satisfies? ICounted values) ":"
-    (satisfies? IEmptyableCollection values)))
+    (satisfies? IEmptyableCollection values) ":"
+    (satisfies? ICollection values) ":"
+    (satisfies? IAssociative values) ":"
+    (satisfies? IFind values) ":"
+    (satisfies? IMap values) ":"
+    (satisfies? IKVReduce values) ":"
+    (satisfies? IMeta values) ":"
+    (satisfies? IWithMeta values)))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   assert_ocaml_runs "hash_map_satisfies_collection_protocols"
-    "true:true:true\n" ocaml_source
+    "true:true:true:true:true:true:true:true:true:true\n" ocaml_source
+
+let test_hash_map_protocol_methods_dispatch_statically () =
+  let source =
+    {|
+(defn make-map [^:keyword key]
+  {key 1})
+(def values (make-map :a))
+(def associated (-assoc values :b 2))
+(def conjoined
+  (if-let [entry (first (seq (-assoc (make-map :c) :c 3)))]
+    (-conj values entry)
+    values))
+(def total (-kv-reduce associated (fn [sum _ value] (+ sum value)) 0))
+(def metadata-value (meta (with-meta values {:source "protocol"})))
+(def retagged (-with-meta values metadata-value))
+(def ^:string metadata-source (:source (-meta retagged)))
+(println
+  (str
+    (-contains-key? associated :b) ":"
+    (nil? (-find associated :b)) ":"
+    (count (-dissoc associated :a)) ":"
+    (:c conjoined) ":"
+    total ":"
+    metadata-source))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "statically dispatched map protocols must not use Runtime_dynamic";
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  assert_ocaml_runs "hash_map_protocol_methods_dispatch_statically"
+    "true:false:1:3:3:protocol\n" ocaml_source
 
 let test_hash_map_is_callable_as_lookup_function () =
   let source =
@@ -34751,6 +34793,8 @@ let tests =
     ("hash-map hash is unordered", test_hash_map_hash_is_unordered);
     ( "hash-map satisfies collection protocols",
       test_hash_map_satisfies_collection_protocols );
+    ( "hash-map protocol methods dispatch statically",
+      test_hash_map_protocol_methods_dispatch_statically );
     ( "hash-map is callable as lookup function",
       test_hash_map_is_callable_as_lookup_function );
     ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);

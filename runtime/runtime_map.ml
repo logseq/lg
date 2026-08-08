@@ -515,6 +515,8 @@ let kv_reduce fn accumulator map =
     (fun accumulator (key, value) -> fn accumulator key value)
     accumulator map
 
+let kv_reduce_protocol map fn accumulator = kv_reduce fn accumulator map
+
 let equiv_by operations value_equal left right =
   left == right
   || (left.size = right.size
