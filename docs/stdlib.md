@@ -48,6 +48,22 @@ through the same ordinary incremental namespace machinery as application
 code. The state is target-specific and must be regenerated with the compiler;
 it is a build artifact, not a checked-in compatibility database.
 
+The aggregate artifacts are `_build/default/stdlib/lg_stdlib_native.ml` plus
+`lg_stdlib_native.state`, and the corresponding `lg_stdlib_melange.*` pair.
+A consumer depends on the pair, compiles only its application chunk from the
+state, and concatenates the aggregate implementation with the emitted chunk:
+
+```sh
+dune exec bin/lg_cli.exe -- \
+  --target native \
+  --compile-chunk-from _build/default/stdlib/lg_stdlib_native.state \
+  app.cljc -o app_chunk.ml
+```
+
+Consumers must not enumerate individual stdlib `.mil` or `.cljc` files.
+`test/stdlib` exercises this contract, including negative type tests restored
+from the same aggregate state.
+
 Generic `set<element>` source functions use LG's statically typed generic set
 representation internally. Calls from concrete persistent set modules convert
 through typed `elements` and `of_list` operations at that source-function

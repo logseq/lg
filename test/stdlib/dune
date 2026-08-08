@@ -1,16 +1,8 @@
 (rule
- (targets clojure_set_bootstrap.ml clojure_set.state)
+ (target clojure_set_app_chunk.ml)
  (deps
-  ../../stdlib/clojure/core.mil
-  ../../stdlib/clojure/core.cljc
-  ../../stdlib/clojure/string.mil
-  ../../stdlib/clojure/string.cljc
-  ../../stdlib/clojure/edn.mil
-  ../../stdlib/clojure/edn.cljc
-  ../../stdlib/cljs/reader.mil
-  ../../stdlib/cljs/reader.cljc
-  ../../stdlib/clojure/set.mil
-  ../../stdlib/clojure/set.cljc
+  clojure_set_app.cljc
+  ../../stdlib/lg_stdlib_native.state
   ../../bin/lg_cli.exe)
  (action
   (setenv
@@ -20,46 +12,20 @@
     %{exe:../../bin/lg_cli.exe}
     --target
     native
-    --compile-files-state
-    clojure_set.state
-    %{dep:../../stdlib/clojure/core.mil}
-    %{dep:../../stdlib/clojure/core.cljc}
-    %{dep:../../stdlib/clojure/string.mil}
-    %{dep:../../stdlib/clojure/string.cljc}
-    %{dep:../../stdlib/clojure/edn.mil}
-    %{dep:../../stdlib/clojure/edn.cljc}
-    %{dep:../../stdlib/cljs/reader.mil}
-    %{dep:../../stdlib/cljs/reader.cljc}
-    %{dep:../../stdlib/clojure/set.mil}
-    %{dep:../../stdlib/clojure/set.cljc}
-    -o
-    clojure_set_bootstrap.ml))))
-
-(rule
- (target clojure_set_app_chunk.ml)
- (deps clojure_set_app.cljc clojure_set.state ../../bin/lg_cli.exe)
- (action
-  (setenv
-   LG_DISABLE_COMPILE_CACHE
-   1
-   (run
-    %{exe:../../bin/lg_cli.exe}
-    --target
-    native
     --compile-chunk-from
-    clojure_set.state
+    %{dep:../../stdlib/lg_stdlib_native.state}
     %{dep:clojure_set_app.cljc}
     -o
     %{target}))))
 
 (rule
  (target clojure_set_native.ml)
- (deps clojure_set_bootstrap.ml clojure_set_app_chunk.ml)
+ (deps ../../stdlib/lg_stdlib_native.ml clojure_set_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:clojure_set_bootstrap.ml})
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
     (cat %{dep:clojure_set_app_chunk.ml})))))
 
 (executable
@@ -84,8 +50,7 @@
  (alias runtest)
  (deps
   check_compile_error.sh
-  ../../stdlib/clojure/set.mil
-  ../../stdlib/clojure/set.cljc
+  ../../stdlib/lg_stdlib_native.state
   clojure_set_bad_arity.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -93,8 +58,7 @@
    sh
    %{dep:check_compile_error.sh}
    %{exe:../../bin/lg_cli.exe}
-   %{dep:../../stdlib/clojure/set.mil}
-   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_set_bad_arity.cljc}
    "called with incompatible arguments")))
 
@@ -102,8 +66,7 @@
  (alias runtest)
  (deps
   check_compile_error.sh
-  ../../stdlib/clojure/set.mil
-  ../../stdlib/clojure/set.cljc
+  ../../stdlib/lg_stdlib_native.state
   clojure_set_non_set.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -111,8 +74,7 @@
    sh
    %{dep:check_compile_error.sh}
    %{exe:../../bin/lg_cli.exe}
-   %{dep:../../stdlib/clojure/set.mil}
-   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_set_non_set.cljc}
    "called with incompatible arguments")))
 
@@ -120,8 +82,7 @@
  (alias runtest)
  (deps
   check_compile_error.sh
-  ../../stdlib/clojure/set.mil
-  ../../stdlib/clojure/set.cljc
+  ../../stdlib/lg_stdlib_native.state
   clojure_set_mixed.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -129,8 +90,7 @@
    sh
    %{dep:check_compile_error.sh}
    %{exe:../../bin/lg_cli.exe}
-   %{dep:../../stdlib/clojure/set.mil}
-   %{dep:../../stdlib/clojure/set.cljc}
+   %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_set_mixed.cljc}
    "same element type")))
 
@@ -171,6 +131,15 @@
   ../../src/type_inference.ml)
  (action
   (run sh %{dep:check_no_source_core_bit_dispatch.sh} ../..)))
+
+(rule
+ (alias aggregate-stdlib-consumer)
+ (deps
+  check_aggregate_stdlib_consumer.sh
+  dune
+  ../../stdlib/dune)
+ (action
+  (run sh %{dep:check_aggregate_stdlib_consumer.sh} ../..)))
 
 (rule
  (alias source-reader-bootstrap)
