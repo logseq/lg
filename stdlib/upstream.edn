@@ -101,6 +101,10 @@
                          :reason :typed-runtime-string-replacement-for-the-clojurescript-number-to-string-radix-host-call}
     parse-boolean {:status :static-adaptation
                    :reason :non-string-input-is-rejected-statically-while-valid-string-control-flow-matches-upstream}
+    parse-long {:status :static-adaptation
+                :reason :source-port-preserves-upstream-decimal-grammar-and-safe-integer-guards-through-boolean-typed-grammar-and-pre-parse-overflow-validators}
+    parse-double {:status :static-adaptation
+                  :reason :source-port-preserves-upstream-nan-before-number-grammar-branching-through-boolean-typed-grammar-validators}
     any? {:status :ported}
     range {:status :static-adaptation
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}

@@ -16,6 +16,8 @@
   :overload<fn<string;int;string>;fn<string;int;int;string>>)
 (signature clojure.core/int-to-string-radix :fn<int;int;string>)
 (signature clojure.core/parse-boolean :fn<string;option<bool>>)
+(signature clojure.core/parse-long :fn<string;option<int>>)
+(signature clojure.core/parse-double :fn<string;option<float>>)
 (signature clojure.core/any? [value] :fn<value;bool>)
 (signature clojure.core/range
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)

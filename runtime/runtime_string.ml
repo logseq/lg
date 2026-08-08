@@ -263,6 +263,139 @@ let parse_float_radix source radix =
   let result = loop 0.0 start in
   if negative then -.result else result
 
+let decimal_integer_string source =
+  let length = String.length source in
+  let start =
+    if length > 0 && (source.[0] = '-' || source.[0] = '+') then 1 else 0
+  in
+  if start = length then false
+  else
+    let rec valid index =
+      index = length
+      ||
+      match source.[index] with
+      | '0' .. '9' -> valid (index + 1)
+      | _ -> false
+    in
+    valid start
+
+let safe_decimal_integer_string source =
+  if not (decimal_integer_string source) then false
+  else
+    let length = String.length source in
+    let start =
+      if source.[0] = '-' || source.[0] = '+' then 1 else 0
+    in
+    let rec skip_zeroes index =
+      if index < length && source.[index] = '0' then skip_zeroes (index + 1)
+      else index
+    in
+    let significant_start = skip_zeroes start in
+    let significant_length = length - significant_start in
+    significant_length < 16
+    ||
+    (significant_length = 16
+    && String.sub source significant_start significant_length
+       <= "9007199254740991")
+
+let ascii_whitespace character = Char.code character <= 0x20
+
+let ascii_trim_bounds source =
+  let length = String.length source in
+  let rec find_start index =
+    if index < length && ascii_whitespace source.[index] then
+      find_start (index + 1)
+    else index
+  in
+  let rec find_end index =
+    if index > 0 && ascii_whitespace source.[index - 1] then
+      find_end (index - 1)
+    else index
+  in
+  (find_start 0, find_end length)
+
+let signed_start source start finish =
+  if start < finish && (source.[start] = '-' || source.[start] = '+') then
+    start + 1
+  else start
+
+let double_nan_string source =
+  let start, finish = ascii_trim_bounds source in
+  let start = signed_start source start finish in
+  finish - start = 3 && String.sub source start 3 = "NaN"
+
+let double_number_string source =
+  let start, finish = ascii_trim_bounds source in
+  let unsigned_start = signed_start source start finish in
+  let exact literal =
+    finish - unsigned_start = String.length literal
+    && String.sub source unsigned_start (String.length literal) = literal
+  in
+  if exact "Infinity" then true
+  else
+    let rec digits index =
+      if index < finish then
+        match source.[index] with
+        | '0' .. '9' -> digits (index + 1)
+        | _ -> index
+      else index
+    in
+    let integer_end = digits unsigned_start in
+    let has_integer = integer_end > unsigned_start in
+    let mantissa_end =
+      if integer_end < finish && source.[integer_end] = '.' then
+        let fraction_end = digits (integer_end + 1) in
+        if has_integer || fraction_end > integer_end + 1 then
+          Some fraction_end
+        else None
+      else if has_integer then Some integer_end
+      else None
+    in
+    match mantissa_end with
+    | None -> false
+    | Some mantissa_end ->
+        let exponent_end =
+          if
+            mantissa_end < finish
+            && (source.[mantissa_end] = 'e' || source.[mantissa_end] = 'E')
+          then
+            let exponent_start =
+              signed_start source (mantissa_end + 1) finish
+            in
+            let exponent_end = digits exponent_start in
+            if exponent_end = exponent_start then None else Some exponent_end
+          else Some mantissa_end
+        in
+        (match exponent_end with
+        | None -> false
+        | Some exponent_end ->
+            let suffix_end =
+              if
+                exponent_end < finish
+                &&
+                match source.[exponent_end] with
+                | 'd' | 'D' | 'f' | 'F' -> true
+                | _ -> false
+              then exponent_end + 1
+              else exponent_end
+            in
+            suffix_end = finish)
+
+let parse_decimal_float source =
+  let start, finish = ascii_trim_bounds source in
+  let finish =
+    if finish > start then
+      match source.[finish - 1] with
+      | 'd' | 'D' | 'f' | 'F' -> finish - 1
+      | _ -> finish
+    else finish
+  in
+  let normalized = String.sub source start (finish - start) in
+  match normalized with
+  | "Infinity" | "+Infinity" -> Float.infinity
+  | "-Infinity" -> Float.neg_infinity
+  | _ -> float_of_string normalized
+
 let int_to_string_radix value radix =
   if radix < 2 || radix > 36 then
     invalid_arg "radix must be between 2 and 36";

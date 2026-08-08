@@ -9,6 +9,7 @@
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
+            [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
             [ocaml.Lg_runtime.Runtime_seq :as runtime-seq]
@@ -55,6 +56,23 @@
     "true" true
     "false" false
     nil))
+
+(defn parse-long [source]
+  (if (and (runtime-string/decimal-integer-string source)
+           (runtime-string/safe-decimal-integer-string source))
+    (let [value #?(:melange (runtime-number-melange/parse-int source 10)
+                   :default (runtime-string/parse-int-radix source 10))]
+      (when (and (<= value 9007199254740991)
+                 (>= value -9007199254740991))
+        value))
+    nil))
+
+(defn parse-double [source]
+  (cond
+    (runtime-string/double-nan-string source) ##NaN
+    (runtime-string/double-number-string source)
+    (runtime-string/parse-decimal-float source)
+    :else nil))
 
 (defn any? [x]
   (runtime-static-value/consume x)

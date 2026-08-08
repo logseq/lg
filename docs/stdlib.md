@@ -126,9 +126,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 138 source entries, 175 typed
+macro surfaces. The current baseline is 140 source entries, 175 typed
 primitives, 5 special forms, 12 host boundaries, 158 static-typing blockers,
-44 out-of-scope Spec entries, and 323 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 321 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
@@ -156,7 +156,7 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
 `constantly`, `vec`, `max-key`, `min-key`, `frequencies`, `update-vals`,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
-`parse-uuid`, `system-time`, and the derived bit
+`parse-uuid`, `system-time`, `parse-long`, `parse-double`, and the derived bit
 functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
@@ -167,7 +167,10 @@ reader/walk/data boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. A repository-wide Logseq symbol scan
 also finds 824 `random-uuid`, 46 `parse-uuid`, and 14 `system-time`
 occurrences; those three core functions now resolve from the aggregate source
-artifact, including `cljs.core` aliases and refers. The aggregate `clojure.set` source
+artifact, including `cljs.core` aliases and refers. The same scan finds 30
+`parse-long` and 7 `parse-double` occurrences; both parsers now preserve the
+upstream grammar and safe-number bounds through the same source artifact. The
+aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
 `superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
 references and all 221 observed qualified-var references resolve through the
