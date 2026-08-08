@@ -60,23 +60,6 @@ let first env collection =
                         Semantic_ir.Ident "first" ) ] )))
       | _ -> Collection_capability.first_expr env collection)
 
-let second env collection =
-  match collection.ty with
-  | TTuple (_ :: second_type :: remaining_types) ->
-      let patterns =
-        Semantic_ir.PAny :: Semantic_ir.PVar "second"
-        :: List.map (fun _ -> Semantic_ir.PAny) remaining_types
-      in
-      Ok
-        (typed_ir second_type
-           (Semantic_ir.Match
-              ( collection.semantic_expr,
-                [ ( Semantic_ir.PTuple patterns,
-                    Semantic_ir.Ident "second" ) ] )))
-  | _ -> Collection_capability.second_expr env collection
-
-let last env collection = Collection_capability.last_expr env collection
-
 let peek collection =
   match collection.ty with
   | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.semantic_expr ]))
@@ -248,7 +231,7 @@ let take_drop env name count collection =
 
 let compile env name args =
   match name with
-  | "count" | "first" | "second" | "last" | "peek" | "pop" | "rest" | "seq"
+  | "count" | "first" | "peek" | "pop" | "rest" | "seq"
   | "empty?" | "empty" -> (
       match one_arg name args with
       | Error _ as err -> err
@@ -256,8 +239,6 @@ let compile env name args =
           match name with
           | "count" -> count env collection
           | "first" -> first env collection
-          | "second" -> second env collection
-          | "last" -> last env collection
           | "peek" -> peek collection
           | "pop" -> pop collection
           | "rest" -> rest env collection

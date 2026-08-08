@@ -77,6 +77,16 @@
 (defn bit-shift-right-zero-fill [x n]
   (runtime-int/logical-shift-right x n))
 
+(defn second [coll]
+  (first (next coll)))
+
+(defn last [coll]
+  (loop [remaining (seq coll)]
+    (let [tail (next remaining)]
+      (if tail
+        (recur tail)
+        (first remaining)))))
+
 (defn even? [n]
   (zero? (bit-and n 1)))
 

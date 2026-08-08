@@ -8769,7 +8769,7 @@ let create ~compile_expr =
     | "count" -> compile_collection_call scope env name arg_forms
     | "conj" -> compile_conj scope env arg_forms
     | "conj!" -> compile_conj_bang scope env arg_forms
-    | "first" | "second" | "last" | "peek" | "pop" ->
+    | "first" | "peek" | "pop" ->
         compile_collection_call scope env name arg_forms
     | "subvec" -> compile_subvec scope env arg_forms
     | "nth" -> compile_nth scope env arg_forms
@@ -9086,7 +9086,7 @@ let create ~compile_expr =
   and compile_collection_call scope env name arg_forms =
     let argument_env =
       match (name, Env.expected_type env) with
-      | ("first" | "second" | "last"), Some expected ->
+      | "first", Some expected ->
           let element_ty =
             match expected with
             | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner

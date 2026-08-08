@@ -1077,7 +1077,7 @@ let rec inferred_form_type params = function
       | _ -> TUnknown)
   | FList [ FSymbol ("inc" | "dec" | "count"); _ ] -> TInt
   | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
-  | FList [ FSymbol ("first" | "second" | "last"); FSymbol receiver ] -> (
+  | FList [ FSymbol "first"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
@@ -2016,17 +2016,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol ("first" | "second" | "last"); collection ];
+            [ FSymbol "first"; collection ];
         ] ->
         let target_ty = TRecord [ make_field keyword expected_ty ] in
         infer_sequence_form target_ty params collection
       | FList
           [
-            FSymbol ("first" | "second" | "last");
+            FSymbol "first";
             FSymbol collection;
           ] ->
         constrain_seqable expected_ty params collection
-    | FList [ FSymbol ("first" | "second" | "last"); collection ] ->
+    | FList [ FSymbol "first"; collection ] ->
         infer_sequence_form expected_ty params collection
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
@@ -3777,7 +3777,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     match option_form with
                     | FList
                         [
-                          FSymbol ("first" | "second" | "last");
+                          FSymbol "first";
                           _collection;
                         ] ->
                         payload_ty
@@ -3827,7 +3827,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   match option_form with
                   | FList
                       [
-                        FSymbol ("first" | "second" | "last");
+                        FSymbol "first";
                         _collection;
                       ] ->
                       payload_ty
@@ -4590,7 +4590,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?")
+            (("first" | "seq" | "rest" | "next" | "empty?")
             as operation);
           FSymbol collection;
         ] ->
@@ -4601,7 +4601,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?");
+            ("first" | "seq" | "rest" | "next" | "empty?");
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
@@ -4612,7 +4612,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("first" | "second" | "last" | "seq" | "rest" | "next" | "empty?")
+            (("first" | "seq" | "rest" | "next" | "empty?")
             as operation);
           collection;
         ] ->
@@ -5257,7 +5257,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol ("first" | "second" | "last"); collection ];
+            [ FSymbol "first"; collection ];
         ] ->
         infer_sequence_form
           (TRecord
@@ -5808,7 +5808,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (fun locals -> function
                         | FList
                             [
-                              FSymbol ("first" | "second" | "last");
+                              FSymbol "first";
                               FSymbol local;
                             ] ->
                             if string_mem local locals then locals

@@ -76,6 +76,9 @@
     rand-nth {:status :ported}
     bit-shift-right-zero-fill {:status :static-adaptation
                                :reason :source-wrapper-over-the-typed-runtime-logical-shift-primitive}
+    second {:status :ported}
+    last {:status :static-adaptation
+          :reason :preserves-the-upstream-linear-next-loop-using-static-empty-sequence-truthiness}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

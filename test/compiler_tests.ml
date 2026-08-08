@@ -20497,6 +20497,34 @@ let test_source_random_and_logical_shift_helpers_are_first_class_vars () =
     {|(clojure.core/rand-int "1")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_sequence_accessors_are_polymorphic_first_class_vars () =
+  let source =
+    {|
+(def second-item clojure.core/second)
+(def last-item clojure.core/last)
+(println
+  (str (second-item [1 2 3]) ":"
+       (last-item (list 1 2 3)) ":"
+       (second-item "ab") ":"
+       (last-item "ab") ":"
+       (nil? (second-item [])) ":"
+       (nil? (last-item []))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_sequence_accessors.cljc"
+      source
+  in
+  assert_ocaml_runs
+    "source_sequence_accessors_are_polymorphic_first_class_vars"
+    "2:3:b:b:true:true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_sequence_accessors.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_sequence_accessors_bad.cljc" {|(clojure.core/second 1)|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -35663,6 +35691,8 @@ let tests =
       test_source_integer_helpers_are_qualified_first_class_vars );
     ( "source random and logical shift helpers are first-class vars",
       test_source_random_and_logical_shift_helpers_are_first_class_vars );
+    ( "source sequence accessors are polymorphic first-class vars",
+      test_source_sequence_accessors_are_polymorphic_first_class_vars );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);

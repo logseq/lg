@@ -30,6 +30,10 @@
 (signature clojure.core/rand-nth [value]
   :fn<seqable<value>;value>)
 (signature clojure.core/bit-shift-right-zero-fill :fn<int;int;int>)
+(signature clojure.core/second [value]
+  :fn<seqable<value>;option<value>>)
+(signature clojure.core/last [value]
+  :fn<seqable<value>;option<value>>)
 
 (signature clojure.core/even? :fn<int;bool>)
 (signature clojure.core/odd? :fn<int;bool>)
