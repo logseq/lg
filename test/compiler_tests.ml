@@ -20601,7 +20601,7 @@ let test_batched_predicate_collection_core_functions_work () =
   in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
     "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:[1 \
-     2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:[1 2]:[3 4 5]:[1 2 3]:[4 5]:3:2:2:done:[1 \
+     2 3 4]:[4 5]:[1 2 3]:[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
      2 3 4 5]\n\
      item:1\n\
      item:2\n"
@@ -20612,9 +20612,9 @@ let test_batched_predicate_collection_core_functions_reject_bad_counts () =
   |> expect_error "take-nth n must be positive"
 
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
-  |> expect_error "split-with expects a predicate matching collection elements"
+  |> expect_error_contains "Type int is not compatible with type string"
 
 let test_batched_predicate_collection_core_functions_reject_bad_run_function ()
     =
@@ -21596,19 +21596,21 @@ let test_loop_initializers_propagate_seqable_constraints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_batched_predicate_collection_core_functions_accept_truthy_params () =
+let test_source_split_with_accepts_boolean_params () =
   let source =
     {|
 (defn prefix [flag xs] (split-with (fn [x] flag) xs))
-(println (str (count (first (prefix 1 [1 2]))) ":"
-              (count (second (prefix 1 [1 2]))) ":"
+(println (str (count (first (prefix true [1 2]))) ":"
+              (count (second (prefix true [1 2]))) ":"
               (count (first (prefix false [1 2]))) ":"
               (count (second (prefix false [1 2])))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/split_truthy.cljc" source
+  in
   assert_ocaml_runs
-    "batched_predicate_collection_core_functions_accept_truthy_params"
+    "source_split_with_accepts_boolean_params"
     "2:0:0:2\n" ocaml_source
 
 let test_batched_identifier_and_constructor_core_functions_work () =
@@ -33689,7 +33691,6 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (interleave [1 2] (list 3 4)))|};
       {|(def result (partition 2 [1 2 3]))|};
       {|(def result (partition-all 2 [1 2 3]))|};
-      {|(def result (split-at 2 [1 2 3]))|};
       {|(def result (bounded-count 2 [1 2 3]))|};
       {|(def result (dorun [1 2 3]))|};
     ]
@@ -35503,7 +35504,7 @@ let tests =
     ( "loop initializers propagate seqable constraints",
       test_loop_initializers_propagate_seqable_constraints );
     ( "batched predicate/collection core functions accept truthy params",
-      test_batched_predicate_collection_core_functions_accept_truthy_params );
+      test_source_split_with_accepts_boolean_params );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",

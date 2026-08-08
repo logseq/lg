@@ -34,8 +34,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 333; then
-  echo "compiler call dispatch changed: expected 333 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 331; then
+  echo "compiler call dispatch changed: expected 331 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -44,7 +44,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in boolean bounded-count butlast comp concat constantly cycle dedupe distinct doall dorun drop drop-last drop-while every-pred every? ffirst filter filterv fnil fnext get-in group-by interleave interpose into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next nfirst nnext not-empty nthnext nthrest partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest reverse rseq run! select-keys some some-fn sort sort-by split-at split-with take take-last take-nth take-while update-in vals vec zipmap", xs)
+    split("apply assoc-in boolean bounded-count butlast comp concat constantly cycle dedupe distinct doall dorun drop drop-last drop-while every-pred every? ffirst filter filterv fnil fnext get-in group-by interleave interpose into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next nfirst nnext not-empty nthnext nthrest partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest reverse rseq run! select-keys some some-fn sort sort-by take take-last take-nth take-while update-in vals vec zipmap", xs)
     for (i in xs) blocked[xs[i]] = 1
     split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1

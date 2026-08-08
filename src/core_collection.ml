@@ -231,10 +231,10 @@ let drop_list_expr count source =
   in
   Semantic_ir.LetRec ("drop__", [ Semantic_ir.PVar "n"; Semantic_ir.PVar "xs" ], body, [ count; source ])
 
-let take_drop name count collection =
+let take_drop env name count collection =
   if not (Types.equal count.ty TInt) then Error.error (name ^ " count must be int")
   else
-    match Core_sequence_transform.collection_to_seq_expr collection with
+    match Collection_capability.to_seq_expr env collection with
     | Error _ -> Error.error (name ^ " expects a seqable value")
     | Ok (inner, sequence) ->
         let runtime_name =
@@ -275,5 +275,5 @@ let compile env name args =
   | "take" | "drop" -> (
       match two_args name args with
       | Error _ as err -> err
-      | Ok (count, collection) -> take_drop name count collection)
+      | Ok (count, collection) -> take_drop env name count collection)
   | _ -> Error.error ("unknown function " ^ name)

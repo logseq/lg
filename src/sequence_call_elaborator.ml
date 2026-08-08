@@ -14,7 +14,6 @@ type t = {
   compile_mapcat : call;
   compile_repeatedly : call;
   compile_reductions : call;
-  compile_split_with : call;
   compile_partition_by : call;
   compile_run_bang : call;
   compile_map_indexed : call;
@@ -678,7 +677,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           params body_forms
     | form -> compile_function_arg scope env form
   in
-  let rec collection_to_list_expr env collection =
+  let collection_to_list_expr env collection =
     match Core_sequence_transform.collection_to_list_expr collection with
     | Ok _ as result -> result
     | Error _ ->
@@ -687,9 +686,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                ( inner,
                  Semantic_ir.Apply
                    (Semantic_ir.Ident "List.of_seq", [ sequence ]) ))
-    and collection_from_list_expr collection_ty list_expr =
-      Core_sequence_transform.collection_from_list_expr collection_ty list_expr
-    and comparable_type = function
+  in
+  let rec comparable_type = function
       | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
       | _ -> false
     and compile_sort_by scope env arg_forms =
@@ -968,101 +966,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               | _, Error _ -> Error.error "reductions expects a collection"))
     | _ ->
         Error.error "reductions expects function, optional init, and collection"
-    and compile_split_with scope env arg_forms =
-      match arg_forms with
-    | [ fn_form; collection_form ] -> (
-        match compile_expr scope env collection_form with
-        | Error _ as error -> error
-        | Ok collection -> (
-            match collection_to_list_expr env collection with
-            | Error _ ->
-                Error.error
-                  ("split-with expects a collection, got "
-                 ^ Types.source_name collection.ty)
-            | Ok (inner, list_expr) -> (
-                match
-                  compile_function_arg_for_collection scope env inner fn_form
-                with
-                | Error _ as error -> error
-                | Ok fn -> (
-                    match adapt_unary_function env inner fn with
-                    | Error _ as error -> error
-                    | Ok fn -> (
-                        match fn.ty with
-                        | TFn ([ param_ty ], return_ty)
-                          when Types.assignable ~policy:Host_boundary
-                                 ~expected:param_ty ~actual:inner
-                               && returns_truthy_value return_ty ->
-                  let split_body =
-                    Semantic_ir.Match
-                      ( Semantic_ir.Ident "rest",
-                      [
-                        ( Semantic_ir.PCons
-                            (Semantic_ir.PVar "item", Semantic_ir.PVar "tail"),
-                            Semantic_ir.If
-                              ( truthy_call return_ty fn.semantic_expr
-                                  [ Semantic_ir.Ident "item" ],
-                                apply "split"
-                                [
-                                  Semantic_ir.Cons
-                                    ( Semantic_ir.Ident "item",
-                                      Semantic_ir.Ident "prefix" );
-                                  Semantic_ir.Ident "tail";
-                                ],
-                                Semantic_ir.Tuple
-                                [
-                                  apply "List.rev"
-                                    [ Semantic_ir.Ident "prefix" ];
-                                  Semantic_ir.Ident "rest";
-                                ] ) );
-                          ( Semantic_ir.PAny,
-                            Semantic_ir.Tuple
-                            [
-                              apply "List.rev" [ Semantic_ir.Ident "prefix" ];
-                              Semantic_ir.Ident "rest";
-                            ] );
-                      ] )
-                  in
-                  let pair_expr =
-                    Semantic_ir.LetRec
-                      ( "split",
-                        [ Semantic_ir.PVar "prefix"; Semantic_ir.PVar "rest" ],
-                        split_body,
-                        [ Semantic_ir.List []; list_expr ] )
-                  in
-                let result_collection_ty =
-                  match Types.seqable_constraint_info collection.ty with
-                  | Some _ -> TList inner
-                  | None
-                    when Types.is_dynamic collection.ty
-                         || (match collection.ty with
-                            | TUnknown | TMeta _ | TVar _ -> true
-                            | _ -> false) ->
-                      TList inner
-                  | None -> collection.ty
-                in
-                  Ok
-                  (typed_ir (TVector result_collection_ty)
-                       (Semantic_ir.Let
-                          ( [ (Semantic_ir.PVar "pair", pair_expr) ],
-                            apply "Rrbvec.of_list"
-                            [
-                              Semantic_ir.List
-                                [
-                                  collection_from_list_expr
-                                    result_collection_ty
-                                      (apply "fst" [ Semantic_ir.Ident "pair" ]);
-                                  collection_from_list_expr
-                                    result_collection_ty
-                                    (apply "snd" [ Semantic_ir.Ident "pair" ]);
-                                ];
-                            ] )))
-                        | TFn _ ->
-                            Error.error
-                              "split-with expects a predicate matching collection elements"
-                        | _ ->
-                            Error.error "split-with expects a function")))))
-      | _ -> Error.error "split-with expects function and collection"
     and compile_partition_by scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
@@ -2294,7 +2197,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     compile_mapcat;
     compile_repeatedly;
     compile_reductions;
-    compile_split_with;
     compile_partition_by;
     compile_run_bang;
     compile_map_indexed;

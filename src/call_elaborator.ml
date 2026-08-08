@@ -3815,7 +3815,6 @@ let create ~compile_expr =
   let compile_mapcat = sequence.compile_mapcat in
   let compile_repeatedly = sequence.compile_repeatedly in
   let compile_reductions = sequence.compile_reductions in
-  let compile_split_with = sequence.compile_split_with in
   let compile_partition_by = sequence.compile_partition_by in
   let compile_run_bang = sequence.compile_run_bang in
   let compile_map_indexed = sequence.compile_map_indexed in
@@ -8876,9 +8875,6 @@ let create ~compile_expr =
             compile_protocol_call scope env "IReversible/-rseq" arg_forms
         | Ok _ -> Error.error "rseq expects 1 arguments")
     | "some" -> compile_some scope env arg_forms
-              | "split-at" ->
-                  compile_sequence_transform_call scope env name arg_forms
-    | "split-with" -> compile_split_with scope env arg_forms
     | "partition-by" -> compile_partition_by scope env arg_forms
     | "bounded-count" | "dorun" | "doall" ->
         compile_sequence_transform_call scope env name arg_forms

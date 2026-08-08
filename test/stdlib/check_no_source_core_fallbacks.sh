@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 
-for name in identity complement even? odd? not-any? not-every?; do
+for name in identity complement even? odd? not-any? not-every? split-at split-with; do
   for file in \
     src/call_elaborator.ml \
     src/expression_support.ml \

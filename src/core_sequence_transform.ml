@@ -581,22 +581,6 @@ let take_nth count collection =
         in
         Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
 
-let split_at count collection =
-  if not (Types.equal count.ty TInt) then Error.error "split-at count must be int"
-  else
-    match collection_to_list_expr collection with
-    | Error _ -> Error.error "split-at expects a collection"
-    | Ok (_inner, list_expr) ->
-        let left =
-          collection_from_list_expr collection.ty
-            (take_list_expr count.semantic_expr list_expr)
-        in
-        let right =
-          collection_from_list_expr collection.ty
-            (drop_list_expr count.semantic_expr list_expr)
-        in
-        Ok (typed_ir (TVector collection.ty) (apply "Rrbvec.of_list" [ Semantic_ir.List [ left; right ] ]))
-
 let bounded_count limit collection =
   if not (Types.equal limit.ty TInt) then Error.error "bounded-count limit must be int"
   else
@@ -782,7 +766,6 @@ let compile name args =
   | ("take-last" | "drop-last"), [ count; collection ] ->
       take_drop_last name count collection
   | "take-nth", [ count; collection ] -> take_nth count collection
-  | "split-at", [ count; collection ] -> split_at count collection
   | "bounded-count", [ limit; collection ] -> bounded_count limit collection
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
@@ -802,7 +785,6 @@ let compile name args =
   | ("take-last" | "drop-last"), _ ->
       Error.error (name ^ " expects count and collection")
   | "take-nth", _ -> Error.error "take-nth expects n and collection"
-  | "split-at", _ -> Error.error "split-at expects count and collection"
   | "bounded-count", _ -> Error.error "bounded-count expects limit and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

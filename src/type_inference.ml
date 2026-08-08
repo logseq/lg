@@ -5768,15 +5768,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_match params target (pairs [] clauses)
     | FList
         [
-          FSymbol "split-with";
-          FList (FSymbol "fn" :: _fn_params :: [ body_form ]);
-          collection;
-        ] -> (
-        match infer_truthy params body_form with
-        | Error _ as err -> err
-        | Ok params -> infer_collection params collection)
-    | FList
-        [
           FSymbol "partition-by";
           FKeyword keyword;
           FSymbol collection;
@@ -5799,8 +5790,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ( "take-last" | "drop-last" | "take-nth" | "split-at"
-            | "bounded-count" );
+            ( "take-last" | "drop-last" | "take-nth" | "bounded-count" );
           count;
           collection;
         ] -> (

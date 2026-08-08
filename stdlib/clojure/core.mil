@@ -18,3 +18,9 @@
 
 (signature clojure.core/not-any? [value]
   :fn<fn<value;bool>;seqable<value>;bool>)
+
+(signature clojure.core/split-at [value]
+  :fn<int;seqable<value>;vector<seq<value>>>)
+
+(signature clojure.core/split-with [value]
+  :fn<fn<value;bool>;seqable<value>;vector<seq<value>>>)

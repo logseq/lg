@@ -24,6 +24,12 @@
 (defn not-any? [pred coll]
   (not (some pred coll)))
 
+(defn split-at [n coll]
+  [(take n coll) (drop n coll)])
+
+(defn split-with [pred coll]
+  [(take-while pred coll) (drop-while pred coll)])
+
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))
 

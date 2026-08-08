@@ -27,7 +27,10 @@
     bit-test {:status :static-adaptation
               :reason :composed-from-static-integer-bit-primitives}
     not-every? {:status :ported}
-    not-any? {:status :ported}}}
+    not-any? {:status :ported}
+    split-at {:status :ported}
+    split-with {:status :static-adaptation
+                :reason :current-static-function-types-require-boolean-predicates}}}
 
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
