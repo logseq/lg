@@ -1,6 +1,8 @@
 (rule
  (targets clojure_set_native.ml clojure_set_native.state)
  (deps
+  clojure/core.mil
+  clojure/core.cljc
   clojure/string.mil
   clojure/string.cljc
   clojure/set.mil
@@ -16,6 +18,8 @@
     native
     --compile-files-state
     clojure_set_native.state
+    %{dep:clojure/core.mil}
+    %{dep:clojure/core.cljc}
     %{dep:clojure/string.mil}
     %{dep:clojure/string.cljc}
     %{dep:clojure/set.mil}
@@ -30,6 +34,8 @@
 (rule
  (targets clojure_set_melange.ml clojure_set_melange.state)
  (deps
+  clojure/core.mil
+  clojure/core.cljc
   clojure/string.mil
   clojure/string.cljc
   clojure/set.mil
@@ -45,6 +51,8 @@
     melange
     --compile-files-state
     clojure_set_melange.state
+    %{dep:clojure/core.mil}
+    %{dep:clojure/core.cljc}
     %{dep:clojure/string.mil}
     %{dep:clojure/string.cljc}
     %{dep:clojure/set.mil}

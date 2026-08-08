@@ -4560,10 +4560,7 @@ let create ~compile_expr =
           String.sub name 2 (String.length name - 2) ^ "."
       | None -> name
     in
-    match
-            if qualified_core then Error.error "core"
-            else lookup_binding scope env name
-    with
+    match lookup_binding scope env name with
     | Ok _ when not (Resolver.starts_with_uppercase name) ->
         compile_named_function_call scope env name arg_forms
           | Error _

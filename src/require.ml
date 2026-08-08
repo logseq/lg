@@ -70,6 +70,23 @@ let namespace_bindings env module_name =
       else None)
     env
 
+let add_source_core_bindings env scope =
+  namespace_bindings env "clojure.core"
+  |> List.fold_left
+       (fun env -> function
+         | `Value name, binding ->
+             Env.add (Names.scoped_key scope name) binding env
+         | `Record _, _ -> env)
+       env
+
+let remove_source_core_binding env scope name =
+  let scoped_key = Names.scoped_key scope name in
+  let core_key = Names.scoped_key "clojure.core" name in
+  match (Env.find_opt scoped_key env, Env.find_opt core_key env) with
+  | Some scoped, Some core when scoped.ocaml_name = core.ocaml_name ->
+      Env.remove scoped_key env
+  | _ -> env
+
 let ensure_namespace env module_name =
   if
     namespace_bindings env module_name = []

@@ -1,0 +1,16 @@
+(ns clojure.core)
+
+(signature clojure.core/identity [value]
+  :fn<value;value>)
+
+(signature clojure.core/complement [value]
+  :fn<fn<value;bool>;fn<value;bool>>)
+
+(signature clojure.core/even? :fn<int;bool>)
+(signature clojure.core/odd? :fn<int;bool>)
+
+(signature clojure.core/not-every? [value]
+  :fn<fn<value;bool>;seqable<value>;bool>)
+
+(signature clojure.core/not-any? [value]
+  :fn<fn<value;bool>;seqable<value>;bool>)

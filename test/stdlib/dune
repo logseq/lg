@@ -1,6 +1,8 @@
 (rule
  (targets clojure_set_bootstrap.ml clojure_set.state)
  (deps
+  ../../stdlib/clojure/core.mil
+  ../../stdlib/clojure/core.cljc
   ../../stdlib/clojure/string.mil
   ../../stdlib/clojure/string.cljc
   ../../stdlib/clojure/set.mil
@@ -16,6 +18,8 @@
     native
     --compile-files-state
     clojure_set.state
+    %{dep:../../stdlib/clojure/core.mil}
+    %{dep:../../stdlib/clojure/core.cljc}
     %{dep:../../stdlib/clojure/string.mil}
     %{dep:../../stdlib/clojure/string.cljc}
     %{dep:../../stdlib/clojure/set.mil}
@@ -140,6 +144,15 @@
   (source_tree ../../src))
  (action
   (run sh %{dep:check_source_namespace_migration.sh} ../..)))
+
+(rule
+ (alias source-core-bootstrap)
+ (deps
+  check_source_core_bootstrap.sh
+  ../../stdlib/upstream.edn
+  (source_tree ../../stdlib/clojure))
+ (action
+  (run sh %{dep:check_source_core_bootstrap.sh} ../..)))
 
 (alias
  (name runtest)

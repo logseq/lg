@@ -9,6 +9,8 @@
  (modules compiler_tests)
  (deps
   compiler_test_runner.bc
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -554,6 +556,8 @@
 (rule
  (target persistent_sorted_set_arrays_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -567,6 +571,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -586,6 +592,8 @@
 (rule
  (target persistent_sorted_set_arrays_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -599,6 +607,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -635,6 +645,8 @@
 (rule
  (target persistent_sorted_set_path_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -651,6 +663,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -673,6 +687,8 @@
 (rule
  (target persistent_sorted_set_path_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -689,6 +705,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -728,6 +746,8 @@
 (rule
  (target persistent_sorted_set_helpers_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -744,6 +764,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -766,6 +788,8 @@
 (rule
  (target persistent_sorted_set_helpers_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -782,6 +806,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -823,6 +849,8 @@
 (rule
  (target persistent_sorted_set_leaf_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -839,6 +867,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -861,6 +891,8 @@
 (rule
  (target persistent_sorted_set_leaf_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -877,6 +909,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -918,6 +952,8 @@
 (rule
  (target persistent_sorted_set_storage_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -934,6 +970,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -956,6 +994,8 @@
 (rule
  (target persistent_sorted_set_storage_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -972,6 +1012,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -997,6 +1039,8 @@
 (rule
  (target persistent_sorted_set_storage_jsoo.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1013,6 +1057,8 @@
    --target
    js
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1065,6 +1111,8 @@
 (rule
  (target persistent_sorted_set_benchmark_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1081,6 +1129,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1103,6 +1153,8 @@
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1119,6 +1171,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1144,6 +1198,8 @@
 (rule
  (target persistent_sorted_set_benchmark_jsoo.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1160,6 +1216,8 @@
    --target
    js
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1183,6 +1241,8 @@
 (rule
  (target datascript_storage_smoke_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1216,6 +1276,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1260,6 +1322,8 @@
 (rule
  (target datascript_storage_smoke_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1293,6 +1357,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1364,6 +1430,8 @@
 (rule
  (target datascript_file_storage_smoke_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1387,6 +1455,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1434,6 +1504,8 @@
 (rule
  (target datascript_api_smoke_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1472,6 +1544,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1522,6 +1596,8 @@
 (rule
  (target datascript_api_smoke_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1559,6 +1635,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1635,6 +1713,8 @@
 (rule
  (target datascript_transact_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1678,6 +1758,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1735,6 +1817,8 @@
 (rule
  (target datascript_transact_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1776,6 +1860,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -1850,6 +1936,8 @@
  (target datascript_conn_native.ml)
  (enabled_if false)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -1928,6 +2016,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -3982,6 +4072,8 @@
  (target datascript_conn_melange.ml)
  (enabled_if false)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -4059,6 +4151,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -4261,6 +4355,8 @@
 (rule
  (target datascript_listen_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -4304,6 +4400,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -4361,6 +4459,8 @@
 (rule
  (target datascript_listen_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -4402,6 +4502,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -4473,6 +4575,8 @@
 (rule
  (target datascript_filter_native.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -4516,6 +4620,8 @@
    --target
    native
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -4573,6 +4679,8 @@
 (rule
  (target datascript_filter_melange.ml)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -4614,6 +4722,8 @@
    --target
    melange
    --compile-files
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}

@@ -3038,6 +3038,7 @@ let rec compile scope env next_type = function
               Value_binding
                 { pattern = Unit_pattern; expression = expr.semantic_expr } ))
   | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
+      let env = Require.add_source_core_bindings env namespace_name in
       let env =
         Env.add
           (Names.scoped_key namespace_name "*print-namespace-maps*")
@@ -3063,6 +3064,11 @@ let rec compile scope env next_type = function
       Result.map
         (fun names ->
           let env = Env.add_core_exclusions ~scope names env in
+          let env =
+            List.fold_left
+              (fun env name -> Require.remove_source_core_binding env scope name)
+              env names
+          in
           (scope, env, next_type, Comment "refer-clojure exclude"))
         (parse_names [] names)
   | FList (FSymbol "defmacro" :: FSymbol name :: forms) ->

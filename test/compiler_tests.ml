@@ -281,6 +281,8 @@ let read_file path =
 
 let stdlib_sources () =
   [
+    "stdlib/clojure/core.mil";
+    "stdlib/clojure/core.cljc";
     "stdlib/clojure/string.mil";
     "stdlib/clojure/string.cljc";
     "stdlib/clojure/set.mil";

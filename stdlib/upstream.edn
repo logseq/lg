@@ -4,10 +4,24 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.string clojure.set]
+ [clojure.core clojure.string clojure.set]
 
  :namespaces
- {clojure.string
+ {clojure.core
+  {:source "src/main/cljs/cljs/core.cljs"
+   :implementation "clojure/core.cljc"
+   :interface "clojure/core.mil"
+   :definitions
+   {identity {:status :ported}
+    complement {:status :static-adaptation
+                :reason :current-static-function-types-support-unary-predicate-complement}
+    even? {:status :static-adaptation
+           :reason :non-integer-input-is-rejected-statically}
+    odd? {:status :ported}
+    not-every? {:status :ported}
+    not-any? {:status :ported}}}
+
+  clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
    :implementation "clojure/string.cljc"
    :interface "clojure/string.mil"

@@ -1,6 +1,8 @@
 (rule
  (targets datascript_conn_native_base.ml datascript_conn_native_base.state)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -53,6 +55,8 @@
    native
    --compile-files-state
    datascript_conn_native_base.state
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}
@@ -98,6 +102,8 @@
 (rule
  (targets datascript_conn_melange_base.ml datascript_conn_melange_base.state)
  (deps
+  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.cljc
   ../stdlib/clojure/string.mil
   ../stdlib/clojure/string.cljc
   ../stdlib/clojure/set.mil
@@ -147,6 +153,8 @@
    melange
    --compile-files-state
    datascript_conn_melange_base.state
+   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.cljc}
    %{dep:../stdlib/clojure/string.mil}
    %{dep:../stdlib/clojure/string.cljc}
    %{dep:../stdlib/clojure/set.mil}

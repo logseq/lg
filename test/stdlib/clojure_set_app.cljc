@@ -1,5 +1,6 @@
 (ns stdlib.clojure-set-app
   (:require
+   [clojure.core :as core :refer [odd?]]
    [clojure.set :as set :refer [difference]]
    [clojure.string :as string :refer [upper-case]]))
 
@@ -15,3 +16,10 @@
 (println (string/index-of "banana" "na" 3))
 (println (string/last-index-of "banana" "na" 3))
 (println (upper-case "logseq"))
+(println (identity 42))
+(println (clojure.core/identity "core"))
+(println ((core/complement (fn [x] (> x 0))) -1))
+(println (core/even? 8))
+(println (odd? 9))
+(println (core/not-every? (fn [x] (> x 0)) [1 -1]))
+(println (core/not-any? (fn [x] (< x 0)) [1 2]))
