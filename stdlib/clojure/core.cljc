@@ -185,6 +185,9 @@
 (defn into-array [coll]
   (to-array coll))
 
+(defmacro array-values [value & values]
+  `(array ~value ~@values))
+
 (defn array-from [coll]
   (to-array coll))
 

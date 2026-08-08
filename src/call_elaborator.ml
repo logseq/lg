@@ -15,6 +15,32 @@ type t = {
 let constrained_argument_counter = ref 0
 let function_adapter_counter = ref 0
 let row_argument_counter = ref 0
+let array_literal_counter = ref 0
+
+let array_element_needs_binding expression =
+  match Semantic_ir.unlocated expression with
+  | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ ->
+      false
+  | _ -> true
+
+let ordered_array_expression expressions =
+  incr array_literal_counter;
+  let array_index = string_of_int !array_literal_counter in
+  let bindings, elements =
+    expressions
+    |> List.mapi (fun element_index expression ->
+           if array_element_needs_binding expression then
+             let name =
+               "__lg_array_element_" ^ array_index ^ "_"
+               ^ string_of_int element_index
+             in
+             (Some (Semantic_ir.PVar name, expression), Semantic_ir.Ident name)
+           else (None, expression))
+    |> List.split
+  in
+  match List.filter_map Fun.id bindings with
+  | [] -> Semantic_ir.Array elements
+  | bindings -> Semantic_ir.Let (bindings, Semantic_ir.Array elements)
 
 let select_binding_arity (binding : binding) argument_count =
   match binding.ty with
@@ -6610,7 +6636,7 @@ let create ~compile_expr =
             Error.error
               "make-array requires a size and a statically typed initial value"
         | Ok _ -> Error.error "make-array expects a size and initial value")
-    | "array" | "array-values" -> (
+    | "array" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [] -> Error.error "empty OCaml array requires a type"
@@ -6626,7 +6652,7 @@ let create ~compile_expr =
             then
               Ok
                 (typed_ir (TArray first.ty)
-                             (Semantic_ir.Array
+                             (ordered_array_expression
                                 (List.map
                                    (fun value -> value.semantic_expr)
                                    values)))

@@ -38,6 +38,12 @@ for name in bit-and bit-or bit-xor bit-shift-left bit-shift-right; do
   fi
 done
 
+if ! grep -E '^\(defmacro array-values([[:space:]]|$)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/array-values is not source-defined as a macro" >&2
+  exit 1
+fi
+
 if ! grep -F '(defmacro amap' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/amap is not source-defined as the upstream macro" >&2
   exit 1

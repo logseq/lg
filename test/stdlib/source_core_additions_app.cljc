@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
+  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -296,6 +296,17 @@
 (println (= 2.0 (source-search-left compare-integers copied-integers 3 4)))
 (println (= 3.0 (core/array-binary-search-right compare-integers copied-integers 3 5)))
 (println (= 1.0 (clojure.core/array-binary-search-left compare-strings copied-strings 1 "b")))
+
+(def constructed-integers (array-values 1 2 3))
+(println (= 3 (alength constructed-integers)))
+(println (= 2 (aget constructed-integers 1)))
+(println (= :only (aget (core/array-values :only) 0)))
+(def construction-order (atom []))
+(array-values
+  (do (swap! construction-order conj 1) 10)
+  (do (swap! construction-order conj 2) 20)
+  (do (swap! construction-order conj 3) 30))
+(println (= [1 2 3] @construction-order))
 
 (def source-increment inc)
 (def source-decrement dec)

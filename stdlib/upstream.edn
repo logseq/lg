@@ -170,6 +170,8 @@
               :reason :source-port-copies-a-statically-typed-seqable-through-the-polymorphic-runtime-array-boundary}
     into-array {:status :static-adaptation
                 :reason :source-port-supports-the-upstream-one-argument-seqable-copy-arity-while-the-two-argument-runtime-type-tag-arity-remains-outside-the-static-source-language}
+    array-values {:status :static-adaptation
+                  :reason :lg-datascript-source-macro-expands-one-or-more-values-to-the-homogeneous-typed-array-primitive-avoiding-runtime-dynamic-storage-and-generic-shape-feedback}
     array-from {:status :static-adaptation
                 :reason :lg-datascript-source-compatibility-alias-copies-any-statically-typed-seqable-through-to-array}
     array-binary-search-left {:status :static-adaptation

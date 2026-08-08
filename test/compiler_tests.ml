@@ -21068,6 +21068,22 @@ let test_source_array_helpers_reject_incompatible_values () =
 |}
   |> expect_error_contains "expected of type"
 
+let test_source_array_values_rejects_invalid_arguments () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let restored_state : Lg.Compiler.state =
+    Marshal.from_string (Marshal.to_string stdlib.state []) 0
+  in
+  Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+    ~filename:"test/restored_array_values.cljc" restored_state
+    {|(def values (array-values 1 2))|}
+  |> expect_ok |> ignore;
+  compile_with_stdlib_result Lg.Target.Native "test/empty_array_values.cljc"
+    {|(def values (array-values))|}
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/mixed_array_values.cljc"
+    {|(def values (array-values 1 "two"))|}
+  |> expect_error_contains "OCaml array elements must have the same type"
+
 let test_batched_core_functions_infer_int_params () =
   let source =
     {|
@@ -37109,6 +37125,8 @@ let tests =
       test_source_realized_rejects_non_future_values );
     ( "source array helpers reject incompatible values",
       test_source_array_helpers_reject_incompatible_values );
+    ( "source array-values rejects invalid arguments",
+      test_source_array_values_rejects_invalid_arguments );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",

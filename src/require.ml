@@ -42,11 +42,6 @@ let ocaml_module_path module_name =
 let core_bindings = function
   | module_name -> Core_namespaces.bindings module_name
 
-let add_core_alias_bindings env module_name alias =
-  core_bindings module_name
-  |> List.map (fun (name, binding) -> (alias ^ "/" ^ name, binding))
-  |> fun bindings -> Env.add_bindings bindings env
-
 let core_namespace = function
   | module_name -> Core_namespaces.is_core_namespace module_name
 
@@ -69,6 +64,45 @@ let namespace_bindings env module_name =
         Some (`Record name, binding)
       else None)
     env
+
+let add_core_alias_bindings env module_name alias =
+  let source_module_name =
+    if String.equal module_name "cljs.core" then "clojure.core"
+    else module_name
+  in
+  let source_bindings = namespace_bindings env source_module_name in
+  let source_value_names =
+    source_bindings
+    |> List.filter_map (function
+         | `Value name, _ -> Some name
+         | `Record _, _ -> None)
+  in
+  let primitive_bindings =
+    core_bindings module_name
+    |> List.filter (fun (name, _) ->
+           not (List.exists (String.equal name) source_value_names))
+    |> List.map (fun (name, binding) -> (`Value name, binding))
+  in
+  let env =
+    source_bindings @ primitive_bindings
+    |> List.map (function
+         | `Value name, binding -> (alias ^ "/" ^ name, binding)
+         | `Record name, binding ->
+             ("__record/" ^ alias ^ "/" ^ name, binding))
+    |> fun bindings -> Env.add_bindings bindings env
+  in
+  let env =
+    Env.namespace_macros source_module_name env
+    |> List.fold_left
+         (fun env (name, definition) ->
+           Env.add_macro_alias ~alias:(alias ^ "/" ^ name) definition env)
+         env
+  in
+  Env.namespace_inline_macros source_module_name env
+  |> List.fold_left
+       (fun env (name, definition) ->
+         Env.add_inline_macro_alias ~alias:(alias ^ "/" ^ name) definition env)
+       env
 
 let add_source_core_bindings env scope =
   let env =
