@@ -21,6 +21,14 @@ EOF
 awk -F '\t' '$1 == "compiler-call" && ($2 == "identity" || $3 == "source-shadowed") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "+" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '
+  $1 == "compiler-call" && $3 == "blocked-static-typing" &&
+  ($4 == "" || $4 == "requires-variadic-dependent-lazy-or-capability-type-support") {
+    print "blocked compiler call lacks a concrete reason: " $2 > "/dev/stderr"
+    failed=1
+  }
+  END {exit failed}
+' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "Buffer.t" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.data" && $3 == "compiler-owned" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.string" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"

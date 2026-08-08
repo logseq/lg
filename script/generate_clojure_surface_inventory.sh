@@ -46,6 +46,39 @@ awk '
     for (i in xs) special[xs[i]] = 1
     split("apply assoc-in comp concat constantly cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next not-empty partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest rseq run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals vec", xs)
     for (i in xs) blocked[xs[i]] = 1
+    blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
+    split("assoc-in get-in update-in", xs)
+    for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
+    split("comp constantly every-pred fnil juxt partial some-fn", xs)
+    for (i in xs) blocked_reason[xs[i]] = "returned-variadic-or-overloaded-function-types-are-not-source-expressible"
+    split("concat interleave map mapv", xs)
+    for (i in xs) blocked_reason[xs[i]] = "variadic-multi-collection-arities-and-lazy-or-transducer-cases-are-not-source-expressible"
+    split("cycle drop drop-while filter keep map-indexed mapcat remove repeat repeatedly take take-while", xs)
+    for (i in xs) blocked_reason[xs[i]] = "upstream-lazy-sequence-or-transducer-behavior-is-not-source-expressible"
+    split("doall dorun run!", xs)
+    for (i in xs) blocked_reason[xs[i]] = "sequence-realization-and-effect-order-remain-a-compiler-runtime-boundary"
+    blocked_reason["filterv"] = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
+    blocked_reason["group-by"] = "generic-key-and-seqable-callback-capability-projection-is-not-yet-source-safe"
+    blocked_reason["into"] = "target-collection-representation-and-transducer-overload-require-dependent-types"
+    split("max max-key min min-key", xs)
+    for (i in xs) blocked_reason[xs[i]] = "variadic-comparable-types-and-key-callback-overloads-are-not-source-expressible"
+    blocked_reason["merge"] = "variadic-map-and-record-shape-unification-is-not-source-expressible"
+    split("next rest", xs)
+    for (i in xs) blocked_reason[xs[i]] = "nil-versus-empty-sequence-semantics-remain-a-collection-capability-boundary"
+    blocked_reason["not-empty"] = "nullable-result-must-preserve-the-input-concrete-collection-type"
+    split("partition partition-all", xs)
+    for (i in xs) blocked_reason[xs[i]] = "multi-arity-lazy-padding-and-transducer-cases-are-not-source-expressible"
+    blocked_reason["partition-by"] = "lazy-partitions-and-generic-key-capability-cannot-yet-share-one-source-signature"
+    split("reduce reduce-kv reductions", xs)
+    for (i in xs) blocked_reason[xs[i]] = "multi-arity-reduced-short-circuit-and-collection-specific-callback-typing-remain-compiler-owned"
+    blocked_reason["rseq"] = "reversible-protocol-dispatch-and-nil-on-unsupported-types-are-not-source-expressible"
+    blocked_reason["select-keys"] = "map-or-record-key-projection-requires-a-dependent-result-shape"
+    blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
+    split("sort sort-by", xs)
+    for (i in xs) blocked_reason[xs[i]] = "comparator-overloads-and-seqable-capability-adaptation-remain-compiler-owned"
+    blocked_reason["take-nth"] = "one-arity-stateful-transducer-and-lazy-two-arity-sequence-are-not-source-expressible"
+    blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
+    blocked_reason["vec"] = "generic-seqable-to-concrete-vector-conversion-requires-representation-capability"
     split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
@@ -59,9 +92,11 @@ awk '
       reason = "compiler-owned-syntax-or-control-flow"
     } else if (blocked[$0]) {
       classification = "blocked-static-typing"
-      reason = "requires-variadic-dependent-lazy-or-capability-type-support"
-      if ($0 == "filterv")
-        reason = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
+      reason = blocked_reason[$0]
+      if (reason == "") {
+        print "missing concrete blocker reason for " $0 > "/dev/stderr"
+        exit 1
+      }
     } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
       classification = "host-boundary"
       reason = "host-interop-or-runtime-effect-boundary"
