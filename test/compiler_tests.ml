@@ -22995,7 +22995,9 @@ let test_additional_sequence_helpers_work () =
        (pr-str (reductions + [1 2 3 4]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/additional_sequences.cljc" source
+  in
   assert_ocaml_runs "additional_sequence_helpers_work"
     "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:true:(1 3 6 10)\n"
     ocaml_source
@@ -26245,8 +26247,9 @@ let test_source_dynamic_nominal_arguments_are_rejected () =
   |> expect_error_contains "dynamic is not a source type"
 
 let test_additional_sequence_helpers_reject_bad_counts () =
-  Lg.Compiler.compile_string {|(def x (nthnext [1 2] "1"))|}
-  |> expect_error "nthnext count must be int"
+  compile_with_stdlib_result Lg.Target.Native "test/bad_nthnext_count.cljc"
+    {|(def x (nthnext [1 2] "1"))|}
+  |> expect_error_contains "nthnext called with incompatible arguments"
 
 let test_some_returns_first_truthy_predicate_value () =
   let source =

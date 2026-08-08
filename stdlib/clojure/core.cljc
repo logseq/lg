@@ -30,6 +30,9 @@
 (defn split-with [pred coll]
   [(take-while pred coll) (drop-while pred coll)])
 
+(defn nthnext [coll n]
+  (drop n coll))
+
 (defn bit-clear [x n]
   (bit-and x (bit-not (bit-shift-left 1 n))))
 

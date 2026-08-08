@@ -4694,7 +4694,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
              (fresh_type_variable
                 ("sequence_" ^ Names.sanitize_name operation ^ "_element")))
           params collection
-    | FList [ FSymbol ("nthnext" | "nthrest"); FSymbol collection; count ] -> (
+    | FList [ FSymbol "nthrest"; FSymbol collection; count ] -> (
         match infer_expected TInt params count with
         | Error _ as err -> err
         | Ok params -> constrain_seqable TUnknown params collection)

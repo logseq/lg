@@ -24,3 +24,6 @@
 
 (signature clojure.core/split-with [value]
   :fn<fn<value;bool>;seqable<value>;vector<seq<value>>>)
+
+(signature clojure.core/nthnext [value]
+  :fn<seqable<value>;int;seq<value>>)

@@ -30,6 +30,7 @@
 (println (= 3 (first (second split-at-result))))
 (def split-with-result (core/split-with (fn [x] (< x 3)) [1 2 3 4]))
 (println (= 2 (count (first split-with-result))))
+(println (= 3 (first (core/nthnext [1 2 3 4] 2))))
 (println (= 4 (core/bit-clear 5 0)))
 (println (= 7 (core/bit-set 5 1)))
 (println (= 7 (core/bit-flip 5 1)))

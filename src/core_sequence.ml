@@ -31,7 +31,7 @@ let compile env name args =
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> next_expr env collection)
-  | "nthnext" | "nthrest" -> (
+  | "nthrest" -> (
       match two_args name args with
       | Error _ as err -> err
       | Ok (collection, count) -> nth_next_expr env name collection count)

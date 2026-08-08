@@ -30,7 +30,9 @@
     not-any? {:status :ported}
     split-at {:status :ported}
     split-with {:status :static-adaptation
-                :reason :current-static-function-types-require-boolean-predicates}}}
+                :reason :current-static-function-types-require-boolean-predicates}
+    nthnext {:status :static-adaptation
+             :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}}}
 
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
