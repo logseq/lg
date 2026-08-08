@@ -2982,7 +2982,23 @@ let rec compile_static_hash scope env value =
   | TNil | TUnit ->
       Ok
         (Semantic_ir.Sequence [ value.semantic_expr; Semantic_ir.Int 0 ])
-  | TRecord fields ->
+  | TTuple [ left_ty; right_ty ] ->
+      let left =
+        typed_ir left_ty (apply "fst" [ value.semantic_expr ])
+      in
+      let right =
+        typed_ir right_ty (apply "snd" [ value.semantic_expr ])
+      in
+      Result.bind (compile_static_hash scope env left) (fun left_hash ->
+          Result.map
+            (fun right_hash ->
+              apply "Lg_runtime.Runtime_hash.hash_ordered"
+                [
+                  apply "List.to_seq"
+                    [ Semantic_ir.List [ left_hash; right_hash ] ];
+                ])
+            (compile_static_hash scope env right))
+  | TRecord fields | TNamed_record { nominal = false; fields; _ } ->
       let fields =
         List.filter (fun field -> not (Types.is_record_extension_field field))
           fields
@@ -3017,6 +3033,9 @@ let rec compile_static_hash scope env value =
       compile_static_collection_hash scope env
         "Lg_runtime.Runtime_hash.hash_ordered" value
   | TSet _ ->
+      compile_static_collection_hash scope env
+        "Lg_runtime.Runtime_hash.hash_unordered" value
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
       compile_static_collection_hash scope env
         "Lg_runtime.Runtime_hash.hash_unordered" value
   | _ ->
@@ -10405,6 +10424,40 @@ let create ~compile_expr =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident fn.ocaml_name,
                           List.map (fun arg -> arg.semantic_expr) args )))
+            | TOcaml_app
+                ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) -> (
+                let map = Semantic_ir.Ident fn.ocaml_name in
+                match args with
+                | [ key ]
+                  when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                         ~actual:key.ty ->
+                    Ok
+                      (typed_ir (TNullable value_ty)
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_map.get_option",
+                              [ map; key.semantic_expr ] )))
+                | [ key; default ]
+                  when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                         ~actual:key.ty
+                       && Types.assignable ~policy:Host_boundary
+                            ~expected:value_ty ~actual:default.ty ->
+                    Ok
+                      (typed_ir value_ty
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_map.get_default",
+                              [
+                                map;
+                                key.semantic_expr;
+                                default.semantic_expr;
+                              ] )))
+                | [ _ ] | [ _; _ ] ->
+                    Error.error
+                      (name ^ " called with incompatible map lookup arguments")
+                | _ ->
+                    Error.error
+                      (name ^ " map lookup expects 1 or 2 arguments"))
             | TOverloaded_fn arities -> (
                 match select_overloaded_arity arities (List.length args) with
                 | None ->

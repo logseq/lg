@@ -625,21 +625,23 @@ let test_small_static_hashed_maps_preserve_map_semantics () =
   assert (Runtime_map.get_option updated "3" = Some 30);
   assert (Runtime_map.get_option updated "9" = Some 9);
   assert (
-    Runtime_map.to_list updated
-    = List.map
-        (fun (key, value) ->
-          if String.equal key "3" then (key, 30) else (key, value))
-        entries);
+    Runtime_map.to_list updated |> List.sort compare
+    = (List.map
+         (fun (key, value) ->
+           if String.equal key "3" then (key, 30) else (key, value))
+         entries
+      |> List.sort compare));
   let removed = Runtime_map.dissoc updated "1" in
   assert (Runtime_map.count removed = 9);
   assert (Runtime_map.get_option removed "1" = None);
   assert (
-    Runtime_map.to_list removed
+    Runtime_map.to_list removed |> List.sort compare
     = (entries
       |> List.filter_map (fun (key, value) ->
              if String.equal key "1" then None
              else if String.equal key "3" then Some (key, 30)
-             else Some (key, value))));
+             else Some (key, value))
+      |> List.sort compare));
   let small =
     Runtime_map.empty
     |> fun map -> Runtime_map.assoc map "first" 1
@@ -648,6 +650,47 @@ let test_small_static_hashed_maps_preserve_map_semantics () =
   in
   assert (Runtime_map.to_list small = [ ("second", 2) ]);
   assert (Runtime_map.get_option small "first" = None)
+
+let test_static_maps_preserve_sequence_order_across_array_nodes () =
+  let operations : int Runtime_map.operations =
+    { hash = Fun.id; equal = Int.equal }
+  in
+  let map =
+    List.init 32 Fun.id
+    |> List.rev
+    |> List.fold_left
+         (fun map key -> Runtime_map.assoc_by operations map key (key * 2))
+         Runtime_map.empty
+  in
+  let keys = Runtime_map.to_list map |> List.map fst in
+  if keys <> (List.init 32 Fun.id |> List.rev) then
+    failwith "default maps must preserve their sequence contract";
+  List.iter
+    (fun key ->
+      if Runtime_map.get_option_by operations map key <> Some (key * 2) then
+        failwith "array-node lookup must preserve every 32-bit branch")
+    (List.init 32 Fun.id)
+
+let test_static_maps_preserve_hash_collision_peers () =
+  let operations : string Runtime_map.operations =
+    { hash = (fun _ -> 7); equal = String.equal }
+  in
+  let map =
+    [ ("first", 1); ("second", 2); ("third", 3) ]
+    |> List.fold_left
+         (fun map (key, value) ->
+           Runtime_map.assoc_by operations map key value)
+         Runtime_map.empty
+  in
+  let removed = Runtime_map.dissoc_by operations map "second" in
+  assert (Runtime_map.get_option_by operations removed "first" = Some 1);
+  assert (Runtime_map.get_option_by operations removed "second" = None);
+  assert (Runtime_map.get_option_by operations removed "third" = Some 3);
+  assert
+    (Runtime_map.equiv_by operations Int.equal removed
+       (Runtime_map.assoc_by operations
+          (Runtime_map.assoc_by operations Runtime_map.empty "third" 3)
+          "first" 1))
 
 let test_query_hash_join_uses_closed_result_keys () =
   let empty_databases = Lg_runtime.Lg_map.empty in
@@ -1140,6 +1183,8 @@ let () =
   test_static_map_assoc_hashes_each_key_once ();
   test_static_map_assoc_uses_a_precomputed_hash ();
   test_small_static_hashed_maps_preserve_map_semantics ();
+  test_static_maps_preserve_sequence_order_across_array_nodes ();
+  test_static_maps_preserve_hash_collision_peers ();
   test_query_hash_join_uses_closed_result_keys ();
   test_query_inputs_use_closed_recursive_binding_values ();
   test_storage_payloads_keep_integer_addresses_and_closed_values ();

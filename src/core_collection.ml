@@ -133,6 +133,11 @@ let empty env collection =
         (typed_ir collection.ty
            (apply "Lg_runtime.Runtime_dynamic.empty"
               [ collection.semantic_expr ]))
+  | ty when Option.is_some (Types.dynamic_map_types ty) ->
+      Ok
+        (typed_ir collection.ty
+           (apply "Lg_runtime.Runtime_map.empty_like"
+              [ collection.semantic_expr ]))
   | TList _ -> Ok (typed_ir collection.ty (Semantic_ir.List []))
   | TSet inner ->
       Types.set_module_name inner

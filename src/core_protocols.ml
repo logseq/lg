@@ -15,6 +15,8 @@ let indexed_id = Protocol_id.create ~owner:[] ~name:"Indexed"
 let nth_method_id = Method_id.create ~owner:[ "Indexed" ] ~name:"-nth"
 let emptyable_id = Protocol_id.create ~owner:[] ~name:"Emptyable"
 let empty_method_id = Method_id.create ~owner:[ "Emptyable" ] ~name:"-empty"
+let runtime_map_receiver =
+  Receiver_id.Host_receiver "Lg_runtime.Runtime_map.t"
 let reversible_id = Protocol_id.create ~owner:[] ~name:"IReversible"
 let editable_id = Protocol_id.create ~owner:[] ~name:"IEditableCollection"
 
@@ -146,6 +148,15 @@ let declare_emptyable registry =
       };
     ]
     registry
+  |> add_or_fail
+
+let add_emptyable receiver ocaml_name registry =
+  let binding =
+    Types.binding ~protocol_id:emptyable_id ocaml_name
+      (TFn ([ TUnknown ], TUnknown))
+  in
+  Protocol_registry.add_implementation emptyable_id empty_method_id receiver
+    binding registry
   |> add_or_fail
 
 let declare_collection_lifecycle_protocols registry =
@@ -324,6 +335,7 @@ let initial_registry =
        "Lg_runtime.Runtime_seq.of_host_seq"
   |> add_seqable (Receiver_id.Host_receiver "Seq")
        "Lg_runtime.Runtime_seq.of_host_seq_alias"
+  |> add_seqable runtime_map_receiver "Lg_runtime.Runtime_map.to_seq"
   |> add_edn_seqable
   |> declare_reducible
   |> add_reducible Receiver_id.List_receiver "Lg.Core_protocols.reduce_list"
@@ -350,6 +362,7 @@ let initial_registry =
        "Lg.Core_protocols.count_host_list"
   |> add_counted (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.count_host_array"
+  |> add_counted runtime_map_receiver "Lg_runtime.Runtime_map.count"
   |> declare_indexed
   |> add_indexed Receiver_id.List_receiver "Lg.Core_protocols.nth_list"
   |> add_indexed Receiver_id.Vector_receiver "Lg.Core_protocols.nth_vector"
@@ -359,7 +372,9 @@ let initial_registry =
        "Lg.Core_protocols.nth_host_list"
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
-  |> declare_emptyable |> declare_collection_lifecycle_protocols |> declare_deref
+  |> declare_emptyable
+  |> add_emptyable runtime_map_receiver "Lg_runtime.Runtime_map.empty_like"
+  |> declare_collection_lifecycle_protocols |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
   |> declare_data_protocols

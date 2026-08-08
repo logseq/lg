@@ -640,6 +640,63 @@ let test_hash_map_rejects_odd_key_value_forms () =
   Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :age))|}
   |> expect_error "hash-map expects keyword/value pairs"
 
+let test_hash_map_empty_preserves_metadata () =
+  let source =
+    {|
+(def tagged (with-meta {:answer 42} {:source "cljs"}))
+(def emptied (empty tagged))
+(def ^:string source (:source (meta emptied)))
+(println (str (count emptied) ":" source))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_empty_preserves_metadata" "0:cljs\n"
+    ocaml_source
+
+let test_hash_map_hash_is_unordered () =
+  let source =
+    {|
+(def left (hash-map :a 1 :b 2))
+(def right (hash-map :b 2 :a 1))
+(println (= (hash left) (hash right)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_hash_is_unordered" "true\n" ocaml_source
+
+let test_hash_map_satisfies_collection_protocols () =
+  let source =
+    {|
+(defn make-map [^:keyword key]
+  {key 1})
+(def values (make-map :a))
+(println
+  (str
+    (satisfies? ISeqable values) ":"
+    (satisfies? ICounted values) ":"
+    (satisfies? IEmptyableCollection values)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_satisfies_collection_protocols"
+    "true:true:true\n" ocaml_source
+
+let test_hash_map_is_callable_as_lookup_function () =
+  let source =
+    {|
+(defn make-map [^:keyword key]
+  {key 42})
+(def values (make-map :answer))
+(println
+  (str
+    (values :answer) ":"
+    (values :missing 7)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_is_callable_as_lookup_function" "42:7\n"
+    ocaml_source
+
 let test_map_literals_accept_computed_keys () =
   let source =
     {|
@@ -34689,6 +34746,13 @@ let tests =
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
     ( "hash-map constructs structural maps",
       test_hash_map_constructs_structural_maps );
+    ( "hash-map empty preserves metadata",
+      test_hash_map_empty_preserves_metadata );
+    ("hash-map hash is unordered", test_hash_map_hash_is_unordered);
+    ( "hash-map satisfies collection protocols",
+      test_hash_map_satisfies_collection_protocols );
+    ( "hash-map is callable as lookup function",
+      test_hash_map_is_callable_as_lookup_function );
     ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);
     ( "hash-map rejects odd key value forms",
       test_hash_map_rejects_odd_key_value_forms );

@@ -351,9 +351,18 @@ The currently accepted measured representation optimizations are narrow:
   silently dropping extra arguments.
 - Parsed pull attributes cache the generic static hash of their closed alias
   value. Pull result insertion reuses that validated hash while retaining the
-  same persistent map, key equality, insertion order, duplicate replacement,
-  and frame transitions. On Melange this reduced pull-one from 1.396 ms to
-  1.339 ms and pull-many from 2.510 ms to 2.151 ms.
+  same persistent map, key equality, duplicate replacement, and frame
+  transitions. On Melange this reduced pull-one from 1.396 ms to 1.339 ms and
+  pull-many from 2.510 ms to 2.151 ms.
+- The default static map is a ClojureScript-shaped persistent hash map. Its
+  trie stores key/value leaves directly in bitmap-indexed nodes, expands a
+  node with 16 occupied branches into a 32-way array node, and keeps equal-hash
+  keys in a collision node. Updates copy only the nodes on the edited path;
+  ordinary lookup no longer performs a second vector access after the trie
+  lookup. A structurally shared sequence spine preserves the insertion-order
+  contract required by DataScript relation bindings without participating in
+  lookup. Metadata is stored once on the map root so `assoc`, `dissoc`, and
+  `empty` preserve the ClojureScript metadata contract.
 - DataScript identifier comparison checks namespace and name slices in place
   instead of allocating substrings. Separator handling and lexical ordering
   remain identical.
