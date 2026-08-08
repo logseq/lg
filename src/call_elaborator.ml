@@ -3797,7 +3797,6 @@ let create ~compile_expr =
   let compile_body = special_forms.compile_body in
   let compile_list = collection.compile_list in
   let compile_list_star = collection.compile_list_star in
-  let compile_range = collection.compile_range in
   let compile_list_of = collection.compile_list_of in
   let compile_vector_of = collection.compile_vector_of in
   let compile_static_conj = collection.compile_conj in
@@ -7270,34 +7269,6 @@ let create ~compile_expr =
                       [ semantic_expr ] )))
         | Ok [ _ ] -> Error.error "rand expects a numeric bound"
         | Ok _ -> Error.error "rand expects zero or one argument")
-    | "shuffle" -> (
-        match arg_forms with
-        | [ collection_form ] -> (
-            match compile_expr scope env collection_form with
-            | Error _ as error -> error
-            | Ok collection -> (
-                match Collection_capability.to_seq_expr env collection with
-                | Error _ ->
-                    Error.error
-                      "shuffle expects a seqable collection"
-                | Ok (inner, sequence) ->
-                    let values =
-                      Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
-                          [ sequence ] )
-                    in
-                    Ok
-                      (typed_ir (TVector inner)
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident "Rrbvec.of_list",
-                              [
-                                Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_random.shuffle",
-                                    [ values ] );
-                              ] )))))
-        | _ ->
-            Error.error "shuffle expects one argument")
     | "int" | "long" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8240,7 +8211,7 @@ let create ~compile_expr =
                                     ]))
             | None -> Core_predicate.compile name [ receiver ])
         | Ok _ -> Error.error "sequential? expects 1 arguments")
-              | "any?" | "rational?" | "ratio?" | "float?" | "double?"
+              | "rational?" | "ratio?" | "float?" | "double?"
               | "decimal?" | "symbol?" | "simple-symbol?" | "qualified-symbol?"
               | "simple-keyword?" | "qualified-keyword?" | "ident?"
               | "simple-ident?" | "qualified-ident?" | "reversible?" | "sorted?"
@@ -8736,7 +8707,6 @@ let create ~compile_expr =
           (compile_args ())
     | "list" -> compile_list scope env arg_forms
     | "list*" -> compile_list_star scope env arg_forms
-    | "range" -> compile_range scope env arg_forms
     | "list-of" -> compile_list_of arg_forms
     | "cons" -> compile_cons scope env arg_forms
     | "vector" -> compile_vector scope env arg_forms

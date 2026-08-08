@@ -86,6 +86,11 @@
           :reason :preserves-the-upstream-two-and-three-argument-api-through-typed-runtime-string-substring-primitives}
     int-to-string-radix {:status :static-adaptation
                          :reason :typed-runtime-string-replacement-for-the-clojurescript-number-to-string-radix-host-call}
+    any? {:status :ported}
+    range {:status :static-adaptation
+           :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}
+    shuffle {:status :static-adaptation
+             :reason :source-wrapper-preserves-the-upstream-seqable-to-vector-contract-through-a-typed-fisher-yates-runtime-primitive}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

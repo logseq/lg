@@ -10,7 +10,6 @@ type forms = Ast.form list -> expression_result
 type t = {
   compile_list : call;
   compile_list_star : call;
-  compile_range : call;
   compile_list_of : forms;
   compile_vector_of : forms;
   compile_conj : call;
@@ -502,62 +501,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                            final_list_expr;
                                          ] ) )))
                             (pack_dynamic_value env dynamic item)))))
-    and compile_range scope env arg_forms =
-      let literal_zero = function FInt 0 -> true | _ -> false in
-      let finite_range start stop step =
-        typed_ir (TSeq TInt)
-          (apply "Lg_runtime.Runtime_seq.range_until" [ start; stop; step ])
-      in
-      match arg_forms with
-      | [] ->
-          Ok
-            (typed_ir (TSeq TInt)
-               (apply "Lg_runtime.Runtime_seq.range"
-                  [ Semantic_ir.Int 0; Semantic_ir.Int 1 ]))
-      | [ end_form ] -> (
-          match compile_expr scope env end_form with
-          | Error _ as err -> err
-          | Ok end_expr ->
-              if Types.equal end_expr.ty TInt then
-                Ok
-                  (finite_range (Semantic_ir.Int 0) end_expr.semantic_expr
-                     (Semantic_ir.Int 1))
-              else Error.error "range arguments must be int")
-      | [ start_form; end_form ] -> (
-        match
-          (compile_expr scope env start_form, compile_expr scope env end_form)
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok start_expr, Ok end_expr ->
-            if Types.equal start_expr.ty TInt && Types.equal end_expr.ty TInt
-            then
-                Ok
-                  (finite_range start_expr.semantic_expr end_expr.semantic_expr
-                     (Semantic_ir.Int 1))
-              else Error.error "range arguments must be int")
-    | [ start_form; end_form; step_form ] -> (
-          if literal_zero step_form then Error.error "range step cannot be 0"
-        else
-            match
-              ( compile_expr scope env start_form,
-                compile_expr scope env end_form,
-                compile_expr scope env step_form )
-            with
-            | (Error _ as err), _, _ -> err
-            | _, (Error _ as err), _ -> err
-            | _, _, (Error _ as err) -> err
-            | Ok start_expr, Ok end_expr, Ok step_expr ->
-                if
-                Types.equal start_expr.ty TInt
-                && Types.equal end_expr.ty TInt
-                  && Types.equal step_expr.ty TInt
-                then
-                  Ok
-                    (finite_range start_expr.semantic_expr end_expr.semantic_expr
-                       step_expr.semantic_expr)
-                else Error.error "range arguments must be int")
-      | _ -> Error.error "range expects zero to three arguments"
     and compile_list_of arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (
@@ -3520,7 +3463,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   {
     compile_list;
     compile_list_star;
-    compile_range;
     compile_list_of;
     compile_vector_of;
     compile_conj;

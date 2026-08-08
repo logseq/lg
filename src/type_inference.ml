@@ -5107,8 +5107,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "sort"; _comparator; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
-    | FList [ FSymbol "shuffle"; FSymbol collection ] ->
-        constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "repeatedly"; FSymbol count; function_form ] ->
         Result.bind (infer_expected TInt params (FSymbol count)) (fun params ->
             infer_form params function_form)

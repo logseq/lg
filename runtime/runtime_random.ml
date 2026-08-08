@@ -26,3 +26,5 @@ let shuffle values =
     values.(swap_index) <- value
   done;
   Array.to_list values
+
+let shuffle_seq values = values |> List.of_seq |> shuffle |> Rrbvec.of_list

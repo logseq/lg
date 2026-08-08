@@ -15,6 +15,11 @@
 (signature clojure.core/subs
   :overload<fn<string;int;string>;fn<string;int;int;string>>)
 (signature clojure.core/int-to-string-radix :fn<int;int;string>)
+(signature clojure.core/any? [value] :fn<value;bool>)
+(signature clojure.core/range
+  :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)
+(signature clojure.core/shuffle [value]
+  :fn<seqable<value>;vector<value>>)
 
 (signature clojure.core/quot :fn<int;int;int>)
 (signature clojure.core/rem :fn<int;int;int>)

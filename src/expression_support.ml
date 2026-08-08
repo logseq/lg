@@ -1070,7 +1070,6 @@ let untyped_first_class_function_error = function
     | "println-str"
     | "prn-str"
     | "persistent!"
-    | "range"
     | "rand"
     | "re-find"
     | "re-matches"

@@ -7,6 +7,8 @@
   (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
+            [ocaml.Lg_runtime.Runtime_seq :as runtime-seq]
+            [ocaml.Lg_runtime.Runtime_static_value :as runtime-static-value]
             [ocaml.Lg_runtime.Runtime_string :as runtime-string]))
 
 (defn identity [x]
@@ -33,6 +35,19 @@
 
 (defn int-to-string-radix [value radix]
   (runtime-string/int-to-string-radix value radix))
+
+(defn any? [x]
+  (runtime-static-value/consume x)
+  true)
+
+(defn range
+  ([] (runtime-seq/range 0 1))
+  ([end] (runtime-seq/range-until 0 end 1))
+  ([start end] (runtime-seq/range-until start end 1))
+  ([start end step] (runtime-seq/range-until start end step)))
+
+(defn shuffle [coll]
+  (runtime-random/shuffle-seq (seq coll)))
 
 (defn quot [n d]
   (runtime-int/int-quot n d))

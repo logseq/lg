@@ -35,7 +35,6 @@ let compile name args =
       let bool value = Ok (typed_ir TBool value) in
       let static_bool value = bool (Semantic_ir.Bool value) in
       match name with
-      | "any?" -> static_bool true
       | "rational?" -> static_bool (Types.equal arg.ty TInt)
       | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
       | "ratio?" | "decimal?" -> static_bool false

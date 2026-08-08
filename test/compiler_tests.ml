@@ -1847,17 +1847,12 @@ let test_cross_chunk_keyword_lookup_on_typed_sequence_records () =
 |}
   in
   let compile target =
-    let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
-      |> expect_ok
-    in
-    let state, api_ocaml =
-      Lg.Compiler.compile_chunk ~target state api |> expect_ok
-    in
-    let _, consumer_ocaml =
-      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
-    in
-    provider_ocaml ^ "\n" ^ api_ocaml ^ "\n" ^ consumer_ocaml
+    compile_chunks_with_stdlib target
+      [
+        ("model.cljc", provider);
+        ("api.cljc", api);
+        ("app.cljc", consumer);
+      ]
   in
   assert_ocaml_runs "cross_chunk_keyword_lookup_on_typed_sequence_records"
     "42\n42\n" (compile Lg.Target.Native);
@@ -11041,11 +11036,11 @@ let test_map_and_mapv_accept_multiple_collections () =
               (present-indexes [true false true])))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "map_and_mapv_accept_multiple_collections"
     "[11 22]:(9 18):[10 21]:(1 3)\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_map_vector_requires_sum_elements () =
   let source =
@@ -11058,9 +11053,9 @@ let test_map_vector_requires_sum_elements () =
   (println -1))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "define a sum type containing these types";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_string_with_stdlib ~target:Lg.Target.Melange source
   |> expect_error_contains "define a sum type containing these types"
 
 let test_forward_declared_functions_work_as_collection_callbacks () =
@@ -20603,6 +20598,37 @@ let test_source_string_index_helpers_preserve_arities () =
     {|(clojure.core/subs "abc" "1")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_range_shuffle_and_any_preserve_clojurescript_contracts () =
+  let source =
+    {|
+(def accepts-any? clojure.core/any?)
+(def make-range clojure.core/range)
+(def permute clojure.core/shuffle)
+(def shuffled-ints (permute [1 2 3 4]))
+(def shuffled-strings (permute (list "a" "b" "c")))
+(println
+  (str (accepts-any? nil) ":" (accepts-any? false) ":"
+       (pr-str (make-range 4)) ":"
+       (pr-str (make-range 2 7 2)) ":"
+       (pr-str (take 4 (make-range 2 9 0))) ":"
+       (= #{1 2 3 4} (set shuffled-ints)) ":"
+       (= #{"a" "b" "c"} (set shuffled-strings))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_range_shuffle_any.cljc" source
+  in
+  assert_ocaml_runs "source_range_shuffle_and_any_preserve_clojurescript_contracts"
+    "true:true:(0 1 2 3):(2 4 6):(2 2 2 2):true:true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_range_shuffle_any.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_range_shuffle_any_bad.cljc"
+    {|(clojure.core/range "4")|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -22190,7 +22216,7 @@ let test_lazy_take_bounds_infinite_range_and_repeat () =
 (println (pr-str (take 3 (repeat "x"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "lazy_take_bounds_infinite_range_and_repeat"
     "(0 1 2 3 4)\n(\"x\" \"x\" \"x\")\n" ocaml_source
 
@@ -22795,7 +22821,7 @@ let test_reduce_specializes_builtin_reducible_types () =
 (def seq-total (reduce (fn [acc x] (+ acc x)) 0 (range 3)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   [
     "List.fold_left";
     "V.fold_left";
@@ -29075,17 +29101,21 @@ let test_range_core_api () =
               (pr-str (range 2 10 3)) ":" (pr-str (range 5 0 -2))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "range_core_api" "(0 1 2 3):(2 3 4 5):(2 5 8):(5 3 1)\n"
     ocaml_source
 
-let test_range_rejects_zero_step () =
-  Lg.Compiler.compile_string {|(def xs (range 1 10 0))|}
-  |> expect_error "range step cannot be 0"
+let test_range_zero_step_matches_clojurescript () =
+  let source =
+    {|(println (str (pr-str (take 3 (range 1 10 0))) ":" (empty? (range 1 1 0))))|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "range_zero_step_matches_clojurescript" "(1 1 1):true\n"
+    ocaml_source
 
 let test_range_rejects_non_int_arguments () =
-  Lg.Compiler.compile_string {|(def xs (range "4"))|}
-  |> expect_error "range arguments must be int"
+  compile_string_with_stdlib {|(def xs (range "4"))|}
+  |> expect_error_contains "range called with incompatible arguments"
 
 let test_take_and_drop_core_api () =
   let source =
@@ -35764,6 +35794,8 @@ let tests =
       test_source_truthiness_and_reduction_helpers_are_polymorphic_vars );
     ( "source string index helpers preserve arities",
       test_source_string_index_helpers_preserve_arities );
+    ( "source range shuffle and any preserve ClojureScript contracts",
+      test_source_range_shuffle_and_any_preserve_clojurescript_contracts );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);
@@ -36464,7 +36496,7 @@ let tests =
     ("list core api works", test_list_core_api);
     ("sequence core api works on lists", test_sequence_core_api_on_lists);
     ("range core api works", test_range_core_api);
-    ("range rejects zero step", test_range_rejects_zero_step);
+    ("range zero step matches ClojureScript", test_range_zero_step_matches_clojurescript);
     ("range rejects non-int arguments", test_range_rejects_non_int_arguments);
     ("take and drop core api works", test_take_and_drop_core_api);
     ( "take and drop reject non-int counts",

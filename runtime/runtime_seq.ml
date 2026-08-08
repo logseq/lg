@@ -157,7 +157,8 @@ let range start step =
   next start |> memoize
 
 let range_until start stop step =
-  if step = 0 then invalid_arg "range step cannot be 0"
+  if step = 0 then
+    if start = stop then Seq.empty else range start 0
   else
     let rec next value () =
       if (step > 0 && value >= stop) || (step < 0 && value <= stop) then
