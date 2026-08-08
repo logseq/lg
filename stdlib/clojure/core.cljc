@@ -295,6 +295,24 @@
       -1
       (if (pred y x) 1 0))))
 
+(defn max-key
+  ([k x]
+   (let [_ k] x))
+  ([k x y] (if (> (k x) (k y)) x y))
+  ([k x y & more]
+   (reduce (fn [best item] (max-key k best item))
+           (max-key k x y)
+           more)))
+
+(defn min-key
+  ([k x]
+   (let [_ k] x))
+  ([k x y] (if (< (k x) (k y)) x y))
+  ([k x y & more]
+   (reduce (fn [best item] (min-key k best item))
+           (min-key k x y)
+           more)))
+
 (defn frequencies
   "Returns a map from each distinct item in `coll` to its occurrence count."
   [coll]

@@ -47,8 +47,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 275; then
-  echo "compiler call dispatch changed: expected 275 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 273; then
+  echo "compiler call dispatch changed: expected 273 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -57,7 +57,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat constantly cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max max-key merge min min-key next not-empty partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest rseq run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals vec", xs)
+    split("apply assoc-in comp concat constantly cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next not-empty partial partition partition-all partition-by reduce reduce-kv reductions remove repeat repeatedly rest rseq run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals vec", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -73,7 +73,7 @@ awk '
     blocked_reason["filterv"] = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
     blocked_reason["group-by"] = "nested-seqable-callback-capability-projection-conflates-logical-items-with-witness-storage"
     blocked_reason["into"] = "target-collection-representation-and-transducer-overload-require-dependent-types"
-    split("max max-key min min-key", xs)
+    split("max min", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-comparable-types-and-key-callback-overloads-are-not-source-expressible"
     blocked_reason["merge"] = "variadic-map-and-record-shape-unification-is-not-source-expressible"
     split("next rest", xs)

@@ -140,6 +140,10 @@
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
     comparator {:status :ported}
+    max-key {:status :static-adaptation
+             :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}
+    min-key {:status :static-adaptation
+             :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}
     frequencies {:status :static-adaptation
                  :reason :persistent-reduce-preserves-upstream-counting-semantics-without-a-transient-representation-boundary}
     update-vals {:status :static-adaptation

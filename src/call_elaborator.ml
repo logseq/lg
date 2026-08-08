@@ -4114,7 +4114,6 @@ let create ~compile_expr =
   let compile_juxt = functions.compile_juxt in
   let compile_distinct_question = comparisons.compile_distinct_question in
   let compile_compare = comparisons.compile_compare in
-  let compile_key_extreme = comparisons.compile_key_extreme in
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
   let compile_disj = comparisons.compile_disj in
@@ -8918,8 +8917,6 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok compared ->
             Ok (typed_ir (TOcaml "int") compared.semantic_expr))
-              | "max-key" | "min-key" ->
-                  compile_key_extreme scope env name arg_forms
               | "hash-set" | "sorted-set" ->
                   compile_hash_set scope env arg_forms
     | "set-of" -> compile_set_of env arg_forms

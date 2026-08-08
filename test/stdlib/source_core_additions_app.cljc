@@ -30,3 +30,22 @@
 (println (= "upstream" (:source (meta (update-vals annotated inc)))))
 (println (= "upstream"
             (:source (meta (update-keys annotated (fn [key] (name key)))))))
+
+(println (= "zebra"
+            (max-key (fn [value]
+                       (if (= value "zebra") 3
+                           (if (= value "middle") 2 1)))
+                     "apple" "zebra" "middle")))
+(println (= "second"
+            (max-key (fn [value] (if (= value "same") 1 1))
+                     "same" "second")))
+(println (= "apple"
+            (min-key (fn [value]
+                       (if (= value "zebra") 3
+                           (if (= value "middle") 2 1)))
+                     "apple" "zebra" "middle")))
+(println (= "second"
+            (min-key (fn [value] (if (= value "same") 1 1))
+                     "same" "second")))
+(println (= 7 (core/max-key identity 7)))
+(println (= 2 (clojure.core/min-key identity 9 4 2 8)))

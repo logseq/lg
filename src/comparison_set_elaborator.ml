@@ -6,16 +6,12 @@ module Env = Compiler_environment
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
 
-type named_call =
-  string -> Env.t -> string -> Ast.form list -> expression_result
-
 type forms = Ast.form list -> expression_result
 type env_forms = Env.t -> Ast.form list -> expression_result
 
 type t = {
   compile_distinct_question : call;
   compile_compare : call;
-  compile_key_extreme : named_call;
   compile_hash_set : call;
   compile_set_of : env_forms;
   compile_disj : call;
@@ -33,10 +29,6 @@ let compile_args_for compile_expr scope env arg_forms =
 
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
-  let compile_function_arg scope env = function
-    | FSymbol name -> lookup_function scope env name
-    | form -> compile_expr scope env form
-  in
   let rec comparable_type = function
     | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TMeta _ | TVar _
       ->
@@ -140,77 +132,6 @@ let create ~compile_expr =
                        (apply "Stdlib.compare" [ left; right ])))
             )
       | Ok _ -> Error.error "compare expects 2 arguments"
-    and compile_key_extreme scope env name arg_forms =
-      match arg_forms with
-      | fn_form :: value_forms when value_forms <> [] -> (
-        match
-          ( compile_function_arg scope env fn_form,
-            compile_args_for scope env value_forms )
-        with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok fn, Ok values -> (
-              let first = List.hd values in
-            if
-              not
-                (List.for_all
-                   (fun value -> Types.equal first.ty value.ty)
-                   values)
-            then Error.error (name ^ " values must have the same type")
-              else
-                match fn.ty with
-                | TFn ([ arg_ty ], key_ty)
-                  when Types.assignable ~policy:Host_boundary ~expected:arg_ty
-                         ~actual:first.ty
-                       && comparable_type key_ty ->
-                    let rest = List.tl values in
-                    let compare_op = if name = "max-key" then ">" else "<" in
-                    let expr =
-                      match rest with
-                      | [] -> first.semantic_expr
-                      | _ ->
-                          Semantic_ir.Let
-                          ( [
-                              (Semantic_ir.PVar "key_fn", fn.semantic_expr);
-                                ( Semantic_ir.PVar "choose",
-                                  Semantic_ir.Fun
-                                  ( [
-                                      Semantic_ir.PVar "best";
-                                      Semantic_ir.PVar "item";
-                                    ],
-                                      Semantic_ir.If
-                                        ( Semantic_ir.Infix
-                                            ( compare_op,
-                                              apply "Stdlib.compare"
-                                              [
-                                                Semantic_ir.Apply
-                                                    ( Semantic_ir.Ident "key_fn",
-                                                    [ Semantic_ir.Ident "item" ]
-                                                  );
-                                                  Semantic_ir.Apply
-                                                    ( Semantic_ir.Ident "key_fn",
-                                                    [ Semantic_ir.Ident "best" ]
-                                                  );
-                                              ],
-                                              Semantic_ir.Int 0 ),
-                                          Semantic_ir.Ident "item",
-                                        Semantic_ir.Ident "best" ) ) );
-                            ],
-                              apply "List.fold_left"
-                              [
-                                Semantic_ir.Ident "choose";
-                                  first.semantic_expr;
-                                Semantic_ir.List
-                                  (List.map
-                                     (fun value -> value.semantic_expr)
-                                     rest);
-                              ] )
-                    in
-                    Ok (typed_ir first.ty expr)
-              | TFn _ ->
-                  Error.error (name ^ " expects a key function matching values")
-                | _ -> Error.error (name ^ " expects a function")))
-      | _ -> Error.error (name ^ " expects function and values")
     and compile_hash_set scope env arg_forms =
       match arg_forms with
       | [] ->
@@ -318,7 +239,6 @@ let create ~compile_expr =
   {
     compile_distinct_question;
     compile_compare;
-    compile_key_extreme;
     compile_hash_set;
     compile_set_of;
     compile_disj;
