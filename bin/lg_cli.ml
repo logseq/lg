@@ -3,6 +3,9 @@ let usage () =
     "Usage: lg <input.cljc> [-o output.ml] | --interface <input.cljc> [-o \
      output.mli] | --run <input.cljc> | --compile-files <input.cljc>... -o \
      output.ml | --compile-files-state <state> <input.cljc>... -o output.ml | \
+     --compile-files-from <state> <input.cljc>... -o output.ml | \
+     --compile-files-from-state <input-state> <output-state> <input.cljc>... -o \
+     output.ml | \
      --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
      --compile-chunk-state <input-state> <output-state> <input.cljc> [-o \
      output.ml] | \
@@ -191,6 +194,17 @@ type mode =
       input_paths : string list;
       output_path : string;
     }
+  | Compile_files_from of {
+      state_path : string;
+      input_paths : string list;
+      output_path : string;
+    }
+  | Compile_files_from_state of {
+      state_path : string;
+      output_state_path : string;
+      input_paths : string list;
+      output_path : string;
+    }
   | Compile_chunk_from of {
       state_path : string;
       input_path : string;
@@ -244,6 +258,28 @@ let parse_args argv =
             Compile_files_state
               {
                 state_path;
+                input_paths = List.rev reversed_inputs;
+                output_path;
+              }
+        | _ -> usage ())
+    | _program :: "--compile-files-from" :: state_path :: args -> (
+        match List.rev args with
+        | output_path :: "-o" :: reversed_inputs when reversed_inputs <> [] ->
+            Compile_files_from
+              {
+                state_path;
+                input_paths = List.rev reversed_inputs;
+                output_path;
+              }
+        | _ -> usage ())
+    | _program :: "--compile-files-from-state" :: state_path
+      :: output_state_path :: args -> (
+        match List.rev args with
+        | output_path :: "-o" :: reversed_inputs when reversed_inputs <> [] ->
+            Compile_files_from_state
+              {
+                state_path;
+                output_state_path;
                 input_paths = List.rev reversed_inputs;
                 output_path;
               }
@@ -485,6 +521,52 @@ let compile_chunk_from_saved_state target state_path input_path =
             |> Result.map (fun (state, compilation) ->
                    (state, packages, compilation))))
 
+let compile_files_from_saved_state target state_path input_paths =
+  let saved = read_saved_compilation_state state_path in
+  if saved.target <> target then
+    Error
+      {
+        Lg.Compiler.message =
+          "saved compiler state target does not match --target";
+        location = None;
+      }
+  else
+    let rec read_sources sources packages = function
+      | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
+      | input_path :: rest ->
+          let source = read_file input_path in
+          Result.bind
+            (Lg.Compiler.required_ocaml_packages ~target source)
+            (fun source_packages ->
+              read_sources ((input_path, source) :: sources)
+                (List.rev_append source_packages packages)
+                rest)
+    in
+    Result.bind
+      (read_sources [] saved.packages input_paths)
+      (fun (sources, packages) ->
+        Result.bind
+          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
+             [])
+          (fun state ->
+            let rec compile state outputs diagnostics = function
+              | [] ->
+                  Ok
+                    ( state,
+                      packages,
+                      concatenate_compilation_outputs (List.rev outputs),
+                      List.concat (List.rev diagnostics) )
+              | (input_path, source) :: rest ->
+                  Result.bind
+                    (Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+                       ~target ~filename:input_path ~check_ocaml:false state source)
+                    (fun (state, compilation) ->
+                      compile state (compilation.ocaml_source :: outputs)
+                        (compilation.diagnostics :: diagnostics)
+                        rest)
+            in
+            compile state [] [] sources))
+
 let infer_interface target input_path =
   let source = read_file input_path in
   Lg.Compiler.infer_interface_with_filename ~target ~filename:input_path source
@@ -536,6 +618,25 @@ let () =
           report_diagnostics diagnostics;
           write_output (Some output_path) ocaml_source;
           write_saved_compilation_state state_path
+            {
+              target;
+              state = Lg.Compiler.cacheable_state state;
+              packages;
+            })
+  | Compile_files_from { state_path; input_paths; output_path } -> (
+      match compile_files_from_saved_state target state_path input_paths with
+      | Error err -> report_error err
+      | Ok (_state, _packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          write_output (Some output_path) ocaml_source)
+  | Compile_files_from_state
+      { state_path; output_state_path; input_paths; output_path } -> (
+      match compile_files_from_saved_state target state_path input_paths with
+      | Error err -> report_error err
+      | Ok (state, packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          write_output (Some output_path) ocaml_source;
+          write_saved_compilation_state output_state_path
             {
               target;
               state = Lg.Compiler.cacheable_state state;

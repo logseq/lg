@@ -1,16 +1,9 @@
 (rule
- (targets datascript_conn_native_base.ml datascript_conn_native_base.state)
+ (targets
+  datascript_conn_native_base.state
+  datascript_conn_native_base_chunk.ml)
  (deps
-  ../stdlib/clojure/core.mil
-  ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
-  ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
-  ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
-  ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
-  ../stdlib/clojure/set.cljc
+  ../stdlib/lg_stdlib_native.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -57,18 +50,9 @@
    %{exe:../bin/lg_cli.exe}
    --target
    native
-   --compile-files-state
+   --compile-files-from-state
+   %{dep:../stdlib/lg_stdlib_native.state}
    datascript_conn_native_base.state
-   %{dep:../stdlib/clojure/core.mil}
-   %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
-   %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
-   %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
-   %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
-   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -105,21 +89,26 @@
    %{dep:datascript/benchmark/datascript/bench/bench.cljc}
    %{dep:datascript/benchmark/datascript/bench/datascript.cljc}
    -o
-   datascript_conn_native_base.ml)))
+   datascript_conn_native_base_chunk.ml)))
 
 (rule
- (targets datascript_conn_melange_base.ml datascript_conn_melange_base.state)
+ (target datascript_conn_native_base.ml)
  (deps
-  ../stdlib/clojure/core.mil
-  ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
-  ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
-  ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
-  ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
-  ../stdlib/clojure/set.cljc
+  ../stdlib/lg_stdlib_native.ml
+  datascript_conn_native_base_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:datascript_conn_native_base_chunk.ml})))))
+
+(rule
+ (targets
+  datascript_conn_melange_base.state
+  datascript_conn_melange_base_chunk.ml)
+ (deps
+  ../stdlib/lg_stdlib_melange.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mil
@@ -163,18 +152,9 @@
    %{exe:../bin/lg_cli.exe}
    --target
    melange
-   --compile-files-state
+   --compile-files-from-state
+   %{dep:../stdlib/lg_stdlib_melange.state}
    datascript_conn_melange_base.state
-   %{dep:../stdlib/clojure/core.mil}
-   %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
-   %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
-   %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
-   %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
-   %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
@@ -211,7 +191,19 @@
    %{dep:datascript/benchmark/datascript/bench/bench.cljc}
    %{dep:datascript/benchmark/datascript/bench/datascript.cljc}
    -o
-   datascript_conn_melange_base.ml)))
+   datascript_conn_melange_base_chunk.ml)))
+
+(rule
+ (target datascript_conn_melange_base.ml)
+ (deps
+  ../stdlib/lg_stdlib_melange.ml
+  datascript_conn_melange_base_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:datascript_conn_melange_base_chunk.ml})))))
 
 (rule
  (target datascript_conn_native_test_lru.ml)

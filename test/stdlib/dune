@@ -142,6 +142,64 @@
   (run sh %{dep:check_aggregate_stdlib_consumer.sh} ../..)))
 
 (rule
+ (alias datascript-aggregate-stdlib)
+ (deps
+  check_datascript_aggregate_stdlib.sh
+  ../datascript_conn_tests.inc)
+ (action
+  (run sh %{dep:check_datascript_aggregate_stdlib.sh} ../..)))
+
+(rule
+ (alias compile-files-from-stdlib)
+ (targets
+  aggregate_files_chunk.ml
+  aggregate_files_chunk.ml.state
+  aggregate_files_chunk.ml.with-state.ml)
+ (deps
+  check_compile_files_from.sh
+  aggregate_provider.cljc
+  aggregate_consumer.cljc
+  ../../stdlib/lg_stdlib_native.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_files_from.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:aggregate_provider.cljc}
+   %{dep:aggregate_consumer.cljc}
+   aggregate_files_chunk.ml)))
+
+(rule
+ (target aggregate_files_native.ml)
+ (deps ../../stdlib/lg_stdlib_native.ml aggregate_files_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:aggregate_files_chunk.ml})))))
+
+(executable
+ (name aggregate_files_native)
+ (modules aggregate_files_native)
+ (flags
+  (:standard -w -32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target aggregate_files.actual)
+ (deps aggregate_files_native.exe aggregate_files.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:aggregate_files_native.exe}))
+   (diff %{dep:aggregate_files.expected} %{target}))))
+
+(rule
  (alias source-reader-bootstrap)
  (deps
   check_source_reader_bootstrap.sh
@@ -155,4 +213,6 @@
 (alias
  (name runtest)
  (deps
+  (alias aggregate-stdlib-consumer)
+  (alias datascript-aggregate-stdlib)
   (alias ../../stdlib/stdlib-melange)))
