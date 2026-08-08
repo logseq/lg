@@ -52,7 +52,7 @@ let find_canonical_record env source_name =
   let local_name = local_record_source_name source_name in
   let ocaml_name = Names.sanitize_name local_name in
   let records =
-    Compiler_environment.filter_map
+    Compiler_environment.filter_record_bindings
       (fun key (binding : binding) ->
         if String.starts_with ~prefix:"__record/" key then
           match binding.ty with
@@ -98,7 +98,7 @@ let resolve_host_record env = function
               (String.length source_name - index - 1)
       in
       let records =
-        Compiler_environment.filter_map
+        Compiler_environment.filter_record_bindings
           (fun key (binding : binding) ->
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with

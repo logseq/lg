@@ -266,7 +266,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
                 TOcaml (Type_registry.emitted_name ~scope:owner type_name)
               else TOcaml type_name
           | Some { kind = Record; _ } | None ->
-              Env.find_map
+              Env.find_record_binding
                 (fun _ (binding : binding) ->
                      match binding.ty with
                      | TNamed_record record
@@ -284,7 +284,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       in
       let inferred = TRecord fields in
       let candidates =
-        Env.filter_map
+        Env.filter_record_bindings
           (fun key (binding : binding) ->
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with

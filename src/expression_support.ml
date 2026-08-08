@@ -1234,7 +1234,7 @@ let dynamic_key_record_type env expected_field_ty =
   let named_records =
     if registered_records <> [] then registered_records
     else
-      Env.filter_map
+      Env.filter_record_bindings
         (fun key (binding : binding) ->
           if String.starts_with ~prefix:"__record/" key then
             match binding.ty with
@@ -1568,7 +1568,7 @@ let row_param_type_names ?env ?(nullable_row_indices = []) prefix param_tys =
     match env with
     | None -> false
     | Some env ->
-        Env.filter_map
+        Env.filter_record_bindings
           (fun key (binding : binding) ->
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with

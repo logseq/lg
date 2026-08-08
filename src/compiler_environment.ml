@@ -14,7 +14,14 @@ end)
 type t = {
   target : Target.t;
   symbols : Types.binding Symbol_map.t;
+  record_symbols : Types.binding Symbol_map.t;
+  record_bindings_by_lookup :
+    (Symbol_id.t * Types.binding) list String_map.t;
   bindings_by_name : (Symbol_id.t * Types.binding) list String_map.t;
+  bindings_by_emitted_name :
+    (Symbol_id.t * Types.binding) list String_map.t;
+  opened_bindings_by_scope :
+    (Symbol_id.t * Types.binding) list String_map.t;
   protocols : Protocol_registry.t;
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
@@ -34,7 +41,11 @@ let empty =
   {
     target = Target.default;
     symbols = Symbol_map.empty;
+    record_symbols = Symbol_map.empty;
+    record_bindings_by_lookup = String_map.empty;
     bindings_by_name = String_map.empty;
+    bindings_by_emitted_name = String_map.empty;
+    opened_bindings_by_scope = String_map.empty;
     protocols = Core_protocols.initial_registry;
     protocol_evidence = None;
     modules = Module_registry.empty;
@@ -60,8 +71,8 @@ let find_opt name env =
 
 let mem name env = Symbol_map.mem (Symbol_id.of_string name) env.symbols
 
-let remove_indexed_binding id bindings_by_name =
-  String_map.update (Symbol_id.name id)
+let remove_indexed_binding key id index =
+  String_map.update key
     (function
       | None -> None
       | Some bindings -> (
@@ -71,19 +82,65 @@ let remove_indexed_binding id bindings_by_name =
           with
           | [] -> None
           | bindings -> Some bindings))
-    bindings_by_name
+    index
+
+let internal_scope ~prefix name =
+  let scope_start = String.length prefix in
+  if not (String.starts_with ~prefix name) then None
+  else
+    match String.rindex_opt name '/' with
+    | Some separator when separator >= scope_start ->
+        Some (String.sub name scope_start (separator - scope_start))
+    | Some _ | None -> None
+
+let record_lookup_index_key name (binding : Types.binding) =
+  match (internal_scope ~prefix:"__record/" name, binding.ty) with
+  | Some scope, Types.TNamed_record record ->
+      Some (scope ^ "\000" ^ record.type_name)
+  | Some _, _ | None, _ -> None
+
+let opened_scope name =
+  internal_scope ~prefix:"__opened/" name
 
 let remove name env =
   let id = Symbol_id.of_string name in
+  let previous = Symbol_map.find_opt id env.symbols in
+  let bindings_by_emitted_name =
+    match previous with
+    | None -> env.bindings_by_emitted_name
+    | Some binding ->
+        remove_indexed_binding binding.Types.ocaml_name id
+          env.bindings_by_emitted_name
+  in
+  let record_bindings_by_lookup =
+    match Option.bind previous (record_lookup_index_key name) with
+    | None -> env.record_bindings_by_lookup
+    | Some key ->
+        remove_indexed_binding key id env.record_bindings_by_lookup
+  in
+  let opened_bindings_by_scope =
+    match opened_scope name with
+    | None -> env.opened_bindings_by_scope
+    | Some scope ->
+        remove_indexed_binding scope id env.opened_bindings_by_scope
+  in
   {
     env with
     symbols = Symbol_map.remove id env.symbols;
-    bindings_by_name = remove_indexed_binding id env.bindings_by_name;
+    record_symbols = Symbol_map.remove id env.record_symbols;
+    record_bindings_by_lookup;
+    bindings_by_name =
+      remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name;
+    bindings_by_emitted_name;
+    opened_bindings_by_scope;
   }
 
 let add name binding env =
   let id = Symbol_id.of_string name in
-  let bindings_by_name = remove_indexed_binding id env.bindings_by_name in
+  let previous = Symbol_map.find_opt id env.symbols in
+  let bindings_by_name =
+    remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name
+  in
   let bindings_by_name =
     String_map.update (Symbol_id.name id)
       (function
@@ -91,10 +148,60 @@ let add name binding env =
         | Some bindings -> Some ((id, binding) :: bindings))
       bindings_by_name
   in
+  let bindings_by_emitted_name =
+    match previous with
+    | None -> env.bindings_by_emitted_name
+    | Some previous ->
+        remove_indexed_binding previous.Types.ocaml_name id
+          env.bindings_by_emitted_name
+  in
+  let bindings_by_emitted_name =
+    String_map.update binding.Types.ocaml_name
+      (function
+        | None -> Some [ (id, binding) ]
+        | Some bindings -> Some ((id, binding) :: bindings))
+      bindings_by_emitted_name
+  in
+  let record_bindings_by_lookup =
+    match Option.bind previous (record_lookup_index_key name) with
+    | None -> env.record_bindings_by_lookup
+    | Some key ->
+        remove_indexed_binding key id env.record_bindings_by_lookup
+  in
+  let record_bindings_by_lookup =
+    match record_lookup_index_key name binding with
+    | None -> record_bindings_by_lookup
+    | Some key ->
+        String_map.update key
+          (function
+            | None -> Some [ (id, binding) ]
+            | Some bindings -> Some ((id, binding) :: bindings))
+          record_bindings_by_lookup
+  in
+  let opened_bindings_by_scope =
+    match opened_scope name with
+    | None -> env.opened_bindings_by_scope
+    | Some scope ->
+        let index =
+          remove_indexed_binding scope id env.opened_bindings_by_scope
+        in
+        String_map.update scope
+          (function
+            | None -> Some [ (id, binding) ]
+            | Some bindings -> Some ((id, binding) :: bindings))
+          index
+  in
   {
     env with
     symbols = Symbol_map.add id binding env.symbols;
+    record_symbols =
+      (if String.starts_with ~prefix:"__record/" name then
+         Symbol_map.add id binding env.record_symbols
+       else Symbol_map.remove id env.record_symbols);
+    record_bindings_by_lookup;
     bindings_by_name;
+    bindings_by_emitted_name;
+    opened_bindings_by_scope;
   }
 
 let add_bindings bindings env =
@@ -123,8 +230,36 @@ let find_map f env =
     (fun id binding -> f (Symbol_id.to_string id) binding)
     env.symbols
 
+let filter_record_bindings f env =
+  Symbol_map.fold
+    (fun id binding result ->
+      match f (Symbol_id.to_string id) binding with
+      | None -> result
+      | Some value -> value :: result)
+    env.record_symbols []
+  |> List.rev
+
+let find_record_binding f env =
+  Symbol_map.find_map
+    (fun id binding -> f (Symbol_id.to_string id) binding)
+    env.record_symbols
+
 let bindings_named name env =
   String_map.find_opt name env.bindings_by_name
+  |> Option.value ~default:[] |> List.map snd
+
+let bindings_emitted_as name env =
+  String_map.find_opt name env.bindings_by_emitted_name
+  |> Option.value ~default:[]
+  |> List.map (fun (id, binding) -> (Symbol_id.to_string id, binding))
+
+let record_bindings_named ~scope ~type_name env =
+  String_map.find_opt (scope ^ "\000" ^ type_name)
+    env.record_bindings_by_lookup
+  |> Option.value ~default:[] |> List.map snd
+
+let opened_bindings scope env =
+  String_map.find_opt scope env.opened_bindings_by_scope
   |> Option.value ~default:[] |> List.map snd
 
 let protocols env = env.protocols

@@ -776,7 +776,7 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
     | [] -> ty
     | protocols ->
         let candidates =
-          Env.filter_map
+          Env.filter_record_bindings
             (fun key (binding : binding) ->
               if String.starts_with ~prefix:"__record/" key then
                 match binding.ty with

@@ -3826,6 +3826,209 @@ let test_compiler_environment_indexes_bindings_by_local_name () =
   if types <> [ Lg.Types.TInt; Lg.Types.TString ] then
     failwith "local-name binding index must include every matching namespace"
 
+let test_record_lookup_cost_is_independent_of_unrelated_bindings () =
+  let record_ty =
+    Lg.Types.named_record ~type_name:"Wanted" ~set_module_name:"Wanted_set" []
+  in
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "__record/requested/Stored"
+         (Lg.Types.binding "stored" record_ty)
+  in
+  let env =
+    List.init 20_000 Fun.id
+    |> List.fold_left
+         (fun env index ->
+           Lg.Compiler_environment.add
+             (Printf.sprintf "noise-%05d/value" index)
+             (Lg.Types.binding (Printf.sprintf "noise_%05d" index) Lg.Types.TInt)
+             env)
+         env
+  in
+  let unrelated_record =
+    Lg.Types.binding "unrelated_record"
+      (Lg.Types.named_record ~type_name:"Unrelated"
+         ~set_module_name:"Unrelated_set" [])
+  in
+  let env =
+    List.init 10_000 Fun.id
+    |> List.fold_left
+         (fun env index ->
+           let scope = if index mod 2 = 0 then "other" else "requested" in
+           Lg.Compiler_environment.add
+             (Printf.sprintf "__record/%s/Unrelated%05d" scope index)
+             unrelated_record env)
+         env
+  in
+  Gc.full_major ();
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 25 do
+    match Lg.Resolver.lookup_record_type "requested" env "Wanted" with
+    | Ok record when String.equal record.type_name "Wanted" -> ()
+    | Ok _ -> failwith "record fallback lookup returned the wrong record"
+    | Error error ->
+        failwith ("record fallback lookup failed: " ^ error.Lg.Error.message)
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 500_000. then
+    failwith
+      (Printf.sprintf
+         "record fallback lookup allocated %.0f bytes for unrelated bindings"
+         allocated)
+
+let test_record_lookup_index_tracks_removal_and_ambiguity () =
+  let record_binding emitted_name =
+    Lg.Types.binding emitted_name
+      (Lg.Types.named_record ~type_name:"Wanted" ~set_module_name:"Wanted_set" [])
+  in
+  let first_key = "__record/requested/StoredFirst" in
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add first_key (record_binding "stored_first")
+  in
+  let removed = Lg.Compiler_environment.remove first_key env in
+  (match Lg.Resolver.lookup_record_type "requested" removed "Wanted" with
+  | Error _ -> ()
+  | Ok _ -> failwith "removed record remained visible to fallback lookup");
+  let ambiguous =
+    env
+    |> Lg.Compiler_environment.add "__record/requested/StoredSecond"
+         (record_binding "stored_second")
+  in
+  match Lg.Resolver.lookup_record_type "requested" ambiguous "Wanted" with
+  | Error _ -> ()
+  | Ok _ -> failwith "ambiguous record fallback lookup must be rejected"
+
+let test_emitted_name_collision_cost_is_independent_of_unrelated_bindings () =
+  let env =
+    List.init 20_000 Fun.id
+    |> List.fold_left
+         (fun env index ->
+           Lg.Compiler_environment.add
+             (Printf.sprintf "noise-%05d/value" index)
+             (Lg.Types.binding (Printf.sprintf "noise_%05d" index) Lg.Types.TInt)
+             env)
+         Lg.Compiler_environment.empty
+  in
+  Gc.full_major ();
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 25 do
+    Lg.Resolver.check_emitted_name_collision env ~source_key:"target/new-value"
+      ~ocaml_name:"unused_emitted_name"
+    |> expect_ok
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 500_000. then
+    failwith
+      (Printf.sprintf
+         "emitted-name collision checks allocated %.0f bytes for unrelated bindings"
+         allocated)
+
+let test_emitted_name_collision_index_tracks_owner_replacement_and_removal () =
+  let key = "first/value" in
+  let env =
+    Lg.Compiler_environment.add key
+      (Lg.Types.binding "shared_emitted_name" Lg.Types.TInt)
+      Lg.Compiler_environment.empty
+  in
+  (match
+     Lg.Resolver.check_emitted_name_collision env ~source_key:"first/other"
+       ~ocaml_name:"shared_emitted_name"
+   with
+  | Error _ -> ()
+  | Ok () -> failwith "same-owner emitted-name collision must be rejected");
+  Lg.Resolver.check_emitted_name_collision env ~source_key:"second/other"
+    ~ocaml_name:"shared_emitted_name"
+  |> expect_ok;
+  let replaced =
+    Lg.Compiler_environment.add key
+      (Lg.Types.binding "replacement_name" Lg.Types.TString)
+      env
+  in
+  Lg.Resolver.check_emitted_name_collision replaced ~source_key:"first/other"
+    ~ocaml_name:"shared_emitted_name"
+  |> expect_ok;
+  let removed = Lg.Compiler_environment.remove key env in
+  Lg.Resolver.check_emitted_name_collision removed ~source_key:"first/other"
+    ~ocaml_name:"shared_emitted_name"
+  |> expect_ok
+
+let test_opened_module_lookup_cost_is_independent_of_unrelated_bindings () =
+  let env =
+    List.init 20_000 Fun.id
+    |> List.fold_left
+         (fun env index ->
+           Lg.Compiler_environment.add
+             (Printf.sprintf "noise-%05d/value" index)
+             (Lg.Types.binding (Printf.sprintf "noise_%05d" index) Lg.Types.TInt)
+             env)
+         Lg.Compiler_environment.empty
+  in
+  Gc.full_major ();
+  let before = Gc.allocated_bytes () in
+  for _ = 1 to 25 do
+    let resolved =
+      Lg.Resolver.resolve_ocaml_call_target "target" env "unknown-host-call"
+    in
+    if not (String.equal resolved "unknown-host-call") then
+      failwith "unknown opened-module call resolved unexpectedly"
+  done;
+  let allocated = Gc.allocated_bytes () -. before in
+  if allocated > 500_000. then
+    failwith
+      (Printf.sprintf
+         "opened-module lookup allocated %.0f bytes for unrelated bindings"
+         allocated)
+
+let test_opened_module_index_tracks_scope_and_removal () =
+  let key = "__opened/target/String" in
+  let opened =
+    Lg.Types.binding ~host_reference:(Lg.Types.Ocaml_module "String") "String"
+      (Lg.Types.TOcaml "__module")
+  in
+  let env =
+    Lg.Compiler_environment.add key opened Lg.Compiler_environment.empty
+  in
+  let resolved =
+    Lg.Resolver.resolve_ocaml_call_target "target" env "uppercase_ascii"
+  in
+  if not (String.equal resolved "String.uppercase_ascii") then
+    failwith "opened module did not resolve its function";
+  let other_scope =
+    Lg.Resolver.resolve_ocaml_call_target "other" env "uppercase_ascii"
+  in
+  if not (String.equal other_scope "uppercase_ascii") then
+    failwith "opened module leaked into another scope";
+  let removed = Lg.Compiler_environment.remove key env in
+  let after_removal =
+    Lg.Resolver.resolve_ocaml_call_target "target" removed "uppercase_ascii"
+  in
+  if not (String.equal after_removal "uppercase_ascii") then
+    failwith "removed opened module remained visible"
+
+let test_compiler_environment_indices_ignore_malformed_internal_keys () =
+  let record_binding =
+    Lg.Types.binding "malformed_record"
+      (Lg.Types.named_record ~type_name:"Malformed"
+         ~set_module_name:"Malformed_set" [])
+  in
+  let opened_binding =
+    Lg.Types.binding ~host_reference:(Lg.Types.Ocaml_module "String") "String"
+      (Lg.Types.TOcaml "__module")
+  in
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "__record/malformed" record_binding
+    |> Lg.Compiler_environment.add "__opened/malformed" opened_binding
+  in
+  let env =
+    env
+    |> Lg.Compiler_environment.remove "__record/malformed"
+    |> Lg.Compiler_environment.remove "__opened/malformed"
+  in
+  if Lg.Compiler_environment.find_opt "__record/malformed" env <> None then
+    failwith "malformed internal record key was not removed"
+
 let test_persistent_hash_map_shares_updates_and_handles_collisions () =
   let module Collision_map = Lg.Persistent_hash_map.Make (struct
     type t = string
@@ -14376,7 +14579,10 @@ let test_recursive_functions_use_sidecar_return_types () =
 (println (count (flatten-binding (Many [(Single 1) (Single 2)]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/recursive_sidecar_return_types.cljc" source
+  in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "recursive sidecar signatures must remain static";
   assert_ocaml_runs "recursive_functions_use_sidecar_return_types"
@@ -15042,13 +15248,16 @@ let test_variadic_rest_is_a_static_sequence_without_a_hint () =
 (println (count (prepend-collections [1] [2] [3] [4])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/static_variadic_rest.cljc" source
+  in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "an unannotated variadic rest parameter must remain static";
   assert_ocaml_runs "variadic_rest_is_a_static_sequence_without_a_hint" "4\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/static_variadic_rest.cljc"
+       source)
 
 let test_multi_arity_defn_supports_cross_arity_calls_and_recur () =
   let source =
@@ -27335,11 +27544,15 @@ let test_filter_accepts_nullable_truthy_predicate_results () =
 (println (empty? (retain-allowed [])))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/nullable_truthy_filter.cljc" source
+  in
   assert_ocaml_runs "filter_accepts_nullable_truthy_predicate_results"
     "[2 3]\ntrue\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/nullable_truthy_filter.cljc" source)
 
 let test_remove_preserves_nested_pair_element_types () =
   let source =
@@ -29848,16 +30061,20 @@ let test_empty_core_api () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let assert_zero_arity_generic_collection_specializes name provider consumer =
+  let native_stdlib = compiled_stdlib Lg.Target.Native in
   let state, provider_source =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk native_stdlib.state provider |> expect_ok
   in
   let _, consumer_source =
     Lg.Compiler.compile_chunk state consumer |> expect_ok
   in
-  assert_ocaml_runs name "true\n" (provider_source ^ "\n" ^ consumer_source);
+  assert_ocaml_runs name "true\n"
+    (String.concat "\n"
+       [ native_stdlib.ocaml_source; provider_source; consumer_source ]);
+  let melange_stdlib = compiled_stdlib Lg.Target.Melange in
   let state, _ =
     Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
-      Lg.Compiler.empty_state provider
+      melange_stdlib.state provider
     |> expect_ok
   in
   ignore
@@ -30079,11 +30296,14 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
        (pr-str (vec flattened)) ":" transduced))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/eduction_transducers.cljc" source
+  in
   assert_ocaml_runs "eduction_applies_map_filter_and_cat_transducers"
     "[2 3 4]:[2 3]:[1 2 3 4]:9\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/eduction_transducers.cljc"
+       source)
 
 let test_take_while_transducers_compile_and_truncate_sequences () =
   let source =
@@ -35144,6 +35364,20 @@ let tests =
       test_compiler_environment_finds_bindings_without_materializing_all );
     ( "compiler environment indexes bindings by local name",
       test_compiler_environment_indexes_bindings_by_local_name );
+    ( "record lookup cost is independent of unrelated bindings",
+      test_record_lookup_cost_is_independent_of_unrelated_bindings );
+    ( "record lookup index tracks removal and ambiguity",
+      test_record_lookup_index_tracks_removal_and_ambiguity );
+    ( "emitted-name collision cost is independent of unrelated bindings",
+      test_emitted_name_collision_cost_is_independent_of_unrelated_bindings );
+    ( "emitted-name collision index tracks owner replacement and removal",
+      test_emitted_name_collision_index_tracks_owner_replacement_and_removal );
+    ( "opened-module lookup cost is independent of unrelated bindings",
+      test_opened_module_lookup_cost_is_independent_of_unrelated_bindings );
+    ( "opened-module index tracks scope and removal",
+      test_opened_module_index_tracks_scope_and_removal );
+    ( "compiler environment indices ignore malformed internal keys",
+      test_compiler_environment_indices_ignore_malformed_internal_keys );
     ( "persistent hash map shares updates and handles collisions",
       test_persistent_hash_map_shares_updates_and_handles_collisions );
     ( "semantic AST preserves nested types",

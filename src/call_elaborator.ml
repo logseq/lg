@@ -642,7 +642,7 @@ let is_sequential_type = function
 let resolve_named_record_application env = function
   | TOcaml_app (name, arguments) as ty ->
       let records =
-        Env.filter_map
+        Env.filter_record_bindings
           (fun key (binding : binding) ->
             if String.starts_with ~prefix:"__record/" key then
               match binding.ty with
@@ -2898,7 +2898,7 @@ let static_deftype_callable env ty arity =
     | Error _ -> None
   in
   let unique_candidates expected_fields =
-    Env.filter_map
+    Env.filter_record_bindings
       (fun key (binding : binding) ->
         if String.starts_with ~prefix:"__record/" key then
           match binding.ty with
