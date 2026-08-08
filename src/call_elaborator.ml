@@ -8492,20 +8492,6 @@ let create ~compile_expr =
                   match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_int.compile_binary name args)
-    | "hash-combine" -> (
-        match compile_args () with
-        | Error _ as error -> error
-        | Ok [ left; right ]
-                    when Types.equal left.ty TInt && Types.equal right.ty TInt
-                    ->
-            Ok
-              (typed_ir TInt
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident
-                        "Lg_runtime.Runtime_int.hash_combine",
-                      [ left.semantic_expr; right.semantic_expr ] )))
-        | Ok [ _; _ ] -> Error.error (name ^ " expects int arguments")
-        | Ok _ -> Error.error (name ^ " expects 2 arguments"))
     | "hash" -> (
         match compile_args () with
         | Error _ as error -> error

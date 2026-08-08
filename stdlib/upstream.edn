@@ -35,6 +35,8 @@
              :reason :composed-from-static-integer-bit-primitives}
     bit-test {:status :static-adaptation
               :reason :composed-from-static-integer-bit-primitives}
+    hash-combine {:status :static-adaptation
+                  :reason :source-wrapper-preserves-clojurescript-32-bit-overflow-through-the-typed-runtime-int-primitive}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

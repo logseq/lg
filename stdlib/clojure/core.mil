@@ -70,3 +70,5 @@
 
 (signature clojure.core/zipmap [key value]
   :fn<seqable<key>;seqable<value>;map<key;value>>)
+
+(signature clojure.core/hash-combine :fn<int;int;int>)

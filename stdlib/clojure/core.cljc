@@ -3,7 +3,8 @@
 ; Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php).
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
-(ns clojure.core)
+(ns clojure.core
+  (:require [ocaml.Lg_runtime.Runtime_int :as runtime-int]))
 
 (defn identity [x]
   x)
@@ -130,3 +131,6 @@
 
 (defn bit-test [x n]
   (not (zero? (bit-and x (bit-shift-left 1 n)))))
+
+(defn hash-combine [seed hash-value]
+  (runtime-int/hash-combine seed hash-value))

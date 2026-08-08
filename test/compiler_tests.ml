@@ -2518,18 +2518,31 @@ let test_external_closed_types_use_static_equality_and_hash_witnesses () =
        (= (value-hash int-value) (value-hash float-value))))
 |}
   in
-  let ocaml = Lg.Compiler.compile_string source |> expect_ok in
-  if not (string_contains_substring ocaml "Runtime_uuid.getmostsignificantbits") then
+  let consumer_ocaml =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/external_closed_types.cljc" source
+    |> expect_ok
+  in
+  let ocaml =
+    compile_with_stdlib Lg.Target.Native "test/external_closed_types.cljc"
+      source
+  in
+  if
+    not
+      (string_contains_substring consumer_ocaml
+         "Runtime_uuid.getmostsignificantbits")
+  then
     failwith "external IEquiv witness must compile to a direct static call";
-  if not (string_contains_substring ocaml "Runtime_int.hash_combine") then
-    failwith "external IHash witness must compile to a direct static call";
-  if string_contains_substring ocaml "Runtime_dynamic.equal" then
+  if string_contains_substring consumer_ocaml "Runtime_dynamic.equal" then
     failwith "external IEquiv witness must avoid dynamic equality";
-  if string_contains_substring ocaml "Runtime_dynamic.hash" then
+  if string_contains_substring consumer_ocaml "Runtime_dynamic.hash" then
     failwith "external IHash witness must avoid dynamic hashing";
   assert_ocaml_runs
     "external_closed_types_use_static_equality_and_hash_witnesses"
-    "true:true\n" ocaml
+    "true:true\n" ocaml;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/external_closed_types.cljc" source)
 
 let test_external_closed_types_use_static_comparison_witnesses () =
   let source =
@@ -20393,15 +20406,23 @@ let test_batched_numeric_scalar_core_functions_reject_non_int_bit_args () =
 let test_hash_combine_matches_clojure_32_bit_overflow () =
   let source =
     {|
+(def combine-hashes hash-combine)
 (println
-  (str (hash-combine 0 0) ":"
-       (hash-combine -1 42) ":"
-       (hash-combine 2147483647 2147483647)))
+  (str (combine-hashes 0 0) ":"
+       (combine-hashes -1 42) ":"
+       (combine-hashes 2147483647 2147483647)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/hash_combine.cljc" source
+  in
   assert_ocaml_runs "hash_combine_matches_clojure_32_bit_overflow"
-    "-1640531527:1640531549:1103660680\n" ocaml_source
+    "-1640531527:1640531549:1103660680\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/hash_combine.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "test/hash_combine_bad.cljc"
+    {|(hash-combine 1 "2")|}
+  |> expect_error_contains "called with incompatible arguments"
 
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
