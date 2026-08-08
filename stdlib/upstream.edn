@@ -14,7 +14,7 @@
    :definitions
    {identity {:status :ported}
     complement {:status :static-adaptation
-                :reason :current-static-function-types-support-unary-predicate-complement}
+                :reason :current-static-function-types-support-unary-truthy-predicate-complement}
     boolean {:status :ported}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
@@ -36,7 +36,8 @@
     bit-test {:status :static-adaptation
               :reason :composed-from-static-integer-bit-primitives}
     not-every? {:status :ported}
-    not-any? {:status :ported}
+    not-any? {:status :static-adaptation
+              :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}
     split-at {:status :ported}
     split-with {:status :static-adaptation
                 :reason :current-static-function-types-require-boolean-predicates}

@@ -45,7 +45,12 @@
   (not (every? pred coll)))
 
 (defn not-any? [pred coll]
-  (not (some pred coll)))
+  (loop [remaining (seq coll)]
+    (if remaining
+      (if (pred (nth remaining 0))
+        false
+        (recur (next remaining)))
+      true)))
 
 (defn split-at [n coll]
   [(take n coll) (drop n coll)])

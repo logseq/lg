@@ -3,8 +3,8 @@
 (signature clojure.core/identity [value]
   :fn<value;value>)
 
-(signature clojure.core/complement [value]
-  :fn<fn<value;bool>;fn<value;bool>>)
+(signature clojure.core/complement [value result]
+  :fn<fn<value;truthy<result>>;fn<value;bool>>)
 
 (signature clojure.core/boolean [value]
   :fn<truthy<value>;bool>)
@@ -26,11 +26,11 @@
 (signature clojure.core/bit-set :fn<int;int;int>)
 (signature clojure.core/bit-test :fn<int;int;bool>)
 
-(signature clojure.core/not-every? [value]
-  :fn<fn<value;bool>;seqable<value>;bool>)
+(signature clojure.core/not-every? [value result]
+  :fn<fn<value;truthy<result>>;seqable<value>;bool>)
 
-(signature clojure.core/not-any? [value]
-  :fn<fn<value;bool>;seqable<value>;bool>)
+(signature clojure.core/not-any? [value result]
+  :fn<fn<value;truthy<result>>;seqable<value>;bool>)
 
 (signature clojure.core/split-at [value]
   :fn<int;seqable<value>;vector<seq<value>>>)
