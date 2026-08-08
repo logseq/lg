@@ -99,6 +99,7 @@ let type_annotation_builtins =
       "symbol";
       "tuple";
       "unit";
+      "variadic-fn";
       "vector";
       "weak";
     ]

@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [parse-double parse-long parse-uuid]]))
+  (:require [cljs.core :as core :refer [merge-with parse-double parse-long parse-uuid]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -175,3 +175,42 @@
 (println (nil? (parse-double "nan")))
 (println (= 2.5 (core/parse-double "2.5")))
 (println (= 3.5 (clojure.core/parse-double "3.5")))
+
+(defn add-values [left right]
+  (+ left right))
+
+(def merged-basic
+  (merge-with add-values {:left 1 :right 2} {:left 4 :extra 3}))
+(println (= 5 (get merged-basic :left 0)))
+(println (= 2 (get merged-basic :right 0)))
+(println (= 3 (get merged-basic :extra 0)))
+
+(def merged-left-to-right
+  (merge-with (fn [left right] (- left right))
+              {:value 20}
+              {:value 3}
+              {:value 2}))
+(println (= 15 (get merged-left-to-right :value 0)))
+(println (= 9 (get (merge-with add-values {:value 9}) :value 0)))
+(println (nil? (merge-with add-values)))
+(println (= 7 (get (merge-with add-values nil {:value 7} nil) :value 0)))
+(println (= 0 (count (merge-with add-values nil nil))))
+
+(def merged-disjoint
+  (merge-with (fn [_left _right] (/ 1 0)) {:left 1} {:right 2}))
+(println (= 1 (get merged-disjoint :left 0)))
+(println (= 2 (get merged-disjoint :right 0)))
+
+(def merged-strings
+  (core/merge-with (fn [left right]
+                     (if (= right "right") "left:right" left))
+                   {1 "left"}
+                   {1 "right" 2 "other"}))
+(println (= "left:right" (get merged-strings 1 "")))
+(println (= "other" (get merged-strings 2 "")))
+(println (= 6 (get (clojure.core/merge-with add-values
+                                           {:value 1}
+                                           {:value 2}
+                                           {:value 3})
+                   :value
+                   0)))

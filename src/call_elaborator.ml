@@ -241,6 +241,14 @@ let optional_payload = function
   | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty
   | _ -> None
 
+let align_optional_inference template actual =
+  match (optional_payload template, optional_payload actual) with
+  | Some template, Some actual -> (template, actual)
+  | Some template, None when not (Types.equal actual TNil) ->
+      (template, actual)
+  | None, Some actual -> (template, actual)
+  | Some _, None | None, None -> (template, actual)
+
 let same_set_storage_representation left right =
   Types.set_module_name left = Types.set_module_name right
 
@@ -288,6 +296,12 @@ let rec argument_compatible expected actual =
     | _, _ -> Option.is_some (Types.seqable_constraint_info actual)
   else
     match (expected, actual) with
+    | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil -> true
+    | ( (TNullable expected | TOcaml_app ("option", [ expected ])),
+        (TNullable actual | TOcaml_app ("option", [ actual ])) ) ->
+        argument_compatible expected actual
+    | (TNullable expected | TOcaml_app ("option", [ expected ])), actual ->
+        argument_compatible expected actual
     | TOcaml "int", TInt | TInt, TOcaml "int" -> true
     | TFn ([ TUnit ], expected_return), TFn ([], actual_return)
     | TFn ([], expected_return), TFn ([ TUnit ], actual_return) ->
@@ -10327,9 +10341,10 @@ let create ~compile_expr =
                               Type_solver.unify !substitutions expected_element
                                 actual_element
                           | _ ->
-                              Ok
-                                (Types.infer_type_substitutions !substitutions
-                                   ~template:expected ~actual:argument.ty)
+                              let expected, actual =
+                                align_optional_inference expected argument.ty
+                              in
+                              Type_solver.unify !substitutions expected actual
                         in
                         substitutions :=
                           Result.value inferred ~default:!substitutions)
@@ -10507,9 +10522,8 @@ let create ~compile_expr =
                     let substitutions =
                       List.fold_left2
                         (fun substitutions template argument ->
-                          let actual =
-                            optional_payload argument.ty
-                            |> Option.value ~default:argument.ty
+                          let template, actual =
+                            align_optional_inference template argument.ty
                           in
                           if Types.is_dynamic actual then substitutions
                           else
@@ -10520,6 +10534,10 @@ let create ~compile_expr =
                     let fixed_param_tys =
                       List.map2 specialize_expected arity.fixed_params fixed_args
                       |> List.map (Type_solver.apply substitutions)
+                    in
+                    let rest_param_ty =
+                      Option.map (Type_solver.apply substitutions)
+                        arity.rest_param
                     in
                     let return_ty =
                       match element_ty with
@@ -10571,12 +10589,28 @@ let create ~compile_expr =
                           List.for_all (Types.same_shape first) rest
                     in
                     let rest_compatible =
-                      match arity.rest_param with
+                      match rest_param_ty with
                       | None -> extra_args = []
                       | Some expected ->
                           List.for_all
                             (fun arg ->
-                              named_argument_compatible expected arg.ty)
+                              let expected_payload =
+                                optional_payload expected
+                                |> Option.value ~default:expected
+                              in
+                              if
+                                Option.is_some
+                                  (Types.dynamic_map_types expected_payload)
+                              then
+                                if Types.equal arg.ty TNil then true
+                                else
+                                  let expected, actual =
+                                    align_optional_inference expected arg.ty
+                                  in
+                                  Result.is_ok
+                                    (Type_solver.unify [] expected actual)
+                              else
+                                named_argument_compatible expected arg.ty)
                             extra_args
                     in
                     if not open_set_elements_compatible then
@@ -10671,9 +10705,14 @@ let create ~compile_expr =
                                   when not (Types.equal argument.ty TNil) ->
                                     argument_compatible payload argument.ty
                                 | _ -> false) ->
-                            Ok
-                              (Semantic_ir.Constructor
-                                 ("Some", Some argument.semantic_expr))
+                            let payload =
+                              optional_payload expected |> Option.get
+                            in
+                            Result.map
+                              (fun argument ->
+                                Semantic_ir.Constructor
+                                  ("Some", Some argument))
+                              (adapt_value_to_type env payload argument)
                         | _ when has_capability_constraint expected ->
                           pack_constrained_value ?row_type_name env expected
                             argument
@@ -10769,7 +10808,8 @@ let create ~compile_expr =
                           let extra_arguments =
                             match arity.rest_param with
                             | None -> Ok []
-                            | Some expected ->
+                            | Some _ ->
+                                let expected = Option.get rest_param_ty in
                                 prepare_arguments fixed_count []
                                   (List.init (List.length extra_args) (fun _ ->
                                        expected))
@@ -10832,6 +10872,9 @@ let create ~compile_expr =
                     param_tys actual_tys
                 in
                 let rec unify_argument substitutions template actual =
+                  let template, actual =
+                    align_optional_inference template actual
+                  in
                   match
                     ( Types.seqable_constraint_info template,
                       Types.seqable_constraint_info actual,
@@ -11499,9 +11542,14 @@ let create ~compile_expr =
                                       when not (Types.equal arg.ty TNil) ->
                                         argument_compatible payload arg.ty
                                     | _ -> false) ->
-                                Ok
-                                  (Semantic_ir.Constructor
-                                     ("Some", Some arg.semantic_expr))
+                                let payload =
+                                  optional_payload expected_ty |> Option.get
+                                in
+                                Result.map
+                                  (fun argument ->
+                                    Semantic_ir.Constructor
+                                      ("Some", Some argument))
+                                  (adapt_value_to_type env payload arg)
                             | _, TNamed_record record
                               when not record.nominal
                                    && Option.is_some

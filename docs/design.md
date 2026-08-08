@@ -36,6 +36,12 @@ authoritative contracts, not hints that body inference may widen.
 `fn<result>` denotes a zero-argument function returning `result`. The compiler
 must not invent a `unit` source parameter to encode this arity.
 
+`variadic-fn<fixed...;rest;result>` denotes one function arity with zero or
+more fixed parameter types, one homogeneous variadic rest element type, and a
+result type. It may appear directly or as an item of `overload<...>`. The
+declared rest relationship remains static; it is not an erased sequence of
+dynamic values.
+
 The host-boundary assignability policy does not make a dynamic constraint
 assignable to a static type, or a static type assignable to a dynamic
 constraint. OCaml ownership is not evidence that an unsafe conversion is

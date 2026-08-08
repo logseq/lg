@@ -76,6 +76,13 @@ value, and persistent `assoc`/`dissoc` operations preserve it. Source ports such
 as `update-keys` and `update-vals` therefore retain map metadata on Native and
 Melange without converting the map or metadata through `Runtime_dynamic.t`.
 
+Sidecars describe a homogeneous variadic arity with
+`variadic-fn<fixed...;rest;result>`. The final two arguments are the rest
+element and result types; preceding arguments are fixed parameters. A
+`variadic-fn` can appear inside `overload<...>`, allowing source definitions to
+share key, value, callback, and rest-element variables without erasing the rest
+sequence.
+
 ## Porting another namespace
 
 1. Inventory the namespace and transitive namespace dependencies in the Logseq
@@ -126,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 140 source entries, 175 typed
+macro surfaces. The current baseline is 141 source entries, 175 typed
 primitives, 5 special forms, 12 host boundaries, 158 static-typing blockers,
-44 out-of-scope Spec entries, and 321 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 320 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
@@ -156,8 +163,8 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `bit-and-not`, `unsigned-bit-shift-right`, `bit-count`, `comparator`,
 `constantly`, `vec`, `max-key`, `min-key`, `frequencies`, `update-vals`,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
-`parse-uuid`, `system-time`, `parse-long`, `parse-double`, and the derived bit
-functions, plus `splitv-at` and the ClojureScript array-hint identity functions
+`parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, and the
+derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
@@ -170,7 +177,12 @@ occurrences; those three core functions now resolve from the aggregate source
 artifact, including `cljs.core` aliases and refers. The same scan finds 30
 `parse-long` and 7 `parse-double` occurrences; both parsers now preserve the
 upstream grammar and safe-number bounds through the same source artifact. The
-aggregate `clojure.set` source
+same tree contains 14 direct `merge-with` references plus `apply merge-with`
+call sites. Its source port preserves the upstream entry fold and left-to-right
+combiner order. Because LG has no value-dependent return types, supplying only
+`nil` map arguments yields an empty typed map rather than upstream nil; the
+zero-map `(merge-with f)` arity still returns nil, and this static adaptation is
+recorded in `stdlib/upstream.edn`. The aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
 `superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
 references and all 221 observed qualified-var references resolve through the

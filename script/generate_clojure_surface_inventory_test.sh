@@ -58,6 +58,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-uuid" && $3 == "sou
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/system-time" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-long" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-double" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/merge-with" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.test" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"

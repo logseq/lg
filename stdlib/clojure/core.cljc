@@ -373,6 +373,29 @@
 (defn val [map-entry]
   (stdlib/snd map-entry))
 
+(defn- merge-entry-with [f m entry]
+  (let [k (key entry)
+        v (val entry)]
+    (if (contains? m k)
+      (assoc m k (f (get m k v) v))
+      (assoc m k v))))
+
+(defn- merge-two-with [f m1 m2]
+  (reduce (fn [m entry] (merge-entry-with f m entry))
+          m1
+          (seq m2)))
+
+(defn merge-with
+  "Returns a map consisting of all input maps. When a key occurs in more than
+  one map, combines its values from left to right by calling `f`. With at least
+  one map argument, treats `nil` maps as empty maps and returns a map."
+  ([_f]
+   nil)
+  ([f first-map & maps]
+   (reduce (fn [m1 m2] (merge-two-with f m1 m2))
+           (if-some [m first-map] m {})
+           maps)))
+
 (defn vec [coll]
   (rrb-vector/of-list (runtime-seq/to-list (seq coll))))
 

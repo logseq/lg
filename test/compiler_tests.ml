@@ -14902,6 +14902,80 @@ let test_generic_overload_signature_resolves_nested_type_parameters () =
     "generic_overload_signature_resolves_nested_type_parameters" "(1 2)\n"
     ocaml_source
 
+let test_generic_variadic_signature_preserves_rest_element_relation () =
+  let source =
+    {|
+(signature collect [value]
+  :overload<fn<seq<value>>;variadic-fn<value;value;seq<value>>>)
+(defn collect
+  ([] (list))
+  ([first & rest] (cons first rest)))
+(println (count (collect)))
+(println (= 6 (reduce + 0 (collect 1 2 3))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "variadic signatures must preserve a static rest element type";
+  assert_ocaml_runs
+    "generic_variadic_signature_preserves_rest_element_relation"
+    "0\ntrue\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_variadic_signature_rejects_missing_rest_type () =
+  Lg.Compiler.compile_string
+    {|
+(signature invalid :variadic-fn<int>)
+|}
+  |> expect_error "variadic-fn expects a rest type and return type"
+
+let test_variadic_signature_lifts_generic_map_returns_to_option () =
+  let source =
+    {|
+(signature choose-map [key value]
+  :overload<fn<fn<value;value;value>;option<map<key;value>>>;variadic-fn<fn<value;value;value>;map<key;value>;map<key;value>;option<map<key;value>>>>)
+(defn choose-map
+  ([f] (let [_ f] nil))
+  ([f first-map & _maps]
+   (when true first-map)))
+(println
+  (when-some [selected
+              (choose-map (fn [left right] (+ left right))
+                          {:value 1}
+                          {:value 2})]
+    (= 1 (get selected :value 0))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "nullable variadic map returns must stay static";
+  assert_ocaml_runs
+    "variadic_signature_lifts_generic_map_returns_to_option"
+    "true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_option_map_parameters_adapt_record_shaped_literals_before_lifting () =
+  let source =
+    {|
+(signature count-maybe-map [key value]
+  :fn<option<map<key;value>>;int>)
+(defn count-maybe-map [value]
+  (if-some [value value] (count value) 0))
+(println (count-maybe-map {:left 1 :right 2}))
+(println (count-maybe-map nil))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "option map adaptation must remain static";
+  assert_ocaml_runs
+    "option_map_parameters_adapt_record_shaped_literals_before_lifting"
+    "2\n0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_truthy_signature_type_supports_static_source_functions () =
   let source =
     {|
@@ -36218,6 +36292,14 @@ let tests =
       test_annotated_multi_arity_defn_constrains_each_clause );
     ( "generic overload signature resolves nested type parameters",
       test_generic_overload_signature_resolves_nested_type_parameters );
+    ( "generic variadic signature preserves rest element relation",
+      test_generic_variadic_signature_preserves_rest_element_relation );
+    ( "variadic signature rejects missing rest type",
+      test_variadic_signature_rejects_missing_rest_type );
+    ( "variadic signature lifts generic map returns to option",
+      test_variadic_signature_lifts_generic_map_returns_to_option );
+    ( "option map parameters adapt record shaped literals before lifting",
+      test_option_map_parameters_adapt_record_shaped_literals_before_lifting );
     ( "truthy signature type supports static source functions",
       test_truthy_signature_type_supports_static_source_functions );
     ( "truthy callback returns are adapted for source functions",

@@ -234,6 +234,70 @@
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
+  source_core_merge_with_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_merge_with_bad_arity.cljc}
+   "unsupported arity")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_merge_with_bad_combiner.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_merge_with_bad_combiner.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_merge_with_bad_key_type.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_merge_with_bad_key_type.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_merge_with_bad_value_type.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_merge_with_bad_value_type.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
   clojure_set_non_set.cljc
   ../../bin/lg_cli.exe)
  (action

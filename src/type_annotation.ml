@@ -64,6 +64,9 @@ let validate_ocaml_type_application name args =
   | "map", _ -> Error.error "map expects two type arguments"
   | "fn", _ :: _ -> Ok ()
   | "fn", [] -> Error.error "fn expects a return type"
+  | "variadic-fn", _ :: _ :: _ -> Ok ()
+  | "variadic-fn", _ ->
+      Error.error "variadic-fn expects a rest type and return type"
   | "overload", _ :: _ -> Ok ()
   | "overload", _ -> Error.error "overload expects at least two function types"
   | _, [] -> Error.error "OCaml type application expects at least one argument"
@@ -184,6 +187,19 @@ let rec parse_ocaml_type source =
                       | return_ty :: reversed_params ->
                           Ok (TFn (List.rev reversed_params, return_ty))
                       | [] -> assert false
+                    else if name = "variadic-fn" then
+                      match List.rev args with
+                      | return_ty :: rest_param :: reversed_fixed_params ->
+                          Ok
+                            (TOverloaded_fn
+                               [
+                                 {
+                                   fixed_params = List.rev reversed_fixed_params;
+                                   rest_param = Some rest_param;
+                                   return_ty;
+                                 };
+                               ])
+                      | _ -> assert false
                     else if name = "overload" then
                       let rec arities acc = function
                         | [] -> Ok (TOverloaded_fn (List.rev acc))
@@ -192,6 +208,8 @@ let rec parse_ocaml_type source =
                               ({ fixed_params; rest_param = None; return_ty }
                               :: acc)
                               rest
+                        | TOverloaded_fn nested :: rest ->
+                            arities (List.rev_append nested acc) rest
                         | _ :: _ ->
                             Error.error
                               "overload arguments must all be function types"

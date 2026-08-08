@@ -150,6 +150,15 @@
 (signature clojure.core/val [key value]
   :fn<tuple<key;value>;value>)
 
+(signature clojure.core/merge-entry-with [key value]
+  :fn<fn<value;value;value>;map<key;value>;tuple<key;value>;map<key;value>>)
+
+(signature clojure.core/merge-two-with [key value]
+  :fn<fn<value;value;value>;map<key;value>;option<map<key;value>>;map<key;value>>)
+
+(signature clojure.core/merge-with [key value]
+  :overload<fn<fn<value;value;value>;option<map<key;value>>>;variadic-fn<fn<value;value;value>;option<map<key;value>>;option<map<key;value>>;map<key;value>>>)
+
 (signature clojure.core/vec [value]
   :fn<seqable<value>;vector<value>>)
 

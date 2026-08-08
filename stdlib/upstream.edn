@@ -168,6 +168,8 @@
          :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
     val {:status :static-adaptation
          :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
+    merge-with {:status :static-adaptation
+                :reason :source-port-preserves-upstream-entry-fold-and-left-to-right-variadic-order-while-supplied-all-nil-maps-produce-an-empty-static-map-because-value-dependent-nullability-is-not-source-expressible}
     vec {:status :static-adaptation
          :reason :typed-seqable-source-wrapper-realizes-elements-into-the-lg-rrb-vector-representation}
     comparator {:status :ported}
