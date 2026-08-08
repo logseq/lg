@@ -281,21 +281,6 @@ let compile name args =
       int_binary name args (fun left right ->
           typed_ir TInt
             (Semantic_ir.Infix ("lsr", left, right)))
-  | "unchecked-add" | "unchecked-add-int" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt (Semantic_ir.Infix ("+", left, right)))
-  | "unchecked-subtract" | "unchecked-subtract-int" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt (Semantic_ir.Infix ("-", left, right)))
-  | "unchecked-multiply" | "unchecked-multiply-int" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt (Semantic_ir.Infix ("*", left, right)))
-  | "unchecked-divide-int" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt (Semantic_ir.Infix ("/", left, right)))
-  | "unchecked-remainder-int" ->
-      int_binary name args (fun left right ->
-          typed_ir TInt (Semantic_ir.Infix ("mod", left, right)))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

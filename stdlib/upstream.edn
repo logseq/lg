@@ -43,6 +43,22 @@
          :reason :source-wrapper-preserves-the-sign-of-the-dividend-through-the-typed-runtime-int-primitive}
     mod {:status :static-adaptation
          :reason :source-wrapper-preserves-floor-modulus-through-the-typed-runtime-int-primitive}
+    unchecked-add {:status :static-adaptation
+                   :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-add-int {:status :static-adaptation
+                       :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-subtract {:status :static-adaptation
+                        :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-subtract-int {:status :static-adaptation
+                            :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-multiply {:status :static-adaptation
+                        :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-multiply-int {:status :static-adaptation
+                            :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
+    unchecked-divide-int {:status :static-adaptation
+                          :reason :static-binary-integer-source-wrapper-over-the-typed-runtime-int-primitive}
+    unchecked-remainder-int {:status :static-adaptation
+                             :reason :static-binary-integer-source-wrapper-over-the-typed-runtime-int-primitive}
     unchecked-inc {:status :static-adaptation
                    :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
     unchecked-inc-int {:status :static-adaptation

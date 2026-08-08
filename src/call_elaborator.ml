@@ -8226,11 +8226,7 @@ let create ~compile_expr =
                   ))
         | _ -> Error.error "instance? expects a record type and value")
               | "integer?" | "nat-int?" | "pos-int?" | "neg-int?"
-              | "bit-shift-right-zero-fill" | "unchecked-add"
-              | "unchecked-add-int" | "unchecked-subtract"
-              | "unchecked-subtract-int" | "unchecked-multiply"
-              | "unchecked-multiply-int" | "unchecked-divide-int"
-              | "unchecked-remainder-int" | "name"
+              | "bit-shift-right-zero-fill" | "name"
               | "namespace" | "keyword" | "symbol" -> (
         match compile_args () with
         | Error _ as err -> err

@@ -20431,6 +20431,14 @@ let test_source_integer_helpers_are_qualified_first_class_vars () =
 (def quotient clojure.core/quot)
 (def remainder clojure.core/rem)
 (def modulo clojure.core/mod)
+(def unchecked-sum clojure.core/unchecked-add)
+(def unchecked-sum-int clojure.core/unchecked-add-int)
+(def unchecked-difference clojure.core/unchecked-subtract)
+(def unchecked-difference-int clojure.core/unchecked-subtract-int)
+(def unchecked-product clojure.core/unchecked-multiply)
+(def unchecked-product-int clojure.core/unchecked-multiply-int)
+(def unchecked-quotient-int clojure.core/unchecked-divide-int)
+(def unchecked-modulus-int clojure.core/unchecked-remainder-int)
 (def unchecked-increment clojure.core/unchecked-inc)
 (def unchecked-increment-int clojure.core/unchecked-inc-int)
 (def unchecked-decrement clojure.core/unchecked-dec)
@@ -20439,6 +20447,10 @@ let test_source_integer_helpers_are_qualified_first_class_vars () =
 (def unchecked-negative-int clojure.core/unchecked-negate-int)
 (println
   (str (quotient -7 3) ":" (remainder -7 3) ":" (modulo -7 3) ":"
+       (unchecked-sum 4 3) ":" (unchecked-sum-int 4 3) ":"
+       (unchecked-difference 4 3) ":" (unchecked-difference-int 4 3) ":"
+       (unchecked-product 4 3) ":" (unchecked-product-int 4 3) ":"
+       (unchecked-quotient-int 7 2) ":" (unchecked-modulus-int 7 2) ":"
        (unchecked-increment 4) ":" (unchecked-increment-int 4) ":"
        (unchecked-decrement 4) ":" (unchecked-decrement-int 4) ":"
        (unchecked-negative 4) ":" (unchecked-negative-int 4)))
@@ -20449,7 +20461,7 @@ let test_source_integer_helpers_are_qualified_first_class_vars () =
       source
   in
   assert_ocaml_runs "source_integer_helpers_are_qualified_first_class_vars"
-    "-2:-1:2:5:5:3:3:-4:-4\n" ocaml_source;
+    "-2:-1:2:7:7:1:1:12:12:3:1:5:5:3:3:-4:-4\n" ocaml_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "test/source_integer_helpers.cljc" source);

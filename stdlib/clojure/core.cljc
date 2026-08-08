@@ -25,6 +25,30 @@
 (defn mod [n d]
   (runtime-int/clojure-mod n d))
 
+(defn unchecked-add [x y]
+  (+ x y))
+
+(defn unchecked-add-int [x y]
+  (+ x y))
+
+(defn unchecked-subtract [x y]
+  (- x y))
+
+(defn unchecked-subtract-int [x y]
+  (- x y))
+
+(defn unchecked-multiply [x y]
+  (* x y))
+
+(defn unchecked-multiply-int [x y]
+  (* x y))
+
+(defn unchecked-divide-int [x y]
+  (runtime-int/int-quot x y))
+
+(defn unchecked-remainder-int [x y]
+  (runtime-int/int-rem x y))
+
 (defn unchecked-inc [x]
   (+ x 1))
 
