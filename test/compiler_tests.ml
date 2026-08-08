@@ -18402,10 +18402,10 @@ let test_melange_array_dot_map_uses_static_array_map () =
   (:require [#?(:cljs cljs.reader :clj clojure.edn) :as edn]))
 
 (def values (into-array [1 2 3]))
-(def mapped #?(:cljs (.map values inc) :clj (amap inc values)))
+(def mapped (.map values inc))
 (println (= [2 3 4] (vec mapped)))
 (def functions (into-array [(fn [^:int value] value)]))
-(def invoked #?(:cljs (.map functions #(% 9)) :clj (amap #(% 9) functions)))
+(def invoked (.map functions #(% 9)))
 (println (count invoked))
 |}
   in
@@ -20663,6 +20663,50 @@ let test_source_array_helpers_preserve_generic_array_types () =
     "test/source_array_helpers_bad.cljc" {|(clojure.core/alength)|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_array_map_and_sort_preserve_upstream_contracts () =
+  let source =
+    {|
+(def ints (array 3 1 2))
+(def mapped
+  (cljs.core/amap ints index result
+    (+ (aget result index) 10)))
+(def words (array "bbb" "a" "cc"))
+(signature compare-int :fn<int;int;int>)
+(defn compare-int [left right]
+  (compare left right))
+(signature compare-length :fn<string;string;int>)
+(defn compare-length [left right]
+  (compare (count left) (count right)))
+(def sort-array! clojure.core/asort!)
+(sort-array! compare-int ints)
+(sort-array! compare-length words)
+(println
+  (str (pr-str (array-to-seq mapped)) ":"
+       (pr-str (array-to-seq ints)) ":"
+       (pr-str (array-to-seq words))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_array_map_sort.cljc" source
+  in
+  assert_ocaml_runs "source_array_map_and_sort_preserve_upstream_contracts"
+    "(13 11 12):(1 2 3):(\"a\" \"cc\" \"bbb\")\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_array_map_sort.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_array_map_wrong_arity.cljc"
+    {|(amap (fn [value] (inc value)) (array 1 2 3))|}
+  |> expect_error_contains "unsupported macro arity";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_array_sort_wrong_comparator.cljc"
+    {|
+(defn boolean-compare [left right] (< left right))
+(clojure.core/asort! boolean-compare (array 2 1))
+|}
+  |> expect_error_contains "incompatible arguments"
+
 let test_hash_matches_clojure_scalar_and_collection_values () =
   let source =
     {|
@@ -22536,7 +22580,7 @@ let test_melange_binary_search_consumes_static_orderings () =
 |}
   in
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Int64.to_int (order_int" then
     failwith "binary search must consume ordering callbacks directly";
@@ -25726,7 +25770,7 @@ let test_closed_array_sources_preserve_nominal_elements_for_sorting () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "closed_array_sources_preserve_nominal_elements_for_sorting" "ok\n"
     ocaml_source
@@ -25770,13 +25814,12 @@ let test_namespaced_array_macros_preserve_closed_sources () =
 (println "ok")
 |}
   in
-  let state, arrays_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state arrays_source |> expect_ok
+  let ocaml_source =
+    compile_chunks_with_stdlib Lg.Target.Native
+      [ ("test/arrays.cljc", arrays_source); ("test/app.cljc", app_source) ]
   in
-  let _, app_ocaml = Lg.Compiler.compile_chunk state app_source |> expect_ok in
   assert_ocaml_runs
-    "namespaced_array_macros_preserve_closed_sources" "ok\n"
-    (arrays_ocaml ^ "\n" ^ app_ocaml)
+    "namespaced_array_macros_preserve_closed_sources" "ok\n" ocaml_source
 
 let test_occurrence_type_hints_require_closed_record_sums () =
   let source =
@@ -27455,13 +27498,13 @@ let test_typed_predicates_preserve_concrete_array_elements () =
 (println (prepare [(Item. 2) (Item. 1)]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_predicates_preserve_concrete_array_elements"
     "1\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_array_classification_uses_a_closed_sum () =
   let source =
@@ -35832,6 +35875,8 @@ let tests =
       test_source_range_shuffle_and_any_preserve_clojurescript_contracts );
     ( "source array helpers preserve generic array types",
       test_source_array_helpers_preserve_generic_array_types );
+    ( "source array map and sort preserve upstream contracts",
+      test_source_array_map_and_sort_preserve_upstream_contracts );
     ( "hash matches Clojure scalar and collection values",
       test_hash_matches_clojure_scalar_and_collection_values );
     ("hash dispatches to record IHash", test_hash_dispatches_to_record_ihash);

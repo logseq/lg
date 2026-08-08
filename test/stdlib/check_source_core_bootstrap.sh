@@ -27,6 +27,16 @@ for name in \
   fi
 done
 
+if ! grep -F '(defmacro amap' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/amap is not source-defined as the upstream macro" >&2
+  exit 1
+fi
+
+if ! grep -F '(defn asort!' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/asort! is not source-defined" >&2
+  exit 1
+fi
+
 if ! grep -F '[clojure.core ' \
   "$root/stdlib/upstream.edn" >/dev/null; then
   echo "clojure.core is not first in aggregate stdlib order" >&2

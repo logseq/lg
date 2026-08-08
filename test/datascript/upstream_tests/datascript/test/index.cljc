@@ -106,7 +106,7 @@
    (into (list) (map tdc/int-value (reverse values)))))
 
 (defn int-sequence-value
-  [^:vector<int> values]
+  [^:seq<int> values]
   :Datascript_runtime.Data_value.t
   (Datascript_runtime.Data_value.List
    (into (list) (map tdc/int-value (reverse values)))))

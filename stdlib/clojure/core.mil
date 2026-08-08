@@ -32,6 +32,8 @@
   :fn<array<array-element>;seq<array-element>>)
 (signature clojure.core/array-to-rseq [array-element]
   :fn<array<array-element>;seq<array-element>>)
+(signature clojure.core/asort! [array-element]
+  :fn<fn<array-element;array-element;int>;array<array-element>;unit>)
 
 (signature clojure.core/quot :fn<int;int;int>)
 (signature clojure.core/rem :fn<int;int;int>)

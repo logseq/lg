@@ -103,6 +103,10 @@
                   :reason :lg-static-array-compatibility-helper-over-the-typed-runtime-sequence-boundary}
     array-to-rseq {:status :static-adaptation
                    :reason :lg-static-array-compatibility-helper-over-the-typed-reverse-sequence-boundary}
+    amap {:status :ported
+          :reason :source-macro-preserves-the-upstream-four-argument-clone-loop-and-element-update-contract}
+    asort! {:status :static-adaptation
+            :reason :lg-datascript-static-array-extension-over-target-specific-typed-in-place-sort-primitives}
     not-every? {:status :ported}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}

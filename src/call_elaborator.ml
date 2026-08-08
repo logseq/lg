@@ -5788,9 +5788,40 @@ let create ~compile_expr =
         | Ok _ -> Error.error (field_access ^ " expects 1 argument"))
     | ".map" -> (
         match arg_forms with
-        | [ receiver; callback ] ->
-            compile_expr scope env
-              (FList [ FSymbol "amap"; callback; receiver ])
+        | [ receiver_form; callback_form ] -> (
+            match compile_expr scope env receiver_form with
+            | Error _ as error -> error
+            | Ok { ty = receiver_ty; semantic_expr = receiver; _ } -> (
+                match array_element_type receiver_ty with
+                | None -> Error.error ".map expects an array and a unary function"
+                | Some element_ty ->
+                    let callback_env =
+                      Env.with_expected_type
+                        (Some (TFn ([ element_ty ], TUnknown))) env
+                    in
+                    (match compile_expr scope callback_env callback_form with
+                    | Error _ as error -> error
+                    | Ok
+                        {
+                          ty = TFn ([ parameter_ty ], return_ty);
+                          semantic_expr = callback;
+                          _;
+                        }
+                      when Types.assignable ~policy:Host_boundary
+                             ~expected:parameter_ty ~actual:element_ty ->
+                        let map, arguments =
+                          match Env.target env with
+                          | Target.Melange ->
+                              ( "Lg_runtime.Runtime_array_melange.map",
+                                [ receiver; callback ] )
+                          | Target.Native | Target.Js_of_ocaml ->
+                              ("Array.map", [ callback; receiver ])
+                        in
+                        Ok
+                          (typed_ir (TArray return_ty) (apply map arguments))
+                    | Ok _ ->
+                        Error.error
+                          ".map expects an array and a unary function")))
         | _ -> Error.error ".map expects an array and a unary function")
     | method_name
       when String.starts_with ~prefix:"." method_name
@@ -6746,112 +6777,6 @@ let create ~compile_expr =
               (pack_dynamic_value env dynamic argument)
         | Ok [ _ ] -> Error.error "aclone expects an OCaml array"
         | Ok _ -> Error.error "aclone expects 1 argument")
-    | "amap" -> (
-        match arg_forms with
-        | [ fn_form; array_form ] -> (
-            match compile_expr scope env array_form with
-            | Error _ as error -> error
-            | Ok ({ ty = array_type; semantic_expr = array; _ } as _array) -> (
-                match array_element_type array_type with
-                | None ->
-                    Error.error
-                      "amap expects a unary function and compatible array"
-                | Some element_ty ->
-                    let function_env =
-                      Env.with_expected_type
-                        (Some (TFn ([ element_ty ], TUnknown))) env
-                    in
-                    (match compile_expr scope function_env fn_form with
-                    | Error _ as error -> error
-                    | Ok
-                        {
-                          ty = TFn ([ parameter_ty ], return_ty);
-                          semantic_expr = fn;
-                          _;
-                        }
-                      when Types.assignable ~policy:Host_boundary
-                             ~expected:parameter_ty ~actual:element_ty ->
-                let return_ty =
-                  match return_ty with
-                  | TUnknown | TMeta _ | TVar _
-                    when Types.is_dynamic parameter_ty
-                         || Types.is_dynamic element_ty ->
-                      Types.dynamic_constraint TUnknown
-                  | ty -> ty
-                in
-                let map, arguments =
-                  match Env.target env with
-                  | Target.Melange ->
-                      ("Lg_runtime.Runtime_array_melange.map", [ array; fn ])
-                  | Target.Native | Target.Js_of_ocaml ->
-                      ("Array.map", [ fn; array ])
-                in
-                Ok
-                  (typed_ir (TArray return_ty)
-                     (apply map arguments))
-                    | Ok _ ->
-                        Error.error
-                          "amap expects a unary function and compatible array"))
-            )
-        | _ -> Error.error "amap expects 2 arguments")
-    | "asort!" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok
-            [
-              {
-                ty =
-                  TFn
-                    ( [ left_ty; right_ty ],
-                      ((TInt | TOcaml "int" | TUnknown | TMeta _ | TVar _) as return_ty) );
-                semantic_expr = cmp;
-                _;
-              };
-              { ty = array_type; semantic_expr = array; _ };
-            ] -> (
-            match array_element_type array_type with
-            | Some element_ty
-              when (Types.equal element_ty TUnknown
-                             || Types.assignable ~policy:Host_boundary
-                                  ~expected:left_ty ~actual:element_ty)
-                   && (Types.equal element_ty TUnknown
-                                || Types.assignable ~policy:Host_boundary
-                                     ~expected:right_ty ~actual:element_ty) ->
-                          let host_cmp =
-                            if Types.equal return_ty (TOcaml "int") then cmp
-                            else
-                              let left_name = "__lg_asort_left" in
-                              let right_name = "__lg_asort_right" in
-                              Semantic_ir.Fun
-                                ( [
-                                    Semantic_ir.PVar left_name;
-                                    Semantic_ir.PVar right_name;
-                                  ],
-                                  Semantic_ir.Apply
-                                    ( cmp,
-                                      [
-                                        Semantic_ir.Ident left_name;
-                                        Semantic_ir.Ident right_name;
-                                      ] ) )
-                          in
-                          let sort, arguments =
-                            match Env.target env with
-                            | Target.Melange ->
-                                ( "Lg_runtime.Runtime_array_melange.sort",
-                                  [ array; host_cmp ] )
-                            | Target.Native | Target.Js_of_ocaml ->
-                                ("Array.fast_sort", [ host_cmp; array ])
-                          in
-                          Ok
-                            (typed_ir TUnit
-                               (apply sort arguments))
-            | Some _ | None ->
-                Error.error
-                  "asort! expects a comparator and compatible array")
-        | Ok [ _; _ ] ->
-                      Error.error
-                        "asort! expects a comparator and compatible array"
-        | Ok _ -> Error.error "asort! expects 2 arguments")
     | "array?" | "array-value?" -> (
         match compile_args () with
         | Error _ as err -> err

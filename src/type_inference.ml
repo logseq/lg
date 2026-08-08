@@ -2474,8 +2474,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             (fun substitutions expected arg ->
               let actual =
                 match inferred_form_type params arg with
-                | TUnknown ->
-                    inferred_call_return_type ~lookup_function_ty params arg
+                | TUnknown -> (
+                    match arg with
+                    | FSymbol symbol -> (
+                        match string_assoc_opt symbol params with
+                        | Some ty -> ty
+                        | None ->
+                            lookup_function_ty symbol
+                            |> Result.value ~default:TUnknown)
+                    | _ ->
+                        inferred_call_return_type ~lookup_function_ty params arg)
                 | ty -> ty
               in
               let unresolved =
@@ -4500,32 +4508,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             constrain_symbol
               (Types.guarded_protocol_constraint constraint_ty)
               params receiver)
-    | FList
-        [ FSymbol "asort!"; FSymbol comparator; FSymbol array ] ->
-        let comparator_ty =
-          match string_assoc_opt comparator params with
-          | Some ty -> Some ty
-          | None -> Result.to_option (lookup_function_ty comparator)
-        in
-        let element_ty =
-          match comparator_ty with
-          | Some
-              (TFn
-                ( [ left; right ],
-                  (TInt | TOcaml "int" | TUnknown | TMeta _ | TVar _) ))
-            when Types.equal left right
-                 && not (Types.equal left TUnknown)
-                 && (match left with TMeta _ | TVar _ -> false | _ -> true) ->
-              left
-          | _ -> TUnknown
-        in
-        Result.bind (constrain_symbol (TArray element_ty) params array)
-          (fun params ->
-            if string_mem_assoc comparator params then
-              constrain_symbol
-                (TFn ([ element_ty; element_ty ], TOcaml "int"))
-                params comparator
-            else Ok params)
     | FList
         [
           FSymbol (("uncurried-call" | "uncurried-compare") as name);

@@ -114,6 +114,12 @@ let add_macro ~scope ~name definition env =
 let add_macro_alias ~alias definition env =
   { env with macros = (alias, definition) :: List.remove_assoc alias env.macros }
 
+let remove_macro_alias ~alias definition env =
+  match List.assoc_opt alias env.macros with
+  | Some current when current = definition ->
+      { env with macros = List.remove_assoc alias env.macros }
+  | Some _ | None -> env
+
 let find_macro ~scope name env =
   match List.assoc_opt (Names.scoped_key scope name) env.macros with
   | Some _ as definition -> definition
@@ -145,6 +151,12 @@ let add_inline_macro_alias ~alias definition env =
     inline_macros =
       (alias, definition) :: List.remove_assoc alias env.inline_macros;
   }
+
+let remove_inline_macro_alias ~alias definition env =
+  match List.assoc_opt alias env.inline_macros with
+  | Some current when current = definition ->
+      { env with inline_macros = List.remove_assoc alias env.inline_macros }
+  | Some _ | None -> env
 
 let find_inline_macro ~scope name env =
   match List.assoc_opt (Names.scoped_key scope name) env.inline_macros with

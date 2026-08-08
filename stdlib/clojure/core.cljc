@@ -5,6 +5,7 @@
 
 (ns clojure.core
   (:require [ocaml.Lg_runtime.Runtime_array :as runtime-array]
+            [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
@@ -67,6 +68,23 @@
 
 (defn array-to-rseq [values]
   (runtime-seq/of-array-rev values))
+
+(defmacro amap [values index result expression]
+  `(let [values# ~values
+         length# (alength values#)
+         ~result (aclone values#)]
+     (loop [~index 0]
+       (if (< ~index length#)
+         (do
+           (aset ~result ~index ~expression)
+           (recur (inc ~index)))
+         ~result))))
+
+(defn asort! [compare values]
+  #?(:melange
+     (runtime-array-melange/sort values compare)
+     :default
+     (runtime-array/sort values compare)))
 
 (defn quot [n d]
   (runtime-int/int-quot n d))
