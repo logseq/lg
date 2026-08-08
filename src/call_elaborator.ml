@@ -8895,7 +8895,7 @@ let create ~compile_expr =
     | "cycle" ->
         compile_sequence_transform_call scope env name arg_forms
     | "repeatedly" -> compile_repeatedly scope env arg_forms
-    | "interpose" | "interleave" | "partition" | "partition-all" ->
+    | "interleave" | "partition" | "partition-all" ->
         compile_sequence_transform_call scope env name arg_forms
     | "reductions" -> compile_reductions scope env arg_forms
     | "map-indexed" -> compile_map_indexed scope env arg_forms

@@ -54,6 +54,9 @@
 (defn reverse [coll]
   (reduce (fn [result item] (conj result item)) (list) coll))
 
+(defn interpose [separator coll]
+  (drop 1 (interleave (repeat separator) coll)))
+
 (defn zipmap [keys values]
   (loop [result {}
          remaining-keys (seq keys)

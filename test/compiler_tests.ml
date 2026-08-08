@@ -33738,7 +33738,6 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (vec (list 1 2)))|};
       {|(def result (set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
-      {|(def result (interpose 0 [1 2 3]))|};
       {|(def result (interleave [1 2] (list 3 4)))|};
       {|(def result (partition 2 [1 2 3]))|};
       {|(def result (partition-all 2 [1 2 3]))|};

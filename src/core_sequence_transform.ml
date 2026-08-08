@@ -313,38 +313,6 @@ let cycle collection =
         (typed_ir (TSeq inner)
            (apply "Lg_runtime.Runtime_seq.cycle" [ sequence ]))
 
-let interpose separator collection =
-  match collection_to_list_expr collection with
-  | Error _ -> Error.error "interpose expects a collection"
-  | Ok (inner, list_expr) ->
-      if Types.equal separator.ty inner then
-        let interpose_body =
-          Semantic_ir.Match
-            ( Semantic_ir.Ident "xs",
-              [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-                ( Semantic_ir.PList [ Semantic_ir.PVar "item" ],
-                  apply "List.rev"
-                    [ Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") ]
-                );
-                ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                  apply "interpose"
-                    [ Semantic_ir.Cons
-                        ( Semantic_ir.Ident "separator",
-                          Semantic_ir.Cons
-                            (Semantic_ir.Ident "item", Semantic_ir.Ident "acc") );
-                      Semantic_ir.Ident "rest" ] ) ] )
-        in
-        Ok
-          (typed_ir (TList inner)
-             (Semantic_ir.Let
-                ( [ (Semantic_ir.PVar "separator", separator.semantic_expr) ],
-                  Semantic_ir.LetRec
-                    ( "interpose",
-                      [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-                      interpose_body,
-                      [ Semantic_ir.List []; list_expr ] ) )))
-      else Error.error "interpose separator type must match collection elements"
-
 let interleave collections =
   if List.length collections < 2 then
     Error.error "interleave expects at least two collections"
@@ -688,7 +656,6 @@ let compile name args =
   | "repeat", [ count; value ] -> repeat count value
   | "repeat", [ value ] -> repeat_forever value
   | "cycle", [ collection ] -> cycle collection
-  | "interpose", [ separator; collection ] -> interpose separator collection
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
       partition name size collection
@@ -705,7 +672,6 @@ let compile name args =
     _ -> Error.error (name ^ " expects 1 arguments")
   | "repeat", _ -> Error.error "repeat expects value, or count and value"
   | "cycle", _ -> Error.error "cycle expects 1 collection"
-  | "interpose", _ -> Error.error "interpose expects separator and collection"
   | ("partition" | "partition-all"), _ ->
       Error.error (name ^ " expects size and collection")
   | "take-nth", _ -> Error.error "take-nth expects n and collection"

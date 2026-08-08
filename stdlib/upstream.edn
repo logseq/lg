@@ -45,6 +45,7 @@
                :reason :finite-static-sequences-use-count-and-take}
     reverse {:status :static-adaptation
              :reason :uses-upstream-reduce-path-without-reversible-protocol-fast-path}
+    interpose {:status :ported}
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}}}
 
