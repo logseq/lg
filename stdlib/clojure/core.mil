@@ -67,6 +67,14 @@
 (signature clojure.core/qualified-symbol? :fn<symbol;bool>)
 (signature clojure.core/simple-keyword? :fn<keyword;bool>)
 (signature clojure.core/qualified-keyword? :fn<keyword;bool>)
+(signature clojure.core/counted? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/seqable? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/empty? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/not-empty [value]
+  :fn<vector<value>;option<vector<value>>>)
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
 (signature clojure.core/bit-and-two :fn<int;int;int>)

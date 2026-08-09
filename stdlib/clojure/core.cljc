@@ -566,21 +566,45 @@
   [x]
   (not (__lg_nil-predicate (namespace x))))
 
-(defmacro counted? [x]
-  `(let [value# ~x]
-     (or (map? value#) (satisfies? ICounted value#))))
+(defn counted?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or
+                   (list 'map? value)
+                   (list 'satisfies? 'clojure.core/ICounted value)))))}
+  [x]
+  (satisfies? ICounted x))
 
-(defmacro seqable? [x]
-  `(let [value# ~x]
-     (or (nil? value#) (map? value#) (satisfies? ISeqable value#))))
+(defn seqable?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or
+                   (list 'nil? value)
+                   (list 'map? value)
+                   (list 'satisfies? 'clojure.core/ISeqable value)))))}
+  [x]
+  (satisfies? ISeqable x))
 
-(defmacro empty? [coll]
-  `(let [coll# ~coll]
-     (not (seq coll#))))
+(defn empty?
+  {:inline
+   (fn [coll]
+     (let [value (gensym)]
+       (list 'let [value coll] (list 'not (list 'seq value)))))}
+  [coll]
+  (not (seq coll)))
 
-(defmacro not-empty [coll]
-  `(let [coll# ~coll]
-     (if (seq coll#) coll# nil)))
+(defn not-empty
+  {:inline
+   (fn [coll]
+     (let [value (gensym)]
+       (list 'let [value coll]
+             (list 'if (list 'seq value) value nil))))}
+  [coll]
+  (if (seq coll) coll nil))
 
 (defn inc [x]
   (+ x 1))

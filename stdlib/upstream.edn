@@ -150,9 +150,9 @@
     boolean? {:status :static-adaptation
               :reason :source-function-provides-a-first-class-boolean-predicate-while-its-inline-definition-preserves-upstream-true-or-false-control-flow-and-single-evaluation}
     empty? {:status :static-adaptation
-            :reason :source-macro-uses-the-upstream-seq-fallback-for-all-static-seqables-because-composing-optional-seqable-and-counted-capabilities-would-leak-compiler-protocol-witness-helpers-into-generated-runtime-code}
+            :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-uses-the-upstream-seq-fallback-for-all-supported-static-seqables}
     not-empty {:status :static-adaptation
-               :reason :call-site-source-macro-preserves-the-upstream-seq-guard-and-the-input-concrete-collection-type-in-the-present-option-branch}
+               :reason :polymorphic-vector-source-function-returns-an-optional-vector-while-its-inline-definition-preserves-the-upstream-seq-guard-and-each-direct-call-input-collection-type}
     integer? {:status :static-adaptation
               :reason :source-function-provides-a-first-class-integer-predicate-while-its-inline-definition-specializes-direct-calls-because-lg-separates-integral-and-floating-static-types}
     pos-int? {:status :static-adaptation
@@ -176,9 +176,9 @@
     qualified-keyword? {:status :static-adaptation
                         :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
     counted? {:status :static-adaptation
-              :reason :source-macro-preserves-upstream-icounted-protocol-satisfaction-through-the-static-core-protocol-registry-and-recognizes-structural-maps-before-they-are-fully-backed-by-the-persistent-hash-map-protocol-receiver}
+              :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-maps-and-static-icounted-protocol-satisfaction}
     seqable? {:status :static-adaptation
-              :reason :source-macro-preserves-upstream-nil-and-iseqable-branches-recognizes-structural-maps-and-treats-supported-arrays-and-strings-as-static-iseqable-implementations-rather-than-javascript-special-cases}
+              :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-nil-maps-and-static-iseqable-implementations}
     indexed? {:status :blocked-static-typing
               :reason :lg-indexed-capability-currently-includes-linear-list-lookup-and-cannot-represent-clojurescript-constant-time-iindexed-without-a-distinct-static-protocol}
     reduced {:status :static-adaptation

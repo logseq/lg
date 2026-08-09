@@ -21686,6 +21686,44 @@ let test_source_identifier_predicates_are_statically_first_class () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange first-class identifier predicates must remain static"
 
+let test_source_collection_predicates_are_statically_first_class () =
+  let source =
+    {|
+(ns source-first-class-collection-predicate-app
+  (:require [cljs.core :as core
+             :refer [counted? seqable? empty? not-empty]]))
+
+(def counted-predicate counted?)
+(def seqable-predicate core/seqable?)
+(def empty-predicate clojure.core/empty?)
+(def keep-nonempty not-empty)
+
+(println (counted-predicate [1]))
+(println (counted-predicate ["value"]))
+(println (seqable-predicate [1]))
+(println (seqable-predicate ["value"]))
+(println (empty-predicate []))
+(println (not (empty-predicate ["value"])))
+(println (= [1] (keep-nonempty [1])))
+(println (nil? (keep-nonempty [])))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_first_class_collection_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class collection predicates must remain static";
+  assert_ocaml_runs "source_first_class_collection_predicates" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_first_class_collection_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange first-class collection predicates must remain static"
+
 let test_source_numeric_coercions_match_clojurescript () =
   let source =
     {|
@@ -38260,6 +38298,8 @@ let tests =
       test_source_scalar_predicates_are_statically_first_class );
     ( "source identifier predicates are statically first-class",
       test_source_identifier_predicates_are_statically_first_class );
+    ( "source collection predicates are statically first-class",
+      test_source_collection_predicates_are_statically_first_class );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
     ( "source control macros match ClojureScript",

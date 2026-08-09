@@ -68,7 +68,8 @@ for name in \
   'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?' \
   'ident?' 'simple-ident?' 'qualified-ident?' \
   'simple-symbol?' 'qualified-symbol?' \
-  'simple-keyword?' 'qualified-keyword?'; do
+  'simple-keyword?' 'qualified-keyword?' \
+  'counted?' 'seqable?' 'empty?' 'not-empty'; do
   if ! grep -F "(defn $name" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a function" >&2
@@ -77,15 +78,6 @@ for name in \
   if ! sed -n "/^(defn $name$/,/^$/p" "$root/stdlib/clojure/core.cljc" \
     | grep -F '{:inline' >/dev/null; then
     echo "clojure.core/$name is missing its source inline specialization" >&2
-    exit 1
-  fi
-done
-
-for name in \
-  'empty?' 'not-empty' 'counted?' 'seqable?'; do
-  if ! grep -F "(defmacro $name " \
-    "$root/stdlib/clojure/core.cljc" >/dev/null; then
-    echo "clojure.core/$name is not source-defined as a macro" >&2
     exit 1
   fi
 done
