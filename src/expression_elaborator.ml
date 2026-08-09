@@ -193,17 +193,17 @@ and compile_expr_unlocated scope (env : Env.t) = function
             | expanded_bindings :: expanded_body_forms ->
                 compile_let scope env expanded_bindings expanded_body_forms
             | [] -> assert false)
-  | FList [ FSymbol "if-let"; binding; then_form; else_form ] ->
+  | FList [ FSymbol "__lg_if-let"; binding; then_form; else_form ] ->
       compile_if_let scope env binding then_form else_form
-  | FList [ FSymbol "if-some"; binding; then_form; else_form ] ->
+  | FList [ FSymbol "__lg_if-some"; binding; then_form; else_form ] ->
       compile_if_some scope env binding then_form else_form
-  | FList (FSymbol "if-let" :: _) ->
+  | FList (FSymbol "__lg_if-let" :: _) ->
       Error.error "if-let requires [name option], then, and else"
-  | FList (FSymbol "if-some" :: _) ->
+  | FList (FSymbol "__lg_if-some" :: _) ->
       Error.error "if-some requires [name option], then, and else"
-  | FList (FSymbol "when-let" :: binding :: body_forms) ->
+  | FList (FSymbol "__lg_when-let" :: binding :: body_forms) ->
       compile_when_let scope env binding body_forms
-  | FList (FSymbol "when-some" :: binding :: body_forms) ->
+  | FList (FSymbol "__lg_when-some" :: binding :: body_forms) ->
       compile_when_some scope env binding body_forms
   | FList [ FSymbol "let-some"; bindings; then_form; else_form ] ->
       compile_let_some scope env bindings then_form else_form

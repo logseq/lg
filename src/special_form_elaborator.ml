@@ -2152,7 +2152,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             (condition_code, then_expr, else_expr))))))
     | FList
         [
-          FSymbol "if-some";
+          FSymbol "__lg_if-some";
           FVector
             [
               FSymbol value_name;
@@ -2256,14 +2256,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                         ] )))))))
     | FList
         [
-          FSymbol ("if-let" as binding_form_name);
+          FSymbol ("__lg_if-let" as binding_form_name);
           binding_form;
           then_form;
           else_form;
         ]
     | FList
         [
-          FSymbol ("if-some" as binding_form_name);
+          FSymbol ("__lg_if-some" as binding_form_name);
           binding_form;
           then_form;
           else_form;
@@ -2276,7 +2276,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         | Error _ as error -> error
         | Ok (pattern, option_form) ->
             compile_option_match
-              ~require_truthy:(binding_form_name = "if-let")
+              ~require_truthy:(binding_form_name = "__lg_if-let")
               scope env pattern option_form
               (fun some_env ->
                 compile_loop_tail scope some_env loop_name param_tys then_form)

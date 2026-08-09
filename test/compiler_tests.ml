@@ -759,10 +759,10 @@ let test_map_literals_accept_computed_keys () =
   nil)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "map_literals_accept_computed_keys" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_dissoc_nil_is_nil () =
   let source =
@@ -1208,7 +1208,7 @@ let test_if_some_and_when_some_bind_option_payloads () =
 (println (str found ":" missing))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_some_and_when_some_bind_option_payloads" "9\n8:0\n"
     ocaml_source
 
@@ -1233,11 +1233,11 @@ let test_if_some_preserves_seqable_capability_payloads () =
      (nth result 2) (nth result 3)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_some_preserves_seqable_capability_payloads"
     "10\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_when_some_binding_constraints_remain_static () =
   let source =
@@ -1317,7 +1317,7 @@ let test_if_let_and_if_some_distinguish_false_from_nil () =
        (if-some [bound value] :then :else)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_let_and_if_some_distinguish_false_from_nil"
     ":else::then\n" ocaml_source
 
@@ -3043,7 +3043,7 @@ let test_required_arguments_are_wrapped_for_option_parameters () =
 (println (call-option 42))
 |}
   in
-  let ocaml = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "required_arguments_are_wrapped_for_option_parameters"
     "42\n" ocaml
 
@@ -3080,7 +3080,7 @@ let test_declared_option_returns_keep_match_payloads_static () =
   (+ (if-some [eid (entid (Lookup 41))] eid 0) 1))
 |}
   in
-  let ocaml = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "declared option match returns must not use Runtime_dynamic";
   assert_ocaml_runs "declared_option_returns_keep_match_payloads_static"
@@ -3126,7 +3126,7 @@ let test_external_variant_option_returns_keep_payloads_static () =
   (Some (entid-strict entity-ref)))
 |}
   in
-  let ocaml = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "external closed variant options must not use Runtime_dynamic"
 
@@ -5659,11 +5659,11 @@ let test_reduce_over_keys_keeps_accessor_map_key_type () =
 (println (limit-rel fixture (conj (set-of :string) "x")))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_over_keys_keeps_accessor_map_key_type" "1\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_current_datascript_filter_protocol_accepts_nominal_callback () =
   let source =
@@ -13260,8 +13260,9 @@ let test_threading_and_option_binding_forms_compile () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "threading_and_option_binding_forms_compile"
     "42:0:42:value=41:5:9:7:42:missing:5:value=41\n" ocaml_source;
-  Lg.Compiler.compile_string {|(def bad (if-let [x] x 0))|}
-  |> expect_error "if-let requires [name option], then, and else";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_if_let_binding.cljc"
+    {|(def bad (if-let [x] x 0))|}
+  |> expect_error_contains "if-let requires exactly two binding forms";
   compile_with_stdlib_result Lg.Target.Native "test/bad_basic_thread.cljc"
     {|(def bad (-> 1 2))|}
   |> expect_error_contains "is not callable";
@@ -13636,8 +13637,9 @@ let test_projected_optional_nominal_values_keep_protocol_witnesses () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, storage_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state storage_source
+      Lg.Compiler.compile_chunk ~target stdlib.state storage_source
       |> expect_ok
     in
     let state, db_ocaml =
@@ -13646,7 +13648,8 @@ let test_projected_optional_nominal_values_keep_protocol_witnesses () =
     let _, consumer_ocaml =
       Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
     in
-    String.concat "\n" [ storage_ocaml; db_ocaml; consumer_ocaml ]
+    String.concat "\n"
+      [ stdlib.ocaml_source; storage_ocaml; db_ocaml; consumer_ocaml ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs
@@ -13853,13 +13856,13 @@ let test_weak_references_store_nominal_values_without_protocol_witnesses () =
        (same-box-identity? box (->Box 42))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "weak_references_store_nominal_values_without_protocol_witnesses"
     "42\ntrue:false\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_mutating_empty_vector_refs_infers_values_from_vswap () =
   let source =
@@ -13888,11 +13891,11 @@ let test_mutating_empty_vector_refs_infers_values_from_vswap () =
     (count (alive-databases []))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "mutating_empty_vector_refs_infers_values_from_vswap" "1:0\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_module_empty_vector_refs_use_static_boundary () =
   let source =
@@ -13923,11 +13926,11 @@ let test_module_empty_vector_refs_use_static_boundary () =
 (println (:id (nth (alive-databases) 0)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "module_empty_vector_refs_use_static_boundary"
     "42\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nested_reduce_kv_infers_map_value_collections () =
   let source =
@@ -15048,14 +15051,14 @@ let test_option_map_parameters_adapt_record_shaped_literals_before_lifting () =
 (println (count-maybe-map nil))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "option map adaptation must remain static";
   assert_ocaml_runs
     "option_map_parameters_adapt_record_shaped_literals_before_lifting"
     "2\n0\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_truthy_signature_type_supports_static_source_functions () =
   let source =
@@ -15471,11 +15474,11 @@ let test_multi_arity_defn_accepts_nil_for_destructured_options () =
        (parse-options 2 {:visitor (fn [^:int value] (+ value 1))})))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "multi_arity_defn_accepts_nil_for_destructured_options"
     "1:3\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nullable_destructured_options_flow_through_forwarding_functions () =
   let source =
@@ -15489,12 +15492,12 @@ let test_nullable_destructured_options_flow_through_forwarding_functions () =
 (println (parse-options 1 nil))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "nullable_destructured_options_flow_through_forwarding_functions"
     "1\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_multi_arity_export_preserves_inferred_optional_parameter () =
   let model =
@@ -15538,8 +15541,9 @@ let test_multi_arity_export_preserves_inferred_optional_parameter () =
 (println (api/choose-closed (model/->Source) (model/->Value 2)))
 |}
   in
+  let stdlib = compiled_stdlib Lg.Target.Native in
   let state, model_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state model |> expect_ok
+    Lg.Compiler.compile_chunk stdlib.state model |> expect_ok
   in
   let state, api_ocaml =
     Lg.Compiler.compile_chunk state api |> expect_ok
@@ -15548,7 +15552,9 @@ let test_multi_arity_export_preserves_inferred_optional_parameter () =
   if string_contains_substring consumer_ocaml "Option.get (Some" then
     failwith "an exported optional overload must not unwrap an inline Some";
   assert_ocaml_runs "multi_arity_export_preserves_inferred_optional_parameter"
-    "2\n" (String.concat "\n" [ model_ocaml; api_ocaml; consumer_ocaml ])
+    "2\n"
+    (String.concat "\n"
+       [ stdlib.ocaml_source; model_ocaml; api_ocaml; consumer_ocaml ])
 
 let test_contains_propagates_protocol_set_element_to_parameter () =
   let source =
@@ -15633,7 +15639,7 @@ let test_multi_arity_calls_project_structural_row_arguments () =
               (forward 3 {:replacement nil})))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "multi_arity_calls_project_structural_row_arguments"
     "2:3\n" ocaml_source
 
@@ -18016,7 +18022,8 @@ let test_recursive_protocol_vectors_keep_static_protocol_elements () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_protocol_frame_stacks_require_sum_elements () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native
+    "test/recursive_protocol_frame_stacks.cljc"
     {|
 (defprotocol IFrame
   (-run [this]))
@@ -18317,9 +18324,9 @@ let test_if_some_heterogeneous_vectors_require_sum_elements () =
 (println (count (choose false)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "heterogeneous vector";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_string_with_stdlib ~target:Lg.Target.Melange source
   |> expect_error_contains "define a sum type"
 
 let test_conditional_heterogeneous_vectors_require_sum_elements () =
@@ -19044,11 +19051,11 @@ let test_if_some_preserves_nominal_array_elements () =
 (println (:key (aget (rotate (make-tree 1) (Some (make-tree 2))) 1)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_some_preserves_nominal_array_elements" "2\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_melange_array_dot_map_uses_static_array_map () =
   let source =
@@ -20269,13 +20276,13 @@ let test_protocol_calls_preserve_static_non_receiver_arguments () =
     false))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "protocol_calls_preserve_static_non_receiver_arguments"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_update_preserves_named_records_with_opaque_fields () =
   let source =
@@ -21898,6 +21905,45 @@ let test_source_logical_macros_match_clojurescript () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange source logical macros must remain static"
 
+let test_source_binding_control_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-binding-control-app
+  (:require [cljs.core :as core
+             :refer [if-let when-let if-some when-some]]))
+
+(def evaluations (atom 0))
+(println (= :else (if-let [_value false] :then :else)))
+(println (= false (if-some [value false] value true)))
+(println (= 7 (if-let [value (do (swap! evaluations inc) 7)] value 0)))
+(println (= 1 @evaluations))
+(println (= 8 (when-let [value 8] value)))
+(println (= false (when-some [value false] value)))
+(println (nil? (when-let [value nil] value)))
+(println (nil? (when-some [value nil] value)))
+(println (= 9 (core/if-let [value 9] value 0)))
+(println (= 10 (clojure.core/if-some [value 10] value 0)))
+(def empty-evaluations (atom 0))
+(println (nil? (when-let [_ (do (swap! empty-evaluations inc) true)])))
+(println (nil? (when-some [_ (do (swap! empty-evaluations inc) false)])))
+(println (= 2 @empty-evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 13 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_binding_control_macros.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source binding control macros must remain static";
+  assert_ocaml_runs "source_binding_control_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_binding_control_macros.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source binding control macros must remain static"
+
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
     compile_chunks_with_stdlib Lg.Target.Native
@@ -22972,7 +23018,7 @@ let test_get_infers_unknown_key_from_known_map () =
       variables)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "known map key evidence must keep get statically typed"
 
@@ -23183,11 +23229,11 @@ let test_record_arguments_fill_missing_optional_fields () =
 (println (option-value {}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "record_arguments_fill_missing_optional_fields" "2\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reify_preserves_static_protocol_payload () =
   let source =
@@ -23438,11 +23484,11 @@ let test_nested_update_reducers_infer_optional_set_values () =
       :indexed)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nested_update_reducers_infer_optional_set_values" "1\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_recur_unpacks_dynamic_protocol_results_to_static_records () =
   let source =
@@ -23784,7 +23830,7 @@ let test_namespace_accepts_closed_identifier_alternatives () =
        (namespace-if-keyword (StringInput "user/name"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "namespace_accepts_closed_identifier_alternatives"
     "true:false\n" ocaml_source
 
@@ -24220,17 +24266,24 @@ let test_if_some_first_fuses_first_and_next_for_tail_recursion () =
 (println total)
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_stdlib = compiled_stdlib Lg.Target.Native in
+  let _, native_program =
+    Lg.Compiler.compile_chunk native_stdlib.state source |> expect_ok
+  in
+  let native_source = native_stdlib.ocaml_source ^ "\n" ^ native_program in
   assert_ocaml_runs "if_some_first_fuses_first_and_next_for_tail_recursion"
     "6\n" native_source;
-  if string_contains_substring native_source "S.uncons" then
+  if string_contains_substring native_program "S.uncons" then
     failwith "tail-recursive first/next traversal must not allocate an option tuple";
-  if not (string_contains_substring native_source "Seq.Cons") then
+  if not (string_contains_substring native_program "Seq.Cons") then
     failwith "tail-recursive first/next traversal must match the sequence node";
-  if string_contains_substring native_source "S.drop 1 remaining" then
+  if string_contains_substring native_program "S.drop 1 remaining" then
     failwith "fused first/next traversal must reuse the matched sequence tail";
-  let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  let melange_stdlib = compiled_stdlib Lg.Target.Melange in
+  let _, melange_source =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange melange_stdlib.state
+      source
+    |> expect_ok
   in
   if
     not
@@ -25111,11 +25164,11 @@ let test_concat_lifts_values_into_nullable_element_types () =
          (concat optional-values ["b"]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "concat_lifts_values_into_nullable_element_types"
     "(\"a\" \"nil\" \"b\")\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_sequence_functions_reject_bad_functions () =
   Lg.Compiler.compile_string {|(def x (filterv (fn [^:string s] true) [1 2]))|}
@@ -25271,13 +25324,13 @@ let test_optional_record_fields_keep_precise_types () =
 (println (pr-str (duplicate-first-value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "precise optional record fields must remain static";
   assert_ocaml_runs "optional_record_fields_keep_precise_types"
     "[7 7]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_rseq_dispatches_to_reversible_protocol () =
   let source =
@@ -26732,14 +26785,14 @@ let test_nested_keyword_lookup_preserves_nullable_map_evidence () =
 |}
   in
   let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Native source |> expect_ok
   in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "nested nullable record lookup must remain statically typed";
   assert_ocaml_runs "nested_keyword_lookup_preserves_nullable_map_evidence"
     "true:true:true:true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_symbol_predicate_narrows_dynamic_value_in_then_branch () =
   let source =
@@ -28171,11 +28224,11 @@ let test_reduce_branch_merges_with_typed_optional_fallback () =
        (= (Some {}) (:upserts empty-resolved))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_branch_merges_with_typed_optional_fallback"
     "true:true:true:true:true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nested_reducers_preserve_closed_entity_lookups () =
   let source =
@@ -28963,11 +29016,11 @@ let test_conj_uses_static_option_guards_for_variant_values () =
 (println (count none))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "conj_uses_static_option_guards_for_variant_values"
     "2:true:true\n1:true:false\n0\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_select_keys_accepts_runtime_seqable_key_collections () =
   let source =
@@ -29091,11 +29144,11 @@ let test_structural_options_preserve_heterogeneous_fields () =
 (println (count indexes))
   |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "structural_options_preserve_heterogeneous_fields" "3\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_keep_drops_only_nil_across_generic_seqables () =
   let source =
@@ -30315,14 +30368,8 @@ let test_variadic_nested_seqable_preserves_static_witness () =
 |}
   in
   let compile target =
-    let state, util_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
-      |> expect_ok
-    in
-    let _, app_ocaml =
-      Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
-    in
-    util_ocaml ^ "\n" ^ app_ocaml
+    compile_chunks_with_stdlib target
+      [ ("test/util.cljc", util_source); ("test/app.cljc", app_source) ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "variadic_nested_seqable_preserves_static_witness" "true\n"
@@ -30861,13 +30908,13 @@ let test_typed_named_records_preserve_mutable_field_identity () =
 (println (deref (:value mutable-value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_named_records_preserve_mutable_field_identity"
     "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_record_constructors_preserve_explicit_ref_fields () =
   let source =
@@ -31987,7 +32034,7 @@ let test_reduce_kv_preserves_captured_value_bindings () =
 (println (add-captured (Some 10)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_kv_preserves_captured_value_bindings"
     "11\n" ocaml_source
 
@@ -32592,11 +32639,11 @@ let test_recursive_map_accumulator_specializes_from_static_consumer () =
     (pr-str (get (collect-current-section [4 5]) :items []))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "recursive_map_accumulator_static_consumer"
     "20:[1 2 3]:[4 5]\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_vector_accumulator_infers_from_typed_vector_operation () =
   let source =
@@ -32663,10 +32710,10 @@ let test_reduce_partition_callback_infers_static_accumulator_and_items () =
 (println (str (get cache :a 0) ":" (get cache :b 0)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_partition_static_callback" "1:3\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_peek_rejects_unsupported_collections () =
   Lg.Compiler.compile_string {|(def x (peek (hash-set 1)))|}
@@ -32766,7 +32813,7 @@ let test_if_some_propagates_variant_match_type_to_map_lookup () =
 (println (stored-item-size {:item (TextItem "four")}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "if_some_propagates_variant_match_type_to_map_lookup"
     "4\n" ocaml_source
 
@@ -38092,6 +38139,8 @@ let tests =
       test_source_basic_control_macros_match_clojure );
     ( "source logical macros match ClojureScript",
       test_source_logical_macros_match_clojurescript );
+    ( "source binding control macros match ClojureScript",
+      test_source_binding_control_macros_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

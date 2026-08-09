@@ -341,14 +341,46 @@ let rec eval context = function
           else
             eval context
               (match else_forms with form :: _ -> form | [] -> FSymbol "nil"))
-  | FList [ FSymbol "when-some"; FVector [ pattern; expression ]; body ] -> (
+  | FList
+      [
+        FSymbol ("__lg_if-let" | "__lg_if-some" as binding_name);
+        FVector [ pattern; expression ];
+        then_form;
+        else_form;
+      ] -> (
       match eval context expression with
       | Error _ as err -> err
-      | Ok (Form (FSymbol "nil")) -> Ok nil
+      | Ok value ->
+          let present =
+            match binding_name with
+            | "__lg_if-let" -> truthy value
+            | "__lg_if-some" -> (
+                match value with Form (FSymbol "nil") -> false | _ -> true)
+            | _ -> assert false
+          in
+          if not present then eval context else_form
+          else (
+            match bind_pattern context.locals pattern value with
+            | Error _ as err -> err
+            | Ok locals -> eval { context with locals } then_form))
+  | FList
+      (FSymbol ("__lg_when-let" | "__lg_when-some" as binding_name)
+      :: FVector [ pattern; expression ] :: body) -> (
+      match eval context expression with
+      | Error _ as err -> err
       | Ok value -> (
-          match bind_pattern context.locals pattern value with
-          | Error _ as err -> err
-          | Ok locals -> eval { context with locals } body))
+          let present =
+            match binding_name with
+            | "__lg_when-let" -> truthy value
+            | "__lg_when-some" -> (
+                match value with Form (FSymbol "nil") -> false | _ -> true)
+            | _ -> assert false
+          in
+          if not present then Ok nil
+          else
+            match bind_pattern context.locals pattern value with
+            | Error _ as err -> err
+            | Ok locals -> eval_body { context with locals } body))
   | FList (FSymbol "let" :: FVector bindings :: body) ->
       eval_let context bindings body
   | FList (FSymbol "binding" :: FVector bindings :: body) ->

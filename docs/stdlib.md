@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 267 source entries (31.23%), 90 typed
+macro surfaces. The current baseline is 271 source entries (31.70%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 276 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 272 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -259,6 +259,12 @@ expression elaboration, inference, or compile-time evaluation. Literal
 truthy/falsey prefixes and unreachable tails are pruned before static branch
 convergence, so `(and true value)` and `(or nil value)` retain `value`'s exact
 type. The Logseq scan finds 3,778 direct `and` and 3,277 direct `or` forms.
+The binding controls `if-let`, `when-let`, `if-some`, and `when-some` are
+source macros over internal typed option-binding primitives. They preserve
+single evaluation, destructuring, truthy-versus-non-nil selection, public
+arities, and empty-body evaluation without leaving public-name compiler or
+macro-evaluator cases. The Logseq scan finds 591 direct `if-let`, 1,706 direct
+`when-let`, 9 direct `if-some`, and 6 direct `when-some` forms.
 The foundational `->` and `->>` macros now use the pinned ClojureScript source
 loop as well. Symbol, keyword, and call-form steps preserve order, and
 step-form type-hint metadata round-trips through the compile-time `meta` and

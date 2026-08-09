@@ -92,6 +92,16 @@ if grep -F 'FList (FSymbol "and" :: forms) -> compile_logical' \
   exit 1
 fi
 
+for name in if-let when-let if-some when-some; do
+  if grep -F "FSymbol \"$name\"" "$root/src/expression_elaborator.ml" \
+      "$root/src/macro_expander.ml" >/dev/null \
+    || grep -F "FSymbol (\"$name\"" "$root/src/expression_elaborator.ml" \
+      "$root/src/special_form_elaborator.ml" >/dev/null; then
+    echo "clojure.core/$name still has public-name compiler ownership" >&2
+    exit 1
+  fi
+done
+
 if grep -F 'FSymbol "not"' "$root/src/type_inference.ml" >/dev/null \
   || grep -F '"not" | "nil?"' "$root/src/call_elaborator.ml" >/dev/null \
   || grep -F '| "not" -> compile_not' "$root/src/core_boolean.ml" >/dev/null; then

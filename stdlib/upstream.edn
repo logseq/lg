@@ -26,6 +26,14 @@
          :reason :source-macro-preserves-upstream-left-to-right-short-circuit-and-last-or-first-falsey-value-semantics-through-an-internal-call-site-specialized-static-logical-primitive}
     or {:status :static-adaptation
         :reason :source-macro-preserves-upstream-left-to-right-short-circuit-and-first-truthy-or-last-value-semantics-through-an-internal-call-site-specialized-static-logical-primitive}
+    if-let {:status :static-adaptation
+            :reason :source-macro-preserves-upstream-single-evaluation-truthy-binding-destructuring-and-two-or-three-form-arities-through-an-internal-static-option-binding-primitive}
+    when-let {:status :static-adaptation
+              :reason :source-macro-preserves-upstream-single-evaluation-truthy-binding-destructuring-and-variadic-body-through-an-internal-static-option-binding-primitive}
+    if-some {:status :static-adaptation
+             :reason :source-macro-preserves-upstream-single-evaluation-non-nil-binding-destructuring-and-two-or-three-form-arities-through-an-internal-static-option-binding-primitive}
+    when-some {:status :static-adaptation
+               :reason :source-macro-preserves-upstream-single-evaluation-non-nil-binding-destructuring-and-variadic-body-through-an-internal-static-option-binding-primitive}
     doto {:status :ported
           :reason :source-macro-preserves-upstream-single-evaluation-ordered-threading-and-original-result}
     when-first {:status :static-adaptation

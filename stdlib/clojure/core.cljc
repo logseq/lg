@@ -63,6 +63,46 @@
 (defmacro or [& forms]
   `(__lg_logical-or ~@forms))
 
+(defmacro if-let
+  ([bindings then]
+   `(if-let ~bindings ~then nil))
+  ([bindings then else & oldform]
+   (assert (vector? bindings) "if-let requires a binding vector")
+   (assert (= 2 (count bindings))
+           "if-let requires exactly two binding forms")
+   (assert (empty? oldform) "if-let accepts one or two result forms")
+   (let [[form test] bindings]
+     `(__lg_if-let [~form ~test] ~then ~else))))
+
+(defmacro when-let [bindings & body]
+  (assert (vector? bindings) "when-let requires a binding vector")
+  (assert (= 2 (count bindings))
+          "when-let requires exactly two binding forms")
+  (let [[form test] bindings]
+    (if body
+      `(__lg_when-let [~form ~test] ~@body)
+      `(__lg_when-let [~form ~test] nil))))
+
+(defmacro if-some
+  ([bindings then]
+   `(if-some ~bindings ~then nil))
+  ([bindings then else & oldform]
+   (assert (vector? bindings) "if-some requires a binding vector")
+   (assert (= 2 (count bindings))
+           "if-some requires exactly two binding forms")
+   (assert (empty? oldform) "if-some accepts one or two result forms")
+   (let [[form test] bindings]
+     `(__lg_if-some [~form ~test] ~then ~else))))
+
+(defmacro when-some [bindings & body]
+  (assert (vector? bindings) "when-some requires a binding vector")
+  (assert (= 2 (count bindings))
+          "when-some requires exactly two binding forms")
+  (let [[form test] bindings]
+    (if body
+      `(__lg_when-some [~form ~test] ~@body)
+      `(__lg_when-some [~form ~test] nil))))
+
 (defmacro doto [x & forms]
   (let [gx (gensym)]
     `(let [~gx ~x]

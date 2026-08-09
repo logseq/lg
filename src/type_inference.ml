@@ -1223,7 +1223,7 @@ let rec inferred_form_type params = function
       | target_ty -> target_ty)
   | FList
       [
-        FSymbol ("if-some" | "if-let");
+        FSymbol ("__lg_if-some" | "__lg_if-let");
         FVector [ FSymbol binding; option_form ];
         then_form;
         else_form;
@@ -1782,7 +1782,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    infer_expected then_expected params then_form)))
     | ( FList
           [
-            FSymbol ("if-some" | "if-let");
+            FSymbol ("__lg_if-some" | "__lg_if-let");
             FVector [ FSymbol _binding; _option_form ];
             _then_form;
             else_form;
@@ -3651,7 +3651,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
              field_forms)
     | FList
         [
-          FSymbol ("if-some" | "if-let");
+          FSymbol ("__lg_if-some" | "__lg_if-let");
           FVector [ FSymbol binding; option_form ];
           then_form;
           else_form;
@@ -3734,7 +3734,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind infer_option (fun params -> infer_form params else_form)
         )
     | FList
-        (FSymbol ("when-some" | "when-let")
+        (FSymbol ("__lg_when-some" | "__lg_when-let")
         :: FVector [ FSymbol binding; option_form ]
         :: body_forms) -> (
         let initial_payload_ty =
