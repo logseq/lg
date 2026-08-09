@@ -132,18 +132,31 @@ let narrow_symbol_predicates scope env condition body =
         List.concat_map narrowed_symbols forms
     | _ -> []
   in
+  let is_core_symbol expected actual =
+    actual = expected || String.ends_with ~suffix:("/" ^ expected) actual
+  in
   let rec symbols_matching predicate_name = function
     | FList [ FSymbol predicate; FSymbol name ]
-      when predicate = predicate_name
-           || String.ends_with ~suffix:("/" ^ predicate_name) predicate ->
+      when is_core_symbol predicate_name predicate ->
         [ name ]
     | FList (FSymbol name :: forms)
       when name = "and" || String.ends_with ~suffix:"/and" name ->
         List.concat_map (symbols_matching predicate_name) forms
     | _ -> []
   in
+  let rec symbols_known_non_nil = function
+    | FList
+        [ FSymbol negation; FList [ FSymbol nil_predicate; FSymbol name ] ]
+      when is_core_symbol "not" negation
+           && is_core_symbol "nil?" nil_predicate ->
+        [ name ]
+    | FList (FSymbol name :: forms)
+      when name = "and" || String.ends_with ~suffix:"/and" name ->
+        List.concat_map symbols_known_non_nil forms
+    | _ -> []
+  in
   let nullable_names =
-    (narrowed_symbols condition @ symbols_matching "some?" condition)
+    (narrowed_symbols condition @ symbols_known_non_nil condition)
     |> List.sort_uniq String.compare
     |> List.filter (fun name ->
            match Resolver.lookup_binding scope env name with

@@ -1074,7 +1074,6 @@ let untyped_first_class_function_error = function
     | "re-pattern"
     | "re-seq"
     | "set"
-    | "some?"
     | "str"
     | "string?"
     | "symbol?"
@@ -1082,8 +1081,7 @@ let untyped_first_class_function_error = function
     | "true?"
     | "update"
     | "vec"
-    | "vector"
-    | "boolean?" ) as name ->
+    | "vector" ) as name ->
       Some (untyped_first_class_collection_function_error name)
   | ( "clojure.core/dissoc"
     | "cljs.core/dissoc"

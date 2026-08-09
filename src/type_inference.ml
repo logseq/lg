@@ -3863,7 +3863,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "string?";
                "int?";
                "number?";
-               "boolean?";
                "array?";
                "vector?";
                "list?";
@@ -4159,7 +4158,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (add_record_field_constraint name keyword (TRef value_ty)
                      params)
                   (fun params -> infer_form params value)))
-    | FList [ FSymbol ("nil?" | "some?"); value ] ->
+    | FList [ FSymbol "nil?"; value ] ->
         let inferred_ty = inferred_form_type params value in
         let expected_ty =
           match inferred_ty with

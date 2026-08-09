@@ -19,6 +19,14 @@
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}
     not {:status :ported}
+    some? {:status :static-adaptation
+           :reason :source-macro-preserves-the-upstream-not-nil-body-while-specializing-the-generic-nil-predicate-at-each-static-call-site}
+    boolean? {:status :static-adaptation
+              :reason :source-macro-preserves-the-upstream-true-or-false-control-flow-and-binds-the-argument-once-before-static-call-site-specialization}
+    true? {:status :typed-primitive
+           :reason :upstream-source-delegates-to-the-cljs-core-compiler-primitive-and-arbitrary-static-values-require-type-directed-literal-identity}
+    false? {:status :typed-primitive
+            :reason :upstream-source-delegates-to-the-cljs-core-compiler-primitive-and-arbitrary-static-values-require-type-directed-literal-identity}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
     ensure-reduced {:status :blocked-static-typing

@@ -40,6 +40,13 @@
 (defn not [x]
   (if x false true))
 
+(defmacro some? [x]
+  `(not (nil? ~x)))
+
+(defmacro boolean? [x]
+  `(let [value# ~x]
+     (or (true? value#) (false? value#))))
+
 (defn inc [x]
   (+ x 1))
 

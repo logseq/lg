@@ -496,9 +496,11 @@
  (deps
   check_no_source_core_fallbacks.sh
   ../../src/call_elaborator.ml
+  ../../src/core_boolean.ml
   ../../src/expression_support.ml
   ../../src/function_combinator_elaborator.ml
   ../../src/sequence_call_elaborator.ml
+  ../../src/special_form_elaborator.ml
   ../../src/type_inference.ml)
  (action
   (run sh %{dep:check_no_source_core_fallbacks.sh} ../..)))

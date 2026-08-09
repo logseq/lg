@@ -87,7 +87,6 @@ let compile_nil_predicate name args expected_nil =
 let compile name args =
   match name with
   | "nil?" -> compile_nil_predicate name args true
-  | "some?" -> compile_nil_predicate name args false
   | "true?" -> compile_bool_literal_predicate name args true
   | "false?" -> compile_bool_literal_predicate name args false
   | "int?" ->
@@ -99,10 +98,6 @@ let compile name args =
         Types.is_numeric args
   | "string?" -> compile_string_family_predicate name ~keyword:false args
   | "keyword?" -> compile_string_family_predicate name ~keyword:true args
-  | "boolean?" ->
-      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_bool"
-        (function TBool -> true | _ -> false)
-        args
   | "vector?" ->
       compile_runtime_type_predicate name
         "Lg_runtime.Runtime_dynamic.is_vector"

@@ -1375,7 +1375,7 @@ let test_type_predicates () =
        (seq? (list 1)) ":" (seq? [1]) ":" (vector? (list 1)) ":" (map? [1])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "type_predicates"
     "true:true:true:true:true:true:true:true:true:false:false:false\n"
     ocaml_source
@@ -11481,11 +11481,11 @@ let test_persistent_transient_map_is_seqable () =
        (some? (not-empty present-map))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "persistent_transient_map_is_seqable" "true:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_untyped_transient_vector_annotation_is_rejected () =
   Lg.Compiler.compile_string
@@ -13474,11 +13474,11 @@ let test_reducer_collection_types_keep_static_stringification () =
      (record source (source-name '$two))]))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reducer_collection_types_keep_static_stringification"
     "$one $two\n" native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_dynamic.polymorphic_str"
   then
@@ -15990,11 +15990,11 @@ let test_forward_optional_result_is_narrowed_before_closed_record_call () =
   (Some value))
 |}
   in
-  let native = Lg.Compiler.compile_string source |> expect_ok in
+  let native = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native "Runtime_dynamic" then
     failwith "forward optional record results must remain static";
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
   let pss_sources =
@@ -18366,11 +18366,11 @@ let test_nullable_sequence_branches_do_not_gain_nested_options () =
 (println (some? (.-value ^Holder holder)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nullable_sequence_branches_do_not_gain_nested_options"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nominal_sequence_branches_lift_into_nullable_results () =
   let source =
@@ -19148,13 +19148,13 @@ let test_static_sets_accept_static_record_lookup_values () =
 (println (some? (schema-datom? (Datom. :db/id))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "static_sets_accept_static_record_lookup_values" "true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_string_backed_sets_accept_optional_string_backed_lookup_values () =
   let source =
@@ -19167,7 +19167,7 @@ let test_string_backed_sets_accept_optional_string_backed_lookup_values () =
        (nil? (schema-attr None))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "string_backed_sets_accept_optional_string_backed_lookup_values"
     "true:true\n" ocaml_source
@@ -20743,13 +20743,13 @@ let test_named_record_inference_keeps_distinct_host_wrappers () =
 (println (read-option {:storage (Some 42)}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "named_record_inference_keeps_distinct_host_wrappers"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_update_infers_record_fields_from_updater_functions () =
   let source =
@@ -21093,6 +21093,61 @@ let test_source_array_values_rejects_invalid_arguments () =
   compile_with_stdlib_result Lg.Target.Native "test/mixed_array_values.cljc"
     {|(def values (array-values 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type"
+
+let test_source_some_and_boolean_predicates_preserve_static_contracts () =
+  let source =
+    {|
+(ns source-predicate-app
+  (:require [cljs.core :as core :refer [some? boolean?]]))
+
+(def evaluations (atom 0))
+(defn int-present? [^:int value] (some? value))
+(defn string-present? [^:string value] (core/some? value))
+(defn optional-present? [^:option<int> value]
+  (clojure.core/some? value))
+(defn optional-inc [^:option<int> value]
+  (if (some? value) (inc value) 0))
+
+(println (int-present? 1))
+(println (string-present? "value"))
+(println (optional-present? (Some 2)))
+(println (optional-present? nil))
+(println (= 3 (optional-inc (Some 2))))
+(println (= 0 (optional-inc nil)))
+(println (some? (do (swap! evaluations inc) nil)))
+(println (core/boolean? (do (swap! evaluations inc) true)))
+(println (boolean? false))
+(println (clojure.core/boolean? 1))
+(println (boolean? "false"))
+(println (boolean? nil))
+(println (= 2 @evaluations))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source predicates must preserve static values";
+  assert_ocaml_runs "source_some_and_boolean_predicates"
+    "true\ntrue\ntrue\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\nfalse\nfalse\nfalse\ntrue\n"
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source predicates must preserve static values";
+  compile_with_stdlib_result Lg.Target.Native "test/some_zero_arity.cljc"
+    {|(def result (some?))|}
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/some_two_arity.cljc"
+    {|(def result (some? 1 2))|}
+  |> expect_error_contains "unsupported macro arity 2";
+  compile_with_stdlib_result Lg.Target.Native "test/boolean_zero_arity.cljc"
+    {|(def result (boolean?))|}
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/boolean_two_arity.cljc"
+    {|(def result (boolean? true false))|}
+  |> expect_error_contains "unsupported macro arity 2"
 
 let test_batched_core_functions_infer_int_params () =
   let source =
@@ -22409,11 +22464,11 @@ let test_some_guard_narrows_nullable_records () =
               (named? (maybe-datom true))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "some_guard_narrows_nullable_records" "false:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_or_nil_guard_narrows_hinted_dynamic_sequence_elements () =
   let source =
@@ -22433,11 +22488,11 @@ let test_or_nil_guard_narrows_hinted_dynamic_sequence_elements () =
 (println (-run (Holder. (list (Datom. :name)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "or_nil_guard_narrows_hinted_dynamic_sequence_elements"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_parameters_widen_for_nullable_generic_recur_values () =
   let source =
@@ -22455,11 +22510,11 @@ let test_loop_parameters_widen_for_nullable_generic_recur_values () =
 (println (last-datom-present? (Holder. (seq (list (Datom. :name))))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_parameters_widen_for_nullable_generic_recur_values"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nullable_field_reads_do_not_widen_nominal_record_fields () =
   let source =
@@ -23078,7 +23133,7 @@ let test_match_coerces_nullable_branches () =
 (println (nil? (choose :missing)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "match_coerces_nullable_branches" "true\ntrue\n"
     ocaml_source
 
@@ -24296,11 +24351,11 @@ let test_first_returns_nil_for_empty_collections () =
 (println (+ (first (list 3 2 1)) 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "first_returns_nil_for_empty_collections"
     "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n3\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_generic_first_can_seed_a_dynamic_reduce () =
   let source =
@@ -24505,13 +24560,13 @@ let test_transducer_type_hints_infer_closed_nominal_record_fields () =
 (println (pr-str (-values (Projection. datoms))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "transducer_type_hints_infer_nominal_record_fields"
     "2\n(1 -1 2)\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_deftype_methods_flush_after_their_declared_dependencies () =
   let source =
@@ -29772,11 +29827,11 @@ let test_some_preserves_static_record_element_types () =
   (some? (find-a [(SomeAttr. :b) (SomeAttr. :a)])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "some_preserves_static_record_element_types" "true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
   Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (+ x 1)) [1 2]))|}
@@ -30056,11 +30111,11 @@ let test_first_supports_static_polymorphic_sets () =
 (println (some? (first users)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "first_supports_static_polymorphic_sets" "true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_empty_transduced_vector_sets_preserve_element_shape () =
   let source =
@@ -31548,7 +31603,7 @@ let test_closed_lists_preserve_optional_values () =
        (= 42 (first (context 42)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "closed_lists_preserve_optional_values" "true:true\n"
     ocaml_source
 
@@ -37139,6 +37194,8 @@ let tests =
       test_source_array_helpers_reject_incompatible_values );
     ( "source array-values rejects invalid arguments",
       test_source_array_values_rejects_invalid_arguments );
+    ( "source some? and boolean? preserve static contracts",
+      test_source_some_and_boolean_predicates_preserve_static_contracts );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",

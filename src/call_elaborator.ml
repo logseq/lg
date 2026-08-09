@@ -7951,8 +7951,8 @@ let create ~compile_expr =
                   Core_compare.compile ~env
                     (if name = "==" then "=" else name)
                     args))
-              | "nil?" | "some?" | "true?" | "false?" | "int?"
-              | "number?" | "string?" | "keyword?" | "boolean?" | "vector?"
+              | "nil?" | "true?" | "false?" | "int?"
+              | "number?" | "string?" | "keyword?" | "vector?"
               | "list?" | "seq?" | "set?" | "map?" | "fn?" | "coll?"
               | "associative?" | "indexed?" | "seqable?" | "counted?" ->
                   compile_boolean_call scope env name arg_forms
