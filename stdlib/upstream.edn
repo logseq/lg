@@ -306,6 +306,8 @@
                              :reason :source-port-preserves-upstream-utf16-code-unit-pairing-odd-tail-and-byte-length-finalization-over-a-linear-utf8-to-utf16-code-unit-array-boundary}
     hash-string* {:status :static-adaptation
                   :reason :source-port-preserves-upstream-null-empty-and-thirty-one-times-hash-plus-utf16-code-unit-loop-over-linear-code-unit-conversion-and-a-melange-untruncated-number-addition-boundary}
+    add-to-string-hash-cache {:status :static-adaptation
+                              :reason :source-port-preserves-the-returned-hash-through-hash-string-star-while-omitting-the-observationally-invisible-mutable-javascript-cache}
     hash-double {:status :static-adaptation
                  :reason :source-port-delegates-the-static-float-domain-to-the-existing-clojurescript-compatible-hash-boundary}
     hash-keyword {:status :static-adaptation
@@ -425,6 +427,8 @@
     NaN? {:status :static-adaptation
           :reason :source-wrapper-preserves-upstream-javascript-number-nan-semantics-through-the-existing-typed-float-primitive}
     infinite? {:status :ported}
+    flush {:status :ported
+           :reason :source-zero-arity-stub-preserves-the-upstream-nil-result}
     keyword-identical? {:status :static-adaptation
                         :reason :static-keyword-arguments-preserve-upstream-fqn-value-identity-without-open-runtime-type-tests}
     symbol-identical? {:status :static-adaptation
@@ -479,6 +483,10 @@
                                :reason :lg-datascript-source-extension-preserves-the-existing-right-bound-binary-search-loop-with-static-array-comparator-and-key-types}
     amap {:status :ported
           :reason :source-macro-preserves-the-upstream-four-argument-clone-loop-and-element-update-contract}
+    areduce {:status :ported
+             :reason :source-macro-preserves-the-upstream-single-array-evaluation-indexed-loop-accumulator-and-result-contract}
+    locking {:status :static-adaptation
+             :reason :source-macro-preserves-the-upstream-ignored-lock-expression-ordered-body-and-nil-empty-body-semantics-with-an-explicit-leading-nil-for-lg-do-validation}
     asort! {:status :static-adaptation
             :reason :lg-datascript-static-array-extension-over-target-specific-typed-in-place-sort-primitives}
     booleans {:status :ported}

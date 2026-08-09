@@ -116,6 +116,7 @@
 (signature clojure.core/hash-double :fn<float;int>)
 (signature clojure.core/hash-keyword :fn<keyword;int>)
 (signature clojure.core/hash-string :fn<option<string>;int>)
+(signature clojure.core/add-to-string-hash-cache :fn<option<string>;int>)
 (signature clojure.core/mix-collection-hash :fn<int;int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
@@ -129,6 +130,7 @@
 (signature clojure.core/parse-double :fn<string;option<float>>)
 (signature clojure.core/NaN? :fn<float;bool>)
 (signature clojure.core/infinite? :fn<float;bool>)
+(signature clojure.core/flush :fn<option<value>>)
 (signature clojure.core/any? [value] :fn<value;bool>)
 (signature clojure.core/gensym
   :overload<fn<symbol>;fn<string;symbol>>)

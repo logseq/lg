@@ -942,6 +942,9 @@
 (defn hash-string [value]
   (hash-string* value))
 
+(defn add-to-string-hash-cache [value]
+  (hash-string* value))
+
 (defn mix-collection-hash [hash-basis count]
   (let [h1 m3-seed
         k1 (m3-mix-K1 hash-basis)
@@ -1042,6 +1045,9 @@
 (defn infinite? [value]
   (or (= value ##Inf)
       (= value ##-Inf)))
+
+(defn flush []
+  nil)
 
 (defn any? [x]
   (runtime-static-value/consume x)
@@ -1144,6 +1150,18 @@
            (aset ~result ~index ~expression)
            (recur (inc ~index)))
          ~result))))
+
+(defmacro areduce [values index result init expression]
+  `(let [values# ~values
+         length# (alength values#)]
+     (loop [~index 0
+            ~result ~init]
+       (if (< ~index length#)
+         (recur (inc ~index) ~expression)
+         ~result))))
+
+(defmacro locking [_lock & forms]
+  `(do nil ~@forms))
 
 (defn asort! [compare values]
   #?(:melange

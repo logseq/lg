@@ -480,12 +480,12 @@ let compile_files target input_paths =
         let prefix_key =
           next_prefix_key ~target prefix_key input_path source
         in
-        match
-          Lg.Compiler.required_ocaml_packages ~target ~filename:input_path
-            source
-        with
+        match Lg.Compiler.prepare_source ~target ~filename:input_path source with
         | Error _ as err -> err
-        | Ok source_packages -> (
+        | Ok prepared -> (
+            let source_packages =
+              Lg.Compiler.prepared_source_required_packages prepared
+            in
             match read_cached_prefix_output prefix_key with
             | Some cached ->
                 report_cache_hit input_path;
@@ -503,8 +503,8 @@ let compile_files target input_paths =
                       Printf.eprintf "lg: compiling %s\n%!" input_path;
                     let started_at = Sys.time () in
                     match
-                      Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-                        ~target ~filename:input_path state source
+                      Lg.Compiler.compile_prepared_chunk_with_diagnostics state
+                        prepared
                     with
                     | Error _ as err -> err
                     | Ok (state, compilation) ->
@@ -548,17 +548,19 @@ let compile_chunk_from_saved_state target state_path input_path =
       }
   else
     let source = read_file input_path in
-    Result.bind
-      (Lg.Compiler.required_ocaml_packages ~target ~filename:input_path source)
-      (fun source_packages ->
+    Result.bind (Lg.Compiler.prepare_source ~target ~filename:input_path source)
+      (fun prepared ->
+        let source_packages =
+          Lg.Compiler.prepared_source_required_packages prepared
+        in
         let packages =
           List.sort_uniq String.compare (source_packages @ saved.packages)
         in
         Result.bind
           (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state [])
           (fun state ->
-            Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-              ~filename:input_path ~check_ocaml:false state source
+            Lg.Compiler.compile_prepared_chunk_with_diagnostics
+              ~check_ocaml:false state prepared
             |> Result.map (fun (state, compilation) ->
                    (state, packages, compilation))))
 
@@ -577,10 +579,12 @@ let compile_files_from_saved_state target state_path input_paths =
       | input_path :: rest ->
           let source = read_file input_path in
           Result.bind
-            (Lg.Compiler.required_ocaml_packages ~target ~filename:input_path
-               source)
-            (fun source_packages ->
-              read_sources ((input_path, source) :: sources)
+            (Lg.Compiler.prepare_source ~target ~filename:input_path source)
+            (fun prepared ->
+              let source_packages =
+                Lg.Compiler.prepared_source_required_packages prepared
+              in
+              read_sources ((input_path, source, prepared) :: sources)
                 (List.rev_append source_packages packages)
                 rest)
     in
@@ -597,7 +601,7 @@ let compile_files_from_saved_state target state_path input_paths =
                     concatenate_compilation_outputs (List.rev outputs),
                     List.concat (List.rev diagnostics) ))
                 (read_compiler_state compiler_state)
-          | (input_path, source) :: rest -> (
+          | (input_path, source, prepared) :: rest -> (
               let prefix_key =
                 next_prefix_key ~target prefix_key input_path source
               in
@@ -616,9 +620,8 @@ let compile_files_from_saved_state target state_path input_paths =
                         Printf.eprintf "lg: compiling %s\n%!" input_path;
                       let started_at = Sys.time () in
                       match
-                        Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-                          ~target ~filename:input_path ~check_ocaml:false state
-                          source
+                        Lg.Compiler.compile_prepared_chunk_with_diagnostics
+                          ~check_ocaml:false state prepared
                       with
                       | Error _ as err -> err
                       | Ok (state, compilation) ->

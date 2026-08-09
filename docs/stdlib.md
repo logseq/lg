@@ -63,6 +63,13 @@ Consumers must not enumerate individual stdlib `.mil` or `.cljc` files.
 `test/stdlib` exercises this contract, including negative type tests restored
 from the same aggregate state.
 
+Multi-file compilation prepares each source once. The parsed forms provide
+both required OCaml packages and the subsequent incremental compilation input;
+the CLI does not parse the same file again after restoring a compiler state.
+The cache-disabled cold-build gate covers the full aggregate-stdlib plus
+DataScript path and enforces a 10-second limit without relying on persisted
+compile-cache entries.
+
 Generic `set<element>` source functions use LG's statically typed generic set
 representation internally. Calls from concrete persistent set modules convert
 through typed `elements` and `of_list` operations at that source-function
@@ -137,9 +144,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 332 source entries (38.79%), 62 typed
+macro surfaces. The current baseline is 336 source entries (39.25%), 62 typed
 primitives, 12 special forms, 15 host boundaries, 171 static-typing blockers,
-44 out-of-scope Spec entries, and 220 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 216 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -224,9 +231,11 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
 `parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, `NaN?`,
 `gensym`, `infinite?`, `keyword-identical?`, `symbol-identical?`, `hash-long`,
-`hash-double`, `hash-keyword`, `hash-string`, `array-index-of`,
+`hash-double`, `hash-keyword`, `hash-string`, `add-to-string-hash-cache`,
+`flush`, `array-index-of`,
 `special-symbol?`, `distinct?`, `not=`, and the
 derived bit functions, plus `splitv-at`, `iterate`, `tree-seq`, `partitionv`,
+`areduce`, `locking`,
 and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback.
@@ -238,6 +247,15 @@ short tails, and padding. Their typed unfold state avoids a public `lazy-seq`
 compiler route. Overloaded calls now also unify repeated `seqable<T>` element
 variables across arguments, so a padding collection cannot silently use a
 different element type from the input collection.
+
+The source array and host-stub batch adds the pinned `areduce`, `locking`,
+`flush`, and `add-to-string-hash-cache` definitions. `areduce` evaluates its
+array expression once and retains the upstream indexed accumulator loop.
+`locking` intentionally does not evaluate its lock expression on JavaScript;
+an explicit leading `nil` also preserves the empty-body result under LG's
+non-empty `do` validation. `flush` remains the upstream zero-argument `nil`
+stub, and `add-to-string-hash-cache` returns the same string hash while omitting
+only the unobservable mutable JavaScript cache.
 
 The collection constructor family now follows the same boundary. Public
 `list`, `vector`, `hash-map`, `array-map`, `hash-set`, and `set` bindings live

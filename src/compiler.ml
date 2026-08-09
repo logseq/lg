@@ -17,6 +17,7 @@ type compilation = Toolchain.compilation = {
 }
 
 type state = Toolchain.state
+type prepared_source = Toolchain.prepared_source
 
 let empty_state = Toolchain.empty_state
 let cacheable_state = Toolchain.cacheable_state
@@ -41,6 +42,12 @@ let compile_string_with_filename_and_diagnostics ?(target = Target.default)
 let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
     source =
   Toolchain.required_ocaml_packages ~target ~filename source
+
+let prepare_source ?(target = Target.default) ?(filename = "<string>") source =
+  Toolchain.prepare_source ~target ~filename source
+
+let prepared_source_required_packages =
+  Toolchain.prepared_source_required_packages
 
 let infer_interface ?(target = Target.default) source =
   Toolchain.interface ~target source
@@ -71,6 +78,10 @@ let compile_chunk_with_filename_and_diagnostics ?(target = Target.default)
     ?(check_ocaml = true) ~filename state source =
   Toolchain.compile_chunk_with_diagnostics ~target ~filename ~check_ocaml state
     source
+
+let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
+    prepared =
+  Toolchain.compile_prepared_chunk_with_diagnostics ~check_ocaml state prepared
 
 let compile_chunk_parsetree ?(target = Target.default) state source =
   Toolchain.compile_chunk_parsetree ~target state source

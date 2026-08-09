@@ -7,6 +7,11 @@ type parser_result = {
   parsed_as : [ `Lg ];
 }
 
+type prepared_source = {
+  parsed : parser_result;
+  required_packages : string list;
+}
+
 type typed_result = {
   ast : Ast.form list;
   items : Lowered.compiled_item list;
@@ -1560,11 +1565,19 @@ let typecheck_incremental state (parsed : parser_result) =
                 typecheck_state;
               } ))
 
-let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
-    source =
+let prepare_source ?(target = Target.default) ?(filename = "<string>") source =
   match Lg_frontend.implementation ~target ~filename source with
   | Error _ as err -> err
-  | Ok parsed -> required_packages_from_ast parsed.ast
+  | Ok parsed ->
+      required_packages_from_ast parsed.ast
+      |> Result.map (fun required_packages -> { parsed; required_packages })
+
+let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
+    source =
+  prepare_source ~target ~filename source
+  |> Result.map (fun prepared -> prepared.required_packages)
+
+let prepared_source_required_packages prepared = prepared.required_packages
 
 let analyze ?(target = Target.default) ?(filename = "<string>") source =
   match Lg_frontend.implementation ~target ~filename source with
@@ -1733,13 +1746,11 @@ let typecheck_parsetree ?(target = Target.default) ?(filename = "<string>")
 
 let print_parsetree = Ocaml_parsetree_backend.print
 
-let compile_chunk_with_diagnostics ?(target = Target.default)
-    ?(filename = "<string>") ?(check_ocaml = true) state source =
+let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
+    prepared =
   let previous_set_modules = state.requested_set_modules in
-  match Lg_frontend.implementation ~target ~filename source with
-  | Error _ as err -> err
-  | Ok parsed ->
-      (match typecheck_incremental state parsed with
+  let parsed = prepared.parsed in
+  match typecheck_incremental state parsed with
       | Error _ as err -> err
       | Ok (state, typed) ->
           (match
@@ -1779,7 +1790,13 @@ let compile_chunk_with_diagnostics ?(target = Target.default)
                         {
                           ocaml_source;
                           diagnostics = analysis.diagnostics;
-                        } )))
+                        } ))
+
+let compile_chunk_with_diagnostics ?(target = Target.default)
+    ?(filename = "<string>") ?(check_ocaml = true) state source =
+  Result.bind
+    (prepare_source ~target ~filename source)
+    (compile_prepared_chunk_with_diagnostics ~check_ocaml state)
 
 let compile_chunk ?(target = Target.default) ?(filename = "<string>") state
     source =

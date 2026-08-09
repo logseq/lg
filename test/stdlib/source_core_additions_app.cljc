@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-double hash-keyword hash-long hash-string ifind? inc infinite? iterate keyword-identical? map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? regexp? special-symbol? symbol-identical? tree-seq volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? flush hash-double hash-keyword hash-long hash-string ifind? inc infinite? iterate keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? regexp? special-symbol? symbol-identical? tree-seq volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -484,3 +484,47 @@
 (println (= [[1 2 3] [4 0]]
             (vec (clojure.core/partitionv 3 3 [0] [1 2 3 4]))))
 (println (= [] (vec (partitionv 3 [1 2]))))
+
+(def source-add-to-string-hash-cache add-to-string-hash-cache)
+(println (= 96354 (source-add-to-string-hash-cache "abc")))
+(println (= 0 (add-to-string-hash-cache nil)))
+(println (= (hash-string* "source")
+            (core/add-to-string-hash-cache "source")))
+(println (= (hash-string* "qualified")
+            (clojure.core/add-to-string-hash-cache "qualified")))
+
+(def source-flush flush)
+(println (nil? (source-flush)))
+(println (nil? (flush)))
+(println (nil? (core/flush)))
+(println (nil? (clojure.core/flush)))
+
+(def source-reduce-values (array-values 1 2 3 4))
+(println (= 10
+            (areduce source-reduce-values index result 0
+              (+ result (aget source-reduce-values index)))))
+(println (= 24
+            (core/areduce source-reduce-values index result 1
+              (* result (aget source-reduce-values index)))))
+(println (= "1234"
+            (clojure.core/areduce source-reduce-values index result ""
+              (str result (aget source-reduce-values index)))))
+(def source-array-evaluations (atom 0))
+(println (= 10
+            (areduce
+             (do (swap! source-array-evaluations inc) source-reduce-values)
+             index result 0
+             (+ result (aget source-reduce-values index)))))
+(println (= 1 @source-array-evaluations))
+
+(def source-lock-evaluations (atom 0))
+(def source-lock-body (atom []))
+(println (= :done
+            (locking (swap! source-lock-evaluations inc)
+              (swap! source-lock-body conj :first)
+              (swap! source-lock-body conj :second)
+              :done)))
+(println (= 0 @source-lock-evaluations))
+(println (= [:first :second] @source-lock-body))
+(println (nil? (core/locking :unused)))
+(println (= 42 (clojure.core/locking :ignored 42)))
