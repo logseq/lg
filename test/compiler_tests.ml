@@ -21591,10 +21591,58 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
   compile_with_stdlib_result Lg.Target.Native
     "test/identical_source_three_arity.cljc"
     "(def result (identical? 1 1 1))"
-  |> expect_error_contains "unsupported macro arity 3";
-  compile_with_stdlib_result Lg.Target.Native
-    "test/char_predicate_source_first_class.cljc" "(def predicate char?)"
-  |> expect_error_contains "cannot be used as an untyped first-class function"
+  |> expect_error_contains "unsupported macro arity 3"
+
+let test_source_scalar_predicates_are_statically_first_class () =
+  let source =
+    {|
+(ns source-first-class-scalar-predicate-app
+  (:require [cljs.core :as core
+             :refer [char? identical? array? array-value? reduced?
+                     some? boolean? integer? pos-int? neg-int? nat-int?]]))
+
+(def char-predicate char?)
+(def identical-predicate core/identical?)
+(def array-predicate array?)
+(def array-value-predicate array-value?)
+(def reduced-predicate clojure.core/reduced?)
+(def some-predicate some?)
+(def boolean-predicate boolean?)
+(def integer-predicate integer?)
+(def positive-integer-predicate pos-int?)
+(def negative-integer-predicate neg-int?)
+(def natural-integer-predicate nat-int?)
+
+(def values (array-values 1 2))
+(def identity-value [1])
+(println (char-predicate \a))
+(println (identical-predicate identity-value identity-value))
+(println (array-predicate values))
+(println (array-value-predicate values))
+(println (reduced-predicate (reduced 1)))
+(println (some-predicate (get {:present 1} :present)))
+(println (boolean-predicate false))
+(println (integer-predicate 1))
+(println (positive-integer-predicate 1))
+(println (negative-integer-predicate -1))
+(println (natural-integer-predicate 0))
+|}
+  in
+  let expected = String.concat "" (List.init 11 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_first_class_scalar_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class scalar predicates must remain static";
+  assert_ocaml_runs "source_first_class_scalar_predicates" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_first_class_scalar_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange first-class scalar predicates must remain static"
 
 let test_source_numeric_coercions_match_clojurescript () =
   let source =
@@ -38166,6 +38214,8 @@ let tests =
       test_source_predicates_are_statically_first_class );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
+    ( "source scalar predicates are statically first-class",
+      test_source_scalar_predicates_are_statically_first_class );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
     ( "source control macros match ClojureScript",

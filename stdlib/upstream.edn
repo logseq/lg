@@ -136,31 +136,31 @@
     long {:status :static-adaptation
           :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-specialize-int-float-or-int64-values-through-an-internal-static-primitive}
     char? {:status :static-adaptation
-           :reason :lg-characters-have-a-distinct-static-char-type-so-the-source-macro-tests-that-type-instead-of-the-upstream-single-character-javascript-string-representation}
+           :reason :source-function-provides-a-first-class-char-predicate-and-inline-static-type-test-because-lg-characters-are-distinct-from-clojurescript-one-character-javascript-strings}
     identical? {:status :static-adaptation
-                :reason :source-macro-preserves-upstream-reference-identity-through-an-internal-same-static-type-physical-identity-primitive}
+                :reason :polymorphic-source-function-and-inline-definition-preserve-upstream-reference-identity-through-an-internal-same-static-type-physical-identity-primitive}
     array? {:status :static-adaptation
-            :reason :source-macro-specializes-the-upstream-javascript-array-test-to-lg-static-array-types}
+            :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-javascript-array-test-to-lg-static-array-types}
     array-value? {:status :static-adaptation
-                  :reason :lg-source-extension-aliases-the-static-array-type-test-without-adding-an-open-runtime-value-boundary}
+                  :reason :polymorphic-lg-source-extension-and-inline-definition-alias-the-static-array-type-test-without-adding-an-open-runtime-value-boundary}
     reduced? {:status :static-adaptation
-              :reason :source-macro-specializes-the-upstream-reduced-instance-test-to-the-parameterized-runtime-reduction-sentinel}
+              :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-reduced-instance-test-to-the-parameterized-runtime-reduction-sentinel}
     some? {:status :static-adaptation
-           :reason :source-macro-preserves-the-upstream-not-nil-body-while-specializing-the-generic-nil-predicate-at-each-static-call-site}
+           :reason :polymorphic-optional-source-function-preserves-the-upstream-not-nil-body-while-its-inline-definition-specializes-direct-calls}
     boolean? {:status :static-adaptation
-              :reason :source-macro-preserves-the-upstream-true-or-false-control-flow-and-binds-the-argument-once-before-static-call-site-specialization}
+              :reason :source-function-provides-a-first-class-boolean-predicate-while-its-inline-definition-preserves-upstream-true-or-false-control-flow-and-single-evaluation}
     empty? {:status :static-adaptation
             :reason :source-macro-uses-the-upstream-seq-fallback-for-all-static-seqables-because-composing-optional-seqable-and-counted-capabilities-would-leak-compiler-protocol-witness-helpers-into-generated-runtime-code}
     not-empty {:status :static-adaptation
                :reason :call-site-source-macro-preserves-the-upstream-seq-guard-and-the-input-concrete-collection-type-in-the-present-option-branch}
     integer? {:status :static-adaptation
-              :reason :source-macro-specializes-to-lg-int-because-lg-separates-integral-and-floating-static-types-and-binds-the-argument-once-to-preserve-evaluation}
+              :reason :source-function-provides-a-first-class-integer-predicate-while-its-inline-definition-specializes-direct-calls-because-lg-separates-integral-and-floating-static-types}
     pos-int? {:status :static-adaptation
-              :reason :source-macro-preserves-the-upstream-integer-and-positive-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
+              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-positive-branches-for-the-supported-lg-int-domain}
     neg-int? {:status :static-adaptation
-              :reason :source-macro-preserves-the-upstream-integer-and-negative-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
+              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-integer-and-negative-branches-for-the-supported-lg-int-domain}
     nat-int? {:status :static-adaptation
-              :reason :source-macro-preserves-the-upstream-integer-and-not-negative-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
+              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-not-negative-branches-for-the-supported-lg-int-domain}
     ident? {:status :static-adaptation
             :reason :source-macro-preserves-upstream-keyword-or-symbol-control-flow-and-binds-the-argument-once-before-static-predicate-specialization}
     simple-ident? {:status :static-adaptation

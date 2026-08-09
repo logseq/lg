@@ -63,7 +63,9 @@ done
 for name in \
   'nil?' 'true?' 'false?' 'int?' 'number?' 'string?' 'keyword?' 'symbol?' \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
-  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?'; do
+  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
+  'char?' 'identical?' 'array?' 'array-value?' 'reduced?' \
+  'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?'; do
   if ! grep -F "(defn $name" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a function" >&2
@@ -77,10 +79,7 @@ for name in \
 done
 
 for name in \
-  'char?' 'identical?' 'array?' 'array-value?' \
-  'reduced?' \
-  'some?' 'boolean?' 'empty?' 'not-empty' 'integer?' 'ident?' 'counted?' 'seqable?' \
-  'nat-int?' 'pos-int?' 'neg-int?' \
+  'empty?' 'not-empty' 'ident?' 'counted?' 'seqable?' \
   'simple-symbol?' 'qualified-symbol?' \
   'simple-keyword?' 'qualified-keyword?' \
   'simple-ident?' 'qualified-ident?'; do

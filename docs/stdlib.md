@@ -224,8 +224,11 @@ occurrences.
 `zero?`, `pos?`, and `neg?` now pair source functions for static first-class
 integer use with source inline macros for direct int/float specialization.
 `char?`, `identical?`, `array?`, the LG `array-value?` extension, and `reduced?`
-use a source-macro/static-ABI boundary. `abs` likewise pairs a source integer
-function with a typed direct-call macro so float
+are source functions with concrete or polymorphic static signatures and source
+inline specialization. The same function/inline boundary now covers `some?`,
+`boolean?`, `integer?`, `pos-int?`, `neg-int?`, and `nat-int?`, preserving
+compatible higher-order use without dynamic adapters. `abs` likewise pairs a
+source integer function with a typed direct-call macro so float
 negative zero, NaN, and infinity retain the pinned ClojureScript `Math.abs`
 behavior. These additions bring the raw dispatch inventory to 237: the public
 routes are replaced by internal routes, while `char?` and `abs` add two minimal

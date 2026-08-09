@@ -44,6 +44,22 @@
   :fn<vector<value>;bool>)
 (signature clojure.core/sorted? [value]
   :fn<vector<value>;bool>)
+(signature clojure.core/char? :fn<char;bool>)
+(signature clojure.core/identical? [value]
+  :fn<value;value;bool>)
+(signature clojure.core/array? [value]
+  :fn<array<value>;bool>)
+(signature clojure.core/array-value? [value]
+  :fn<array<value>;bool>)
+(signature clojure.core/reduced? [value]
+  :fn<Lg_runtime.Runtime_reduced.t<value>;bool>)
+(signature clojure.core/some? [value]
+  :fn<option<value>;bool>)
+(signature clojure.core/boolean? :fn<bool;bool>)
+(signature clojure.core/integer? :fn<int;bool>)
+(signature clojure.core/pos-int? :fn<int;bool>)
+(signature clojure.core/neg-int? :fn<int;bool>)
+(signature clojure.core/nat-int? :fn<int;bool>)
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
 (signature clojure.core/bit-and-two :fn<int;int;int>)

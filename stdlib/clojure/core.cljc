@@ -413,42 +413,81 @@
   [^:int x]
   (__lg_long x))
 
-(defmacro char? [x]
-  `(__lg_char-predicate ~x))
+(defn char?
+  {:inline (fn [x] (list '__lg_char-predicate x))}
+  [x]
+  (__lg_char-predicate x))
 
-(defmacro identical? [x y]
-  `(__lg_identical-predicate ~x ~y))
+(defn identical?
+  {:inline (fn [x y] (list '__lg_identical-predicate x y))}
+  [x y]
+  (__lg_identical-predicate x y))
 
-(defmacro array? [x]
-  `(__lg_array-predicate ~x))
+(defn array?
+  {:inline (fn [x] (list '__lg_array-predicate x))}
+  [x]
+  (__lg_array-predicate x))
 
-(defmacro array-value? [x]
-  `(__lg_array-value-predicate ~x))
+(defn array-value?
+  {:inline (fn [x] (list '__lg_array-value-predicate x))}
+  [x]
+  (__lg_array-value-predicate x))
 
-(defmacro reduced? [x]
-  `(__lg_reduced-predicate ~x))
+(defn reduced?
+  {:inline (fn [x] (list '__lg_reduced-predicate x))}
+  [x]
+  (__lg_reduced-predicate x))
 
-(defmacro some? [x]
-  `(not (__lg_nil-predicate ~x)))
+(defn some?
+  {:inline (fn [x] (list 'not (list '__lg_nil-predicate x)))}
+  [x]
+  (not (__lg_nil-predicate x)))
 
-(defmacro boolean? [x]
-  `(let [value# ~x]
-     (or (__lg_true-predicate value#) (__lg_false-predicate value#))))
+(defn boolean?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or
+                   (list '__lg_true-predicate value)
+                   (list '__lg_false-predicate value)))))}
+  [x]
+  (or (__lg_true-predicate x) (__lg_false-predicate x)))
 
-(defmacro integer? [x]
-  `(__lg_int-predicate ~x))
+(defn integer?
+  {:inline (fn [x] (list '__lg_int-predicate x))}
+  [x]
+  (__lg_int-predicate x))
 
-(defmacro pos-int? [x]
-  `(let [value# ~x]
-     (if (__lg_int-predicate value#) (pos? value#) false)))
+(defn pos-int?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_int-predicate value)
+                   (list 'pos? value) false))))}
+  [x]
+  (if (__lg_int-predicate x) (pos? x) false))
 
-(defmacro neg-int? [x]
-  `(let [value# ~x]
-     (if (__lg_int-predicate value#) (neg? value#) false)))
+(defn neg-int?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_int-predicate value)
+                   (list 'neg? value) false))))}
+  [x]
+  (if (__lg_int-predicate x) (neg? x) false))
 
-(defmacro nat-int? [x]
-  `(let [value# ~x]
-     (if (__lg_int-predicate value#) (not (neg? value#)) false)))
+(defn nat-int?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_int-predicate value)
+                   (list 'not (list 'neg? value)) false))))}
+  [x]
+  (if (__lg_int-predicate x) (not (neg? x)) false))
 
 (defmacro ident? [x]
   `(let [value# ~x]
