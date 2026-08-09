@@ -63,6 +63,24 @@
                  :reason :source-macro-specializes-the-upstream-ireversible-test-to-supported-string-list-and-vector-representations}
     sorted? {:status :static-adaptation
              :reason :source-macro-preserves-the-current-false-result-because-lg-sorted-collections-do-not-yet-have-a-distinct-static-isorted-representation}
+    zero? {:status :static-adaptation
+           :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-numeric-zero-predicate}
+    pos? {:status :static-adaptation
+          :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-positive-number-predicate}
+    neg? {:status :static-adaptation
+          :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-negative-number-predicate}
+    abs {:status :static-adaptation
+         :reason :source-macro-specializes-the-upstream-math-abs-host-boundary-to-typed-integer-and-float-primitives-while-preserving-positive-zero-nan-and-infinity-behavior}
+    char? {:status :static-adaptation
+           :reason :lg-characters-have-a-distinct-static-char-type-so-the-source-macro-tests-that-type-instead-of-the-upstream-single-character-javascript-string-representation}
+    identical? {:status :static-adaptation
+                :reason :source-macro-preserves-upstream-reference-identity-through-an-internal-same-static-type-physical-identity-primitive}
+    array? {:status :static-adaptation
+            :reason :source-macro-specializes-the-upstream-javascript-array-test-to-lg-static-array-types}
+    array-value? {:status :static-adaptation
+                  :reason :lg-source-extension-aliases-the-static-array-type-test-without-adding-an-open-runtime-value-boundary}
+    reduced? {:status :static-adaptation
+              :reason :source-macro-specializes-the-upstream-reduced-instance-test-to-the-parameterized-runtime-reduction-sentinel}
     some? {:status :static-adaptation
            :reason :source-macro-preserves-the-upstream-not-nil-body-while-specializing-the-generic-nil-predicate-at-each-static-call-site}
     boolean? {:status :static-adaptation

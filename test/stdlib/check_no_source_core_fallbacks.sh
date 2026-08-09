@@ -30,7 +30,7 @@ for name in identity complement boolean some? boolean? empty? not-empty integer?
   done
 done
 
-public_predicates='nil? true? false? int? number? string? keyword? symbol? vector? list? seq? set? map? fn? coll? associative? rational? float? double? sequential? reversible? sorted?'
+public_predicates='nil? true? false? int? number? string? keyword? symbol? vector? list? seq? set? map? fn? coll? associative? rational? float? double? sequential? reversible? sorted? zero? pos? neg? abs char? identical? array? array-value? reduced?'
 dispatch_names=$(ocaml -I +compiler-libs ocamlcommon.cma \
   "$root/script/extract_ocaml_string_dispatch.ml" \
   "$root/src/call_elaborator.ml")

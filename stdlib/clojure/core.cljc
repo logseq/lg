@@ -106,6 +106,33 @@
 (defmacro sorted? [x]
   `(__lg_sorted-predicate ~x))
 
+(defmacro zero? [x]
+  `(__lg_zero-predicate ~x))
+
+(defmacro pos? [x]
+  `(__lg_pos-predicate ~x))
+
+(defmacro neg? [x]
+  `(__lg_neg-predicate ~x))
+
+(defmacro abs [x]
+  `(__lg_abs ~x))
+
+(defmacro char? [x]
+  `(__lg_char-predicate ~x))
+
+(defmacro identical? [x y]
+  `(__lg_identical-predicate ~x ~y))
+
+(defmacro array? [x]
+  `(__lg_array-predicate ~x))
+
+(defmacro array-value? [x]
+  `(__lg_array-value-predicate ~x))
+
+(defmacro reduced? [x]
+  `(__lg_reduced-predicate ~x))
+
 (defmacro some? [x]
   `(not (__lg_nil-predicate ~x)))
 

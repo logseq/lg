@@ -1027,6 +1027,7 @@ let rec numeric_form_type params = function
       if List.exists (Types.equal TFloat) types then TFloat
       else if List.exists (Types.equal TInt) types then TInt
       else TUnknown
+  | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | _ -> TUnknown
 
 let rec inferred_form_type params = function
@@ -1069,6 +1070,7 @@ let rec inferred_form_type params = function
       |> Option.value ~default:TUnknown
   | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form ->
       numeric_form_type params form
+  | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
       match string_assoc_opt fn params with
@@ -1420,8 +1422,8 @@ let inferred_form_or_call_type ~lookup_function_ty params form =
 let rec form_checks_reduced name = function
   | FList [ FSymbol predicate; FSymbol candidate ] ->
       candidate = name
-      && (predicate = "reduced?"
-         || String.ends_with ~suffix:"/reduced?" predicate)
+      && (predicate = "__lg_reduced-predicate"
+         || String.ends_with ~suffix:"/__lg_reduced-predicate" predicate)
   | FList forms | FVector forms -> List.exists (form_checks_reduced name) forms
   | FMap pairs ->
       List.exists
@@ -3863,7 +3865,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_string-predicate";
                "__lg_int-predicate";
                "__lg_number-predicate";
-               "array?";
+               "__lg_array-predicate";
+               "__lg_array-value-predicate";
                "__lg_vector-predicate";
                "__lg_list-predicate";
                "__lg_seq-predicate";
@@ -3891,7 +3894,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             match constrain_comparable_symbol params left with
             | Error _ as error -> error
             | Ok params -> constrain_comparable_symbol params right))
-    | FList [ FSymbol ("identical?" | ".equals"); left; right ] ->
+    | FList [ FSymbol ("__lg_identical-predicate" | ".equals"); left; right ] ->
         Result.bind (infer_all params [ left; right ]) (fun params ->
             let left_ty = inferred_form_type params left in
             let right_ty = inferred_form_type params right in
@@ -5067,7 +5070,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected_all expected_ty params args
     | FList
         [
-          FSymbol ("zero?" | "pos?" | "neg?");
+          FSymbol
+            ( "__lg_zero-predicate" | "__lg_pos-predicate"
+            | "__lg_neg-predicate" );
           arg;
         ] ->
         let arg_ty =
@@ -5078,6 +5083,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         infer_expected
           (if Types.equal arg_ty (TOcaml "int") then TOcaml "int" else TInt)
+          params arg
+    | FList [ FSymbol "__lg_abs"; arg ] ->
+        let arg_ty =
+          match inferred_form_type params arg with
+          | TUnknown ->
+              inferred_call_return_type ~lookup_function_ty params arg
+          | ty -> ty
+        in
+        infer_expected
+          (if Types.equal arg_ty TFloat then TFloat else TInt)
           params arg
     | FList [ FSymbol "double"; arg ] ->
         let expected_ty =

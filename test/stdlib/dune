@@ -495,6 +495,7 @@
  (alias no-source-core-fallbacks)
  (deps
   check_no_source_core_fallbacks.sh
+  ../../script/extract_ocaml_string_dispatch.ml
   ../../src/call_elaborator.ml
   ../../src/core_boolean.ml
   ../../src/core_collection.ml

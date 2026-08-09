@@ -6275,7 +6275,7 @@ let create ~compile_expr =
     | ".containsKey" -> java_interop_error ".containsKey"
     | ".entryAt" -> java_interop_error ".entryAt"
     | "-contains-key?" -> compile_contains scope env arg_forms
-    | "reduced?" -> (
+    | "__lg_reduced-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] -> (
@@ -6294,7 +6294,7 @@ let create ~compile_expr =
                                   [
                                     value.semantic_expr; Semantic_ir.Bool false;
                                   ])))
-        | Ok _ -> Error.error "reduced? expects 1 arguments")
+        | Ok _ -> Error.error "reduced? expects 1 argument")
     | "unreduced" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -6844,7 +6844,7 @@ let create ~compile_expr =
                                     ]))
             | None -> Error.error (name ^ " expects an OCaml array")))
         | Ok _ -> Error.error (name ^ " expects 3 arguments"))
-    | "array?" | "array-value?" -> (
+    | "__lg_array-predicate" | "__lg_array-value-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] ->
@@ -6861,7 +6861,12 @@ let create ~compile_expr =
                         Semantic_ir.Bool
                           (match value_ty with TArray _ -> true | _ -> false);
                       ]))
-        | Ok _ -> Error.error "array? expects 1 argument")
+        | Ok _ ->
+            let source_name =
+              if name = "__lg_array-predicate" then "array?"
+              else "array-value?"
+            in
+            Error.error (source_name ^ " expects 1 argument"))
     | "atom" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8071,34 +8076,42 @@ let create ~compile_expr =
                                     ]))
             | None -> Core_predicate.compile name [ receiver ])
         | Ok _ -> Error.error "sequential? expects 1 arguments")
-              | "__lg_rational-predicate" | "__lg_float-predicate"
-              | "__lg_double-predicate" | "__lg_symbol-predicate"
-              | "__lg_reversible-predicate" | "__lg_sorted-predicate"
-                -> (
+    | "__lg_rational-predicate" | "__lg_float-predicate"
+    | "__lg_double-predicate" | "__lg_symbol-predicate"
+    | "__lg_reversible-predicate" | "__lg_sorted-predicate"
+    | "__lg_char-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_predicate.compile name args)
-    | ("zero?" | "pos?" | "neg?") as predicate -> (
+    | ("__lg_zero-predicate" | "__lg_pos-predicate" | "__lg_neg-predicate")
+      as predicate -> (
+        let source_predicate =
+          match predicate with
+          | "__lg_zero-predicate" -> "zero?"
+          | "__lg_pos-predicate" -> "pos?"
+          | "__lg_neg-predicate" -> "neg?"
+          | _ -> assert false
+        in
         match compile_args () with
         | Error _ as err -> err
-                  | Ok [ arg ] when Types.is_dynamic arg.ty ->
-                      let function_name =
-                        match predicate with
-                        | "zero?" -> "is_zero"
-                        | "pos?" -> "is_positive"
-                        | _ -> "is_negative"
-                      in
-                      Ok
-                        (typed_ir TBool
-                           (apply
-                              ("Lg_runtime.Runtime_dynamic." ^ function_name)
-                              [ arg.semantic_expr ]))
+        | Ok [ arg ] when Types.is_dynamic arg.ty ->
+            let function_name =
+              match predicate with
+              | "__lg_zero-predicate" -> "is_zero"
+              | "__lg_pos-predicate" -> "is_positive"
+              | _ -> "is_negative"
+            in
+            Ok
+              (typed_ir TBool
+                 (apply
+                    ("Lg_runtime.Runtime_dynamic." ^ function_name)
+                    [ arg.semantic_expr ]))
         | Ok [ arg ] ->
             let operator =
               match predicate with
-              | "zero?" -> "="
-              | "pos?" -> ">"
-              | "neg?" -> "<"
+              | "__lg_zero-predicate" -> "="
+              | "__lg_pos-predicate" -> ">"
+              | "__lg_neg-predicate" -> "<"
               | _ -> assert false
             in
             let zero =
@@ -8106,17 +8119,31 @@ let create ~compile_expr =
               | TInt | TUnknown | TOcaml "int" ->
                   Ok (Semantic_ir.Int 0)
               | TFloat -> Ok (Semantic_ir.Float "0.0")
-                        | _ ->
-                            Error.error
-                              ("expected int arguments for " ^ predicate)
+              | _ ->
+                  Error.error
+                    ("expected int arguments for " ^ source_predicate)
             in
             Result.map
               (fun zero ->
                 typed_ir TBool
-                            (Semantic_ir.Infix
-                               (operator, arg.semantic_expr, zero)))
+                  (Semantic_ir.Infix (operator, arg.semantic_expr, zero)))
               zero
-        | Ok _ -> Error.error (predicate ^ " expects 1 arguments"))
+        | Ok _ -> Error.error (source_predicate ^ " expects 1 arguments"))
+    | "__lg_abs" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ arg ] -> (
+            match arg.ty with
+            | TInt | TOcaml "int" ->
+                Ok
+                  (typed_ir arg.ty
+                     (apply "Stdlib.abs" [ arg.semantic_expr ]))
+            | TFloat ->
+                Ok
+                  (typed_ir TFloat
+                     (apply "Float.abs" [ arg.semantic_expr ]))
+            | _ -> Error.error "abs expects a numeric argument")
+        | Ok _ -> Error.error "abs expects 1 argument")
     | "str" -> (
         let printable_env =
           Env.with_expected_type
@@ -8299,7 +8326,7 @@ let create ~compile_expr =
                   Error.error
                     "runtime class inspection is not supported; match a closed \
                      sum type"
-    | "identical?" -> (
+    | "__lg_identical-predicate" -> (
         match compile_args () with
         | Error _ as error -> error
         | Ok [ left; right ]

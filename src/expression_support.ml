@@ -1040,8 +1040,12 @@ let untyped_first_class_function_error = function
   | ( "!="
     | "="
     | "=="
+    | "abs"
+    | "array-value?"
+    | "array?"
     | "array-map"
     | "assoc"
+    | "char?"
     | "compare"
     | "conj"
     | "contains?"
@@ -1056,6 +1060,7 @@ let untyped_first_class_function_error = function
     | "list"
     | "meta"
     | "name"
+    | "neg?"
     | "nil?"
     | "namespace"
     | "number?"
@@ -1063,6 +1068,7 @@ let untyped_first_class_function_error = function
     | "pr-writer"
     | "print-str"
     | "println-str"
+    | "pos?"
     | "prn-str"
     | "persistent!"
     | "rand"
@@ -1070,6 +1076,7 @@ let untyped_first_class_function_error = function
     | "re-matches"
     | "re-pattern"
     | "re-seq"
+    | "reduced?"
     | "set"
     | "str"
     | "string?"
@@ -1078,7 +1085,8 @@ let untyped_first_class_function_error = function
     | "true?"
     | "update"
     | "vec"
-    | "vector" ) as name ->
+    | "vector"
+    | "zero?" ) as name ->
       Some (untyped_first_class_collection_function_error name)
   | ( "clojure.core/dissoc"
     | "cljs.core/dissoc"
@@ -1154,9 +1162,6 @@ let lookup_function scope env name =
           Ok (static_int_comparison operator)
       | "max" -> Ok (static_int_function [ TInt; TInt ] TInt "int_max")
       | "min" -> Ok (static_int_function [ TInt; TInt ] TInt "int_min")
-      | "zero?" -> Ok (static_int_function [ TInt ] TBool "int_zero")
-      | "pos?" -> Ok (static_int_function [ TInt ] TBool "int_positive")
-      | "neg?" -> Ok (static_int_function [ TInt ] TBool "int_negative")
       | _ -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =

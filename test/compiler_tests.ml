@@ -3059,7 +3059,7 @@ let test_declared_option_returns_keep_match_payloads_static () =
 (defn ^:option<int> entid [^:entity-ref entity-ref]
   (match entity-ref
     (Entity_id eid)
-    (if (pos? eid)
+    (if (__lg_pos-predicate eid)
       (if (> eid max-entity-id)
         (raise (Invalid_argument "entity id too large"))
         (Some eid))
@@ -3073,7 +3073,7 @@ let test_declared_option_returns_keep_match_payloads_static () =
     eid
     (raise (Invalid_argument "missing entity"))))
 (defn ^:option<int> resolve-entity-ref [^:int eid]
-  (if (pos? eid)
+  (if (__lg_pos-predicate eid)
     (Some (entid-strict (Entity_id eid)))
     None))
 (println
@@ -3103,7 +3103,7 @@ let test_external_variant_option_returns_keep_payloads_static () =
   [^:Datascript_runtime.Data_value.entity_ref entity-ref]
   (match entity-ref
     (Datascript_runtime.Data_value.Entity_id eid)
-    (if (pos? eid)
+    (if (__lg_pos-predicate eid)
       (if (> eid max-entity-id)
         (raise (Invalid_argument "entity id too large"))
         (Some eid))
@@ -3835,8 +3835,13 @@ let test_compiler_phases_have_explicit_boundaries () =
               ~pack_constrained_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
           in
-        operations.compile_comp "" Lg.Compiler_environment.empty
-          [ Lg.Ast.FSymbol "zero?" ]
+        let comp_env =
+          Lg.Compiler_environment.add "positive"
+            (Lg.Types.binding "positive"
+               (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TBool)))
+            Lg.Compiler_environment.empty
+        in
+        operations.compile_comp "" comp_env [ Lg.Ast.FSymbol "positive" ]
           |> expect_ok
         in
       (match composed.ty with
@@ -6265,7 +6270,7 @@ let test_closed_query_values_are_shared_across_calls () =
         (Datascript_runtime.Data_value.Keyword ":name")
         (Datascript_runtime.Data_value.String "Ivan")])]))
 (defn query [] query-value)
-(println (identical? (query) (query)))
+(println (__lg_identical-predicate (query) (query)))
 |}
   in
   let native_source =
@@ -10948,7 +10953,7 @@ let test_system_current_time_millis_compiles_for_native () =
   let source =
     {|
 (def now (current-time-millis))
-(println (pos? now))
+(println (__lg_pos-predicate now))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -13757,7 +13762,7 @@ let test_custom_atom_protocol_infers_closed_record_state () =
   IAtom
   (-compare-and-set! [box old-database new-database]
     (let [cell (:cell box)]
-      (if (identical? @cell old-database)
+      (if (__lg_identical-predicate @cell old-database)
         (do
           (reset! cell new-database)
           true)
@@ -13831,7 +13836,7 @@ let test_weak_references_store_nominal_values_without_protocol_witnesses () =
 (defn remember [^Box box]
   (weak-ref box))
 (defn same-box-identity? [^Box left ^Box right]
-  (identical? left right))
+  (__lg_identical-predicate left right))
 (def box (->Box 42))
 (def reference (remember box))
 (println
@@ -16661,7 +16666,7 @@ let test_equality_infers_comparator_return_type () =
   let source =
     {|
 (defn comparator-negative? [cmp values key]
-  (neg? (cmp (unsafe-aget values 0) key)))
+  (__lg_neg-predicate (cmp (unsafe-aget values 0) key)))
 (defn matches [cmp values key]
   (let [_checked (comparator-negative? cmp values key)]
     (= 0 (cmp (unsafe-aget values 0) key))))
@@ -16982,8 +16987,8 @@ let test_static_deftype_preserves_identity_predicate () =
     {|
 (deftype Token [^int id])
 (def token (Token. 1))
-(println (identical? token token))
-(println (identical? token (Token. 1)))
+(println (__lg_identical-predicate token token))
+(println (__lg_identical-predicate token (Token. 1)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -17005,7 +17010,7 @@ let test_identity_predicate_uses_constrained_receiver_values () =
     (read-value item)
     item))
 (def item (Item. 1))
-(println (identical? (observe item) item))
+(println (__lg_identical-predicate (observe item) item))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -17150,7 +17155,7 @@ let test_deftype_fields_accept_clojure_primitive_hints () =
     {|
 (deftype Metric [^int value ^boolean ready])
 (defn usable? [^Metric metric]
-  (and (pos? (.-value metric)) (.-ready metric)))
+  (and (__lg_pos-predicate (.-value metric)) (.-ready metric)))
 (println (usable? (Metric. 42 true)))
 |}
   in
@@ -20407,7 +20412,7 @@ let test_named_record_extensions_require_explicit_fields () =
 (defn process-report [^Report initial-report]
   (loop [report initial-report
          remaining 1]
-    (if (zero? remaining)
+    (if (__lg_zero-predicate remaining)
       (:value report)
       (recur (assoc report :extra 1) (dec remaining)))))
 (println (process-report (Report. 42)))
@@ -21427,6 +21432,107 @@ let test_source_static_predicate_family_matches_clojurescript () =
         ("(def result (" ^ name ^ " 1 2))")
       |> expect_error_contains "unsupported macro arity 2")
     predicate_names
+
+let test_source_primitive_predicates_and_abs_match_clojurescript () =
+  let source =
+    {|
+(ns source-primitive-predicate-app
+  (:require [cljs.core :as core
+             :refer [zero? pos? neg? abs char? identical? array?
+                     array-value? reduced?]]))
+
+(def evaluations (atom 0))
+(def shared (array 1 2))
+(defn positive-float? [^:float value] (pos? value))
+(defn absolute-float [^:float value] (abs value))
+
+(println (zero? 0))
+(println (not (zero? 1)))
+(println (pos? 2.5))
+(println (neg? -2))
+(println (char? \a))
+(println (not (char? "a")))
+(println (identical? shared shared))
+(println (not (identical? (array 1) (array 1))))
+(println (array? shared))
+(println (not (array? [1 2])))
+(println (array-value? shared))
+(println (reduced? (reduced 1)))
+(println (not (reduced? 1)))
+(println (= 3 (abs -3)))
+(println (= 2.5 (abs -2.5)))
+(println (= ##Inf (/ 1.0 (abs -0.0))))
+(println (not (= (abs ##NaN) (abs ##NaN))))
+(println (= ##Inf (abs ##-Inf)))
+(println (positive-float? 1.5))
+(println (= 1.5 (absolute-float -1.5)))
+(println (core/char? \b))
+(println (clojure.core/reduced? (reduced 2)))
+
+(zero? (do (swap! evaluations inc) 0))
+(pos? (do (swap! evaluations inc) 1))
+(neg? (do (swap! evaluations inc) -1))
+(char? (do (swap! evaluations inc) \c))
+(identical? (do (swap! evaluations inc) shared)
+            (do (swap! evaluations inc) shared))
+(array? (do (swap! evaluations inc) shared))
+(array-value? (do (swap! evaluations inc) shared))
+(reduced? (do (swap! evaluations inc) (reduced 3)))
+(abs (do (swap! evaluations inc) -4))
+(println (= 10 @evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 23 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_primitive_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith
+      "source primitive predicates and abs must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_primitive_predicates_and_abs" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_primitive_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith
+      "Melange source primitive predicates and abs must remain static";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_zero_arity.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0";
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_two_arity.cljc")
+        ("(def result (" ^ name ^ " 1 2))")
+      |> expect_error_contains "unsupported macro arity 2")
+    [
+      "zero?";
+      "pos?";
+      "neg?";
+      "abs";
+      "char?";
+      "array?";
+      "array-value?";
+      "reduced?";
+    ];
+  compile_with_stdlib_result Lg.Target.Native
+    "test/identical_source_one_arity.cljc" "(def result (identical? 1))"
+  |> expect_error_contains "unsupported macro arity 1";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/identical_source_three_arity.cljc"
+    "(def result (identical? 1 1 1))"
+  |> expect_error_contains "unsupported macro arity 3";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_first_class.cljc")
+        ("(def predicate " ^ name ^ ")")
+      |> expect_error_contains
+           "cannot be used as an untyped first-class function")
+    [ "zero?"; "abs" ]
 
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
@@ -22827,7 +22933,7 @@ let test_and_truthy_guard_narrows_nullable_ints () =
     {|
 (defn positive-result [flag candidate]
   (let [value (when flag candidate)]
-    (and value (pos? value))))
+    (and value (__lg_pos-predicate value))))
 (println
   (str (if (positive-result true 1) "yes" "no") ":"
        (if (positive-result false 1) "yes" "no") ":"
@@ -24995,7 +25101,7 @@ let test_deftype_methods_flush_after_their_declared_dependencies () =
   (-count [items]
     (count
       (filter (fn [^Item item]
-                (pos? (-id item)))
+                (__lg_pos-predicate (-id item)))
         values))))
 (defn unrelated [] 42)
 
@@ -25208,7 +25314,7 @@ let test_deferred_recursive_calls_bypass_the_holder_wrapper () =
   in
   let compile target =
     let ocaml_source =
-      Lg.Compiler.compile_string ~target source |> expect_ok
+      compile_string_with_stdlib ~target source |> expect_ok
     in
     if
       not
@@ -37610,6 +37716,8 @@ let tests =
       test_source_not_empty_preserves_concrete_collections );
     ( "source static predicate family matches ClojureScript",
       test_source_static_predicate_family_matches_clojurescript );
+    ( "source primitive predicates and abs match ClojureScript",
+      test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",
