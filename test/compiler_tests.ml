@@ -21758,6 +21758,84 @@ let test_source_ex_message_matches_clojurescript () =
     "(def result (ex-message (Failure \"a\") (Failure \"b\")))"
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_ex_cause_matches_clojurescript () =
+  let static_source =
+    {|
+(ns source-ex-cause-static-app
+  (:require [cljs.core :refer [ex-cause]]))
+
+(def cause-of ex-cause)
+(println (nil? (cause-of (Failure "plain"))))
+|}
+  in
+  let native_static_source =
+    compile_with_stdlib Lg.Target.Native "test/source_ex_cause_static.cljc"
+      static_source
+  in
+  if string_contains_substring native_static_source "Runtime_dynamic" then
+    failwith "source ex-cause must remain static";
+  assert_ocaml_runs "source_ex_cause_static" "true\n" native_static_source;
+  let melange_static_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_ex_cause_static.cljc"
+      static_source
+  in
+  if string_contains_substring melange_static_source "Runtime_dynamic" then
+    failwith "Melange source ex-cause must remain static";
+  let cause_source =
+    {|
+(ns source-ex-cause-app
+  (:require [cljs.core :as core :refer [ex-cause]]))
+
+(def root (Failure "root"))
+(def outer (ex-info "outer" {} root))
+(def cause-of ex-cause)
+(println (if-some [cause (cause-of outer)]
+           (= "root" (ex-message cause))
+           false))
+(println (if-some [cause (core/ex-cause outer)]
+           (= "root" (ex-message cause))
+           false))
+(println (if-some [cause (clojure.core/ex-cause outer)]
+           (= "root" (ex-message cause))
+           false))
+(println (nil? (ex-cause (ex-info "without cause" {}))))
+(println (nil? (ex-cause (Failure "plain"))))
+|}
+  in
+  let expected = String.concat "" (List.init 5 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_ex_cause.cljc"
+      cause_source
+  in
+  assert_ocaml_runs "source_ex_cause" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_ex_cause.cljc"
+       cause_source);
+  compile_with_stdlib_result Lg.Target.Native "test/ex_cause_zero.cljc"
+    "(def result (ex-cause))"
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/ex_cause_two.cljc"
+    "(def result (ex-cause (Failure \"a\") (Failure \"b\")))"
+  |> expect_error_contains "called with incompatible arguments"
+
+let test_ex_info_supports_clojurescript_cause_arity () =
+  let source =
+    {|
+(def root (Failure "root"))
+(def outer (ex-info "outer" {} root))
+(println (= "outer" (ex-message outer)))
+|}
+  in
+  assert_ocaml_runs "ex_info_cause_arity" "true\n"
+    (compile_with_stdlib Lg.Target.Native "test/ex_info_cause_arity.cljc"
+       source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/ex_info_cause_arity.cljc"
+       source);
+  compile_with_stdlib_result Lg.Target.Native "test/ex_info_invalid_cause.cljc"
+    "(def result (ex-info \"outer\" {} \"not an exception\"))"
+  |> expect_error_contains "ex-info cause must be an exception"
+
 let test_source_numeric_coercions_match_clojurescript () =
   let source =
     {|
@@ -38336,6 +38414,10 @@ let tests =
       test_source_collection_predicates_are_statically_first_class );
     ( "source ex-message matches ClojureScript",
       test_source_ex_message_matches_clojurescript );
+    ( "source ex-cause matches ClojureScript",
+      test_source_ex_cause_matches_clojurescript );
+    ( "ex-info supports ClojureScript cause arity",
+      test_ex_info_supports_clojurescript_cause_arity );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
     ( "source control macros match ClojureScript",

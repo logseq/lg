@@ -609,6 +609,9 @@
 (defn ex-message [ex]
   (__lg_ex-message ex))
 
+(defn ex-cause [ex]
+  (__lg_ex-cause ex))
+
 (defn inc [x]
   (+ x 1))
 

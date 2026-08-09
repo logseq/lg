@@ -6321,38 +6321,49 @@ let create ~compile_expr =
                            (Semantic_ir.Apply
                               (Semantic_ir.Ident "raise", [ arg.semantic_expr ])))
         | Ok _ -> Error.error "raise expects 1 arguments")
-    | "ex-info" -> (
-        match compile_args () with
-        | Error _ as error -> error
-                  | Ok [ message; data ] when Types.equal message.ty TString
-                    -> (
-            let packed_data =
-              match arg_forms with
-              | [ _message; FMap [] ] ->
-                  (* The empty map is constructed directly inside ex-info's
-                     documented open runtime field. No static collection
-                     crosses the dynamic boundary. *)
-                  Ok
-                    (Semantic_ir.Apply
-                       ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
-                         [ Semantic_ir.List [] ] ))
-              | _ ->
-                  pack_dynamic_value env
-                    (Types.dynamic_constraint TUnknown)
-                    data
-            in
-            match packed_data with
-            | Error _ as error -> error
-            | Ok data ->
+    | "ex-info" ->
+        let compile_ex_info message data cause =
+          let packed_data =
+            match arg_forms with
+            | [ _message; FMap [] ] | [ _message; FMap []; _ ] ->
+                (* The empty map is constructed directly inside ex-info's
+                   documented open runtime field. No static collection
+                   crosses the dynamic boundary. *)
                 Ok
-                  (typed_ir (TOcaml "exn")
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_exception.ex_info",
-                          [ message.semantic_expr; data ] ))))
-                  | Ok [ _; _ ] ->
-                      Error.error "ex-info message must be a string"
-        | Ok _ -> Error.error "ex-info expects 2 arguments")
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
+                       [ Semantic_ir.List [] ] ))
+            | _ ->
+                pack_dynamic_value env
+                  (Types.dynamic_constraint TUnknown)
+                  data
+          in
+          Result.map
+            (fun data ->
+              let callee, semantic_args =
+                match cause with
+                | None ->
+                    ( "Lg_runtime.Runtime_exception.ex_info",
+                      [ message.semantic_expr; data ] )
+                | Some cause ->
+                    ( "Lg_runtime.Runtime_exception.ex_info_with_cause",
+                      [ message.semantic_expr; data; cause.semantic_expr ] )
+              in
+              typed_ir (TOcaml "exn")
+                (Semantic_ir.Apply (Semantic_ir.Ident callee, semantic_args)))
+            packed_data
+        in
+        (match compile_args () with
+        | Error _ as error -> error
+        | Ok ([ message; _ ] | [ message; _; _ ])
+          when not (Types.equal message.ty TString) ->
+            Error.error "ex-info message must be a string"
+        | Ok [ _; _; cause ] when not (Types.equal cause.ty (TOcaml "exn")) ->
+            Error.error "ex-info cause must be an exception"
+        | Ok [ message; data ] -> compile_ex_info message data None
+        | Ok [ message; data; cause ] ->
+            compile_ex_info message data (Some cause)
+        | Ok _ -> Error.error "ex-info expects 2 or 3 arguments")
     | "throw" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -7196,6 +7207,15 @@ let create ~compile_expr =
                     [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ex-message expects an exception"
         | Ok _ -> Error.error "ex-message expects 1 arguments")
+    | "__lg_ex-cause" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ { ty = TOcaml "exn"; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir (TNullable (TOcaml "exn"))
+                 (apply "Lg_runtime.Runtime_exception.cause" [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "ex-cause expects an exception"
+        | Ok _ -> Error.error "ex-cause expects 1 arguments")
     | "reify" -> (
         match arg_forms with
                   | FSymbol protocol_name :: method_forms -> (

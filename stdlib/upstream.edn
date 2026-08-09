@@ -155,6 +155,10 @@
                :reason :polymorphic-vector-source-function-returns-an-optional-vector-while-its-inline-definition-preserves-the-upstream-seq-guard-and-each-direct-call-input-collection-type}
     ex-message {:status :static-adaptation
                 :reason :source-function-exposes-a-first-class-exn-to-optional-string-contract-through-a-minimal-internal-runtime-exception-message-primitive}
+    ex-cause {:status :static-adaptation
+              :reason :source-function-exposes-the-upstream-exception-info-cause-as-a-closed-optional-exception-through-a-minimal-internal-runtime-primitive}
+    ex-info {:status :host-boundary
+             :reason :two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary}
     ex-data {:status :blocked-static-typing
              :reason :exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type}
     js-obj {:status :host-boundary

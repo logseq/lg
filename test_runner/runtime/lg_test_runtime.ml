@@ -61,7 +61,7 @@ let finish () = ()
 let invoke body = body ()
 
 let exception_message = function
-  | Lg_runtime.Runtime_exception.Exception_info (message, _) -> message
+  | Lg_runtime.Runtime_exception.Exception_info (message, _, _) -> message
   | Failure message | Invalid_argument message -> message
   | exn -> Printexc.to_string exn
 

@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 272 source entries (31.81%), 90 typed
+macro surfaces. The current baseline is 273 source entries (31.93%), 90 typed
 primitives, 5 special forms, 15 host boundaries, 162 static-typing blockers,
-44 out-of-scope Spec entries, and 267 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 266 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -160,7 +160,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 238-name compiler dispatch inventory has zero `source-shadowed`
+The current 239-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
@@ -219,6 +219,10 @@ collection domains. Direct `not-empty` retains its input collection type while
 the first-class vector instance returns an optional vector.
 `ex-message` is a source function over a minimal internal
 `exn -> option<string>` primitive and works as a normal static function value.
+`ex-cause` is likewise a source function over `exn -> option<exn>`.
+`Exception_info` stores that closed optional cause directly, and `ex-info`
+supports the pinned upstream two- and three-argument arities without widening
+its existing exception-only data boundary.
 `ex-data` remains blocked because its upstream result is an open heterogeneous
 map currently stored in the documented exception-only dynamic payload.
 `js-obj` and `js->clj` are explicit JavaScript host boundaries: neither has a
@@ -254,6 +258,8 @@ direct `abs` calls.
 `ex-message` adds the 238th internal route, classified explicitly as the
 minimal typed `exn -> option<string>` primitive behind its public source
 function.
+`ex-cause` adds the 239th internal route as the corresponding closed
+`exn -> option<exn>` primitive.
 The numeric coercions `int`, `long`, and `double` are source functions with
 inline source specialization over internal typed primitives. `byte` and
 `float` preserve the pinned ClojureScript identity function and inline macro.
