@@ -6,6 +6,17 @@ let ex_info_with_cause message data cause =
   Exception_info (message, data, Some cause)
 
 let create message = Exception_info (message, Runtime_dynamic.nil, None)
+
+let integer_overflow function_name =
+  let data =
+    Runtime_dynamic.map
+      [
+        ( Runtime_dynamic.keyword ":fn",
+          Runtime_dynamic.string function_name );
+      ]
+  in
+  Exception_info ("Integer overflow", data, None)
+
 let throw exception_ = raise exception_
 
 let message = function

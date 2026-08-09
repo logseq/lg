@@ -974,7 +974,13 @@
     next-down {:status :ported}
     ulp {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-ieee-unit-in-last-place-primitive}
     scalb {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-bounded-exponent-scaling-primitive}
-    IEEE-remainder {:status :static-adaptation :reason :source-port-preserves-upstream-fmod-reduction-ties-to-even-and-signed-zero-control-flow-with-static-float-operations}}}
+    IEEE-remainder {:status :static-adaptation :reason :source-port-preserves-upstream-fmod-reduction-ties-to-even-and-signed-zero-control-flow-with-static-float-operations}
+    add-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    subtract-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    multiply-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    increment-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    decrement-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    negate-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

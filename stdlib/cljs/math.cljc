@@ -6,6 +6,7 @@
 (ns cljs.math
   (:require [ocaml.Lg_runtime.Runtime_math :as runtime-math]
             [ocaml.Lg_runtime.Runtime_math_melange :as runtime-math-melange]
+            [ocaml.Lg_runtime.Runtime_exception :as runtime-exception]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Stdlib :as stdlib]))
 
@@ -142,3 +143,45 @@
           (if (< original-dividend 0.0)
             (- remainder-magnitude)
             remainder-magnitude))))))
+
+(defn- outside-safe-integer? [value]
+  (or (> value 9007199254740991.0)
+      (< value -9007199254740991.0)))
+
+(defn- throw-integer-overflow [function-name]
+  (throw (runtime-exception/integer-overflow function-name)))
+
+(defn add-exact [x y]
+  (let [result (+ x y)]
+    (if (outside-safe-integer? result)
+      (throw-integer-overflow "add-exact")
+      result)))
+
+(defn subtract-exact [x y]
+  (let [result (- x y)]
+    (if (outside-safe-integer? result)
+      (throw-integer-overflow "subtract-exact")
+      result)))
+
+(defn multiply-exact [x y]
+  (let [result (* x y)]
+    (if (outside-safe-integer? result)
+      (throw-integer-overflow "multiply-exact")
+      result)))
+
+(defn increment-exact [a]
+  (if (or (>= a 9007199254740991.0)
+          (< a -9007199254740991.0))
+    (throw-integer-overflow "increment-exact")
+    (+ a 1.0)))
+
+(defn decrement-exact [a]
+  (if (or (<= a -9007199254740991.0)
+          (> a 9007199254740991.0))
+    (throw-integer-overflow "decrement-exact")
+    (- a 1.0)))
+
+(defn negate-exact [a]
+  (if (outside-safe-integer? a)
+    (throw-integer-overflow "negate-exact")
+    (- a)))

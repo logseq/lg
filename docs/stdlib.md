@@ -148,9 +148,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 467 source entries (47.41%), 96 typed
+macro surfaces. The current baseline is 473 source entries (48.02%), 96 typed
 primitives, 12 special forms, 34 host boundaries, 159 static-typing blockers,
-51 out-of-scope entries, and 166 deferred entries. The deferred set is the
+51 out-of-scope entries, and 160 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -172,6 +172,12 @@ Melange; rounding and IEEE remainder control flow remains readable LG source.
 The public-surface extractor recognizes both metadata attached to a name and
 the declaration attribute-map form used throughout `cljs.math`, so private
 upstream helpers cannot inflate the denominator or the deferred queue.
+The six `*-exact` arithmetic functions use binary64 source arithmetic and the
+same positive and negative safe-integer limits as ClojureScript. This keeps
+their behavior identical across Native and Melange instead of inheriting each
+target's OCaml `int` width. Overflow construction crosses only the existing
+open `ExceptionInfo` data field through a typed `string -> exn` runtime helper;
+source maps are not packed into dynamic values.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

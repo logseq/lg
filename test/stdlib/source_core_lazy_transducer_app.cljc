@@ -259,6 +259,30 @@
 (println (= 1.0 (math/IEEE-remainder 5.0 2.0)))
 (println (= -1.0 (math/IEEE-remainder 7.0 2.0)))
 (println (= 7.0 (math/IEEE-remainder 7.0 ##Inf)))
+(println (= 5.0 (math/add-exact 2.0 3.0)))
+(println (= 4.0 (math/subtract-exact 7.0 3.0)))
+(println (= 42.0 (math/multiply-exact 6.0 7.0)))
+(println (= 4.0 (math/increment-exact 3.0)))
+(println (= 2.0 (math/decrement-exact 3.0)))
+(println (= -3.0 (math/negate-exact 3.0)))
+(println (try
+           (do (math/add-exact 9007199254740991.0 1.0) false)
+           (catch _ true)))
+(println (try
+           (do (math/subtract-exact -9007199254740991.0 1.0) false)
+           (catch _ true)))
+(println (try
+           (do (math/multiply-exact 9007199254740991.0 2.0) false)
+           (catch _ true)))
+(println (try
+           (do (math/increment-exact 9007199254740991.0) false)
+           (catch _ true)))
+(println (try
+           (do (math/decrement-exact -9007199254740991.0) false)
+           (catch _ true)))
+(println (try
+           (do (math/negate-exact 9007199254740992.0) false)
+           (catch _ true)))
 (defrecord ProtocolBox [value])
 (extend-type ProtocolBox
   protocols/Datafiable
