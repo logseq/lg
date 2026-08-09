@@ -8334,7 +8334,7 @@ let create ~compile_expr =
     | "__lg_set" -> compile_set scope env arg_forms
     | "interleave" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "reductions" -> compile_reductions scope env arg_forms
+    | "__lg_reductions" -> compile_reductions scope env arg_forms
               | "mapv" -> compile_mapv scope env arg_forms
     | "reduce-kv" -> compile_reduce_kv scope env arg_forms
     | "__lg_transformer_sequence" -> (

@@ -325,8 +325,8 @@
              :reason :source-port-preserves-eager-vector-accumulation-through-static-reduce-and-persistent-conj-because-the-javascript-transient-array-boundary-is-not-shared-by-native-and-melange}
     partition {:status :static-adaptation
                :reason :source-port-preserves-all-two-three-and-four-argument-lazy-arities-with-named-sequence-recursion-and-static-pad-storage}
-    reductions {:status :blocked-static-typing
-                :reason :source-port-needs-overloaded-zero-and-binary-reducer-projection-to-preserve-raw-or-reduced-callback-results-without-contextually-retyping-the-generated-function-value}
+    reductions {:status :static-adaptation
+                :reason :source-public-arities-delegate-the-overloaded-zero-or-binary-reducer-and-seqable-adaptation-boundary-to-a-private-typed-primitive}
     take-nth {:status :static-adaptation
               :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
     partition-all {:status :static-adaptation

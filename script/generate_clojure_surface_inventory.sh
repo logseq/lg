@@ -62,7 +62,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat doall drop drop-while every-pred filter fnil get-in interleave into juxt keep map map-indexed mapcat mapv max merge min next partial rand reduce reduce-kv reductions remove repeatedly rest select-keys some some-fn take take-while update-in vals", xs)
+    split("apply assoc-in comp concat doall drop drop-while every-pred filter fnil get-in interleave into juxt keep map map-indexed mapcat mapv max merge min next partial rand reduce reduce-kv remove repeatedly rest select-keys some some-fn take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -82,7 +82,7 @@ awk '
     blocked_reason["rand"] = "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type"
     split("next rest", xs)
     for (i in xs) blocked_reason[xs[i]] = "nil-versus-empty-sequence-semantics-remain-a-collection-capability-boundary"
-    split("reduce reduce-kv reductions", xs)
+    split("reduce reduce-kv", xs)
     for (i in xs) blocked_reason[xs[i]] = "multi-arity-reduced-short-circuit-and-collection-specific-callback-typing-remain-compiler-owned"
     blocked_reason["select-keys"] = "map-or-record-key-projection-requires-a-dependent-result-shape"
     blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
@@ -104,6 +104,7 @@ awk '
     internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
     internal_abi["__lg_sort"] = "typed-stable-sequence-sort-primitive"
     internal_abi["__lg_sort-by"] = "typed-key-projection-and-stable-sequence-sort-primitive"
+    internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }

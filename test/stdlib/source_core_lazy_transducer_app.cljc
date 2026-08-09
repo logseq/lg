@@ -180,3 +180,9 @@
      (mapv (fn [^SortEntry entry] (:rank entry))
            (sort-by (fn [^SortEntry entry] (:rank entry))
                     [(SortEntry. 3) (SortEntry. 1) (SortEntry. 2)]))))
+(println
+  (= [1 3 6]
+     (vec (reductions (fn [left right] (+ left right)) [1 2 3]))))
+(println
+  (= [10 11 13]
+     (vec (reductions (fn [left right] (+ left right)) 10 [1 2]))))

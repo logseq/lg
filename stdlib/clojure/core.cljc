@@ -676,6 +676,12 @@
     {}
     coll))
 
+(defn reductions
+  ([f coll]
+   (__lg_reductions f coll))
+  ([f init coll]
+   (__lg_reductions f init coll)))
+
 (defn- take-nth-seq [n coll]
   (lazy-seq
    (if coll
