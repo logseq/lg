@@ -205,6 +205,12 @@
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
     ensure-reduced {:status :blocked-static-typing
                     :reason :same-arity-return-type-depends-on-whether-the-input-is-already-a-parameterized-reduced-value}
+    delay? {:status :blocked-static-typing
+            :reason :first-class-instance-predicate-must-accept-every-static-value-type-but-lg-has-no-universal-static-instance-capability}
+    force {:status :blocked-static-typing
+           :reason :first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value}
+    keep-indexed {:status :blocked-static-typing
+                  :reason :one-arity-stateful-transducer-and-two-arity-lazy-optional-result-filter-cannot-yet-share-one-source-function-type}
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
     inc {:status :static-adaptation

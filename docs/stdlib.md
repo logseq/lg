@@ -134,12 +134,19 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 274 source entries (32.05%), 88 typed
-primitives, 5 special forms, 15 host boundaries, 165 static-typing blockers,
-44 out-of-scope Spec entries, and 264 deferred entries. The deferred set is the
+primitives, 5 special forms, 15 host boundaries, 168 static-typing blockers,
+44 out-of-scope Spec entries, and 261 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.
+`delay?` and `force` remain blocked rather than using direct-call-only inline
+type tests. Their pinned ClojureScript functions are first-class: `delay?`
+accepts every value type, while `force` returns either a delay's payload or the
+unchanged non-delay input. LG cannot yet express those relationships through
+one static source function without a typed instance/forceable capability.
+`keep-indexed` is also blocked as a whole: porting only its two-argument lazy
+sequence clause would silently omit the one-argument stateful transducer.
 `rand` remains compiler-owned because its one-argument public API accepts both
 int and float bounds, while source signatures cannot yet express same-arity
 overloads without rejecting one of those existing cases.
