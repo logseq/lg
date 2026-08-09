@@ -8338,10 +8338,6 @@ let create ~compile_expr =
     | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
-    | "repeat" ->
-        compile_sequence_transform_call scope env name arg_forms
-    | "cycle" ->
-        compile_sequence_transform_call scope env name arg_forms
     | "interleave" | "partition" ->
         compile_sequence_transform_call scope env name arg_forms
     | "reductions" -> compile_reductions scope env arg_forms

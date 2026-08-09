@@ -624,6 +624,26 @@
   ([n f]
    (take n (repeatedly f))))
 
+(defn repeat
+  ([value]
+   (lazy-seq
+    (cons value (repeat value))))
+  ([n value]
+   (take n (repeat value))))
+
+(defn- cycle-seq [values remaining]
+  (lazy-seq
+   (if remaining
+     (cons (nth remaining 0)
+           (cycle-seq values (rest remaining)))
+     (cycle-seq values values))))
+
+(defn cycle [coll]
+  (let [values (seq coll)]
+    (if values
+      (cycle-seq values values)
+      (seq []))))
+
 (defn- take-nth-seq [n coll]
   (lazy-seq
    (if coll

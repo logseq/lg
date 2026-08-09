@@ -227,28 +227,6 @@ let set collection =
              typed_ir (TSet inner)
                (apply (set_module ^ ".of_list") [ list_expr ]))
 
-let repeat count value =
-  if Types.equal count.ty TInt then
-    Ok
-      (typed_ir (TSeq value.ty)
-         (apply "Lg_runtime.Runtime_seq.take"
-            [ count.semantic_expr;
-              apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ] ]))
-  else Error.error "repeat count must be int"
-
-let repeat_forever value =
-  Ok
-    (typed_ir (TSeq value.ty)
-       (apply "Lg_runtime.Runtime_seq.repeat" [ value.semantic_expr ]))
-
-let cycle collection =
-  match collection_to_seq_expr collection with
-  | Error _ -> Error.error "cycle expects a collection"
-  | Ok (inner, sequence) ->
-      Ok
-        (typed_ir (TSeq inner)
-           (apply "Lg_runtime.Runtime_seq.cycle" [ sequence ]))
-
 let interleave collections =
   if List.length collections < 2 then
     Error.error "interleave expects at least two collections"
@@ -515,9 +493,6 @@ let compile name args =
   | "concat", collections -> concat collections
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
-  | "repeat", [ count; value ] -> repeat count value
-  | "repeat", [ value ] -> repeat_forever value
-  | "cycle", [ collection ] -> cycle collection
   | "interleave", collections -> interleave collections
   | "partition", [ size; collection ] -> partition size collection
   | "dorun", [ collection ] -> dorun collection
@@ -530,8 +505,6 @@ let compile name args =
   | ("sort" | "vec" | "set" | "dorun"
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
-  | "repeat", _ -> Error.error "repeat expects value, or count and value"
-  | "cycle", _ -> Error.error "cycle expects 1 collection"
   | "partition", _ -> Error.error "partition expects size and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

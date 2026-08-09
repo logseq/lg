@@ -74,6 +74,12 @@
   :overload<fn<seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;seqable<input;storage>;seq<output>>>)
 (signature clojure.core/repeatedly [value]
   :overload<fn<fn<value>;seq<value>>;fn<int;fn<value>;seq<value>>>)
+(signature clojure.core/repeat [value]
+  :overload<fn<value;seq<value>>;fn<int;value;seq<value>>>)
+(signature clojure.core/cycle-seq [value]
+  :fn<seq<value>;seq<value>;seq<value>>)
+(signature clojure.core/cycle [value storage]
+  :fn<seqable<value;storage>;seq<value>>)
 (signature clojure.core/take-nth-seq [value]
   :fn<int;seq<value>;seq<value>>)
 (signature clojure.core/take-nth [value storage accumulator]

@@ -303,6 +303,12 @@
               :reason :source-port-preserves-one-arity-seq-normalization-and-two-arity-lazy-transformer-buffering-while-upstream-multi-collection-transformer-iteration-remains-dependent-variadic-work}
     repeatedly {:status :ported
                 :reason :source-port-preserves-infinite-delayed-generation-and-finite-take-composition}
+    repeat {:status :static-adaptation
+            :reason :source-port-preserves-infinite-delayed-repetition-and-finite-take-composition-instead-of-the-javascript-repeat-runtime-type}
+    cycle {:status :static-adaptation
+           :reason :source-port-preserves-empty-input-termination-and-memoized-infinite-repetition-instead-of-the-javascript-cycle-runtime-type}
+    reductions {:status :blocked-static-typing
+                :reason :source-port-needs-overloaded-zero-and-binary-reducer-projection-to-preserve-raw-or-reduced-callback-results-without-contextually-retyping-the-generated-function-value}
     take-nth {:status :static-adaptation
               :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
     partition-all {:status :static-adaptation

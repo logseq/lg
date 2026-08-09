@@ -5974,13 +5974,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           collections
           |> List.find_map (fun collection ->
                  let element_ty =
-                   match collection with
-                   | FList [ FSymbol "repeat"; value ]
-                   | FList [ FSymbol "repeat"; _; value ] ->
-                       Some (inferred_form_type params value)
-                   | _ ->
-                       inferred_form_type params collection
-                       |> Types.next_seq_element
+                   inferred_form_type params collection
+                   |> Types.next_seq_element
                  in
                  match element_ty with
                  | Some (TUnknown | TMeta _ | TVar _) | None -> None

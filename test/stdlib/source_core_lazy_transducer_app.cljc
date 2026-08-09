@@ -106,3 +106,6 @@
 (println (= [[1 2] [3]] (vec (sequence (partition-all 2) [1 2 3]))))
 (println (= [[1 2] [3]] (vec (partitionv-all 2 [1 2 3]))))
 (println (= [[1 2] [3]] (vec (sequence (partitionv-all 2) [1 2 3]))))
+(println (= [9 9 9 9] (vec (take 4 (repeat 9)))))
+(println (= [8 8 8] (vec (repeat 3 8))))
+(println (= [1 2 1 2 1] (vec (take 5 (cycle [1 2])))))
