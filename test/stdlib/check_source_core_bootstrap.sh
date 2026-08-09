@@ -20,7 +20,7 @@ for name in \
   second last \
   even? odd? every? ffirst fnext nfirst nnext not-any? not-every? \
   split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct zipmap \
-  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val parse-boolean splitv-at distinct? not= \
+  comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec replicate key val key-test reduceable? vector-lite hash-map-lite set-lite parse-boolean splitv-at distinct? not= \
   booleans bytes chars shorts ints floats doubles longs random-uuid parse-uuid system-time parse-long parse-double merge-with \
   NaN? infinite? keyword-identical? symbol-identical? hash-long special-symbol? \
   bit-clear bit-flip bit-set bit-test; do
@@ -70,7 +70,7 @@ done
 for name in truth_ \
   'nil?' 'true?' 'false?' 'int?' 'number?' 'string?' 'keyword?' 'symbol?' \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
-  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
+  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' 'reduceable?' \
   'char?' 'identical?' 'array?' 'array-value?' 'reduced?' \
   'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?' \
   'ident?' 'simple-ident?' 'qualified-ident?' \

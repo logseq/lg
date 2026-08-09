@@ -31,6 +31,11 @@
   [& values]
   (rrb-vector/of-list (runtime-seq/to-list (seq values))))
 
+(defn vector-lite
+  {:inline (fn [& values] (cons '__lg_vector values))}
+  [& values]
+  (rrb-vector/of-list (runtime-seq/to-list (seq values))))
+
 (defn- map-from-keyvals [keyvals]
   (loop [remaining (seq keyvals)
          result {}]
@@ -47,6 +52,11 @@
   [& keyvals]
   (map-from-keyvals keyvals))
 
+(defn hash-map-lite
+  {:inline (fn [& keyvals] (cons '__lg_hash-map keyvals))}
+  [& keyvals]
+  (map-from-keyvals keyvals))
+
 (defn array-map
   {:inline (fn [& keyvals] (cons '__lg_array-map keyvals))}
   [& keyvals]
@@ -56,6 +66,11 @@
   (reduce (fn [result value] (conj result value)) #{} coll))
 
 (defn set
+  {:inline (fn [coll] (list '__lg_set coll))}
+  [coll]
+  (set-from-coll coll))
+
+(defn set-lite
   {:inline (fn [coll] (list '__lg_set coll))}
   [coll]
   (set-from-coll coll))
@@ -425,6 +440,11 @@
   {:inline (fn [x] (list 'satisfies? 'ISorted x))}
   [x]
   (satisfies? ISorted x))
+
+(defn reduceable?
+  {:inline (fn [x] (list 'satisfies? 'IReduce x))}
+  [x]
+  (satisfies? IReduce x))
 
 (defn zero?
   {:inline (fn [x] (list '__lg_zero-predicate x))}
@@ -1552,6 +1572,12 @@
 
 (defn keyword-identical? [left right]
   (= left right))
+
+(defn key-test [key other]
+  (cond
+    (identical? key other) true
+    (keyword-identical? key other) true
+    :else (= key other)))
 
 (defn symbol-identical? [left right]
   (= left right))

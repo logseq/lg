@@ -29,6 +29,7 @@ let method_basename name =
 let canonical_protocol_name protocol_name =
   match method_basename protocol_name with
   | "ISeqable" -> "Seqable"
+  | "IReduce" -> "Reducible"
   | "ICounted" -> "Counted"
   | "IEmptyableCollection" -> "Emptyable"
   | _ -> protocol_name

@@ -622,6 +622,7 @@ let initial_registry =
   |> add_reducible Receiver_id.Seq_receiver "Lg.Core_protocols.reduce_seq"
   |> add_reducible Receiver_id.Array_receiver "Lg.Core_protocols.reduce_array"
   |> add_reducible Receiver_id.String_receiver "Lg.Core_protocols.reduce_string"
+  |> add_reducible runtime_map_receiver "Lg_runtime.Runtime_map.reduce_protocol"
   |> add_reducible (Receiver_id.Host_receiver "list")
        "Lg.Core_protocols.reduce_host_list"
   |> add_reducible (Receiver_id.Host_receiver "array")

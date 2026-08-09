@@ -515,6 +515,8 @@ let fold_left fn accumulator map =
       | None -> accumulator)
     accumulator map.sequence
 
+let reduce_protocol map fn accumulator = fold_left fn accumulator map
+
 let kv_reduce fn accumulator map =
   fold_left
     (fun accumulator (key, value) -> fn accumulator key value)

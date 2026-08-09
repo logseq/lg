@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? flush hash-double hash-keyword hash-long hash-string ifind? inc infinite? iterate keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? regexp? special-symbol? symbol-identical? tree-seq volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -528,3 +528,53 @@
 (println (= [:first :second] @source-lock-body))
 (println (nil? (core/locking :unused)))
 (println (= 42 (clojure.core/locking :ignored 42)))
+
+(println (key-test :item :item))
+(println (key-test "item" "item"))
+(println (not (key-test 1 2)))
+(println (core/key-test :item :item))
+(println (clojure.core/key-test "item" "item"))
+(def source-key-test key-test)
+(println (source-key-test 7 7))
+
+(println (reduceable? [1 2]))
+(println (reduceable? (list 1 2)))
+(println (reduceable? #{1 2}))
+(println (reduceable? (array-values 1 2)))
+(println (reduceable? "ab"))
+(println (reduceable? {:left 1}))
+(println (not (reduceable? 1)))
+(println (core/reduceable? [1]))
+(println (clojure.core/reduceable? {:left 1}))
+(def source-reduceable? reduceable?)
+(println (source-reduceable? [1]))
+
+(type-record source-reducible (value :int))
+(extend-type source-reducible ISeqable
+  (-seq [_source] (list 99)))
+(extend-type source-reducible IReduce
+  (-reduce [source reducer initial]
+    (reducer initial (:value source))))
+(def source-reducible-value
+  (record source-reducible (value 7)))
+(println (reduceable? source-reducible-value))
+(println (= 7 (reduce + 0 source-reducible-value)))
+
+(println (= [] (vector-lite)))
+(println (= [1 2 3] (vector-lite 1 2 3)))
+(println (= ["left" "right"] (core/vector-lite "left" "right")))
+(def source-vector-lite vector-lite)
+(println (= [:left :right] (source-vector-lite :left :right)))
+
+(println (= {} (hash-map-lite)))
+(println (= 1 (get (hash-map-lite :left 1 :right 2) :left 0)))
+(println (= 3 (get (hash-map-lite :left 1 :left 3) :left 0)))
+(println (= true (get (core/hash-map-lite "ready" true) "ready" false)))
+(def source-hash-map-lite hash-map-lite)
+(println (= 9 (get (source-hash-map-lite :value 9) :value 0)))
+
+(println (= #{1 2} (set-lite [1 2 1])))
+(println (= #{:left :right} (core/set-lite (list :left :right :left))))
+(println (= #{"x"} (clojure.core/set-lite ["x" "x"])))
+(def source-set-lite set-lite)
+(println (= #{7 8} (source-set-lite [7 8 7])))

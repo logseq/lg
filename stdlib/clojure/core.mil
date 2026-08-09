@@ -56,6 +56,8 @@
   :fn<vector<value>;bool>)
 (signature clojure.core/sorted? [value]
   :fn<vector<value>;bool>)
+(signature clojure.core/reduceable? [value]
+  :fn<vector<value>;bool>)
 (signature clojure.core/char? :fn<char;bool>)
 (signature clojure.core/identical? [value]
   :fn<value;value;bool>)
@@ -310,7 +312,10 @@
 (signature clojure.core/val [key value]
   :fn<tuple<key;value>;value>)
 
-(signature clojure.core/keyword-identical? :fn<keyword;keyword;bool>)
+(signature clojure.core/keyword-identical? [value]
+  :fn<value;value;bool>)
+(signature clojure.core/key-test [value]
+  :fn<value;value;bool>)
 (signature clojure.core/symbol-identical? :fn<symbol;symbol;bool>)
 (signature clojure.core/special-symbol? :fn<symbol;bool>)
 
@@ -343,11 +348,17 @@
   :variadic-fn<value;list<value>>)
 (signature clojure.core/vector [value]
   :variadic-fn<value;vector<value>>)
+(signature clojure.core/vector-lite [value]
+  :variadic-fn<value;vector<value>>)
 (signature clojure.core/hash-map [value]
+  :variadic-fn<value;map<value;value>>)
+(signature clojure.core/hash-map-lite [value]
   :variadic-fn<value;map<value;value>>)
 (signature clojure.core/array-map [value]
   :variadic-fn<value;map<value;value>>)
 (signature clojure.core/hash-set [value]
   :variadic-fn<value;set<value>>)
 (signature clojure.core/set [value]
+  :fn<seqable<value>;set<value>>)
+(signature clojure.core/set-lite [value]
   :fn<seqable<value>;set<value>>)

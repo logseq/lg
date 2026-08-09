@@ -145,9 +145,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 336 source entries (39.25%), 62 typed
-primitives, 12 special forms, 15 host boundaries, 171 static-typing blockers,
-44 out-of-scope Spec entries, and 216 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 341 source entries (39.84%), 62 typed
+primitives, 12 special forms, 15 host boundaries, 173 static-typing blockers,
+44 out-of-scope Spec entries, and 209 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -557,6 +557,23 @@ inventory but do not count against migration completion. `clojure.walk` and `clo
 their upstream algorithms traverse heterogeneous Clojure trees; a valid port
 must use a closed value domain rather than the existing `Runtime_dynamic.t`
 boundary.
+
+The source core also includes ClojureScript's `key-test`, `reduceable?`,
+`vector-lite`, `hash-map-lite`, and `set-lite`. `IReduce` is a source-facing
+alias of LG's existing static `Reducible` protocol, including a typed map
+reducer, so explicit implementations work through both names. Lite collections
+use LG's default persistent vector, hash-map, and set representations because
+their upstream runtime classes are explicitly internal; observable collection
+behavior is retained. `hash-map-lite` rejects odd key/value input instead of
+inserting an implicit `nil`, because that value would violate a homogeneous
+static map value type.
+
+`flatten` and `memoize` are explicit blockers rather than partial Logseq-facing
+ports. Arbitrarily nested `flatten` input can yield heterogeneous leaf types and
+therefore needs a closed recursive value domain. A faithful first-class
+`memoize` must preserve every arity of its input function while using complete,
+potentially heterogeneous argument tuples as cache keys; LG cannot yet express
+that returned-function relationship statically.
 
 The architecture tests in `test/stdlib` enforce that `clojure.set` is no
 longer classified as compiler-owned and that source-owned core functions have
