@@ -21921,6 +21921,64 @@ let test_coll_predicate_has_no_name_based_compiler_dispatch () =
       "src/type_inference.ml";
     ]
 
+let test_set_predicate_uses_the_clojurescript_protocol () =
+  let source =
+    {|
+(ns source-iset-predicate-app
+  (:require [cljs.core :as core :refer [set?]]))
+
+(deftype ProtocolSet [^int id]
+  ISet
+  (-disjoin [this _value] this))
+
+(def evaluations (atom 0))
+
+(println (set? (ProtocolSet. 1)))
+(println (core/set? #{1 2}))
+(println (not (set? [1 2])))
+(println (not (set? nil)))
+(println (= #{1 2} (-conj #{1} 2)))
+(println (= #{2} (-disjoin #{1 2} 1)))
+(println (set? (do (swap! evaluations inc) #{1})))
+(println (= 1 @evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_iset_predicate.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "set? must dispatch through a static ISet witness";
+  if not (string_contains_substring native_source "Int_set.add 2") then
+    failwith "ICollection/-conj should emit the readable specialized set update";
+  if not (string_contains_substring native_source "Int_set.remove 1") then
+    failwith "ISet/-disjoin should emit the readable specialized set update";
+  if string_contains_substring native_source "disjoin_poly_set" then
+    failwith "a concrete int set should not use the polymorphic set fallback";
+  assert_ocaml_runs "set_predicate_uses_clojurescript_iset" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_iset_predicate.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange set? must use a static ISet witness"
+
+let test_set_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_set-predicate" in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith ("set? still has name-based compiler dispatch in " ^ path))
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -39263,6 +39321,10 @@ let tests =
       test_coll_predicate_uses_the_clojurescript_protocol );
     ( "coll predicate has no name-based compiler dispatch",
       test_coll_predicate_has_no_name_based_compiler_dispatch );
+    ( "set predicate uses the ClojureScript ISet protocol",
+      test_set_predicate_uses_the_clojurescript_protocol );
+    ( "set predicate has no name-based compiler dispatch",
+      test_set_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

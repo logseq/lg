@@ -247,11 +247,11 @@ argument is still evaluated before the boolean result is produced. `nil?` and
 values.
 
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
-`neg-int?`, `string?`, `keyword?`, `boolean?`, `list?`, `seq?`, `set?`, `fn?`,
+`neg-int?`, `string?`, `keyword?`, `boolean?`, `list?`, `seq?`, `fn?`,
 `indexed?`, `seqable?`, and `counted?` are resolved from static lg types or
-direct OCaml integer checks. `vector?`, `map?`, `coll?`, and `associative?`
-follow the ClojureScript `IVector`, `IMap`, `ICollection`, and `IAssociative`
-protocols.
+direct OCaml integer checks. `vector?`, `set?`, `map?`, `coll?`, and
+`associative?` follow the ClojureScript `IVector`, `ISet`, `IMap`,
+`ICollection`, and `IAssociative` protocols.
 Vectors and persistent HAMTs provide concrete `IAssociative` implementations;
 structural maps and source `defrecord` values satisfy the protocol from their
 closed static record representation.

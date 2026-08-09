@@ -302,9 +302,9 @@
   (__lg_seq-predicate x))
 
 (defn set?
-  {:inline (fn [x] (list '__lg_set-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'ISet x))}
   [x]
-  (__lg_set-predicate x))
+  (if (nil? x) false (satisfies? ISet x)))
 
 (defn map?
   {:inline (fn [x] (list 'satisfies? 'IMap x))}

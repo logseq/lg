@@ -33,6 +33,7 @@ let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let lookup_id = Protocol_id.create ~owner:[] ~name:"ILookup"
 let collection_id = Protocol_id.create ~owner:[] ~name:"ICollection"
+let set_id = Protocol_id.create ~owner:[] ~name:"ISet"
 let associative_id = Protocol_id.create ~owner:[] ~name:"IAssociative"
 let find_id = Protocol_id.create ~owner:[] ~name:"IFind"
 let map_id = Protocol_id.create ~owner:[] ~name:"IMap"
@@ -298,6 +299,26 @@ let declare_map_protocols registry =
        ]
   |> add_or_fail
 
+let declare_set_protocol registry =
+  let element = TVar "set_element" in
+  let set = TSet element in
+  Protocol_registry.declare set_id
+    [ signature (method_id set_id "-disjoin") [ set; element ] set ]
+    registry
+  |> add_or_fail
+
+let add_static_set_protocol registry =
+  let element = TVar "set_element" in
+  let set = TSet element in
+  let binding =
+    Types.binding ~protocol_id:set_id
+      "Lg_runtime.Runtime_collection.disjoin_poly_set"
+      (TFn ([ set; element ], set))
+  in
+  Protocol_registry.add_implementation set_id (method_id set_id "-disjoin")
+    Receiver_id.Set_receiver binding registry
+  |> add_or_fail
+
 let add_runtime_map_protocols registry =
   let key = TVar "map_key" in
   let value = TVar "map_value" in
@@ -475,6 +496,7 @@ let initial_registry =
   |> declare_collection_lifecycle_protocols |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
+  |> declare_set_protocol |> add_static_set_protocol
   |> declare_map_protocols |> add_runtime_map_protocols
   |> add_static_collection_protocols
   |> declare_vector_protocol |> add_vector_associative_protocols

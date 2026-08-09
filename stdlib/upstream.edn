@@ -88,7 +88,7 @@
     seq? {:status :static-adaptation
           :reason :source-function-provides-a-polymorphic-first-class-sequence-predicate-while-its-inline-definition-specializes-direct-calls-to-supported-static-sequence-representations}
     set? {:status :static-adaptation
-          :reason :source-function-provides-a-polymorphic-first-class-set-predicate-while-its-inline-definition-specializes-direct-calls-to-the-static-set-representation}
+          :reason :source-function-and-inline-specialization-use-clojurescript-iset-protocol-satisfaction-without-name-based-compiler-dispatch}
     map? {:status :static-adaptation
           :reason :source-function-and-inline-specialization-use-clojurescript-imap-protocol-satisfaction-without-name-based-compiler-dispatch}
     fn? {:status :static-adaptation

@@ -8011,7 +8011,6 @@ let create ~compile_expr =
               | "__lg_number-predicate" | "__lg_string-predicate"
               | "__lg_keyword-predicate" | "__lg_list-predicate"
               | "__lg_seq-predicate"
-              | "__lg_set-predicate"
               | "__lg_fn-predicate"
               | "indexed?" ->
                   compile_boolean_call scope env name arg_forms
@@ -12264,13 +12263,46 @@ let create ~compile_expr =
                                           "protocol method argument count \
                                            mismatch"
                                   in
-                                  Result.map
+                                  Result.bind (prepare [] param_tys args)
                                     (fun arguments ->
-                                      typed_ir ret
-                                       (Semantic_ir.Apply
-                                          ( Semantic_ir.Ident impl.ocaml_name,
-                                             arguments )))
-                                    (prepare [] param_tys args)
+                                      let static_set_operation =
+                                        match impl.protocol_id with
+                                        | Some protocol_id
+                                          when Protocol_id.equal protocol_id
+                                                 Core_protocols.set_id
+                                               && method_name = "-disjoin" ->
+                                            Some "remove"
+                                        | Some protocol_id
+                                          when Protocol_id.equal protocol_id
+                                                 Core_protocols.collection_id
+                                               && method_name = "-conj" ->
+                                            Some "add"
+                                        | Some _ | None -> None
+                                      in
+                                      match
+                                        ( receiver.ty,
+                                          arguments,
+                                          static_set_operation )
+                                      with
+                                      | ( TSet element_ty,
+                                          [ collection; value ],
+                                          Some operation ) ->
+                                          Result.map
+                                            (fun set_module ->
+                                              typed_ir ret
+                                                (Semantic_ir.Apply
+                                                   ( Semantic_ir.Ident
+                                                       (set_module ^ "."
+                                                      ^ operation),
+                                                     [ value; collection ] )))
+                                            (Types.set_module_name element_ty)
+                                      | _ ->
+                                          Ok
+                                            (typed_ir ret
+                                               (Semantic_ir.Apply
+                                                  ( Semantic_ir.Ident
+                                                      impl.ocaml_name,
+                                                    arguments ))))
                               | TFn _ ->
                                   Error.error
                                     (name
