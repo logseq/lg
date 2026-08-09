@@ -384,6 +384,11 @@ Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `co
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
+The public `contains?`, `assoc`, `dissoc`, and `keys` definitions are compiled
+from `clojure.core` source. Static receiver-dependent map, record, set, vector,
+and index relationships cross only private compiler primitives; no dynamic
+collection representation is introduced.
+
 `map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
 realized nodes are cached, so repeated traversal does not rerun producer side
 effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array

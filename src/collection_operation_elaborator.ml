@@ -329,8 +329,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                })
     | FSymbol _ -> (
         match compile_function_arg scope env form with
-        | Ok _ as fn -> fn
-        | Error _ -> compile_contextual_call ())
+        | Ok ({ ty = TFn _; _ } as fn) -> Ok fn
+        | Ok _ | Error _ -> compile_contextual_call ())
     | FList (FSymbol "fnil" :: _) -> compile_contextual_call ()
     | _ -> compile_function_arg scope env form
   in

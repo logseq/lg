@@ -517,6 +517,16 @@
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-icounted-with-static-witnesses-for-nil-seqables-and-explicit-protocol-implementations}
     nth {:status :static-adaptation
          :reason :source-overloads-and-inline-specialization-delegate-to-clojurescript-iindexed-while-preserving-static-list-vector-array-string-default-and-explicit-protocol-behavior}
+    get {:status :typed-primitive
+         :reason :return-type-depends-on-the-receiver-key-and-optional-default-and-a-public-source-binding-currently-erases-nominal-record-field-function-types-across-precompiled-namespaces}
+    contains? {:status :static-adaptation
+               :reason :source-function-preserves-upstream-key-or-index-membership-through-a-private-static-associative-set-vector-array-and-record-elaboration-primitive}
+    assoc {:status :static-adaptation
+           :reason :source-overloads-and-inline-expansion-preserve-left-to-right-key-value-association-and-even-form-validation-through-a-private-static-associated-shape-primitive}
+    dissoc {:status :static-adaptation
+            :reason :source-overloads-and-inline-expansion-preserve-zero-one-and-variadic-left-to-right-key-removal-through-a-private-static-map-shape-primitive}
+    keys {:status :static-adaptation
+          :reason :source-function-exposes-static-map-key-sequences-through-a-private-key-value-associated-type-projection-primitive}
     inc {:status :static-adaptation
          :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
     dec {:status :static-adaptation

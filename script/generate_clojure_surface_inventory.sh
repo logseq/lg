@@ -106,6 +106,10 @@ awk '
     internal_abi["__lg_reduce-kv"] = "typed-empty-accumulator-and-collection-inference-primitive"
     internal_abi["__lg_reduce"] = "typed-reduced-short-circuit-and-collection-specialization-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
+    internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
+    internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
+    internal_abi["__lg_contains"] = "typed-key-index-and-membership-capability-primitive"
+    internal_abi["__lg_keys"] = "typed-map-key-projection-primitive"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }
@@ -153,8 +157,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 139; then
-  echo "compiler form dispatch changed: expected 139 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 136; then
+  echo "compiler form dispatch changed: expected 136 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

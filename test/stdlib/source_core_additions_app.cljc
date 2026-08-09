@@ -9,6 +9,10 @@
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
+(defrecord AssocState [^:map<keyword;int> properties])
+(def assoc-updated
+  (update (AssocState. {}) :properties assoc :answer 42))
+(println (get (:properties assoc-updated) :answer))
 (println (= 4 (unsigned-bit-shift-right 8 1)))
 (println (= 0 (bit-count 0)))
 (println (= 4 (bit-count 15)))

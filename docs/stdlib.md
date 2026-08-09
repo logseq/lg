@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 478 source entries (48.53%), 96 typed
+macro surfaces. The current baseline is 482 source entries (48.93%), 92 typed
 primitives, 43 special forms, 98 host boundaries, 219 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -191,6 +191,14 @@ including both `prim-seq` arities, without introducing the JavaScript-only
 character table lives in a typed runtime helper because the current LG lexer
 cannot express delimiter characters such as braces and brackets as char
 literals; the boundary is `string -> string` and does not use dynamic values.
+`contains?`, `assoc`, `dissoc`, and `keys` are source-visible collection
+functions. Their direct-call inline definitions preserve ClojureScript arities,
+left-to-right key processing, and odd-association validation while delegating
+only receiver/key/value dependent elaboration to private `__lg_*` primitives.
+The public names no longer occur in call elaboration or type-inference form
+dispatch. `get` remains a typed primitive because its result depends jointly on
+receiver, key, and optional default; exposing the current inferred signature as
+a precompiled source binding loses nominal record-field function types.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;

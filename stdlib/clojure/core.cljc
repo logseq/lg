@@ -46,6 +46,66 @@
   (-write [writer source] (buffer/add-string writer source))
   (-flush [_writer] nil))
 
+(defn contains?
+  {:inline (fn [collection key]
+             (list '__lg_contains collection key))}
+  [collection key]
+  (__lg_contains collection key))
+
+(defn assoc
+  {:inline
+   (fn [collection key value & keyvals]
+     (loop [expression (list '__lg_assoc collection key value)
+            remaining keyvals]
+       (if (nil? remaining)
+         expression
+         (let [tail (next remaining)]
+           (if (nil? tail)
+             (cons '__lg_assoc
+                   (cons collection (cons key (cons value keyvals))))
+             (recur (list '__lg_assoc expression
+                          (first remaining)
+                          (first tail))
+                    (next tail)))))))}
+  ([collection key value]
+   (IAssociative/-assoc collection key value))
+  ([collection key value & keyvals]
+   (loop [result (IAssociative/-assoc collection key value)
+          remaining keyvals]
+     (if (seq remaining)
+       (let [tail (next remaining)]
+         (if (seq tail)
+           (recur (IAssociative/-assoc result (first remaining) (first tail))
+                  (next tail))
+           (throw (ex-info "assoc expects an even number of key/value forms" {}))))
+       result))))
+
+(defn dissoc
+  {:inline
+   (fn [collection & keys]
+     (loop [expression collection
+            remaining keys]
+       (if (nil? remaining)
+         expression
+         (recur (list '__lg_dissoc expression (first remaining))
+                (next remaining)))))}
+  ([collection] collection)
+  ([collection key]
+   (IMap/-dissoc collection key))
+  ([collection key & keys]
+   (loop [result (IMap/-dissoc collection key)
+          remaining keys]
+     (if (seq remaining)
+       (recur (IMap/-dissoc result (first remaining))
+              (next remaining))
+       result))))
+
+(defn keys
+  {:inline (fn [collection]
+             (list '__lg_keys collection))}
+  [collection]
+  (__lg_keys collection))
+
 (defn make-hierarchy []
   (runtime-hierarchy/make))
 

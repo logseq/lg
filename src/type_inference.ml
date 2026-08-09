@@ -543,8 +543,7 @@ let record_mutable_field_value_type params receiver keyword =
 
 let rec assoc_root_symbol = function
   | FSymbol name -> Some name
-  | FList
-      (FSymbol ("assoc" | "clojure.core/assoc") :: target :: _) ->
+  | FList ((FSymbol "__lg_assoc" | FCoreSymbol Core_assoc) :: target :: _) ->
       assoc_root_symbol target
   | _ -> None
 
@@ -1830,7 +1829,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
            || String.ends_with ~suffix:"/let" let_name
            || String.ends_with ~suffix:"/let*" let_name ->
         infer_let ~expected_body:expected_ty params bindings body_forms
-    | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) -> (
+    | FList
+        ((FSymbol "__lg_assoc" | FCoreSymbol Core_assoc) :: target :: pairs) -> (
         match Types.record_fields expected_ty with
         | None -> infer_assoc params target pairs
         | Some expected_fields ->
@@ -1888,7 +1888,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               params index)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
-           && (has_source_name operation "keys"
+           && (has_source_name operation "__lg_keys"
               || has_source_name operation "vals") ->
         let element_ty =
           Types.seqable_constraint_element expected_ty
@@ -1896,7 +1896,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         let other_ty = fresh_type_variable "map_projection" in
         let map_ty =
-          if has_source_name operation "keys" then
+          if has_source_name operation "__lg_keys" then
             Types.dynamic_map element_ty other_ty
           else Types.dynamic_map other_ty element_ty
         in
@@ -2095,7 +2095,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    | Error _ as error -> error
                    | Ok params -> infer_expected expected_ty params value))
              (Ok params)
-    | (FList [ FSymbol "contains?"; _target; _key ] as form) ->
+    | (FList [ FSymbol "__lg_contains"; _target; _key ] as form) ->
         infer_form params form
     | FList (FSymbol name :: args) -> (
         let form = FList (FSymbol name :: args) in
@@ -3836,7 +3836,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | _ -> Ok params)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
-           && (has_source_name operation "keys"
+           && (has_source_name operation "__lg_keys"
               || has_source_name operation "vals") ->
         let key_ty = fresh_type_variable "map_key" in
         let value_ty = fresh_type_variable "map_value" in
@@ -5140,7 +5140,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (fun params -> infer_expected field_ty params default)
     | FList
         [
-          FSymbol "contains?";
+          FSymbol "__lg_contains";
           FList [ FKeyword keyword; FSymbol name ];
           key;
         ] ->
@@ -5150,11 +5150,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
              (Types.dynamic_map dynamic dynamic)
              params)
           (fun params -> infer_expected dynamic params key)
-    | FList [ FSymbol "contains?"; FSymbol name; (FKeyword _ as key) ] -> (
+    | FList
+        [
+          FSymbol "__lg_contains";
+          FSymbol name;
+          (FKeyword _ as key);
+        ] -> (
         match constrain_contains TKeyword params name with
         | Error _ as err -> err
         | Ok params -> infer_expected TKeyword params key)
-    | FList [ FSymbol "contains?"; FSymbol name; key ] -> (
+    | FList [ FSymbol "__lg_contains"; FSymbol name; key ] -> (
         let target_ty =
           match string_assoc_opt name params with
           | Some ty -> ty
@@ -5188,7 +5193,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         match infer_collection with
         | Error _ as error -> error
         | Ok params -> infer_expected key_ty params key)
-    | FList [ FSymbol "contains?"; target; key ] ->
+    | FList [ FSymbol "__lg_contains"; target; key ] ->
         let target_ty =
           match target with
           | FList _ ->
@@ -5248,8 +5253,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_form params
           (Core_form_expansion.update_in target keys function_form argument_forms)
     | FList
-        (FSymbol ("dissoc" | "clojure.core/dissoc" | "cljs.core/dissoc")
-        :: target :: keys) ->
+        (FSymbol "__lg_dissoc" :: target :: keys) ->
         (match
            Types.dynamic_map_types (inferred_form_type params target)
          with
@@ -5257,7 +5261,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_form params target) (fun params ->
                 infer_expected_all key_ty params keys)
         | None -> infer_all params (target :: keys))
-    | FList (FSymbol ("assoc" | "clojure.core/assoc") :: target :: pairs) ->
+    | FList (FSymbol "__lg_assoc" :: target :: pairs) ->
         infer_assoc params target pairs
     | FList (FSymbol "subvec" :: collection :: indexes)
       when List.length indexes = 1 || List.length indexes = 2 ->

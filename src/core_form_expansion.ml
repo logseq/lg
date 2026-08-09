@@ -7,8 +7,8 @@ let get_in target keys default =
         let get =
           match (rest, default) with
           | [], Some default ->
-              FList [ FCoreSymbol Core_get; target; key; default ]
-          | _ -> FList [ FCoreSymbol Core_get; target; key ]
+              FList [ FSymbol "get"; target; key; default ]
+          | _ -> FList [ FSymbol "get"; target; key ]
         in
         expand get rest
   in
@@ -28,7 +28,7 @@ let assoc_in target keys value =
       | [] -> value
       | _ ->
           expand (depth + 1)
-            (FList [ FCoreSymbol Core_get; FSymbol target_name; FSymbol key_name ])
+            (FList [ FSymbol "get"; FSymbol target_name; FSymbol key_name ])
             rest
     in
     FList
@@ -38,7 +38,7 @@ let assoc_in target keys value =
           [ FSymbol target_name; target; FSymbol key_name; key ];
         FList
           [
-            FCoreSymbol Core_assoc;
+            FSymbol "__lg_assoc";
             FSymbol target_name;
             FSymbol key_name;
             nested_value;

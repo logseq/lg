@@ -615,7 +615,7 @@ let test_records_assoc_and_dissoc () =
 (def z (dissoc y :age))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_compiles "records_assoc_and_dissoc" ocaml_source
 
 let test_assoc_rejects_type_changes () =
@@ -625,7 +625,7 @@ let test_assoc_rejects_type_changes () =
 (def y (assoc x :age "old"))
   |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "cannot assoc :age as string because it is already int"
 
 let test_dissoc_missing_fields_is_noop () =
@@ -15835,7 +15835,7 @@ let test_contains_propagates_protocol_set_element_to_parameter () =
   (has-global-attr? :name)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "closed set membership must not introduce dynamic";
   assert_ocaml_runs "contains_propagates_protocol_set_element_to_parameter"
@@ -16494,7 +16494,7 @@ let test_typed_parameters_preserve_nested_float_assoc_values () =
 (println (str (:value (raise-score score 1.0))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "contextual_parameter_inference_preserves_nested_float_assoc_values" "1.5\n"
     ocaml_source
@@ -19508,11 +19508,11 @@ let test_contains_static_sets_handles_closed_sum_candidates () =
        (keyword-member? (SymbolCandidate 'and))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "contains_static_sets_handles_closed_sum_candidates"
     "true:false:true:false\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_generic_protocol_witness_compiles_for_javascript_targets () =
   let source =
@@ -20004,7 +20004,7 @@ let test_keys_return_keyword_values () =
 (println (pr-str (keys user)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "keys_return_keyword_values" "[:name :age]\n" ocaml_source
 
 let test_keys_support_generic_and_static_maps () =
@@ -20285,7 +20285,7 @@ let test_core_assoc_rejects_open_deftype_fields () =
 (println (get (assoc box :computed 9) :computed))
 |}
   in
-  Lg.Compiler.compile_string source |> expect_error_contains "unknown record field"
+  compile_string_with_stdlib source |> expect_error_contains "unknown record field"
 
 let test_forward_dynamic_deftype_lookup_registration () =
   let source =
@@ -20321,7 +20321,7 @@ let test_deftype_method_parameters_shadow_fields () =
 (println (.-value (assoc (Box. 1) :value 2)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "deftype_method_parameters_shadow_fields" "2\n"
     native_source;
   ignore
@@ -20339,12 +20339,13 @@ let test_assoc_supports_multiple_pairs () =
 (println (str (:name updated) ":" (:age updated) ":" (:admin? updated)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_supports_multiple_pairs" "Ada:36:true\n" ocaml_source
 
 let test_assoc_rejects_odd_key_value_pairs () =
-  Lg.Compiler.compile_string {|(def bad (assoc {:name "Ada"} :age))|}
-  |> expect_error "assoc expects map followed by keyword/value pairs"
+  compile_string_with_stdlib
+    {|(def bad (assoc {:name "Ada"} :age 36 :admin?))|}
+  |> expect_error_contains "assoc expects map followed by keyword/value pairs"
 
 let test_assoc_supports_vector_indexes () =
   let source =
@@ -20354,7 +20355,7 @@ let test_assoc_supports_vector_indexes () =
 (println (pr-str ys))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_supports_vector_indexes" "[10 2 30]\n" ocaml_source
 
 let test_assoc_infers_vector_parameter_from_integer_index () =
@@ -20377,11 +20378,11 @@ let test_assoc_infers_vector_parameter_from_integer_index () =
     "2\n" ocaml_source
 
 let test_assoc_rejects_vector_value_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (assoc [1 2] 0 "one"))|}
+  compile_string_with_stdlib {|(def x (assoc [1 2] 0 "one"))|}
   |> expect_error "assoc vector value must match element type"
 
 let test_assoc_rejects_vector_non_int_indexes () =
-  Lg.Compiler.compile_string {|(def x (assoc [1 2] "0" 9))|}
+  compile_string_with_stdlib {|(def x (assoc [1 2] "0" 9))|}
   |> expect_error "assoc vector index must be int"
 
 let test_dissoc_supports_multiple_keys () =
@@ -20462,13 +20463,13 @@ let test_assoc_updates_statically_typed_map_record_fields () =
 (println (get (:payload result) :answer))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_updates_statically_typed_map_record_fields" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_assoc_adapts_record_collection_fields () =
   let source =
@@ -20734,12 +20735,12 @@ let test_assoc_in_updates_nested_maps () =
 (println (get-in result [:users 1 :score]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_in_updates_nested_maps" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_assoc_in_preserves_named_records_with_references () =
   let source =
@@ -21156,12 +21157,12 @@ let test_contains_supports_vector_indexes () =
 (println (str (contains? xs 0) ":" (contains? xs 2) ":" (contains? xs -1)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "contains_supports_vector_indexes" "true:false:false\n"
     ocaml_source
 
 let test_contains_rejects_vector_non_int_indexes () =
-  Lg.Compiler.compile_string {|(def x (contains? [1 2] "0"))|}
+  compile_string_with_stdlib {|(def x (contains? [1 2] "0"))|}
   |> expect_error "contains? vector index must be int"
 
 let test_if_requires_closed_sum_for_mixed_branch_types () =
@@ -29863,11 +29864,11 @@ let test_nested_assoc_reads_static_records () =
        (= :second (:stopped stopped))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nested_assoc_reads_static_records" "true:true:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_rejects_heterogeneous_vector_accumulator_slots () =
   let source =
@@ -33840,9 +33841,24 @@ let test_assoc_rejects_an_untyped_first_class_reference () =
 (println (get (get result :nested) :answer))
   |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains
        "assoc requires an optional value with a concrete static map or record type"
+
+let test_source_assoc_is_a_contextual_update_callback () =
+  let source =
+    {|
+(defrecord State [^:map<keyword;int> properties])
+(def updated
+  (update (State. {}) :properties assoc :answer 42))
+(println (get (:properties updated) :answer))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_assoc_is_a_contextual_update_callback" "42\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_assoc_uses_a_statically_typed_first_class_wrapper () =
   let source =
@@ -33853,13 +33869,14 @@ let test_assoc_uses_a_statically_typed_first_class_wrapper () =
 (println (get (put {} :answer 42) :answer))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let app_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring app_source "Runtime_dynamic" then
     failwith "typed first-class assoc wrapper should remain static";
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_uses_a_statically_typed_first_class_wrapper" "42\n"
     ocaml_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "typed first-class assoc wrapper should remain static"
@@ -33872,7 +33889,7 @@ let test_assoc_rejects_untyped_map_parameters () =
 (println (get result :answer))
   |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "assoc requires a statically typed map"
 
 let test_assoc_uses_static_maps_for_variable_keys () =
@@ -33885,13 +33902,14 @@ let test_assoc_uses_static_maps_for_variable_keys () =
 (println (get result :answer))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let app_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring app_source "Runtime_dynamic" then
     failwith "assoc should infer a static map from its key and value";
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_uses_static_maps_for_variable_keys" "42\n"
     ocaml_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "assoc should infer a static map from its key and value"
@@ -33932,10 +33950,10 @@ let test_assoc_accepts_nullable_static_maps () =
 (println (get absent :existing))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_accepts_nullable_static_maps" "42\n7\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_source_nullable_dynamic_arguments_are_rejected () =
   let provider =
@@ -34328,11 +34346,11 @@ let test_contains_infers_generic_membership_for_variable_keys () =
     (member? #{1 2} 3)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "contains_infers_generic_membership_for_variable_keys"
     "true:false\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_contains_freshens_generic_membership_across_set_modules () =
   let source =
@@ -34345,11 +34363,11 @@ let test_contains_freshens_generic_membership_across_set_modules () =
     (member? #{:name :age} :age)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "contains_freshens_generic_membership_across_set_modules"
     "true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_into_rejects_element_type_mismatch () =
   Lg.Compiler.compile_string {|(def x (into [1] ["two"]))|}
@@ -41026,6 +41044,8 @@ let tests =
       test_cond_thread_macros_apply_selected_steps );
     ( "assoc rejects an untyped first-class reference",
       test_assoc_rejects_an_untyped_first_class_reference );
+    ( "source assoc is a contextual update callback",
+      test_source_assoc_is_a_contextual_update_callback );
     ( "assoc uses a statically typed first-class wrapper",
       test_assoc_uses_a_statically_typed_first_class_wrapper );
     ( "assoc rejects untyped map parameters",
