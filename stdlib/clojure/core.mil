@@ -266,6 +266,24 @@
 (signature clojure.core/interpose [value]
   :fn<value;seqable<value>;seq<value>>)
 
+(signature clojure.core/iterate [value]
+  :fn<fn<value;value>;value;seq<value>>)
+
+(signature clojure.core/tree-seq-step [node]
+  :fn<fn<node;bool>;fn<node;seqable<node>>;seq<node>;option<tuple<node;seq<node>>>>)
+
+(signature clojure.core/tree-seq [node]
+  :fn<fn<node;bool>;fn<node;seqable<node>>;node;seq<node>>)
+
+(signature clojure.core/partitionv-step [value]
+  :fn<int;int;seq<value>;option<tuple<vector<value>;seq<value>>>>)
+
+(signature clojure.core/padded-partitionv-step [value]
+  :fn<int;int;seqable<value>;seq<value>;option<tuple<vector<value>;seq<value>>>>)
+
+(signature clojure.core/partitionv [value]
+  :overload<fn<int;seqable<value>;seq<vector<value>>>;fn<int;int;seqable<value>;seq<vector<value>>>;fn<int;int;seqable<value>;seqable<value>;seq<vector<value>>>>)
+
 (signature clojure.core/replicate [value]
   :fn<int;value;seq<value>>)
 

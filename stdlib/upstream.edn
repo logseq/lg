@@ -312,6 +312,10 @@
                   :reason :source-port-delegates-the-static-keyword-domain-to-the-existing-clojurescript-compatible-keyword-hash-boundary-without-exposing-keywords-as-strings}
     hash-string {:status :static-adaptation
                  :reason :source-port-preserves-the-upstream-hash-string-result-through-hash-string-star-while-omitting-the-observationally-invisible-mutable-javascript-cache}
+    hash-ordered-coll {:status :blocked-static-typing
+                       :reason :generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness}
+    hash-unordered-coll {:status :blocked-static-typing
+                         :reason :generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness}
     mix-collection-hash {:status :ported
                          :reason :source-port-preserves-upstream-seed-key-mix-hash-mix-and-count-finalization-order}
     even? {:status :static-adaptation
@@ -508,6 +512,12 @@
     reverse {:status :static-adaptation
              :reason :uses-upstream-reduce-path-without-reversible-protocol-fast-path}
     interpose {:status :ported}
+    iterate {:status :static-adaptation
+             :reason :source-port-preserves-upstream-memoized-lazy-successor-generation-through-the-typed-runtime-sequence-unfold-boundary-instead-of-the-private-iterate-runtime-type}
+    tree-seq {:status :static-adaptation
+              :reason :source-port-preserves-upstream-lazy-depth-first-root-before-children-order-and-branch-guarding-with-an-explicit-typed-pending-sequence}
+    partitionv {:status :static-adaptation
+                :reason :source-port-preserves-all-three-upstream-arities-offsets-full-partition-filtering-padding-and-laziness-through-a-typed-memoized-unfold}
     replicate {:status :ported}
     dedupe {:status :static-adaptation
             :reason :composed-from-partition-by-and-map-with-static-indexed-group-access}

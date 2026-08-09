@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-double hash-keyword hash-long hash-string ifind? inc infinite? keyword-identical? map-entry? merge-with parse-double parse-long parse-uuid ratio? realized? regexp? special-symbol? symbol-identical? volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-double hash-keyword hash-long hash-string ifind? inc infinite? iterate keyword-identical? map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? regexp? special-symbol? symbol-identical? tree-seq volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -437,3 +437,50 @@
 (println (= (hash 2.5) (clojure.core/hash-double 2.5)))
 (println (= (hash :source/value) (cljs.core/hash-keyword :source/value)))
 (println (= 120 (clojure.core/hash-string "x")))
+
+(def source-iterate iterate)
+(println (= [1 2 3 4 5] (vec (take 5 (source-iterate inc 1)))))
+(println (= ["a" "a!" "a!!"]
+            (vec (take 3 (core/iterate (fn [value] (str value "!")) "a")))))
+(println (= [2 4 8 16]
+            (vec (take 4 (clojure.core/iterate (fn [value] (* value 2)) 2)))))
+
+(defn source-tree-branch? [node]
+  (< node 4))
+
+(defn source-tree-children [node]
+  (cond
+    (= node 1) [2 3]
+    (= node 2) [4 5]
+    (= node 3) [6]
+    :else []))
+
+(def source-tree-seq tree-seq)
+(println (= [1 2 4 5 3 6]
+            (vec (source-tree-seq source-tree-branch? source-tree-children 1))))
+(println (= [1 2 4 5 3 6]
+            (vec (core/tree-seq source-tree-branch? source-tree-children 1))))
+(println (= [1 2 4 5 3 6]
+            (vec (clojure.core/tree-seq
+                  source-tree-branch? source-tree-children 1))))
+(def source-tree-visits (atom []))
+(def source-lazy-tree
+  (tree-seq
+   (fn [node]
+     (do
+       (swap! source-tree-visits conj node)
+       (source-tree-branch? node)))
+   source-tree-children
+   1))
+(println (empty? @source-tree-visits))
+(println (= [1 2] (vec (take 2 source-lazy-tree))))
+(println (= [1 2] @source-tree-visits))
+
+(def source-partitionv partitionv)
+(println (= [[1 2] [3 4]] (vec (source-partitionv 2 [1 2 3 4 5]))))
+(println (= [[1 2] [2 3]] (vec (partitionv 2 1 [1 2 3]))))
+(println (= [[1 2 3] [4 0 0]]
+            (vec (core/partitionv 3 3 [0 0] [1 2 3 4]))))
+(println (= [[1 2 3] [4 0]]
+            (vec (clojure.core/partitionv 3 3 [0] [1 2 3 4]))))
+(println (= [] (vec (partitionv 3 [1 2]))))

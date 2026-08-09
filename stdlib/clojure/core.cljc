@@ -1385,6 +1385,57 @@
 (defn interpose [separator coll]
   (drop 1 (interleave (repeat separator) coll)))
 
+(defn iterate [f x]
+  (runtime-seq/unfold-memoized
+   (fn [value]
+     (Some (tuple value (f value))))
+   x))
+
+(defn- tree-seq-step [branch? children pending]
+  (if pending
+    (let [node (nth pending 0)
+          siblings (next pending)
+          child-seq (if (branch? node) (seq (children node)) (seq []))
+          pending (if child-seq (concat child-seq siblings) siblings)]
+      (Some (tuple node pending)))
+    None))
+
+(defn tree-seq [branch? children root]
+  (runtime-seq/unfold-memoized
+   (fn [pending]
+     (tree-seq-step branch? children pending))
+   (seq [root])))
+
+(defn- partitionv-step [n step remaining]
+  (if remaining
+    (let [partition (vec (take n remaining))]
+      (if (= n (count partition))
+        (Some (tuple partition (nthrest remaining step)))
+        None))
+    None))
+
+(defn- padded-partitionv-step [n step pad remaining]
+  (if remaining
+    (let [partition (vec (take n remaining))]
+      (if (= n (count partition))
+        (Some (tuple partition (nthrest remaining step)))
+        (Some (tuple (vec (take n (concat partition pad))) (seq [])))))
+    None))
+
+(defn partitionv
+  ([n coll]
+   (partitionv n n coll))
+  ([n step coll]
+   (runtime-seq/unfold-memoized
+    (fn [remaining]
+      (partitionv-step n step remaining))
+    (seq coll)))
+  ([n step pad coll]
+   (runtime-seq/unfold-memoized
+    (fn [remaining]
+      (padded-partitionv-step n step pad remaining))
+    (seq coll))))
+
 (defn replicate [n x]
   (take n (repeat x)))
 

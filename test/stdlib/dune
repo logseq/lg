@@ -331,6 +331,86 @@
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
+  source_core_iterate_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_iterate_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_tree_seq_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_tree_seq_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_tree_seq_bad_children.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_tree_seq_bad_children.cljc}
+   "collection value is not seqable")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_partitionv_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_partitionv_bad_arity.cljc}
+   "partitionv called with unsupported arity 1")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_partitionv_bad_pad.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_partitionv_bad_pad.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
   source_core_parse_long_bad_arity.cljc
   ../../bin/lg_cli.exe)
  (action

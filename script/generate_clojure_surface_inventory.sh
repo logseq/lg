@@ -95,6 +95,8 @@ awk '
     for (i in xs) blocked_reason[xs[i]] = "comparator-overloads-and-seqable-capability-adaptation-remain-compiler-owned"
     blocked_reason["take-nth"] = "one-arity-stateful-transducer-and-lazy-two-arity-sequence-are-not-source-expressible"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
+    blocked["hash-unordered-coll"] = 1
+    blocked_reason["hash-unordered-coll"] = "generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness"
     blocked["re-find"] = 1
     blocked["re-matches"] = 1
     blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"

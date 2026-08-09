@@ -137,9 +137,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 329 source entries (38.43%), 63 typed
-primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
-44 out-of-scope Spec entries, and 224 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 332 source entries (38.79%), 62 typed
+primitives, 12 special forms, 15 host boundaries, 171 static-typing blockers,
+44 out-of-scope Spec entries, and 220 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -166,6 +166,11 @@ overloads without rejecting one of those existing cases.
 `char` is blocked for the same first-class overload limitation: the upstream
 one-argument function accepts either an integer code unit or a string. A
 single-domain port would silently narrow ClojureScript compatibility.
+`hash-ordered-coll` and `hash-unordered-coll` remain blocked from source
+ownership because their generic elements need an `IHash` capability witness
+inside the function body. `hash-unordered-coll` therefore remains a typed
+compiler boundary rather than substituting OCaml polymorphic hashing for the
+ClojureScript hash contract.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
@@ -221,9 +226,18 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `gensym`, `infinite?`, `keyword-identical?`, `symbol-identical?`, `hash-long`,
 `hash-double`, `hash-keyword`, `hash-string`, `array-index-of`,
 `special-symbol?`, `distinct?`, `not=`, and the
-derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
+derived bit functions, plus `splitv-at`, `iterate`, `tree-seq`, `partitionv`,
+and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
 `longs`, have no legacy compiler fallback.
+
+The source sequence batch preserves `iterate`'s memoized lazy successor
+generation, `tree-seq`'s root-before-children depth-first order and guarded
+child callback, and all three `partitionv` arities including overlap, omitted
+short tails, and padding. Their typed unfold state avoids a public `lazy-seq`
+compiler route. Overloaded calls now also unify repeated `seqable<T>` element
+variables across arguments, so a padding collection cannot silently use a
+different element type from the input collection.
 
 The collection constructor family now follows the same boundary. Public
 `list`, `vector`, `hash-map`, `array-map`, `hash-set`, and `set` bindings live

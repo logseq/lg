@@ -9795,15 +9795,37 @@ let create ~compile_expr =
                     in
                     let substitutions =
                       List.fold_left2
-                        (fun substitutions template argument ->
-                          let template, actual =
-                            align_optional_inference template argument.ty
-                          in
-                          if Types.is_dynamic actual then substitutions
-                          else
-                            Type_solver.unify substitutions template actual
-                            |> Result.value ~default:substitutions)
-                        Type_solver.empty arity.fixed_params fixed_args
+                        (fun result template argument ->
+                          Result.bind result (fun substitutions ->
+                              let template, actual =
+                                align_optional_inference template argument.ty
+                              in
+                              if Types.is_dynamic actual then Ok substitutions
+                              else
+                                match
+                                  ( Types.seqable_constraint_element template,
+                                    Collection_capability.element_type env
+                                      argument )
+                                with
+                                | Some expected_element, Some actual_element ->
+                                    Result.map
+                                      (fun substitutions ->
+                                        Type_solver.unify substitutions template
+                                          actual
+                                        |> Result.value ~default:substitutions)
+                                      (Type_solver.unify substitutions
+                                         expected_element actual_element)
+                                | None, _ | _, None ->
+                                    Ok
+                                      (Type_solver.unify substitutions template
+                                         actual
+                                      |> Result.value ~default:substitutions)))
+                        (Ok Type_solver.empty) arity.fixed_params fixed_args
+                    in
+                    let seqable_elements_compatible, substitutions =
+                      match substitutions with
+                      | Ok substitutions -> (true, substitutions)
+                      | Error _ -> (false, Type_solver.empty)
                     in
                     let fixed_param_tys =
                       List.map2 specialize_expected arity.fixed_params fixed_args
@@ -9891,7 +9913,11 @@ let create ~compile_expr =
                     if not open_set_elements_compatible then
                       Error.error
                         (name ^ " expects sets with the same element type")
-                    else if not (fixed_compatible && rest_compatible) then
+                    else if
+                      not
+                        (seqable_elements_compatible && fixed_compatible
+                       && rest_compatible)
+                    then
                       Error.error
                         (name ^ " called with incompatible arguments: expected ("
                        ^ String.concat ", "
