@@ -140,7 +140,7 @@ When a pinned ClojureScript checkout is supplied, the report also contains an
 core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 993 function, macro, and protocol-method
+pinned surface currently contains 985 function, macro, and protocol-method
 entries, including 753 entries in `cljs.core`. Public methods declared by
 `defprotocol` are inventoried independently instead of being hidden behind the
 protocol var. Each row is
@@ -148,20 +148,23 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 461 source entries (46.42%), 96 typed
+macro surfaces. The current baseline is 459 source entries (46.60%), 96 typed
 primitives, 12 special forms, 34 host boundaries, 159 static-typing blockers,
-51 out-of-scope entries, and 180 deferred entries. The deferred set is the
+51 out-of-scope entries, and 174 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
 logarithms, square root, exponential functions, stable hypotenuse,
 ceiling/floor, degree/radian conversion, and the `E`/`PI` constants through
-static OCaml float operations on both Native and Melange. Cube root, power,
-floating remainder, and random use small explicitly typed cross-target runtime
-boundaries rather than dynamic values.
-Absolute value and sign-bit copying use the same narrow IEEE float boundary;
-`rint` preserves the upstream 2^52 ties-to-even algorithm in source, and
-`signum` composes the source operations without dynamic numeric dispatch.
+static OCaml float operations on both Native and Melange. Cube root, power, and
+random use small explicitly typed cross-target runtime boundaries rather than
+dynamic values. The private upstream `IEEE-fmod` helper is retained as a
+private source definition for the future public `IEEE-remainder` port and is
+not counted as public surface.
+The private absolute-value helper and public sign-bit copying function use the
+same narrow IEEE float boundary; `rint` preserves the upstream 2^52
+ties-to-even algorithm in source, and `signum` composes the source operations
+without dynamic numeric dispatch.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

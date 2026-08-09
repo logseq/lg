@@ -232,10 +232,8 @@
 (println (= 0.0 (math/log1p 0.0)))
 (println (= 3.0 (math/cbrt 27.0)))
 (println (= 8.0 (math/pow 2.0 3.0)))
-(println (= 1.0 (math/IEEE-fmod 7.0 3.0)))
 (println (let [value (math/random)]
            (and (<= 0.0 value) (< value 1.0))))
-(println (= 3.5 (math/fabs -3.5)))
 (println (= -2.0 (math/copy-sign 2.0 -1.0)))
 (println (= 2.0 (math/rint 2.5)))
 (println (= 4.0 (math/rint 3.5)))

@@ -7,6 +7,15 @@
 
 (def ^:private eof (Object.))
 
+(defn- private-options? [values]
+  (some (fn [value]
+          (and (map? value) (:private value)))
+        (take-while #(or (string? %) (map? %)) values)))
+
+(defn- declaration-private? [form]
+  (or (:private (meta form))
+      (private-options? (drop 2 form))))
+
 (defn- read-forms [path features]
   (with-open [input (io/reader path)]
     (let [source (reader-types/indexing-push-back-reader input)]
@@ -27,6 +36,7 @@
           definition-name (second form)
           private-operator? (contains? #{"defn-" "core/defn-"} operator)
           private-name? (boolean (:private (meta definition-name)))
+          private-declaration? (boolean (declaration-private? form))
           kind (cond
                  (contains? #{"defn" "core/defn"} operator) "function"
                  (contains? #{"defmacro" "core/defmacro"} operator) "macro"
@@ -34,7 +44,8 @@
       (when (and kind
                  (symbol? definition-name)
                  (not private-operator?)
-                 (not private-name?))
+                 (not private-name?)
+                 (not private-declaration?))
         [[(str namespace "/" (name definition-name)) kind]]))))
 
 (defn- protocol-method-definitions [namespace form]
@@ -43,13 +54,16 @@
           protocol-name (second form)]
       (when (and (contains? #{"defprotocol" "core/defprotocol"} operator)
                  (symbol? protocol-name)
-                 (not (:private (meta protocol-name))))
+                 (not (:private (meta protocol-name)))
+                 (not (declaration-private? form)))
         (->> (drop 2 form)
              (keep (fn [method-form]
                      (when (seq? method-form)
                        (let [method-name (first method-form)]
                          (when (and (symbol? method-name)
-                                    (not (:private (meta method-name))))
+                                    (not (:private (meta method-name)))
+                                    (not (:private (meta method-form)))
+                                    (not (private-options? (rest method-form))))
                            [(str namespace "/" (name method-name))
                             "protocol-method"])))))
              seq)))))

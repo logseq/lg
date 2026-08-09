@@ -49,14 +49,14 @@
   #?(:melange (runtime-math-melange/pow a b)
      :default (runtime-math/pow a b)))
 
-(defn IEEE-fmod [x y]
+(defn- IEEE-fmod [x y]
   #?(:melange (runtime-math-melange/fmod x y)
      :default (runtime-math/fmod x y)))
 
 (defn random []
   (runtime-random/rand 1.0))
 
-(defn fabs [x]
+(defn- fabs [x]
   #?(:melange (runtime-math-melange/abs x)
      :default (runtime-math/abs x)))
 

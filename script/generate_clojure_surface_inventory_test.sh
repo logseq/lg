@@ -32,8 +32,15 @@ cat >"$tmp/clojurescript/core.cljs" <<'EOF'
 (defn public-function [x] x)
 (defn- private-function [x] x)
 (defn ^:private metadata-private-function [x] x)
+(defn attr-map-private-function
+  {:private true}
+  [x]
+  x)
 (defprotocol VisibleProtocol
-  (visible-method [x]))
+  (visible-method [x])
+  (attr-map-private-method
+    {:private true}
+    [x]))
 #?(:cljs (defn conditional-function [x] x))
 (if true
   (defn branch-defined-function [x] x)
@@ -44,6 +51,10 @@ cat >"$tmp/clojurescript/core.cljc" <<'EOF'
 
 (core/defmacro public-macro [form] form)
 (core/defmacro ^:private private-macro [form] form)
+(core/defmacro attr-map-private-macro
+  {:private true}
+  [form]
+  form)
 EOF
 
 bb "$root/script/extract_clojurescript_public_vars.clj" cljs.core \
