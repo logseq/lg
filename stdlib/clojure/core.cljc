@@ -466,6 +466,19 @@
   [x]
   (__lg_abs x))
 
+(defmacro divide
+  ([x]
+   `(let [x# ~x]
+      (/ 1 x#)))
+  ([x y]
+   `(let [x# ~x
+          y# ~y]
+      (/ x# y#)))
+  ([x y & more]
+   `(let [x# ~x
+          y# ~y]
+      (divide (/ x# y#) ~@more))))
+
 (defmacro unchecked-max
   ([x] x)
   ([x y]

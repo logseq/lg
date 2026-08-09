@@ -357,6 +357,8 @@
          :reason :source-wrapper-preserves-the-sign-of-the-dividend-through-the-typed-runtime-int-primitive}
     mod {:status :static-adaptation
          :reason :source-wrapper-preserves-floor-modulus-through-the-typed-runtime-int-primitive}
+    divide {:status :static-adaptation
+            :reason :source-macro-preserves-upstream-unary-reciprocal-left-associated-variadic-division-and-javascript-left-to-right-operand-evaluation-through-ordered-static-let-bindings}
     unchecked-add {:status :static-adaptation
                    :reason :static-binary-integer-source-port-of-the-clojurescript-unchecked-helper}
     unchecked-add-int {:status :static-adaptation

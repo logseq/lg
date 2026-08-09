@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -588,3 +588,15 @@
 (println (clojure.core/equiv-map {:left "value"} {:left "value"}))
 (def source-equiv-map equiv-map)
 (println (source-equiv-map {7 :seven} {7 :seven}))
+
+(println (= (divide 2) (/ 1 2)))
+(println (= (divide 8 2) (/ 8 2)))
+(println (= (divide 64 4 2) (/ (/ 64 4) 2)))
+(println (= (core/divide 27 3 3) (/ (/ 27 3) 3)))
+(println (= (clojure.core/divide -12 3) (/ -12 3)))
+(def source-divide-order (atom []))
+(println (= (divide (do (swap! source-divide-order conj :left) 64)
+                    (do (swap! source-divide-order conj :middle) 4)
+                    (do (swap! source-divide-order conj :right) 2))
+            (/ (/ 64 4) 2)))
+(println (= [:left :middle :right] @source-divide-order))

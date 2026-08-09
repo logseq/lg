@@ -146,9 +146,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 342 source entries (39.95%), 62 typed
+macro surfaces. The current baseline is 343 source entries (40.07%), 62 typed
 primitives, 12 special forms, 15 host boundaries, 173 static-typing blockers,
-44 out-of-scope Spec entries, and 208 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 207 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -571,6 +571,11 @@ static map value type. `equiv-map` preserves the upstream count guard and
 first-mismatch short-circuit. Its typed `IFind` option replaces ClojureScript's
 private `NeverEquiv` sentinel, while static record types remain outside the map
 signature.
+
+The ClojureScript `divide` macro is source-defined with its unary, binary, and
+variadic arities. Ordered `let` bindings retain JavaScript's left-to-right
+operand evaluation when the expansion is emitted as OCaml, while division
+remains left-associated and delegates to LG's typed `/` primitive.
 
 `flatten` and `memoize` are explicit blockers rather than partial Logseq-facing
 ports. Arbitrarily nested `flatten` input can yield heterogeneous leaf types and
