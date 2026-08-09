@@ -2225,6 +2225,18 @@
       -1
       (if (pred y x) 1 0))))
 
+(defn sort
+  ([coll]
+   (__lg_sort coll))
+  ([comp coll]
+   (__lg_sort comp coll)))
+
+(defn sort-by
+  ([keyfn coll]
+   (__lg_sort-by keyfn coll))
+  ([keyfn comp coll]
+   (__lg_sort-by keyfn comp coll)))
+
 (defn max-key
   ([k x]
    (let [_ k] x))

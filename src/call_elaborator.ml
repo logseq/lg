@@ -8327,9 +8327,9 @@ let create ~compile_expr =
     | "some" -> compile_some scope env arg_forms
     | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "sort" ->
+    | "__lg_sort" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "sort-by" -> compile_sort_by scope env arg_forms
+    | "__lg_sort-by" -> compile_sort_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
     | "interleave" ->
@@ -9127,7 +9127,7 @@ let create ~compile_expr =
                                "Lg_runtime.Runtime_seq.interleave",
                              [ Semantic_ir.List sequences ] )))
                     (prepare_collections [] prepared)))
-    | "sort", [ comparator_form; collection_form ] -> (
+    | "__lg_sort", [ comparator_form; collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error
         | Ok collection -> (
@@ -9195,7 +9195,7 @@ let create ~compile_expr =
                                ] )))
                       comparator_expression
                 | Ok _ -> Error.error "sort expects a comparator function")))
-    | "sort", [ collection_form ] -> (
+    | "__lg_sort", [ collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error
         | Ok collection -> (

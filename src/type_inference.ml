@@ -4958,9 +4958,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | _ -> TUnknown
         in
         infer_sequence_form declared_element_ty params collection
-    | FList [ FSymbol "sort"; FSymbol collection ] ->
+    | FList [ FSymbol "__lg_sort"; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
-    | FList [ FSymbol "sort"; _comparator; FSymbol collection ] ->
+    | FList [ FSymbol "__lg_sort"; _comparator; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
         let expected_ty =

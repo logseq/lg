@@ -25269,20 +25269,21 @@ let test_thread_last_inferred_functions_pass_collections_to_take_while () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_sort_accepts_dynamic_collections () =
+let test_sort_accepts_statically_typed_record_fields () =
   let source =
     {|
-(defrecord Box [values])
+(defrecord Box [^:vector<int> values])
 (def sorted (sort (:values (Box. [3 1 2]))))
 (println (pr-str sorted))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "sort_accepts_dynamic_collections" "(1 2 3)\n" ocaml_source;
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sort_accepts_statically_typed_record_fields" "(1 2 3)\n"
+    ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let metadata_attach_function_source =
   {|
@@ -30090,11 +30091,11 @@ let test_sort_accepts_typed_query_function_parameters () =
        (= '(1 2 3) ((:ordered-by query-fns) [3 1 2]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "sort_accepts_typed_query_function_parameters"
     "true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_random_collection_operations_preserve_element_types () =
   let source =
@@ -32592,12 +32593,12 @@ let test_sort_by_preserves_static_record_element_types () =
 (println (:name (first sorted)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "sort_by_preserves_static_record_element_types" ":a\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_sort_by_preserves_named_record_lists () =
   let source =
@@ -38281,7 +38282,7 @@ let test_parsetree_backend_builds_native_set_constructor_expressions () =
 let test_parsetree_backend_builds_native_sequence_transform_expressions () =
   List.iter expect_structured_value_expression
     [
-      {|(def result (sort [3 1 2]))|};
+      {|(def result (__lg_sort [3 1 2]))|};
       {|(def result (concat [1 2] (__lg_list 3 4)))|};
       {|(def result (__lg_set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
@@ -40305,7 +40306,8 @@ let tests =
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
-    ("sort accepts dynamic collections", test_sort_accepts_dynamic_collections);
+    ( "sort accepts statically typed record fields",
+      test_sort_accepts_statically_typed_record_fields );
     ( "metadata maps preserve closed EDN values statically",
       test_metadata_maps_preserve_closed_edn_values_statically );
     ( "metadata compilation is isolated from package include dirs",

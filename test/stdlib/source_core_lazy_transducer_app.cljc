@@ -161,3 +161,22 @@
 (println
   (= [[1 3] [2 4] [5]]
      (into [] (partition-by odd?) [1 3 2 4 5])))
+(println (= [1 2 3] (vec (sort [3 1 2]))))
+(println
+  (= [3 2 1]
+     (vec (sort (comparator (fn [left right] (> left right))) [1 3 2]))))
+(println
+  (= ["a" "bb" "ccc"]
+     (vec (sort-by (fn [value] (count value)) ["ccc" "a" "bb"]))))
+(println
+  (= ["ccc" "bb" "a"]
+     (vec
+      (sort-by (fn [value] (count value))
+               (comparator (fn [left right] (> left right)))
+               ["a" "ccc" "bb"]))))
+(defrecord SortEntry [^:int rank])
+(println
+  (= [1 2 3]
+     (mapv (fn [^SortEntry entry] (:rank entry))
+           (sort-by (fn [^SortEntry entry] (:rank entry))
+                    [(SortEntry. 3) (SortEntry. 1) (SortEntry. 2)]))))

@@ -721,13 +721,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       | TInt | TString | TSymbol | TKeyword | TBool | TUnknown -> true
       | _ -> false
     and compile_sort_by scope env arg_forms =
-      let sort fn inner list_expr =
+      let sort_default fn inner list_expr =
         match fn.ty with
         | TFn ([ param_ty ], key_ty) when Types.equal param_ty inner -> (
             let compare =
               if Types.is_dynamic key_ty then
                 Some "Lg_runtime.Runtime_dynamic.compare"
               else if comparable_type key_ty then Some "Stdlib.compare"
+              else if
+                match key_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
+              then Some "Stdlib.compare"
               else None
             in
             match compare with
@@ -762,6 +765,45 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               "sort-by key function must return a comparable value"
         | _ -> Error.error "sort-by expects a function"
       in
+      let sort_with_comparator fn comparator inner list_expr =
+        match (fn.ty, comparator.ty) with
+        | ( TFn ([ param_ty ], key_ty),
+            TFn ([ left_ty; right_ty ], return_ty) )
+          when Types.equal param_ty inner
+               && Types.assignable ~policy:Host_boundary ~expected:left_ty
+                    ~actual:key_ty
+               && Types.assignable ~policy:Host_boundary ~expected:right_ty
+                    ~actual:key_ty
+               && (Types.equal return_ty TInt
+                  || Types.equal return_ty (TOcaml "int")) ->
+            let left = "__lg_sort_by_left" in
+            let right = "__lg_sort_by_right" in
+            Ok
+              (typed_ir (TList inner)
+                 (apply "List.sort"
+                    [
+                      Semantic_ir.Fun
+                        ( [ Semantic_ir.PVar left; Semantic_ir.PVar right ],
+                          Semantic_ir.Apply
+                            ( comparator.semantic_expr,
+                              [
+                                Semantic_ir.Apply
+                                  ( fn.semantic_expr,
+                                    [ Semantic_ir.Ident left ] );
+                                Semantic_ir.Apply
+                                  ( fn.semantic_expr,
+                                    [ Semantic_ir.Ident right ] );
+                              ] ) );
+                      list_expr;
+                    ]))
+        | TFn ([ param_ty ], _), _ when not (Types.equal param_ty inner) ->
+            Error.error "sort-by key function must match collection elements"
+        | TFn _, TFn _ ->
+            Error.error
+              "sort-by comparator must accept two keys and return int"
+        | _, TFn _ -> Error.error "sort-by expects a key function"
+        | _, _ -> Error.error "sort-by expects key and comparator functions"
+      in
       match arg_forms with
       | [ fn_form; collection_form ] -> (
           match
@@ -771,12 +813,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok fn, Ok collection -> (
+                  match collection_to_list_expr env collection with
+                  | Error _ -> Error.error "sort-by expects a collection"
+                  | Ok (inner, list_expr) ->
+                      Result.bind (adapt_unary_function env inner fn) (fun fn ->
+                      sort_default fn inner list_expr)))
+      | [ fn_form; comparator_form; collection_form ] -> (
+          match
+            ( compile_function_arg scope env fn_form,
+              compile_function_arg scope env comparator_form,
+              compile_expr scope env collection_form )
+          with
+          | (Error _ as error), _, _ | _, (Error _ as error), _
+          | _, _, (Error _ as error) -> error
+          | Ok fn, Ok comparator, Ok collection -> (
               match collection_to_list_expr env collection with
               | Error _ -> Error.error "sort-by expects a collection"
               | Ok (inner, list_expr) ->
                   Result.bind (adapt_unary_function env inner fn) (fun fn ->
-                      sort fn inner list_expr)))
-      | _ -> Error.error "sort-by expects function and collection"
+                      sort_with_comparator fn comparator inner list_expr)))
+      | _ ->
+          Error.error
+            "sort-by expects a key function, optional comparator, and collection"
     and compile_mapcat scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (

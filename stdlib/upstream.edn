@@ -315,6 +315,10 @@
               :reason :source-port-preserves-input-order-within-persistent-vector-buckets-and-default-hash-map-accumulation-without-javascript-transients}
     partition-by {:status :static-adaptation
                   :reason :source-port-preserves-lazy-partition-order-and-stateful-transducer-flushing-with-typed-vectors-instead-of-the-javascript-array-list-buffer}
+    sort {:status :static-adaptation
+          :reason :source-public-arities-delegate-only-stable-host-sorting-and-seqable-adaptation-to-a-private-typed-primitive}
+    sort-by {:status :static-adaptation
+             :reason :source-public-arities-including-the-upstream-three-arity-form-delegate-only-key-projection-and-stable-host-sorting-to-a-private-typed-primitive}
     doall {:status :blocked-static-typing
            :reason :source-port-can-realize-the-input-but-overloaded-return-storage-inference-currently-specializes-the-seqable-storage-variable-to-the-element-type-instead-of-preserving-the-original-collection-representation}
     filterv {:status :static-adaptation

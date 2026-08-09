@@ -452,6 +452,12 @@
 (signature clojure.core/comparator [value result]
   :fn<fn<value;value;truthy<result>>;fn<value;value;int>>)
 
+(signature clojure.core/sort [value storage]
+  :overload<fn<seqable<value;storage>;list<value>>;fn<fn<value;value;int>;seqable<value;storage>;list<value>>>)
+
+(signature clojure.core/sort-by [value key storage]
+  :overload<fn<fn<value;key>;seqable<value;storage>;list<value>>;fn<fn<value;key>;fn<key;key;int>;seqable<value;storage>;list<value>>>)
+
 (signature clojure.core/frequencies [value]
   :fn<seqable<value>;map<value;int>>)
 
