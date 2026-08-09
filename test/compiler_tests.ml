@@ -21445,6 +21445,10 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
 (def shared (array 1 2))
 (defn positive-float? [^:float value] (pos? value))
 (defn absolute-float [^:float value] (abs value))
+(def zero-predicate zero?)
+(def positive-predicate core/pos?)
+(def negative-predicate clojure.core/neg?)
+(def absolute-value abs)
 
 (println (zero? 0))
 (println (not (zero? 1)))
@@ -21468,6 +21472,10 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
 (println (= 1.5 (absolute-float -1.5)))
 (println (core/char? \b))
 (println (clojure.core/reduced? (reduced 2)))
+(println (zero-predicate 0))
+(println (positive-predicate 1))
+(println (negative-predicate -1))
+(println (= 4 (absolute-value -4)))
 
 (zero? (do (swap! evaluations inc) 0))
 (pos? (do (swap! evaluations inc) 1))
@@ -21482,7 +21490,7 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
 (println (= 10 @evaluations))
 |}
   in
-  let expected = String.concat "" (List.init 23 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 27 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native
       "test/source_primitive_predicates.cljc" source
@@ -21525,14 +21533,9 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
     "test/identical_source_three_arity.cljc"
     "(def result (identical? 1 1 1))"
   |> expect_error_contains "unsupported macro arity 3";
-  List.iter
-    (fun name ->
-      compile_with_stdlib_result Lg.Target.Native
-        ("test/" ^ name ^ "_source_first_class.cljc")
-        ("(def predicate " ^ name ^ ")")
-      |> expect_error_contains
-           "cannot be used as an untyped first-class function")
-    [ "zero?"; "abs" ]
+  compile_with_stdlib_result Lg.Target.Native
+    "test/char_predicate_source_first_class.cljc" "(def predicate char?)"
+  |> expect_error_contains "cannot be used as an untyped first-class function"
 
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =

@@ -106,17 +106,25 @@
 (defmacro sorted? [x]
   `(__lg_sorted-predicate ~x))
 
-(defmacro zero? [x]
-  `(__lg_zero-predicate ~x))
+(defn zero?
+  {:inline (fn [x] (list '__lg_zero-predicate x))}
+  [x]
+  (__lg_zero-predicate x))
 
-(defmacro pos? [x]
-  `(__lg_pos-predicate ~x))
+(defn pos?
+  {:inline (fn [x] (list '__lg_pos-predicate x))}
+  [x]
+  (__lg_pos-predicate x))
 
-(defmacro neg? [x]
-  `(__lg_neg-predicate ~x))
+(defn neg?
+  {:inline (fn [x] (list '__lg_neg-predicate x))}
+  [x]
+  (__lg_neg-predicate x))
 
-(defmacro abs [x]
-  `(__lg_abs ~x))
+(defn abs
+  {:inline (fn [x] (list '__lg_abs x))}
+  [x]
+  (__lg_abs x))
 
 (defmacro char? [x]
   `(__lg_char-predicate ~x))

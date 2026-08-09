@@ -64,13 +64,13 @@
     sorted? {:status :static-adaptation
              :reason :source-macro-preserves-the-current-false-result-because-lg-sorted-collections-do-not-yet-have-a-distinct-static-isorted-representation}
     zero? {:status :static-adaptation
-           :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-numeric-zero-predicate}
+           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-numeric-zero-predicate}
     pos? {:status :static-adaptation
-          :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-positive-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-positive-number-predicate}
     neg? {:status :static-adaptation
-          :reason :source-macro-preserves-the-upstream-compiler-primitive-through-an-internal-static-negative-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-negative-number-predicate}
     abs {:status :static-adaptation
-         :reason :source-macro-specializes-the-upstream-math-abs-host-boundary-to-typed-integer-and-float-primitives-while-preserving-positive-zero-nan-and-infinity-behavior}
+         :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
     char? {:status :static-adaptation
            :reason :lg-characters-have-a-distinct-static-char-type-so-the-source-macro-tests-that-type-instead-of-the-upstream-single-character-javascript-string-representation}
     identical? {:status :static-adaptation

@@ -217,9 +217,11 @@ the internal typed primitives replace those public routes one-for-one. Predicate
 once even when the result is statically known, and persistent Hashmaps now
 participate in `map?`, `coll?`, and `associative?`. The Logseq scan finds 166
 direct `coll?` occurrences and 47 direct `sorted?` occurrences.
-`zero?`, `pos?`, `neg?`, `char?`, `identical?`, `array?`, the LG
-`array-value?` extension, and `reduced?` now use the same source-macro/static-ABI
-boundary. `abs` is also a source macro over a typed numeric primitive so float
+`zero?`, `pos?`, and `neg?` now pair source functions for static first-class
+integer use with source inline macros for direct int/float specialization.
+`char?`, `identical?`, `array?`, the LG `array-value?` extension, and `reduced?`
+use a source-macro/static-ABI boundary. `abs` likewise pairs a source integer
+function with a typed direct-call macro so float
 negative zero, NaN, and infinity retain the pinned ClojureScript `Math.abs`
 behavior. These additions bring the raw dispatch inventory to 237: the public
 routes are replaced by internal routes, while `char?` and `abs` add two minimal

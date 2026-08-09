@@ -11,7 +11,7 @@ for file in stdlib/clojure/core.mil stdlib/clojure/core.cljc; do
 done
 
 for name in \
-  identity complement boolean not reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? \
+  identity complement boolean not zero? pos? neg? abs reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? \
   alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array array-from array-binary-search-left array-binary-search-right quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
@@ -26,6 +26,14 @@ for name in \
   bit-clear bit-flip bit-set bit-test; do
   if ! grep -F "(defn $name" "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2
+    exit 1
+  fi
+done
+
+for name in 'zero?' 'pos?' 'neg?' 'abs'; do
+  if ! sed -n "/^(defn $name$/,/^$/p" "$root/stdlib/clojure/core.cljc" \
+    | grep -F '{:inline' >/dev/null; then
+    echo "clojure.core/$name is missing its source inline macro" >&2
     exit 1
   fi
 done
@@ -48,7 +56,7 @@ for name in \
   'nil?' 'true?' 'false?' 'int?' 'number?' 'string?' 'keyword?' 'symbol?' \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
   'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
-  'zero?' 'pos?' 'neg?' 'abs' 'char?' 'identical?' 'array?' 'array-value?' \
+  'char?' 'identical?' 'array?' 'array-value?' \
   'reduced?' \
   'some?' 'boolean?' 'empty?' 'not-empty' 'integer?' 'ident?' 'counted?' 'seqable?' \
   'nat-int?' 'pos-int?' 'neg-int?' \
