@@ -5380,7 +5380,7 @@ let create ~compile_expr =
                     [ encoding.semantic_expr; value.semantic_expr ]))
         | Ok _ -> Error.error ".getBytes expects a string and encoding"
         | Error _ as error -> error)
-    | ".write" | "-write" -> (
+    | ".write" | "__lg_write" -> (
         match compile_args () with
         | Ok [ writer; text ]
           when (Types.equal writer.ty (TOcaml "Buffer.t")
@@ -5592,7 +5592,7 @@ let create ~compile_expr =
                        FSymbol "do";
                        FList
                          [
-                           FSymbol "-write";
+                           FSymbol "__lg_write";
                            FSymbol writer_name;
                            FSymbol prefix_name;
                          ];
@@ -5617,7 +5617,7 @@ let create ~compile_expr =
                                    FSymbol "do";
                                    FList
                                      [
-                                       FSymbol "-write";
+                                       FSymbol "__lg_write";
                                        FSymbol writer_name;
                                        FSymbol separator_name;
                                      ];
@@ -5634,7 +5634,7 @@ let create ~compile_expr =
                          ];
                        FList
                          [
-                           FSymbol "-write";
+                           FSymbol "__lg_write";
                            FSymbol writer_name;
                            FSymbol suffix_name;
                          ];

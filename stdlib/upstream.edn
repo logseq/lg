@@ -139,6 +139,84 @@
               :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
     -assoc-n {:status :typed-primitive
               :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -name {:status :static-adaptation
+           :reason :source-inamed-protocol-method-with-static-keyword-symbol-and-extensible-record-receivers}
+    -namespace {:status :static-adaptation
+                :reason :source-inamed-protocol-method-with-static-optional-namespace-results}
+    -write {:status :static-adaptation
+            :reason :source-iwriter-protocol-method-with-a-static-buffer-receiver-adaptation}
+    -flush {:status :static-adaptation
+            :reason :source-iwriter-protocol-method-with-the-upstream-noop-flush-result}
+    -add-method {:status :blocked-static-typing
+                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -remove-method {:status :blocked-static-typing
+                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -prefer-method {:status :blocked-static-typing
+                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -get-method {:status :blocked-static-typing
+                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -methods {:status :blocked-static-typing
+              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -prefers {:status :blocked-static-typing
+              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -dispatch-fn {:status :blocked-static-typing
+                  :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -default-dispatch-val {:status :blocked-static-typing
+                           :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -reset {:status :blocked-static-typing
+            :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -add-watch {:status :blocked-static-typing
+                :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    -remove-watch {:status :blocked-static-typing
+                   :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    -notify-watches {:status :blocked-static-typing
+                     :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    -assoc! {:status :blocked-static-typing
+             :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
+    -assoc-n! {:status :blocked-static-typing
+               :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
+    -dissoc! {:status :blocked-static-typing
+              :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
+    -pop! {:status :blocked-static-typing
+           :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
+    -chunked-first {:status :blocked-static-typing
+                    :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -chunked-next {:status :blocked-static-typing
+                   :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -chunked-rest {:status :blocked-static-typing
+                   :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -drop-first {:status :blocked-static-typing
+                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -clone {:status :blocked-static-typing
+            :reason :same-static-receiver-result-across-arrays-and-cljs-collection-types-needs-a-clone-capability-witness}
+    -invoke {:status :blocked-static-typing
+             :reason :upstream-ifn-exposes-zero-through-twenty-one-and-variadic-arities-not-representable-by-one-static-protocol-method}
+    -first {:status :blocked-static-typing
+            :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
+    -rest {:status :blocked-static-typing
+           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
+    -next {:status :blocked-static-typing
+           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
+    -drop {:status :blocked-static-typing
+           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
+    -key {:status :blocked-static-typing
+          :reason :map-entry-key-and-value-are-distinct-associated-types-not-expressible-by-one-first-class-method-signature}
+    -val {:status :blocked-static-typing
+          :reason :map-entry-key-and-value-are-distinct-associated-types-not-expressible-by-one-first-class-method-signature}
+    -realized? {:status :blocked-static-typing
+                :reason :pending-receiver-payload-and-realization-state-require-a-generic-host-type-extension-not-source-expressible}
+    -clj->js {:status :host-boundary
+              :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
+    -js->clj {:status :host-boundary
+              :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
+    -key->js {:status :host-boundary
+              :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
+    -iterator {:status :host-boundary
+               :reason :javascript-iterator-protocol-has-no-shared-native-static-representation}
+    -deref-with-timeout {:status :host-boundary
+                         :reason :asynchronous-timeout-dereference-has-no-shared-native-melange-static-effect-boundary}
+    inst-ms* {:status :host-boundary
+              :reason :clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation}
     completing {:status :static-adaptation
                 :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}
     complement {:status :static-adaptation
@@ -908,8 +986,12 @@
    :implementation "clojure/data.cljc"
    :interface "clojure/data.mil"
    :definitions
-   {diff {:status :static-adaptation
-          :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}}}
+  {diff {:status :static-adaptation
+          :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}
+    equality-partition {:status :blocked-static-typing
+                        :reason :upstream-open-equality-partitions-span-arbitrary-clojure-values-while-lg-clojure-data-uses-a-closed-edn-domain}
+    diff-similar {:status :blocked-static-typing
+                  :reason :upstream-open-equality-partitions-span-arbitrary-clojure-values-while-lg-clojure-data-uses-a-closed-edn-domain}}}
 
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"

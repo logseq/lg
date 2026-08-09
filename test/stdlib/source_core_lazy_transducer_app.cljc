@@ -1,6 +1,8 @@
 (ns source-core-lazy-transducer-app
   (:require [cljs.math :as math]
+            [clojure.core :as core]
             [clojure.core.protocols :as protocols]
+            [ocaml.Buffer :as buffer]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
 
 (def lazy-realizations (atom 0))
@@ -241,3 +243,21 @@
 (println (satisfies? protocols/Datafiable "plain"))
 (println (= 42 (protocols/datafy (ProtocolBox. 42))))
 (println (= 7 (protocols/nav {:answer 7} :answer 7)))
+(defrecord SourceNamed [name-value ^:option<string> namespace-value])
+(extend-type SourceNamed
+  clojure.core/INamed
+  (-name [value] (:name-value value))
+  (-namespace [value] (:namespace-value value)))
+(println (= "entry"
+            (core/INamed/-name
+              (SourceNamed. "entry" (Some "scope")))))
+(println (= (Some "scope")
+            (core/INamed/-namespace
+              (SourceNamed. "entry" (Some "scope")))))
+(println (= "entry" (core/INamed/-name :scope/entry)))
+(println (= (Some "scope")
+            (core/INamed/-namespace :scope/entry)))
+(def source-writer (buffer/create 16))
+(core/IWriter/-write source-writer "ab")
+(println (= "ab" (buffer/contents source-writer)))
+(println (= nil (core/IWriter/-flush source-writer)))

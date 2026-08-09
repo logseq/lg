@@ -4,7 +4,8 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Stdlib :as stdlib]
+  (:require [ocaml.Buffer :as buffer]
+            [ocaml.Stdlib :as stdlib]
             [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
@@ -21,6 +22,29 @@
             [ocaml.Lg_runtime.Runtime_time :as runtime-time]
             [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
+
+(defprotocol INamed
+  (-name [value])
+  (-namespace [value]))
+
+(extend-type :keyword
+  INamed
+  (-name [value] (name value))
+  (-namespace [value] (namespace value)))
+
+(extend-type :symbol
+  INamed
+  (-name [value] (name value))
+  (-namespace [value] (namespace value)))
+
+(defprotocol IWriter
+  (-write [writer source])
+  (-flush [writer]))
+
+(extend-type :Buffer.t
+  IWriter
+  (-write [writer source] (buffer/add-string writer source))
+  (-flush [_writer] nil))
 
 (defn make-hierarchy []
   (runtime-hierarchy/make))

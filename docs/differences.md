@@ -179,6 +179,12 @@ protocol table, dynamic extension, metadata dispatch, or reflection. Protocol
 identity includes its owning module and protocol name; when two protocols expose
 the same method name, `Protocol/method` selects one explicitly while the
 traditional unqualified method spelling remains available when unambiguous.
+An `extend-type :default` implementation supplies the statically selected
+fallback when no concrete receiver extension exists. Concrete extensions take
+precedence. `clojure.core/INamed` and `clojure.core/IWriter` use this same source
+protocol machinery: keywords, symbols, records, and OCaml buffers do not need
+public-name compiler dispatch. The private `__lg_write` primitive remains only
+for compiler-generated buffer effects.
 `defprotocol` and `extend-type` are also valid inside `module`; exported calls
 use `Module/Protocol/method` and retain qualified record receiver identity.
 
