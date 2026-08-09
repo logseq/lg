@@ -974,6 +974,198 @@
               :reason :mutable-per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
     with-redefs {:status :blocked-static-typing
                  :reason :temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation}
+    *exec-tap-fn* {:status :blocked-static-typing
+                   :reason :global-tap-executor-must-store-and-invoke-callbacks-over-arbitrary-unrelated-static-value-types}
+    --destructure-map {:status :special-form
+                       :reason :clojurescript-macro-implementation-helper-that-rewrites-binding-forms-at-analysis-time}
+    ExceptionInfo {:status :host-boundary
+                   :reason :clojurescript-javascript-error-constructor-with-open-ex-data-and-host-stack-fields}
+    Throwable->map {:status :host-boundary
+                    :reason :walks-javascript-error-cause-chains-and-returns-open-exception-data-maps}
+    add-tap {:status :blocked-static-typing
+             :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
+    add-watch {:status :blocked-static-typing
+               :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    alter-meta! {:status :blocked-static-typing
+                 :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map-or-a-statically-typed-metadata-update-capability}
+    array-chunk {:status :blocked-static-typing
+                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    array-iter {:status :host-boundary
+                :reason :constructs-a-javascript-iterator-object-over-a-javascript-array}
+    array-list {:status :host-boundary
+                :reason :constructs-a-mutable-javascript-object-used-by-stateful-transducers}
+    bases {:status :host-boundary
+           :reason :reads-google-closure-javascript-constructor-inheritance-metadata}
+    chunk {:status :blocked-static-typing
+           :reason :clojurescript-chunk-buffer-and-chunk-result-have-no-lg-static-source-types}
+    chunk-append {:status :blocked-static-typing
+                  :reason :clojurescript-mutable-chunk-buffer-has-no-lg-static-source-type}
+    chunk-buffer {:status :blocked-static-typing
+                  :reason :clojurescript-mutable-chunk-buffer-has-no-lg-static-source-type}
+    chunk-cons {:status :blocked-static-typing
+                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunk-first {:status :blocked-static-typing
+                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunk-next {:status :blocked-static-typing
+                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunk-rest {:status :blocked-static-typing
+                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunked-seq {:status :blocked-static-typing
+                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunked-seq? {:status :blocked-static-typing
+                  :reason :first-class-predicate-needs-a-shared-static-chunked-sequence-capability}
+    create-ns {:status :host-boundary
+               :reason :bootstrap-namespace-wrapper-is-backed-by-a-javascript-namespace-object}
+    defmacro {:status :special-form
+              :reason :analyzer-owned-macro-definition-and-metadata-rewrite}
+    demunge {:status :blocked-static-typing
+             :reason :same-arity-string-or-symbol-input-must-preserve-its-nominal-result-type}
+    destructure {:status :special-form
+                 :reason :compiler-owned-binding-form-rewrite-over-code-data}
+    disj! {:status :blocked-static-typing
+           :reason :transient-receiver-family-needs-associated-element-and-persistent-result-types}
+    dispatch-fn {:status :blocked-static-typing
+                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    double-array {:status :blocked-static-typing
+                  :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    dt->et {:status :special-form
+            :reason :clojurescript-macro-helper-that-rewrites-deftype-and-defrecord-protocol-implementation-forms}
+    eduction {:status :blocked-static-typing
+              :reason :returned-value-must-carry-seq-reduce-and-host-iterator-capabilities-over-a-composed-transducer}
+    es6-entries-iterator {:status :host-boundary
+                          :reason :constructs-a-javascript-es6-map-entry-iterator-object}
+    es6-iterator {:status :host-boundary
+                  :reason :constructs-a-javascript-es6-iterator-object}
+    es6-iterator-seq {:status :host-boundary
+                      :reason :adapts-a-javascript-es6-iterator-into-the-clojurescript-sequence-runtime}
+    es6-set-entries-iterator {:status :host-boundary
+                              :reason :constructs-a-javascript-es6-set-entry-iterator-object}
+    eval {:status :host-boundary
+          :reason :delegates-code-data-to-the-self-hosted-clojurescript-evaluator-environment}
+    find-macros-ns {:status :host-boundary
+                    :reason :bootstrap-macro-namespace-lookup-walks-javascript-global-objects-and-a-mutable-cache}
+    find-ns {:status :host-boundary
+             :reason :bootstrap-namespace-lookup-walks-javascript-global-objects-and-a-mutable-cache}
+    find-ns-obj {:status :host-boundary
+                 :reason :bootstrap-namespace-lookup-traverses-munged-javascript-global-object-properties}
+    get-method {:status :blocked-static-typing
+                :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    get-validator {:status :blocked-static-typing
+                   :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
+    int-array {:status :blocked-static-typing
+               :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    is_proto_ {:status :host-boundary
+               :reason :tests-javascript-constructor-prototype-object-identity}
+    iter {:status :host-boundary
+          :reason :dispatches-to-the-javascript-symbol-iterator-protocol}
+    iterable? {:status :host-boundary
+               :reason :tests-the-javascript-symbol-iterator-protocol}
+    iteration {:status :blocked-static-typing
+               :reason :returned-value-combines-seq-and-reduce-capabilities-with-associated-step-token-result-and-value-types}
+    js-invoke {:status :host-boundary
+               :reason :invokes-an-arbitrary-javascript-function-with-javascript-arguments-and-result}
+    js-iterable? {:status :host-boundary
+                  :reason :tests-the-javascript-symbol-iterator-property}
+    js-keys {:status :host-boundary
+             :reason :enumerates-own-properties-of-a-javascript-object}
+    key->js {:status :host-boundary
+             :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
+    load-file {:status :host-boundary
+               :reason :node-only-bootstrap-hook-loads-and-evaluates-a-javascript-file}
+    long-array {:status :blocked-static-typing
+                :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    methods {:status :blocked-static-typing
+             :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    missing-protocol {:status :host-boundary
+                      :reason :constructs-a-javascript-error-from-google-closure-runtime-type-dispatch}
+    mk-bound-fn {:status :blocked-static-typing
+                 :reason :sorted-collection-receiver-needs-associated-entry-key-and-comparator-types}
+    munge {:status :blocked-static-typing
+           :reason :same-arity-string-or-symbol-input-must-preserve-its-nominal-result-type}
+    native-satisfies? {:status :host-boundary
+                       :reason :reads-clojurescript-javascript-protocol-dispatch-tables-by-google-closure-runtime-type}
+    nil-iter {:status :host-boundary
+              :reason :constructs-a-javascript-es6-iterator-object}
+    ns-interns* {:status :host-boundary
+                 :reason :bootstrap-namespace-introspection-enumerates-javascript-object-properties-and-wraps-vars}
+    ns-name {:status :host-boundary
+             :reason :reads-the-name-field-of-the-bootstrap-javascript-namespace-wrapper}
+    obj-map {:status :host-boundary
+             :reason :constructs-the-clojurescript-lite-mode-javascript-object-backed-map}
+    object-array {:status :blocked-static-typing
+                  :reason :same-arity-size-or-seqable-overload-requires-a-shared-object-array-element-domain}
+    persistent-array-map-seq {:status :blocked-static-typing
+                              :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
+    pop! {:status :blocked-static-typing
+          :reason :transient-receiver-family-needs-associated-element-and-persistent-result-types}
+    pr-seq-writer {:status :blocked-static-typing
+                   :reason :printer-callback-must-accept-arbitrary-heterogeneous-values-with-a-shared-writer-and-options-domain}
+    pr-str* {:status :blocked-static-typing
+             :reason :variadic-readable-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    pr-str-with-opts {:status :blocked-static-typing
+                      :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
+    prefer-method {:status :blocked-static-typing
+                   :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    prefers {:status :blocked-static-typing
+             :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    print-map {:status :blocked-static-typing
+               :reason :map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
+    print-meta? {:status :blocked-static-typing
+                 :reason :printer-options-and-value-metadata-require-a-shared-heterogeneous-map-domain}
+    print-prefix-map {:status :blocked-static-typing
+                      :reason :namespaced-map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
+    print-str {:status :blocked-static-typing
+               :reason :variadic-display-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    println-str {:status :blocked-static-typing
+                 :reason :variadic-display-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    prn-str {:status :blocked-static-typing
+             :reason :variadic-readable-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    prn-str-with-opts {:status :blocked-static-typing
+                       :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
+    ranged-iterator {:status :host-boundary
+                     :reason :constructs-a-javascript-es6-iterator-over-a-sorted-collection-range}
+    remove-all-methods {:status :blocked-static-typing
+                        :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    remove-method {:status :blocked-static-typing
+                   :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    remove-tap {:status :blocked-static-typing
+                :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
+    remove-watch {:status :blocked-static-typing
+                  :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    reset-meta! {:status :blocked-static-typing
+                 :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map}
+    rsubseq {:status :blocked-static-typing
+             :reason :sorted-collection-receiver-needs-associated-entry-key-comparator-and-sequence-types}
+    seq-iter {:status :host-boundary
+              :reason :constructs-a-javascript-es6-iterator-over-a-clojurescript-sequence}
+    seq-to-map-for-destructuring {:status :blocked-static-typing
+                                  :reason :alternating-key-value-input-needs-distinct-associated-key-and-value-types-and-map-or-map-sequence-overload}
+    set-print-err-fn! {:status :host-boundary
+                       :reason :mutates-the-target-specific-global-error-print-callback}
+    set-print-fn! {:status :host-boundary
+                   :reason :mutates-the-target-specific-global-output-print-callback}
+    set-validator! {:status :blocked-static-typing
+                    :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
+    sorted-map-by {:status :blocked-static-typing
+                   :reason :lg-has-no-persistent-sorted-map-source-representation-carrying-a-key-comparator}
+    sorted-set-by {:status :blocked-static-typing
+                   :reason :lg-has-no-persistent-sorted-set-source-representation-carrying-an-element-comparator}
+    string-iter {:status :host-boundary
+                 :reason :constructs-a-javascript-es6-iterator-over-utf16-string-code-points}
+    string-print {:status :host-boundary
+                  :reason :writes-through-the-target-specific-global-print-callback}
+    subseq {:status :blocked-static-typing
+            :reason :sorted-collection-receiver-needs-associated-entry-key-comparator-and-sequence-types}
+    supers {:status :host-boundary
+            :reason :reads-google-closure-javascript-constructor-inheritance-metadata}
+    tap> {:status :blocked-static-typing
+          :reason :global-tap-registry-must-invoke-callbacks-over-arbitrary-unrelated-static-value-types}
+    test {:status :host-boundary
+          :reason :reads-test-functions-from-clojurescript-var-metadata-or-javascript-function-properties}
+    transformer-iterator {:status :host-boundary
+                          :reason :constructs-a-stateful-javascript-es6-iterator-around-a-transducer}
+    type->str {:status :host-boundary
+               :reason :reads-clojurescript-javascript-constructor-name-metadata}
     update-vals {:status :static-adaptation
                  :reason :persistent-reduce-kv-preserves-key-value-transformation-and-typed-map-metadata-without-a-transient-representation-boundary}
     update-keys {:status :static-adaptation

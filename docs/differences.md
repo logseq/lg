@@ -368,12 +368,12 @@ legal OCaml identifiers while preserving source-level names.
 
 Vectors compile to `Rrbvec.t` persistent vectors.
 
-`cljs.math` is an aggregate source namespace. Its initial static float batch
-includes `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`,
-`tanh`, `exp`, `expm1`, `log`, `log10`, `log1p`, `sqrt`, `cbrt`, `pow`,
-`IEEE-fmod`, `random`, `hypot`, `ceil`, `floor`, `to-radians`, and
-`to-degrees`, plus the upstream `E` and `PI` constants. Remaining `cljs.math`
-functions stay explicitly deferred.
+`cljs.math` is an aggregate source namespace. Its static float implementation
+includes the complete pinned public surface, including trigonometric,
+hyperbolic, exact-arithmetic, rounding, exponent, adjacent-float, scaling, and
+IEEE remainder operations. Bit-sensitive behavior uses the same typed shared
+runtime implementation on Native and Melange; no public `cljs.math` function is
+deferred.
 
 `clojure.core.protocols` is source-defined. Protocol extensions may use the
 upstream `:default` receiver; LG resolves a concrete static receiver first and

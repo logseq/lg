@@ -149,9 +149,10 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 478 source entries (48.53%), 96 typed
-primitives, 39 special forms, 60 host boundaries, 165 static-typing blockers,
-51 out-of-scope entries, and 96 deferred entries. The deferred set is the
-explicit queue for further source-port and compiler/macro-boundary review.
+primitives, 43 special forms, 98 host boundaries, 219 static-typing blockers,
+51 out-of-scope entries, and zero deferred entries. Source coverage only counts
+real precompiled LG definitions; classifying a boundary does not inflate the
+percentage.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
 logarithms, square root, exponential functions, stable hypotenuse,
@@ -196,6 +197,15 @@ are special forms; JavaScript syntax and host-object macros are host boundaries;
 multimethod, per-object protocol extension, and dynamic root-rebinding macros
 carry concrete static blockers. These classifications do not count as source
 coverage.
+All remaining public `cljs.core` function surfaces are also explicitly
+classified. The non-source families are JavaScript iterators and prototype
+inspection, chunked-sequence internals, multimethods, reference watches and
+validators, heterogeneous printing, sorted collections, transient associated
+types, bootstrap namespace objects, and analyzer helpers. Each individual var
+has its concrete reason in `stdlib/upstream.edn`; there is no unreviewed
+function queue hidden behind a generic deferred reason. Further source coverage
+therefore proceeds by implementing one of these missing static capabilities as
+a coherent family rather than by copying isolated wrappers.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

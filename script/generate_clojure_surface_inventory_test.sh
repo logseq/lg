@@ -87,6 +87,23 @@ awk -F '\t' '
     exit failed
   }
 ' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  BEGIN {
+    split("*exec-tap-fn* --destructure-map ExceptionInfo Throwable->map add-tap add-watch alter-meta! array-chunk array-iter array-list bases chunk chunk-append chunk-buffer chunk-cons chunk-first chunk-next chunk-rest chunked-seq chunked-seq? create-ns defmacro demunge destructure disj! dispatch-fn double-array dt->et eduction es6-entries-iterator es6-iterator es6-iterator-seq es6-set-entries-iterator eval find-macros-ns find-ns find-ns-obj get-method get-validator int-array is_proto_ iter iterable? iteration js-invoke js-iterable? js-keys key->js load-file long-array methods missing-protocol mk-bound-fn munge native-satisfies? nil-iter ns-interns* ns-name obj-map object-array persistent-array-map-seq pop! pr-seq-writer pr-str* pr-str-with-opts prefer-method prefers print-map print-meta? print-prefix-map print-str println-str prn-str prn-str-with-opts ranged-iterator remove-all-methods remove-method remove-tap remove-watch reset-meta! rsubseq seq-iter seq-to-map-for-destructuring set-print-err-fn! set-print-fn! set-validator! sorted-map-by sorted-set-by string-iter string-print subseq supers tap> test transformer-iterator type->str", names, " ")
+    for (i in names) required["clojure.core/" names[i]] = 1
+  }
+  $1 == "definition" && ($2 in required) &&
+  $3 != "deferred" && $4 != "" {classified[$2] = 1}
+  END {
+    for (name in required) {
+      if (!(name in classified)) {
+        print "unclassified cljs.core function: " name > "/dev/stderr"
+        failed = 1
+      }
+    }
+    exit failed
+  }
+' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/union" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/random-uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
