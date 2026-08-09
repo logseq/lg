@@ -26569,9 +26569,9 @@ let test_batched_sequence_functions_reject_bad_counts () =
   |> expect_error_contains "incompatible arguments"
 
 let test_batched_sequence_functions_reject_reduce_kv_non_collection () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/bad_reduce_kv.cljc"
     {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (__lg_list 1 2)))|}
-  |> expect_error "reduce-kv expects a vector or map"
+  |> expect_error_contains "IKVReduce"
 
 let test_interleave_accepts_multiple_collections () =
   let source =

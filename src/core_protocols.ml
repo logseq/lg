@@ -588,6 +588,26 @@ let add_vector_associative_protocols registry =
   |> add "-assoc" "Lg_runtime.Runtime_vector.assoc"
        (TFn ([ vector; TInt; element ], vector))
 
+let add_vector_kv_reduce_protocol registry =
+  let element = TVar "vector_kv_element" in
+  let accumulator = TVar "vector_kv_accumulator" in
+  let vector = TVector element in
+  let binding =
+    Types.binding ~protocol_id:kv_reduce_id
+      "Lg_runtime.Runtime_vector.kv_reduce_protocol"
+      (TFn
+         ( [
+             vector;
+             TFn ([ accumulator; TInt; element ], accumulator);
+             accumulator;
+           ],
+           accumulator ))
+  in
+  Protocol_registry.add_implementation kv_reduce_id
+    (method_id kv_reduce_id "-kv-reduce") Receiver_id.Vector_receiver binding
+    registry
+  |> add_or_fail
+
 let add_indexed receiver ocaml_name registry =
   let binding =
     Types.binding ~protocol_id:indexed_id ocaml_name
@@ -688,6 +708,7 @@ let initial_registry =
   |> declare_map_protocols |> add_runtime_map_protocols
   |> add_static_collection_protocols
   |> declare_vector_protocol |> add_vector_associative_protocols
+  |> add_vector_kv_reduce_protocol
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =

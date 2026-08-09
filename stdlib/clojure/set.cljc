@@ -88,14 +88,14 @@
 (defn map-invert
   "Returns a map whose values are the keys of `m` and whose keys are its values."
   [m]
-  (reduce-kv
+  (__lg_reduce-kv
    (fn [result key value]
      (assoc result value key))
    {}
    m))
 
 (defn- remove-renamed-keys [m key-map]
-  (reduce-kv
+  (__lg_reduce-kv
    (fn [result old _new]
      (dissoc result old))
    m
@@ -104,7 +104,7 @@
 (defn rename-keys
   "Returns `m` with keys renamed according to `key-map`."
   [m key-map]
-  (reduce-kv
+  (__lg_reduce-kv
    (fn [result old new]
      (if-some [value (get m old)]
        (assoc result new value)

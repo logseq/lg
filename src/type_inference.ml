@@ -5323,7 +5323,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               else element_ty
             in
             infer_expected_all value_ty params values)
-    | FList [ FSymbol "reduce-kv"; reducer; init; FSymbol name ] -> (
+    | FList [ FSymbol "__lg_reduce-kv"; reducer; init; FSymbol name ] -> (
         let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
         let unresolved = function
           | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "map"
@@ -5338,7 +5338,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         with
         | Error _ as error -> error
         | Ok params -> infer_all params [ reducer; init ])
-    | FList [ FSymbol "reduce-kv"; reducer; init; collection ]
+    | FList [ FSymbol "__lg_reduce-kv"; reducer; init; collection ]
       when
         (match inferred_form_type params collection with
         | TUnknown | TMeta _ | TVar _ -> true

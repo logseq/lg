@@ -92,6 +92,8 @@
   :fn<fn<input;key>;seqable<input;storage>;map<key;vector<input>>>)
 (signature clojure.core/reductions [input accumulator storage]
   :overload<fn<fn<input;input;input>;seqable<input;storage>;list<input>>;fn<fn<accumulator;input;accumulator>;accumulator;seqable<input;storage>;list<accumulator>>>)
+(signature clojure.core/reduce-kv [key value accumulator]
+  :fn<fn<accumulator;key;value;accumulator>;accumulator;map<key;value>;accumulator>)
 (signature clojure.core/partition-by-run [input key]
   :fn<fn<input;key>;key;seq<input>;seq<input>>)
 (signature clojure.core/partition-by-seq [input key storage]

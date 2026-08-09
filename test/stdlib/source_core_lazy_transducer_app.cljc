@@ -186,3 +186,14 @@
 (println
   (= [10 11 13]
      (vec (reductions (fn [left right] (+ left right)) 10 [1 2]))))
+(println
+  (= 31
+     (reduce-kv (fn [result index value]
+                  (+ result (+ index value)))
+                0
+                [10 20])))
+(println
+  (= 6
+     (reduce-kv (fn [result _key value] (+ result value))
+                0
+                {:a 1 :b 2 :c 3})))

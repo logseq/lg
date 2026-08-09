@@ -682,6 +682,12 @@
   ([f init coll]
    (__lg_reductions f init coll)))
 
+(defn reduce-kv
+  {:inline (fn [f init coll]
+             (list 'IKVReduce/-kv-reduce coll f init))}
+  [f init coll]
+  (IKVReduce/-kv-reduce coll f init))
+
 (defn- take-nth-seq [n coll]
   (lazy-seq
    (if coll
@@ -2274,7 +2280,7 @@
   "Returns `m` with `f` applied to every value."
   [m f]
   (with-meta
-    (reduce-kv
+    (__lg_reduce-kv
      (fn [result key value]
        (assoc result key (f value)))
      {}
@@ -2285,7 +2291,7 @@
   "Returns `m` with `f` applied to every key."
   [m f]
   (with-meta
-    (reduce-kv
+    (__lg_reduce-kv
      (fn [result key value]
        (assoc result (f key) value))
      {}
