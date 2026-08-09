@@ -318,6 +318,14 @@
 (println (= #{3 4}
             (source-set-from-indexed-seq
               (array-seq (array 3 4 3)))))
+(println (= "" (munge-str "")))
+(println (= "hello_world" (munge-str "hello-world")))
+(println (= "app_SLASH_core_QMARK_" (munge-str "app/core?")))
+(println (= "_PLUS__COLON__BANG_" (munge-str "+:!")))
+(println (= "a_LBRACK_b_RBRACK_" (munge-str "a[b]")))
+(println (= "x_EQ_y" (cljs.core/munge-str "x=y")))
+(def source-munge-str munge-str)
+(println (= "left_GT_right" (source-munge-str "left>right")))
 (defrecord ProtocolBox [value])
 (extend-type ProtocolBox
   protocols/Datafiable

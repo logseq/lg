@@ -148,9 +148,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 477 source entries (48.43%), 96 typed
+macro surfaces. The current baseline is 478 source entries (48.53%), 96 typed
 primitives, 12 special forms, 34 host boundaries, 159 static-typing blockers,
-51 out-of-scope entries, and 156 deferred entries. The deferred set is the
+51 out-of-scope entries, and 155 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -186,6 +186,10 @@ and JavaScript zero-divisor number behavior in the shared binary64 domain.
 adapters. They reuse the existing typed array sequence and default HAMT set,
 including both `prim-seq` arities, without introducing the JavaScript-only
 `IndexedSeq` representation or the upstream transient array fast path.
+`munge-str` is a source-visible static string function. Its complete upstream
+character table lives in a typed runtime helper because the current LG lexer
+cannot express delimiter characters such as braces and brackets as char
+literals; the boundary is `string -> string` and does not use dynamic values.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

@@ -294,6 +294,7 @@
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/set-from-indexed-seq [value]
   :fn<seq<value>;set<value>>)
+(signature clojure.core/munge-str :fn<string;string>)
 (signature clojure.core/array-index-of [value]
   :fn<array<value>;value;int>)
 (signature clojure.core/array-binary-search-left [element key]

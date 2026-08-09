@@ -721,6 +721,8 @@
                 :reason :lg-datascript-source-compatibility-alias-copies-any-statically-typed-seqable-through-to-array}
     set-from-indexed-seq {:status :static-adaptation
                           :reason :source-port-builds-the-default-hamt-set-from-the-static-indexed-sequence-instead-of-the-upstream-transient-array-fast-path}
+    munge-str {:status :static-adaptation
+               :reason :source-wrapper-preserves-the-complete-upstream-character-replacement-table-through-a-typed-string-primitive-because-lg-char-literals-cannot-currently-represent-delimiter-characters-such-as-braces-and-brackets}
     array-index-of {:status :ported
                     :reason :source-port-preserves-the-upstream-even-key-slot-scan-equality-check-and-minus-one-missing-result}
     array-binary-search-left {:status :static-adaptation

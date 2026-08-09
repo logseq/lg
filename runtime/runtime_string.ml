@@ -287,6 +287,43 @@ let escape source replacements =
     source;
   Buffer.contents buffer
 
+let munge_str source =
+  let replacement = function
+    | '-' -> Some "_"
+    | ':' -> Some "_COLON_"
+    | '+' -> Some "_PLUS_"
+    | '>' -> Some "_GT_"
+    | '<' -> Some "_LT_"
+    | '=' -> Some "_EQ_"
+    | '~' -> Some "_TILDE_"
+    | '!' -> Some "_BANG_"
+    | '@' -> Some "_CIRCA_"
+    | '#' -> Some "_SHARP_"
+    | '\'' -> Some "_SINGLEQUOTE_"
+    | '"' -> Some "_DOUBLEQUOTE_"
+    | '%' -> Some "_PERCENT_"
+    | '^' -> Some "_CARET_"
+    | '&' -> Some "_AMPERSAND_"
+    | '*' -> Some "_STAR_"
+    | '|' -> Some "_BAR_"
+    | '{' -> Some "_LBRACE_"
+    | '}' -> Some "_RBRACE_"
+    | '[' -> Some "_LBRACK_"
+    | ']' -> Some "_RBRACK_"
+    | '/' -> Some "_SLASH_"
+    | '\\' -> Some "_BSLASH_"
+    | '?' -> Some "_QMARK_"
+    | _ -> None
+  in
+  let buffer = Buffer.create (String.length source) in
+  String.iter
+    (fun character ->
+      match replacement character with
+      | Some encoded -> Buffer.add_string buffer encoded
+      | None -> Buffer.add_char buffer character)
+    source;
+  Buffer.contents buffer
+
 let starts_with source prefix = String.starts_with ~prefix source
 let identity source = source
 

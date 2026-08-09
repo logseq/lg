@@ -1778,6 +1778,9 @@
 (defn set-from-indexed-seq [indexed-seq]
   (set indexed-seq))
 
+(defn munge-str [source]
+  (runtime-string/munge-str source))
+
 (defn array-index-of [values key]
   (let [length (alength values)]
     (loop [index 0]
