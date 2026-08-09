@@ -19,6 +19,8 @@
   ../stdlib/cljs/reader.cljc
   ../stdlib/clojure/set.mil
   ../stdlib/clojure/set.cljc
+  ../stdlib/clojure/zip.mil
+  ../stdlib/clojure/zip.cljc
   datascript/lg/built_ins.mil
   ../src/lg.cma
   ../runtime/lg_runtime.cma

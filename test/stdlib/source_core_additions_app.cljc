@@ -4,6 +4,7 @@
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
             [clojure.walk :as walk :refer [keywordize-keys postwalk-replace prewalk-replace stringify-keys]]
+            [clojure.zip :as zip :refer [node]]
             [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (println (= 4 (bit-and-not 7 3)))
@@ -746,3 +747,85 @@
  (= (reader/read-string "[{:a nil} nil nil]")
     (data/diff (reader/read-string "{:a nil}")
                (reader/read-string "{}"))))
+
+(defn zip-branch? [value] (< value 4))
+(defn zip-children [value] [(* value 2) (inc (* value 2))])
+(defn zip-make-node [value children]
+  (reduce + value children))
+(def zip-root (zip/zipper zip-branch? zip-children zip-make-node 1))
+(def zip-down (zip/down zip-root))
+(def zip-right (zip/right zip-down))
+
+(println (= 1 (node zip-root)))
+(println (= 2 (zip/node zip-down)))
+(println (= 3 (zip/node zip-right)))
+(println (= [1] (zip/path zip-down)))
+(println (= [] (zip/lefts zip-down)))
+(println (= [3] (zip/rights zip-down)))
+(println (= 2 (zip/node (zip/left zip-right))))
+(println (= 3 (zip/node (zip/rightmost zip-down))))
+(println (= 2 (zip/node (zip/leftmost zip-right))))
+(println (= 1 (zip/node (zip/up zip-down))))
+(println (= 4 (zip/node (zip/down (zip/down zip-root)))))
+(println (= 2 (zip/node (zip/prev (zip/next (zip/next zip-root))))))
+(println (= 5 (zip/node (zip/next (zip/next (zip/next zip-root))))))
+(println (= 24 (zip/root (zip/replace zip-down 20))))
+(println (= 15 (zip/root (zip/insert-right zip-down 9))))
+(println (= 15 (zip/root (zip/insert-left zip-right 9))))
+(println (= 15 (zip/root (zip/insert-child zip-root 9))))
+(println (= 15 (zip/root (zip/append-child zip-root 9))))
+(println (= 24 (zip/root (zip/edit zip-down (fn [value] (* value 10))))))
+(println (= 4 (zip/root (zip/remove zip-down))))
+(println (= 3 (zip/root (zip/remove zip-right))))
+(def zip-end
+  (zip/next
+   (zip/next
+    (zip/next
+     (zip/next
+      (zip/next
+       (zip/next
+        (zip/next zip-root))))))))
+(println (zip/end? zip-end))
+(println (= 1 (zip/root zip-end)))
+(def source-zip-root zip/root)
+(println (= 1 (source-zip-root zip-root)))
+(println (= 1 (clojure.zip/root zip-root)))
+(println (nil? (zip/up zip-root)))
+(println (nil? (zip/left zip-root)))
+(println (nil? (zip/down (zip/zipper (fn [_] false) zip-children zip-make-node 1))))
+(println
+ (try
+   (do (zip/insert-left zip-root 9) false)
+   (catch _ true)))
+(println
+ (try
+   (do (zip/insert-right zip-root 9) false)
+   (catch _ true)))
+(println
+ (try
+   (do (zip/remove zip-root) false)
+   (catch _ true)))
+
+(def vector-zipper (zip/vector-zip (reader/read-string "[1 [2 3]]")))
+(println (= (reader/read-string "1") (zip/node (zip/down vector-zipper))))
+(println (= (reader/read-string "[2 3]")
+            (zip/node (zip/right (zip/down vector-zipper)))))
+(println (= (reader/read-string "[1 [20 3]]")
+            (zip/root
+             (zip/replace
+              (zip/down (zip/right (zip/down vector-zipper)))
+              (reader/read-string "20")))))
+(def sequence-zipper (zip/seq-zip (reader/read-string "(1 (2 3))")))
+(println (= (reader/read-string "(1 (20 3))")
+            (zip/root
+             (zip/replace
+              (zip/down (zip/right (zip/down sequence-zipper)))
+              (reader/read-string "20")))))
+(def xml-zipper
+  (zip/xml-zip
+   (reader/read-string "{:tag :root, :content [\"a\" {:tag :child, :content [\"b\"]}]}")))
+(println (= (reader/read-string "\"b\"")
+            (zip/node
+             (zip/down
+              (zip/right
+               (zip/down xml-zipper))))))

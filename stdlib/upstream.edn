@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.data clojure.walk]
+ [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -739,8 +739,42 @@
 
   clojure.zip
   {:source "src/main/cljs/clojure/zip.cljs"
-   :status :blocked
-   :reason :public-heterogeneous-location-vectors-and-metadata-held-generic-callbacks-require-a-closed-zipper-domain}
+   :implementation "clojure/zip.cljc"
+   :interface "clojure/zip.mil"
+   :definitions
+   {zipper {:status :static-adaptation
+            :reason :source-algorithm-uses-a-parameterized-closed-location-path-and-callback-context-instead-of-an-upstream-heterogeneous-metadata-vector}
+    seq-zip {:status :static-adaptation :reason :closed-edn-sequential-node-adapter}
+    vector-zip {:status :static-adaptation :reason :closed-edn-vector-node-adapter}
+    xml-zip {:status :static-adaptation :reason :closed-edn-xml-map-node-adapter}
+    node {:status :ported}
+    branch? {:status :ported}
+    children {:status :static-adaptation :reason :typed-vector-normalization-preserves-child-order}
+    make-node {:status :ported}
+    path {:status :static-adaptation :reason :typed-vector-normalization-preserves-root-to-parent-order}
+    lefts {:status :static-adaptation :reason :typed-vector-normalization-preserves-sibling-order}
+    rights {:status :static-adaptation :reason :typed-vector-normalization-preserves-sibling-order}
+    down {:status :ported}
+    up {:status :ported}
+    root {:status :ported}
+    right {:status :ported}
+    rightmost {:status :ported}
+    left {:status :ported}
+    leftmost {:status :ported}
+    insert-left {:status :ported}
+    insert-right {:status :ported}
+    replace {:status :ported}
+    edit {:status :static-adaptation
+          :reason :typed-unary-callback-arity-is-source-owned-while-upstream-additional-variadic-edit-arguments-remain-blocked-by-dependent-apply}
+    insert-child {:status :ported}
+    append-child {:status :ported}
+    next {:status :ported}
+    prev {:status :ported}
+    end? {:status :ported}
+    remove {:status :ported}}
+   :notes
+   ["Navigation, sibling order, changed propagation, root rebuilding, depth-first traversal, and removal follow pinned ClojureScript control flow."
+    "No callback, node, path, or location is boxed into Runtime_dynamic.t."]}
 
   clojure.test
   {:source :jvm-only

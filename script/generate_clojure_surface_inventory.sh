@@ -250,7 +250,8 @@ if test -n "$clojurescript_root"; then
     'clojure.edn|stdlib/clojure/edn.cljc' \
     'cljs.reader|stdlib/cljs/reader.cljc' \
     'clojure.data|stdlib/clojure/data.cljc' \
-    'clojure.walk|stdlib/clojure/walk.cljc'; do
+    'clojure.walk|stdlib/clojure/walk.cljc' \
+    'clojure.zip|stdlib/clojure/zip.cljc'; do
     namespace=${namespace_and_source%%|*}
     source=${namespace_and_source#*|}
     bb "$lg_root/script/extract_clojurescript_public_vars.clj" "$namespace" \
@@ -364,7 +365,8 @@ for namespace in \
     || test "$namespace" = clojure.edn \
     || test "$namespace" = cljs.reader \
     || test "$namespace" = clojure.data \
-    || test "$namespace" = clojure.walk; then
+    || test "$namespace" = clojure.walk \
+    || test "$namespace" = clojure.zip; then
     ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.set; then
     ownership=source
@@ -391,6 +393,9 @@ clojure.walk/keywordize-keys|source
 clojure.walk/stringify-keys|source
 clojure.walk/prewalk-replace|source
 clojure.walk/postwalk-replace|source
+clojure.zip/zipper|source
+clojure.zip/root|source
+clojure.zip/next|source
 EOF
 
 stdlib_sources=$(rg --files "$lg_root/stdlib" -g '*.cljc')

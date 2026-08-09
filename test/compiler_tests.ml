@@ -301,6 +301,8 @@ let stdlib_sources =
          "stdlib/clojure/data.cljc";
          "stdlib/clojure/walk.mil";
          "stdlib/clojure/walk.cljc";
+         "stdlib/clojure/zip.mil";
+         "stdlib/clojure/zip.cljc";
        ]
       |> List.map (fun path ->
              (path, read_file (Filename.concat (repo_root ()) path))))

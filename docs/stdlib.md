@@ -146,8 +146,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 356 source entries (41.59%), 62 typed
-primitives, 12 special forms, 27 host boundaries, 184 static-typing blockers,
+macro surfaces. The current baseline is 384 source entries (44.86%), 62 typed
+primitives, 12 special forms, 27 host boundaries, 156 static-typing blockers,
 44 out-of-scope Spec entries, and 171 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -567,9 +567,16 @@ macros, dynamic test environments, and a closed report-event domain.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.
 `cljs.pprint` occurs 15 times and is explicitly blocked because
 readable and display printing need distinct static printer witnesses;
-`clojure.pprint` occurs 14 times and is a JVM-only host boundary. `clojure.zip`
-occurs 3 times and is blocked on its public heterogeneous location vectors and
-metadata-held generic callbacks. `cljs.spec.alpha` and `clojure.spec.alpha`
+`clojure.pprint` occurs 14 times and is a JVM-only host boundary. All 28 public
+`clojure.zip` vars are now precompiled source definitions. Its parameterized
+closed location, path, and callback-context records replace upstream's
+heterogeneous metadata vector without dynamic packing. Navigation, changed
+propagation, rebuilding, depth-first traversal, and removal retain the pinned
+ClojureScript control flow; sibling collections are normalized to typed vectors.
+The unary `edit` arity used by Logseq is supported, while additional variadic
+callback arguments remain explicitly recorded as a dependent-`apply` blocker.
+All 36 observed Logseq qualified zipper calls now resolve through the aggregate
+source artifact. `cljs.spec.alpha` and `clojure.spec.alpha`
 are explicitly out of scope; their Logseq references remain visible in the
 inventory but do not count against migration completion. The aggregate now
 contains all seven public `clojure.walk` functions over the closed
