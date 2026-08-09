@@ -146,9 +146,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 384 source entries (44.86%), 62 typed
+macro surfaces. The current baseline is 391 source entries (45.68%), 62 typed
 primitives, 12 special forms, 27 host boundaries, 156 static-typing blockers,
-44 out-of-scope Spec entries, and 171 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 164 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -592,6 +592,16 @@ arities, regex captures, empty-regex handling, and positive, zero, and negative
 limits. Consequently, `Core_namespaces` no longer routes any non-core public
 namespace, and the old `Core_data`, `Core_string`, and dynamic data-diff
 implementations have been removed.
+
+The seven public hierarchy functions are source-owned with their pinned
+explicit/global arities. A minimal closed `Lg_edn_backend.t` runtime primitive
+stores the three parent/ancestor/descendant relations, maintains transitive
+closure in upstream update order, rebuilds closure on `underive`, and rejects
+self or cyclic derivations. Recursive vector `isa?` and global hierarchy
+mutation are covered on Native and Melange. JavaScript constructor inheritance
+is retained as an explicit host-only boundary rather than being simulated with
+dynamic values. Closed EDN equality now uses Clojure set/map semantics instead
+of OCaml representation order, which is required by hierarchy result sets.
 
 The source core also includes ClojureScript's `key-test`, `equiv-map`, `reduceable?`,
 `vector-lite`, `hash-map-lite`, and `set-lite`. `IReduce` is a source-facing

@@ -829,3 +829,66 @@
              (zip/down
               (zip/right
                (zip/down xml-zipper))))))
+
+(def hierarchy-child (reader/read-string ":app/child"))
+(def hierarchy-parent (reader/read-string ":app/parent"))
+(def hierarchy-root (reader/read-string ":app/root"))
+(def hierarchy-peer (reader/read-string ":app/peer"))
+(def hierarchy-other (reader/read-string ":app/other"))
+(def hierarchy-empty (make-hierarchy))
+(def hierarchy-one (derive hierarchy-empty hierarchy-child hierarchy-parent))
+(def hierarchy-two (derive hierarchy-one hierarchy-parent hierarchy-root))
+
+(println (= (reader/read-string "{:parents {}, :descendants {}, :ancestors {}}")
+            hierarchy-empty))
+(println (= (reader/read-string "#{:app/parent}")
+            (parents hierarchy-one hierarchy-child)))
+(println (= (reader/read-string "#{:app/parent :app/root}")
+            (ancestors hierarchy-two hierarchy-child)))
+(println (= (reader/read-string "#{:app/child :app/parent}")
+            (descendants hierarchy-two hierarchy-root)))
+(println (isa? hierarchy-two hierarchy-child hierarchy-root))
+(println (isa? hierarchy-two hierarchy-child hierarchy-child))
+(println (not (isa? hierarchy-two hierarchy-child hierarchy-other)))
+(println
+ (isa? hierarchy-two
+       (reader/read-string "[:app/child :app/parent]")
+       (reader/read-string "[:app/root :app/root]")))
+(println (= hierarchy-two (derive hierarchy-two hierarchy-child hierarchy-parent)))
+(println (nil? (parents hierarchy-two hierarchy-other)))
+(println (nil? (ancestors hierarchy-two hierarchy-other)))
+(println (nil? (descendants hierarchy-two hierarchy-other)))
+(println
+ (try
+   (do (derive hierarchy-two hierarchy-child hierarchy-root) false)
+   (catch _ true)))
+(println
+ (try
+   (do (derive hierarchy-two hierarchy-root hierarchy-child) false)
+   (catch _ true)))
+(println
+ (try
+   (do (derive hierarchy-two hierarchy-child hierarchy-child) false)
+   (catch _ true)))
+
+(def hierarchy-three (derive hierarchy-two hierarchy-child hierarchy-peer))
+(def hierarchy-underived
+  (underive hierarchy-three hierarchy-child hierarchy-parent))
+(println (= (reader/read-string "#{:app/peer}")
+            (parents hierarchy-underived hierarchy-child)))
+(println (= (reader/read-string "#{:app/peer}")
+            (ancestors hierarchy-underived hierarchy-child)))
+(println (= (reader/read-string "#{:app/parent}")
+            (descendants hierarchy-underived hierarchy-root)))
+(println (= hierarchy-underived
+            (underive hierarchy-underived hierarchy-child hierarchy-parent)))
+
+(println (nil? (derive hierarchy-child hierarchy-parent)))
+(println (isa? hierarchy-child hierarchy-parent))
+(println (= (reader/read-string "#{:app/parent}") (parents hierarchy-child)))
+(println (nil? (underive hierarchy-child hierarchy-parent)))
+(println (not (isa? hierarchy-child hierarchy-parent)))
+
+(def source-isa cljs.core/isa?)
+(println (source-isa hierarchy-two hierarchy-child hierarchy-root))
+(println (clojure.core/isa? hierarchy-two hierarchy-child hierarchy-root))

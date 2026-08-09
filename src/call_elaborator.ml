@@ -3263,7 +3263,15 @@ let compile_equality scope env args =
                     [ dynamic.semantic_expr; other ] )))
     in
     let result =
-      if Types.equal left.ty (TOcaml "Lg_edn_backend.t")
+      if
+        is_edn_value_type left.ty && is_edn_value_type right.ty
+      then
+        Ok
+          (typed_ir TBool
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal",
+                  [ left.semantic_expr; right.semantic_expr ] )))
+      else if Types.equal left.ty (TOcaml "Lg_edn_backend.t")
          && not (Types.equal right.ty (TOcaml "Lg_edn_backend.t"))
       then metadata_pair left right
       else if Types.equal right.ty (TOcaml "Lg_edn_backend.t")

@@ -54,6 +54,20 @@
             :reason :source-macro-preserves-upstream-thread-first-order-and-nil-short-circuiting-with-a-finite-mapcat-binding-sequence}
     some->> {:status :static-adaptation
              :reason :source-macro-preserves-upstream-thread-last-order-and-nil-short-circuiting-with-a-finite-mapcat-binding-sequence}
+    make-hierarchy {:status :static-adaptation
+                    :reason :source-public-function-uses-a-closed-edn-hierarchy-map-and-minimal-typed-runtime-constructor}
+    isa? {:status :static-adaptation
+          :reason :source-two-and-three-arity-function-preserves-equality-explicit-and-global-ancestor-lookup-and-recursive-vector-dispatch-over-the-closed-edn-domain-while-javascript-constructor-inheritance-remains-a-host-boundary}
+    parents {:status :static-adaptation
+             :reason :source-one-and-two-arity-function-preserves-global-or-explicit-direct-parent-lookup-over-the-closed-edn-domain}
+    ancestors {:status :static-adaptation
+               :reason :source-one-and-two-arity-function-preserves-global-or-explicit-transitive-parent-lookup-over-the-closed-edn-domain}
+    descendants {:status :static-adaptation
+                 :reason :source-one-and-two-arity-function-preserves-global-or-explicit-transitive-child-lookup-over-the-closed-edn-domain-while-javascript-constructor-descendants-remain-a-host-boundary}
+    derive {:status :static-adaptation
+            :reason :source-two-and-three-arity-function-preserves-global-mutation-explicit-persistence-duplicate-edge-identity-transitive-closure-and-cycle-validation-through-a-closed-edn-runtime-algorithm}
+    underive {:status :static-adaptation
+              :reason :source-two-and-three-arity-function-preserves-global-mutation-explicit-persistence-missing-edge-identity-and-upstream-full-closure-rebuild-through-a-closed-edn-runtime-algorithm}
     identity {:status :ported}
     completing {:status :static-adaptation
                 :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}

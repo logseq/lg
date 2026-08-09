@@ -1,5 +1,20 @@
 (ns clojure.core)
 
+(signature clojure.core/make-hierarchy
+  :fn<Lg_edn_backend.t>)
+(signature clojure.core/isa?
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t;bool>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t;bool>>)
+(signature clojure.core/parents
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t>>)
+(signature clojure.core/ancestors
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t>>)
+(signature clojure.core/descendants
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t>>)
+(signature clojure.core/derive
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t;option<Lg_edn_backend.t>>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t>>)
+(signature clojure.core/underive
+  :overload<fn<Lg_edn_backend.t;Lg_edn_backend.t;option<Lg_edn_backend.t>>;fn<Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t;Lg_edn_backend.t>>)
+
 (signature clojure.core/identity [value]
   :fn<value;value>)
 

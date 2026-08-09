@@ -9,6 +9,7 @@
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_future :as runtime-future]
+            [ocaml.Lg_runtime.Runtime_hierarchy :as runtime-hierarchy]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_int_melange :as runtime-int-melange]
             [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
@@ -20,6 +21,45 @@
             [ocaml.Lg_runtime.Runtime_time :as runtime-time]
             [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
+
+(defn make-hierarchy []
+  (runtime-hierarchy/make))
+
+(defn isa?
+  ([child parent]
+   (runtime-hierarchy/global-isa child parent))
+  ([hierarchy child parent]
+   (runtime-hierarchy/isa hierarchy child parent)))
+
+(defn parents
+  ([tag]
+   (runtime-hierarchy/global-parents tag))
+  ([hierarchy tag]
+   (runtime-hierarchy/parents hierarchy tag)))
+
+(defn ancestors
+  ([tag]
+   (runtime-hierarchy/global-ancestors tag))
+  ([hierarchy tag]
+   (runtime-hierarchy/ancestors hierarchy tag)))
+
+(defn descendants
+  ([tag]
+   (runtime-hierarchy/global-descendants tag))
+  ([hierarchy tag]
+   (runtime-hierarchy/descendants hierarchy tag)))
+
+(defn derive
+  ([tag parent]
+   (runtime-hierarchy/global-derive tag parent))
+  ([hierarchy tag parent]
+   (runtime-hierarchy/derive hierarchy tag parent)))
+
+(defn underive
+  ([tag parent]
+   (runtime-hierarchy/global-underive tag parent))
+  ([hierarchy tag parent]
+   (runtime-hierarchy/underive hierarchy tag parent)))
 
 (defn list
   {:inline (fn [& values] (cons '__lg_list values))}
