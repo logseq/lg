@@ -76,6 +76,12 @@ if printf '%s\n' "$dispatch_names" | grep -Fx 're-pattern' >/dev/null \
   exit 1
 fi
 
+if printf '%s\n' "$dispatch_names" | grep -Fx 'gensym' >/dev/null \
+  || grep -F 'FSymbol "gensym"' "$root/src/type_inference.ml" >/dev/null; then
+  echo "clojure.core/gensym still has runtime public-name compiler ownership" >&2
+  exit 1
+fi
+
 for name in comment doto when-first while if-not when when-not cond unchecked-max unchecked-min mask bitpos caching-hash '->' '->>' 'as->' 'cond->' 'cond->>' 'some->' 'some->>'; do
   for file in src/call_elaborator.ml src/expression_elaborator.ml \
     src/macro_expander.ml src/special_form_elaborator.ml src/top_level_elaborator.ml \

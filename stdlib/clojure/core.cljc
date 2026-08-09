@@ -940,6 +940,14 @@
   #?(:melange (runtime-time-melange/now)
      :default (runtime-time/now)))
 
+(def gensym_counter (atom 0))
+
+(defn gensym
+  ([]
+   (gensym "G__"))
+  ([prefix-string]
+   (symbol (str prefix-string (swap! gensym_counter inc)))))
+
 (defn bit-shift-right-zero-fill [x n]
   (runtime-int/logical-shift-right x n))
 

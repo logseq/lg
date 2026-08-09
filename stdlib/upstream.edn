@@ -297,6 +297,8 @@
                 :reason :source-port-preserves-the-upstream-strict-uuid-grammar-through-a-boolean-typed-validator-because-regex-match-values-have-a-heterogeneous-host-boundary}
     system-time {:status :static-adaptation
                  :reason :source-wrapper-uses-performance-now-on-melange-and-process-cpu-milliseconds-on-native-through-target-specific-typed-time-primitives}
+    gensym {:status :static-adaptation
+            :reason :source-overloaded-function-preserves-default-and-explicit-prefixes-monotonic-symbol-names-and-first-class-use-with-an-eager-internal-typed-counter-instead-of-upstream-nil-to-atom-global-type-mutation}
     bit-and {:status :static-adaptation
              :reason :upstream-two-and-variadic-arity-control-flow-reduces-through-a-statically-typed-binary-runtime-primitive}
     bit-or {:status :static-adaptation

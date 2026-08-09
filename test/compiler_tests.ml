@@ -22229,6 +22229,46 @@ let test_source_caching_hash_macro_matches_clojurescript () =
       |> expect_error_contains "unsupported macro arity")
     [ ""; " nil"; " nil identity"; " nil identity cached extra" ]
 
+let test_source_gensym_matches_clojurescript () =
+  let source =
+    {|
+(ns source-gensym-app
+  (:require [cljs.core :as core :refer [gensym]]))
+
+(def make-symbol clojure.core/gensym)
+(def generated (gensym))
+(def aliased (core/gensym "item-"))
+(def qualified (cljs.core/gensym "item-"))
+(def first-class-default (make-symbol))
+(def first-class-prefixed (make-symbol "alias-"))
+
+(println (= "G__1" (name generated)))
+(println (= "item-2" (name aliased)))
+(println (= "item-3" (name qualified)))
+(println (= "G__4" (name first-class-default)))
+(println (= "alias-5" (name first-class-prefixed)))
+(println (symbol? generated))
+|}
+  in
+  let expected = String.concat "" (List.init 6 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_gensym.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source gensym must remain static";
+  assert_ocaml_runs "source_gensym" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_gensym.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source gensym must remain static";
+  compile_with_stdlib_result Lg.Target.Native "test/gensym_arity.cljc"
+    {|(def generated (gensym "a" "b"))|}
+  |> expect_error_contains "gensym called with unsupported arity 2";
+  compile_with_stdlib_result Lg.Target.Native "test/gensym_prefix.cljc"
+    {|(def generated (gensym 1))|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_source_control_macros_match_clojurescript () =
   let source =
     {|
@@ -38726,6 +38766,8 @@ let tests =
       test_source_hamt_bit_macros_match_clojurescript );
     ( "source caching-hash macro matches ClojureScript",
       test_source_caching_hash_macro_matches_clojurescript );
+    ( "source gensym matches ClojureScript",
+      test_source_gensym_matches_clojurescript );
     ( "source control macros match ClojureScript",
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",
