@@ -966,7 +966,15 @@
     random {:status :static-adaptation :reason :source-wrapper-over-the-existing-cross-target-pseudorandom-float-boundary}
     copy-sign {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-ieee-float-sign-bit-primitive}
     rint {:status :ported}
-    signum {:status :ported}}}
+    signum {:status :ported}
+    round {:status :static-adaptation :reason :source-port-returns-a-static-float-because-clojurescript-number-does-not-distinguish-integral-results}
+    get-exponent {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-ieee-bit-exponent-primitive}
+    next-after {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-ieee-adjacent-float-primitive}
+    next-up {:status :ported}
+    next-down {:status :ported}
+    ulp {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-ieee-unit-in-last-place-primitive}
+    scalb {:status :static-adaptation :reason :source-wrapper-over-a-cross-target-static-bounded-exponent-scaling-primitive}
+    IEEE-remainder {:status :static-adaptation :reason :source-port-preserves-upstream-fmod-reduction-ties-to-even-and-signed-zero-control-flow-with-static-float-operations}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

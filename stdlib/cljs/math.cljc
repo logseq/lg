@@ -49,7 +49,7 @@
   #?(:melange (runtime-math-melange/pow a b)
      :default (runtime-math/pow a b)))
 
-(defn- IEEE-fmod [x y]
+(defn- ieee-fmod [x y]
   #?(:melange (runtime-math-melange/fmod x y)
      :default (runtime-math/fmod x y)))
 
@@ -77,3 +77,68 @@
   (if (or (zero? d) (not (= d d)))
     d
     (copy-sign 1.0 d)))
+
+(defn round [a]
+  (cond
+    (not (= a a)) 0.0
+    (= a ##Inf) 9007199254740991.0
+    (= a ##-Inf) -9007199254740991.0
+    :else (floor (+ a 0.5))))
+
+(defn get-exponent [d]
+  #?(:melange (runtime-math-melange/get-exponent d)
+     :default (runtime-math/get-exponent d)))
+
+(defn next-after [start direction]
+  #?(:melange (runtime-math-melange/next-after start direction)
+     :default (runtime-math/next-after start direction)))
+
+(defn next-up [d]
+  (next-after d ##Inf))
+
+(defn next-down [d]
+  (next-after d ##-Inf))
+
+(defn ulp [d]
+  #?(:melange (runtime-math-melange/ulp d)
+     :default (runtime-math/ulp d)))
+
+(defn scalb [d scale-factor]
+  #?(:melange (runtime-math-melange/scalb d scale-factor)
+     :default (runtime-math/scalb d scale-factor)))
+
+(defn IEEE-remainder [dividend divisor]
+  (cond
+    (zero? divisor) ##NaN
+    (not (= divisor divisor)) ##NaN
+    (not (= dividend dividend)) ##NaN
+    (or (= dividend ##Inf) (= dividend ##-Inf)) ##NaN
+    (or (= divisor ##Inf) (= divisor ##-Inf)) dividend
+    :else
+    (let [original-dividend dividend
+          divisor-magnitude (fabs divisor)
+          reduced-dividend (if (<= divisor-magnitude 8.988465674311579e307)
+                             (ieee-fmod dividend (* divisor-magnitude 2.0))
+                             dividend)
+          dividend-magnitude (fabs reduced-dividend)]
+      (if (= dividend-magnitude divisor-magnitude)
+        (* 0.0 original-dividend)
+        (let [remainder-magnitude
+              (if (< divisor-magnitude 4.450147717014403e-308)
+                (if (> (+ dividend-magnitude dividend-magnitude)
+                       divisor-magnitude)
+                  (let [reduced (- dividend-magnitude divisor-magnitude)]
+                    (if (>= (+ reduced reduced) divisor-magnitude)
+                      (- reduced divisor-magnitude)
+                      reduced))
+                  dividend-magnitude)
+                (let [divisor-half (* 0.5 divisor-magnitude)]
+                  (if (> dividend-magnitude divisor-half)
+                    (let [reduced (- dividend-magnitude divisor-magnitude)]
+                      (if (>= reduced divisor-half)
+                        (- reduced divisor-magnitude)
+                        reduced))
+                    dividend-magnitude)))]
+          (if (< original-dividend 0.0)
+            (- remainder-magnitude)
+            remainder-magnitude))))))
