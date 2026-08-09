@@ -8009,8 +8009,8 @@ let create ~compile_expr =
               | "__lg_nil-predicate" | "__lg_true-predicate"
               | "__lg_false-predicate" | "__lg_int-predicate"
               | "__lg_number-predicate" | "__lg_string-predicate"
-              | "__lg_keyword-predicate" | "__lg_vector-predicate"
-              | "__lg_list-predicate" | "__lg_seq-predicate"
+              | "__lg_keyword-predicate" | "__lg_list-predicate"
+              | "__lg_seq-predicate"
               | "__lg_set-predicate"
               | "__lg_fn-predicate" | "__lg_coll-predicate"
               | "__lg_associative-predicate" | "indexed?" ->

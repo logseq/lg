@@ -36,6 +36,7 @@ let collection_id = Protocol_id.create ~owner:[] ~name:"ICollection"
 let associative_id = Protocol_id.create ~owner:[] ~name:"IAssociative"
 let find_id = Protocol_id.create ~owner:[] ~name:"IFind"
 let map_id = Protocol_id.create ~owner:[] ~name:"IMap"
+let vector_id = Protocol_id.create ~owner:[] ~name:"IVector"
 let kv_reduce_id = Protocol_id.create ~owner:[] ~name:"IKVReduce"
 let meta_id = Protocol_id.create ~owner:[] ~name:"IMeta"
 let with_meta_id = Protocol_id.create ~owner:[] ~name:"IWithMeta"
@@ -355,6 +356,22 @@ let add_runtime_map_protocols registry =
   |> add with_meta_id "-with-meta" "Lg_runtime.Runtime_map.with_metadata"
        (TFn ([ map_ty; metadata_ty ], map_ty))
 
+let declare_vector_protocol registry =
+  let element = TVar "vector_element" in
+  let vector = TVector element in
+  let assoc_n_id = method_id vector_id "-assoc-n" in
+  let implementation =
+    Types.binding ~protocol_id:vector_id "Rrbvec.set"
+      (TFn ([ vector; TInt; element ], vector))
+  in
+  registry
+  |> Protocol_registry.declare vector_id
+       [ signature assoc_n_id [ vector; TInt; element ] vector ]
+  |> add_or_fail
+  |> Protocol_registry.add_implementation vector_id assoc_n_id
+       Receiver_id.Vector_receiver implementation
+  |> add_or_fail
+
 let add_indexed receiver ocaml_name registry =
   let binding =
     Types.binding ~protocol_id:indexed_id ocaml_name
@@ -423,6 +440,7 @@ let initial_registry =
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
   |> declare_map_protocols |> add_runtime_map_protocols
+  |> declare_vector_protocol
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =

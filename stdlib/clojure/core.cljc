@@ -287,9 +287,9 @@
   (__lg_symbol-predicate x))
 
 (defn vector?
-  {:inline (fn [x] (list '__lg_vector-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'IVector x))}
   [x]
-  (__lg_vector-predicate x))
+  (satisfies? IVector x))
 
 (defn list?
   {:inline (fn [x] (list '__lg_list-predicate x))}

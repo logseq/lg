@@ -3814,7 +3814,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_number-predicate";
                "__lg_array-predicate";
                "__lg_array-value-predicate";
-               "__lg_vector-predicate";
                "__lg_list-predicate";
                "__lg_seq-predicate";
                "__lg_set-predicate";

@@ -282,12 +282,13 @@ source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element
 types where applicable, so compatible higher-order uses remain ordinary vars.
 Most direct calls expand to non-public `__lg_*-predicate` primitives for
-call-site type tests and guard narrowing. `map?` is the first collection
-predicate moved fully to the ClojureScript protocol model: its source function
-and inline specialization use `satisfies? IMap`, and no map-specific
-name-based compiler dispatch remains. Predicate arguments are evaluated exactly
-once even when the result is statically known, and persistent Hashmaps and
-`defrecord` values participate in `map?` through `IMap`.
+call-site type tests and guard narrowing. `map?` and `vector?` have moved fully
+to the ClojureScript protocol model: their source functions and inline
+specializations use `satisfies? IMap` and `satisfies? IVector`, with no
+predicate-specific name dispatch. Predicate arguments are evaluated exactly
+once even when the result is statically known. Persistent Hashmaps and
+`defrecord` values participate in `map?` through `IMap`; RRB vectors and custom
+implementations participate in `vector?` through `IVector/-assoc-n`.
 The Logseq scan finds 166 direct `coll?` occurrences and 47 direct `sorted?`
 occurrences.
 `zero?`, `pos?`, and `neg?` now pair source functions for static first-class
@@ -306,13 +307,11 @@ type is an explicit adaptation from ClojureScript's one-character JavaScript
 string representation. The Logseq scan finds 163 direct `zero?`, 160 direct
 `pos?`, 42 direct `neg?`, 42 direct `identical?`, 23 direct `array?`, and 6
 direct `abs` calls.
-`ex-message` adds the 238th internal route, classified explicitly as the
-minimal typed `exn -> option<string>` primitive behind its public source
-function.
-`ex-cause` adds the 239th internal route as the corresponding closed
-`exn -> option<exn>` primitive.
-`re-pattern` adds the 240th internal route as a validated static regex
-constructor while the public var remains source-defined.
+`ex-message` and `ex-cause` retain minimal typed `exn -> option<string>` and
+`exn -> option<exn>` routes behind their public source functions. `re-pattern`
+retains a validated static regex constructor while the public var remains
+source-defined. After removing the `map?` and `vector?` name routes, the raw
+compiler-call inventory contains 238 names.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

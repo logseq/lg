@@ -82,7 +82,7 @@
     symbol? {:status :static-adaptation
              :reason :source-function-provides-a-first-class-symbol-predicate-while-its-inline-definition-preserves-symbol-guard-narrowing}
     vector? {:status :static-adaptation
-             :reason :source-function-provides-a-polymorphic-first-class-vector-predicate-while-its-inline-definition-specializes-direct-calls-to-the-static-vector-representation}
+             :reason :source-function-and-inline-specialization-use-clojurescript-ivector-protocol-satisfaction-without-name-based-compiler-dispatch}
     list? {:status :static-adaptation
            :reason :source-function-provides-a-polymorphic-first-class-list-predicate-while-its-inline-definition-specializes-direct-calls-to-the-static-list-representation}
     seq? {:status :static-adaptation

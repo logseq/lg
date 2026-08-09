@@ -21753,6 +21753,55 @@ let test_map_predicate_has_no_name_based_compiler_dispatch () =
         failwith ("map? still has name-based compiler dispatch in " ^ path))
     paths
 
+let test_vector_predicate_uses_the_clojurescript_ivector_protocol () =
+  let source =
+    {|
+(ns source-ivector-predicate-app
+  (:require [cljs.core :refer [vector?]]))
+
+(deftype ProtocolVector [^int id ^string label]
+  IVector
+  (-assoc-n [this _index _value] this))
+
+(println (vector? (ProtocolVector. 1 "vector")))
+(println (not (vector? (list 1))))
+(println (vector? [1]))
+(println (= [1 9] (-assoc-n [1 2] 1 9)))
+|}
+  in
+  let expected = "true\ntrue\ntrue\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_ivector_predicate.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "vector? must dispatch through a static IVector protocol witness";
+  assert_ocaml_runs "vector_predicate_uses_the_clojurescript_ivector_protocol"
+    expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_ivector_predicate.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange vector? must use a static IVector protocol witness"
+
+let test_vector_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_vector-predicate" in
+  let paths =
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+  in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith ("vector? still has name-based compiler dispatch in " ^ path))
+    paths
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -39083,6 +39132,10 @@ let tests =
       test_defrecord_automatically_satisfies_the_clojurescript_imap_protocol );
     ( "map predicate has no name-based compiler dispatch",
       test_map_predicate_has_no_name_based_compiler_dispatch );
+    ( "vector predicate uses the ClojureScript IVector protocol",
+      test_vector_predicate_uses_the_clojurescript_ivector_protocol );
+    ( "vector predicate has no name-based compiler dispatch",
+      test_vector_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

@@ -114,11 +114,6 @@ let compile name args =
       compile_string_family_predicate name ~keyword:false args
   | "__lg_keyword-predicate" ->
       compile_string_family_predicate name ~keyword:true args
-  | "__lg_vector-predicate" ->
-      compile_runtime_type_predicate name
-        "Lg_runtime.Runtime_dynamic.is_vector"
-        (function TVector _ -> true | _ -> false)
-        args
   | "__lg_list-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_list"
         (function TList _ -> true | _ -> false)
