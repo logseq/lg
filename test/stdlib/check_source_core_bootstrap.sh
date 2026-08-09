@@ -63,7 +63,20 @@ done
 for name in \
   'nil?' 'true?' 'false?' 'int?' 'number?' 'string?' 'keyword?' 'symbol?' \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
-  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
+  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?'; do
+  if ! grep -F "(defn $name" \
+    "$root/stdlib/clojure/core.cljc" >/dev/null; then
+    echo "clojure.core/$name is not source-defined as a function" >&2
+    exit 1
+  fi
+  if ! sed -n "/^(defn $name$/,/^$/p" "$root/stdlib/clojure/core.cljc" \
+    | grep -F '{:inline' >/dev/null; then
+    echo "clojure.core/$name is missing its source inline specialization" >&2
+    exit 1
+  fi
+done
+
+for name in \
   'char?' 'identical?' 'array?' 'array-value?' \
   'reduced?' \
   'some?' 'boolean?' 'empty?' 'not-empty' 'integer?' 'ident?' 'counted?' 'seqable?' \

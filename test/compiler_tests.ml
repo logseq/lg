@@ -21455,6 +21455,43 @@ let test_source_static_predicate_family_matches_clojurescript () =
       |> expect_error_contains "unsupported macro arity 2")
     predicate_names
 
+let test_source_predicates_are_statically_first_class () =
+  let source =
+    {|
+(ns source-first-class-predicate-app
+  (:require [cljs.core :as core
+             :refer [nil? true? int? string? vector? map?]]))
+
+(def nil-predicate nil?)
+(def true-predicate true?)
+(def int-predicate core/int?)
+(def string-predicate clojure.core/string?)
+(def vector-predicate vector?)
+(def map-predicate map?)
+
+(println (nil-predicate (get {:present 1} :missing)))
+(println (true-predicate true))
+(println (int-predicate 1))
+(println (string-predicate "value"))
+(println (vector-predicate [1]))
+(println (map-predicate {:value 1}))
+|}
+  in
+  let expected = String.concat "" (List.init 6 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_first_class_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class source predicates must remain static";
+  assert_ocaml_runs "source_first_class_predicates" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_first_class_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange first-class source predicates must remain static"
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -38125,6 +38162,8 @@ let tests =
       test_source_not_empty_preserves_concrete_collections );
     ( "source static predicate family matches ClojureScript",
       test_source_static_predicate_family_matches_clojurescript );
+    ( "source predicates are statically first-class",
+      test_source_predicates_are_statically_first_class );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source numeric coercions match ClojureScript",

@@ -10,6 +10,40 @@
   :fn<truthy<value>;bool>)
 (signature clojure.core/not [value]
   :fn<truthy<value>;bool>)
+(signature clojure.core/nil? [value]
+  :fn<option<value>;bool>)
+(signature clojure.core/true? :fn<bool;bool>)
+(signature clojure.core/false? :fn<bool;bool>)
+(signature clojure.core/int? :fn<int;bool>)
+(signature clojure.core/number? :fn<int;bool>)
+(signature clojure.core/string? :fn<string;bool>)
+(signature clojure.core/keyword? :fn<keyword;bool>)
+(signature clojure.core/symbol? :fn<symbol;bool>)
+(signature clojure.core/vector? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/list? [value]
+  :fn<list<value>;bool>)
+(signature clojure.core/seq? [value]
+  :fn<seq<value>;bool>)
+(signature clojure.core/set? [value]
+  :fn<set<value>;bool>)
+(signature clojure.core/map? [key value]
+  :fn<map<key;value>;bool>)
+(signature clojure.core/fn? [argument result]
+  :fn<fn<argument;result>;bool>)
+(signature clojure.core/coll? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/associative? [key value]
+  :fn<map<key;value>;bool>)
+(signature clojure.core/rational? :fn<int;bool>)
+(signature clojure.core/float? :fn<float;bool>)
+(signature clojure.core/double? :fn<float;bool>)
+(signature clojure.core/sequential? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/reversible? [value]
+  :fn<vector<value>;bool>)
+(signature clojure.core/sorted? [value]
+  :fn<vector<value>;bool>)
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
 (signature clojure.core/bit-and-two :fn<int;int;int>)

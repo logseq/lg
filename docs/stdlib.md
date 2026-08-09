@@ -210,13 +210,17 @@ branches through internal typed helpers so the guarded branch remains readable
 source without restoring public-name dispatch; these two newly needed helper
 routes explain why removing nine public routes reduces the raw dispatch count
 by seven.
-The broader public static predicate family now resolves through source macros
-while non-public `__lg_*-predicate` primitives retain call-site type tests and
-guard narrowing. This removes 22 Clojure public names from compiler dispatch;
-the internal typed primitives replace those public routes one-for-one. Predicate arguments are evaluated exactly
-once even when the result is statically known, and persistent Hashmaps now
-participate in `map?`, `coll?`, and `associative?`. The Logseq scan finds 166
-direct `coll?` occurrences and 47 direct `sorted?` occurrences.
+The broader public static predicate family is defined as ClojureScript-style
+source functions with source inline definitions. The runtime function bodies
+have concrete static signatures, including polymorphic collection element
+types where applicable, so compatible higher-order uses remain ordinary vars.
+Direct calls expand to non-public `__lg_*-predicate` primitives for call-site
+type tests and guard narrowing. This removes 22 Clojure public names from
+compiler dispatch without generating dynamic function adapters. Predicate
+arguments are evaluated exactly once even when the result is statically known,
+and persistent Hashmaps participate in `map?`, `coll?`, and `associative?`.
+The Logseq scan finds 166 direct `coll?` occurrences and 47 direct `sorted?`
+occurrences.
 `zero?`, `pos?`, and `neg?` now pair source functions for static first-class
 integer use with source inline macros for direct int/float specialization.
 `char?`, `identical?`, `array?`, the LG `array-value?` extension, and `reduced?`

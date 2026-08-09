@@ -228,71 +228,115 @@
 (defn not [x]
   (if x false true))
 
-(defmacro nil? [x]
-  `(__lg_nil-predicate ~x))
+(defn nil?
+  {:inline (fn [x] (list '__lg_nil-predicate x))}
+  [x]
+  (__lg_nil-predicate x))
 
-(defmacro true? [x]
-  `(__lg_true-predicate ~x))
+(defn true?
+  {:inline (fn [x] (list '__lg_true-predicate x))}
+  [x]
+  (__lg_true-predicate x))
 
-(defmacro false? [x]
-  `(__lg_false-predicate ~x))
+(defn false?
+  {:inline (fn [x] (list '__lg_false-predicate x))}
+  [x]
+  (__lg_false-predicate x))
 
-(defmacro int? [x]
-  `(__lg_int-predicate ~x))
+(defn int?
+  {:inline (fn [x] (list '__lg_int-predicate x))}
+  [x]
+  (__lg_int-predicate x))
 
-(defmacro number? [x]
-  `(__lg_number-predicate ~x))
+(defn number?
+  {:inline (fn [x] (list '__lg_number-predicate x))}
+  [x]
+  (__lg_number-predicate x))
 
-(defmacro string? [x]
-  `(__lg_string-predicate ~x))
+(defn string?
+  {:inline (fn [x] (list '__lg_string-predicate x))}
+  [x]
+  (__lg_string-predicate x))
 
-(defmacro keyword? [x]
-  `(__lg_keyword-predicate ~x))
+(defn keyword?
+  {:inline (fn [x] (list '__lg_keyword-predicate x))}
+  [x]
+  (__lg_keyword-predicate x))
 
-(defmacro symbol? [x]
-  `(__lg_symbol-predicate ~x))
+(defn symbol?
+  {:inline (fn [x] (list '__lg_symbol-predicate x))}
+  [x]
+  (__lg_symbol-predicate x))
 
-(defmacro vector? [x]
-  `(__lg_vector-predicate ~x))
+(defn vector?
+  {:inline (fn [x] (list '__lg_vector-predicate x))}
+  [x]
+  (__lg_vector-predicate x))
 
-(defmacro list? [x]
-  `(__lg_list-predicate ~x))
+(defn list?
+  {:inline (fn [x] (list '__lg_list-predicate x))}
+  [x]
+  (__lg_list-predicate x))
 
-(defmacro seq? [x]
-  `(__lg_seq-predicate ~x))
+(defn seq?
+  {:inline (fn [x] (list '__lg_seq-predicate x))}
+  [x]
+  (__lg_seq-predicate x))
 
-(defmacro set? [x]
-  `(__lg_set-predicate ~x))
+(defn set?
+  {:inline (fn [x] (list '__lg_set-predicate x))}
+  [x]
+  (__lg_set-predicate x))
 
-(defmacro map? [x]
-  `(__lg_map-predicate ~x))
+(defn map?
+  {:inline (fn [x] (list '__lg_map-predicate x))}
+  [x]
+  (__lg_map-predicate x))
 
-(defmacro fn? [x]
-  `(__lg_fn-predicate ~x))
+(defn fn?
+  {:inline (fn [x] (list '__lg_fn-predicate x))}
+  [x]
+  (__lg_fn-predicate x))
 
-(defmacro coll? [x]
-  `(__lg_coll-predicate ~x))
+(defn coll?
+  {:inline (fn [x] (list '__lg_coll-predicate x))}
+  [x]
+  (__lg_coll-predicate x))
 
-(defmacro associative? [x]
-  `(__lg_associative-predicate ~x))
+(defn associative?
+  {:inline (fn [x] (list '__lg_associative-predicate x))}
+  [x]
+  (__lg_associative-predicate x))
 
-(defmacro rational? [x]
-  `(__lg_rational-predicate ~x))
+(defn rational?
+  {:inline (fn [x] (list '__lg_rational-predicate x))}
+  [x]
+  (__lg_rational-predicate x))
 
-(defmacro float? [x]
-  `(__lg_float-predicate ~x))
+(defn float?
+  {:inline (fn [x] (list '__lg_float-predicate x))}
+  [x]
+  (__lg_float-predicate x))
 
-(defmacro double? [x]
-  `(__lg_double-predicate ~x))
+(defn double?
+  {:inline (fn [x] (list '__lg_double-predicate x))}
+  [x]
+  (__lg_double-predicate x))
 
-(defmacro sequential? [x]
-  `(__lg_sequential-predicate ~x))
+(defn sequential?
+  {:inline (fn [x] (list '__lg_sequential-predicate x))}
+  [x]
+  (__lg_sequential-predicate x))
 
-(defmacro reversible? [x]
-  `(__lg_reversible-predicate ~x))
+(defn reversible?
+  {:inline (fn [x] (list '__lg_reversible-predicate x))}
+  [x]
+  (__lg_reversible-predicate x))
 
-(defmacro sorted? [x]
-  `(__lg_sorted-predicate ~x))
+(defn sorted?
+  {:inline (fn [x] (list '__lg_sorted-predicate x))}
+  [x]
+  (__lg_sorted-predicate x))
 
 (defn zero?
   {:inline (fn [x] (list '__lg_zero-predicate x))}
