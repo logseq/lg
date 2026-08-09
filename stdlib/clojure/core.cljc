@@ -1561,6 +1561,18 @@
   [coll key]
   (IFind/-find coll key))
 
+(defn equiv-map
+  "Test map equivalence. Returns true if x equals y, otherwise returns false."
+  [x y]
+  (if (= (count x) (count y))
+    (every?
+     (fn [entry]
+       (match (find y (key entry))
+         (Some other) (= (val other) (val entry))
+         None false))
+     x)
+    false))
+
 (defn with-meta
   {:inline (fn [value metadata]
              (list '__lg_with-meta value metadata))}

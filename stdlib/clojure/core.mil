@@ -44,6 +44,8 @@
   :fn<map<key;value>;bool>)
 (signature clojure.core/map-entry? [key value]
   :fn<tuple<key;value>;bool>)
+(signature clojure.core/equiv-map [key value]
+  :fn<map<key;value>;map<key;value>;bool>)
 (signature clojure.core/regexp? :fn<regex;bool>)
 (signature clojure.core/volatile? [value]
   :fn<ref<value>;bool>)

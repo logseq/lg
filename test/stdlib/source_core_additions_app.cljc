@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -578,3 +578,13 @@
 (println (= #{"x"} (clojure.core/set-lite ["x" "x"])))
 (def source-set-lite set-lite)
 (println (= #{7 8} (source-set-lite [7 8 7])))
+
+(println (equiv-map {} {}))
+(println (equiv-map {:left 1 :right 2} {:right 2 :left 1}))
+(println (not (equiv-map {:left 1} {:left 1 :right 2})))
+(println (not (equiv-map {:left 1} {:right 1})))
+(println (not (equiv-map {:left 1} {:left 2})))
+(println (core/equiv-map {"left" true} {"left" true}))
+(println (clojure.core/equiv-map {:left "value"} {:left "value"}))
+(def source-equiv-map equiv-map)
+(println (source-equiv-map {7 :seven} {7 :seven}))

@@ -111,6 +111,8 @@
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ifind-for-static-runtime-maps-and-explicit-protocol-implementations}
+    equiv-map {:status :static-adaptation
+               :reason :source-port-preserves-count-check-entry-order-and-first-mismatch-short-circuiting-while-typed-ifind-options-replace-the-upstream-private-never-equiv-sentinel-and-records-remain-a-distinct-static-domain}
     ifind? {:status :static-adaptation
             :reason :source-function-and-inline-specialization-use-clojurescript-ifind-protocol-satisfaction-for-static-runtime-maps-and-explicit-protocol-implementations}
     map-entry? {:status :static-adaptation

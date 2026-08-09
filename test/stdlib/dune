@@ -162,6 +162,22 @@
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
+  source_core_equiv_map_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_equiv_map_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
   source_core_hash_map_lite_odd_keyvals.cljc
   ../../bin/lg_cli.exe)
  (action
