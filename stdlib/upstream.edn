@@ -527,6 +527,14 @@
             :reason :source-overloads-and-inline-expansion-preserve-zero-one-and-variadic-left-to-right-key-removal-through-a-private-static-map-shape-primitive}
     keys {:status :static-adaptation
           :reason :source-function-exposes-static-map-key-sequences-through-a-private-key-value-associated-type-projection-primitive}
+    hash {:status :typed-primitive
+          :reason :first-class-polymorphic-source-function-needs-an-ihash-capability-witness-that-current-sidecar-signatures-cannot-express}
+    compare {:status :typed-primitive
+             :reason :first-class-source-signature-cannot-express-the-required-single-concrete-comparable-domain-without-accepting-invalid-dynamic-or-mixed-values}
+    subvec {:status :static-adaptation
+            :reason :source-overloads-and-inline-specialization-preserve-two-and-three-argument-vector-slicing-through-a-private-typed-vector-boundary}
+    array {:status :static-adaptation
+           :reason :source-variadic-constructor-and-inline-specialization-preserve-homogeneous-array-construction-through-a-private-typed-array-boundary}
     inc {:status :static-adaptation
          :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
     dec {:status :static-adaptation

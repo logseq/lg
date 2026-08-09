@@ -6629,7 +6629,7 @@ let create ~compile_expr =
             Error.error
               "make-array requires a size and a statically typed initial value"
         | Ok _ -> Error.error "make-array expects a size and initial value")
-    | "array" -> (
+    | "__lg_array" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [] -> Error.error "empty OCaml array requires a type"
@@ -8288,7 +8288,7 @@ let create ~compile_expr =
     | "conj" -> compile_conj scope env arg_forms
     | "conj!" -> compile_conj_bang scope env arg_forms
     | "first" -> compile_collection_call scope env name arg_forms
-    | "subvec" -> compile_subvec scope env arg_forms
+    | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
     | "get-in" -> compile_get_in scope env arg_forms

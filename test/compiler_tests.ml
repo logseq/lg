@@ -13581,7 +13581,7 @@ let test_ocaml_arrays_support_construction_read_and_mutation () =
        (Array.length empty-values)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "ocaml_arrays_support_construction_read_and_mutation"
     "42:99:0\n" ocaml_source
 
@@ -14311,15 +14311,15 @@ let test_top_level_atom_nil_uses_explicit_option_storage () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_arrays_reject_invalid_operations () =
-  Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
+  compile_string_with_stdlib {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
   Lg.Compiler.compile_string {|(def value (aget 42 0))|}
   |> expect_error_contains "aget expects an OCaml array";
-  Lg.Compiler.compile_string {|(def value (aget (array 1 2) "0"))|}
+  compile_string_with_stdlib {|(def value (aget (array 1 2) "0"))|}
   |> expect_error_contains "OCaml array index must be int";
-  Lg.Compiler.compile_string {|(aset (array 1 2) 0 "bad")|}
+  compile_string_with_stdlib {|(aset (array 1 2) 0 "bad")|}
   |> expect_error_contains "OCaml array value must match element type";
-  Lg.Compiler.compile_string {|(def values (array))|}
+  compile_string_with_stdlib {|(def values (array))|}
   |> expect_error_contains "empty OCaml array requires a type"
 
 let test_typed_tuple_access_is_static () =
@@ -14425,11 +14425,11 @@ let test_array_indexes_and_nominal_fields_stay_static () =
 (println (str (aget values array-index) ":" (.-e row)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "array_indexes_and_nominal_fields_stay_static"
     "7:9\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_array_packing_reuses_static_element_arrays () =
   let source =
@@ -16966,11 +16966,11 @@ let test_equality_infers_comparator_return_type () =
        (matches (fn [left right] (- left right)) (array 4) 3)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "equality_infers_comparator_return_type" "true:false\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_static_record_arrays_preserve_element_types () =
   let source =
@@ -16982,11 +16982,11 @@ let test_static_record_arrays_preserve_element_types () =
 (println (first-plus-one (:value box)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "static_record_arrays_preserve_element_types" "2\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_nil_initial_value_can_become_optional () =
   let source =
@@ -34555,11 +34555,11 @@ let test_subvec_core_api () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_subvec_rejects_non_vector_sources () =
-  Lg.Compiler.compile_string {|(def x (subvec (__lg_list 1 2) 0))|}
+  compile_string_with_stdlib {|(def x (subvec (__lg_list 1 2) 0))|}
   |> expect_error "subvec expects a vector"
 
 let test_subvec_rejects_non_int_indexes () =
-  Lg.Compiler.compile_string {|(def x (subvec [1 2] "0"))|}
+  compile_string_with_stdlib {|(def x (subvec [1 2] "0"))|}
   |> expect_error "subvec indexes must be int"
 
 let test_recursive_map_accumulator_specializes_from_static_consumer () =

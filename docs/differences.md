@@ -384,10 +384,14 @@ Lists compile to OCaml lists and support `list`, `list*`, `list-of`, `cons`, `co
 
 Vectors support `first`, `second`, `last`, `peek`, `pop`, `rest`, `next`, `nthnext`, `nthrest`, `ffirst`, `fnext`, `nfirst`, `nnext`, `rseq`, `nth`, `get`, `assoc`, `update`, `contains?`, `subvec`, and the current eager sequence operations.
 
-The public `contains?`, `assoc`, `dissoc`, and `keys` definitions are compiled
-from `clojure.core` source. Static receiver-dependent map, record, set, vector,
-and index relationships cross only private compiler primitives; no dynamic
-collection representation is introduced.
+The public `contains?`, `assoc`, `dissoc`, `keys`, `subvec`, and `array`
+definitions are compiled from `clojure.core` source. Static receiver-dependent
+map, record, set, vector, slicing, and array element relationships cross only
+private compiler primitives; no dynamic collection representation is
+introduced. Explicit generic signatures preserve first-class polymorphism
+across the precompiled stdlib boundary. `hash` and `compare` remain typed
+primitives until sidecar signatures can express their required `IHash` and
+single-concrete-comparable capability witnesses.
 
 `map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
 realized nodes are cached, so repeated traversal does not rerun producer side

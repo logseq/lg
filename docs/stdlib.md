@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 482 source entries (48.93%), 92 typed
+macro surfaces. The current baseline is 484 source entries (49.14%), 90 typed
 primitives, 43 special forms, 98 host boundaries, 219 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the

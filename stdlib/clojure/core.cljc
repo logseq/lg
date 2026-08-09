@@ -106,6 +106,16 @@
   [collection]
   (__lg_keys collection))
 
+(defn subvec
+  {:inline (fn [vector start & end]
+             (if (nil? end)
+               (list '__lg_subvec vector start)
+               (list '__lg_subvec vector start (first end))))}
+  ([vector start]
+   (__lg_subvec vector start))
+  ([vector start end]
+   (__lg_subvec vector start end)))
+
 (defn make-hierarchy []
   (runtime-hierarchy/make))
 
@@ -159,6 +169,11 @@
   {:inline (fn [& values] (cons '__lg_vector values))}
   [& values]
   (rrb-vector/of-list (runtime-seq/to-list (seq values))))
+
+(defn array
+  {:inline (fn [& values] (cons '__lg_array values))}
+  [& values]
+  (runtime-array/of-seq (seq values)))
 
 (defn- map-from-keyvals [keyvals]
   (loop [remaining (seq keyvals)

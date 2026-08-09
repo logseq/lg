@@ -9,6 +9,10 @@
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
+(def source-subvec subvec)
+(def source-array array)
+(println (= [2 3] (source-subvec [1 2 3 4] 1 3)))
+(println (= 3 (aget (source-array 1 2 3) 2)))
 (defrecord AssocState [^:map<keyword;int> properties])
 (def assoc-updated
   (update (AssocState. {}) :properties assoc :answer 42))

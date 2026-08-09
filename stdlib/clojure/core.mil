@@ -17,6 +17,10 @@
 
 (signature clojure.core/identity [value]
   :fn<value;value>)
+(signature clojure.core/subvec [value]
+  :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
+(signature clojure.core/array [value]
+  :variadic-fn<value;array<value>>)
 
 (signature clojure.core/map-seq [input output]
   :fn<fn<input;output>;seq<input>;seq<output>>)

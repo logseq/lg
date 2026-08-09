@@ -1281,8 +1281,8 @@ let rec returned_vector_type params = function
         | _ -> Types.dynamic_constraint TUnknown
       in
       Some (TVector element_ty)
-  | FList [ FSymbol "subvec"; collection; _ ]
-  | FList [ FSymbol "subvec"; collection; _; _ ] -> (
+  | FList [ FSymbol "__lg_subvec"; collection; _ ]
+  | FList [ FSymbol "__lg_subvec"; collection; _; _ ] -> (
       match returned_vector_type params collection with
       | Some vector_ty -> Some vector_ty
       | None -> Some (TVector (Types.dynamic_constraint TUnknown)))
@@ -5263,7 +5263,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | None -> infer_all params (target :: keys))
     | FList (FSymbol "__lg_assoc" :: target :: pairs) ->
         infer_assoc params target pairs
-    | FList (FSymbol "subvec" :: collection :: indexes)
+    | FList (FSymbol "__lg_subvec" :: collection :: indexes)
       when List.length indexes = 1 || List.length indexes = 2 ->
         let element_ty =
           match inferred_form_type params collection with
