@@ -794,7 +794,16 @@
     exp {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
     log {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
     log10 {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
-    sqrt {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}}}
+    sqrt {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    ceil {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    floor {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    atan2 {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    sinh {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    cosh {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    tanh {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    hypot {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    expm1 {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    log1p {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"
