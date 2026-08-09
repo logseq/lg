@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long inc infinite? keyword-identical? merge-with parse-double parse-long parse-uuid ratio? realized? special-symbol? symbol-identical?]]))
+  (:require [cljs.core :as core :refer [NaN? array-binary-search-left array-binary-search-right array-from array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? hash-long ifind? inc infinite? keyword-identical? map-entry? merge-with parse-double parse-long parse-uuid ratio? realized? regexp? special-symbol? symbol-identical? volatile?]]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -380,3 +380,38 @@
 (println (= 2147505144 (source-string-hash "墀㺙眧悱崯뒛")))
 (println (= 1118836419 (source-unencoded-hash "abc")))
 (println (= 1443257913 (source-unencoded-hash "😀")))
+
+(deftype SourceFindable [^:int value])
+(extend-type SourceFindable
+  IFind
+  (-find [this key]
+    (if (= key :value)
+      (Some (tuple key (.-value this)))
+      None)))
+
+(def source-ifind? ifind?)
+(def source-map-entry? map-entry?)
+(def source-regexp? regexp?)
+(def source-volatile? volatile?)
+(def ^:map<keyword;int> predicate-map {:value 1})
+(println (source-ifind? predicate-map))
+(println (not (ifind? [1 2])))
+(println (core/ifind? (SourceFindable. 7)))
+(println
+  (if-let [entry (first (seq predicate-map))]
+    (and (source-map-entry? entry) (= 1 (val entry)))
+    false))
+(println (not (map-entry? [1 2])))
+(println (regexp? #"value"))
+(println (not (cljs.core/regexp? "value")))
+(println (source-regexp? #"source"))
+(println (volatile? (volatile! 1)))
+(println (not (core/volatile? 1)))
+(println (source-volatile? (volatile! :ready)))
+(println (clojure.core/ifind? predicate-map))
+(println
+  (if-let [entry (first (seq predicate-map))]
+    (and (clojure.core/map-entry? entry) (= 1 (val entry)))
+    false))
+(println (clojure.core/regexp? #"qualified"))
+(println (cljs.core/volatile? (volatile! 1)))

@@ -137,9 +137,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 321 source entries (37.50%), 63 typed
+macro surfaces. The current baseline is 325 source entries (37.97%), 63 typed
 primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
-44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 229 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -186,7 +186,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 219-name compiler dispatch inventory has zero `source-shadowed`
+The current 220-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -342,7 +342,7 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
-routes, the raw compiler-call inventory contains 219 names.
+routes, the raw compiler-call inventory contains 220 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the
@@ -469,7 +469,14 @@ materialize an infinite compile-time sequence. The Logseq scan finds 5 direct
 linear-list `Indexed` capability does not incorrectly claim the upstream
 constant-time contract. `ISequential` is represented as a real zero-method
 marker protocol with explicit per-type evidence, and `ISorted` preserves all
-four upstream method arities for user-defined implementations. `true?` and
+four upstream method arities for user-defined implementations. The source
+predicates `ifind?`, `map-entry?`, `regexp?`, and `volatile?` now follow the
+pinned ClojureScript capability checks. `IMapEntry` is a marker protocol backed
+by LG's statically typed map-entry tuple receiver; regex testing uses one
+private static type primitive. Because LG atoms and volatiles that support
+`vreset!` share the same `ref<value>` representation, `volatile?` reports that
+`IVolatile` capability rather than a distinct JavaScript constructor identity.
+`true?` and
 `false?` retain the minimal
 internal typed identity primitive used by the pinned ClojureScript
 implementation, but their public vars now come from the source standard

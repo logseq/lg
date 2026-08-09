@@ -46,4 +46,5 @@ let compile name args =
                [ arg.semantic_expr ])
       | "__lg_symbol-predicate" -> static_bool (Types.equal arg.ty TSymbol)
       | "__lg_char-predicate" -> static_bool (Types.equal arg.ty TChar)
+      | "__lg_regex-predicate" -> static_bool (Types.equal arg.ty TRegex)
       | _ -> Error.error ("unknown function " ^ name)

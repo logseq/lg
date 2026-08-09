@@ -111,6 +111,14 @@
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ifind-for-static-runtime-maps-and-explicit-protocol-implementations}
+    ifind? {:status :static-adaptation
+            :reason :source-function-and-inline-specialization-use-clojurescript-ifind-protocol-satisfaction-for-static-runtime-maps-and-explicit-protocol-implementations}
+    map-entry? {:status :static-adaptation
+                :reason :source-function-and-inline-specialization-use-the-clojurescript-imapentry-marker-protocol-with-lg-static-map-entry-tuples-as-the-built-in-implementation}
+    regexp? {:status :static-adaptation
+             :reason :source-function-provides-first-class-static-regex-testing-while-its-inline-definition-specializes-direct-calls-through-a-minimal-regex-type-predicate-primitive}
+    volatile? {:status :static-adaptation
+               :reason :source-function-and-inline-specialization-use-clojurescript-ivolatile-protocol-satisfaction-while-lg-refs-that-support-vreset-share-the-static-ref-representation}
     with-meta {:status :static-adaptation
                :reason :source-function-delegates-to-clojurescript-iwithmeta-for-static-runtime-maps-while-a-private-inline-typed-primitive-converts-closed-edn-metadata-literals-without-runtime-dynamic-packing}
     meta {:status :static-adaptation

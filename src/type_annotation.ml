@@ -86,6 +86,7 @@ let rec parse_ocaml_type source =
         else if source = "float" then Ok TFloat
         else if source = "char" then Ok TChar
         else if source = "string" then Ok TString
+        else if source = "regex" then Ok TRegex
         else if source = "bytes" then Ok TString
         else if source = "bool" then Ok TBool
         else if source = "unit" then Ok TUnit

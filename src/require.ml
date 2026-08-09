@@ -127,8 +127,12 @@ let add_source_core_bindings env scope =
   Env.namespace_inline_macros "clojure.core" env
   |> List.fold_left
        (fun env (name, definition) ->
-         Env.add_inline_macro_alias ~alias:(Names.scoped_key scope name)
-           definition env)
+         env
+         |> Env.add_inline_macro_alias ~alias:(Names.scoped_key scope name)
+              definition
+         |> Env.add_inline_macro_alias
+              ~alias:(Names.scoped_key "cljs.core" name)
+              definition)
        env
 
 let remove_source_core_macro_alias env scope name =

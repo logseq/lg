@@ -40,6 +40,13 @@
   :fn<vector<value>;bool>)
 (signature clojure.core/associative? [key value]
   :fn<map<key;value>;bool>)
+(signature clojure.core/ifind? [key value]
+  :fn<map<key;value>;bool>)
+(signature clojure.core/map-entry? [key value]
+  :fn<tuple<key;value>;bool>)
+(signature clojure.core/regexp? :fn<regex;bool>)
+(signature clojure.core/volatile? [value]
+  :fn<ref<value>;bool>)
 (signature clojure.core/rational? :fn<int;bool>)
 (signature clojure.core/float? :fn<float;bool>)
 (signature clojure.core/double? :fn<float;bool>)

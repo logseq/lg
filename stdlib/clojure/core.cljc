@@ -376,6 +376,26 @@
   [x]
   (satisfies? IIndexed x))
 
+(defn ifind?
+  {:inline (fn [x] (list 'satisfies? 'IFind x))}
+  [x]
+  (satisfies? IFind x))
+
+(defn map-entry?
+  {:inline (fn [x] (list 'satisfies? 'IMapEntry x))}
+  [x]
+  (satisfies? IMapEntry x))
+
+(defn regexp?
+  {:inline (fn [x] (list '__lg_regex-predicate x))}
+  [x]
+  (__lg_regex-predicate x))
+
+(defn volatile?
+  {:inline (fn [x] (list 'satisfies? 'IVolatile x))}
+  [x]
+  (satisfies? IVolatile x))
+
 (defn rational?
   {:inline (fn [x] (list '__lg_rational-predicate x))}
   [x]

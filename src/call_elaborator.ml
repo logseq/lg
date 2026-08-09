@@ -7804,7 +7804,7 @@ let create ~compile_expr =
              type containing the supported Vars")
     | "__lg_rational-predicate" | "__lg_float-predicate"
     | "__lg_double-predicate" | "__lg_symbol-predicate"
-    | "__lg_char-predicate" -> (
+    | "__lg_char-predicate" | "__lg_regex-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_predicate.compile name args)

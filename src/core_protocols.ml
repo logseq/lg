@@ -43,6 +43,7 @@ let associative_id = Protocol_id.create ~owner:[] ~name:"IAssociative"
 let find_id = Protocol_id.create ~owner:[] ~name:"IFind"
 let map_id = Protocol_id.create ~owner:[] ~name:"IMap"
 let vector_id = Protocol_id.create ~owner:[] ~name:"IVector"
+let map_entry_id = Protocol_id.create ~owner:[] ~name:"IMapEntry"
 let kv_reduce_id = Protocol_id.create ~owner:[] ~name:"IKVReduce"
 let meta_id = Protocol_id.create ~owner:[] ~name:"IMeta"
 let with_meta_id = Protocol_id.create ~owner:[] ~name:"IWithMeta"
@@ -229,6 +230,8 @@ let declare_protocol_predicate_family registry =
   |> add_or_fail
   |> Protocol_registry.declare sequential_id []
   |> add_or_fail
+  |> Protocol_registry.declare map_entry_id []
+  |> add_or_fail
   |> Protocol_registry.declare sorted_id
        [
          signature (method_id sorted_id "-sorted-seq")
@@ -273,6 +276,8 @@ let add_protocol_predicate_family registry =
   |> add_marker Receiver_id.List_receiver
   |> add_marker Receiver_id.Vector_receiver
   |> add_marker Receiver_id.Seq_receiver
+  |> Protocol_registry.add_marker_implementation map_entry_id
+       Receiver_id.Tuple_receiver
 
 let add_vector_reversible_protocol registry =
   let element = TVar "reversible_element" in
