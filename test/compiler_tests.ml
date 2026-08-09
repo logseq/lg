@@ -644,7 +644,7 @@ let test_map_rejects_duplicate_fields () =
 let test_hash_map_constructs_structural_maps () =
   let source =
     {|
-(def user (hash-map :name "Ada" :age 36))
+(def user (__lg_hash-map :name "Ada" :age 36))
 (println (str (:name user) ":" (:age user)))
 |}
   in
@@ -729,13 +729,18 @@ let test_hash_map_update_preserves_present_and_missing_value_semantics () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_hash_map_rejects_duplicate_fields () =
-  Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :name "Grace"))|}
-  |> expect_error "duplicate field :name"
+let test_hash_map_duplicate_fields_use_last_value () =
+  let source =
+    {|(def x (__lg_hash-map :name "Ada" :name "Grace"))
+(println (:name x))|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "hash_map_duplicate_fields_use_last_value" "Grace\n"
+    ocaml_source
 
 let test_hash_map_rejects_odd_key_value_forms () =
-  Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :age))|}
-  |> expect_error "hash-map expects keyword/value pairs"
+  Lg.Compiler.compile_string {|(def x (__lg_hash-map :name "Ada" :age))|}
+  |> expect_error "No value supplied for key: :age"
 
 let test_hash_map_empty_preserves_metadata () =
   let source =
@@ -753,8 +758,8 @@ let test_hash_map_empty_preserves_metadata () =
 let test_hash_map_hash_is_unordered () =
   let source =
     {|
-(def left (hash-map :a 1 :b 2))
-(def right (hash-map :b 2 :a 1))
+(def left (__lg_hash-map :a 1 :b 2))
+(def right (__lg_hash-map :b 2 :a 1))
 (println (= (hash left) (hash right)))
 |}
   in
@@ -877,7 +882,7 @@ let test_dissoc_accepts_nullable_keys () =
     {|
 (def maybe-key (if false :answer nil))
 (def answer-key :answer)
-(def values (hash-map answer-key 42))
+(def values (__lg_hash-map answer-key 42))
 (println (get (dissoc values maybe-key) :answer))
 |}
   in
@@ -2925,10 +2930,10 @@ let test_heterogeneous_vectors_require_a_declared_sum_type () =
        "heterogeneous vector has element types int | keyword; define a sum type"
 
 let test_heterogeneous_lists_require_a_declared_sum_type () =
-  Lg.Compiler.compile_string {|(def value (list :tag 1))|}
+  Lg.Compiler.compile_string {|(def value (__lg_list :tag 1))|}
   |> expect_error_contains
        "heterogeneous list has element types int | keyword; define a sum type";
-  Lg.Compiler.compile_string {|(def value (list 1 2.0))|}
+  Lg.Compiler.compile_string {|(def value (__lg_list 1 2.0))|}
   |> expect_error_contains
        "heterogeneous list has element types float | int; define a sum type"
 
@@ -2942,14 +2947,14 @@ let test_heterogeneous_sets_require_a_declared_sum_type () =
 
 let test_heterogeneous_computed_maps_require_declared_sum_types () =
   Lg.Compiler.compile_string
-    {|(def key :left) (def value (hash-map key 1 :right "two"))|}
+    {|(def key :left) (def value (__lg_hash-map key 1 :right "two"))|}
   |> expect_error_contains
        "heterogeneous map values have types int | string; define a sum type";
-  Lg.Compiler.compile_string {|(def value (hash-map :left 1 "right" 2))|}
+  Lg.Compiler.compile_string {|(def value (__lg_hash-map :left 1 "right" 2))|}
   |> expect_error_contains
        "heterogeneous map keys have types keyword | string; define a sum type";
   Lg.Compiler.compile_string
-    {|(def key :left) (def value (hash-map key 1 :right 2.0))|}
+    {|(def key :left) (def value (__lg_hash-map key 1 :right 2.0))|}
   |> expect_error_contains
        "heterogeneous map values have types float | int; define a sum type"
 
@@ -2958,7 +2963,7 @@ let test_vector_updates_require_sum_elements () =
   |> expect_error_contains "define a sum type"
 
 let test_list_updates_require_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (conj (list 1) "two"))|}
+  Lg.Compiler.compile_string {|(def value (conj (__lg_list 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_set_updates_require_sum_elements () =
@@ -2976,14 +2981,14 @@ let test_sequence_cons_requires_sum_elements () =
 let test_map_updates_require_sum_values () =
   Lg.Compiler.compile_string
     {|(def key :left)
-(def value (assoc (hash-map key 1) :right "two"))|}
+(def value (assoc (__lg_hash-map key 1) :right "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_heterogeneous_runtime_maps_require_a_declared_sum_type () =
   Lg.Compiler.compile_string
     {|(def left :left)
 (def right :right)
-(def value (hash-map left 1 right "two"))|}
+(def value (__lg_hash-map left 1 right "two"))|}
   |> expect_error_contains
        "heterogeneous map values have types int | string; define a sum type"
 
@@ -3008,8 +3013,8 @@ let test_merge_rejects_heterogeneous_runtime_maps () =
     {|
 (def key :left)
 (def other-key :right)
-(def left (hash-map key 1))
-(def right (hash-map other-key "two"))
+(def left (__lg_hash-map key 1))
+(def right (__lg_hash-map other-key "two"))
 (def merged (merge left right))
 |}
   in
@@ -4878,7 +4883,7 @@ let test_callback_return_records_are_materialized () =
 (defn total [callback]
   (let [result (callback)]
     (+ (:fail result) (:error result))))
-(println (total #(hash-map :fail 1 :error 2)))
+(println (total #(__lg_hash-map :fail 1 :error 2)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -11675,7 +11680,7 @@ let test_mapv_vector_zips_multiple_collections () =
        (= [[1 4 7] [2 5 8]] (zip [1 2] [4 5] [7 8]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "mapv_vector_zips_multiple_collections" "true:true\n"
     ocaml_source
 
@@ -11886,7 +11891,7 @@ let test_fnil_wraps_core_conj_with_default_collection () =
   let source =
     {|
 (def conjv (fnil conj (vector-of :int)))
-(def conjs (fnil conj (hash-set)))
+(def conjs (fnil conj (__lg_hash-set)))
 (println
   (str (= [1] (conjv nil 1)) ":" (= #{1} (conjs nil 1))))
 |}
@@ -12885,7 +12890,7 @@ let test_parsetree_typecheck_gate_accepts_runtime_dependencies () =
     {|
 (def user {:name "Ada", :age 36})
 (def xs [1 2 3])
-(def users (hash-set user))
+(def users (__lg_hash-set user))
 (def answer (+ (__lg_count xs) (__lg_count users)))
 |}
   |> expect_ok
@@ -13302,7 +13307,7 @@ let test_collection_type_application_annotations_preserve_nested_elements () =
   (reduce + 0 values))
 (println
   (str (batch-total [[1 2] [3 4]]) ":"
-       (list-total (list 1 2 3)) ":"
+       (list-total (__lg_list 1 2 3)) ":"
        (set-total #{1 2 3})))
 |}
   in
@@ -14568,7 +14573,7 @@ let test_custom_record_set_modules_are_emitted_on_demand () =
       {|
 (type-record user (name :string))
 (def ada (record user (name "Ada")))
-(def users (hash-set ada))
+(def users (__lg_hash-set ada))
 (println (contains? users ada))
 |}
     |> expect_ok
@@ -14583,7 +14588,7 @@ let test_custom_record_set_modules_are_emitted_on_demand () =
 (type-record user (name :string))
 (def ada (record user (name "Ada")))
 (def maybe-ada (if true ada nil))
-(def users (hash-set maybe-ada))
+(def users (__lg_hash-set maybe-ada))
 (println (contains? users maybe-ada))
 |}
     |> expect_ok
@@ -17004,7 +17009,7 @@ let test_forward_declared_functions_refresh_nominal_returns () =
 (defn make-datom ^Datom []
   (Datom. 42))
 (defn resolve-datom []
-  (let [_ (list 'resolve-datom)]
+  (let [_ (__lg_list 'resolve-datom)]
     (make-datom)))
 (defn components->pattern []
   (resolve-datom))
@@ -19196,7 +19201,7 @@ let test_macro_concat_preserves_sequence_semantics () =
 (println (empty-concat-count))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "macro_concat_preserves_sequence_semantics"
     "true\ntrue\n0\n" ocaml_source
 
@@ -23765,8 +23770,8 @@ let test_hash_matches_clojure_scalar_and_collection_values () =
   (str (hash nil) ":" (hash true) ":" (hash false) ":"
        (hash 1) ":" (hash -1) ":" (hash 42) ":"
        (hash 1.5) ":" (hash "abc") ":" (hash :db/ident) ":"
-       (hash [1 2]) ":" (hash (list 1 2)) ":"
-       (hash (hash-set 1 2)) ":" (hash {:a 1 :b 2}) ":"
+       (hash [1 2]) ":" (hash (__lg_list 1 2)) ":"
+       (hash (__lg_hash-set 1 2)) ":" (hash {:a 1 :b 2}) ":"
        (= (hash-unordered-coll [1 2])
           (hash-unordered-coll [2 1]))))
 |}
@@ -25787,10 +25792,10 @@ let test_reduce_accepts_all_builtin_seqable_types () =
   let source =
     {|
 (def host-seq
-  (List.to_seq (list 4 5)))
-(println (reduce (fn [acc x] (+ acc x)) 0 (list 1 2)))
+  (List.to_seq (__lg_list 4 5)))
+(println (reduce (fn [acc x] (+ acc x)) 0 (__lg_list 1 2)))
 (println (reduce (fn [acc x] (+ acc x)) 0 [1 2]))
-(println (reduce (fn [acc x] (+ acc x)) 0 (hash-set 2 1)))
+(println (reduce (fn [acc x] (+ acc x)) 0 (__lg_hash-set 2 1)))
 (println (reduce (fn [acc x] (+ acc x)) 0 (array 1 2)))
 (println (reduce (fn [acc ch] (str acc ch)) "" "ab"))
 (println (reduce (fn [acc x] (+ acc x)) 0 host-seq))
@@ -26370,7 +26375,7 @@ let test_sequential_destructuring_accepts_deftype_seqable_values () =
   ISeqable
   (-seq [datom] (seq-datom datom)))
 (defn seq-datom [^Datom datom]
-  (list (.-e datom) (.-a datom) (.-v datom)))
+  (__lg_list (.-e datom) (.-a datom) (.-v datom)))
 (defn unpack [^Datom datom]
   (let [[_ attribute value] datom]
     [(datom-tx datom) attribute value]))
@@ -26514,13 +26519,13 @@ let test_batched_sequence_functions_reject_bad_partition_size () =
 
 let test_batched_sequence_functions_reject_reduce_kv_non_collection () =
   Lg.Compiler.compile_string
-    {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (list 1 2)))|}
+    {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (__lg_list 1 2)))|}
   |> expect_error "reduce-kv expects a vector or map"
 
 let test_interleave_accepts_multiple_collections () =
   let source =
     {|
-(def xs (interleave [1 2 3] (list 10 20) (hash-set 100 200 300)))
+(def xs (interleave [1 2 3] (__lg_list 10 20) (__lg_hash-set 100 200 300)))
 (println (pr-str xs))
 |}
   in
@@ -26549,7 +26554,7 @@ let test_interleave_accepts_inferred_seqable_parameters () =
     (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_interleave_rejects_later_type_mismatches () =
-  Lg.Compiler.compile_string {|(def x (interleave [1] (list 2) ["three"]))|}
+  Lg.Compiler.compile_string {|(def x (interleave [1] (__lg_list 2) ["three"]))|}
   |> expect_error "interleave element types must match"
 
 let test_interleave_requires_two_collections () =
@@ -26977,6 +26982,95 @@ let test_counted_indexed_family_has_no_public_name_dispatch () =
               (name ^ " still has public-name compiler dispatch in " ^ path))
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "count"; "nth" ]
+
+let test_source_collection_constructor_family_matches_clojurescript () =
+  let source =
+    {|
+(ns app.collection-constructors
+  (:require [cljs.core :as core
+             :refer [list vector hash-map array-map hash-set set]]))
+
+(def make-list core/list)
+(def make-vector core/vector)
+(def make-map core/hash-map)
+(def make-array-map core/array-map)
+(def make-hash-set core/hash-set)
+(def make-set core/set)
+
+(println (= (list) (core/list)))
+(println (= (list 1 2 3) (make-list 1 2 3)))
+(println (= [] (vector)))
+(println (= [1 2 3] (make-vector 1 2 3)))
+(println (= {:a 3 :b 2} (hash-map :a 1 :b 2 :a 3)))
+(println (= {"a" "b"} (make-map "a" "b")))
+(println (= {:a 3 :b 2} (core/array-map :a 1 :b 2 :a 3)))
+(println (= {1 2} (make-array-map 1 2)))
+(println (= #{} (hash-set)))
+(println (= #{1 2 3} (make-hash-set 1 2 1 3)))
+(println (= #{1 2 3} (set [1 2 1 3])))
+(println (= #{1 2} (make-set (list 1 2 1))))
+|}
+  in
+  let expected = String.concat "" (List.init 12 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_collection_constructors.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source collection constructors must remain statically typed";
+  assert_ocaml_runs "source_collection_constructor_family" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_collection_constructors.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange collection constructors must remain statically typed"
+
+let test_source_collection_constructor_family_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native "test/bad_hash_map_arity.cljc"
+    {|(hash-map :a 1 :b)|}
+  |> expect_error_contains "No value supplied";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_array_map_arity.cljc"
+    {|(array-map :a 1 :b)|}
+  |> expect_error_contains "No value supplied";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_set_receiver.cljc"
+    {|(set 42)|}
+  |> expect_error_contains "set";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_vector_elements.cljc"
+    {|(vector 1 "two")|}
+  |> expect_error_contains "sum type"
+
+let test_collection_constructor_family_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring core_source ("(defn " ^ name)) then
+        failwith (name ^ " is not owned by the source standard library");
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          let public_dispatch_fragments =
+            [
+              "| \"" ^ name ^ "\" ->";
+              "| \"" ^ name ^ "\" |";
+              "FSymbol \"" ^ name ^ "\"";
+              "FSymbol (\"" ^ name ^ "\"";
+            ]
+          in
+          if
+            List.exists
+              (string_contains_substring compiler_source)
+              public_dispatch_fragments
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "list"; "vector"; "hash-map"; "array-map"; "hash-set"; "set" ]
 
 let test_source_collection_lifecycle_family_matches_clojurescript () =
   let source =
@@ -31218,7 +31312,7 @@ let test_let_destructuring_accepts_generic_seqable_values () =
   (let [[left right] values]
     (str left ":" right)))
 (println (first-pair ["a" "b"]))
-(println (first-pair (list "c" "d")))
+(println (first-pair (__lg_list "c" "d")))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
@@ -32497,7 +32591,7 @@ let test_common_higher_order_helpers_reject_compare_type_mismatch () =
   |> expect_error "compare arguments must have the same type: int and string"
 
 let test_apply_rejects_bad_set_reducers () =
-  Lg.Compiler.compile_string {|(def x (apply + (hash-set "a" "b")))|}
+  Lg.Compiler.compile_string {|(def x (apply + (__lg_hash-set "a" "b")))|}
   |> expect_error "apply currently supports int binary reducers"
 
 let test_apply_distinct_accepts_generic_seqable_values () =
@@ -32770,7 +32864,7 @@ let test_empty_transduced_vector_sets_preserve_element_shape () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "empty_transduced_vector_sets_preserve_element_shape"
     "ok\n" ocaml_source
 
@@ -33003,7 +33097,7 @@ let test_set_positional_sequence_helpers_reject_non_collections () =
   |> expect_error "first expects a seqable value"
 
 let test_conj_rejects_set_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (conj (hash-set 1) "two"))|}
+  Lg.Compiler.compile_string {|(def xs (conj (__lg_hash-set 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_disj_rejects_set_type_mismatch () =
@@ -33039,13 +33133,13 @@ let test_set_sequence_predicates_accept_truthy_results () =
 
 let test_reduce_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string
-    {|(def x (reduce (fn [acc x] (str acc x)) 0 (hash-set 1 2)))|}
+    {|(def x (reduce (fn [acc x] (str acc x)) 0 (__lg_hash-set 1 2)))|}
   |> expect_error_contains "reduced value must match init"
 
 let test_set_map_and_filter_core_api () =
   let source =
     {|
-(def xs (hash-set 1 2 3))
+(def xs (__lg_hash-set 1 2 3))
 (def mapped (map (fn [x] (+ x 1)) xs))
 (def filtered (filter (fn [x] (> x 2)) mapped))
 (println (str (pr-str mapped) ":" (pr-str filtered)))
@@ -33056,13 +33150,13 @@ let test_set_map_and_filter_core_api () =
 
 let test_set_map_rejects_function_type_mismatch () =
   Lg.Compiler.compile_string
-    {|(def xs (map (fn [^:string x] x) (hash-set 1 2)))|}
+    {|(def xs (map (fn [^:string x] x) (__lg_hash-set 1 2)))|}
   |> expect_error "map function argument type does not match sequence"
 
 let test_set_filter_accepts_truthy_predicates () =
   let ocaml_source =
     Lg.Compiler.compile_string
-      {|(println (pr-str (filter (fn [x] (+ x 1)) (hash-set 1 2))))|}
+      {|(println (pr-str (filter (fn [x] (+ x 1)) (__lg_hash-set 1 2))))|}
     |> expect_ok
   in
   assert_ocaml_runs "set_filter_accepts_truthy_predicates" "(1 2)\n"
@@ -33121,7 +33215,7 @@ let test_take_and_drop_core_api () =
   let source =
     {|
 (def xs [1 2 3 4])
-(def ys (list 1 2 3 4))
+(def ys (__lg_list 1 2 3 4))
 (println (str (pr-str (take 2 xs)) ":" (pr-str (drop 2 xs)) ":"
               (pr-str (take 9 ys)) ":" (pr-str (drop 9 ys))))
 |}
@@ -33135,7 +33229,7 @@ let test_take_and_drop_reject_non_int_counts () =
   |> expect_error "take count must be int"
 
 let test_take_and_drop_support_sets () =
-  let source = {|(println (pr-str (drop 1 (hash-set 1 2))))|} in
+  let source = {|(println (pr-str (drop 1 (__lg_hash-set 1 2))))|} in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "take_and_drop_support_sets" "(2)\n" ocaml_source
 
@@ -33388,9 +33482,9 @@ let test_empty_rejects_unsupported_values () =
 let test_into_core_api () =
   let source =
     {|
-(def xs (into [1] (list 2 3)))
+(def xs (into [1] (__lg_list 2 3)))
 (def ys (into (list-of :int) [1 2 3]))
-(def zs (into (hash-set 1) [1 2 2 3]))
+(def zs (into (__lg_hash-set 1) [1 2 2 3]))
 (println (str (pr-str xs) ":" (pr-str ys) ":" (pr-str zs)))
 |}
   in
@@ -34148,9 +34242,9 @@ let test_typed_empty_sets () =
 let test_sets_reject_nil_elements () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
   |> expect_error "unknown set element type :nil";
-  Lg.Compiler.compile_string {|(def values (hash-set nil))|}
+  Lg.Compiler.compile_string {|(def values (__lg_hash-set nil))|}
   |> expect_error "sets require a generated comparator for nil";
-  Lg.Compiler.compile_string {|(def values (set [nil]))|}
+  Lg.Compiler.compile_string {|(def values (__lg_set [nil]))|}
   |> expect_error "sets require a generated comparator for nil"
 
 let test_set_of_rejects_types_without_comparators () =
@@ -34210,13 +34304,13 @@ let test_empty_lists_infer_type_from_branch_context () =
   let source =
     {|
 (defn values [^:bool enabled]
-  (if enabled (list 42) (list)))
+  (if enabled (__lg_list 42) (__lg_list)))
 (defn matched-values [^:bool enabled]
   (match enabled
-    true (list 42)
-    false (list)))
+    true (__lg_list 42)
+    false (__lg_list)))
 (defn literal-values [^:bool enabled]
-  (if enabled (list 42) ()))
+  (if enabled (__lg_list 42) ()))
 (println
   (str (count (values true)) ":" (count (values false)) ":"
        (count (matched-values true)) ":" (count (matched-values false)) ":"
@@ -34226,9 +34320,9 @@ let test_empty_lists_infer_type_from_branch_context () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "empty_lists_infer_type_from_branch_context" "1:0:1:0:1:0\n"
     ocaml_source;
-  compile_string_with_stdlib {|(def values (list))|}
+  compile_string_with_stdlib {|(def values (__lg_list))|}
   |> expect_error "empty list requires a contextual element type";
-  compile_string_with_stdlib {|(defn values [] (list))|}
+  compile_string_with_stdlib {|(defn values [] (__lg_list))|}
   |> expect_error "empty list requires a contextual element type";
   compile_string_with_stdlib {|(def values ())|}
   |> expect_error "empty list requires a contextual element type"
@@ -34260,7 +34354,7 @@ let test_closed_lists_preserve_optional_values () =
     ocaml_source
 
 let test_conj_rejects_list_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (conj (list 1) "two"))|}
+  Lg.Compiler.compile_string {|(def xs (conj (__lg_list 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_collection_positional_helpers () =
@@ -34314,7 +34408,7 @@ let test_subvec_core_api () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_subvec_rejects_non_vector_sources () =
-  Lg.Compiler.compile_string {|(def x (subvec (list 1 2) 0))|}
+  Lg.Compiler.compile_string {|(def x (subvec (__lg_list 1 2) 0))|}
   |> expect_error "subvec expects a vector"
 
 let test_subvec_rejects_non_int_indexes () =
@@ -34466,9 +34560,9 @@ let test_match_expression_works () =
     1 "one"
     n (str "n=" n)))
 (def empty-list-score (match (list-of :int) [] 0 _ 99))
-(def one-list-score (match (list 7) [] 0 [x] x _ 99))
-(def two-list-score (match (list 3 4) [] 0 [x] x [x y] (+ x y) _ 99))
-(def many-list-score (match (list 1 2 3) [] 0 [x] x [x y] (+ x y) _ 99))
+(def one-list-score (match (__lg_list 7) [] 0 [x] x _ 99))
+(def two-list-score (match (__lg_list 3 4) [] 0 [x] x [x y] (+ x y) _ 99))
+(def many-list-score (match (__lg_list 1 2 3) [] 0 [x] x [x y] (+ x y) _ 99))
 (def empty-vector-score (match (vector-of :int) [] 0 _ 99))
 (def one-vector-score (match [7] [] 0 [x] x _ 99))
 (def two-vector-score (match [3 4] [] 0 [x] x [x y] (+ x y) _ 99))
@@ -37515,7 +37609,7 @@ let test_parsetree_backend_supports_record_sets () =
   let source =
     {|
 (def ada {:name "Ada", :age 36})
-(def users (hash-set ada))
+(def users (__lg_hash-set ada))
 (println (str (__lg_count users) ":" (contains? users ada)))
 |}
   in
@@ -37527,7 +37621,7 @@ let test_parsetree_backend_supports_record_sets () =
 let test_parsetree_backend_supports_composite_sets () =
   let source =
     {|
-(def values (hash-set [1 2]))
+(def values (__lg_hash-set [1 2]))
 (def updated (conj values [2 3]))
 (println (str (__lg_count updated) ":" (contains? updated [2 3])))
 |}
@@ -37951,7 +38045,7 @@ let test_parsetree_backend_builds_native_collection_expressions () =
   let structure =
     Lg.Compiler.compile_parsetree {|
 (def xs [1 2 3])
-(def ys (list 4 5 6))
+(def ys (__lg_list 4 5 6))
 |}
     |> expect_ok
   in
@@ -38008,7 +38102,7 @@ let test_parsetree_backend_builds_native_sequence_expressions () =
 let test_parsetree_backend_builds_native_sequence_navigation_expressions () =
   List.iter expect_structured_value_expression
     [
-      {|(def result (next (list 1 2)))|};
+      {|(def result (next (__lg_list 1 2)))|};
       {|(def result (next [1 2]))|};
       {|(def result (IReversible/-rseq [1 2]))|};
     ]
@@ -38047,7 +38141,7 @@ let test_parsetree_backend_builds_native_collection_core_expressions () =
   expect_structured_value_expression {|(def result (__lg_count [1 2 3]))|}
 
 let test_parsetree_backend_builds_native_collection_match_expressions () =
-  expect_structured_value_expression {|(def result (rest (list 1 2 3)))|}
+  expect_structured_value_expression {|(def result (rest (__lg_list 1 2 3)))|}
 
 let test_parsetree_backend_builds_native_function_combinator_expressions () =
   expect_structured_value_expression
@@ -38074,16 +38168,16 @@ let test_parsetree_backend_builds_native_contains_expressions () =
     {|(def present? (contains? {:name "Ada"} :name))|}
 
 let test_parsetree_backend_builds_native_set_constructor_expressions () =
-  expect_structured_value_expression {|(def ids (hash-set 3 1 2))|}
+  expect_structured_value_expression {|(def ids (__lg_hash-set 3 1 2))|}
 
 let test_parsetree_backend_builds_native_sequence_transform_expressions () =
   List.iter expect_structured_value_expression
     [
       {|(def result (sort [3 1 2]))|};
-      {|(def result (concat [1 2] (list 3 4)))|};
-      {|(def result (set [1 1 2]))|};
+      {|(def result (concat [1 2] (__lg_list 3 4)))|};
+      {|(def result (__lg_set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
-      {|(def result (interleave [1 2] (list 3 4)))|};
+      {|(def result (interleave [1 2] (__lg_list 3 4)))|};
       {|(def result (partition 2 [1 2 3]))|};
       {|(def result (partition-all 2 [1 2 3]))|};
       {|(def result (dorun [1 2 3]))|};
@@ -38266,7 +38360,8 @@ let tests =
       test_hash_map_protocol_methods_dispatch_statically );
     ( "hash-map is callable as lookup function",
       test_hash_map_is_callable_as_lookup_function );
-    ("hash-map rejects duplicate fields", test_hash_map_rejects_duplicate_fields);
+    ( "hash-map duplicate fields use the last value",
+      test_hash_map_duplicate_fields_use_last_value );
     ( "hash-map rejects odd key value forms",
       test_hash_map_rejects_odd_key_value_forms );
     ("map literals accept computed keys", test_map_literals_accept_computed_keys);
@@ -40264,6 +40359,12 @@ let tests =
       test_source_counted_indexed_family_rejects_invalid_inputs );
     ( "counted indexed family has no public-name dispatch",
       test_counted_indexed_family_has_no_public_name_dispatch );
+    ( "source collection constructor family matches ClojureScript",
+      test_source_collection_constructor_family_matches_clojurescript );
+    ( "source collection constructor family rejects invalid inputs",
+      test_source_collection_constructor_family_rejects_invalid_inputs );
+    ( "collection constructor family has no public-name dispatch",
+      test_collection_constructor_family_has_no_public_name_dispatch );
     ( "source collection lifecycle family matches ClojureScript",
       test_source_collection_lifecycle_family_matches_clojurescript );
     ( "source collection lifecycle family rejects invalid inputs",

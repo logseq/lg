@@ -4122,7 +4122,7 @@ let create ~compile_expr =
         ( Semantic_ir.Ident function_name,
           List.map (fun (_, argument) -> argument.semantic_expr) arguments )
   and compile_transient scope env = function
-    | [ FList [ FSymbol "hash-set" ] ] ->
+    | [ FList [ FSymbol "__lg_hash-set" ] ] ->
         Ok
           (typed_ir
              (TOcaml_app ("Lg_runtime.Runtime_transient.set", [ TUnknown ]))
@@ -4618,45 +4618,63 @@ let create ~compile_expr =
                   (Types.set_module_name element_type)
             | _ -> Error.error "persistent! expects a transient collection"))
     | _ -> Error.error "persistent! expects 1 argument"
-  and compile_apply_zip_vectors scope env fixed_forms rest_form =
+  and compile_apply_zip_vectors scope env constructor_form fixed_forms rest_form =
     match
-      (compile_args_for scope env fixed_forms, compile_expr scope env rest_form)
+      ( compile_function_arg scope env constructor_form,
+        compile_args_for scope env fixed_forms,
+        compile_expr scope env rest_form )
     with
-    | (Error _ as error), _ -> error
-    | _, (Error _ as error) -> error
-    | Ok fixed, Ok rest ->
-        let element_ty =
-          fixed
-          |> List.find_map (fun collection ->
-                 match collection.ty with
-                 | TVector element_ty -> Some element_ty
-                 | TUnknown | TMeta _ | TVar _ -> None
-                 | _ -> None)
-          |> Option.value ~default:TUnknown
-        in
-        if
-          not
-            (List.for_all
-               (fun collection ->
-                 match collection.ty with
-                 | TVector _ | TUnknown | TMeta _ | TVar _ -> true
-                 | _ -> false)
-               fixed)
-        then Error.error "apply mapv vector expects vector collections"
-        else
-          let collections =
-            List.fold_right
-              (fun collection tail ->
-                Semantic_ir.Cons (collection.semantic_expr, tail))
-              fixed
-              (Semantic_ir.Apply
-                 (Semantic_ir.Ident "List.of_seq", [ rest.semantic_expr ]))
-          in
-          Ok
-            (typed_ir (TVector (TVector element_ty))
-               (Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.zip_vectors",
-                    [ collections ] )))
+    | (Error _ as error), _, _ -> error
+    | _, (Error _ as error), _ -> error
+    | _, _, (Error _ as error) -> error
+    | Ok constructor, Ok fixed, Ok rest -> (
+        match constructor.ty with
+        | TOverloaded_fn
+            [
+              {
+                fixed_params = [];
+                rest_param = Some element_ty;
+                return_ty = TVector return_element_ty;
+              };
+            ]
+          when Types.equal element_ty return_element_ty ->
+            if
+              not
+                (List.for_all
+                   (fun collection ->
+                     match collection.ty with
+                     | TVector _ | TUnknown | TMeta _ | TVar _ -> true
+                     | _ -> false)
+                   fixed)
+            then Error.error "apply mapv expects vector collections"
+            else
+              let element_ty =
+                fixed
+                |> List.find_map (fun collection ->
+                       match collection.ty with
+                       | TVector element_ty -> Some element_ty
+                       | TUnknown | TMeta _ | TVar _ -> None
+                       | _ -> None)
+                |> Option.value ~default:element_ty
+              in
+              let collections =
+                List.fold_right
+                  (fun collection tail ->
+                    Semantic_ir.Cons (collection.semantic_expr, tail))
+                  fixed
+                  (Semantic_ir.Apply
+                     (Semantic_ir.Ident "List.of_seq", [ rest.semantic_expr ]))
+              in
+              Ok
+                (typed_ir (TVector (TVector element_ty))
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_seq.zip_vectors",
+                        [ collections ] )))
+        | _ ->
+            Error.error
+              ("apply mapv requires a statically typed variadic vector constructor, got "
+              ^ Types.source_name constructor.ty))
   and compile_mutable_field_assignment scope env keyword target_form value_form =
     match compile_expr scope env target_form with
     | Error _ as error -> error
@@ -8176,11 +8194,11 @@ let create ~compile_expr =
               (Semantic_ir.Apply
                  (Semantic_ir.Ident "print_endline", [ rendered ])))
           (compile_args ())
-    | "list" -> compile_list scope env arg_forms
+    | "__lg_list" -> compile_list scope env arg_forms
     | "list*" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms
     | "cons" -> compile_cons scope env arg_forms
-    | "vector" -> compile_vector scope env arg_forms
+    | "__lg_vector" -> compile_vector scope env arg_forms
     | "vector-of" -> compile_vector_of arg_forms
     | "__lg_count" -> compile_collection_call scope env name arg_forms
     | "conj" -> compile_conj scope env arg_forms
@@ -8205,7 +8223,7 @@ let create ~compile_expr =
     | "vals" -> compile_vals scope env arg_forms
     | "transient" -> compile_transient scope env arg_forms
     | "persistent!" -> compile_persistent_bang scope env arg_forms
-              | "hash-map" | "array-map" | "sorted-map" ->
+              | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
                   compile_hash_map scope env arg_forms
               | "rest" | "seq" ->
                   compile_collection_call scope env name arg_forms
@@ -8251,7 +8269,7 @@ let create ~compile_expr =
     | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "mapcat" -> compile_mapcat scope env arg_forms
-    | "set" -> compile_set scope env arg_forms
+    | "__lg_set" -> compile_set scope env arg_forms
     | "repeat" ->
         compile_sequence_transform_call scope env name arg_forms
     | "cycle" ->
@@ -8267,12 +8285,13 @@ let create ~compile_expr =
     | "reduce" -> compile_reduce scope env arg_forms
     | "apply" -> (
         match arg_forms with
-        | FSymbol "mapv" :: FSymbol "vector" :: fixed_and_rest
+        | FSymbol "mapv" :: constructor_form :: fixed_and_rest
           when List.length fixed_and_rest >= 2 ->
             let reversed = List.rev fixed_and_rest in
             let rest_form = List.hd reversed in
             let fixed_forms = List.rev (List.tl reversed) in
-            compile_apply_zip_vectors scope env fixed_forms rest_form
+            compile_apply_zip_vectors scope env constructor_form fixed_forms
+              rest_form
         | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
@@ -8286,7 +8305,7 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok compared ->
             Ok (typed_ir (TOcaml "int") compared.semantic_expr))
-              | "hash-set" | "sorted-set" ->
+              | "__lg_hash-set" | "sorted-set" ->
                   compile_hash_set scope env arg_forms
     | "set-of" -> compile_set_of env arg_forms
     | _ when is_constructor_name name -> (

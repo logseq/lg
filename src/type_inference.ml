@@ -1133,14 +1133,14 @@ let rec inferred_form_type params = function
               | Some element_ty -> TSeq element_ty
               | None -> TUnknown))
       | None -> TUnknown)
-  | FList (FSymbol "list" :: values) -> (
+  | FList (FSymbol "__lg_list" :: values) -> (
       match List.map (inferred_form_type params) values with
       | [] -> TList TUnknown
       | first :: rest
         when List.for_all (fun ty -> Types.equal first ty) rest ->
           TList first
       | _ -> TList (Types.dynamic_constraint TUnknown))
-  | FList (FSymbol "hash-set" :: values) -> (
+  | FList (FSymbol "__lg_hash-set" :: values) -> (
       match List.map (inferred_form_type params) values with
       | [] -> TSet TUnknown
       | first :: rest
@@ -2579,6 +2579,26 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 |> Option.value ~default:TUnknown)
               specs)
     | _ -> []
+  and is_variadic_vector_constructor params = function
+    | FSymbol name -> (
+        let function_ty =
+          match string_assoc_opt name params with
+          | Some ty -> Ok ty
+          | None -> lookup_function_ty name
+        in
+        match function_ty with
+        | Ok
+            (TOverloaded_fn
+              [
+                {
+                  fixed_params = [];
+                  rest_param = Some element_ty;
+                  return_ty = TVector return_element_ty;
+                };
+              ]) ->
+            Types.equal element_ty return_element_ty
+        | Ok _ | Error _ -> false)
+    | _ -> false
   and callback_compares_destructured_values = function
     | FList (FSymbol "fn" :: (FVector _ as params_form) :: body_forms) -> (
         match Destructure.parse_param_specs params_form with
@@ -2632,18 +2652,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword
           (Types.seqable_constraint element_ty)
           params
-    | FList
-        (FSymbol ("map" | "mapv") :: FSymbol "vector" :: collections)
-      when List.length collections >= 2
-           && (match element_ty with TVector _ -> true | _ -> false) ->
-        let item_ty =
-          match element_ty with TVector item_ty -> item_ty | _ -> assert false
-        in
-        List.fold_left
-          (fun result collection ->
-            Result.bind result (fun params ->
-                infer_sequence_form item_ty params collection))
-          (Ok params) collections
     | FList [ FSymbol "partition-by"; function_form; collection ] ->
         let source_element_ty =
           match element_ty with
@@ -2673,7 +2681,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | form ->
         infer_expected (Types.seqable_constraint element_ty) params form
   and inferred_literal_collection_item params = function
-    | FVector forms | FList (FSymbol "list" :: forms) -> (
+    | FVector forms | FList (FSymbol "__lg_list" :: forms) -> (
         let item_types = List.map (inferred_form_type params) forms in
         match item_types with
         | [] -> TUnknown
@@ -4564,7 +4572,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         match infer_expected TRegex params expression with
         | Error _ as error -> error
         | Ok params -> infer_expected TString params source)
-    | FList (FSymbol "list" :: values) -> (
+    | FList (FSymbol "__lg_list" :: values) -> (
         match infer_all params values with
         | Error _ as error -> error
         | Ok params ->
@@ -4608,9 +4616,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               params collection
         | _ -> infer_all params arguments)
     | FList
-        (FSymbol "apply" :: FSymbol "mapv" :: FSymbol "vector"
+        (FSymbol "apply" :: FSymbol "mapv" :: constructor_form
         :: fixed_and_rest)
-      when List.length fixed_and_rest >= 2 ->
+      when List.length fixed_and_rest >= 2
+           && is_variadic_vector_constructor params constructor_form ->
         let reversed = List.rev fixed_and_rest in
         let rest_collection = List.hd reversed in
         let fixed_collections = List.rev (List.tl reversed) in
@@ -4855,7 +4864,36 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | Some element_ty -> element_ty
               | None -> TUnknown)
         in
-        let callback_tys = inferred_function_parameter_types params fn in
+        let variadic_callback_tys =
+          match fn with
+          | FSymbol name -> (
+              let function_ty =
+                match string_assoc_opt name params with
+                | Some ty -> Ok ty
+                | None -> lookup_function_ty name
+              in
+              match function_ty with
+              | Ok (TOverloaded_fn arities) ->
+                  arities
+                  |> List.find_map (fun (arity : fn_arity) ->
+                         match arity.rest_param with
+                         | Some rest_ty
+                           when List.length arity.fixed_params
+                                <= List.length collection_forms ->
+                             Some
+                               (arity.fixed_params
+                               @ List.init
+                                   (List.length collection_forms
+                                   - List.length arity.fixed_params)
+                                   (fun _ -> rest_ty))
+                         | Some _ | None -> None)
+              | Ok _ | Error _ -> None)
+          | _ -> None
+        in
+        let callback_tys =
+          Option.value variadic_callback_tys
+            ~default:(inferred_function_parameter_types params fn)
+        in
         let element_tys =
           collection_forms
           |> List.mapi (fun index collection ->
@@ -4864,16 +4902,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      List.nth_opt callback_tys index
                      |> Option.value ~default:TUnknown
                  | element_ty -> element_ty)
-        in
-        let element_tys =
-          match (fn, element_tys) with
-          | FSymbol "vector", element_tys
-            when List.for_all
-                   (function TUnknown | TMeta _ | TVar _ -> true | _ -> false)
-                   element_tys ->
-              let element_ty = fresh_type_variable "vector_element" in
-              List.map (fun _ -> element_ty) element_tys
-          | _ -> element_tys
         in
         let function_ty = TFn (element_tys, TUnknown) in
         let rec constrain_collections params element_tys collections =
@@ -4886,7 +4914,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   constrain_collections params element_tys collections)
           | _ -> assert false
         in
-        Result.bind (infer_expected function_ty params fn) (fun params ->
+        let inferred_function =
+          match variadic_callback_tys with
+          | Some _ -> Ok params
+          | None -> infer_expected function_ty params fn
+        in
+        Result.bind inferred_function (fun params ->
             constrain_collections params element_tys collection_forms))
     | FList
         [
@@ -4964,7 +4997,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           match declared_accumulator_ty with
           | TUnknown | TMeta _ | TVar _ -> (
               match init with
-              | FMap [] | FList [ FSymbol "hash-map" ] ->
+              | FMap [] | FList [ FSymbol "__lg_hash-map" ] ->
                   Types.dynamic_map (Type_solver.fresh ())
                     (Type_solver.fresh ())
               | _ ->
@@ -5602,7 +5635,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_seqable
           (inferred_unary_function_param params function_form)
           params collection
-    | FList [ FSymbol ("set" | "dorun" | "doall"); collection ] ->
+    | FList [ FSymbol ("__lg_set" | "dorun" | "doall"); collection ] ->
         infer_collection params collection
     | FList
         [

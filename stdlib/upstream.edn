@@ -217,6 +217,18 @@
               :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-nil-maps-and-static-iseqable-implementations}
     indexed? {:status :static-adaptation
               :reason :source-function-uses-a-distinct-clojurescript-iindexed-protocol-so-linear-internal-indexed-list-access-does-not-claim-constant-time-satisfaction}
+    list {:status :static-adaptation
+          :reason :source-variadic-constructor-preserves-first-class-clojurescript-use-while-an-inline-internal-static-primitive-retains-call-site-element-types}
+    vector {:status :static-adaptation
+            :reason :source-variadic-constructor-preserves-first-class-clojurescript-use-while-an-inline-internal-static-primitive-builds-the-static-rrb-vector-and-retains-call-site-element-types}
+    hash-map {:status :static-adaptation
+              :reason :source-keyval-loop-preserves-odd-arity-rejection-and-last-value-wins-semantics-while-an-inline-internal-static-primitive-retains-separate-key-and-value-types}
+    array-map {:status :static-adaptation
+               :reason :source-keyval-loop-preserves-the-supported-clojurescript-constructor-semantics-while-the-static-runtime-uses-the-default-persistent-hash-map-representation}
+    hash-set {:status :static-adaptation
+              :reason :source-variadic-constructor-reduces-through-conj-while-an-inline-internal-static-primitive-retains-the-element-type-and-persistent-set-representation}
+    set {:status :static-adaptation
+         :reason :source-constructor-reduces-the-input-sequence-through-conj-while-an-inline-internal-static-primitive-retains-the-seqable-witness-and-element-type}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
     deref {:status :static-adaptation

@@ -750,7 +750,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       let arguments =
         List.concat_map (fun (key, value) -> [ key; value ]) pairs
       in
-      compile_expr scope env (FList (FSymbol "hash-map" :: arguments))
+      compile_expr scope env (FList (FSymbol "__lg_hash-map" :: arguments))
     | None ->
     let compile_pair = function
       | FKeyword keyword, value_form -> (

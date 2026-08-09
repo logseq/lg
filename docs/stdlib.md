@@ -134,7 +134,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 308 source entries (35.98%), 76 typed
+macro surfaces. The current baseline is 319 source entries (37.27%), 65 typed
 primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
 44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -202,7 +202,8 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
 `rseq`, `find`, `deref`, `reset!`, `vreset!`, `vswap!`, `compare-and-set!`,
-`empty`, `peek`, `pop`, `disj`,
+`empty`, `peek`, `pop`, `disj`, `list`, `vector`, `hash-map`, `array-map`,
+`hash-set`, `set`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
 `array-binary-search-right`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
@@ -215,7 +216,19 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `special-symbol?`, `distinct?`, `not=`, and the
 derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and
-`longs`, have no legacy compiler fallback. At the current checkpoint, the Logseq tree requires
+`longs`, have no legacy compiler fallback.
+
+The collection constructor family now follows the same boundary. Public
+`list`, `vector`, `hash-map`, `array-map`, `hash-set`, and `set` bindings live
+in `clojure.core` source and remain usable through aliases, refers, qualified
+calls, and first-class values. Their inline definitions lower direct calls to
+internal `__lg_*` primitives so static element, key, and value types are
+retained without `Runtime_dynamic.t`. Map constructors preserve
+ClojureScript's odd-keyval rejection and last-value-wins behavior. This moves
+11 independently inventoried function and inline-macro surfaces from typed
+primitive to source ownership.
+
+At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining

@@ -144,7 +144,7 @@ let rec parse_one ~target = function
   | { desc = Set_lbrace; span = open_span } :: rest ->
       parse_until ~target Rbrace open_span "set; expected '}'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
-          let head = located (FSymbol "hash-set") open_span in
+          let head = located (FSymbol "__lg_hash-set") open_span in
           let children = head :: forms in
           ( located ~children
               (FList (List.map (fun form -> form.form) children))

@@ -303,3 +303,15 @@
   :fn<map<key;value>;fn<key;result>;map<result;value>>)
 
 (signature clojure.core/hash-combine :fn<int;int;int>)
+(signature clojure.core/list [value]
+  :variadic-fn<value;list<value>>)
+(signature clojure.core/vector [value]
+  :variadic-fn<value;vector<value>>)
+(signature clojure.core/hash-map [value]
+  :variadic-fn<value;map<value;value>>)
+(signature clojure.core/array-map [value]
+  :variadic-fn<value;map<value;value>>)
+(signature clojure.core/hash-set [value]
+  :variadic-fn<value;set<value>>)
+(signature clojure.core/set [value]
+  :fn<seqable<value>;set<value>>)

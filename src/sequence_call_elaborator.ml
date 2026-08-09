@@ -514,20 +514,45 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                    (FList
                       [ FSymbol callable_name; FSymbol item_name ])))
   in
-  let rec compile_function_arg_for_collections scope env element_tys = function
-    | FSymbol "vector" ->
+  let compile_function_arg_for_collections scope env element_tys = function
+    | (FSymbol name as form) ->
+        Result.bind (compile_function_arg scope env form) (fun function_arg ->
+            match function_arg.ty with
+            | TOverloaded_fn
+                [
+                  {
+                    fixed_params = [];
+                    rest_param = Some rest_param;
+                    return_ty = TVector return_element;
+                  };
+                ]
+              when Types.equal rest_param return_element ->
         let parameter_names =
           List.mapi
             (fun index _ -> "__lg_map_argument_" ^ string_of_int index)
             element_tys
         in
-        compile_function_arg_for_collections scope env element_tys
-          (FList
-             [
-               FSymbol "fn";
-               FVector (List.map (fun name -> FSymbol name) parameter_names);
-               FVector (List.map (fun name -> FSymbol name) parameter_names);
-             ])
+        let function_env =
+          List.fold_left2
+            (fun env parameter_name element_ty ->
+              Env.add (Names.scoped_key scope parameter_name)
+                (Types.binding parameter_name element_ty)
+                env)
+            env parameter_names element_tys
+        in
+        Result.map
+          (fun body ->
+            typed_ir (TFn (element_tys, body.ty))
+              (Semantic_ir.Fun
+                 ( List.map
+                     (fun parameter_name -> Semantic_ir.PVar parameter_name)
+                     parameter_names,
+                   body.semantic_expr )))
+          (compile_expr scope function_env
+             (FList
+                (FSymbol name
+                :: List.map (fun name -> FSymbol name) parameter_names)))
+            | _ -> Ok function_arg)
     | FList (FSymbol "fn" :: (FVector parameters as params) :: body_forms)
       when List.length parameters = List.length element_tys ->
         compile_contextual_fn scope env

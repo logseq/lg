@@ -251,7 +251,11 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_match scope env target clauses
   | FList (FSymbol "try" :: forms) -> compile_try scope env forms
   | FList
-      [ FList (FSymbol ("hash-set" | "sorted-set") :: element_forms); key_form ]
+      [
+        FList
+          (FSymbol ("__lg_hash-set" | "sorted-set") :: element_forms);
+        key_form;
+      ]
     ->
       incr callable_set_counter;
       let suffix = string_of_int !callable_set_counter in
@@ -295,7 +299,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
           | Ok expanded -> compile_expr scope env expanded))
   | FList (FCoreSymbol core_symbol :: args) ->
       compile_call scope env (Ast.core_symbol_qualified_name core_symbol) args
-  | FList [] -> compile_call scope env "list" []
+  | FList [] -> compile_call scope env "__lg_list" []
   | FList
       [ FList (FSymbol "juxt" :: keyword_forms); argument ]
     when keyword_forms <> []
@@ -359,7 +363,7 @@ and compile_quoted scope env form =
       share_collection
         (compile_expr scope env
            (FList
-              (FSymbol "list"
+              (FSymbol "__lg_list"
               :: List.map (fun form -> FList [ FSymbol "quote"; form ]) forms)))
   | FMap pairs ->
       share_collection

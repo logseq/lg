@@ -21,6 +21,50 @@
             [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
 
+(defn list
+  {:inline (fn [& values] (cons '__lg_list values))}
+  [& values]
+  (runtime-seq/to-list (seq values)))
+
+(defn vector
+  {:inline (fn [& values] (cons '__lg_vector values))}
+  [& values]
+  (rrb-vector/of-list (runtime-seq/to-list (seq values))))
+
+(defn- map-from-keyvals [keyvals]
+  (loop [remaining (seq keyvals)
+         result {}]
+    (if remaining
+      (let [tail (next remaining)]
+        (if tail
+          (recur (next tail)
+                 (assoc result (first remaining) (first tail)))
+          (raise (Invalid_argument "No value supplied for key"))))
+      result)))
+
+(defn hash-map
+  {:inline (fn [& keyvals] (cons '__lg_hash-map keyvals))}
+  [& keyvals]
+  (map-from-keyvals keyvals))
+
+(defn array-map
+  {:inline (fn [& keyvals] (cons '__lg_array-map keyvals))}
+  [& keyvals]
+  (map-from-keyvals keyvals))
+
+(defn- set-from-coll [coll]
+  (reduce (fn [result value] (conj result value)) #{} coll))
+
+(defn set
+  {:inline (fn [coll] (list '__lg_set coll))}
+  [coll]
+  (set-from-coll coll))
+
+(defn hash-set
+  {:inline (fn [& keys] (cons '__lg_hash-set keys))}
+  [& keys]
+  (set-from-coll keys))
+
 (defmacro comment [& _body])
 
 (defmacro if-not

@@ -2412,7 +2412,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | [] -> Ok (List.rev acc)
       | key_form :: value_form :: rest ->
           parse_pairs ((key_form, value_form) :: acc) rest
-        | _ -> Error.error "hash-map expects keyword/value pairs"
+        | key_form :: [] -> (
+            match key_form with
+            | FKeyword keyword ->
+                Error.error ("No value supplied for key: " ^ keyword)
+            | _ -> Error.error "No value supplied for key")
       in
       if arg_forms = [] then
         Ok
@@ -2420,7 +2424,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
            (Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ()))
              (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty"))
       else if List.length arg_forms mod 2 <> 0 then
-        Error.error "hash-map expects keyword/value pairs"
+        let key = List.hd (List.rev arg_forms) in
+        (match key with
+        | FKeyword keyword ->
+            Error.error ("No value supplied for key: " ^ keyword)
+        | _ -> Error.error "No value supplied for key")
       else
         match parse_pairs [] arg_forms with
         | Error _ as err -> err
@@ -2428,7 +2436,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         when List.for_all
                (fun (key, _value) ->
                  match key with FKeyword _ -> true | _ -> false)
-               pairs ->
+               pairs
+             && (let rec has_duplicate seen = function
+                   | [] -> false
+                   | (FKeyword keyword, _) :: rest ->
+                       List.mem keyword seen
+                       || has_duplicate (keyword :: seen) rest
+                   | _ -> false
+                 in
+                 not (has_duplicate [] pairs)) ->
           compile_map scope env pairs
       | Ok _ ->
           Result.bind (compile_args_for scope env arg_forms) (fun arguments ->
