@@ -1,6 +1,5 @@
 let bindings = function
   | "clojure.data" -> Core_data.bindings
-  | "clojure.edn" | "cljs.reader" -> Core_edn.bindings
   | "clojure.string" -> Core_string.bindings
   | "clojure.walk" -> Core_walk.bindings
   | _ -> []

@@ -1,5 +1,7 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]))
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+            [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
+            [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
@@ -600,3 +602,50 @@
                     (do (swap! source-divide-order conj :right) 2))
             (/ (/ 64 4) 2)))
 (println (= [:left :middle :right] @source-divide-order))
+
+(def reader-parser-a (fn [value] value))
+(def reader-first-old
+  (reader/register-tag-parser! 'lg/point reader-parser-a))
+(println (nil? reader-first-old))
+(def source-register-tag-parser! reader/register-tag-parser!)
+(def reader-second-old
+  (source-register-tag-parser! 'lg/point (fn [value] value)))
+(println
+ (if-some [old reader-second-old]
+   (= "[1 2]" (runtime-edn/write-string (old (reader/read-string "[1 2]"))))
+   false))
+(println
+ (= "[3 4]"
+    (runtime-edn/write-string (reader/read-string "#lg/point [3 4]"))))
+(def reader-removed (deregister-tag-parser! 'lg/point))
+(println
+ (if-some [old reader-removed]
+   (= "9" (runtime-edn/write-string (old (reader/read-string "9"))))
+   false))
+(println
+ (= "#lg/point [3 4]"
+    (runtime-edn/write-string (reader/read-string "#lg/point [3 4]"))))
+
+(def reader-default-a (fn [_tag value] value))
+(def reader-default-first-old
+  (cljs.reader/register-default-tag-parser! reader-default-a))
+(println (nil? reader-default-first-old))
+(def reader-default-second-old
+  (cljs.reader/register-default-tag-parser! (fn [_tag value] value)))
+(println
+ (if-some [old reader-default-second-old]
+   (= "7" (runtime-edn/write-string
+            (old 'lg/unknown (reader/read-string "7"))))
+   false))
+(println
+ (= "[5 6]"
+    (runtime-edn/write-string (reader/read-string "#lg/unknown [5 6]"))))
+(def reader-default-removed (deregister-default-tag-parser!))
+(println
+ (if-some [old reader-default-removed]
+   (= "8" (runtime-edn/write-string
+            (old 'lg/unknown (reader/read-string "8"))))
+   false))
+(println
+ (= "#lg/unknown [5 6]"
+    (runtime-edn/write-string (reader/read-string "#lg/unknown [5 6]"))))

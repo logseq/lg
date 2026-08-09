@@ -668,9 +668,9 @@
    :interface "clojure/edn.mil"
    :definitions
    {read-string {:status :static-adaptation
-                 :reason :typed-host-edn-reader-primitive}
-    register-tag-parser! {:status :host-primitive
-                          :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}}}
+                 :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
+    read {:status :blocked-static-typing
+          :reason :pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain}}}
 
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
@@ -678,9 +678,21 @@
    :interface "cljs/reader.mil"
    :definitions
    {read-string {:status :static-adaptation
-                 :reason :typed-host-edn-reader-primitive}
-    register-tag-parser! {:status :host-primitive
-                          :reason :source-ffi-cannot-yet-express-symbol-to-host-string-primitive}}}
+                 :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
+    register-tag-parser! {:status :static-adaptation
+                          :reason :source-wrapper-preserves-previous-parser-return-and-typed-closed-edn-callback-registration-with-an-explicit-symbol-to-runtime-string-key-adapter}
+    deregister-tag-parser! {:status :static-adaptation
+                            :reason :source-wrapper-preserves-previous-parser-return-and-removes-the-registration-through-an-explicit-symbol-to-runtime-string-key-adapter}
+    register-default-tag-parser! {:status :static-adaptation
+                                  :reason :source-wrapper-preserves-previous-default-return-and-restores-the-public-symbol-tag-before-calling-the-closed-edn-source-callback}
+    deregister-default-tag-parser! {:status :static-adaptation
+                                    :reason :source-wrapper-preserves-previous-default-return-and-clears-the-runtime-registration}
+    parse-and-validate-timestamp {:status :blocked-static-typing
+                                  :reason :regex-capture-dependent-optional-string-groups-are-not-exposed-by-the-static-regex-boundary}
+    parse-timestamp {:status :host-boundary
+                     :reason :returns-a-javascript-date-which-has-no-shared-native-source-representation}
+    read {:status :blocked-static-typing
+          :reason :pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

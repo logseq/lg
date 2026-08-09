@@ -146,9 +146,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 343 source entries (40.07%), 62 typed
-primitives, 12 special forms, 28 host boundaries, 189 static-typing blockers,
-44 out-of-scope Spec entries, and 178 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 347 source entries (40.54%), 62 typed
+primitives, 12 special forms, 28 host boundaries, 192 static-typing blockers,
+44 out-of-scope Spec entries, and 171 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -268,6 +268,23 @@ retained without `Runtime_dynamic.t`. Map constructors preserve
 ClojureScript's odd-keyval rejection and last-value-wins behavior. This moves
 11 independently inventoried function and inline-macro surfaces from typed
 primitive to source ownership.
+
+The `cljs.reader` source namespace owns the complete mutable tag-parser
+registry surface: `register-tag-parser!`, `deregister-tag-parser!`,
+`register-default-tag-parser!`, and `deregister-default-tag-parser!`. The
+source wrappers preserve previous-parser return values and use closed
+`Lg_edn_backend.t` callbacks. Explicit adapters convert public tag symbols to
+runtime string keys and restore symbols before default callbacks; host
+assignability remains strict. `read-string` applies specific parsers before
+the default parser and preserves an unknown tagged value when neither exists.
+Neither `cljs.reader` nor `clojure.edn` remains routed through
+`Core_namespaces`; only the private typed EDN parsing primitive stays in the
+compiler/runtime boundary.
+The current `read-string` source wrapper supports the ordinary one-argument
+entry point. Its upstream options-map arity and the stream-oriented `read`
+overloads remain explicit blockers until reader/default/eof options have a
+closed static source domain. Timestamp validation is blocked on typed regex
+capture groups, while `parse-timestamp` remains a JavaScript `Date` boundary.
 
 At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,

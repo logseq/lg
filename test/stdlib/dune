@@ -159,6 +159,36 @@
 
 (rule
  (alias runtest)
+ (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
+  reader_deregister_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (action
+  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:reader_deregister_tag_parser_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
+  reader_register_default_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (action
+  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:reader_register_default_tag_parser_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
+  reader_deregister_default_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (action
+  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:reader_deregister_default_tag_parser_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
@@ -983,6 +1013,8 @@
   check_source_reader_bootstrap.sh
   (source_tree ../../stdlib/clojure)
   (source_tree ../../stdlib/cljs)
+  ../../script/extract_stdlib_manifest_status.clj
+  ../../stdlib/upstream.edn
   ../../src/core_edn.ml
   ../../src/core_namespaces.ml)
  (action

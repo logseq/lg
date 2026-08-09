@@ -1,11 +1,28 @@
 type value = Lg_edn_backend.t
 type reader = value -> value
+type default_reader = string -> value -> value
 
 let tag_parsers : (string * reader) list ref = ref []
+let default_tag_parser : default_reader option ref = ref None
 
 let register_tag_parser tag parser =
   let previous = List.assoc_opt tag !tag_parsers in
   tag_parsers := (tag, parser) :: List.remove_assoc tag !tag_parsers;
+  previous
+
+let deregister_tag_parser tag =
+  let previous = List.assoc_opt tag !tag_parsers in
+  tag_parsers := List.remove_assoc tag !tag_parsers;
+  previous
+
+let register_default_tag_parser parser =
+  let previous = !default_tag_parser in
+  default_tag_parser := Some parser;
+  previous
+
+let deregister_default_tag_parser () =
+  let previous = !default_tag_parser in
+  default_tag_parser := None;
   previous
 
 let rec apply_tag_parsers value =
@@ -28,10 +45,12 @@ let rec apply_tag_parsers value =
   | Set values -> Set (Array.map apply_tag_parsers values)
   | Tagged (tag, value) ->
       let value = apply_tag_parsers value in
-      Option.fold
-        ~none:(Tagged (tag, value))
-        ~some:(fun parser -> parser value)
-        (List.assoc_opt tag !tag_parsers)
+      (match List.assoc_opt tag !tag_parsers with
+      | Some parser -> parser value
+      | None -> (
+          match !default_tag_parser with
+          | Some parser -> parser tag value
+          | None -> Tagged (tag, value)))
   | Json_source source ->
       source |> Lg_edn_backend.of_json_string |> apply_tag_parsers
   | ( Nil | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Small_int _
