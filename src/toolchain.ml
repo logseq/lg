@@ -335,6 +335,22 @@ module Lg_frontend : FRONTEND = struct
     { located with Ast.form = normalize_metadata located.Ast.form }
 
   let extract_compile_time_helpers located_ast =
+    let source_core =
+      List.exists
+        (fun located ->
+          match located.Ast.form with
+          | Ast.FList (Ast.FSymbol "ns" :: Ast.FSymbol "clojure.core" :: _) ->
+              true
+          | Ast.FList
+              [ Ast.FSymbol "namespace-scope"; Ast.FSymbol "clojure.core" ] ->
+              true
+          | _ -> false)
+        located_ast
+    in
+    let add_reference refs name =
+      if source_core && Macro_expander.is_compile_time_primitive name then refs
+      else String_set.add name refs
+    in
     let rec quoted_refs refs = function
       | Ast.FList [ Ast.FSymbol ("unquote" | "unquote-splicing"); expression ]
         ->
@@ -350,14 +366,14 @@ module Lg_frontend : FRONTEND = struct
       | Ast.FList [ Ast.FSymbol "syntax-quote"; quoted ] ->
           quoted_refs refs quoted
       | Ast.FList (Ast.FSymbol name :: forms) ->
-          List.fold_left form_refs (String_set.add name refs) forms
+          List.fold_left form_refs (add_reference refs name) forms
       | Ast.FList forms | Ast.FVector forms ->
           List.fold_left form_refs refs forms
       | Ast.FMap entries ->
           List.fold_left
             (fun refs (key, value) -> form_refs (form_refs refs key) value)
             refs entries
-      | Ast.FSymbol name -> String_set.add name refs
+      | Ast.FSymbol name -> add_reference refs name
       | _ -> refs
     in
     let definitions =

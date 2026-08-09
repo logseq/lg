@@ -20,6 +20,16 @@
                 :reason :source-macro-preserves-upstream-single-seq-evaluation-and-binding-control-flow-with-equivalent-explicit-binding-validation}
     while {:status :static-adaptation
            :reason :source-macro-uses-an-explicit-if-do-loop-tail-so-lg-recur-validation-preserves-the-upstream-when-loop-control-flow}
+    as-> {:status :static-adaptation
+          :reason :source-macro-preserves-upstream-left-to-right-single-evaluation-with-a-finite-mapcat-binding-sequence-instead-of-the-upstream-repeat-interleave-construction}
+    cond-> {:status :static-adaptation
+            :reason :source-macro-preserves-upstream-condition-order-thread-first-steps-and-single-initial-evaluation-with-a-finite-mapcat-binding-sequence}
+    cond->> {:status :static-adaptation
+             :reason :source-macro-preserves-upstream-condition-order-thread-last-steps-and-single-initial-evaluation-with-a-finite-mapcat-binding-sequence}
+    some-> {:status :static-adaptation
+            :reason :source-macro-preserves-upstream-thread-first-order-and-nil-short-circuiting-with-a-finite-mapcat-binding-sequence}
+    some->> {:status :static-adaptation
+             :reason :source-macro-preserves-upstream-thread-last-order-and-nil-short-circuiting-with-a-finite-mapcat-binding-sequence}
     identity {:status :ported}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}

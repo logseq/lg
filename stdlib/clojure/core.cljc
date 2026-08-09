@@ -50,6 +50,61 @@
          (recur))
        nil)))
 
+(defmacro as-> [expr name & forms]
+  `(let [~name ~expr
+         ~@(mapcat (fn [form] [name form]) (butlast forms))]
+     ~(if (empty? forms)
+        name
+        (last forms))))
+
+(defmacro cond-> [expr & clauses]
+  (assert (even? (count clauses))
+          "cond-> requires an even number of clauses")
+  (let [result (gensym)
+        steps (map (fn [[test step]]
+                     `(if ~test (-> ~result ~step) ~result))
+                   (partition 2 clauses))]
+    `(let [~result ~expr
+           ~@(mapcat (fn [step] [result step]) (butlast steps))]
+       ~(if (empty? steps)
+          result
+          (last steps)))))
+
+(defmacro cond->> [expr & clauses]
+  (assert (even? (count clauses))
+          "cond->> requires an even number of clauses")
+  (let [result (gensym)
+        steps (map (fn [[test step]]
+                     `(if ~test (->> ~result ~step) ~result))
+                   (partition 2 clauses))]
+    `(let [~result ~expr
+           ~@(mapcat (fn [step] [result step]) (butlast steps))]
+       ~(if (empty? steps)
+          result
+          (last steps)))))
+
+(defmacro some-> [expr & forms]
+  (let [result (gensym)
+        steps (map (fn [form]
+                     `(if (nil? ~result) nil (-> ~result ~form)))
+                   forms)]
+    `(let [~result ~expr
+           ~@(mapcat (fn [step] [result step]) (butlast steps))]
+       ~(if (empty? steps)
+          result
+          (last steps)))))
+
+(defmacro some->> [expr & forms]
+  (let [result (gensym)
+        steps (map (fn [form]
+                     `(if (nil? ~result) nil (->> ~result ~form)))
+                   forms)]
+    `(let [~result ~expr
+           ~@(mapcat (fn [step] [result step]) (butlast steps))]
+       ~(if (empty? steps)
+          result
+          (last steps)))))
+
 (defn identity [x]
   x)
 

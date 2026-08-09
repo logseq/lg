@@ -23,6 +23,35 @@ and locals = (string * value) list
 type context = { compiler_env : Env.t; namespace : string; locals : locals }
 
 let gensym_counter = ref 0
+
+let is_unqualified_compile_time_primitive = function
+  | "assert" | "str" | "subs" | "namespace" | "identity" | "num"
+  | "boolean" | "string?" | "char?" | "regex?" | "regex-source"
+  | "float?" | "symbol?" | "keyword?" | "vector?" | "map?" | "seq?"
+  | "sequential?" | "empty?" | "not-empty" | "reverse" | "concat"
+  | "clojure.core/concat" | "count" | "take" | "drop" | "/" | "nil?"
+  | "even?" | "partition" | "first" | "second" | "last" | "next"
+  | "nnext" | "butlast" | "=" | "list" | "cons" | "conj" | "assoc"
+  | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat" | "filter"
+  | "into" | "juxt" | "reduce" | "apply" | "volatile!" | "deref"
+  | "vswap!" | "gensym" | "clojure.test/expand-are" ->
+      true
+  | _ -> false
+
+let compile_time_primitive_name name =
+  let unqualified =
+    if String.starts_with ~prefix:"clojure.core/" name then
+      String.sub name 13 (String.length name - 13)
+    else if String.starts_with ~prefix:"cljs.core/" name then
+      String.sub name 10 (String.length name - 10)
+    else name
+  in
+  if is_unqualified_compile_time_primitive unqualified then Some unqualified
+  else None
+
+let is_compile_time_primitive name =
+  Option.is_some (compile_time_primitive_name name)
+
 let nil = Form (FSymbol "nil")
 
 let rec string_of_form = function
@@ -351,38 +380,6 @@ let rec eval context = function
           initial steps
       in
       eval context threaded
-  | FList (FSymbol (("some->" | "some->>") as operator) :: initial :: steps) ->
-      let direction = if operator = "some->" then "->" else "->>" in
-      let rec expand value = function
-        | [] -> value
-        | step :: rest ->
-            incr gensym_counter;
-            let binding =
-              FSymbol ("G__some_thread_" ^ string_of_int !gensym_counter)
-            in
-            let threaded =
-              match (direction, step) with
-              | "->", FSymbol name | "->>", FSymbol name ->
-                  FList [ FSymbol name; binding ]
-              | "->", FList (head :: arguments) ->
-                  FList (head :: binding :: arguments)
-              | "->>", FList forms -> FList (forms @ [ binding ])
-              | _ -> step
-            in
-            FList
-              [
-                FSymbol "let";
-                FVector [ binding; value ];
-                FList
-                  [
-                    FSymbol "if";
-                    FList [ FSymbol "nil?"; binding ];
-                    FSymbol "nil";
-                    expand threaded rest;
-                  ];
-              ]
-      in
-      eval context (expand initial steps)
   | FList (FSymbol "fn" :: FSymbol name :: FVector params :: body) ->
       Ok
         (Closure
@@ -588,13 +585,25 @@ and eval_call context name arg_forms =
       | Error _ as err -> err
       | Ok args -> apply_value context callable args)
   | None -> (
-      match
-        Env.find_macro_function ~scope:context.namespace name
-          context.compiler_env
-      with
-      | Some definition ->
-          invoke_function_definition context definition arg_forms
-      | None -> eval_builtin context name arg_forms)
+      match compile_time_primitive_name name with
+      | Some primitive -> eval_builtin context primitive arg_forms
+      | None -> (
+          match
+            Env.find_macro ~scope:context.namespace name context.compiler_env
+          with
+          | Some definition -> (
+              match invoke_definition context definition arg_forms with
+              | Error _ as error -> error
+              | Ok (Form expanded) -> eval context expanded
+              | Ok _ -> Error.error "macro expansion must return a form")
+          | None -> (
+              match
+                Env.find_macro_function ~scope:context.namespace name
+                  context.compiler_env
+              with
+              | Some definition ->
+                  invoke_function_definition context definition arg_forms
+              | None -> eval_builtin context name arg_forms)))
 
 and apply_value context callable args =
   match callable with
@@ -883,6 +892,33 @@ and eval_builtin context name arg_forms =
       unary (fun value ->
           sequence_forms value
           |> Result.map (fun forms -> Form (FInt (List.length forms))))
+  | "even?" ->
+      unary (function
+        | Form (FInt value) -> Ok (Form (FBool (value mod 2 = 0)))
+        | _ -> Error.error "even? expects an integer macro argument")
+  | "partition" -> (
+      match eval_args () with
+      | Ok [ Form (FInt size); collection ] when size > 0 ->
+          Result.map
+            (fun forms ->
+              let rec take count taken remaining =
+                if count = 0 then Some (List.rev taken, remaining)
+                else
+                  match remaining with
+                  | [] -> None
+                  | form :: rest -> take (count - 1) (form :: taken) rest
+              in
+              let rec groups grouped remaining =
+                match take size [] remaining with
+                | Some (group, rest) -> groups (FList group :: grouped) rest
+                | None -> Form (FList (List.rev grouped))
+              in
+              groups [] forms)
+            (sequence_forms collection)
+      | Ok _ ->
+          Error.error
+            "partition expects a positive integer and macro collection"
+      | Error _ as error -> error)
   | "take" | "drop" -> (
       match eval_args () with
       | Ok [ Form (FInt count); collection ] ->
@@ -1352,10 +1388,6 @@ let rec expand_all ~scope ~compiler_env = function
     when core_form_name operator "->" || core_form_name operator "->>" ->
       let position = if core_form_name operator "->" then `First else `Last in
       expand_all ~scope ~compiler_env (thread_form position value steps)
-  | FList
-      (FSymbol ("cond->" | "cond->>" | "some->" | "some->>") :: _ as forms)
-    ->
-      Ok (FList forms)
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name compiler_env with
       | Some definition ->

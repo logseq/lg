@@ -22,7 +22,6 @@ type prepared_multi_arity_fn = {
   expr : typed_expr;
 }
 
-let some_thread_counter = ref 0
 let condp_counter = ref 0
 let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
@@ -200,14 +199,6 @@ and compile_expr_unlocated scope (env : Env.t) = function
       (FSymbol ("->>" | "clojure.core/->>" | "cljs.core/->>") :: value :: steps)
     ->
       compile_thread scope env `Last value steps
-  | FList (FSymbol "cond->" :: value :: clauses) ->
-      compile_cond_thread scope env `First value clauses
-  | FList (FSymbol "cond->>" :: value :: clauses) ->
-      compile_cond_thread scope env `Last value clauses
-  | FList (FSymbol "some->" :: value :: steps) ->
-      compile_some_thread scope env `First value steps
-  | FList (FSymbol "some->>" :: value :: steps) ->
-      compile_some_thread scope env `Last value steps
   | FList [ FSymbol "if-let"; binding; then_form; else_form ] ->
       compile_if_let scope env binding then_form else_form
   | FList [ FSymbol "if-some"; binding; then_form; else_form ] ->
@@ -406,145 +397,6 @@ and compile_thread scope env position value steps =
     | _ -> Error.error "threading steps must be symbols or call forms"
   in
   expand value steps
-
-and compile_cond_thread scope env position value clauses =
-  let operator = match position with `First -> "->" | `Last -> "->>" in
-  let rec expand current = function
-    | [] -> Ok current
-    | condition :: step :: rest ->
-        incr some_thread_counter;
-        let name =
-          "__lg_cond_thread_value_" ^ string_of_int !some_thread_counter
-        in
-        let threaded = FList [ FSymbol operator; FSymbol name; step ] in
-        let unchanged = FSymbol name in
-        Result.map
-          (fun continuation ->
-            FList
-              [ FSymbol "let"; FVector [ FSymbol name; current ]; continuation ])
-          (expand
-             (FList
-                [
-                  FSymbol "if";
-                  condition;
-                  threaded;
-                  unchanged;
-                ])
-             rest)
-    | [ _ ] -> Error.error (operator ^ " requires condition/step pairs")
-  in
-  Result.bind (expand value clauses) (compile_expr scope env)
-
-and compile_some_thread scope env position value steps =
-  let thread value = function
-    | FSymbol name -> Ok (FList [ FSymbol name; value ])
-    | FKeyword _ as keyword -> Ok (FList [ keyword; value ])
-    | FList (FSymbol name :: args) ->
-        let args =
-          match position with
-          | `First -> value :: args
-          | `Last -> args @ [ value ]
-        in
-        Ok (FList (FSymbol name :: args))
-    | _ ->
-        Error.error
-          ((match position with `First -> "some->" | `Last -> "some->>")
-         ^ " steps must be symbols or call forms")
-  in
-  let option_payload_type = function
-    | TNullable payload_ty -> Some payload_ty
-    | TNil -> Some TUnknown
-    | TOcaml_app ("option", [ payload_ty ]) ->
-        Some (lg_metadata_type_for_ocaml_payload payload_ty)
-    | TOcaml "option" -> Some TUnknown
-    | _ -> None
-  in
-  let nil = typed_ir TNil (Semantic_ir.Constructor ("None", None)) in
-  let merge_with_nil threaded =
-    match merge_branch_expressions threaded nil with
-    | Some merged -> Ok merged
-    | None -> Error.error "some-> result cannot be made nullable"
-  in
-  let rec continue env current = function
-    | [] -> Ok current
-    | step :: rest -> (
-        incr some_thread_counter;
-        let source_name =
-          "__lg_some_thread_value_" ^ string_of_int !some_thread_counter
-        in
-        let ocaml_name = Names.sanitize_name source_name in
-        let compile_rest binding_ty =
-          let step_env =
-            Env.add
-              (Names.scoped_key scope source_name)
-              (Types.binding ocaml_name binding_ty)
-              env
-          in
-          match thread (FSymbol source_name) step with
-          | Error _ as error -> error
-          | Ok threaded -> (
-              match compile_expr scope step_env threaded with
-              | Error _ as error -> error
-              | Ok threaded -> continue step_env threaded rest)
-        in
-        match option_payload_type current.ty with
-        | Some payload_ty -> (
-            match compile_rest payload_ty with
-            | Error _ as error -> error
-            | Ok threaded -> (
-                match merge_with_nil threaded with
-                | Error _ as error -> error
-                | Ok (result_ty, some_code, none_code) ->
-                    Ok
-                      (typed_ir result_ty
-                         (Semantic_ir.Match
-                            ( current.semantic_expr,
-                              [
-                                ( Semantic_ir.PConstructor
-                                    ("Some", Some (Semantic_ir.PVar ocaml_name)),
-                                  some_code );
-                                ( Semantic_ir.PConstructor ("None", None),
-                                  none_code );
-                              ] )))))
-        | None when Types.is_dynamic current.ty -> (
-            match compile_rest current.ty with
-            | Error _ as error -> error
-            | Ok threaded -> (
-                match merge_with_nil threaded with
-                | Error _ as error -> error
-                | Ok (result_ty, some_code, none_code) ->
-                    Ok
-                      (typed_ir result_ty
-                         (Semantic_ir.Let
-                            ( [
-                                ( Semantic_ir.PVar ocaml_name,
-                                  current.semantic_expr );
-                              ],
-                              Semantic_ir.If
-                                ( Semantic_ir.Apply
-                                    ( Semantic_ir.Ident
-                                        "Lg_runtime.Runtime_dynamic.is_nil",
-                                      [ Semantic_ir.Ident ocaml_name ] ),
-                                  none_code,
-                                  some_code ) )))))
-        | None -> (
-            match compile_rest current.ty with
-            | Error _ as error -> error
-            | Ok threaded ->
-                Ok
-                  {
-                    threaded with
-                    semantic_expr =
-                      Semantic_ir.Let
-                        ( [
-                            (Semantic_ir.PVar ocaml_name, current.semantic_expr);
-                          ],
-                          threaded.semantic_expr );
-                  }))
-  in
-  match compile_expr scope env value with
-  | Error _ as error -> error
-  | Ok value -> continue env value steps
 
 and compile_case scope env target clauses =
   let rec grouped_pattern = function

@@ -1142,29 +1142,6 @@ let rec inferred_form_type params = function
   | FList [ FSymbol operation; _ ]
     when String.equal operation "Array.length" ->
       TInt
-  | FList
-      (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses) ->
-      let thread value step =
-        match step with
-        | FSymbol name -> FList [ FSymbol name; value ]
-        | FKeyword _ as keyword -> FList [ keyword; value ]
-        | FList (FSymbol name :: arguments) ->
-            if operator = "cond->" then
-              FList (FSymbol name :: value :: arguments)
-            else FList ((FSymbol name :: arguments) @ [ value ])
-        | form -> form
-      in
-      let rec result_type current_form current_ty = function
-        | _condition :: step :: rest ->
-            let current_form = thread current_form step in
-            let step_ty = inferred_form_type params current_form in
-            let current_ty =
-              if Types.equal step_ty TUnknown then current_ty else step_ty
-            in
-            result_type current_form current_ty rest
-        | _ -> current_ty
-      in
-      result_type value (inferred_form_type params value) clauses
   | FList [ FSymbol operation; FSymbol array; _from; _to ]
     when String.equal operation "Array.sub" -> (
       match string_assoc_opt array params with
@@ -1899,29 +1876,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (fun params ->
             Result.bind (infer_expected TInt params from) (fun params ->
                 infer_expected TInt params length))
-    | FList
-        (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses) ->
-        let thread position step =
-          match step with
-          | FSymbol name -> FList [ FSymbol name; value ]
-          | FKeyword _ as keyword -> FList [ keyword; value ]
-          | FList (FSymbol name :: arguments) ->
-              if position = `First then
-                FList (FSymbol name :: value :: arguments)
-              else FList ((FSymbol name :: arguments) @ [ value ])
-          | form -> form
-        in
-        let position = if operator = "cond->" then `First else `Last in
-        let rec infer_clauses params = function
-          | [] -> Ok params
-          | condition :: step :: rest ->
-              Result.bind (infer_truthy params condition) (fun params ->
-                  Result.bind
-                    (infer_expected expected_ty params (thread position step))
-                    (fun params -> infer_clauses params rest))
-          | [ form ] -> infer_form params form
-        in
-        infer_clauses params clauses
     | FList [ FSymbol operation; FSymbol array; index ]
       when has_source_name operation "aget"
            || has_source_name operation "unsafe-aget" -> (
@@ -5680,28 +5634,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                                 | _ -> infer_collection params collection))))))
     | FList (FSymbol ("doseq" | "for") :: bindings :: body_forms) ->
         infer_generator_bindings params bindings body_forms
-    | FList (FSymbol (("cond->" | "cond->>") as operator) :: value :: clauses)
-      ->
-        let thread step =
-          match step with
-          | FSymbol name -> FList [ FSymbol name; value ]
-          | FKeyword _ as keyword -> FList [ keyword; value ]
-          | FList (FSymbol name :: arguments) ->
-              if operator = "cond->" then
-                FList (FSymbol name :: value :: arguments)
-              else FList ((FSymbol name :: arguments) @ [ value ])
-          | form -> form
-        in
-        let rec infer_clauses params = function
-          | [] -> infer_form params value
-          | condition :: step :: rest ->
-              Result.bind (infer_truthy params condition) (fun params ->
-                  Result.bind
-                    (infer_form params (thread step))
-                    (fun params -> infer_clauses params rest))
-          | [ form ] -> infer_form params form
-        in
-        infer_clauses params clauses
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms
     | FList (FSymbol "loop" :: FVector bindings :: body_forms) -> (
         let rec pairs acc = function

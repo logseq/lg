@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 254 source entries (29.71%), 90 typed
+macro surfaces. The current baseline is 259 source entries (30.29%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 289 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 284 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -245,6 +245,14 @@ source macros. `doto` preserves single evaluation and effect order;
 `when-first` preserves one `seq` evaluation; and `while` uses an explicit
 `if`/`do` tail solely to make LG's static `recur` validation see the same loop
 edge as the upstream `when` expansion.
+The `as->`, `cond->`, `cond->>`, `some->`, and `some->>` macros are also
+precompiled source macros rather than public-name compiler cases. Their source
+bodies preserve the pinned ClojureScript binding order, single evaluation, and
+nil short-circuiting. LG uses finite `mapcat` binding construction in place of
+the upstream `repeat`/`interleave` construction so macro expansion does not
+materialize an infinite compile-time sequence. The Logseq scan finds 5 direct
+`as->`, 584 direct `cond->`, 38 direct `cond->>`, 1,082 direct `some->`, and
+148 direct `some->>` calls.
 `indexed?` remains compiler-owned because LG's current `Indexed` capability
 also covers linear list lookup and therefore cannot stand in for upstream's
 constant-time `IIndexed` contract. `true?` and `false?` retain the minimal
