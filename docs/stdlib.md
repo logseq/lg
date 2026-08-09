@@ -134,8 +134,8 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 277 source entries (32.40%), 88 typed
-primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
-44 out-of-scope Spec entries, and 250 deferred entries. The deferred set is the
+primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
+44 out-of-scope Spec entries, and 249 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -151,6 +151,11 @@ The existing compiler-owned `doseq` expansion remains a visible blocker rather
 than counting as supported: it rejects the upstream `:while` binding modifier
 and cannot yet preserve termination of the current nested loop when `:while`
 follows a `:let` modifier.
+`to-array-2d` is blocked as a whole rather than restricted to vectors. Its
+upstream input is a seqable whose elements are themselves seqable; LG currently
+loses each inner value's static sequence witness when that nested capability is
+passed through the array-conversion callback. A valid source port must retain
+that witness without dynamic packing.
 `rand` remains compiler-owned because its one-argument public API accepts both
 int and float bounds, while source signatures cannot yet express same-arity
 overloads without rejecting one of those existing cases.
