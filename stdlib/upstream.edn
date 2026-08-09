@@ -964,7 +964,11 @@
     cbrt {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-math-primitives}
     pow {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-math-primitives}
     IEEE-fmod {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-floating-remainder-primitives}
-    random {:status :static-adaptation :reason :source-wrapper-over-the-existing-cross-target-pseudorandom-float-boundary}}}
+    random {:status :static-adaptation :reason :source-wrapper-over-the-existing-cross-target-pseudorandom-float-boundary}
+    fabs {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-ieee-float-absolute-value-primitive}
+    copy-sign {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-ieee-float-sign-bit-primitive}
+    rint {:status :ported}
+    signum {:status :ported}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

@@ -55,3 +55,25 @@
 
 (defn random []
   (runtime-random/rand 1.0))
+
+(defn fabs [x]
+  #?(:melange (runtime-math-melange/abs x)
+     :default (runtime-math/abs x)))
+
+(defn copy-sign [magnitude sign]
+  #?(:melange (runtime-math-melange/copy-sign magnitude sign)
+     :default (runtime-math/copy-sign magnitude sign)))
+
+(defn rint [a]
+  (let [two-to-the-52 4503599627370496.0
+        sign (copy-sign 1.0 a)
+        magnitude (fabs a)
+        rounded (if (< magnitude two-to-the-52)
+                  (- (+ two-to-the-52 magnitude) two-to-the-52)
+                  magnitude)]
+    (* sign rounded)))
+
+(defn signum [d]
+  (if (or (zero? d) (not (= d d)))
+    d
+    (copy-sign 1.0 d)))

@@ -30,3 +30,7 @@
 (signature cljs.math/pow :fn<float;float;float>)
 (signature cljs.math/IEEE-fmod :fn<float;float;float>)
 (signature cljs.math/random :fn<float>)
+(signature cljs.math/fabs :fn<float;float>)
+(signature cljs.math/copy-sign :fn<float;float;float>)
+(signature cljs.math/rint :fn<float;float>)
+(signature cljs.math/signum :fn<float;float>)
