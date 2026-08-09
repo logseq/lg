@@ -8121,8 +8121,7 @@ let create ~compile_expr =
         | Ok _ -> Error.error "sequential? expects 1 arguments")
     | "__lg_rational-predicate" | "__lg_float-predicate"
     | "__lg_double-predicate" | "__lg_symbol-predicate"
-    | "__lg_reversible-predicate" | "__lg_sorted-predicate"
-    | "__lg_char-predicate" -> (
+    | "__lg_sorted-predicate" | "__lg_char-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_predicate.compile name args)

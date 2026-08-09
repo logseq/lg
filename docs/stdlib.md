@@ -183,7 +183,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 235-name compiler dispatch inventory has zero `source-shadowed`
+The current 234-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -283,10 +283,11 @@ have concrete static signatures, including polymorphic collection element
 types where applicable, so compatible higher-order uses remain ordinary vars.
 Most direct calls expand to non-public `__lg_*-predicate` primitives for
 call-site type tests and guard narrowing. `map?`, `vector?`, `set?`, `coll?`,
-and `associative?` have moved fully to the ClojureScript protocol model: their
-source functions and inline specializations use `satisfies? IMap`,
-`satisfies? IVector`, `satisfies? ISet`, `satisfies? ICollection`, and
-`satisfies? IAssociative`, with no predicate-specific name dispatch. Predicate
+`associative?`, and `reversible?` have moved fully to the ClojureScript protocol
+model: their source functions and inline specializations use `satisfies? IMap`,
+`satisfies? IVector`, `satisfies? ISet`, `satisfies? ICollection`,
+`satisfies? IAssociative`, and `satisfies? IReversible`, with no
+predicate-specific name dispatch. Predicate
 arguments are evaluated exactly once even when the result is statically known.
 Persistent HAMTs and `defrecord` values participate in `map?` through `IMap`;
 RRB vectors and custom implementations participate in `vector?` through
@@ -296,6 +297,8 @@ Lists, sequences, RRB vectors, sets, persistent HAMTs, structural maps, source
 `defrecord` values, and custom implementations participate in `coll?`.
 Static sets and custom implementations participate in `set?` through `ISet`;
 `ISet/-disjoin` selects the generated set module for the element type.
+RRB vectors and custom implementations participate in `reversible?` through
+`IReversible`; strings and lists no longer receive the former LG-only result.
 The Logseq scan finds 166 direct `coll?` occurrences and 47 direct `sorted?`
 occurrences.
 `zero?`, `pos?`, and `neg?` now pair source functions for static first-class
@@ -317,8 +320,9 @@ direct `abs` calls.
 `ex-message` and `ex-cause` retain minimal typed `exn -> option<string>` and
 `exn -> option<exn>` routes behind their public source functions. `re-pattern`
 retains a validated static regex constructor while the public var remains
-source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`, and
-`associative?` name routes, the raw compiler-call inventory contains 235 names.
+source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
+`associative?`, and `reversible?` name routes, the raw compiler-call inventory
+contains 234 names.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

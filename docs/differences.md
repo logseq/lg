@@ -249,16 +249,16 @@ values.
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `neg-int?`, `string?`, `keyword?`, `boolean?`, `list?`, `seq?`, `fn?`,
 `indexed?`, `seqable?`, and `counted?` are resolved from static lg types or
-direct OCaml integer checks. `vector?`, `set?`, `map?`, `coll?`, and
-`associative?` follow the ClojureScript `IVector`, `ISet`, `IMap`,
-`ICollection`, and `IAssociative` protocols.
+direct OCaml integer checks. `vector?`, `set?`, `map?`, `coll?`, `associative?`,
+and `reversible?` follow the ClojureScript `IVector`, `ISet`, `IMap`,
+`ICollection`, `IAssociative`, and `IReversible` protocols.
 Vectors and persistent HAMTs provide concrete `IAssociative` implementations;
 structural maps and source `defrecord` values satisfy the protocol from their
 closed static record representation.
 `any?`, `rational?`, `ratio?`, `float?`, `double?`, `decimal?`,
 `simple-keyword?`, `qualified-keyword?`, `symbol?`, `simple-symbol?`,
 `qualified-symbol?`, `ident?`, `simple-ident?`, `qualified-ident?`,
-`sequential?`, `reversible?`, and `sorted?` are also static predicates in the
+`sequential?` and `sorted?` are also static predicates in the
 current subset. `number?` recognizes both lg integers and OCaml floats;
 `float?` and `double?` recognize the OCaml float representation. Ratios and
 decimals are not represented, so their predicates return false.

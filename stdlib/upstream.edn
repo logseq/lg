@@ -106,7 +106,7 @@
     sequential? {:status :static-adaptation
                  :reason :source-function-provides-a-polymorphic-first-class-vector-instance-while-its-inline-definition-preserves-optional-sequential-capability-narrowing}
     reversible? {:status :static-adaptation
-                 :reason :source-function-provides-a-polymorphic-first-class-vector-instance-while-its-inline-definition-specializes-direct-calls-to-supported-string-list-and-vector-representations}
+                 :reason :source-function-and-inline-specialization-use-clojurescript-ireversible-protocol-satisfaction-without-name-based-compiler-dispatch}
     sorted? {:status :static-adaptation
              :reason :source-function-provides-a-polymorphic-first-class-vector-instance-and-inline-false-result-because-lg-sorted-collections-do-not-yet-have-a-distinct-static-isorted-representation}
     zero? {:status :static-adaptation

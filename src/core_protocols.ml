@@ -175,6 +175,18 @@ let declare_collection_lifecycle_protocols registry =
        ]
   |> add_or_fail
 
+let add_vector_reversible_protocol registry =
+  let element = TVar "reversible_element" in
+  let vector = TVector element in
+  let binding =
+    Types.binding ~protocol_id:reversible_id "Lg_runtime.Runtime_vector.rseq"
+      (TFn ([ vector ], vector))
+  in
+  Protocol_registry.add_implementation reversible_id
+    (method_id reversible_id "-rseq")
+    Receiver_id.Vector_receiver binding registry
+  |> add_or_fail
+
 let declare_deref registry =
   Protocol_registry.declare deref_id
     [ signature (method_id deref_id "-deref") [ TUnknown ] TUnknown ]
@@ -493,7 +505,8 @@ let initial_registry =
        "Lg.Core_protocols.nth_host_array"
   |> declare_emptyable
   |> add_emptyable runtime_map_receiver "Lg_runtime.Runtime_map.empty_like"
-  |> declare_collection_lifecycle_protocols |> declare_deref
+  |> declare_collection_lifecycle_protocols |> add_vector_reversible_protocol
+  |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
   |> declare_set_protocol |> add_static_set_protocol

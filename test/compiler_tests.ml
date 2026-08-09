@@ -21584,7 +21584,7 @@ let test_source_static_predicate_family_matches_clojurescript () =
 (println (double? 1.0))
 (println (sequential? []))
 (println (not (sequential? #{})))
-(println (reversible? "value"))
+(println (not (reversible? "value")))
 (println (not (reversible? #{})))
 (println (not (sorted? [])))
 (println (core/vector? []))
@@ -21975,6 +21975,59 @@ let test_set_predicate_has_no_name_based_compiler_dispatch () =
     [
       "stdlib/clojure/core.cljc";
       "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+
+let test_reversible_predicate_uses_the_clojurescript_protocol () =
+  let source =
+    {|
+(ns source-ireversible-predicate-app
+  (:require [cljs.core :as core :refer [reversible?]]))
+
+(deftype ProtocolReversible [^int id]
+  IReversible
+  (-rseq [_] [3 2 1]))
+
+(def evaluations (atom 0))
+
+(println (reversible? (ProtocolReversible. 1)))
+(println (core/reversible? [1 2 3]))
+(println (not (reversible? (list 1 2 3))))
+(println (not (reversible? "abc")))
+(println (not (reversible? #{1 2 3})))
+(println (= [3 2 1] (-rseq [1 2 3])))
+(println (reversible? (do (swap! evaluations inc) [1])))
+(println (= 1 @evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_ireversible_predicate.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "reversible? must dispatch through a static IReversible witness";
+  assert_ocaml_runs "reversible_predicate_uses_clojurescript_protocol" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_ireversible_predicate.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange reversible? must use a static IReversible witness"
+
+let test_reversible_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_reversible-predicate" in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith
+          ("reversible? still has name-based compiler dispatch in " ^ path))
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_predicate.ml";
       "src/call_elaborator.ml";
       "src/type_inference.ml";
     ]
@@ -39325,6 +39378,10 @@ let tests =
       test_set_predicate_uses_the_clojurescript_protocol );
     ( "set predicate has no name-based compiler dispatch",
       test_set_predicate_has_no_name_based_compiler_dispatch );
+    ( "reversible predicate uses the ClojureScript IReversible protocol",
+      test_reversible_predicate_uses_the_clojurescript_protocol );
+    ( "reversible predicate has no name-based compiler dispatch",
+      test_reversible_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

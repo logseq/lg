@@ -349,9 +349,9 @@
   (__lg_sequential-predicate x))
 
 (defn reversible?
-  {:inline (fn [x] (list '__lg_reversible-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'IReversible x))}
   [x]
-  (__lg_reversible-predicate x))
+  (satisfies? IReversible x))
 
 (defn sorted?
   {:inline (fn [x] (list '__lg_sorted-predicate x))}
