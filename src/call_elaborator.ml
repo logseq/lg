@@ -4745,7 +4745,7 @@ let create ~compile_expr =
           Error.error
             "transduce expects a transducer, reducer, initial value, and \
              collection"
-    else if member_name = "with-meta" || member_name = "meta" then
+    else if member_name = "__lg_with-meta" then
       compile_metadata_call scope env member_name arg_forms
     else
     let qualified_core = String.starts_with ~prefix:"clojure.core/" name in
@@ -7895,7 +7895,7 @@ let create ~compile_expr =
                   |> Codegen.concat_expr
             in
             Ok (typed_ir TString expr))
-    | "with-meta" | "meta" ->
+    | "__lg_with-meta" ->
         compile_metadata_call scope env name arg_forms
     | "__lg_nullable-value" -> (
         match compile_args () with
@@ -8617,7 +8617,6 @@ let create ~compile_expr =
                 heterogeneous_collection_type_error "sequence"
                   (List.map fst sequences))
   and compile_metadata_call scope env name arg_forms =
-    let dynamic_ty = Types.dynamic_constraint TUnknown in
     let expression_env = Env.with_expected_type None env in
     let compile_literal_map entries =
       let rec compile_entries compiled = function
@@ -8662,10 +8661,6 @@ let create ~compile_expr =
       | FMap entries -> compile_literal_map entries
       | form -> compile_expr scope env form
     in
-    let compile_metadata_target = function
-      | FMap entries -> compile_literal_map entries
-      | form -> compile_expr scope expression_env form
-    in
     let compile_metadata_payload = function
       | FMap entries ->
           let rec compile_entries compiled = function
@@ -8697,7 +8692,7 @@ let create ~compile_expr =
       | form -> compile_expr scope expression_env form
     in
     match (name, arg_forms) with
-    | "with-meta", [ value_form; metadata_form ] -> (
+    | "__lg_with-meta", [ value_form; metadata_form ] -> (
         match
           ( compile_metadata_operand value_form,
             compile_metadata_payload metadata_form )
@@ -8717,50 +8712,10 @@ let create ~compile_expr =
                          "Lg_runtime.Runtime_map.with_metadata",
                        [ value.semantic_expr; metadata ] )))
               (pack_metadata_expression metadata.ty metadata.semantic_expr)
-        | Ok value, Ok metadata -> (
-            match
-              ( pack_dynamic_value env dynamic_ty value,
-                pack_dynamic_value env dynamic_ty metadata )
-            with
-            | (Error _ as error), _ -> error
-            | _, (Error _ as error) -> error
-            | Ok value, Ok metadata ->
-                Ok
-                  (typed_ir dynamic_ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_dynamic.with_metadata",
-                          [ value; metadata ] )))))
-    | "meta", [ value_form ] -> (
-        match compile_metadata_target value_form with
-        | Error _ as error -> error
-        | Ok ({ ty = TNamed_record record; _ } as value) -> (
-            match
-              Structural_map.extension_get value record.fields
-                Types.record_metadata_key
-            with
-            | Some metadata -> Ok metadata
-            | None ->
-                Ok
-                  (typed_ir dynamic_ty
-                     (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")))
-        | Ok value when Option.is_some (Types.dynamic_map_types value.ty) ->
-            Ok
-              (typed_ir (TOcaml "Lg_edn_backend.t")
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_map.metadata",
-                      [ value.semantic_expr ] )))
-        | Ok value -> (
-            match pack_dynamic_value env dynamic_ty value with
-            | Error _ as error -> error
-            | Ok value ->
-                Ok
-                  (typed_ir dynamic_ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.metadata",
-                          [ value ] )))))
-    | "with-meta", _ -> Error.error "with-meta expects 2 arguments"
-    | "meta", _ -> Error.error "meta expects 1 arguments"
+        | Ok _, Ok _ ->
+            Error.error
+              "with-meta requires a statically typed map implementing IWithMeta")
+    | "__lg_with-meta", _ -> Error.error "__lg_with-meta expects 2 arguments"
     | _ -> assert false
   and compile_into scope env target_form source_form =
     let expression_env = Env.with_expected_type None env in

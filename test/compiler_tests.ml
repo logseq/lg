@@ -11461,8 +11461,8 @@ let test_keyword_reader_metadata_rejects_collection_erasure () =
          (::internal (meta (first queued))))))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains "collections cannot cross a dynamic boundary"
+  compile_string_with_stdlib source
+  |> expect_error_contains "with-meta requires a statically typed map"
 
 let test_named_record_metadata_rejects_record_erasure () =
   let source =
@@ -11476,7 +11476,7 @@ let test_named_record_metadata_rejects_record_erasure () =
   (println (str (.-value value) ":" (pr-str (source value)))))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "records cannot cross a dynamic boundary"
 
 let test_named_record_protocol_metadata_rejects_dynamic_erasure () =
@@ -11497,8 +11497,8 @@ let test_named_record_protocol_metadata_rejects_dynamic_erasure () =
   (println (pr-str (source value))))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains "cannot cross a dynamic boundary"
+  compile_string_with_stdlib source
+  |> expect_error_contains "metadata requires a closed EDN-compatible static value"
 
 let test_dynamic_named_record_roundtrip_is_rejected () =
   Lg.Compiler.compile_string
@@ -25308,14 +25308,14 @@ let metadata_map_source =
 
 let test_metadata_maps_preserve_closed_edn_values_statically () =
   let ocaml_source =
-    Lg.Compiler.compile_string metadata_map_source |> expect_ok
+    compile_string_with_stdlib metadata_map_source |> expect_ok
   in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "typed map metadata must not cross Runtime_dynamic";
   assert_ocaml_runs "metadata_maps_preserve_closed_edn_values_statically"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange metadata_map_source
+    (compile_string_with_stdlib ~target:Lg.Target.Melange metadata_map_source
     |> expect_ok)
 
 let test_metadata_compilation_isolated_from_package_include_dirs () =
@@ -25324,9 +25324,9 @@ let test_metadata_compilation_isolated_from_package_include_dirs () =
        ~packages:[ "datascript.runtime" ] Lg.Compiler.empty_state []
     |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string metadata_attach_function_source |> expect_ok);
-  ignore (Lg.Compiler.compile_string metadata_map_setup_source |> expect_ok);
-  ignore (Lg.Compiler.compile_string metadata_map_source |> expect_ok)
+    (compile_string_with_stdlib metadata_attach_function_source |> expect_ok);
+  ignore (compile_string_with_stdlib metadata_map_setup_source |> expect_ok);
+  ignore (compile_string_with_stdlib metadata_map_source |> expect_ok)
 
 let test_metadata_maps_decode_closed_edn_collections () =
   let source =

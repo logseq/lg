@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 220; then
-  echo "compiler call dispatch changed: expected 220 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 219; then
+  echo "compiler call dispatch changed: expected 219 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -155,8 +155,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 162; then
-  echo "compiler form dispatch changed: expected 162 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 157; then
+  echo "compiler form dispatch changed: expected 157 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

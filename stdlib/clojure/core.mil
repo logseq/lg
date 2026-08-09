@@ -54,6 +54,10 @@
   :fn<value;value;bool>)
 (signature clojure.core/array? [value]
   :fn<array<value>;bool>)
+(signature clojure.core/with-meta [key value]
+  :fn<map<key;value>;Lg_edn_backend.t;map<key;value>>)
+(signature clojure.core/meta [key value]
+  :fn<map<key;value>;Lg_edn_backend.t>)
 (signature clojure.core/array-value? [value]
   :fn<array<value>;bool>)
 (signature clojure.core/reduced? [value]

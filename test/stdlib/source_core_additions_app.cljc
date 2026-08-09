@@ -31,6 +31,21 @@
 (println (= "upstream"
             (:source (meta (update-keys annotated (fn [key] (name key)))))))
 
+(def source-meta meta)
+(def source-with-meta with-meta)
+(def cljs-meta core/meta)
+(def clojure-with-meta clojure.core/with-meta)
+(def ^:map<keyword;int> source-annotated
+  (source-with-meta {:left 1} (meta annotated)))
+(println (= {:left 1} source-annotated))
+(println (= "upstream" (:source (source-meta source-annotated))))
+(println (= "upstream" (:source (cljs-meta source-annotated))))
+(def ^:map<keyword;int> replaced-metadata
+  (clojure-with-meta source-annotated {:source "replacement"}))
+(println (= "replacement" (:source (core/meta replaced-metadata))))
+(println (= "upstream" (:source (clojure.core/meta source-annotated))))
+(println (= {:left 1} replaced-metadata))
+
 (println (= "zebra"
             (max-key (fn [value]
                        (if (= value "zebra") 3

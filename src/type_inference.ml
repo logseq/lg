@@ -1094,7 +1094,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_count"; _ ] -> TInt
   | FList
       [
-        FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+        FSymbol "__lg_with-meta";
         FMap pairs;
         _metadata;
       ] ->
@@ -1110,14 +1110,11 @@ let rec inferred_form_type params = function
       Types.dynamic_map (homogeneous_type keys) (homogeneous_type values)
   | FList
       [
-        FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+        FSymbol "__lg_with-meta";
         value;
         _metadata;
       ] ->
       inferred_form_type params value
-  | FList
-      [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); _value ] ->
-      TOcaml "Lg_edn_backend.t"
   | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
   | FList [ FSymbol "first"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
@@ -3787,8 +3784,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_expected expected_ty params option_form))
     | FList
         [
-          FSymbol
-            ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
+          FSymbol "__lg_with-meta";
           value;
           metadata;
         ] ->
@@ -3797,9 +3793,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | (FList
         (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) as form) ->
         infer_truthy params form
-    | FList
-        [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); value ] ->
-        infer_form params value
     | FList [ FSymbol predicate; FSymbol value ]
       when has_source_name predicate "__lg_symbol-predicate" ->
         constrain_symbol_predicate params value

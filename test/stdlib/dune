@@ -52,7 +52,7 @@
  (name source_core_additions_native)
  (modules source_core_additions_native)
  (flags
-  (:standard -w -32))
+  (:standard -w -27-32))
  (libraries lg.edn-backend.native lg.runtime re rrbvec))
 
 (rule
@@ -103,6 +103,7 @@
  (alias source-core-additions-melange)
  (module_systems es6)
  (modules source_core_additions_melange)
+ (compile_flags -w -27-32)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
@@ -135,7 +136,7 @@
  (name clojure_set_native)
  (modules clojure_set_native)
  (flags
-  (:standard -w -32))
+  (:standard -w -27-32))
  (libraries lg.edn-backend.native lg.runtime re rrbvec))
 
 (rule
@@ -164,6 +165,38 @@
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_set_bad_arity.cljc}
    "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_meta_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_meta_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_with_meta_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_with_meta_bad_arity.cljc}
+   "with-meta called with unsupported macro arity 1")))
 
 (rule
  (alias runtest)
@@ -562,7 +595,7 @@
  (name aggregate_files_native)
  (modules aggregate_files_native)
  (flags
-  (:standard -w -32))
+  (:standard -w -27-32))
  (libraries lg.edn-backend.native lg.runtime re rrbvec))
 
 (rule

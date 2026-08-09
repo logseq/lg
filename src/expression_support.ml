@@ -1064,7 +1064,6 @@ let untyped_first_class_function_error = function
     | "keyword"
     | "keyword?"
     | "list"
-    | "meta"
     | "name"
     | "neg?"
     | "nil?"

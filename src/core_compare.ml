@@ -178,7 +178,9 @@ let rec equality_expr ?env left right =
                     [ map; Semantic_ir.String field.keyword; value ] ))
               (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty") values
           in
-          Semantic_ir.Infix ("=", dynamic_left, right.semantic_expr))
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_map.equiv",
+              [ dynamic_left; right.semantic_expr ] ))
   | left_type, (TRecord _ | TNamed_record _)
     when Option.is_some (Types.dynamic_map_types left_type) ->
       equality_expr ?env right left

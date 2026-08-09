@@ -1435,6 +1435,15 @@
   [coll key]
   (IFind/-find coll key))
 
+(defn with-meta
+  {:inline (fn [value metadata]
+             (list '__lg_with-meta value metadata))}
+  [value metadata]
+  (__lg_with-meta value metadata))
+
+(defn meta [value]
+  (IMeta/-meta value))
+
 (defn keyword-identical? [left right]
   (= left right))
 

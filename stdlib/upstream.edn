@@ -111,6 +111,10 @@
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ifind-for-static-runtime-maps-and-explicit-protocol-implementations}
+    with-meta {:status :static-adaptation
+               :reason :source-function-delegates-to-clojurescript-iwithmeta-for-static-runtime-maps-while-a-private-inline-typed-primitive-converts-closed-edn-metadata-literals-without-runtime-dynamic-packing}
+    meta {:status :static-adaptation
+          :reason :source-function-delegates-to-clojurescript-imeta-and-returns-the-closed-lg-edn-backend-metadata-domain-for-static-runtime-maps}
     sorted? {:status :static-adaptation
              :reason :source-function-and-inline-specialization-use-clojurescript-isorted-protocol-satisfaction-without-name-based-compiler-dispatch-while-lg-has-no-built-in-sorted-collection-yet}
     zero? {:status :static-adaptation
