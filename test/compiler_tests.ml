@@ -22864,6 +22864,62 @@ let test_source_murmur3_helpers_preserve_fixed_arities_and_types () =
     {|(m3-hash-int "1")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_utf16_hash_helpers_match_clojurescript () =
+  let source =
+    {|
+(ns source-utf16-hash-app
+  (:require [cljs.core :as core
+             :refer [m3-hash-unencoded-chars hash-string*]]))
+
+(def unencoded-hash m3-hash-unencoded-chars)
+(def string-hash core/hash-string*)
+
+(println
+  (str (string-hash nil) ":"
+       (string-hash "") ":" (string-hash "abc") ":"
+       (string-hash "é") ":" (string-hash "😀") ":"
+       (string-hash "a😀b") ":" (string-hash "𝄞") ":"
+       (string-hash "中文") ":"
+       (string-hash "墀㺙眧悱崯뒛") ":"
+       (unencoded-hash "") ":" (unencoded-hash "abc") ":"
+       (unencoded-hash "é") ":" (unencoded-hash "😀") ":"
+       (unencoded-hash "a😀b") ":" (unencoded-hash "𝄞") ":"
+       (unencoded-hash "中文") ":"
+       (clojure.core/hash-string* "ab")))
+|}
+  in
+  let expected =
+    "0:0:96354:233:1772899:57849694:1772394:646394:2147505144:0:1118836419:\
+     1105794559:1443257913:2145382652:1697988357:-819122266:3105\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_utf16_hash.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source UTF-16 hash helpers must remain statically typed";
+  assert_ocaml_runs "source_utf16_hash_helpers" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_utf16_hash.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source UTF-16 hash helpers must remain statically typed"
+
+let test_source_utf16_hash_helpers_preserve_fixed_arities_and_types () =
+  List.iter
+    (fun source ->
+      compile_with_stdlib_result Lg.Target.Native "test/utf16_hash_arity.cljc"
+        source
+      |> expect_error_contains "called with incompatible arguments")
+    [
+      {|(m3-hash-unencoded-chars)|};
+      {|(m3-hash-unencoded-chars "a" "b")|};
+      {|(hash-string*)|};
+      {|(hash-string* "a" "b")|};
+    ];
+  compile_with_stdlib_result Lg.Target.Native "test/utf16_hash_type.cljc"
+    {|(m3-hash-unencoded-chars 1)|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_source_integer_helpers_are_qualified_first_class_vars () =
   let source =
     {|
@@ -38909,6 +38965,10 @@ let tests =
       test_source_murmur3_helpers_match_clojurescript );
     ( "source Murmur3 helpers preserve fixed arities and types",
       test_source_murmur3_helpers_preserve_fixed_arities_and_types );
+    ( "source UTF-16 hash helpers match ClojureScript",
+      test_source_utf16_hash_helpers_match_clojurescript );
+    ( "source UTF-16 hash helpers preserve fixed arities and types",
+      test_source_utf16_hash_helpers_preserve_fixed_arities_and_types );
     ( "source integer helpers are qualified first-class vars",
       test_source_integer_helpers_are_qualified_first_class_vars );
     ( "source random and logical shift helpers are first-class vars",

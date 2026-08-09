@@ -52,6 +52,60 @@ let last_index_of_int source needle = last_index_of source needle
 
 let length source = String.length source
 
+let utf8_scalar_at source index =
+  let source_length = String.length source in
+  if index < 0 || index >= source_length then
+    invalid_arg "UTF-8 byte index is out of bounds";
+  let byte offset = Char.code source.[index + offset] in
+  let continuation offset =
+    if index + offset >= source_length then invalid_arg "truncated UTF-8 string";
+    let value = byte offset in
+    if value land 0xc0 <> 0x80 then invalid_arg "invalid UTF-8 continuation";
+    value land 0x3f
+  in
+  let leading = byte 0 in
+  if leading land 0x80 = 0 then (leading, index + 1)
+  else if leading land 0xe0 = 0xc0 then
+    (((leading land 0x1f) lsl 6) lor continuation 1, index + 2)
+  else if leading land 0xf0 = 0xe0 then
+    ( ((leading land 0x0f) lsl 12)
+      lor (continuation 1 lsl 6)
+      lor continuation 2,
+      index + 3 )
+  else if leading land 0xf8 = 0xf0 then
+    ( ((leading land 0x07) lsl 18)
+      lor (continuation 1 lsl 12)
+      lor (continuation 2 lsl 6)
+      lor continuation 3,
+      index + 4 )
+  else invalid_arg "invalid UTF-8 leading byte"
+
+let utf16_length source =
+  let rec loop byte_index length =
+    if byte_index = String.length source then length
+    else
+      let scalar, next_byte = utf8_scalar_at source byte_index in
+      loop next_byte (length + if scalar <= 0xffff then 1 else 2)
+  in
+  loop 0 0
+
+let utf16_code_units source =
+  let units = Array.make (utf16_length source) 0 in
+  let rec loop byte_index unit_index =
+    if byte_index = String.length source then units
+    else
+      let scalar, next_byte = utf8_scalar_at source byte_index in
+      if scalar <= 0xffff then (
+        units.(unit_index) <- scalar;
+        loop next_byte (unit_index + 1))
+      else
+        let supplementary = scalar - 0x10000 in
+        units.(unit_index) <- 0xd800 lor (supplementary lsr 10);
+        units.(unit_index + 1) <- 0xdc00 lor (supplementary land 0x3ff);
+        loop next_byte (unit_index + 2)
+  in
+  loop 0 0
+
 let substring_from source start =
   String.sub source start (String.length source - start)
 

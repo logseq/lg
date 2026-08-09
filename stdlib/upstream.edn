@@ -250,6 +250,10 @@
              :reason :source-port-preserves-upstream-finalization-order-through-the-static-unsigned-32-bit-shift-primitive}
     m3-hash-int {:status :ported
                  :reason :source-port-preserves-upstream-zero-fast-path-and-four-byte-murmur3-mix-chain}
+    m3-hash-unencoded-chars {:status :static-adaptation
+                             :reason :source-port-preserves-upstream-utf16-code-unit-pairing-odd-tail-and-byte-length-finalization-over-a-linear-utf8-to-utf16-code-unit-array-boundary}
+    hash-string* {:status :static-adaptation
+                  :reason :source-port-preserves-upstream-null-empty-and-thirty-one-times-hash-plus-utf16-code-unit-loop-over-linear-code-unit-conversion-and-a-melange-untruncated-number-addition-boundary}
     mix-collection-hash {:status :ported
                          :reason :source-port-preserves-upstream-seed-key-mix-hash-mix-and-count-finalization-order}
     even? {:status :static-adaptation

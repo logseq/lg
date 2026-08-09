@@ -10,6 +10,7 @@
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_future :as runtime-future]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
+            [ocaml.Lg_runtime.Runtime_int_melange :as runtime-int-melange]
             [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
@@ -755,6 +756,54 @@
     (let [k1 (m3-mix-K1 input)
           h1 (m3-mix-H1 m3-seed k1)]
       (m3-fmix h1 4))))
+
+(defn- utf16-code-units [source]
+  (runtime-string/utf16-code-units source))
+
+(defn- hash-string-code-unit [hash-code code-unit]
+  #?(:melange
+     (runtime-int-melange/of-float-unchecked
+      (+ (runtime-int-melange/to-float-unchecked (imul 31 hash-code))
+         (runtime-int-melange/to-float-unchecked code-unit)))
+     :default
+     (+ (imul 31 hash-code) code-unit)))
+
+(defn m3-hash-unencoded-chars [input]
+  (let [code-units (utf16-code-units input)
+        length (alength code-units)
+        h1 (loop [i 1 h1 m3-seed]
+             (if (< i length)
+               (recur
+                (+ i 2)
+                (m3-mix-H1
+                 h1
+                 (m3-mix-K1
+                  (bit-or
+                   (aget code-units (dec i))
+                   (runtime-int/shift-left-32
+                    (aget code-units i)
+                    16)))))
+               h1))
+        h1 (if (= (bit-and length 1) 1)
+             (bit-xor
+              h1
+              (m3-mix-K1 (aget code-units (dec length))))
+             h1)]
+    (m3-fmix h1 (imul 2 length))))
+
+(defn hash-string* [source]
+  (if-not (nil? source)
+    (let [code-units (utf16-code-units source)
+          length (alength code-units)]
+      (if (pos? length)
+        (loop [index 0 hash-code 0]
+          (if (< index length)
+            (recur
+             (inc index)
+             (hash-string-code-unit hash-code (aget code-units index)))
+            hash-code))
+        0))
+    0))
 
 (defn mix-collection-hash [hash-basis count]
   (let [h1 m3-seed

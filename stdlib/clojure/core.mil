@@ -100,6 +100,8 @@
 (signature clojure.core/m3-mix-H1 :fn<int;int;int>)
 (signature clojure.core/m3-fmix :fn<int;int;int>)
 (signature clojure.core/m3-hash-int :fn<int;int>)
+(signature clojure.core/m3-hash-unencoded-chars :fn<string;int>)
+(signature clojure.core/hash-string* :fn<option<string>;int>)
 (signature clojure.core/mix-collection-hash :fn<int;int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)

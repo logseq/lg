@@ -134,9 +134,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 292 source entries (34.11%), 88 typed
+macro surfaces. The current baseline is 294 source entries (34.35%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
-44 out-of-scope Spec entries, and 235 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -186,7 +186,8 @@ language gains the required capability, variadic, or higher-order relation.
 The current 240-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
-`m3-hash-int`, `mix-collection-hash`, `even?`, `odd?`, `every?`, `ffirst`,
+`m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
+`mix-collection-hash`, `even?`, `odd?`, `every?`, `ffirst`,
 `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
@@ -354,6 +355,15 @@ shift. The public helpers remain first-class source vars and introduce no
 dynamic values. The inventory extractor now sees `imul` inside its upstream
 top-level feature-selection `if`, correcting the audited surface from 855 to
 856 entries.
+`m3-hash-unencoded-chars` and `hash-string*` continue that source chain with
+the pinned UTF-16 code-unit algorithms. Native and Melange both convert LG's
+UTF-8 byte-string representation to a code-unit array in linear time. This
+explicit representation boundary keeps both source loops identical, handles
+BMP and surrogate-pair characters, and avoids repeatedly scanning UTF-8 for
+each code-unit index. The `hash-string*` recurrence also retains CLJS's
+untruncated final JavaScript Number addition on Melange through the existing
+typed int/float identity boundary; the next `imul` still performs the pinned
+signed-32-bit coercion.
 The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or
