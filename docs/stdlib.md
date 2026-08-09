@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 281 source entries (32.87%), 88 typed
+macro surfaces. The current baseline is 282 source entries (32.98%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
-44 out-of-scope Spec entries, and 245 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 244 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -199,8 +199,8 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `even?`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
 `array-binary-search-right`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
-`bit-and-not`, `unsigned-bit-shift-right`, the HAMT `mask` and `bitpos` source
-macros, `bit-count`, `comparator`,
+`bit-and-not`, `unsigned-bit-shift-right`, the HAMT `mask`, `bitpos`, and
+`caching-hash` source macros, `bit-count`, `comparator`,
 `constantly`, `vec`, `max-key`, `min-key`, `frequencies`, `update-vals`,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
 `parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, `NaN?`,
@@ -324,6 +324,11 @@ The pinned internal-public `mask` and `bitpos` macros are source adaptations of
 the ClojureScript HAMT bit arithmetic. They preserve the unsigned right shift,
 five-bit index mask, and bit-position composition through LG's existing typed
 32-bit operations, with each macro argument evaluated once.
+The pinned `caching-hash` macro also remains source-identical: it validates the
+mutable cache field symbol, returns a present cached integer without invoking
+the hash function, and computes and stores a missing value once. Deftype method
+bodies now expand source macros before mutable-field assignment rewriting, so a
+macro-produced `set!` follows the same typed field path as a handwritten one.
 The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or

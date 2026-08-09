@@ -317,6 +317,8 @@
           :reason :source-macro-preserves-the-upstream-logical-right-shift-and-five-bit-hamt-index-mask-through-existing-static-bit-operations}
     bitpos {:status :static-adaptation
             :reason :source-macro-preserves-the-upstream-one-shifted-by-the-masked-hamt-index-composition-through-existing-static-bit-operations}
+    caching-hash {:status :ported
+                  :reason :source-macro-preserves-upstream-optional-cache-hit-single-hash-computation-mutable-field-update-and-symbol-validation-after-deftype-method-macros-expand-before-field-assignment-rewriting}
     bit-count {:status :ported}
     second {:status :ported}
     last {:status :static-adaptation

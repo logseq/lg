@@ -964,6 +964,15 @@
 (defmacro bitpos [hash shift]
   `(bit-shift-left 1 (mask ~hash ~shift)))
 
+(defmacro caching-hash [coll hash-fn hash-key]
+  (assert (symbol? hash-key) "hash-key is substituted twice")
+  `(let [h# ~hash-key]
+     (if-not (nil? h#)
+       h#
+       (let [h# (~hash-fn ~coll)]
+         (set! ~hash-key h#)
+         h#))))
+
 (defn bit-count
   "Returns the number of set bits in `value`."
   [value]

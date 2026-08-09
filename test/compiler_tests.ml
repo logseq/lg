@@ -22158,6 +22158,77 @@ let test_source_hamt_bit_macros_match_clojurescript () =
       ("bitpos", " 1 2 3");
     ]
 
+let test_source_caching_hash_macro_matches_clojurescript () =
+  let source =
+    {|
+(ns source-caching-hash-app
+  (:require [cljs.core :as core :refer [caching-hash]]))
+
+(def calls (atom 0))
+(defprotocol ICachedHash
+  (cached-hash [value] :int))
+
+(deftype AliasedCache [^:mutable ^:option<int> cached]
+  ICachedHash
+  (cached-hash [this]
+    (core/caching-hash
+      this
+      (fn [_]
+        (do
+          (swap! calls inc)
+          42))
+      cached)))
+
+(deftype ReferredCache [^:mutable ^:option<int> cached]
+  ICachedHash
+  (cached-hash [this]
+    (caching-hash
+      this
+      (fn [_]
+        (do
+          (swap! calls inc)
+          7))
+      cached)))
+
+(def aliased (AliasedCache. nil))
+(def referred (ReferredCache. nil))
+(println (= 42 (cached-hash aliased)))
+(println (= 42 (cached-hash aliased)))
+(println (= 7 (cached-hash referred)))
+(println (= 7 (cached-hash referred)))
+(println (= 2 @calls))
+|}
+  in
+  let expected = String.concat "" (List.init 5 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_caching_hash.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source caching-hash must remain static";
+  assert_ocaml_runs "source_caching_hash" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_caching_hash.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source caching-hash must remain static";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/caching_hash_non_symbol.cljc"
+    {|
+(def value 1)
+(def result
+  (caching-hash value (fn [_] 1) (+ value 1)))
+|}
+  |> expect_error_contains "hash-key is substituted twice";
+  List.iter
+    (fun arguments ->
+      compile_with_stdlib_result Lg.Target.Native
+        "test/caching_hash_arity.cljc"
+        ("(def result (caching-hash" ^ arguments ^ "))")
+      |> expect_error_contains "unsupported macro arity")
+    [ ""; " nil"; " nil identity"; " nil identity cached extra" ]
+
 let test_source_control_macros_match_clojurescript () =
   let source =
     {|
@@ -38653,6 +38724,8 @@ let tests =
       test_source_unchecked_extrema_macros_match_clojurescript );
     ( "source HAMT bit macros match ClojureScript",
       test_source_hamt_bit_macros_match_clojurescript );
+    ( "source caching-hash macro matches ClojureScript",
+      test_source_caching_hash_macro_matches_clojurescript );
     ( "source control macros match ClojureScript",
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",

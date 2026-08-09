@@ -1616,12 +1616,13 @@ let rec compile scope env next_type form =
                            pairs)
                   | form -> form
                 in
-                let body_forms =
-                  List.map rewrite_mutable_assignments body_forms
-                in
-                let parameter_names =
-                  Destructure.pattern_names params_form
-                in
+                let compile_expanded_body body_forms =
+                  let body_forms =
+                    List.map rewrite_mutable_assignments body_forms
+                  in
+                  let parameter_names =
+                    Destructure.pattern_names params_form
+                  in
                 let field_bindings =
                   record.fields
                   |> List.filter (fun (field : field) ->
@@ -1742,7 +1743,14 @@ let rec compile scope env next_type form =
                               }
                         in
                         compile_methods env (item :: items) current_interface
-                          rest))
+                          rest)
+                in
+                match
+                  Macro_expander.expand_all_forms ~scope ~compiler_env:env
+                    body_forms
+                with
+                | Error _ as error -> error
+                | Ok body_forms -> compile_expanded_body body_forms)
             | _ :: _ ->
                 Error.error
                   "deftype methods must be (method-name [params] body...)"
