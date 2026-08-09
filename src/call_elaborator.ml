@@ -7151,7 +7151,8 @@ let create ~compile_expr =
                       [ semantic_expr ] )))
         | Ok [ _ ] -> Error.error "rand expects a numeric bound"
         | Ok _ -> Error.error "rand expects zero or one argument")
-    | "int" | "long" -> (
+    | "__lg_int" | "__lg_long" -> (
+        let source_name = if name = "__lg_int" then "int" else "long" in
         match compile_args () with
         | Error _ as err -> err
         | Ok [ ({ ty = TInt; _ } as value) ] -> Ok value
@@ -7170,9 +7171,9 @@ let create ~compile_expr =
                       [ semantic_expr ] )))
                   | Ok [ ({ ty = TUnknown | TMeta _ | TVar _; _ } as value) ] ->
             Ok { value with ty = TInt }
-        | Ok [ _ ] -> Error.error (name ^ " expects a numeric value")
-        | Ok _ -> Error.error (name ^ " expects 1 argument"))
-    | "double" -> (
+        | Ok [ _ ] -> Error.error (source_name ^ " expects a numeric value")
+        | Ok _ -> Error.error (source_name ^ " expects 1 argument"))
+    | "__lg_double" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ { ty = TInt; semantic_expr; _ } ] ->

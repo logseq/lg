@@ -93,7 +93,7 @@ awk '
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
     split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
-    split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
+    split("+ - * / < <= = == > >= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
     split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
     for (i in xs) narrowing[xs[i]] = 1

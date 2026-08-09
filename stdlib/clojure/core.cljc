@@ -126,6 +126,31 @@
   [x]
   (__lg_abs x))
 
+(defn byte
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn float
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn double
+  {:inline (fn [x] (list '__lg_double x))}
+  [^:int x]
+  (__lg_double x))
+
+(defn int
+  {:inline (fn [x] (list '__lg_int x))}
+  [^:int x]
+  (__lg_int x))
+
+(defn long
+  {:inline (fn [x] (list '__lg_long x))}
+  [^:int x]
+  (__lg_long x))
+
 (defmacro char? [x]
   `(__lg_char-predicate ~x))
 

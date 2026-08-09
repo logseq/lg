@@ -11943,7 +11943,7 @@ let test_int_coerces_float_and_preserves_int () =
 (println (str (coerce (FloatInput 3.9)) ":" (coerce (IntInput 4))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "int_coerces_float_and_preserves_int" "3:4\n" ocaml_source
 
 let test_namespace_rejects_malformed_and_repeated_forms () =
@@ -13351,7 +13351,7 @@ let test_double_converts_ints_and_preserves_floats () =
               (Float.to_string (+ (double 2.5) 0.5))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "double_converts_ints_and_preserves_floats" "2.:3.\n"
     ocaml_source
 
@@ -18677,7 +18677,7 @@ let test_defn_accepts_attribute_maps_and_return_hints () =
 (defn add
   {:inline (fn [x y] (list '+ x y))}
   ^long [x y]
-  (long (+ x y)))
+  (__lg_long (+ x y)))
 (println (add 20 22))
 |}
   in
@@ -21536,6 +21536,70 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
   compile_with_stdlib_result Lg.Target.Native
     "test/char_predicate_source_first_class.cljc" "(def predicate char?)"
   |> expect_error_contains "cannot be used as an untyped first-class function"
+
+let test_source_numeric_coercions_match_clojurescript () =
+  let source =
+    {|
+(ns source-numeric-coercion-app
+  (:require [cljs.core :as core :refer [int long double byte float]]))
+
+(def int-coercion int)
+(def long-coercion core/long)
+(def double-coercion clojure.core/double)
+(def byte-coercion byte)
+(def float-coercion core/float)
+(def float-factors (array 2.0))
+(defn multiply-double [value]
+  (Float.mul (double value) (aget float-factors 0)))
+
+(println (= 2 (int 2.9)))
+(println (= -2 (long -2.9)))
+(println (= 2.0 (double 2)))
+(println (= 7 (byte 7)))
+(println (= 1.5 (float 1.5)))
+(println (= 3 (core/int 3.9)))
+(println (= -3 (clojure.core/long -3.9)))
+(println (= 4.0 (core/double 4)))
+(println (= 5 (int-coercion 5)))
+(println (= 6 (long-coercion 6)))
+(println (= 7.0 (double-coercion 7)))
+(println (= 8 (byte-coercion 8)))
+(println (= 9.5 (float-coercion 9.5)))
+(println (= 6.0 (multiply-double 3)))
+|}
+  in
+  let expected = String.concat "" (List.init 14 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_numeric_coercions.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source numeric coercions must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_numeric_coercions" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_numeric_coercions.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source numeric coercions must remain static";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_zero_arity.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0";
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_two_arity.cljc")
+        ("(def result (" ^ name ^ " 1 2))")
+      |> expect_error_contains "unsupported macro arity 2")
+    [ "int"; "long"; "double"; "byte"; "float" ];
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_wrong_type.cljc")
+        ("(def result (" ^ name ^ " \"1\"))")
+      |> expect_error_contains (name ^ " expects a numeric value"))
+    [ "int"; "long"; "double" ]
 
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
@@ -37721,6 +37785,8 @@ let tests =
       test_source_static_predicate_family_matches_clojurescript );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
+    ( "source numeric coercions match ClojureScript",
+      test_source_numeric_coercions_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

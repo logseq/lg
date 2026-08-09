@@ -46,6 +46,18 @@ for name in $public_predicates; do
   fi
 done
 
+public_source_primitives='int long double byte float'
+for name in $public_source_primitives; do
+  if printf '%s\n' "$dispatch_names" | grep -Fx "$name" >/dev/null; then
+    echo "clojure.core/$name is still publicly dispatched in call_elaborator.ml" >&2
+    exit 1
+  fi
+  if grep -F "FSymbol \"$name\"" "$root/src/type_inference.ml" >/dev/null; then
+    echo "clojure.core/$name is still publicly inferred in type_inference.ml" >&2
+    exit 1
+  fi
+done
+
 if grep -F 'FSymbol "not"' "$root/src/type_inference.ml" >/dev/null \
   || grep -F '"not" | "nil?"' "$root/src/call_elaborator.ml" >/dev/null \
   || grep -F '| "not" -> compile_not' "$root/src/core_boolean.ml" >/dev/null; then

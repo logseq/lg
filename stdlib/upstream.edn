@@ -71,6 +71,16 @@
           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-negative-number-predicate}
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
+    byte {:status :ported
+          :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    float {:status :ported
+           :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    double {:status :static-adaptation
+            :reason :source-function-preserves-first-class-int-to-float-coercion-while-a-source-inline-macro-retains-direct-int-or-float-static-specialization}
+    int {:status :static-adaptation
+         :reason :source-function-preserves-first-class-int-coercion-while-the-upstream-inline-macro-specializes-direct-int-float-or-int64-calls-through-an-internal-static-primitive}
+    long {:status :static-adaptation
+          :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-specialize-int-float-or-int64-values-through-an-internal-static-primitive}
     char? {:status :static-adaptation
            :reason :lg-characters-have-a-distinct-static-char-type-so-the-source-macro-tests-that-type-instead-of-the-upstream-single-character-javascript-string-representation}
     identical? {:status :static-adaptation

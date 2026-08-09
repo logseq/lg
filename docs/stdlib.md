@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 229 source entries (26.78%), 95 typed
+macro surfaces. The current baseline is 238 source entries (27.84%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 309 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 305 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -230,6 +230,12 @@ type is an explicit adaptation from ClojureScript's one-character JavaScript
 string representation. The Logseq scan finds 163 direct `zero?`, 160 direct
 `pos?`, 42 direct `neg?`, 42 direct `identical?`, 23 direct `array?`, and 6
 direct `abs` calls.
+The numeric coercions `int`, `long`, and `double` are source functions with
+inline source specialization over internal typed primitives. `byte` and
+`float` preserve the pinned ClojureScript identity function and inline macro.
+This keeps higher-order calls and namespace exports in the aggregate stdlib
+while removing the public conversion names from compiler dispatch. The Logseq
+scan finds 21 direct `int`, 9 direct `long`, and 6 direct `double` calls.
 `indexed?` remains compiler-owned because LG's current `Indexed` capability
 also covers linear list lookup and therefore cannot stand in for upstream's
 constant-time `IIndexed` contract. `true?` and `false?` retain the minimal
