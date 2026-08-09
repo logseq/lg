@@ -136,19 +136,21 @@ occurrences after alias resolution, so they are a prioritization signal rather
 than a reachability analysis.
 
 When a pinned ClojureScript checkout is supplied, the report also contains an
-`upstream-var` row for every public function and macro read from the reviewed
+`upstream-var` row for every public function, macro, and protocol method read from the reviewed
 core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 907 function/macro entries, including 667
-entries in `cljs.core`. Each row is
+pinned surface currently contains 993 function, macro, and protocol-method
+entries, including 753 entries in `cljs.core`. Public methods declared by
+`defprotocol` are inventoried independently instead of being hidden behind the
+protocol var. Each row is
 classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 451 source entries (49.72%), 62 typed
-primitives, 12 special forms, 27 host boundaries, 127 static-typing blockers,
-44 out-of-scope Spec entries, and 184 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 453 source entries (45.62%), 62 typed
+primitives, 12 special forms, 31 host boundaries, 128 static-typing blockers,
+51 out-of-scope entries, and 256 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -157,6 +159,11 @@ ceiling/floor, degree/radian conversion, and the `E`/`PI` constants through
 static OCaml float operations on both Native and Melange. Cube root, power,
 floating remainder, and random use small explicitly typed cross-target runtime
 boundaries rather than dynamic values.
+The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
+and `Navigable/nav` in source. Static protocol dispatch now supports an
+upstream-compatible `:default` implementation, while concrete receiver
+extensions still take precedence. Default methods are emitted as ordinary
+polymorphic OCaml functions and survive precompiled-state chunk loading.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.

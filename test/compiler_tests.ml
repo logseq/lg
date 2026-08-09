@@ -16562,6 +16562,26 @@ let test_static_protocols_dispatch_by_receiver_type () =
   assert_ocaml_runs "static_protocols_dispatch_by_receiver_type"
     "int:7:str:Ada\n" ocaml_source
 
+let test_static_protocols_use_default_implementations () =
+  let source =
+    {|
+(defprotocol Labelled
+  (label [value] :string))
+(extend-type :default
+  Labelled
+  (label [_value] "default"))
+(extend-type :int
+  Labelled
+  (label [value] (str "int:" value)))
+(println (str (label 7) ":" (label "Ada") ":" (label true)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "static_protocols_use_default_implementations"
+    "int:7:default:default\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_satisfies_question_checks_static_receivers () =
   let source =
     {|
@@ -39616,6 +39636,8 @@ let tests =
     );
     ( "static protocols dispatch by receiver type",
       test_static_protocols_dispatch_by_receiver_type );
+    ( "static protocols use default implementations",
+      test_static_protocols_use_default_implementations );
     ( "satisfies? checks static receivers",
       test_satisfies_question_checks_static_receivers );
     ( "satisfies? carries a generic protocol witness",

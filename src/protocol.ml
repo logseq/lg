@@ -91,6 +91,7 @@ let method_is_ambiguous scope env method_name =
     | [] | [ _ ] -> false)
 
 let receiver_id = function
+  | TVar name when name = Receiver_id.default_type_variable -> Some "default"
   | TInt -> Some "int"
   | TFloat -> Some "float"
   | TChar -> Some "char"
@@ -137,8 +138,8 @@ let type_satisfies env protocol_id receiver_ty =
           Protocol_registry.Method_map.for_all
             (fun method_id _ ->
               Option.is_some
-                (Protocol_registry.find_implementation protocol_id method_id
-                   receiver_id registry))
+                (Protocol_registry.find_implementation_or_default protocol_id
+                   method_id receiver_id registry))
             declaration.methods
     | None, _ | _, None -> false
   in
@@ -207,8 +208,8 @@ let witness_implementations env protocol_id receiver_ty =
         declaration.methods
         |> Protocol_registry.Method_map.bindings
         |> List.map (fun (method_id, signature) ->
-               Protocol_registry.find_implementation protocol_id method_id
-                 receiver_id (Env.protocols env)
+               Protocol_registry.find_implementation_or_default protocol_id
+                 method_id receiver_id (Env.protocols env)
                |> Option.map (fun implementation ->
                       implementation
                       |> instantiate_receiver_binding receiver_ty
@@ -524,8 +525,8 @@ let lookup_impl env protocol_id method_name receiver_ty =
   | Some receiver_id ->
       let method_id = method_id protocol_id method_name in
       let registry = Env.protocols env in
-      Protocol_registry.find_implementation protocol_id method_id receiver_id
-        registry
+      Protocol_registry.find_implementation_or_default protocol_id method_id
+        receiver_id registry
       |> Option.map (fun implementation ->
              let implementation =
                instantiate_receiver_binding receiver_ty implementation

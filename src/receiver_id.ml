@@ -1,4 +1,5 @@
 type t =
+  | Default_receiver
   | Int_receiver
   | Float_receiver
   | Char_receiver
@@ -17,7 +18,11 @@ type t =
   | Host_receiver of string
   | Record_receiver of Type_id.t
 
+let default_type_variable = "__lg_protocol_default_receiver"
+
 let of_type = function
+  | Semantic_type.TVar name when name = default_type_variable ->
+      Some Default_receiver
   | Semantic_type.TInt -> Some Int_receiver
   | TFloat -> Some Float_receiver
   | TChar -> Some Char_receiver

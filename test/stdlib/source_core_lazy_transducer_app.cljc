@@ -1,5 +1,6 @@
 (ns source-core-lazy-transducer-app
   (:require [cljs.math :as math]
+            [clojure.core.protocols :as protocols]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
 
 (def lazy-realizations (atom 0))
@@ -232,3 +233,11 @@
 (println (= 1.0 (math/IEEE-fmod 7.0 3.0)))
 (println (let [value (math/random)]
            (and (<= 0.0 value) (< value 1.0))))
+(defrecord ProtocolBox [value])
+(extend-type ProtocolBox
+  protocols/Datafiable
+  (datafy [box] (:value box)))
+(println (= "plain" (protocols/datafy "plain")))
+(println (satisfies? protocols/Datafiable "plain"))
+(println (= 42 (protocols/datafy (ProtocolBox. 42))))
+(println (= 7 (protocols/nav {:answer 7} :answer 7)))

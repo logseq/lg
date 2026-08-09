@@ -21,7 +21,7 @@
             forms
             (recur (conj forms form))))))))
 
-(defn- definition [namespace form]
+(defn- ordinary-definition [namespace form]
   (when (seq? form)
     (let [operator (some-> form first str)
           definition-name (second form)
@@ -35,7 +35,28 @@
                  (symbol? definition-name)
                  (not private-operator?)
                  (not private-name?))
-        [(str namespace "/" (name definition-name)) kind]))))
+        [[(str namespace "/" (name definition-name)) kind]]))))
+
+(defn- protocol-method-definitions [namespace form]
+  (when (seq? form)
+    (let [operator (some-> form first str)
+          protocol-name (second form)]
+      (when (and (contains? #{"defprotocol" "core/defprotocol"} operator)
+                 (symbol? protocol-name)
+                 (not (:private (meta protocol-name))))
+        (->> (drop 2 form)
+             (keep (fn [method-form]
+                     (when (seq? method-form)
+                       (let [method-name (first method-form)]
+                         (when (and (symbol? method-name)
+                                    (not (:private (meta method-name))))
+                           [(str namespace "/" (name method-name))
+                            "protocol-method"])))))
+             seq)))))
+
+(defn- definitions [namespace form]
+  (or (protocol-method-definitions namespace form)
+      (ordinary-definition namespace form)))
 
 (defn- top-level-definitions [namespace form]
   (let [operator (when (seq? form) (first form))]
@@ -47,7 +68,7 @@
       (mapcat #(top-level-definitions namespace %) (drop 2 form))
 
       :else
-      (some-> (definition namespace form) vector))))
+      (or (definitions namespace form) []))))
 
 (let [[namespace & paths] *command-line-args*]
   (when (or (string/blank? namespace) (empty? paths))

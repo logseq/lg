@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.edn cljs.reader cljs.math clojure.set clojure.data clojure.walk clojure.zip]
+ [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -741,6 +741,15 @@
     triml {:status :static-adaptation :reason :typed-host-string-primitive}
     trimr {:status :static-adaptation :reason :typed-host-string-primitive}
     upper-case {:status :static-adaptation :reason :typed-host-string-primitive}}}
+
+  clojure.core.protocols
+  {:source "src/main/cljs/clojure/core/protocols.cljs"
+   :implementation "clojure/core/protocols.cljc"
+   :definitions
+   {datafy {:status :static-adaptation
+            :reason :source-protocol-method-preserves-upstream-default-identity-and-static-receiver-specific-extensions}
+    nav {:status :static-adaptation
+         :reason :source-protocol-method-preserves-upstream-default-context-value-and-static-receiver-specific-extensions}}}
 
   clojure.edn
   {:source "src/main/cljs/cljs/reader.cljs"

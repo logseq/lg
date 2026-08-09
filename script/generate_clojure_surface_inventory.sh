@@ -208,6 +208,7 @@ if test -n "$clojurescript_root"; then
     >>"$tmp/upstream-vars"
   for namespace_and_source in \
     'clojure.string|src/main/cljs/clojure/string.cljs' \
+    'clojure.core.protocols|src/main/cljs/clojure/core/protocols.cljs' \
     'clojure.set|src/main/cljs/clojure/set.cljs' \
     'clojure.data|src/main/cljs/clojure/data.cljs' \
     'clojure.walk|src/main/cljs/clojure/walk.cljs' \
@@ -231,8 +232,8 @@ if test -n "$clojurescript_root"; then
     >>"$tmp/upstream-vars"
   LC_ALL=C sort -u "$tmp/upstream-vars" -o "$tmp/upstream-vars"
   upstream_var_count=$(wc -l <"$tmp/upstream-vars" | tr -d ' ')
-  if test "$upstream_var_count" -ne 907; then
-    echo "ClojureScript public function/macro surface changed: expected 907 entries, found $upstream_var_count" >&2
+  if test "$upstream_var_count" -ne 993; then
+    echo "ClojureScript public function/macro surface changed: expected 993 entries, found $upstream_var_count" >&2
     echo "review the pinned upstream files and classifications before updating the count" >&2
     exit 1
   fi
@@ -242,6 +243,7 @@ if test -n "$clojurescript_root"; then
     "$lg_root/stdlib/clojure/core.cljc" >>"$tmp/source-vars"
   for namespace_and_source in \
     'clojure.string|stdlib/clojure/string.cljc' \
+    'clojure.core.protocols|stdlib/clojure/core/protocols.cljc' \
     'clojure.set|stdlib/clojure/set.cljc' \
     'clojure.edn|stdlib/clojure/edn.cljc' \
     'cljs.reader|stdlib/cljs/reader.cljc' \

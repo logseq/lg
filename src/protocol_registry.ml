@@ -35,6 +35,7 @@ type declaration = {
 }
 
 type receiver_id = Receiver_id.t =
+  | Default_receiver
   | Int_receiver
   | Float_receiver
   | Char_receiver
@@ -214,6 +215,12 @@ let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt
     (protocol_id, method_id, receiver_id)
     registry.implementations
+
+let find_implementation_or_default protocol_id method_id receiver_id registry =
+  match find_implementation protocol_id method_id receiver_id registry with
+  | Some _ as implementation -> implementation
+  | None ->
+      find_implementation protocol_id method_id Default_receiver registry
 
 let add_marker_implementation protocol_id receiver_id registry =
   {
