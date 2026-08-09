@@ -284,12 +284,16 @@
   :fn<array<array-element>;seq<array-element>>)
 (signature clojure.core/array-seq [array-element]
   :overload<fn<array<array-element>;seq<array-element>>;fn<array<array-element>;int;seq<array-element>>>)
+(signature clojure.core/prim-seq [array-element]
+  :overload<fn<array<array-element>;seq<array-element>>;fn<array<array-element>;int;seq<array-element>>>)
 (signature clojure.core/to-array [value]
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/into-array [value]
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/array-from [value]
   :fn<seqable<value>;array<value>>)
+(signature clojure.core/set-from-indexed-seq [value]
+  :fn<seq<value>;set<value>>)
 (signature clojure.core/array-index-of [value]
   :fn<array<value>;value;int>)
 (signature clojure.core/array-binary-search-left [element key]

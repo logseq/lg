@@ -148,9 +148,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 475 source entries (48.22%), 96 typed
+macro surfaces. The current baseline is 477 source entries (48.43%), 96 typed
 primitives, 12 special forms, 34 host boundaries, 159 static-typing blockers,
-51 out-of-scope entries, and 158 deferred entries. The deferred set is the
+51 out-of-scope entries, and 156 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -182,6 +182,10 @@ source maps are not packed into dynamic values.
 namespace now has zero deferred public vars. Their source preserves upstream
 safe-integer validation, truncation, sign correction, divisor-signed remainder,
 and JavaScript zero-divisor number behavior in the shared binary64 domain.
+`prim-seq` and `set-from-indexed-seq` are source-defined generic collection
+adapters. They reuse the existing typed array sequence and default HAMT set,
+including both `prim-seq` arities, without introducing the JavaScript-only
+`IndexedSeq` representation or the upstream transient array fast path.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

@@ -301,6 +301,23 @@
            (catch _ true)))
 (println (let [result (math/floor-mod 5.0 0.0)]
            (not (= result result))))
+(println (= [1 2 3] (vec (prim-seq (array 1 2 3)))))
+(println (= [2 3] (vec (prim-seq (array 1 2 3) 1))))
+(println (empty? (prim-seq (array 1 2 3) 3)))
+(println (= ["a"] (vec (cljs.core/prim-seq (array "a")))))
+(def source-prim-seq prim-seq)
+(println (= ["b" "c"]
+            (vec (source-prim-seq (array "a" "b" "c") 1))))
+(println (= #{1 2} (set-from-indexed-seq (array-seq (array 1 2 1)))))
+(println (= #{"a" "b"}
+            (set-from-indexed-seq (array-seq (array "a" "b" "a")))))
+(println (= #{1 2}
+            (cljs.core/set-from-indexed-seq
+              (array-seq (array 1 1 2)))))
+(def source-set-from-indexed-seq set-from-indexed-seq)
+(println (= #{3 4}
+            (source-set-from-indexed-seq
+              (array-seq (array 3 4 3)))))
 (defrecord ProtocolBox [value])
 (extend-type ProtocolBox
   protocols/Datafiable

@@ -1757,6 +1757,12 @@
   ([values index]
    (drop index (array-to-seq values))))
 
+(defn prim-seq
+  ([values]
+   (prim-seq values 0))
+  ([values index]
+   (array-seq values index)))
+
 (defn to-array [coll]
   (runtime-array/of-seq (seq coll)))
 
@@ -1768,6 +1774,9 @@
 
 (defn array-from [coll]
   (to-array coll))
+
+(defn set-from-indexed-seq [indexed-seq]
+  (set indexed-seq))
 
 (defn array-index-of [values key]
   (let [length (alength values)]

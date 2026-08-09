@@ -707,6 +707,8 @@
                    :reason :lg-static-array-compatibility-helper-over-the-typed-reverse-sequence-boundary}
     array-seq {:status :static-adaptation
                :reason :source-port-preserves-the-public-one-and-two-argument-array-sequence-api-with-static-empty-sequence-semantics-instead-of-a-nullable-indexed-sequence}
+    prim-seq {:status :static-adaptation
+              :reason :source-port-preserves-the-public-one-and-two-argument-primitive-array-sequence-api-with-static-empty-sequence-semantics-instead-of-a-nullable-indexed-sequence}
     to-array {:status :static-adaptation
               :reason :source-port-copies-a-statically-typed-seqable-through-the-polymorphic-runtime-array-boundary}
     to-array-2d {:status :blocked-static-typing
@@ -717,6 +719,8 @@
                   :reason :lg-datascript-source-macro-expands-one-or-more-values-to-the-homogeneous-typed-array-primitive-avoiding-runtime-dynamic-storage-and-generic-shape-feedback}
     array-from {:status :static-adaptation
                 :reason :lg-datascript-source-compatibility-alias-copies-any-statically-typed-seqable-through-to-array}
+    set-from-indexed-seq {:status :static-adaptation
+                          :reason :source-port-builds-the-default-hamt-set-from-the-static-indexed-sequence-instead-of-the-upstream-transient-array-fast-path}
     array-index-of {:status :ported
                     :reason :source-port-preserves-the-upstream-even-key-slot-scan-equality-check-and-minus-one-missing-result}
     array-binary-search-left {:status :static-adaptation
