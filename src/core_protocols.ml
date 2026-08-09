@@ -356,6 +356,26 @@ let add_runtime_map_protocols registry =
   |> add with_meta_id "-with-meta" "Lg_runtime.Runtime_map.with_metadata"
        (TFn ([ map_ty; metadata_ty ], map_ty))
 
+let add_static_collection_protocols registry =
+  let element = TVar "collection_element" in
+  let add receiver ocaml_name collection_ty registry =
+    let method_ty = TFn ([ collection_ty; element ], collection_ty) in
+    let binding = Types.binding ~protocol_id:collection_id ocaml_name method_ty in
+    Protocol_registry.add_implementation collection_id
+      (method_id collection_id "-conj")
+      receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add Receiver_id.List_receiver "Lg_runtime.Runtime_collection.conj_list"
+       (TList element)
+  |> add Receiver_id.Seq_receiver "Lg_runtime.Runtime_collection.conj_seq"
+       (TSeq element)
+  |> add Receiver_id.Vector_receiver
+       "Lg_runtime.Runtime_collection.conj_vector" (TVector element)
+  |> add Receiver_id.Set_receiver "Lg_runtime.Runtime_collection.conj_set"
+       (TSet element)
+
 let declare_vector_protocol registry =
   let element = TVar "vector_element" in
   let vector = TVector element in
@@ -456,6 +476,7 @@ let initial_registry =
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
   |> declare_map_protocols |> add_runtime_map_protocols
+  |> add_static_collection_protocols
   |> declare_vector_protocol |> add_vector_associative_protocols
   |> declare_data_protocols
 

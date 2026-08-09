@@ -21869,6 +21869,58 @@ let test_associative_predicate_has_no_name_based_compiler_dispatch () =
           ("associative? still has name-based compiler dispatch in " ^ path))
     paths
 
+let test_coll_predicate_uses_the_clojurescript_protocol () =
+  let source =
+    {|
+(ns source-icollection-predicate-app
+  (:require [cljs.core :refer [coll?]]))
+
+(deftype ProtocolCollection [^int id]
+  ICollection
+  (-conj [this _value] this))
+
+(defrecord Point [^int x ^int y])
+
+(println (coll? (ProtocolCollection. 1)))
+(println (coll? (list 1)))
+(println (coll? [1]))
+(println (coll? #{1}))
+(println (coll? {:answer 42}))
+(println (coll? (->Point 1 2)))
+(println (not (coll? 1)))
+(println (= (list 0 1) (-conj (list 1) 0)))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_icollection_predicate.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "coll? must dispatch through a static ICollection witness";
+  assert_ocaml_runs "coll_predicate_uses_clojurescript_icollection" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_icollection_predicate.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange coll? must use a static ICollection witness"
+
+let test_coll_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_coll-predicate" in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith ("coll? still has name-based compiler dispatch in " ^ path))
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -39207,6 +39259,10 @@ let tests =
       test_associative_predicate_uses_the_clojurescript_protocol );
     ( "associative predicate has no name-based compiler dispatch",
       test_associative_predicate_has_no_name_based_compiler_dispatch );
+    ( "coll predicate uses the ClojureScript ICollection protocol",
+      test_coll_predicate_uses_the_clojurescript_protocol );
+    ( "coll predicate has no name-based compiler dispatch",
+      test_coll_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

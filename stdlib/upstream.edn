@@ -94,7 +94,7 @@
     fn? {:status :static-adaptation
          :reason :source-function-provides-a-first-class-unary-function-predicate-while-its-inline-definition-specializes-direct-calls-to-static-function-types}
     coll? {:status :static-adaptation
-           :reason :source-function-provides-a-polymorphic-first-class-vector-instance-while-its-inline-definition-specializes-direct-calls-to-supported-static-collection-representations}
+           :reason :source-function-and-inline-specialization-use-clojurescript-icollection-protocol-satisfaction-without-name-based-compiler-dispatch}
     associative? {:status :static-adaptation
                   :reason :source-function-and-inline-specialization-use-clojurescript-iassociative-protocol-satisfaction-without-name-based-compiler-dispatch}
     rational? {:status :static-adaptation

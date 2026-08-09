@@ -128,14 +128,5 @@ let compile name args =
         args
   | "__lg_fn-predicate" ->
       compile_type_predicate name (function TFn _ -> true | _ -> false) args
-  | "__lg_coll-predicate" ->
-      compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
-        (function
-          | TList _ | TVector _ | TSeq _ | TSet _ | TRecord _
-          | TNamed_record { nominal = false; _ } ->
-              true
-          | ty when Option.is_some (Types.dynamic_map_types ty) -> true
-          | _ -> false)
-        args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | _ -> Error.error ("unknown function " ^ name)

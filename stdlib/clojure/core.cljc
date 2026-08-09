@@ -319,9 +319,9 @@
   (__lg_fn-predicate x))
 
 (defn coll?
-  {:inline (fn [x] (list '__lg_coll-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'ICollection x))}
   [x]
-  (__lg_coll-predicate x))
+  (if (nil? x) false (satisfies? ICollection x)))
 
 (defn associative?
   {:inline (fn [x] (list 'satisfies? 'IAssociative x))}

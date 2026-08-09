@@ -3818,7 +3818,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_seq-predicate";
                "__lg_set-predicate";
                "__lg_fn-predicate";
-               "__lg_coll-predicate";
              ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList

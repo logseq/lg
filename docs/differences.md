@@ -248,9 +248,10 @@ values.
 
 Type predicates such as `int?`, `integer?`, `number?`, `nat-int?`, `pos-int?`,
 `neg-int?`, `string?`, `keyword?`, `boolean?`, `list?`, `seq?`, `set?`, `fn?`,
-`coll?`, `indexed?`, `seqable?`, and `counted?` are resolved from static lg
-types or direct OCaml integer checks. `vector?`, `map?`, and `associative?`
-follow the ClojureScript `IVector`, `IMap`, and `IAssociative` protocols.
+`indexed?`, `seqable?`, and `counted?` are resolved from static lg types or
+direct OCaml integer checks. `vector?`, `map?`, `coll?`, and `associative?`
+follow the ClojureScript `IVector`, `IMap`, `ICollection`, and `IAssociative`
+protocols.
 Vectors and persistent HAMTs provide concrete `IAssociative` implementations;
 structural maps and source `defrecord` values satisfy the protocol from their
 closed static record representation.

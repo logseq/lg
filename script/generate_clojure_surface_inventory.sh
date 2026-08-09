@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 237; then
-  echo "compiler call dispatch changed: expected 237 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 236; then
+  echo "compiler call dispatch changed: expected 236 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -109,7 +109,7 @@ awk '
     internal_abi["__lg_ex-message"] = "static-exception-message-extraction-primitive"
     internal_abi["__lg_ex-cause"] = "static-optional-exception-cause-primitive"
     internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
-    split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_set-predicate __lg_fn-predicate __lg_coll-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_sequential-predicate __lg_reversible-predicate __lg_sorted-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
+    split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_set-predicate __lg_fn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_sequential-predicate __lg_reversible-predicate __lg_sorted-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }
   {
