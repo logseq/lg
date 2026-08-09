@@ -47,8 +47,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 243; then
-  echo "compiler call dispatch changed: expected 243 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 236; then
+  echo "compiler call dispatch changed: expected 236 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -96,6 +96,8 @@ awk '
     for (i in xs) host[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec int long double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
+    split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
+    for (i in xs) narrowing[xs[i]] = 1
   }
   {
     classification = "typed-primitive"
@@ -110,6 +112,9 @@ awk '
         print "missing concrete blocker reason for " $0 > "/dev/stderr"
         exit 1
       }
+    } else if (narrowing[$0]) {
+      classification = "typed-primitive"
+      reason = "static-guard-narrowing-primitive"
     } else if (primitive[$0]) {
       classification = "typed-primitive"
       reason = "static-scalar-primitive"

@@ -31,8 +31,26 @@
             :reason :source-macro-uses-the-upstream-seq-fallback-for-all-static-seqables-because-composing-optional-seqable-and-counted-capabilities-would-leak-compiler-protocol-witness-helpers-into-generated-runtime-code}
     integer? {:status :static-adaptation
               :reason :source-macro-specializes-to-lg-int-because-lg-separates-integral-and-floating-static-types-and-binds-the-argument-once-to-preserve-evaluation}
+    pos-int? {:status :static-adaptation
+              :reason :source-macro-preserves-the-upstream-integer-and-positive-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
+    neg-int? {:status :static-adaptation
+              :reason :source-macro-preserves-the-upstream-integer-and-negative-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
+    nat-int? {:status :static-adaptation
+              :reason :source-macro-preserves-the-upstream-integer-and-not-negative-branches-while-lg-int-covers-the-supported-integral-domain-without-javascript-goog-integer-classes}
     ident? {:status :static-adaptation
             :reason :source-macro-preserves-upstream-keyword-or-symbol-control-flow-and-binds-the-argument-once-before-static-predicate-specialization}
+    simple-ident? {:status :static-adaptation
+                   :reason :source-macro-composes-the-upstream-simple-keyword-and-simple-symbol-cases-because-lg-represents-their-common-guard-as-two-static-branches}
+    qualified-ident? {:status :static-adaptation
+                      :reason :source-macro-composes-the-upstream-qualified-keyword-and-qualified-symbol-cases-and-uses-static-option-presence-for-namespace-truthiness}
+    simple-symbol? {:status :static-adaptation
+                    :reason :source-macro-preserves-the-upstream-symbol-and-nil-namespace-branches-with-static-guard-narrowing}
+    qualified-symbol? {:status :static-adaptation
+                       :reason :source-macro-preserves-the-upstream-symbol-and-present-namespace-branches-and-uses-static-option-presence-for-boolean-coercion}
+    simple-keyword? {:status :static-adaptation
+                     :reason :source-macro-preserves-the-upstream-keyword-and-nil-namespace-branches-with-static-guard-narrowing}
+    qualified-keyword? {:status :static-adaptation
+                        :reason :source-macro-preserves-the-upstream-keyword-and-present-namespace-branches-and-uses-static-option-presence-for-boolean-coercion}
     counted? {:status :static-adaptation
               :reason :source-macro-preserves-upstream-icounted-protocol-satisfaction-through-the-static-core-protocol-registry-and-recognizes-structural-maps-before-they-are-fully-backed-by-the-persistent-hash-map-protocol-receiver}
     seqable? {:status :static-adaptation

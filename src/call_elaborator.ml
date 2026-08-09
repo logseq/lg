@@ -84,6 +84,12 @@ let java_interop_error name =
     ("Java interop is not supported; use static LG types and functions ("
    ^ name ^ ")")
 
+let unreachable_narrowed_value ty kind =
+  typed_ir ty
+    (Semantic_ir.Apply
+       ( Semantic_ir.Ident "invalid_arg",
+         [ Semantic_ir.String ("unreachable " ^ kind ^ " branch") ] ))
+
 let array_element_type = function
   | TArray element_ty -> Some element_ty
   | TOcaml "array" -> Some TUnknown
@@ -8006,7 +8012,6 @@ let create ~compile_expr =
                           "instance? requires a statically known record type; match a closed sum type")
                   ))
         | _ -> Error.error "instance? expects a record type and value")
-              | "nat-int?" | "pos-int?" | "neg-int?"
               | "name"
               | "namespace" | "keyword" | "symbol" -> (
         match compile_args () with
@@ -8063,9 +8068,7 @@ let create ~compile_expr =
             | None -> Core_predicate.compile name [ receiver ])
         | Ok _ -> Error.error "sequential? expects 1 arguments")
               | "rational?" | "float?" | "double?" | "symbol?"
-              | "simple-symbol?" | "qualified-symbol?"
-              | "simple-keyword?" | "qualified-keyword?"
-              | "simple-ident?" | "qualified-ident?" | "reversible?" | "sorted?"
+              | "reversible?" | "sorted?"
                 -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8231,14 +8234,32 @@ let create ~compile_expr =
                  (Semantic_ir.Apply
                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.as_symbol",
                       [ value.semantic_expr ] )))
-        | Ok [ _ ] ->
-            Ok
-              (typed_ir TSymbol
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "invalid_arg",
-                      [ Semantic_ir.String "unreachable symbol branch" ] )))
+        | Ok [ _ ] -> Ok (unreachable_narrowed_value TSymbol "symbol")
         | Ok _ ->
             Error.error "internal symbol narrowing expects 1 argument")
+    | "__lg_keyword-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when Types.equal value.ty TKeyword -> Ok value
+        | Ok [ value ] when Types.equal value.ty TUnknown ->
+            Ok (typed_ir TKeyword value.semantic_expr)
+        | Ok [ value ] when Types.is_dynamic value.ty ->
+            Error.error
+              "keyword? guard narrowing requires a statically typed value; \
+               define a closed sum type for alternative value types"
+        | Ok [ _ ] -> Ok (unreachable_narrowed_value TKeyword "keyword")
+        | Ok _ ->
+            Error.error "internal keyword narrowing expects 1 argument")
+    | "__lg_int-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when Types.equal value.ty TInt -> Ok value
+        | Ok [ value ] when Types.is_dynamic value.ty ->
+            Error.error
+              "int? guard narrowing requires a statically typed value; define \
+               a closed sum type for alternative value types"
+        | Ok [ _ ] -> Ok (unreachable_narrowed_value TInt "int")
+        | Ok _ -> Error.error "internal int narrowing expects 1 argument")
     | "max" | "min" -> (
         match compile_args () with
         | Error _ as err -> err

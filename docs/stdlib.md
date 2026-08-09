@@ -133,7 +133,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 179 source entries (20.94%), 142 typed
+macro surfaces. The current baseline is 188 source entries (21.99%), 133 typed
 primitives, 5 special forms, 12 host boundaries, 162 static-typing blockers,
 44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -160,10 +160,12 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 243-name compiler dispatch inventory has zero `source-shadowed`
+The current 236-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `some?`, `boolean?`, `empty?`, `integer?`,
-`ident?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
+`pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
+`qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
+`qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
 `inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
@@ -193,6 +195,13 @@ preserving single evaluation and nullable flow narrowing. The source
 `seqable?` also restores the upstream `nil`, structural-map, and static-array
 cases; `counted?` uses the existing static `ICounted` registry and recognizes
 structural maps until all maps use the persistent hash-map protocol receiver.
+The Logseq scan finds 18 uses of the integer sign predicates and 55 uses of the
+simple/qualified identifier-family predicates. These now follow the upstream
+guarded source control flow. LG narrows `int?`, `keyword?`, and `symbol?`
+branches through internal typed helpers so the guarded branch remains readable
+source without restoring public-name dispatch; these two newly needed helper
+routes explain why removing nine public routes reduces the raw dispatch count
+by seven.
 `indexed?` remains compiler-owned because LG's current `Indexed` capability
 also covers linear list lookup and therefore cannot stand in for upstream's
 constant-time `IIndexed` contract. `true?` and `false?`

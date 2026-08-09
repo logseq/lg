@@ -51,9 +51,45 @@
   `(let [value# ~x]
      (int? value#)))
 
+(defmacro pos-int? [x]
+  `(let [value# ~x]
+     (if (int? value#) (pos? value#) false)))
+
+(defmacro neg-int? [x]
+  `(let [value# ~x]
+     (if (int? value#) (neg? value#) false)))
+
+(defmacro nat-int? [x]
+  `(let [value# ~x]
+     (if (int? value#) (not (neg? value#)) false)))
+
 (defmacro ident? [x]
   `(let [value# ~x]
      (or (keyword? value#) (symbol? value#))))
+
+(defmacro simple-ident? [x]
+  `(let [value# ~x]
+     (or (simple-keyword? value#) (simple-symbol? value#))))
+
+(defmacro qualified-ident? [x]
+  `(let [value# ~x]
+     (or (qualified-keyword? value#) (qualified-symbol? value#))))
+
+(defmacro simple-symbol? [x]
+  `(let [value# ~x]
+     (if (symbol? value#) (nil? (namespace value#)) false)))
+
+(defmacro qualified-symbol? [x]
+  `(let [value# ~x]
+     (if (symbol? value#) (some? (namespace value#)) false)))
+
+(defmacro simple-keyword? [x]
+  `(let [value# ~x]
+     (if (keyword? value#) (nil? (namespace value#)) false)))
+
+(defmacro qualified-keyword? [x]
+  `(let [value# ~x]
+     (if (keyword? value#) (some? (namespace value#)) false)))
 
 (defmacro counted? [x]
   `(let [value# ~x]

@@ -7,27 +7,6 @@ let one_arg name args =
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
-let identifier_body_expr expr =
-  Semantic_ir.Let
-    ( [ (Semantic_ir.PVar "value", expr) ],
-      Semantic_ir.If
-        ( Semantic_ir.Infix
-            ( "&&",
-              Semantic_ir.Infix
-                (">", apply "String.length" [ Semantic_ir.Ident "value" ], Semantic_ir.Int 0),
-              Semantic_ir.Infix
-                ("=", apply "String.get" [ Semantic_ir.Ident "value"; Semantic_ir.Int 0 ], Semantic_ir.Char ':')
-            ),
-          apply "String.sub"
-            [ Semantic_ir.Ident "value";
-              Semantic_ir.Int 1;
-              Semantic_ir.Infix
-                ("-", apply "String.length" [ Semantic_ir.Ident "value" ], Semantic_ir.Int 1) ],
-          Semantic_ir.Ident "value" ) )
-
-let has_slash expr =
-  apply "String.contains" [ identifier_body_expr expr; Semantic_ir.Char '/' ]
-
 let compile name args =
   match one_arg name args with
   | Error _ as err -> err
@@ -58,30 +37,6 @@ let compile name args =
             (apply "Lg_runtime.Runtime_dynamic.is_symbol"
                [ arg.semantic_expr ])
       | "symbol?" -> static_bool (Types.equal arg.ty TSymbol)
-      | "simple-symbol?" -> (
-          match arg.ty with
-          | TSymbol -> bool (Semantic_ir.Prefix ("not", has_slash arg.semantic_expr))
-          | _ -> static_bool false)
-      | "qualified-symbol?" -> (
-          match arg.ty with
-          | TSymbol -> bool (has_slash arg.semantic_expr)
-          | _ -> static_bool false)
-      | "simple-keyword?" -> (
-          match arg.ty with
-          | TKeyword -> bool (Semantic_ir.Prefix ("not", has_slash arg.semantic_expr))
-          | _ -> static_bool false)
-      | "qualified-keyword?" -> (
-          match arg.ty with
-          | TKeyword -> bool (has_slash arg.semantic_expr)
-          | _ -> static_bool false)
-      | "simple-ident?" -> (
-          match arg.ty with
-          | TKeyword | TSymbol -> bool (Semantic_ir.Prefix ("not", has_slash arg.semantic_expr))
-          | _ -> static_bool false)
-      | "qualified-ident?" -> (
-          match arg.ty with
-          | TKeyword | TSymbol -> bool (has_slash arg.semantic_expr)
-          | _ -> static_bool false)
       | "sequential?" ->
           static_bool (match arg.ty with TList _ | TVector _ -> true | _ -> false)
       | "reversible?" ->

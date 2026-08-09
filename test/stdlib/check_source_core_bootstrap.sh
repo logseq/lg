@@ -44,7 +44,12 @@ if ! grep -E '^\(defmacro array-values([[:space:]]|$)' \
   exit 1
 fi
 
-for name in 'some?' 'boolean?' 'empty?' 'integer?' 'ident?' 'counted?' 'seqable?'; do
+for name in \
+  'some?' 'boolean?' 'empty?' 'integer?' 'ident?' 'counted?' 'seqable?' \
+  'nat-int?' 'pos-int?' 'neg-int?' \
+  'simple-symbol?' 'qualified-symbol?' \
+  'simple-keyword?' 'qualified-keyword?' \
+  'simple-ident?' 'qualified-ident?'; do
   if ! grep -F "(defmacro $name " \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a macro" >&2

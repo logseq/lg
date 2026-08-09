@@ -17,14 +17,6 @@ let two_args name args =
   | [ left; right ] -> Ok (left, right)
   | _ -> Error.error (name ^ " expects 2 arguments")
 
-let int_predicate name args build_code =
-  match one_arg name args with
-  | Error _ as err -> err
-  | Ok arg ->
-      if accepts_int arg.ty then
-        Ok (typed_ir TBool (build_code arg.semantic_expr))
-      else Ok (typed_ir TBool (Semantic_ir.Bool false))
-
 let int_unary name args build_code =
   match one_arg name args with
   | Error _ as err -> err
@@ -263,15 +255,6 @@ let compile_symbol name args =
 
 let compile name args =
   match name with
-  | "nat-int?" ->
-      int_predicate name args (fun expr ->
-          Semantic_ir.Infix (">=", expr, Semantic_ir.Int 0))
-  | "pos-int?" ->
-      int_predicate name args (fun expr ->
-          Semantic_ir.Infix (">", expr, Semantic_ir.Int 0))
-  | "neg-int?" ->
-      int_predicate name args (fun expr ->
-          Semantic_ir.Infix ("<", expr, Semantic_ir.Int 0))
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
   | "keyword" -> compile_keyword name args

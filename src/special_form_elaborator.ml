@@ -124,7 +124,7 @@ let has_capability ty =
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
 
-let narrow_symbol_predicates scope env condition body =
+let narrow_type_predicates scope env condition body =
   let rec narrowed_symbols = function
     | FSymbol name -> [ name ]
     | FList (FSymbol name :: forms)
@@ -181,22 +181,28 @@ let narrow_symbol_predicates scope env condition body =
           ])
       nullable_names body
   in
-  let symbol_names =
-    symbols_matching "symbol?" condition |> List.sort_uniq String.compare
+  let narrow predicate helper body =
+    let names =
+      symbols_matching predicate condition |> List.sort_uniq String.compare
+    in
+    List.fold_right
+      (fun name body ->
+        FList
+          [
+            FSymbol "let";
+            FVector
+              [
+                FSymbol name;
+                FList [ FSymbol helper; FSymbol name ];
+              ];
+            body;
+          ])
+      names body
   in
-  List.fold_right
-    (fun name body ->
-      FList
-        [
-          FSymbol "let";
-          FVector
-            [
-              FSymbol name;
-              FList [ FSymbol "__lg_symbol-value"; FSymbol name ];
-            ];
-          body;
-        ])
-    symbol_names body
+  body
+  |> narrow "symbol?" "__lg_symbol-value"
+  |> narrow "keyword?" "__lg_keyword-value"
+  |> narrow "int?" "__lg_int-value"
 
 let rec false_nil_predicate_names = function
   | FList [ FSymbol predicate; FSymbol name ]
@@ -1105,7 +1111,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 compile_bindings env bindings))
     | _ -> Error.error "let-some bindings must be a vector"
   and compile_if scope env condition then_form else_form =
-    let then_form = narrow_symbol_predicates scope env condition then_form in
+    let then_form = narrow_type_predicates scope env condition then_form in
     let else_form =
       narrow_false_nil_predicates scope env condition else_form
     in
@@ -1307,7 +1313,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             )
         )
   and compile_if_not scope env condition then_form else_form =
-    let else_form = narrow_symbol_predicates scope env condition else_form in
+    let else_form = narrow_type_predicates scope env condition else_form in
     match
       ( compile_expr scope env condition,
         compile_expr scope env then_form,
@@ -1339,10 +1345,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     let body_forms =
       match body_forms with
       | [] -> []
-      | [ body ] -> [ narrow_symbol_predicates scope env condition body ]
+      | [ body ] -> [ narrow_type_predicates scope env condition body ]
       | forms ->
           [
-            narrow_symbol_predicates scope env condition
+            narrow_type_predicates scope env condition
               (FList (FSymbol "do" :: forms));
           ]
     in
@@ -1477,7 +1483,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   match conditions with
                   | [] -> form
                   | _ ->
-                      narrow_symbol_predicates scope env
+                      narrow_type_predicates scope env
                         (FList
                            (FSymbol "and" :: List.rev conditions))
                         form
@@ -2232,7 +2238,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         compile_recur scope env loop_name param_tys arg_forms
     | FList [ FSymbol "if"; condition_form; then_form; else_form ] -> (
         let then_form =
-          narrow_symbol_predicates scope env condition_form then_form
+          narrow_type_predicates scope env condition_form then_form
         in
         let else_form =
           narrow_false_nil_predicates scope env condition_form else_form

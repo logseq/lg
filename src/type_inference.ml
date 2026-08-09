@@ -5067,9 +5067,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected_all expected_ty params args
     | FList
         [
-          FSymbol
-            ( "zero?" | "pos?" | "neg?" | "nat-int?" | "pos-int?"
-            | "neg-int?" );
+          FSymbol ("zero?" | "pos?" | "neg?");
           arg;
         ] ->
         let arg_ty =

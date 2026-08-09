@@ -21244,6 +21244,114 @@ let test_namespace_value_shadows_automatic_core_macro () =
   assert_ocaml_runs "namespace_value_shadows_automatic_core_macro" "true\n"
     native_source
 
+let test_source_integer_and_identifier_predicates_match_clojurescript () =
+  let source =
+    {|
+(ns source-refined-predicate-app
+  (:require [cljs.core :as core
+             :refer [nat-int? pos-int? neg-int?
+                     simple-symbol? qualified-symbol?
+                     simple-keyword? qualified-keyword?
+                     simple-ident? qualified-ident?]]))
+
+(type-variant identifier-input
+  (KeywordInput :keyword)
+  (SymbolInput :symbol)
+  (StringInput :string))
+
+(defn qualified-input? [^identifier-input value]
+  (match value
+    (KeywordInput keyword-value) (qualified-ident? keyword-value)
+    (SymbolInput symbol-value) (qualified-ident? symbol-value)
+    (StringInput string-value) (qualified-ident? string-value)))
+
+(defn positive-integer? [value]
+  (pos-int? value))
+
+(defn qualified-keyword-value? [^:keyword value]
+  (qualified-keyword? value))
+
+(def evaluations (atom 0))
+(println
+  (str (nat-int? 0) ":" (nat-int? -1) ":" (nat-int? 1.0) ":" (nat-int? "0") ":"
+       (pos-int? 1) ":" (pos-int? 0) ":" (pos-int? "1") ":"
+       (neg-int? -1) ":" (neg-int? 0) ":" (neg-int? -1.0) ":"
+       (simple-symbol? 'name) ":" (clojure.core/simple-symbol? 'user/name) ":"
+       (qualified-symbol? 'user/name) ":" (qualified-symbol? 'name) ":"
+       (simple-keyword? :name) ":" (simple-keyword? :user/name) ":"
+       (core/qualified-keyword? :user/name) ":" (qualified-keyword? :name) ":"
+       (qualified-keyword? "user/name") ":"
+       (simple-ident? 'name) ":" (simple-ident? :name) ":"
+       (simple-ident? :user/name) ":" (simple-ident? "name") ":"
+       (qualified-ident? :user/name) ":" (qualified-ident? 'user/name) ":"
+       (qualified-ident? :name) ":" (qualified-ident? "user/name") ":"
+       (qualified-input? (KeywordInput :user/name)) ":"
+       (qualified-input? (SymbolInput 'user/name)) ":"
+       (qualified-input? (StringInput "user/name")) ":"
+       (positive-integer? 7) ":"
+       (qualified-keyword-value? :user/name)))
+(println
+  (str (nat-int? (do (swap! evaluations inc) 0)) ":" (= 1 @evaluations) ":"
+       (pos-int? (do (swap! evaluations inc) 1)) ":" (= 2 @evaluations) ":"
+       (neg-int? (do (swap! evaluations inc) -1)) ":" (= 3 @evaluations) ":"
+       (simple-symbol? (do (swap! evaluations inc) 'name)) ":" (= 4 @evaluations) ":"
+       (qualified-symbol? (do (swap! evaluations inc) 'user/name)) ":" (= 5 @evaluations) ":"
+       (simple-keyword? (do (swap! evaluations inc) :name)) ":" (= 6 @evaluations) ":"
+       (qualified-keyword? (do (swap! evaluations inc) :user/name)) ":" (= 7 @evaluations) ":"
+       (simple-ident? (do (swap! evaluations inc) :name)) ":" (= 8 @evaluations) ":"
+       (qualified-ident? (do (swap! evaluations inc) :user/name)) ":" (= 9 @evaluations)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_refined_predicates.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source refined predicates must preserve static values";
+  assert_ocaml_runs "source_integer_and_identifier_predicates"
+    "true:false:false:false:true:false:false:true:false:false:true:false:true:false:true:false:true:false:false:true:true:false:false:true:true:false:false:true:true:false:true:true\ntrue:true:true:true:true:true:true:true:true:true:true:true:true:true:true:true:true:true\n"
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_refined_predicates.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source refined predicates must preserve static values";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_zero_arity.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0";
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_two_arity.cljc")
+        ("(def result (" ^ name ^ " 1 2))")
+      |> expect_error_contains "unsupported macro arity 2")
+    [
+      "nat-int?";
+      "pos-int?";
+      "neg-int?";
+      "simple-symbol?";
+      "qualified-symbol?";
+      "simple-keyword?";
+      "qualified-keyword?";
+      "simple-ident?";
+      "qualified-ident?";
+    ];
+  compile_with_stdlib_result Lg.Target.Native "test/bad_pos_int_call.cljc"
+    {|
+(defn positive-integer? [value] (pos-int? value))
+(def result (positive-integer? "1"))
+|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/bad_qualified_keyword_call.cljc"
+    {|
+(defn qualified-keyword-value? [^:keyword value] (qualified-keyword? value))
+(def result (qualified-keyword-value? "user/name"))
+|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_batched_core_functions_infer_int_params () =
   let source =
     {|
@@ -37295,6 +37403,8 @@ let tests =
       test_source_collection_and_scalar_predicates_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
+    ( "source integer and identifier predicates match ClojureScript",
+      test_source_integer_and_identifier_predicates_match_clojurescript );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",
