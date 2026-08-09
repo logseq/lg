@@ -980,7 +980,9 @@
     multiply-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
     increment-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
     decrement-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
-    negate-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}}}
+    negate-exact {:status :static-adaptation :reason :source-port-uses-the-cross-target-binary64-number-domain-to-preserve-clojurescript-safe-integer-overflow-bounds}
+    floor-div {:status :static-adaptation :reason :source-port-preserves-upstream-safe-integer-validation-truncation-sign-correction-and-zero-divisor-number-semantics-in-the-binary64-domain}
+    floor-mod {:status :static-adaptation :reason :source-port-preserves-upstream-safe-integer-validation-truncation-sign-correction-and-zero-divisor-number-semantics-in-the-binary64-domain}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

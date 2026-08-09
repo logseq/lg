@@ -3,6 +3,7 @@ let pow = Float.pow
 let fmod = Float.rem
 let abs = Float.abs
 let copy_sign = Float.copy_sign
+let trunc = Float.trunc
 let get_exponent = Runtime_math_common.get_exponent
 let next_after = Runtime_math_common.next_after
 let ulp = Runtime_math_common.ulp

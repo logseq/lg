@@ -283,6 +283,24 @@
 (println (try
            (do (math/negate-exact 9007199254740992.0) false)
            (catch _ true)))
+(println (= -1.0 (math/floor-div -2.0 5.0)))
+(println (= 2.0 (math/floor-div 7.0 3.0)))
+(println (= 2.0 (math/floor-div -7.0 -3.0)))
+(println (= 9007199254740991.0
+            (math/floor-div -9007199254740991.0 -1.0)))
+(println (try
+           (do (math/floor-div 1.5 2.0) false)
+           (catch _ true)))
+(println (= ##Inf (math/floor-div 5.0 0.0)))
+(println (= 3.0 (math/floor-mod -2.0 5.0)))
+(println (= -3.0 (math/floor-mod 2.0 -5.0)))
+(println (= -2.0 (math/floor-mod -2.0 -5.0)))
+(println (= 1.0 (math/floor-mod 7.0 3.0)))
+(println (try
+           (do (math/floor-mod 2.0 1.5) false)
+           (catch _ true)))
+(println (let [result (math/floor-mod 5.0 0.0)]
+           (not (= result result))))
 (defrecord ProtocolBox [value])
 (extend-type ProtocolBox
   protocols/Datafiable

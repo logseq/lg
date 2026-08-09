@@ -185,3 +185,43 @@
   (if (outside-safe-integer? a)
     (throw-integer-overflow "negate-exact")
     (- a)))
+
+(defn- trunc [value]
+  #?(:melange (runtime-math-melange/trunc value)
+     :default (runtime-math/trunc value)))
+
+(defn- safe-integer? [value]
+  (if (= value (trunc value))
+    (if (outside-safe-integer? value) false true)
+    false))
+
+(defn- xor [^:bool a ^:bool b]
+  (if a
+    (if b false true)
+    b))
+
+(defn floor-div [x y]
+  (let [x-safe (safe-integer? x)
+        y-safe (safe-integer? y)]
+    (if-not (and x-safe y-safe)
+      (throw (runtime-exception/unsafe-integer-arguments
+               "floor-div" x-safe y-safe))
+      (let [result (trunc (/ x y))]
+        (if (xor (< x 0.0) (< y 0.0))
+          (if (= (* result y) x)
+            result
+            (- result 1.0))
+          result)))))
+
+(defn floor-mod [x y]
+  (let [x-safe (safe-integer? x)
+        y-safe (safe-integer? y)]
+    (if-not (and x-safe y-safe)
+      (throw (runtime-exception/unsafe-integer-arguments
+               "floor-mod" x-safe y-safe))
+      (let [result (trunc (/ x y))]
+        (if (xor (< x 0.0) (< y 0.0))
+          (if (= (* result y) x)
+            (- x (* y result))
+            (- x (* y result) (- y)))
+          (- x (* y result)))))))

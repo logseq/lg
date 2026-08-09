@@ -46,3 +46,5 @@
 (signature cljs.math/increment-exact :fn<float;float>)
 (signature cljs.math/decrement-exact :fn<float;float>)
 (signature cljs.math/negate-exact :fn<float;float>)
+(signature cljs.math/floor-div :fn<float;float;float>)
+(signature cljs.math/floor-mod :fn<float;float;float>)

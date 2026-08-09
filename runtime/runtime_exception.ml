@@ -17,6 +17,17 @@ let integer_overflow function_name =
   in
   Exception_info ("Integer overflow", data, None)
 
+let unsafe_integer_arguments function_name x_safe y_safe =
+  let data =
+    Runtime_dynamic.map
+      [
+        (Runtime_dynamic.keyword ":x-int?", Runtime_dynamic.bool x_safe);
+        (Runtime_dynamic.keyword ":y-int?", Runtime_dynamic.bool y_safe);
+      ]
+  in
+  Exception_info
+    (function_name ^ " called with non-safe-integer arguments", data, None)
+
 let throw exception_ = raise exception_
 
 let message = function
