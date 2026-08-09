@@ -21541,13 +21541,22 @@ let test_source_numeric_coercions_match_clojurescript () =
   let source =
     {|
 (ns source-numeric-coercion-app
-  (:require [cljs.core :as core :refer [int long double byte float]]))
+  (:require
+    [cljs.core :as core
+     :refer [int long double byte float short unchecked-byte unchecked-char
+             unchecked-short unchecked-float unchecked-double]]))
 
 (def int-coercion int)
 (def long-coercion core/long)
 (def double-coercion clojure.core/double)
 (def byte-coercion byte)
 (def float-coercion core/float)
+(def short-coercion short)
+(def unchecked-byte-coercion core/unchecked-byte)
+(def unchecked-char-coercion clojure.core/unchecked-char)
+(def unchecked-short-coercion unchecked-short)
+(def unchecked-float-coercion core/unchecked-float)
+(def unchecked-double-coercion clojure.core/unchecked-double)
 (def float-factors (array 2.0))
 (defn multiply-double [value]
   (Float.mul (double value) (aget float-factors 0)))
@@ -21566,9 +21575,21 @@ let test_source_numeric_coercions_match_clojurescript () =
 (println (= 8 (byte-coercion 8)))
 (println (= 9.5 (float-coercion 9.5)))
 (println (= 6.0 (multiply-double 3)))
+(println (= 10 (short-coercion 10)))
+(println (= 11 (unchecked-byte-coercion 11)))
+(println (= \a (unchecked-char-coercion \a)))
+(println (= 12 (unchecked-short-coercion 12)))
+(println (= 13.5 (unchecked-float-coercion 13.5)))
+(println (= 14.5 (unchecked-double-coercion 14.5)))
+(println (= 15 (short 15)))
+(println (= 16 (core/unchecked-byte 16)))
+(println (= \b (clojure.core/unchecked-char \b)))
+(println (= 17 (unchecked-short 17)))
+(println (= 18.5 (core/unchecked-float 18.5)))
+(println (= 19.5 (clojure.core/unchecked-double 19.5)))
 |}
   in
-  let expected = String.concat "" (List.init 14 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 26 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/source_numeric_coercions.cljc"
       source
@@ -21592,7 +21613,19 @@ let test_source_numeric_coercions_match_clojurescript () =
         ("test/" ^ name ^ "_source_two_arity.cljc")
         ("(def result (" ^ name ^ " 1 2))")
       |> expect_error_contains "unsupported macro arity 2")
-    [ "int"; "long"; "double"; "byte"; "float" ];
+    [
+      "int";
+      "long";
+      "double";
+      "byte";
+      "float";
+      "short";
+      "unchecked-byte";
+      "unchecked-char";
+      "unchecked-short";
+      "unchecked-float";
+      "unchecked-double";
+    ];
   List.iter
     (fun name ->
       compile_with_stdlib_result Lg.Target.Native

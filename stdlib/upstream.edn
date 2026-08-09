@@ -75,6 +75,18 @@
           :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
     float {:status :ported
            :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    short {:status :ported
+           :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    unchecked-byte {:status :ported
+                    :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    unchecked-char {:status :ported
+                    :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    unchecked-short {:status :ported
+                     :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    unchecked-float {:status :ported
+                     :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
+    unchecked-double {:status :ported
+                      :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
     double {:status :static-adaptation
             :reason :source-function-preserves-first-class-int-to-float-coercion-while-a-source-inline-macro-retains-direct-int-or-float-static-specialization}
     int {:status :static-adaptation

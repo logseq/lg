@@ -136,6 +136,36 @@
   [x]
   x)
 
+(defn short
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn unchecked-byte
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn unchecked-char
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn unchecked-short
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn unchecked-float
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
+(defn unchecked-double
+  {:inline (fn [x] x)}
+  [x]
+  x)
+
 (defn double
   {:inline (fn [x] (list '__lg_double x))}
   [^:int x]

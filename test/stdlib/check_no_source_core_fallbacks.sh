@@ -46,7 +46,7 @@ for name in $public_predicates; do
   fi
 done
 
-public_source_primitives='int long double byte float'
+public_source_primitives='int long double byte float short unchecked-byte unchecked-char unchecked-short unchecked-float unchecked-double'
 for name in $public_source_primitives; do
   if printf '%s\n' "$dispatch_names" | grep -Fx "$name" >/dev/null; then
     echo "clojure.core/$name is still publicly dispatched in call_elaborator.ml" >&2

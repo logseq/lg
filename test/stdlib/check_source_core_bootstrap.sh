@@ -11,7 +11,7 @@ for file in stdlib/clojure/core.mil stdlib/clojure/core.cljc; do
 done
 
 for name in \
-  identity complement boolean not zero? pos? neg? abs byte float double int long reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? \
+  identity complement boolean not zero? pos? neg? abs byte float short unchecked-byte unchecked-char unchecked-short unchecked-float unchecked-double double int long reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? \
   alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array array-from array-binary-search-left array-binary-search-right quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
@@ -30,7 +30,7 @@ for name in \
   fi
 done
 
-for name in 'zero?' 'pos?' 'neg?' 'abs' byte float double int long; do
+for name in 'zero?' 'pos?' 'neg?' 'abs' byte float short unchecked-byte unchecked-char unchecked-short unchecked-float unchecked-double double int long; do
   if ! sed -n "/^(defn $name$/,/^$/p" "$root/stdlib/clojure/core.cljc" \
     | grep -F '{:inline' >/dev/null; then
     echo "clojure.core/$name is missing its source inline macro" >&2
