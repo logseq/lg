@@ -54,6 +54,25 @@
 (defn reverse [source]
   (runtime/reverse source))
 
+(defn- split-source
+  ([source separator]
+   (runtime/split source separator))
+  ([source separator limit]
+   (runtime/split-with-limit source separator limit)))
+
+(defn split
+  {:inline (fn
+             ([source separator]
+              (list 'clojure.string/split-source
+                    source (list 'str separator)))
+             ([source separator limit]
+              (list 'clojure.string/split-source
+                    source (list 'str separator) limit)))}
+  ([source separator]
+   (split-source source (str separator)))
+  ([source separator limit]
+   (split-source source (str separator) limit)))
+
 (defn split-lines [source]
   (runtime/split-lines source))
 

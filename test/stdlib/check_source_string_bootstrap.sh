@@ -15,6 +15,18 @@ if ! grep -F '(defn escape' "$root/stdlib/clojure/string.cljc" >/dev/null; then
   exit 1
 fi
 
+if ! grep -E '^\(defn split($|[[:space:]])' \
+  "$root/stdlib/clojure/string.cljc" >/dev/null; then
+  echo "clojure.string/split is not source-defined" >&2
+  exit 1
+fi
+
+if grep -F '"clojure.string" -> Core_string.bindings' \
+  "$root/src/core_namespaces.ml" >/dev/null; then
+  echo "clojure.string is still compiler-owned" >&2
+  exit 1
+fi
+
 if grep -F 'clojure.string/escape' "$root/src/expression_support.ml" >/dev/null \
   || grep -F 'str/escape' "$root/src/expression_support.ml" >/dev/null; then
   echo "clojure.string/escape still has a compiler-owned first-class fallback" >&2

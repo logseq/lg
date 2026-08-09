@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.walk]
+ [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.data clojure.walk]
 
  :namespaces
  {clojure.core
@@ -652,8 +652,8 @@
     replace {:status :static-adaptation :reason :host-regex-boundary}
     replace-first {:status :static-adaptation :reason :host-regex-boundary}
     reverse {:status :static-adaptation :reason :typed-host-string-primitive}
-    split {:status :host-primitive
-           :reason :string-or-regex-pattern-sum-not-yet-source-expressible}
+    split {:status :static-adaptation
+           :reason :source-two-and-three-arity-function-preserves-upstream-regex-capture-empty-pattern-trailing-empty-and-limit-semantics-through-a-typed-regex-backend-while-direct-string-separators-use-the-source-inline-adapter}
     split-lines {:status :static-adaptation :reason :typed-host-string-primitive}
     starts-with? {:status :static-adaptation :reason :typed-host-string-primitive}
     trim {:status :static-adaptation :reason :typed-host-string-primitive}
@@ -711,8 +711,11 @@
 
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
-   :status :blocked
-   :reason :requires-closed-heterogeneous-clojure-value-domain}
+   :implementation "clojure/data.cljc"
+   :interface "clojure/data.mil"
+   :definitions
+   {diff {:status :static-adaptation
+          :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}}}
 
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"

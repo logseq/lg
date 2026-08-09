@@ -20,6 +20,8 @@
 (signature clojure.string/replace :fn<string;string;string;string>)
 (signature clojure.string/replace-first :fn<string;string;string;string>)
 (signature clojure.string/reverse :fn<string;string>)
+(signature clojure.string/split
+  :overload<fn<string;regex;vector<string>>;fn<string;regex;int;vector<string>>>)
 (signature clojure.string/split-lines :fn<string;vector<string>>)
 (signature clojure.string/starts-with? :fn<string;string;bool>)
 (signature clojure.string/trim :fn<string;string>)

@@ -11,6 +11,8 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  clojure/data.mil
+  clojure/data.cljc
   clojure/walk.mil
   clojure/walk.cljc
   %{lib:lg.runtime:lg_runtime.cma}
@@ -32,6 +34,8 @@
    %{dep:cljs/reader.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
+   %{dep:clojure/data.mil}
+   %{dep:clojure/data.cljc}
    %{dep:clojure/walk.mil}
    %{dep:clojure/walk.cljc}
    -o
@@ -54,6 +58,8 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  clojure/data.mil
+  clojure/data.cljc
   clojure/walk.mil
   clojure/walk.cljc
   %{lib:lg.runtime:lg_runtime.cma}
@@ -75,6 +81,8 @@
    %{dep:cljs/reader.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
+   %{dep:clojure/data.mil}
+   %{dep:clojure/data.cljc}
    %{dep:clojure/walk.mil}
    %{dep:clojure/walk.cljc}
    -o

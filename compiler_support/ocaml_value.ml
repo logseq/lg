@@ -103,3 +103,17 @@ let lookup_label ~include_dirs name =
         in
         Ok (normalize description.lbl_arg)
   with exn -> Error (exception_message exn)
+
+let lookup_type_manifest ~include_dirs name =
+  try
+    let env = init include_dirs in
+    match Longident.unflatten (String.split_on_char '.' name) with
+    | None -> Error ("invalid OCaml type name " ^ name)
+    | Some longident ->
+        let _, declaration =
+          Env.lookup_type ~use:false ~loc:Location.none longident env
+        in
+        (match declaration.type_manifest with
+        | Some manifest -> Ok (normalize manifest)
+        | None -> Error ("OCaml type " ^ name ^ " is not a transparent alias"))
+  with exn -> Error (exception_message exn)

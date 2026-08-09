@@ -914,8 +914,10 @@ let drop_trailing_empty values =
     in
     Array.sub values 0 (last_nonempty (Array.length values - 1) + 1)
 
-let limited_regex_split pattern limit source =
-  let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
+let global_flags flags = if String.contains flags 'g' then flags else flags ^ "g"
+
+let limited_regex_split pattern flags limit source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:(global_flags flags) in
   let rec collect cursor remaining values =
     if remaining = 1 then
       Array.of_list
@@ -946,8 +948,8 @@ let limited_regex_split pattern limit source =
   in
   collect 0 limit []
 
-let full_regex_split pattern source =
-  let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
+let full_regex_split pattern flags source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:(global_flags flags) in
   let rec collect cursor values =
     match Js.Re.exec ~str:source regexp with
     | None ->
@@ -979,12 +981,15 @@ let full_regex_split pattern source =
   in
   collect 0 []
 
-let regex_split ~pattern ~limit source =
+let regex_split_with_flags ~pattern ~flags ~limit source =
   let values =
     match limit with
-    | Some value when value > 0 -> limited_regex_split pattern value source
-    | _ -> full_regex_split pattern source
+    | Some value when value > 0 -> limited_regex_split pattern flags value source
+    | _ -> full_regex_split pattern flags source
   in
   match limit with
   | Some value when value < 0 -> values
   | None | Some _ -> drop_trailing_empty values
+
+let regex_split ~pattern ~limit source =
+  regex_split_with_flags ~pattern ~flags:"" ~limit source

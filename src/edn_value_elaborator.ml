@@ -1,7 +1,15 @@
 open Types
 
 let value_ty = TOcaml "Lg_edn_backend.t"
-let is_value_type ty = Types.equal ty value_ty
+let is_value_type ty =
+  Types.equal ty value_ty
+  ||
+  match ty with
+  | TOcaml name -> (
+      match Ocaml_signature.type_manifest name with
+      | Ok manifest -> Types.equal manifest value_ty
+      | Error _ -> false)
+  | _ -> false
 let optional_payload = function
   | TNullable ty | TOcaml_app ("option", [ ty ]) -> Some ty
   | _ -> None

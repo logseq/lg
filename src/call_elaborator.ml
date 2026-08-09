@@ -295,6 +295,7 @@ let is_edn_value_type = Edn_value_elaborator.is_value_type
 
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
+  else if is_edn_value_type expected then is_edn_value_type actual
   else if Option.is_some (Types.protocol_constraint_info expected) then true
   else if Option.is_some (Types.truthy_constraint_info expected) then true
   else if Option.is_some (Types.nil_predicate_constraint_info expected) then

@@ -89,7 +89,7 @@ let replace replacements value =
   | Lg_edn_backend.Map entries ->
       entries
       |> Array.find_map (fun (candidate, replacement) ->
-             if Runtime_static_value.equal candidate value then Some replacement
+             if Runtime_edn.equal candidate value then Some replacement
              else None)
       |> Option.value ~default:value
   | _ -> invalid_arg "clojure.walk replacement map must be an EDN map"

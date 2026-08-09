@@ -173,3 +173,6 @@ val regex_replace :
   all:bool -> pattern:string -> replacement:string -> string -> string
 val regex_split :
   pattern:string -> limit:int option -> string -> string option array
+val regex_split_with_flags :
+  pattern:string -> flags:string -> limit:int option -> string ->
+  string option array

@@ -249,6 +249,7 @@ if test -n "$clojurescript_root"; then
     'clojure.set|stdlib/clojure/set.cljc' \
     'clojure.edn|stdlib/clojure/edn.cljc' \
     'cljs.reader|stdlib/cljs/reader.cljc' \
+    'clojure.data|stdlib/clojure/data.cljc' \
     'clojure.walk|stdlib/clojure/walk.cljc'; do
     namespace=${namespace_and_source%%|*}
     source=${namespace_and_source#*|}
@@ -362,6 +363,7 @@ for namespace in \
   elif test "$namespace" = clojure.string \
     || test "$namespace" = clojure.edn \
     || test "$namespace" = cljs.reader \
+    || test "$namespace" = clojure.data \
     || test "$namespace" = clojure.walk; then
     ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.set; then
@@ -375,13 +377,13 @@ done
 while IFS='|' read -r var classification; do
   printf 'namespace-var\t%s\t%s\n' "$var" "$classification"
 done <<'EOF'
-clojure.data/diff|host-boundary
+clojure.data/diff|source
 clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
 cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 clojure.string/escape|source
-clojure.string/split|host-boundary
+clojure.string/split|source
 clojure.walk/walk|source
 clojure.walk/prewalk|source
 clojure.walk/postwalk|source

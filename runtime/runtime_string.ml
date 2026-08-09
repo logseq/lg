@@ -193,45 +193,32 @@ let regex_matches_groups expression source =
   Lg_edn_backend.regex_matches_groups_with_flags ~pattern ~flags source
   |> Option.map regex_captures
 
-let split source separator =
-  let literal_regex pattern =
-    let buffer = Buffer.create (String.length pattern) in
-    let rec loop index =
-      if index >= String.length pattern then Buffer.contents buffer
-      else
-        match pattern.[index] with
-        | '\\' when index + 1 < String.length pattern ->
-            Buffer.add_char buffer pattern.[index + 1];
-            loop (index + 2)
-        | ('.' | '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '^'
-          | '$' | '|') as ch ->
-            invalid_arg
-              (Printf.sprintf
-                 "clojure.string/split does not yet support regex operator %c" ch)
-        | ch ->
-            Buffer.add_char buffer ch;
-            loop (index + 1)
-    in
-    loop 0
-  in
-  let separator =
+let escape_regex_literal source =
+  let buffer = Buffer.create (String.length source) in
+  String.iter
+    (fun ch ->
+      (match ch with
+      | '\\' | '.' | '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}'
+      | '^' | '$' | '|' ->
+          Buffer.add_char buffer '\\'
+      | _ -> ());
+      Buffer.add_char buffer ch)
+    source;
+  Buffer.contents buffer
+
+let split_with_limit source separator limit =
+  let pattern, flags =
     if String.starts_with ~prefix:regex_prefix separator then
-      literal_regex (regex_pattern separator)
-    else separator
+      regex_parts separator
+    else (escape_regex_literal separator, "")
   in
-  let separator_len = String.length separator in
-  if separator_len = 0 then Rrbvec.of_list [ source ]
-  else
-    let rec loop acc start index =
-      if index + separator_len > String.length source then
-        List.rev (String.sub source start (String.length source - start) :: acc)
-      else if String.sub source index separator_len = separator then
-        loop
-          (String.sub source start (index - start) :: acc)
-          (index + separator_len) (index + separator_len)
-      else loop acc start (index + 1)
-    in
-    Rrbvec.of_list (loop [] 0 0)
+  Lg_edn_backend.regex_split_with_flags ~pattern ~flags ~limit:(Some limit)
+    source
+  |> Array.to_list
+  |> List.map (Option.value ~default:"")
+  |> Rrbvec.of_list
+
+let split source separator = split_with_limit source separator 0
 
 let split_lines source =
   let length = String.length source in

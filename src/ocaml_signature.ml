@@ -74,6 +74,9 @@ let value_signature_cache =
 let constructor_signature_cache =
   Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
 
+let type_manifest_cache =
+  Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
+
 let rec of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in
   function
@@ -170,6 +173,23 @@ let constructor_signature name =
       in
       Lookup_cache.add cache key signature;
       signature
+
+let type_manifest name =
+  let include_dirs = include_dirs () in
+  let cache = Domain.DLS.get type_manifest_cache in
+  let key = (include_dirs, name) in
+  match Lookup_cache.find_opt cache key with
+  | Some manifest -> manifest
+  | None ->
+      let manifest =
+        match
+          Lg_compiler_support.Ocaml_value.lookup_type_manifest ~include_dirs name
+        with
+        | Error message -> Error.error message
+        | Ok compiler_type -> Ok (of_compiler_type compiler_type)
+      in
+      Lookup_cache.add cache key manifest;
+      manifest
 
 let field_type type_name field_name =
   let owner =

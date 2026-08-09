@@ -297,6 +297,8 @@ let stdlib_sources =
          "stdlib/cljs/reader.cljc";
          "stdlib/clojure/set.mil";
          "stdlib/clojure/set.cljc";
+         "stdlib/clojure/data.mil";
+         "stdlib/clojure/data.cljc";
          "stdlib/clojure/walk.mil";
          "stdlib/clojure/walk.cljc";
        ]
@@ -24073,8 +24075,9 @@ let test_clojure_data_diff_requires_closed_recursive_values () =
 (println (pr-str (data/diff (ComparableBox. 1) (ComparableBox. 2))))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains "cannot cross a dynamic boundary"
+  compile_with_stdlib_result Lg.Target.Native
+    "test/clojure_data_closed_domain.cljc" source
+  |> expect_error_contains "data/diff called with incompatible arguments"
 
 let test_batched_predicate_collection_core_functions_work () =
   let source =

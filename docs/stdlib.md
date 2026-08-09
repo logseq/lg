@@ -146,8 +146,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 354 source entries (41.36%), 62 typed
-primitives, 12 special forms, 28 host boundaries, 185 static-typing blockers,
+macro surfaces. The current baseline is 356 source entries (41.59%), 62 typed
+primitives, 12 special forms, 27 host boundaries, 184 static-typing blockers,
 44 out-of-scope Spec entries, and 171 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -290,7 +290,7 @@ At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,
 `clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
-reader/walk/data boundaries visible instead of treating `clojure.set` as the
+reader boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same scan finds 677 `some?` and
 44 `boolean?` occurrences. It also finds 537 `empty?`, 77 `integer?`, one
 `counted?`, and one `seqable?` occurrence. These now resolve through source
@@ -577,8 +577,14 @@ contains all seven public `clojure.walk` functions over the closed
 pre-order, post-order, map-entry, key-conversion, and replacement order while a
 small typed runtime primitive rebuilds one collection level. The former
 `Runtime_dynamic.t` implementation and compiler namespace route are gone.
-`clojure.data` remains blocked until its recursive diff result is represented
-by an equally explicit closed domain.
+`clojure.data/diff` now uses the same explicit closed domain: the source public
+function delegates to a typed runtime port that preserves atom, map, set, and
+sequential partitions, recursive nil placement, key membership, and upstream
+result order. `clojure.string/split` is also source-owned with both public
+arities, regex captures, empty-regex handling, and positive, zero, and negative
+limits. Consequently, `Core_namespaces` no longer routes any non-core public
+namespace, and the old `Core_data`, `Core_string`, and dynamic data-diff
+implementations have been removed.
 
 The source core also includes ClojureScript's `key-test`, `equiv-map`, `reduceable?`,
 `vector-lite`, `hash-map-lite`, and `set-lite`. `IReduce` is a source-facing

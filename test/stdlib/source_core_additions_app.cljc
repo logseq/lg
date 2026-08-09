@@ -1,6 +1,8 @@
 (ns source-core-additions-app
   (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
+            [clojure.data :as data :refer [diff]]
+            [clojure.string :as string :refer [split]]
             [clojure.walk :as walk :refer [keywordize-keys postwalk-replace prewalk-replace stringify-keys]]
             [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
@@ -705,3 +707,42 @@
 (println
  (= (reader/read-string "{:a 2}")
     (keywordize-keys (reader/read-string "{\"a\" 1, :a 2}"))))
+
+(println (= ["a" "b" "" "c"] (string/split "a,b,,c," #",")))
+(println (= ["a" "b" "c,d"] (split "a,b,c,d" #"," 3)))
+(println (= ["a" "1" "b" "2"]
+            (clojure.string/split "a1b2" #"([0-9])")))
+(println (= ["" "a" "b" "c"] (string/split "abc" #"")))
+(println (= ["a" "b"] (string/split "a,b," #"," 0)))
+(println (= ["a" "b" ""] (string/split "a,b," #"," -1)))
+(println (= ["a,b,c"] (string/split "a,b,c" #"," 1)))
+(println (= ["a" "b" "c"] (string/split "a,b,c" ",")))
+
+(def data-one (reader/read-string "1"))
+(def data-two (reader/read-string "2"))
+(def source-diff diff)
+(println (= (reader/read-string "[nil nil 1]")
+            (source-diff data-one data-one)))
+(println (= (reader/read-string "[1 2 nil]")
+            (data/diff data-one data-two)))
+(println
+ (= (reader/read-string "[{:b 2} {:b 3, :c 4} {:a 1}]")
+    (clojure.data/diff
+     (reader/read-string "{:a 1, :b 2}")
+     (reader/read-string "{:a 1, :b 3, :c 4}"))))
+(println
+ (= (reader/read-string "[[nil 2] [nil 3 4] [1]]")
+    (data/diff (reader/read-string "[1 2]")
+               (reader/read-string "[1 3 4]"))))
+(println
+ (= (reader/read-string "[#{1} #{3} #{2}]")
+    (data/diff (reader/read-string "#{1 2}")
+               (reader/read-string "#{2 3}"))))
+(println
+ (= (reader/read-string "[[1] {:a 1} nil]")
+    (data/diff (reader/read-string "[1]")
+               (reader/read-string "{:a 1}"))))
+(println
+ (= (reader/read-string "[{:a nil} nil nil]")
+    (data/diff (reader/read-string "{:a nil}")
+               (reader/read-string "{}"))))

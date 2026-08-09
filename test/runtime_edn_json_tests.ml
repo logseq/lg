@@ -114,6 +114,17 @@ let () =
   assert (String.equal source (Runtime_edn.write_json_string value))
 
 let () =
+  let compact =
+    Edn.Int4_array
+      ([| 1 |], [| 2 |], [| Edn.String "value" |], [| 3 |])
+  in
+  let expanded =
+    Edn.Vector [| Edn.Int4_vector (1, 2, Edn.String "value", 3) |]
+  in
+  assert (Runtime_edn.equal compact expanded);
+  assert (not (Runtime_edn.equal (Edn.Float nan) (Edn.Float nan)))
+
+let () =
   let count = 20_000 in
   let value =
     Edn.Map

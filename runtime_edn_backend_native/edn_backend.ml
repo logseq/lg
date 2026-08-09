@@ -896,8 +896,8 @@ let limited_regex_split regex limit source =
   in
   collect 0 limit [] (Re.all regex source)
 
-let regex_split ~pattern ~limit source =
-  let regex = Re.Perl.compile_pat pattern in
+let regex_split_with_flags ~pattern ~flags ~limit source =
+  let regex = Re.Perl.compile_pat ~opts:(regex_options flags) pattern in
   let values =
     match limit with
     | Some value when value > 0 -> limited_regex_split regex value source
@@ -909,3 +909,6 @@ let regex_split ~pattern ~limit source =
     | None | Some _ -> drop_trailing_empty values
   in
   Array.of_list values
+
+let regex_split ~pattern ~limit source =
+  regex_split_with_flags ~pattern ~flags:"" ~limit source

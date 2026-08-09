@@ -122,3 +122,76 @@ let bool_value = function
   | _ -> invalid_arg "expected an EDN boolean"
 
 let is_nil = function Lg_edn_backend.Nil -> true | _ -> false
+
+let sequence_values = function
+  | Lg_edn_backend.List values | Lg_edn_backend.Vector values -> Some values
+  | Lg_edn_backend.Int4_vector (first, second, third, fourth) ->
+      Some
+        [|
+          Lg_edn_backend.Small_int first;
+          Lg_edn_backend.Small_int second;
+          third;
+          Lg_edn_backend.Small_int fourth;
+        |]
+  | Lg_edn_backend.Int_vector values ->
+      Some (Array.map (fun value -> Lg_edn_backend.Small_int value) values)
+  | Lg_edn_backend.Int4_array (entities, attributes, values, txs) ->
+      let length = Array.length entities in
+      if
+        Array.length attributes <> length
+        || Array.length values <> length
+        || Array.length txs <> length
+      then invalid_arg "EDN compact row columns must have equal lengths"
+      else
+        Some
+          (Array.init length (fun index ->
+               Lg_edn_backend.Int4_vector
+                 ( entities.(index),
+                   attributes.(index),
+                   values.(index),
+                   txs.(index) )))
+  | _ -> None
+
+let rec equal left right =
+  let open Lg_edn_backend in
+  match (left, right) with
+  | Json_source source, right -> equal (of_json_string source) right
+  | left, Json_source source -> equal left (of_json_string source)
+  | Nil, Nil -> true
+  | Bool left, Bool right -> Bool.equal left right
+  | String left, String right
+  | Symbol left, Symbol right
+  | Keyword left, Keyword right
+  | Bigint left, Bigint right
+  | Decimal left, Decimal right
+  | Ratio left, Ratio right
+  | Regex left, Regex right ->
+      String.equal left right
+  | Char left, Char right -> Uchar.equal left right
+  | Small_int left, Small_int right -> Int.equal left right
+  | Int left, Int right -> Int64.equal left right
+  | Small_int left, Int right | Int right, Small_int left ->
+      Int64.equal (Int64.of_int left) right
+  | Float left, Float right -> left = right
+  | Tagged (left_tag, left_value), Tagged (right_tag, right_value) ->
+      String.equal left_tag right_tag && equal left_value right_value
+  | Set left, Set right ->
+      Array.length left = Array.length right
+      && Array.for_all
+           (fun value -> Array.exists (equal value) right)
+           left
+  | Map left, Map right ->
+      Array.length left = Array.length right
+      && Array.for_all
+           (fun (key, value) ->
+             Array.exists
+               (fun (other_key, other_value) ->
+                 equal key other_key && equal value other_value)
+               right)
+           left
+  | _ -> (
+      match (sequence_values left, sequence_values right) with
+      | Some left, Some right ->
+          Array.length left = Array.length right
+          && Array.for_all2 equal left right
+      | _ -> false)
