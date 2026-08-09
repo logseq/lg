@@ -441,7 +441,9 @@ vectors of the input collection representation, and same-shape operations such
 as `distinct`, `dedupe`, `butlast`,
 `take-last`, `drop-last`, `nthnext`, `nthrest`, and `rseq` currently
 preserve the input collection representation where practical. `dorun` and
-`doall` are explicit realization boundaries.
+`doall` are explicit realization boundaries; `dorun` is source-defined, while
+`doall` remains compiler-owned until overloaded storage-return inference can
+preserve the original collection representation.
 
 `range` returns a typed memoized lazy integer seq. `(range)` is unbounded;
 bounded one-, two-, and three-argument forms remain lazy.

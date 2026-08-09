@@ -5556,7 +5556,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_seqable
           (inferred_unary_function_param params function_form)
           params collection
-    | FList [ FSymbol ("__lg_set" | "dorun" | "doall"); collection ] ->
+    | FList [ FSymbol ("__lg_set" | "doall"); collection ] ->
         infer_collection params collection
     | FList
         [

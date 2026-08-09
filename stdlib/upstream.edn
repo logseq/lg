@@ -307,6 +307,10 @@
             :reason :source-port-preserves-infinite-delayed-repetition-and-finite-take-composition-instead-of-the-javascript-repeat-runtime-type}
     cycle {:status :static-adaptation
            :reason :source-port-preserves-empty-input-termination-and-memoized-infinite-repetition-instead-of-the-javascript-cycle-runtime-type}
+    dorun {:status :static-adaptation
+           :reason :source-port-preserves-one-and-two-arity-lazy-realization-order-through-tail-recursive-sequence-walking-and-returns-static-none-as-clojure-nil}
+    doall {:status :blocked-static-typing
+           :reason :source-port-can-realize-the-input-but-overloaded-return-storage-inference-currently-specializes-the-seqable-storage-variable-to-the-element-type-instead-of-preserving-the-original-collection-representation}
     filterv {:status :static-adaptation
              :reason :source-port-preserves-eager-vector-accumulation-through-static-reduce-and-persistent-conj-because-the-javascript-transient-array-boundary-is-not-shared-by-native-and-melange}
     partition {:status :static-adaptation

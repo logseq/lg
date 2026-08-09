@@ -133,3 +133,14 @@
 (println
   (and (= [1 2] (vec (first padded-partitions)))
        (= [3 0] (vec (second padded-partitions)))))
+(def dorun-calls (atom 0))
+(def dorun-values
+  (map
+    (fn [value]
+      (swap! dorun-calls inc)
+      value)
+    [1 2 3]))
+(dorun 2 dorun-values)
+(println (= 3 @dorun-calls))
+(dorun dorun-values)
+(println (= 3 @dorun-calls))

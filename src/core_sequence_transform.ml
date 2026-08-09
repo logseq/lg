@@ -279,11 +279,6 @@ let interleave collections =
                   body,
                   [ Semantic_ir.List []; Semantic_ir.List exprs ] )))
 
-let dorun collection =
-  match collection_to_list_expr collection with
-  | Error _ -> Error.error "dorun expects a collection"
-  | Ok _ -> Ok (typed_ir TUnit Semantic_ir.Unit)
-
 let doall collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "doall expects a collection"
@@ -439,15 +434,13 @@ let compile name args =
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
   | "interleave", collections -> interleave collections
-  | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
   | "into", [ target; source ] -> into target source
   | "into-cat", [ target; source ] -> into_cat target source
   | "remove", _ -> Error.error "remove expects function and collection"
   | ("take-while" | "drop-while"), _ ->
       Error.error (name ^ " expects function and collection")
-  | ("sort" | "vec" | "set" | "dorun"
-    | "doall"),
+  | ("sort" | "vec" | "set" | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

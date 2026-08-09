@@ -8328,7 +8328,7 @@ let create ~compile_expr =
         | Ok args -> Core_sequence.compile env name args)
     | "some" -> compile_some scope env arg_forms
     | "partition-by" -> compile_partition_by scope env arg_forms
-    | "dorun" | "doall" ->
+    | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
     | "sort" ->

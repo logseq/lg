@@ -644,6 +644,27 @@
       (cycle-seq values values)
       (seq []))))
 
+(defn- dorun-seq [coll]
+  (loop [remaining coll]
+    (if remaining
+      (recur (rest remaining))
+      nil)))
+
+(defn- dorun-n-seq [n coll]
+  (loop [remaining-count n
+         remaining coll]
+    (if remaining
+      (if (pos? remaining-count)
+        (recur (dec remaining-count) (rest remaining))
+        nil)
+      nil)))
+
+(defn dorun
+  ([coll]
+   (dorun-seq (seq coll)))
+  ([n coll]
+   (dorun-n-seq n (seq coll))))
+
 (defn- take-nth-seq [n coll]
   (lazy-seq
    (if coll
