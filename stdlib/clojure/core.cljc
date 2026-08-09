@@ -370,6 +370,24 @@
   [x]
   (__lg_abs x))
 
+(defmacro unchecked-max
+  ([x] x)
+  ([x y]
+   `(let [x# ~x
+          y# ~y]
+      (if (> x# y#) x# y#)))
+  ([x y & more]
+   `(max (max ~x ~y) ~@more)))
+
+(defmacro unchecked-min
+  ([x] x)
+  ([x y]
+   `(let [x# ~x
+          y# ~y]
+      (if (< x# y#) x# y#)))
+  ([x y & more]
+   `(min (min ~x ~y) ~@more)))
+
 (defn byte
   {:inline (fn [x] x)}
   [x]

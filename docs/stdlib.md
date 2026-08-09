@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 277 source entries (32.40%), 88 typed
+macro surfaces. The current baseline is 279 source entries (32.63%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
-44 out-of-scope Spec entries, and 249 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 247 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -315,6 +315,10 @@ the distinction explicit within LG's current static integer domain. `byte` and
 This keeps higher-order calls and namespace exports in the aggregate stdlib
 while removing the public conversion names from compiler dispatch. The Logseq
 scan finds 21 direct `int`, 9 direct `long`, and 6 direct `double` calls.
+The public `unchecked-max` and `unchecked-min` macros are also pinned source:
+their two-argument clauses bind both inputs exactly once before comparing, and
+their variadic clauses preserve upstream nesting through the existing static
+`max` and `min` operations.
 The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or

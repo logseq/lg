@@ -22053,6 +22053,57 @@ let test_source_numeric_coercions_match_clojurescript () =
       |> expect_error_contains "expects a numeric value")
     [ "unchecked-int"; "unchecked-long" ]
 
+let test_source_unchecked_extrema_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-unchecked-extrema-app
+  (:require [cljs.core :as core :refer [unchecked-max unchecked-min]]))
+
+(def calls (atom 0))
+(def maximum
+  (unchecked-max
+    (do (swap! calls inc) 3)
+    (do (swap! calls inc) 5)))
+(def minimum
+  (core/unchecked-min
+    (do (swap! calls inc) 4)
+    (do (swap! calls inc) 2)))
+
+(println (= 7 (unchecked-max 7)))
+(println (= 9 (clojure.core/unchecked-max 2 9)))
+(println (= 11 (unchecked-max 1 11 3 7)))
+(println (= -3 (unchecked-min -3)))
+(println (= -5 (clojure.core/unchecked-min 2 -5)))
+(println (= -7 (unchecked-min 4 -2 8 -7)))
+(println (= 5 maximum))
+(println (= 2 minimum))
+(println (= 4 @calls))
+(println (= 2.5 (core/unchecked-max 1.5 2.5)))
+(println (= -2.5 (core/unchecked-min -1.5 -2.5)))
+|}
+  in
+  let expected = String.concat "" (List.init 11 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_unchecked_extrema.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source unchecked extrema macros must remain static";
+  assert_ocaml_runs "source_unchecked_extrema" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_unchecked_extrema.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source unchecked extrema macros must remain static";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_zero.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0")
+    [ "unchecked-max"; "unchecked-min" ]
+
 let test_source_control_macros_match_clojurescript () =
   let source =
     {|
@@ -38544,6 +38595,8 @@ let tests =
       test_ex_info_supports_clojurescript_cause_arity );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
+    ( "source unchecked extrema macros match ClojureScript",
+      test_source_unchecked_extrema_macros_match_clojurescript );
     ( "source control macros match ClojureScript",
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",

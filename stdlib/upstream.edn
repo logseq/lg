@@ -115,6 +115,10 @@
           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-negative-number-predicate}
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
+    unchecked-max {:status :ported
+                   :reason :source-macro-preserves-upstream-one-two-and-variadic-arities-two-argument-single-evaluation-and-max-composition-order}
+    unchecked-min {:status :ported
+                   :reason :source-macro-preserves-upstream-one-two-and-variadic-arities-two-argument-single-evaluation-and-min-composition-order}
     byte {:status :ported
           :reason :source-function-and-inline-identity-macro-preserve-the-upstream-clojurescript-number-representation}
     float {:status :ported
