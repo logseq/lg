@@ -17,6 +17,10 @@
 
 (signature clojure.core/identity [value]
   :fn<value;value>)
+(signature clojure.core/hash [value]
+  :fn<hashable<value>;int>)
+(signature clojure.core/compare [value]
+  :fn<comparable<value>;value;int>)
 (signature clojure.core/subvec [value]
   :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
 (signature clojure.core/array [value]
@@ -256,6 +260,10 @@
 (signature clojure.core/hash-string :fn<option<string>;int>)
 (signature clojure.core/add-to-string-hash-cache :fn<option<string>;int>)
 (signature clojure.core/mix-collection-hash :fn<int;int;int>)
+(signature clojure.core/hash-ordered-coll [value storage]
+  :fn<seqable<hashable<value>;storage>;int>)
+(signature clojure.core/hash-unordered-coll [value storage]
+  :fn<seqable<hashable<value>;storage>;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
 (signature clojure.core/reset-vals! [value]

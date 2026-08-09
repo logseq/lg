@@ -111,6 +111,20 @@ let rec refine_type existing inferred =
       let existing_value = Types.truthy_constraint_info existing |> Option.get in
       let inferred_value = Types.truthy_constraint_info inferred |> Option.get in
       Types.truthy_constraint (refine_type existing_value inferred_value)
+  | existing, inferred
+    when Option.is_some (Types.hashable_constraint_info existing)
+         && Option.is_some (Types.hashable_constraint_info inferred) ->
+      Types.hashable_constraint
+        (refine_type
+           (Types.hashable_constraint_info existing |> Option.get)
+           (Types.hashable_constraint_info inferred |> Option.get))
+  | existing, inferred
+    when Option.is_some (Types.comparable_constraint_info existing)
+         && Option.is_some (Types.comparable_constraint_info inferred) ->
+      Types.comparable_constraint
+        (refine_type
+           (Types.comparable_constraint_info existing |> Option.get)
+           (Types.comparable_constraint_info inferred |> Option.get))
   | existing, inferred -> (
       match
         ( Types.protocol_constraint_info existing,
@@ -129,6 +143,18 @@ and refine_nonmatching_type existing inferred =
     when Option.is_some (Types.truthy_constraint_info existing) ->
       let value_ty = Types.truthy_constraint_info existing |> Option.get in
       Types.truthy_constraint (refine_type value_ty inferred)
+  | existing, inferred
+    when Option.is_some (Types.hashable_constraint_info existing) ->
+      Types.hashable_constraint
+        (refine_type
+           (Types.hashable_constraint_info existing |> Option.get)
+           inferred)
+  | existing, inferred
+    when Option.is_some (Types.comparable_constraint_info existing) ->
+      Types.comparable_constraint
+        (refine_type
+           (Types.comparable_constraint_info existing |> Option.get)
+           inferred)
   | existing, inferred
     when Option.is_some (Types.contains_constraint_info existing)
          && Option.is_some (Types.contains_constraint_info inferred) ->
@@ -467,6 +493,31 @@ let constrain_printable_symbol params name =
       Ok (replace_param name (Types.printable_constraint value_ty) params)
   | Some _ | None -> Ok params
 
+let constrain_hashable_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.hashable_constraint_info ty) -> Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.hashable_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok (replace_param name (Types.hashable_constraint value_ty) params)
+  | Some _ | None -> Ok params
+
+let constrain_comparable_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.comparable_constraint_info ty) ->
+      Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.comparable_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok (replace_param name (Types.comparable_constraint value_ty) params)
+  | Some _ | None -> Ok params
+
 let constrain_symbol_predicate params name =
   match string_assoc_opt name params with
   | Some ty
@@ -547,12 +598,6 @@ let rec assoc_root_symbol = function
       assoc_root_symbol target
   | _ -> None
 
-let constrain_comparable_symbol params name =
-  match string_assoc_opt name params with
-  | Some (TNullable _ | TOcaml_app ("option", [ _ ])) ->
-      Ok (replace_param name (Types.dynamic_constraint TUnknown) params)
-  | _ -> Ok params
-
 let constrain_seqable element_ty params name =
   let rec add_constraint = function
     | TUnknown | TMeta _ | TVar _ -> Types.seqable_constraint element_ty
@@ -603,6 +648,15 @@ let constrain_seqable element_ty params name =
         Types.printable_constraint
           (add_constraint
              (Option.get (Types.printable_constraint_info existing)))
+    | existing when Option.is_some (Types.hashable_constraint_info existing) ->
+        Types.hashable_constraint
+          (add_constraint
+             (Option.get (Types.hashable_constraint_info existing)))
+    | existing
+      when Option.is_some (Types.comparable_constraint_info existing) ->
+        Types.comparable_constraint
+          (add_constraint
+             (Option.get (Types.comparable_constraint_info existing)))
     | existing
       when Option.is_some (Types.symbol_predicate_constraint_info existing) ->
         Types.symbol_predicate_constraint
@@ -3771,22 +3825,46 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
         [
-          FSymbol ("name" | "namespace" | "hash");
+          FSymbol ("name" | "namespace");
           FSymbol value;
         ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
+    | FList [ FSymbol "__lg_hash"; FSymbol value ] ->
+        constrain_hashable_symbol params value
     | FList
-        [ FSymbol ("compare" | "ordering-compare"); FSymbol left; FSymbol right ] -> (
+        [ FSymbol "__lg_compare"; FSymbol left; FSymbol right ] -> (
+        match (string_assoc_opt left params, string_assoc_opt right params) with
+        | Some left_ty, _
+          when Option.is_some (Types.comparable_constraint_info left_ty) ->
+            constrain_symbol
+              (Types.comparable_constraint_info left_ty |> Option.get)
+              params right
+        | _, Some right_ty
+          when Option.is_some (Types.comparable_constraint_info right_ty) ->
+            constrain_symbol
+              (Types.comparable_constraint
+                 (Types.comparable_constraint_info right_ty |> Option.get))
+              params left
+        | Some (TUnknown | TMeta _ | TVar _),
+          Some (TUnknown | TMeta _ | TVar _) ->
+            let comparison = fresh_type_variable "comparison" in
+            Result.bind
+              (constrain_symbol
+                 (Types.comparable_constraint comparison)
+                 params left)
+              (fun params -> constrain_symbol comparison params right)
+        | _ -> (
+            match constrain_comparable_symbol params left with
+            | Error _ as error -> error
+            | Ok params -> constrain_comparable_symbol params right))
+    | FList [ FSymbol "ordering-compare"; FSymbol left; FSymbol right ] -> (
         match (string_assoc_opt left params, string_assoc_opt right params) with
         | Some (TUnknown | TMeta _ | TVar _),
           Some (TUnknown | TMeta _ | TVar _) ->
             infer_expected_all
               (fresh_type_variable "comparison")
               params [ FSymbol left; FSymbol right ]
-        | _ -> (
-            match constrain_comparable_symbol params left with
-            | Error _ as error -> error
-            | Ok params -> constrain_comparable_symbol params right))
+        | _ -> Ok params)
     | FList [ FSymbol ("__lg_identical-predicate" | ".equals"); left; right ] ->
         Result.bind (infer_all params [ left; right ]) (fun params ->
             let left_ty = inferred_form_type params left in
@@ -4162,8 +4240,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | FSymbol name -> constrain_seqable TUnknown params name
         | form ->
             infer_expected (Types.seqable_constraint TUnknown) params form)
-    | FList [ FSymbol "hash-unordered-coll"; FSymbol collection ] ->
-        constrain_seqable TUnknown params collection
     | FList (FSymbol "merge" :: maps) ->
         infer_expected_all (Types.dynamic_constraint TUnknown) params maps
     | FList

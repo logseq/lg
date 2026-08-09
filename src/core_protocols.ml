@@ -787,3 +787,17 @@ let find_comparable receiver_ty registry =
                  instantiate_receiver_method_type receiver_ty
                    implementation.ty;
              })
+
+let find_hash receiver_ty registry =
+  match Receiver_id.of_type receiver_ty with
+  | None -> None
+  | Some receiver ->
+      Protocol_registry.find_implementation hash_id
+        (method_id hash_id "-hash") receiver registry
+      |> Option.map (fun (implementation : binding) ->
+             {
+               implementation with
+               ty =
+                 instantiate_receiver_method_type receiver_ty
+                   implementation.ty;
+             })

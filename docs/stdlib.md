@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 486 source entries (49.34%), 89 typed
-primitives, 43 special forms, 97 host boundaries, 219 static-typing blockers,
+macro surfaces. The current baseline is 490 source entries (49.75%), 87 typed
+primitives, 43 special forms, 97 host boundaries, 217 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -259,11 +259,14 @@ overloads without rejecting one of those existing cases.
 `char` is blocked for the same first-class overload limitation: the upstream
 one-argument function accepts either an integer code unit or a string. A
 single-domain port would silently narrow ClojureScript compatibility.
-`hash-ordered-coll` and `hash-unordered-coll` remain blocked from source
-ownership because their generic elements need an `IHash` capability witness
-inside the function body. `hash-unordered-coll` therefore remains a typed
-compiler boundary rather than substituting OCaml polymorphic hashing for the
-ClojureScript hash contract.
+`hash`, `compare`, `hash-ordered-coll`, and `hash-unordered-coll` are now
+source-owned. `hashable<T>` carries a closed `T -> int` witness assembled from
+LG's static scalar, collection, record, and `IHash` implementations;
+`comparable<T>` carries a `T -> T -> int` witness and keeps both operands in one
+concrete domain. The two collection functions preserve the pinned
+ClojureScript accumulation loops and final Murmur3 mix. Only the minimal
+private `__lg_hash` and `__lg_compare` elaboration ABI remains in the compiler,
+and neither capability uses dynamic packing.
 
 The Logseq/DataScript compatibility helpers `weak-deref` and `weak-clear!` are
 ordinary precompiled `clojure.core` source functions with explicit

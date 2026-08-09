@@ -303,6 +303,8 @@ let rec argument_compatible expected actual =
   else if Option.is_some (Types.nil_predicate_constraint_info expected) then
     true
   else if Option.is_some (Types.printable_constraint_info expected) then true
+  else if Option.is_some (Types.hashable_constraint_info expected) then true
+  else if Option.is_some (Types.comparable_constraint_info expected) then true
   else if Option.is_some (Types.symbol_predicate_constraint_info expected) then
     true
   else if Option.is_some (Types.contains_constraint_info expected) then
@@ -470,6 +472,8 @@ let has_capability_constraint ty =
   || Option.is_some (Types.truthy_constraint_info ty)
   || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
+  || Option.is_some (Types.hashable_constraint_info ty)
+  || Option.is_some (Types.comparable_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
   ||
@@ -527,8 +531,24 @@ let constrained_identifier_expression name ty =
                       [
                         Semantic_ir.Ident (name ^ "__print");
                         build value_ty;
-                      ]
+                    ]
                 | None -> (
+                    match Types.hashable_constraint_info ty with
+                    | Some value_ty ->
+                        Semantic_ir.Tuple
+                          [
+                            Semantic_ir.Ident (name ^ "__hash");
+                            build value_ty;
+                          ]
+                    | None -> (
+                        match Types.comparable_constraint_info ty with
+                        | Some value_ty ->
+                            Semantic_ir.Tuple
+                              [
+                                Semantic_ir.Ident (name ^ "__compare");
+                                build value_ty;
+                              ]
+                        | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.Tuple
@@ -559,7 +579,7 @@ let constrained_identifier_expression name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.Ident name)))))))
+            | _ -> Semantic_ir.Ident name)))))))))
   in
   build ty
 
@@ -598,8 +618,24 @@ let constrained_identifier_pattern name ty =
                       [
                         Semantic_ir.PVar (name ^ "__print");
                         build value_ty;
-                      ]
+                    ]
                 | None -> (
+                    match Types.hashable_constraint_info ty with
+                    | Some value_ty ->
+                        Semantic_ir.PTuple
+                          [
+                            Semantic_ir.PVar (name ^ "__hash");
+                            build value_ty;
+                          ]
+                    | None -> (
+                        match Types.comparable_constraint_info ty with
+                        | Some value_ty ->
+                            Semantic_ir.PTuple
+                              [
+                                Semantic_ir.PVar (name ^ "__compare");
+                                build value_ty;
+                              ]
+                        | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.PTuple
@@ -630,7 +666,7 @@ let constrained_identifier_pattern name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.PVar name)))))))
+            | _ -> Semantic_ir.PVar name)))))))))
   in
   build ty
 
@@ -662,6 +698,18 @@ let rec constrained_value_expression ty expression =
               constrained_value_expression value_ty
                 (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
           | None -> (
+              match Types.hashable_constraint_info ty with
+              | Some value_ty ->
+                  constrained_value_expression value_ty
+                    (Semantic_ir.Apply
+                       (Semantic_ir.Ident "snd", [ expression ]))
+              | None -> (
+                  match Types.comparable_constraint_info ty with
+                  | Some value_ty ->
+                      constrained_value_expression value_ty
+                        (Semantic_ir.Apply
+                           (Semantic_ir.Ident "snd", [ expression ]))
+                  | None -> (
               match Types.symbol_predicate_constraint_info ty with
               | Some value_ty ->
                   constrained_value_expression value_ty
@@ -680,7 +728,7 @@ let rec constrained_value_expression ty expression =
              || constraint_name = Types.optional_sequential_constraint_name ->
           constrained_value_expression value_ty
             (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
-      | _ -> expression))))))
+      | _ -> expression))))))))
 
 let constrained_argument_value argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -735,6 +783,193 @@ let resolve_named_record_application env = function
             (TNamed_record record)
       | [] | _ :: _ :: _ -> ty)
   | ty -> ty
+
+let compile_registered_hash env value =
+  let value_ty =
+    Types.constraint_value_type value.ty |> resolve_named_record_application env
+  in
+  match Core_protocols.find_hash value_ty (Env.protocols env) with
+  | Some { ty = TFn ([ _ ], return_ty); ocaml_name; _ }
+    when Types.equal return_ty TInt
+         || match return_ty with
+            | TUnknown | TMeta _ | TVar _ -> true
+            | _ -> false ->
+      Some
+        (Semantic_ir.Apply
+           (Semantic_ir.Ident ocaml_name, [ constrained_argument_value value ]))
+  | Some _ -> None
+  | None -> None
+
+let rec compile_static_hash_capability env value =
+  let apply name arguments =
+    Semantic_ir.Apply (Semantic_ir.Ident name, arguments)
+  in
+  match Types.hashable_constraint_info value.ty with
+  | Some _ ->
+      let expression =
+        match Semantic_ir.unlocated value.semantic_expr with
+        | Semantic_ir.Ident name when not (is_generated_callback_argument name) ->
+            apply (name ^ "__hash") [ value.semantic_expr ]
+        | _ ->
+            Semantic_ir.Apply
+              ( apply "fst" [ value.semantic_expr ],
+                [ apply "snd" [ value.semantic_expr ] ] )
+      in
+      Ok expression
+  | None -> (
+  match compile_registered_hash env value with
+  | Some expression -> Ok expression
+  | None -> (
+      let value_ty = Types.constraint_value_type value.ty in
+      let expression = constrained_argument_value value in
+      let value = typed_ir value_ty expression in
+      match value_ty with
+      | TInt -> Ok (apply "Lg_runtime.Runtime_hash.hash_int" [ expression ])
+      | TFloat -> Ok (apply "Lg_runtime.Runtime_hash.hash_float" [ expression ])
+      | TChar -> Ok (apply "Char.code" [ expression ])
+      | TString | TRegex ->
+          Ok (apply "Lg_runtime.Runtime_hash.hash_string" [ expression ])
+      | TSymbol ->
+          Ok (apply "Lg_runtime.Runtime_hash.hash_symbol" [ expression ])
+      | TKeyword ->
+          Ok (apply "Lg_runtime.Runtime_hash.hash_keyword" [ expression ])
+      | TBool ->
+          Ok
+            (Semantic_ir.If
+               (expression, Semantic_ir.Int 1231, Semantic_ir.Int 1237))
+      | TNil | TUnit ->
+          Ok (Semantic_ir.Sequence [ expression; Semantic_ir.Int 0 ])
+      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+          let item_name = "__lg_constrained_argument_optional_hash_value" in
+          let item = typed_ir inner (Semantic_ir.Ident item_name) in
+          Result.map
+            (fun item_hash ->
+              Semantic_ir.Match
+                ( expression,
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Int 0 );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar item_name)),
+                      item_hash );
+                  ] ))
+            (compile_static_hash_capability env item)
+      | TTuple [ left_ty; right_ty ] ->
+          let left = typed_ir left_ty (apply "fst" [ expression ]) in
+          let right = typed_ir right_ty (apply "snd" [ expression ]) in
+          Result.bind (compile_static_hash_capability env left) (fun left_hash ->
+              Result.map
+                (fun right_hash ->
+                  apply "Lg_runtime.Runtime_hash.hash_ordered"
+                    [
+                      apply "List.to_seq"
+                        [ Semantic_ir.List [ left_hash; right_hash ] ];
+                    ])
+                (compile_static_hash_capability env right))
+      | TRecord fields | TNamed_record { nominal = false; fields; _ } ->
+          let fields =
+            List.filter
+              (fun field -> not (Types.is_record_extension_field field))
+              fields
+          in
+          let rec entry_hashes hashes = function
+            | [] -> Ok (List.rev hashes)
+            | (field : field) :: rest ->
+                let field_value =
+                  typed_ir field.ty (Structural_map.field_expr value field)
+                in
+                Result.bind
+                  (compile_static_hash_capability env field_value)
+                  (fun value_hash ->
+                    let key_hash =
+                      apply "Lg_runtime.Runtime_hash.hash_keyword"
+                        [ Semantic_ir.String field.keyword ]
+                    in
+                    let entry_hash =
+                      apply "Lg_runtime.Runtime_hash.hash_ordered"
+                        [
+                          apply "List.to_seq"
+                            [ Semantic_ir.List [ key_hash; value_hash ] ];
+                        ]
+                    in
+                    entry_hashes (entry_hash :: hashes) rest)
+          in
+          Result.map
+            (fun hashes ->
+              apply "Lg_runtime.Runtime_hash.hash_unordered"
+                [ apply "List.to_seq" [ Semantic_ir.List hashes ] ])
+            (entry_hashes [] fields)
+      | TArray _ | TList _ | TVector _ | TSeq _ ->
+          compile_static_collection_hash_capability env
+            "Lg_runtime.Runtime_hash.hash_ordered" value
+      | TSet _ | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+          compile_static_collection_hash_capability env
+            "Lg_runtime.Runtime_hash.hash_unordered" value
+      | _ ->
+          Error.error
+            ("hash requires a statically supported type, got "
+           ^ Types.source_name value_ty)))
+
+and compile_static_collection_hash_capability env hash_name value =
+  Result.bind (Collection_capability.to_seq_expr env value)
+    (fun (element_ty, sequence) ->
+      match element_ty with
+      | TUnknown | TMeta _ | TVar _ ->
+          Error.error "hash requires a closed collection element type"
+      | element_ty ->
+          let item_name = "__lg_hash_item" in
+          let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
+          Result.map
+            (fun item_hash ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident hash_name,
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                        [
+                          Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], item_hash);
+                          sequence;
+                        ] );
+                  ] ))
+            (compile_static_hash_capability env item))
+
+let compile_static_compare_capability env left right =
+  let value_ty = Types.constraint_value_type left.ty in
+  if not (Types.equal value_ty (Types.constraint_value_type right.ty)) then
+    Error.error
+      ("compare arguments must have the same type: "
+     ^ Types.source_name value_ty ^ " and "
+     ^ Types.source_name (Types.constraint_value_type right.ty))
+  else
+    match Core_protocols.find_comparable value_ty (Env.protocols env) with
+    | Some { ty = TFn ([ _; _ ], return_ty); ocaml_name; _ }
+      when Types.equal return_ty TInt
+           || Types.equal return_ty (TOcaml "int")
+           || match return_ty with
+              | TUnknown | TMeta _ | TVar _ -> true
+              | _ -> false ->
+        Ok
+          (Semantic_ir.Apply
+             ( Semantic_ir.Ident ocaml_name,
+               [ constrained_argument_value left; constrained_argument_value right ] ))
+    | Some _ -> Error.error "IComparable/-compare has an invalid signature"
+    | None ->
+        let rec comparable_type = function
+          | TInt | TFloat | TString | TSymbol | TKeyword | TBool -> true
+          | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+              comparable_type inner
+          | _ -> false
+        in
+        if comparable_type value_ty then
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Stdlib.compare",
+                 [ constrained_argument_value left; constrained_argument_value right ] ))
+        else
+          Error.error
+            "compare expects one concrete comparable type; define a closed sum \
+             type and match its cases explicitly for a heterogeneous domain"
 
 let dynamic_boundary_error_message direction ty =
   let cannot_cross subject guidance =
@@ -1296,6 +1531,52 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       Result.map
         (fun packed -> Semantic_ir.Tuple [ witness; packed ])
         (pack_constrained_value env value_ty argument)
+  | expected, actual
+    when Option.is_some (Types.hashable_constraint_info expected)
+         && Option.is_some (Types.hashable_constraint_info actual) ->
+      Ok (constrained_argument_expression argument)
+  | expected, _ when Option.is_some (Types.hashable_constraint_info expected) ->
+      let value_ty = Types.hashable_constraint_info expected |> Option.get in
+      let witness_value_ty =
+        match value_ty with
+        | TUnknown | TMeta _ | TVar _ -> Types.constraint_value_type argument.ty
+        | ty -> ty
+      in
+      let value_name = "__lg_hashable_value" in
+      let value = typed_ir witness_value_ty (Semantic_ir.Ident value_name) in
+      Result.bind (compile_static_hash_capability env value) (fun hash ->
+          let witness =
+            Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], hash)
+          in
+          Result.map
+            (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+            (pack_constrained_value env value_ty argument))
+  | expected, actual
+    when Option.is_some (Types.comparable_constraint_info expected)
+         && Option.is_some (Types.comparable_constraint_info actual) ->
+      Ok (constrained_argument_expression argument)
+  | expected, _ when Option.is_some (Types.comparable_constraint_info expected) ->
+      let value_ty = Types.comparable_constraint_info expected |> Option.get in
+      let witness_value_ty =
+        match value_ty with
+        | TUnknown | TMeta _ | TVar _ -> Types.constraint_value_type argument.ty
+        | ty -> ty
+      in
+      let left_name = "__lg_comparable_left" in
+      let right_name = "__lg_comparable_right" in
+      let left = typed_ir witness_value_ty (Semantic_ir.Ident left_name) in
+      let right = typed_ir witness_value_ty (Semantic_ir.Ident right_name) in
+      Result.bind
+        (compile_static_compare_capability env left right)
+        (fun compared ->
+          let witness =
+            Semantic_ir.Fun
+              ( [ Semantic_ir.PVar left_name; Semantic_ir.PVar right_name ],
+                compared )
+          in
+          Result.map
+            (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+            (pack_constrained_value env value_ty argument))
   | expected, actual
     when Option.is_some (Types.symbol_predicate_constraint_info expected)
          && Option.is_some
@@ -3030,179 +3311,6 @@ let static_deftype_callable env ty arity =
     | _ -> None
   in
   resolve false (Types.constraint_value_type ty)
-
-let compile_ihash scope env value =
-  let value_ty =
-    Types.constraint_value_type value.ty |> resolve_named_record_application env
-  in
-  let value =
-    if Types.equal value_ty value.ty then value
-    else
-      {
-        value with
-        ty = value_ty;
-        semantic_expr = constrained_argument_value value;
-      }
-  in
-  let implementation =
-    match Protocol.lookup_protocol_marker scope env "IHash" "-hash" with
-    | Some marker -> Protocol.lookup_marker_impl env marker "-hash" value.ty
-    | None -> None
-  in
-  let implementation =
-    match (implementation, value.ty) with
-    | Some _, _ -> implementation
-    | None, TNamed_record record -> (
-        match lookup_deftype_method scope env record "-hash" 1 with
-        | Ok implementation -> Some implementation
-        | Error _ -> None)
-    | None, _ -> None
-  in
-  match implementation with
-  | Some { ty = TFn ([ parameter_ty ], return_ty); ocaml_name; _ } ->
-      let generic_receiver_mismatch =
-        (not (Types.equal parameter_ty value.ty))
-        && contains_dynamic_type parameter_ty
-      in
-      (match
-         if
-           (not generic_receiver_mismatch)
-           && argument_compatible parameter_ty value.ty
-         then adapt_value_to_type env parameter_ty value
-         else Error.error "incompatible IHash receiver"
-       with
-      | Error _ -> Ok None
-      | Ok value ->
-          let call =
-            Semantic_ir.Apply (Semantic_ir.Ident ocaml_name, [ value ])
-          in
-          (match return_ty with
-          | TInt | TUnknown | TMeta _ | TVar _ -> Ok (Some call)
-          | ty when Types.is_dynamic ty ->
-              Result.map Option.some (dynamic_unpack env TInt call)
-          | _ -> Error.error "IHash/-hash must return int"))
-  | Some _ -> Error.error "IHash/-hash has an invalid signature"
-  | None -> Ok None
-
-let rec compile_static_hash scope env value =
-  let apply name arguments =
-    Semantic_ir.Apply (Semantic_ir.Ident name, arguments)
-  in
-  match value.ty with
-  | TInt ->
-      Ok
-        (apply "Lg_runtime.Runtime_hash.hash_int" [ value.semantic_expr ])
-  | TFloat ->
-      Ok
-        (apply "Lg_runtime.Runtime_hash.hash_float" [ value.semantic_expr ])
-  | TChar -> Ok (apply "Char.code" [ value.semantic_expr ])
-  | TString | TRegex ->
-      Ok
-        (apply "Lg_runtime.Runtime_hash.hash_string" [ value.semantic_expr ])
-  | TSymbol ->
-      Ok
-        (apply "Lg_runtime.Runtime_hash.hash_symbol" [ value.semantic_expr ])
-  | TKeyword ->
-      Ok
-        (apply "Lg_runtime.Runtime_hash.hash_keyword" [ value.semantic_expr ])
-  | TBool ->
-      Ok
-        (Semantic_ir.If
-           (value.semantic_expr, Semantic_ir.Int 1231, Semantic_ir.Int 1237))
-  | TNil | TUnit ->
-      Ok
-        (Semantic_ir.Sequence [ value.semantic_expr; Semantic_ir.Int 0 ])
-  | TTuple [ left_ty; right_ty ] ->
-      let left =
-        typed_ir left_ty (apply "fst" [ value.semantic_expr ])
-      in
-      let right =
-        typed_ir right_ty (apply "snd" [ value.semantic_expr ])
-      in
-      Result.bind (compile_static_hash scope env left) (fun left_hash ->
-          Result.map
-            (fun right_hash ->
-              apply "Lg_runtime.Runtime_hash.hash_ordered"
-                [
-                  apply "List.to_seq"
-                    [ Semantic_ir.List [ left_hash; right_hash ] ];
-                ])
-            (compile_static_hash scope env right))
-  | TRecord fields | TNamed_record { nominal = false; fields; _ } ->
-      let fields =
-        List.filter (fun field -> not (Types.is_record_extension_field field))
-          fields
-      in
-      let rec entry_hashes hashes = function
-        | [] -> Ok (List.rev hashes)
-        | (field : field) :: rest ->
-            let field_value =
-              typed_ir field.ty (Structural_map.field_expr value field)
-            in
-            Result.bind (compile_static_hash scope env field_value)
-              (fun value_hash ->
-                let key_hash =
-                  apply "Lg_runtime.Runtime_hash.hash_keyword"
-                    [ Semantic_ir.String field.keyword ]
-                in
-                let entry_hash =
-                  apply "Lg_runtime.Runtime_hash.hash_ordered"
-                    [
-                      apply "List.to_seq"
-                        [ Semantic_ir.List [ key_hash; value_hash ] ];
-                    ]
-                in
-                entry_hashes (entry_hash :: hashes) rest)
-      in
-      Result.map
-        (fun hashes ->
-          apply "Lg_runtime.Runtime_hash.hash_unordered"
-            [ apply "List.to_seq" [ Semantic_ir.List hashes ] ])
-        (entry_hashes [] fields)
-  | (TArray _ | TList _ | TVector _ | TSeq _) ->
-      compile_static_collection_hash scope env
-        "Lg_runtime.Runtime_hash.hash_ordered" value
-  | TSet _ ->
-      compile_static_collection_hash scope env
-        "Lg_runtime.Runtime_hash.hash_unordered" value
-  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
-      compile_static_collection_hash scope env
-        "Lg_runtime.Runtime_hash.hash_unordered" value
-  | _ ->
-      Result.bind (compile_ihash scope env value) (function
-        | Some expression -> Ok expression
-        | None ->
-            Error.error
-              ("hash requires a statically supported type, got "
-             ^ Types.source_name value.ty))
-
-and compile_static_collection_hash scope env hash_name value =
-  Result.bind (Collection_capability.to_seq_expr env value)
-    (fun (element_ty, sequence) ->
-      match element_ty with
-      | TUnknown | TMeta _ | TVar _ ->
-          Error.error "hash requires a closed collection element type"
-      | element_ty ->
-          let item_name = "__lg_hash_unordered_item" in
-          let item = typed_ir element_ty (Semantic_ir.Ident item_name) in
-          Result.map
-            (fun item_hash ->
-              Semantic_ir.Apply
-                ( Semantic_ir.Ident hash_name,
-                  [
-                    Semantic_ir.Apply
-                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
-                        [
-                          Semantic_ir.Fun
-                            ([ Semantic_ir.PVar item_name ], item_hash);
-                          sequence;
-                        ] );
-                  ] ))
-            (compile_static_hash scope env item))
-
-let compile_static_unordered_hash scope env value =
-  compile_static_collection_hash scope env
-    "Lg_runtime.Runtime_hash.hash_unordered" value
 
 let rec compile_record_iequiv_pair scope env left right =
   match (optional_payload left.ty, optional_payload right.ty) with
@@ -8088,25 +8196,30 @@ let create ~compile_expr =
             Core_float.compile_min_max name
               (List.map Core_float.widen_to_float args)
         | Ok args -> Core_int.compile_min_max name args)
-    | "hash" -> (
+    | "__lg_hash" -> (
         match compile_args () with
         | Error _ as error -> error
+        | Ok [ value ]
+          when Option.is_some (Types.hashable_constraint_info value.ty) ->
+            let expression =
+              match Semantic_ir.unlocated value.semantic_expr with
+              | Semantic_ir.Ident name ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident (name ^ "__hash"), [ value.semantic_expr ])
+              | _ ->
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Apply
+                        (Semantic_ir.Ident "fst", [ value.semantic_expr ]),
+                      [
+                        Semantic_ir.Apply
+                          (Semantic_ir.Ident "snd", [ value.semantic_expr ]);
+                      ] )
+            in
+            Ok (typed_ir TInt expression)
         | Ok [ value ] ->
-            Result.bind (compile_ihash scope env value) (function
-              | Some expression ->
-                  Ok (typed_ir TInt expression)
-              | None ->
-                  Result.map (fun expression -> typed_ir TInt expression)
-                    (compile_static_hash scope env value))
+            Result.map (fun expression -> typed_ir TInt expression)
+              (compile_static_hash_capability env value)
         | Ok _ -> Error.error "hash expects 1 argument")
-              | "hash-unordered-coll" -> (
-                  match compile_args () with
-                  | Error _ as error -> error
-                  | Ok [ value ] ->
-                      Result.map (fun expression -> typed_ir TInt expression)
-                        (compile_static_unordered_hash scope env value)
-                  | Ok _ -> Error.error "hash-unordered-coll expects 1 argument"
-                  )
               | "class" | "type" ->
                   Error.error
                     "runtime class inspection is not supported; match a closed \
@@ -8426,7 +8539,28 @@ let create ~compile_expr =
                   compile_predicate_combinator scope env "every-pred" arg_forms
     | "some-fn" -> compile_some_fn scope env arg_forms
     | "juxt" -> compile_juxt scope env arg_forms
-    | "compare" -> compile_compare scope env arg_forms
+    | "__lg_compare" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ left; right ]
+          when Option.is_some (Types.comparable_constraint_info left.ty) ->
+            let left_value = constrained_argument_value left in
+            let right_value = constrained_argument_value right in
+            let witness =
+              match Semantic_ir.unlocated left.semantic_expr with
+              | Semantic_ir.Ident name ->
+                  Semantic_ir.Ident (name ^ "__compare")
+              | _ ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident "fst", [ left.semantic_expr ])
+            in
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Apply (witness, [ left_value; right_value ])))
+        | Ok [ left; right ] ->
+            Result.map (fun expression -> typed_ir TInt expression)
+              (compile_static_compare_capability env left right)
+        | Ok _ -> Error.error "compare expects 2 arguments")
     | "ordering-compare" -> (
         match compile_compare scope env arg_forms with
         | Error _ as error -> error

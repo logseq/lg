@@ -529,10 +529,10 @@
             :reason :source-overloads-and-inline-expansion-preserve-zero-one-and-variadic-left-to-right-key-removal-through-a-private-static-map-shape-primitive}
     keys {:status :static-adaptation
           :reason :source-function-exposes-static-map-key-sequences-through-a-private-key-value-associated-type-projection-primitive}
-    hash {:status :typed-primitive
-          :reason :first-class-polymorphic-source-function-needs-an-ihash-capability-witness-that-current-sidecar-signatures-cannot-express}
-    compare {:status :typed-primitive
-             :reason :first-class-source-signature-cannot-express-the-required-single-concrete-comparable-domain-without-accepting-invalid-dynamic-or-mixed-values}
+    hash {:status :static-adaptation
+          :reason :source-function-carries-a-closed-hashable-witness-and-delegates-static-scalars-collections-records-and-ihash-implementations-to-a-private-typed-primitive}
+    compare {:status :static-adaptation
+             :reason :source-function-carries-a-single-domain-comparable-witness-that-preserves-same-type-operands-and-static-icomparable-dispatch-through-a-private-typed-primitive}
     subvec {:status :static-adaptation
             :reason :source-overloads-and-inline-specialization-preserve-two-and-three-argument-vector-slicing-through-a-private-typed-vector-boundary}
     array {:status :static-adaptation
@@ -572,10 +572,10 @@
                   :reason :source-port-delegates-the-static-keyword-domain-to-the-existing-clojurescript-compatible-keyword-hash-boundary-without-exposing-keywords-as-strings}
     hash-string {:status :static-adaptation
                  :reason :source-port-preserves-the-upstream-hash-string-result-through-hash-string-star-while-omitting-the-observationally-invisible-mutable-javascript-cache}
-    hash-ordered-coll {:status :blocked-static-typing
-                       :reason :generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness}
-    hash-unordered-coll {:status :blocked-static-typing
-                         :reason :generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness}
+    hash-ordered-coll {:status :ported
+                       :reason :source-port-preserves-upstream-sequence-order-thirty-one-times-accumulation-signed-int-coercion-count-and-final-mix-with-a-static-element-hash-witness}
+    hash-unordered-coll {:status :ported
+                         :reason :source-port-preserves-upstream-order-independent-sum-signed-int-coercion-count-and-final-mix-with-a-static-element-hash-witness}
     mix-collection-hash {:status :ported
                          :reason :source-port-preserves-upstream-seed-key-mix-hash-mix-and-count-finalization-order}
     even? {:status :static-adaptation

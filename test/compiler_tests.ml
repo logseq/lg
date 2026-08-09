@@ -769,7 +769,7 @@ let test_hash_map_hash_is_unordered () =
 (println (= (hash left) (hash right)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_map_hash_is_unordered" "true\n" ocaml_source
 
 let test_hash_map_satisfies_collection_protocols () =
@@ -2962,7 +2962,7 @@ let test_external_closed_types_use_static_comparison_witnesses () =
      0))
 |}
   in
-  let ocaml = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "external_closed_types_use_static_comparison_witnesses"
     "true\n" ocaml
 
@@ -16033,10 +16033,10 @@ let test_unannotated_compare_parameters_share_one_inferred_type () =
 (println (compare-values 1 2))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "unannotated_compare_parameters_share_one_inferred_type"
     "-1\n" ocaml_source;
-  Lg.Compiler.compile_string
+  compile_string_with_stdlib
     {|
 (defn compare-values [left right] (compare left right))
 (def invalid (compare-values 1 "2"))
@@ -23847,10 +23847,69 @@ let test_hash_matches_clojure_scalar_and_collection_values () =
           (hash-unordered-coll [2 1]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_matches_clojure_scalar_and_collection_values"
     "0:1231:1237:1392991556:1651860712:1871679806:1073217536:74834163:-737096:156247261:156247261:460223544:161871944:true\n"
     ocaml_source
+
+let test_source_hash_and_compare_are_first_class_static_capabilities () =
+  let source =
+    {|
+(deftype HashBox [^int value]
+  IHash
+  (-hash [this]
+    (.-value this)))
+(deftype Ranked [^int value]
+  IComparable
+  (-compare [left ^Ranked right]
+    (compare (.-value left) (.-value right))))
+(def int-hash hash)
+(def string-hash hash)
+(def box-hash hash)
+(def int-compare compare)
+(def string-compare compare)
+(def ranked-compare compare)
+(println
+  (str (int-hash 42) ":" (string-hash "abc") ":"
+       (box-hash (HashBox. 7)) ":"
+       (int-compare 1 2) ":" (string-compare "b" "a") ":"
+       (ranked-compare (Ranked. 3) (Ranked. 2))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_hash_compare_capabilities.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source hash and compare capabilities must stay statically typed";
+  assert_ocaml_runs "source_hash_and_compare_are_first_class_static_capabilities"
+    "1871679806:74834163:7:-1:1:1\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_hash_compare_capabilities.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_hash_compare_capabilities.cljc" source)
+
+let test_source_hash_and_compare_reject_invalid_static_domains () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_hash_rejects_function.cljc"
+    {|(def hash-value hash) (def invalid (hash-value (fn [] 1)))|}
+  |> expect_error_contains "hash requires a statically supported type";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_compare_rejects_mixed.cljc"
+    {|(def compare-values compare) (def invalid (compare-values 1 "2"))|}
+  |> expect_error_contains "compare-values called with incompatible arguments"
+
+let test_compile_time_helper_extraction_respects_macro_parameters () =
+  Lg.Compiler.compile_string
+    {|
+(ns clojure.core)
+(defn collision [value] (+ value 1))
+(defmacro preserve-local [collision] collision)
+(def answer (collision 41))
+|}
+  |> expect_ok |> ignore
 
 let test_hash_dispatches_to_record_ihash () =
   let source =
@@ -23862,10 +23921,10 @@ let test_hash_dispatches_to_record_ihash () =
 (println (hash (HashBox. 42 (fn [] 0))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_dispatches_to_record_ihash" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nominal_record_fields_preserve_deftype_ihash () =
   let source =
@@ -23879,13 +23938,19 @@ let test_nominal_record_fields_preserve_deftype_ihash () =
 (println (hash box))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/nominal_record_hash.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "nominal record fields must preserve static hash dispatch";
   assert_ocaml_runs "nominal_record_fields_preserve_deftype_ihash" "42\n"
-    native_source;
+    (compile_with_stdlib Lg.Target.Native
+       "test/nominal_record_hash.cljc" source);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange
+       "test/nominal_record_hash.cljc" source)
 
 let test_hash_unordered_coll_uses_static_seqable_capabilities () =
   let source =
@@ -23904,6 +23969,31 @@ let test_hash_unordered_coll_uses_static_seqable_capabilities () =
     "true\n" ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_source_collection_hashes_are_first_class_static_capabilities () =
+  let source =
+    {|
+(def ordered-hash hash-ordered-coll)
+(def unordered-hash hash-unordered-coll)
+(println
+  (str (= (ordered-hash [1 2]) (hash [1 2])) ":"
+       (= (unordered-hash [1 2]) (unordered-hash [2 1]))))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_collection_hash_capabilities.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source collection hash functions must remain statically typed";
+  assert_ocaml_runs "source_collection_hashes_are_first_class_static_capabilities"
+    "true:true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_collection_hash_capabilities.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_collection_hash_capabilities.cljc" source)
 
 let test_numeric_double_equals_supports_mixed_numbers () =
   let source = {|(println (str (== 1 1) ":" (== 1 1.0) ":" (== 1 2)))|} in
@@ -32725,8 +32815,8 @@ let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
   |> expect_error "juxt functions must return the same type"
 
 let test_common_higher_order_helpers_reject_compare_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (compare 1 "1"))|}
-  |> expect_error "compare arguments must have the same type: int and string"
+  compile_string_with_stdlib {|(def x (compare 1 "1"))|}
+  |> expect_error_contains "compare called with incompatible arguments"
 
 let test_apply_rejects_bad_set_reducers () =
   Lg.Compiler.compile_string {|(def x (apply + (__lg_hash-set "a" "b")))|}
@@ -40244,6 +40334,8 @@ let tests =
       test_nominal_record_fields_preserve_deftype_ihash );
     ( "hash-unordered-coll uses static seqable capabilities",
       test_hash_unordered_coll_uses_static_seqable_capabilities );
+    ( "source collection hashes are first-class static capabilities",
+      test_source_collection_hashes_are_first_class_static_capabilities );
     ( "numeric == supports mixed numbers",
       test_numeric_double_equals_supports_mixed_numbers );
     ( "case supports closed keyword and string targets",
@@ -40920,6 +41012,12 @@ let tests =
       test_source_core_splitv_and_array_hint_identities );
     ( "source core splitv and array hint identities reject bad calls",
       test_source_core_splitv_and_array_hint_identities_reject_bad_calls );
+    ( "source hash and compare are first-class static capabilities",
+      test_source_hash_and_compare_are_first_class_static_capabilities );
+    ( "source hash and compare reject invalid static domains",
+      test_source_hash_and_compare_reject_invalid_static_domains );
+    ( "compile-time helper extraction respects macro parameters",
+      test_compile_time_helper_extraction_respects_macro_parameters );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

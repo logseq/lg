@@ -127,6 +127,24 @@ let printable_constraint_info = function
       Some value_ty
   | _ -> None
 
+let hashable_constraint_name = "__lg_hashable_constraint"
+let hashable_constraint value_ty =
+  TOcaml_app (hashable_constraint_name, [ value_ty ])
+
+let hashable_constraint_info = function
+  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
+      Some value_ty
+  | _ -> None
+
+let comparable_constraint_name = "__lg_comparable_constraint"
+let comparable_constraint value_ty =
+  TOcaml_app (comparable_constraint_name, [ value_ty ])
+
+let comparable_constraint_info = function
+  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
+      Some value_ty
+  | _ -> None
+
 let symbol_predicate_constraint_name = "__lg_symbol_predicate_constraint"
 let symbol_predicate_constraint value_ty =
   TOcaml_app (symbol_predicate_constraint_name, [ value_ty ])
@@ -268,10 +286,16 @@ let capability_constraint_value ty =
               match printable_constraint_info ty with
               | Some value_ty -> Some value_ty
               | None -> (
-                  match symbol_predicate_constraint_info ty with
+                  match hashable_constraint_info ty with
                   | Some value_ty -> Some value_ty
-                  | None ->
-                      Option.map snd (contains_constraint_info ty)))))
+                  | None -> (
+                      match comparable_constraint_info ty with
+                      | Some value_ty -> Some value_ty
+                      | None -> (
+                          match symbol_predicate_constraint_info ty with
+                          | Some value_ty -> Some value_ty
+                          | None ->
+                              Option.map snd (contains_constraint_info ty)))))))
 
 let rec seqable_constraint_element = function
   | TOcaml_app (name, [ element_ty; _container_ty ])
@@ -651,6 +675,10 @@ let rec source_name = function
       "nil-predicate<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
       "printable<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
+      "hashable<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
+      "comparable<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ])
     when name = symbol_predicate_constraint_name ->
       "symbol-predicate<" ^ source_name value_ty ^ ">"
@@ -762,6 +790,11 @@ let rec ocaml_name = function
       "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> " ^ ocaml_name value_ty
+      ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ])
     when name = symbol_predicate_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> string option) * "

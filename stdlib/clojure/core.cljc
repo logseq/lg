@@ -47,6 +47,12 @@
   (-write [writer source] (buffer/add-string writer source))
   (-flush [_writer] nil))
 
+(defn hash [value]
+  (__lg_hash value))
+
+(defn compare [left right]
+  (__lg_compare left right))
+
 (defn contains?
   {:inline (fn [collection key]
              (list '__lg_contains collection key))}
@@ -1683,6 +1689,22 @@
         k1 (m3-mix-K1 hash-basis)
         h1 (m3-mix-H1 h1 k1)]
     (m3-fmix h1 count)))
+
+(defn hash-ordered-coll [coll]
+  (loop [n 0 hash-code 1 coll (seq coll)]
+    (if-not (nil? coll)
+      (recur (inc n)
+             (bit-or (+ (imul 31 hash-code) (hash (first coll))) 0)
+             (next coll))
+      (mix-collection-hash hash-code n))))
+
+(defn hash-unordered-coll [coll]
+  (loop [n 0 hash-code 0 coll (seq coll)]
+    (if-not (nil? coll)
+      (recur (inc n)
+             (bit-or (+ hash-code (hash (first coll))) 0)
+             (next coll))
+      (mix-collection-hash hash-code n))))
 
 (defn reduced [x]
   (runtime-reduced/reduced x))

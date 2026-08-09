@@ -184,6 +184,14 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (Types.truthy_constraint inner)
                       | _ -> Error.error "truthy expects one type argument"
+                    else if name = "hashable" then
+                      match args with
+                      | [ inner ] -> Ok (Types.hashable_constraint inner)
+                      | _ -> Error.error "hashable expects one type argument"
+                    else if name = "comparable" then
+                      match args with
+                      | [ inner ] -> Ok (Types.comparable_constraint inner)
+                      | _ -> Error.error "comparable expects one type argument"
                     else if name = "map" then
                       match args with
                       | [ key; value ] -> Ok (Types.dynamic_map key value)

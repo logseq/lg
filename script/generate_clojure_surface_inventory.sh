@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 200; then
-  echo "compiler call dispatch changed: expected 200 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 199; then
+  echo "compiler call dispatch changed: expected 199 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -85,8 +85,6 @@ awk '
     blocked_reason["select-keys"] = "map-or-record-key-projection-requires-a-dependent-result-shape"
     blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
-    blocked["hash-unordered-coll"] = 1
-    blocked_reason["hash-unordered-coll"] = "generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness"
     blocked["re-find"] = 1
     blocked["re-matches"] = 1
     blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
@@ -112,6 +110,8 @@ awk '
     internal_abi["__lg_keys"] = "typed-map-key-projection-primitive"
     internal_abi["__lg_subvec"] = "typed-vector-slice-primitive"
     internal_abi["__lg_array"] = "typed-homogeneous-array-construction-primitive"
+    internal_abi["__lg_hash"] = "typed-hashable-capability-primitive"
+    internal_abi["__lg_compare"] = "typed-single-domain-comparable-capability-primitive"
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
@@ -161,8 +161,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 136; then
-  echo "compiler form dispatch changed: expected 136 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 135; then
+  echo "compiler form dispatch changed: expected 135 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

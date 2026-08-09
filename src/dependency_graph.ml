@@ -79,9 +79,11 @@ let type_annotation_builtins =
       "bool";
       "bytes";
       "char";
+      "comparable";
       "dynamic";
       "float";
       "fn";
+      "hashable";
       "int";
       "int64";
       "keyword";

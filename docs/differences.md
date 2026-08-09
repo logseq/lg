@@ -389,9 +389,13 @@ definitions are compiled from `clojure.core` source. Static receiver-dependent
 map, record, set, vector, slicing, and array element relationships cross only
 private compiler primitives; no dynamic collection representation is
 introduced. Explicit generic signatures preserve first-class polymorphism
-across the precompiled stdlib boundary. `hash` and `compare` remain typed
-primitives until sidecar signatures can express their required `IHash` and
-single-concrete-comparable capability witnesses.
+across the precompiled stdlib boundary. `hash` and `compare` are source
+functions whose explicit `hashable<T>` and `comparable<T>` signatures carry
+closed static witnesses. Their compiler support is private typed ABI only;
+first-class aliases remain polymorphic, `IHash` and `IComparable` dispatch stay
+static, and mixed comparison domains are rejected without dynamic packing.
+The pinned `hash-ordered-coll` and `hash-unordered-coll` loops are source-owned
+over nested seqable/hashable capabilities.
 
 `weak-deref` and `weak-clear!` are source-defined over the shared typed weak
 reference runtime. `weak-ref` remains a compiler boundary so Native and

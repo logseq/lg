@@ -84,6 +84,12 @@ let rec capability_pattern name ty =
               match Types.printable_constraint_info ty with
               | Some value_ty -> layer (name ^ "__print") value_ty
               | None -> (
+                  match Types.hashable_constraint_info ty with
+                  | Some value_ty -> layer (name ^ "__hash") value_ty
+                  | None -> (
+                      match Types.comparable_constraint_info ty with
+                      | Some value_ty -> layer (name ^ "__compare") value_ty
+                      | None -> (
                   match Types.symbol_predicate_constraint_info ty with
                   | Some value_ty -> layer (name ^ "__symbol") value_ty
                   | None -> (
@@ -108,7 +114,7 @@ let rec capability_pattern name ty =
                                 else name ^ "__seq_optional"
                               in
                               layer witness_name value_ty
-                          | _ -> Semantic_ir.PVar name))))))
+                          | _ -> Semantic_ir.PVar name))))))))
 
 let has_capability ty =
   Option.is_some (Types.protocol_constraint_info ty)
@@ -116,6 +122,8 @@ let has_capability ty =
   || Option.is_some (Types.truthy_constraint_info ty)
   || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
+  || Option.is_some (Types.hashable_constraint_info ty)
+  || Option.is_some (Types.comparable_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
 
@@ -457,7 +465,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       when Option.is_some (Types.protocol_constraint_info target)
            || Option.is_some (Types.seqable_constraint_info target)
            || Option.is_some (Types.truthy_constraint_info target)
-           || Option.is_some (Types.printable_constraint_info target) ->
+           || Option.is_some (Types.printable_constraint_info target)
+           || Option.is_some (Types.hashable_constraint_info target)
+           || Option.is_some (Types.comparable_constraint_info target) ->
         pack_constrained_value env target branch
     | target, source
       when Types.is_dynamic target && not (Types.is_dynamic source) ->

@@ -381,6 +381,43 @@ module Lg_frontend : FRONTEND = struct
       | Ast.FSymbol name -> add_reference refs name
       | _ -> refs
     in
+    let definition_arities forms =
+      let rec drop_prefix = function
+        | (Ast.FString _ | Ast.FMap _) :: rest -> drop_prefix rest
+        | Ast.FSymbol annotation :: rest
+          when String.starts_with ~prefix:"^" annotation ->
+            drop_prefix rest
+        | forms -> forms
+      in
+      let forms = drop_prefix forms in
+      let parameter_names parameters =
+        parameters
+        |> List.filter_map (function
+             | Ast.FSymbol name when name <> "&" -> Some name
+             | _ -> None)
+        |> String_set.of_list
+      in
+      match forms with
+      | Ast.FVector parameters :: body ->
+          [ (parameter_names parameters, body) ]
+      | clauses ->
+          clauses
+          |> List.filter_map (function
+               | Ast.FList (Ast.FVector parameters :: body) ->
+                   Some (parameter_names parameters, body)
+               | _ -> None)
+    in
+    let scan_definition refs forms =
+      definition_arities forms
+      |> List.fold_left
+           (fun refs (parameters, body) ->
+             let body_refs =
+               List.fold_left form_refs String_set.empty body
+               |> fun refs -> String_set.diff refs parameters
+             in
+             String_set.union refs body_refs)
+           refs
+    in
     let definitions =
       located_ast
       |> List.filter_map (fun located ->
@@ -397,7 +434,7 @@ module Lg_frontend : FRONTEND = struct
         (fun refs located ->
           match located.Ast.form with
           | Ast.FList (Ast.FSymbol "defmacro" :: _name :: forms) ->
-              List.fold_left form_refs refs forms
+              scan_definition refs forms
           | _ -> refs)
         String_set.empty located_ast
     in
@@ -405,7 +442,7 @@ module Lg_frontend : FRONTEND = struct
       let expanded =
         List.fold_left
           (fun refs (name, forms) ->
-            if String_set.mem name refs then List.fold_left form_refs refs forms
+            if String_set.mem name refs then scan_definition refs forms
             else refs)
           refs definitions
       in

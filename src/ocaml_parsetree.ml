@@ -101,6 +101,24 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.hashable_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                   (type_constructor "int" []));
+          (None, value_ty);
+        ]
+  | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.comparable_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      let compare_ty =
+        Ast_helper.Typ.arrow ~loc Nolabel value_ty
+          (Ast_helper.Typ.arrow ~loc Nolabel value_ty
+             (type_constructor "int" []))
+      in
+      Ast_helper.Typ.tuple ~loc [ (None, compare_ty); (None, value_ty) ]
+  | Types.TOcaml_app (name, [ value_ty ])
     when name = Types.symbol_predicate_constraint_name ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
