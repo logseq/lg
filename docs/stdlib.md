@@ -265,6 +265,12 @@ inside the function body. `hash-unordered-coll` therefore remains a typed
 compiler boundary rather than substituting OCaml polymorphic hashing for the
 ClojureScript hash contract.
 
+The Logseq/DataScript compatibility helpers `weak-deref` and `weak-clear!` are
+ordinary precompiled `clojure.core` source functions with explicit
+`weak<value>` signatures. They call the shared runtime weak-reference API;
+only `weak-ref` remains compiler-owned because its public contract must reject
+immediate values that cannot be held by the target weak-reference mechanism.
+
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
 commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify

@@ -14220,10 +14220,10 @@ let test_weak_references_reject_invalid_calls () =
   |> expect_error_contains "weak-ref expects 1 argument";
   Lg.Compiler.compile_string {|(weak-ref 42)|}
   |> expect_error_contains "weak-ref expects a heap value";
-  Lg.Compiler.compile_string {|(weak-deref 42)|}
-  |> expect_error_contains "weak-deref expects a weak reference";
-  Lg.Compiler.compile_string {|(weak-clear! 42)|}
-  |> expect_error_contains "weak-clear! expects a weak reference"
+  compile_string_with_stdlib {|(weak-deref 42)|}
+  |> expect_error_contains "Lg_runtime.Runtime_weak.t";
+  compile_string_with_stdlib {|(weak-clear! 42)|}
+  |> expect_error_contains "Lg_runtime.Runtime_weak.t"
 
 let test_concise_standard_type_annotations () =
   let source =

@@ -9,6 +9,17 @@
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
+(defrecord WeakSourceBox [^int value])
+(def retained-weak-source-box (WeakSourceBox. 7))
+(def weak-source-reference (weak-ref retained-weak-source-box))
+(def source-weak-deref weak-deref)
+(def source-weak-clear! weak-clear!)
+(println
+ (if-some [box (source-weak-deref weak-source-reference)]
+   (= 7 (:value box))
+   false))
+(source-weak-clear! weak-source-reference)
+(println (nil? (source-weak-deref weak-source-reference)))
 (def source-subvec subvec)
 (def source-array array)
 (println (= [2 3] (source-subvec [1 2 3 4] 1 3)))

@@ -393,6 +393,10 @@ across the precompiled stdlib boundary. `hash` and `compare` remain typed
 primitives until sidecar signatures can express their required `IHash` and
 single-concrete-comparable capability witnesses.
 
+`weak-deref` and `weak-clear!` are source-defined over the shared typed weak
+reference runtime. `weak-ref` remains a compiler boundary so Native and
+Melange both reject non-heap values before code generation.
+
 `map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
 realized nodes are cached, so repeated traversal does not rerun producer side
 effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array

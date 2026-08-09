@@ -5137,11 +5137,8 @@ let create ~compile_expr =
             Ok
               (typed_ir TInt
                  (Semantic_ir.Apply
-                    ( Semantic_ir.Ident conversion,
-                      [ current_time ] )))
-                  | _ ->
-                      Error.error "current-time-millis expects 0 arguments"
-                  )
+                    (Semantic_ir.Ident conversion, [ current_time ])))
+        | _ -> Error.error "current-time-millis expects 0 arguments")
     | "js/performance.now" -> (
         match (Env.target env, arg_forms) with
         | Target.Melange, [] ->
@@ -6917,36 +6914,6 @@ let create ~compile_expr =
                  (apply make [ value_expression ]))
         | Ok [ _ ] -> Error.error "weak-ref expects a heap value"
         | Ok _ -> Error.error "weak-ref expects 1 argument")
-    | "weak-deref" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ reference ] -> (
-            match Types.weak_element reference.ty with
-            | Some value_ty ->
-                Ok
-                  (typed_ir (TOcaml_app ("option", [ value_ty ]))
-                     (apply "Lg_runtime.Runtime_weak.get"
-                        [ reference.semantic_expr ]))
-            | None ->
-                Error.error
-                  ("weak-deref expects a weak reference, got "
-                 ^ Types.source_name reference.ty))
-        | Ok _ -> Error.error "weak-deref expects 1 argument")
-    | "weak-clear!" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ reference ] -> (
-            match Types.weak_element reference.ty with
-            | Some _ ->
-                Ok
-                  (typed_ir TUnit
-                     (apply "Lg_runtime.Runtime_weak.clear"
-                        [ reference.semantic_expr ]))
-            | None ->
-                Error.error
-                  ("weak-clear! expects a weak reference, got "
-                 ^ Types.source_name reference.ty))
-        | Ok _ -> Error.error "weak-clear! expects 1 argument")
     | "tuple" -> (
         match compile_args () with
         | Error _ as err -> err

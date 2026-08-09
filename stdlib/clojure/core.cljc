@@ -21,7 +21,8 @@
             [ocaml.Lg_runtime.Runtime_string :as runtime-string]
             [ocaml.Lg_runtime.Runtime_time :as runtime-time]
             [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
-            [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
+            [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]
+            [ocaml.Lg_runtime.Runtime_weak :as runtime-weak]))
 
 (defprotocol INamed
   (-name [value])
@@ -2007,6 +2008,12 @@
 (defn system-time []
   #?(:melange (runtime-time-melange/now)
      :default (runtime-time/now)))
+
+(defn weak-deref [reference]
+  (runtime-weak/get reference))
+
+(defn weak-clear! [reference]
+  (runtime-weak/clear reference))
 
 (def gensym_counter (atom 0))
 
