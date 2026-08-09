@@ -269,6 +269,40 @@
               :reason :source-constructor-preserves-upstream-deduplication-and-metadata-free-result-semantics-using-lg-default-static-persistent-sets-because-lite-runtime-class-identity-is-not-source-observable}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
+    lazy-seq {:status :static-adaptation
+              :reason :source-macro-preserves-delayed-single-realization-through-the-typed-memoized-sequence-boundary-without-clojurescript-chunk-storage}
+    lazy-cat {:status :static-adaptation
+              :reason :source-macro-preserves-left-to-right-lazy-concatenation-through-lazy-seq-and-the-current-static-concat-boundary}
+    map {:status :static-adaptation
+         :reason :source-port-preserves-the-transducer-and-lazy-one-two-and-three-collection-control-flow-while-the-upstream-unbounded-additional-collection-arity-remains-dependent-variadic-work}
+    filter {:status :static-adaptation
+            :reason :source-port-preserves-the-upstream-stateful-transducer-and-lazy-two-arity-control-flow-without-the-clojurescript-chunk-optimization}
+    remove {:status :ported
+            :reason :source-port-composes-the-source-filter-and-complement-arities}
+    take {:status :static-adaptation
+          :reason :source-port-preserves-upstream-stateful-early-termination-and-lazy-prefix-control-flow-through-an-explicit-static-reduced-result}
+    drop {:status :static-adaptation
+          :reason :source-port-preserves-upstream-stateful-transducer-and-lazy-prefix-skipping-through-a-typed-sequence-helper}
+    take-while {:status :static-adaptation
+                :reason :source-port-preserves-upstream-predicate-ordered-early-termination-and-lazy-prefix-control-flow}
+    drop-while {:status :static-adaptation
+                :reason :source-port-preserves-upstream-stateful-transducer-and-lazy-prefix-skipping-control-flow}
+    map-indexed {:status :static-adaptation
+                 :reason :source-port-preserves-upstream-zero-based-stateful-transducer-and-lazy-index-progression}
+    keep {:status :static-adaptation
+          :reason :source-port-preserves-upstream-optional-result-transducer-and-lazy-filter-map-control-flow}
+    mapcat {:status :static-adaptation
+            :reason :source-port-preserves-the-one-arity-map-cat-transducer-and-lazy-single-collection-flattening-while-additional-collection-arities-remain-dependent-variadic-work}
+    cat {:status :static-adaptation
+         :reason :source-port-preserves-input-order-through-the-explicit-statically-reduced-reducing-function-abi}
+    halt-when {:status :static-adaptation
+               :reason :source-port-preserves-predicate-order-early-termination-and-retf-result-selection-through-a-typed-halted-reduction-result}
+    transduce {:status :static-adaptation
+               :reason :source-port-preserves-three-and-four-arity-transform-reduce-complete-order-through-an-explicit-statically-reduced-reducing-function-abi}
+    sequence {:status :static-adaptation
+              :reason :source-port-preserves-one-arity-seq-normalization-and-two-arity-lazy-transformer-buffering-while-upstream-multi-collection-transformer-iteration-remains-dependent-variadic-work}
+    repeatedly {:status :ported
+                :reason :source-port-preserves-infinite-delayed-generation-and-finite-take-composition}
     deref {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ideref-with-static-protocol-implementations-for-refs-lazy-values-futures-and-slots-while-var-quotes-remain-a-compile-time-reference}
     reset! {:status :static-adaptation

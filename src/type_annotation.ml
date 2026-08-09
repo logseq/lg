@@ -163,10 +163,23 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (TSeq inner)
                       | _ -> Error.error "seq expects one type argument"
+                    else if
+                      name = Types.maybe_reduced_callback_type_name
+                    then
+                      match args with
+                      | [ inner ] -> Ok (Types.reduced inner)
+                      | _ ->
+                          Error.error
+                            "reducing-function result expects one type argument"
                     else if name = "seqable" then
                       match args with
                       | [ inner ] -> Ok (Types.seqable_constraint inner)
-                      | _ -> Error.error "seqable expects one type argument"
+                      | [ inner; storage ] ->
+                          Ok
+                            (Types.seqable_constraint_with_value inner storage)
+                      | _ ->
+                          Error.error
+                            "seqable expects one or two type arguments"
                     else if name = "truthy" then
                       match args with
                       | [ inner ] -> Ok (Types.truthy_constraint inner)

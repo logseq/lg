@@ -657,6 +657,11 @@ adapter beside the original collection; it must not erase a `vector<T>`,
 `list<T>`, `array<T>`, or another statically supported collection to dynamic
 storage while instantiating the signature.
 
+Source interfaces may name that storage relationship as
+`seqable<Element; Storage>`. This is required for higher-order collection
+functions whose sequence witness crosses another source function boundary;
+the stored value is `Storage`, never a nested or copied capability pair.
+
 Anonymous `fn` forms support the same fixed and final variadic clause layout as
 multi-arity `defn`. Each clause lowers to a readable local OCaml function and
 the value carries one static overload bundle. A variadic clause has one

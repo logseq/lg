@@ -2671,16 +2671,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                  ( [ source_element_ty ],
                    fresh_type_variable "partition_key" ))
               params function_form)
-    | FList
-        [
-          FSymbol
-            ("filter" | "remove" | "take-while" | "drop-while");
-          predicate;
-          collection;
-        ] ->
-        Result.bind (infer_sequence_form element_ty params collection)
-          (fun params ->
-            infer_expected (TFn ([ element_ty ], TUnknown)) params predicate)
     | (FList (FSymbol _ :: _) as form) ->
         infer_expected (Types.seqable_constraint element_ty) params form
     | form ->
@@ -2695,23 +2685,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                && List.for_all (Types.equal first) rest ->
             first
         | _ -> TUnknown)
-    | _ -> TUnknown
-  and inferred_map_indexed_item params = function
-    | FSymbol name -> (
-        match string_assoc_opt name params with
-        | Some (TFn ([ TInt; item_ty ], _)) -> item_ty
-        | Some _ | None -> (
-            match lookup_function_ty name with
-            | Ok (TFn ([ TInt; item_ty ], _)) -> item_ty
-            | _ -> TUnknown))
-    | FList
-        (FSymbol "fn"
-        :: FVector [ FSymbol index; FSymbol item ]
-        :: body_forms) -> (
-        match infer_all [ (index, TInt); (item, TUnknown) ] body_forms with
-        | Ok inferred ->
-            string_assoc_opt item inferred |> Option.value ~default:TUnknown
-        | Error _ -> TUnknown)
     | _ -> TUnknown
   and inferred_reducer_types outer_params accumulator_ty = function
     | FSymbol name -> (
@@ -3614,9 +3587,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_form params
           (FList (FSymbol name :: arguments))
     | FList [ FSymbol "->Eduction"; transducer; collection ] ->
-        Result.bind
-          (Core_form_expansion.apply_transducer collection transducer)
-          (infer_form params)
+        infer_form params
+          (FList [ FSymbol "sequence"; transducer; collection ])
     | FList [ FSymbol "__type-hint"; FSymbol annotation; value ] -> (
         match Type_annotation.of_param_annotation annotation with
         | Error _ as error -> error
@@ -4762,7 +4734,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   in
                   constrain_seqable element_ty params collection)
           | _ -> infer_all params arguments)
-    | FList [ FSymbol ("map" | "mapv" | "keep"); fn; collection ] ->
+    | FList [ FSymbol "mapv"; fn; collection ] ->
         let inferred_element_ty = inferred_unary_function_param params fn in
         let inferred_element_ty =
           match inferred_element_ty with
@@ -4791,38 +4763,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (TFn
                      ( [ element_ty ],
                        fresh_type_variable "unary_map_result" ))
-                  params name
-            | form -> infer_form params form)
-    | FList [ FSymbol "mapcat"; fn; collection ] ->
-        let inferred_element_ty = inferred_unary_function_param params fn in
-        let element_ty =
-          match inferred_element_ty with
-          | TUnknown | TMeta _ | TVar _ ->
-              fresh_type_variable "mapcat_item"
-          | ty -> ty
-        in
-        Result.bind (infer_sequence_form element_ty params collection)
-          (fun params ->
-            infer_expected
-              (TFn
-                 ( [ element_ty ],
-                   Types.seqable_constraint
-                     (fresh_type_variable "mapcat_result") ))
-              params fn)
-    | FList [ FSymbol "map-indexed"; fn; FSymbol collection ] ->
-        let inferred_item_ty = inferred_map_indexed_item params fn in
-        let item_ty =
-          match inferred_item_ty with
-          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "map_indexed_item"
-          | ty -> ty
-        in
-        Result.bind (constrain_seqable item_ty params collection) (fun params ->
-            match fn with
-            | FSymbol name ->
-                constrain_symbol
-                  (TFn
-                     ( [ TInt; item_ty ],
-                       fresh_type_variable "map_indexed_result" ))
                   params name
             | form -> infer_form params form)
     | FList [ FSymbol "group-by"; fn; collection ] ->
@@ -4854,7 +4794,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_sequence_form element_ty params collection)
           (fun params ->
             infer_expected (TFn ([ element_ty ], TBool)) params predicate)
-    | FList (FSymbol ("map" | "mapv") :: fn :: collection_forms)
+    | FList (FSymbol "mapv" :: fn :: collection_forms)
       when List.length collection_forms >= 2 -> (
         let collection_element_ty collection =
           let collection_ty = inferred_form_type params collection in
@@ -4924,8 +4864,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             constrain_collections params element_tys collection_forms))
     | FList
         [
-          FSymbol
-            ("filter" | "remove" | "take-while" | "drop-while" | "some");
+          FSymbol "some";
           fn;
           collection;
         ] ->
@@ -5081,13 +5020,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "sort"; _comparator; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
-    | FList [ FSymbol "repeatedly"; FSymbol count; function_form ] ->
-        Result.bind (infer_expected TInt params (FSymbol count)) (fun params ->
-            infer_form params function_form)
-    | FList
-        [ FSymbol ("take" | "drop"); FSymbol count; collection_form ] ->
-        Result.bind (infer_expected TInt params (FSymbol count)) (fun params ->
-            infer_form params collection_form)
     | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
         let expected_ty =
           if
@@ -6041,32 +5973,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol ("into" | "clojure.core/into");
           target;
-          FSymbol "cat";
-          (FSymbol source_name as source);
-        ] ->
-        let element_ty =
-          match string_assoc_opt source_name params with
-          | Some source_ty -> (
-              match Types.seqable_constraint_element source_ty with
-              | Some ty
-                when not (Types.equal ty TUnknown)
-                     && (match ty with TMeta _ | TVar _ -> false | _ -> true) ->
-                  ty
-              | Some _ | None -> Types.dynamic_constraint TUnknown)
-          | None -> Types.dynamic_constraint TUnknown
-        in
-        Result.bind (infer_form params target) (fun params ->
-            infer_sequence_form element_ty params source)
-    | FList
-        [
-          FSymbol ("into" | "clojure.core/into");
-          target;
           transducer;
           source;
         ] ->
-        Result.bind
-          (Core_form_expansion.apply_transducer source transducer)
-          (fun transformed -> infer_all params [ target; transformed ])
+        infer_all params
+          [ target; FList [ FSymbol "sequence"; transducer; source ] ]
     | FList
         (FSymbol ("interleave" | "clojure.core/interleave") :: collections) ->
         let element_ty =

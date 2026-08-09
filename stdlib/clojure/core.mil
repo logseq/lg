@@ -18,6 +18,59 @@
 (signature clojure.core/identity [value]
   :fn<value;value>)
 
+(signature clojure.core/map-seq [input output]
+  :fn<fn<input;output>;seq<input>;seq<output>>)
+(signature clojure.core/map2-seq [left right output]
+  :fn<fn<left;right;output>;seq<left>;seq<right>;seq<output>>)
+(signature clojure.core/map3-seq [first second third output]
+  :fn<fn<first;second;third;output>;seq<first>;seq<second>;seq<third>;seq<output>>)
+(signature clojure.core/map [input output storage accumulator left right left-storage right-storage first second third first-storage second-storage third-storage]
+  :overload<fn<fn<input;output>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;output>;seqable<input;storage>;seq<output>>;fn<fn<left;right;output>;seqable<left;left-storage>;seqable<right;right-storage>;seq<output>>;fn<fn<first;second;third;output>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;seq<output>>>)
+(signature clojure.core/filter-seq [input predicate-result]
+  :fn<fn<input;truthy<predicate-result>>;seq<input>;seq<input>>)
+(signature clojure.core/filter [input storage accumulator predicate-result]
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/remove [input storage accumulator predicate-result]
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/take-seq [input]
+  :fn<int;seq<input>;seq<input>>)
+(signature clojure.core/take [input storage accumulator]
+  :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/drop-seq [input storage]
+  :fn<int;seqable<input;storage>;seq<input>>)
+(signature clojure.core/drop [input storage accumulator]
+  :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/take-while-seq [input predicate-result]
+  :fn<fn<input;truthy<predicate-result>>;seq<input>;seq<input>>)
+(signature clojure.core/take-while [input storage accumulator predicate-result]
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/drop-while-seq [input storage predicate-result]
+  :fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>)
+(signature clojure.core/drop-while [input storage accumulator predicate-result]
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
+(signature clojure.core/map-indexed-from [input output]
+  :fn<fn<int;input;output>;int;seq<input>;seq<output>>)
+(signature clojure.core/map-indexed [input output storage accumulator]
+  :overload<fn<fn<int;input;output>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<int;input;output>;seqable<input;storage>;seq<output>>>)
+(signature clojure.core/keep-seq [input output]
+  :fn<fn<input;option<output>>;seq<input>;seq<output>>)
+(signature clojure.core/keep [input output storage accumulator]
+  :overload<fn<fn<input;option<output>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;option<output>>;seqable<input;storage>;seq<output>>>)
+(signature clojure.core/mapcat-seq [input output inner-storage]
+  :fn<fn<input;seqable<output;inner-storage>>;seq<output>;seq<input>;seq<output>>)
+(signature clojure.core/mapcat [input output storage inner-storage accumulator]
+  :overload<fn<fn<input;seqable<output;inner-storage>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;seqable<output;inner-storage>>;seqable<input;storage>;seq<output>>>)
+(signature clojure.core/cat [input storage accumulator]
+  :fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;seqable<input;storage>;__lg_maybe_reduced_callback_result<accumulator>>>>)
+(signature clojure.core/halt-when [input accumulator predicate-result]
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<input>;fn<input;input>;fn<input;input;__lg_maybe_reduced_callback_result<input>>>;overload<fn<input>;fn<input;input>;fn<input;input;__lg_maybe_reduced_callback_result<input>>>>>;fn<fn<input;truthy<predicate-result>>;fn<accumulator;input;accumulator>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>>)
+(signature clojure.core/transduce [input output storage accumulator]
+  :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;seqable<input;storage>;accumulator>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;accumulator;seqable<input;storage>;accumulator>>)
+(signature clojure.core/sequence [input output storage accumulator]
+  :overload<fn<seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;seqable<input;storage>;seq<output>>>)
+(signature clojure.core/repeatedly [value]
+  :overload<fn<fn<value>;seq<value>>;fn<int;fn<value>;seq<value>>>)
+
 (signature clojure.core/completing [accumulator input completed]
   :overload<fn<overload<fn<accumulator>;fn<accumulator;input;accumulator>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;accumulator>>>;fn<overload<fn<accumulator>;fn<accumulator;input;accumulator>>;fn<accumulator;completed>;overload<fn<accumulator>;fn<accumulator;completed>;fn<accumulator;input;accumulator>>>>)
 
@@ -272,8 +325,8 @@
 (signature clojure.core/bounded-count [value]
   :fn<int;seqable<value>;int>)
 
-(signature clojure.core/butlast [value]
-  :fn<seqable<value>;seq<value>>)
+(signature clojure.core/butlast [value storage]
+  :fn<seqable<value;storage>;seq<value>>)
 
 (signature clojure.core/take-last [value]
   :fn<int;seqable<value>;seq<value>>)
@@ -345,8 +398,8 @@
 (signature clojure.core/merge-with [key value]
   :overload<fn<fn<value;value;value>;option<map<key;value>>>;variadic-fn<fn<value;value;value>;option<map<key;value>>;option<map<key;value>>;map<key;value>>>)
 
-(signature clojure.core/vec [value]
-  :fn<seqable<value>;vector<value>>)
+(signature clojure.core/vec [value storage]
+  :fn<seqable<value;storage>;vector<value>>)
 
 (signature clojure.core/comparator [value result]
   :fn<fn<value;value;truthy<result>>;fn<value;value;int>>)

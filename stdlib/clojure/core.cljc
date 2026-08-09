@@ -306,7 +306,299 @@
            ~@(mapcat (fn [step] [result step]) (butlast steps))]
        ~(if (empty? steps)
           result
-          (last steps)))))
+      (last steps)))))
+
+(defmacro lazy-seq [& body]
+  `(__lg_defer_seq (fn [] (do ~@body))))
+
+(defmacro lazy-cat [& colls]
+  `(concat ~@(map (fn [coll] `(lazy-seq ~coll)) colls)))
+
+(defn- map-seq [f coll]
+  (lazy-seq
+   (if coll
+     (cons (f (nth coll 0))
+           (map-seq f (rest coll)))
+     nil)))
+
+(defn- map2-seq [f left right]
+  (lazy-seq
+   (if (and left right)
+     (cons (f (nth left 0) (nth right 0))
+           (map2-seq f (rest left) (rest right)))
+     nil)))
+
+(defn- map3-seq [f first-coll second-coll third-coll]
+  (lazy-seq
+   (if (and first-coll second-coll third-coll)
+     (cons (f (nth first-coll 0)
+              (nth second-coll 0)
+              (nth third-coll 0))
+           (map3-seq f
+                     (rest first-coll)
+                     (rest second-coll)
+                     (rest third-coll)))
+     nil)))
+
+(defn map
+  ([f]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input] (rf result (f input))))))
+  ([f coll]
+   (map-seq f (seq coll)))
+  ([f left right]
+   (map2-seq f (seq left) (seq right)))
+  ([f first-coll second-coll third-coll]
+   (map3-seq f
+             (seq first-coll)
+             (seq second-coll)
+             (seq third-coll))))
+
+(defn- filter-seq [pred coll]
+  (lazy-seq
+   (if coll
+     (let [item (nth coll 0)
+           tail (rest coll)]
+       (if (pred item)
+         (cons item (filter-seq pred tail))
+         (filter-seq pred tail)))
+     nil)))
+
+(defn filter
+  ([pred]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input]
+        (if (pred input)
+          (rf result input)
+          (runtime-reduced/continue result))))))
+  ([pred coll]
+   (filter-seq pred (seq coll))))
+
+(defn remove
+  ([pred]
+   (filter (complement pred)))
+  ([pred coll]
+   (filter (complement pred) coll)))
+
+(defn- take-seq [n coll]
+  (lazy-seq
+   (if (and (pos? n) coll)
+     (cons (nth coll 0)
+           (take-seq (dec n) (rest coll)))
+     nil)))
+
+(defn take
+  ([n]
+   (fn [rf]
+     (let [remaining-count (volatile! n)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (let [remaining @remaining-count
+                next-count (vswap! remaining-count dec)
+                stepped (if (pos? remaining)
+                          (rf result input)
+                          (runtime-reduced/continue result))]
+            (if (pos? next-count)
+              stepped
+              (runtime-reduced/stop stepped))))))))
+  ([n coll]
+   (take-seq n (seq coll))))
+
+(defn- drop-seq [n coll]
+  (loop [remaining-count n
+         remaining (seq coll)]
+    (if (pos? remaining-count)
+      (if remaining
+        (recur (dec remaining-count) (rest remaining))
+        remaining)
+      remaining)))
+
+(defn drop
+  ([n]
+   (fn [rf]
+     (let [remaining-count (volatile! n)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (let [remaining @remaining-count]
+            (vswap! remaining-count dec)
+            (if (pos? remaining)
+              (runtime-reduced/continue result)
+              (rf result input))))))))
+  ([n coll]
+   (lazy-seq (drop-seq n coll))))
+
+(defn- take-while-seq [pred coll]
+  (lazy-seq
+   (if coll
+     (let [item (nth coll 0)]
+       (if (pred item)
+         (cons item (take-while-seq pred (rest coll)))
+         nil))
+     nil)))
+
+(defn take-while
+  ([pred]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input]
+        (if (pred input)
+          (rf result input)
+          (reduced result))))))
+  ([pred coll]
+   (take-while-seq pred (seq coll))))
+
+(defn- drop-while-seq [pred coll]
+  (loop [remaining (seq coll)]
+    (if remaining
+      (if (pred (nth remaining 0))
+        (recur (rest remaining))
+        remaining)
+      remaining)))
+
+(defn drop-while
+  ([pred]
+   (fn [rf]
+     (let [dropping (volatile! true)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (if (and @dropping (pred input))
+            (runtime-reduced/continue result)
+            (do
+              (vreset! dropping false)
+              (rf result input))))))))
+  ([pred coll]
+   (lazy-seq (drop-while-seq pred coll))))
+
+(defn- map-indexed-from [f index coll]
+  (lazy-seq
+   (let [remaining coll]
+     (if remaining
+       (cons (f index (nth remaining 0))
+             (map-indexed-from f (inc index) (rest remaining)))
+       nil))))
+
+(defn map-indexed
+  ([f]
+   (fn [rf]
+     (let [index (volatile! -1)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (rf result (f (vswap! index inc) input)))))))
+  ([f coll]
+   (map-indexed-from f 0 (seq coll))))
+
+(defn- keep-seq [f coll]
+  (lazy-seq
+   (if coll
+     (if-some [value (f (nth coll 0))]
+       (cons value (keep-seq f (rest coll)))
+       (keep-seq f (rest coll)))
+     nil)))
+
+(defn keep
+  ([f]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input]
+        (if-some [value (f input)]
+          (rf result value)
+          (runtime-reduced/continue result))))))
+  ([f coll]
+   (keep-seq f (seq coll))))
+
+(defn- mapcat-seq [f current colls]
+  (lazy-seq
+   (if current
+     (cons (nth current 0)
+           (mapcat-seq f (rest current) colls))
+     (if colls
+       (mapcat-seq f
+                   (seq (f (nth colls 0)))
+                   (rest colls))
+       nil))))
+
+(declare cat)
+
+(defn mapcat
+  ([f]
+   (fn [rf]
+     ((map f) (cat rf))))
+  ([f coll]
+   (mapcat-seq f (seq []) (seq coll))))
+
+(defn cat [rf]
+  (fn
+    ([] (rf))
+    ([result] (rf result))
+    ([result input]
+     (runtime-reduced/continue (reduce rf result input)))))
+
+(defn halt-when
+  ([pred]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input]
+        (if (pred input)
+          (runtime-reduced/halted input)
+          (rf result input))))))
+  ([pred retf]
+   (fn [rf]
+     (fn
+       ([] (rf))
+       ([result] (rf result))
+       ([result input]
+        (if (pred input)
+          (runtime-reduced/halted
+           (retf (rf result) input))
+          (rf result input)))))))
+
+(defn transduce
+  ([xform f coll]
+   (transduce xform f (f) coll))
+  ([xform f init coll]
+   (let [reducing-function
+         (fn
+           ([] (f))
+           ([result] (f result))
+           ([result input]
+            (runtime-reduced/continue (f result input))))
+         transformed (xform reducing-function)
+         result (__lg_reduce_transformed transformed init coll)]
+     (__lg_complete_transformed transformed result))))
+
+(defn sequence
+  ([coll]
+   (let [values (seq coll)]
+     (if values values (seq []))))
+  ([xform coll]
+   (__lg_transformer_sequence xform coll)))
+
+(defn repeatedly
+  ([f]
+   (lazy-seq
+    (cons (f) (repeatedly f))))
+  ([n f]
+   (take n (repeatedly f))))
 
 (defn identity [x]
   x)

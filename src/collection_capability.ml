@@ -23,9 +23,12 @@ let rec constraint_value_expression ty expression =
     in
     constraint_value_expression value_ty expression
   in
-  match Types.capability_constraint_value ty with
-  | Some value_ty -> unwrap value_ty
-  | None -> expression
+  match Types.seqable_constraint_info ty with
+  | Some (_, _, value_ty) -> unwrap value_ty
+  | None -> (
+      match Types.capability_constraint_value ty with
+      | Some value_ty -> unwrap value_ty
+      | None -> expression)
 
 let valid_ocaml_type_name name =
   String.length name > 0
@@ -531,7 +534,11 @@ let seqable_adapter ?element_mapper env argument =
 let pack_seqable_argument ?element_mapper env argument =
   seqable_adapter ?element_mapper env argument
   |> Result.map (fun adapter ->
-         Semantic_ir.Tuple [ adapter; argument.semantic_expr ])
+         Semantic_ir.Tuple
+           [
+             adapter;
+             constraint_value_expression argument.ty argument.semantic_expr;
+           ])
 
 let reduce_expr env ?(short_circuit = false) fn init collection sequence =
   if short_circuit then

@@ -2548,13 +2548,6 @@ let test_core_form_expansions_use_hygienic_identifiers () =
   | _ ->
       failwith
         "compiler-generated update calls must use unforgeable core identifiers");
-  (match
-     Lg.Core_form_expansion.apply_transducer (FSymbol "values")
-       (FList [ FSymbol "map"; FSymbol "inc" ])
-   with
-  | Ok (FList [ FCoreSymbol Core_map; FSymbol "inc"; FSymbol "values" ]) ->
-      ()
-  | _ -> failwith "transducer expansion must preserve a hygienic core map");
   let assoc_expansion =
     Lg.Core_form_expansion.assoc_in (FSymbol "target")
       [ FKeyword ":outer"; FKeyword ":inner" ]
@@ -26260,6 +26253,20 @@ let test_explicit_generic_seqable_signature_preserves_static_storage () =
     "explicit_generic_seqable_signature_preserves_static_storage"
     "5\n" ocaml_source
 
+let test_seqable_signature_can_name_storage_type () =
+  let source =
+    {|
+(signature user/identity-seqable [value storage]
+  :fn<seqable<value;storage>;storage>)
+(defn identity-seqable [values] values)
+(println (= [1 2] (identity-seqable [1 2])))
+(println (= (list 3 4) (identity-seqable (list 3 4))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "seqable_signature_can_name_storage_type" "true\ntrue\n"
+    ocaml_source
+
 let test_generic_seqable_returns_instantiate_element_types () =
   let source =
     {|
@@ -40391,6 +40398,8 @@ let tests =
       test_generic_sequence_functions_infer_seqable_dictionaries );
     ( "explicit generic Seqable signature preserves static storage",
       test_explicit_generic_seqable_signature_preserves_static_storage );
+    ( "Seqable signature can name storage type",
+      test_seqable_signature_can_name_storage_type );
     ( "generic Seqable returns instantiate element types",
       test_generic_seqable_returns_instantiate_element_types );
     ( "generic map arguments do not rebuild static maps",

@@ -134,7 +134,9 @@ let callback_parameters_compatible expected actual =
   List.length expected = List.length actual
   && List.for_all2
        (fun expected actual ->
-         Types.assignable ~policy:Host_boundary ~expected ~actual)
+         Types.assignable ~policy:Host_boundary ~expected ~actual
+         || Result.is_ok
+              (Type_solver.unify Type_solver.empty expected actual))
        expected actual
 
 let expects_dynamic_value = Types.is_dynamic
@@ -382,6 +384,27 @@ let rec argument_compatible expected actual =
                 argument_compatible expected_fn
                   (TFn (actual_params, arity.return_ty)))
           arities
+    | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
+        let function_type (arity : fn_arity) =
+          let parameters =
+            match arity.rest_param with
+            | None -> arity.fixed_params
+            | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
+          in
+          TFn (parameters, arity.return_ty)
+        in
+        List.for_all
+          (fun (expected : fn_arity) ->
+            actual_arities
+            |> List.find_opt (fun (actual : fn_arity) ->
+                   List.length actual.fixed_params
+                   = List.length expected.fixed_params
+                   && Option.is_some actual.rest_param
+                      = Option.is_some expected.rest_param)
+            |> Option.fold ~none:false ~some:(fun actual ->
+                   argument_compatible (function_type expected)
+                     (function_type actual)))
+          expected_arities
     | _ -> false
 
 let named_argument_compatible expected actual =
@@ -2033,7 +2056,16 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                                           ] );
                                     ] ))
                               (pack_dynamic_value env dynamic item)))
-                else pack_constrained_value env stored_value_ty argument
+                else
+                  match Types.seqable_constraint_info argument.ty with
+                  | Some _ when Type_solver.is_open stored_value_ty ->
+                      Ok (constrained_argument_value argument)
+                  | Some _
+                    when Types.equal stored_value_ty
+                           (Types.constraint_value_type argument.ty) ->
+                      Ok (constrained_argument_value argument)
+                  | _ ->
+                      pack_constrained_value env stored_value_ty argument
               in
                         match
                           (adapter, packed_value)
@@ -3620,7 +3652,7 @@ let adapt_reduced_callback arg =
                           Semantic_ir.Infix
                             ( ":=",
                               Semantic_ir.Ident reduced_callback_state,
-                              Semantic_ir.Constructor ("Some", Some value) );
+                              Semantic_ir.Constructor ("Some", Some result) );
                           Semantic_ir.Apply
                             ( Semantic_ir.Ident "raise",
                               [
@@ -4019,19 +4051,13 @@ let create ~compile_expr =
   let compile_keys = collection.compile_keys in
   let compile_vals = collection.compile_vals in
   let compile_sort_by = sequence.compile_sort_by in
-  let compile_mapcat = sequence.compile_mapcat in
-  let compile_repeatedly = sequence.compile_repeatedly in
   let compile_reductions = sequence.compile_reductions in
   let compile_partition_by = sequence.compile_partition_by in
   let compile_run_bang = sequence.compile_run_bang in
-  let compile_map_indexed = sequence.compile_map_indexed in
   let compile_filterv = sequence.compile_filterv in
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
-  let compile_map_call = sequence.compile_map_call in
-  let compile_keep = sequence.compile_keep in
-  let compile_filter = sequence.compile_filter in
   let compile_reduce = sequence.compile_reduce in
   let compile_apply = functions.compile_apply in
   let compile_comp = functions.compile_comp in
@@ -4735,25 +4761,75 @@ let create ~compile_expr =
       | Some separator ->
           String.sub name (separator + 1) (String.length name - separator - 1)
     in
-    let apply_transducer = Core_form_expansion.apply_transducer in
     if is_java_namespace name then java_interop_error name
     else if member_name = "->Eduction" then
       match arg_forms with
       | [ transducer; collection ] ->
-          Result.bind (apply_transducer collection transducer) (fun form ->
-              compile_expr scope env form)
+          compile_expr scope env
+            (FList [ FSymbol "sequence"; transducer; collection ])
       | _ -> Error.error "->Eduction expects a transducer and collection"
-    else if member_name = "transduce" then
+    else if member_name = "__lg_defer_seq" then
       match arg_forms with
-      | [ transducer; reducer; initial; collection ] ->
-          Result.bind (apply_transducer collection transducer)
-            (fun transformed ->
-              compile_expr scope env
-                (FList [ FSymbol "reduce"; reducer; initial; transformed ]))
-      | _ ->
-          Error.error
-            "transduce expects a transducer, reducer, initial value, and \
-             collection"
+      | [ thunk_form ] -> (
+          match compile_function_arg scope env thunk_form with
+          | Error _ as error -> error
+          | Ok { ty = TFn ([], return_ty); semantic_expr = thunk; _ } ->
+              let returned_name = "__lg_deferred_sequence" in
+              let returned =
+                typed_ir return_ty (Semantic_ir.Ident returned_name)
+              in
+              let normalized =
+                match return_ty with
+                | TNil ->
+                    let element_ty =
+                      match Env.expected_type env with
+                      | Some (TSeq element_ty) -> element_ty
+                      | _ -> TUnknown
+                    in
+                    Ok (element_ty, Semantic_ir.Ident "Seq.empty")
+                | TNullable payload | TOcaml_app ("option", [ payload ]) ->
+                    let payload_name = "__lg_deferred_sequence_value" in
+                    let payload_value =
+                      typed_ir payload (Semantic_ir.Ident payload_name)
+                    in
+                    Result.map
+                      (fun (element_ty, sequence) ->
+                        ( element_ty,
+                          Semantic_ir.Match
+                            ( Semantic_ir.Ident returned_name,
+                              [ ( Semantic_ir.PConstructor ("None", None),
+                                  Semantic_ir.Ident "Seq.empty" );
+                                ( Semantic_ir.PConstructor
+                                    ( "Some",
+                                      Some
+                                        (Semantic_ir.PVar payload_name) ),
+                                  sequence );
+                              ] ) ))
+                      (Collection_capability.to_seq_expr env payload_value)
+                | _ -> Collection_capability.to_seq_expr env returned
+              in
+              Result.map
+                (fun (element_ty, sequence) ->
+                  let normalized_thunk =
+                    Semantic_ir.Fun
+                      ( [],
+                        Semantic_ir.Let
+                          ( [ ( Semantic_ir.PVar returned_name,
+                                Semantic_ir.Apply (thunk, []) ) ],
+                            sequence ) )
+                  in
+                  typed_ir (TSeq element_ty)
+                    (Semantic_ir.Apply
+                       ( Semantic_ir.Ident
+                           (match Env.target env with
+                           | Target.Melange ->
+                               "Lg_runtime.Runtime_seq_melange.defer"
+                           | Target.Native | Target.Js_of_ocaml ->
+                               "Lg_runtime.Runtime_seq.defer"),
+                         [ normalized_thunk ] )))
+                normalized
+          | Ok _ -> Error.error "__lg_defer_seq expects a zero-argument function")
+      | _ -> Error.error "__lg_defer_seq expects one argument"
     else if member_name = "__lg_with-meta" then
       compile_metadata_call scope env member_name arg_forms
     else
@@ -8240,26 +8316,13 @@ let create ~compile_expr =
                   compile_collection_call scope env name arg_forms
     | "into" -> (
         match arg_forms with
-        | [ target_form; FSymbol "cat"; source_form ] -> (
-            match
-              ( compile_expr scope env target_form,
-                compile_expr scope env source_form )
-            with
-            | (Error _ as error), _ -> error
-            | _, (Error _ as error) -> error
-            | Ok target, Ok source ->
-                          Core_sequence_transform.compile "into-cat"
-                            [ target; source ])
         | [ target_form; transducer_form; source_form ] ->
-            Result.bind (apply_transducer source_form transducer_form)
-              (fun transformed ->
-                compile_into scope env target_form transformed)
+            compile_into scope env target_form
+              (FList [ FSymbol "sequence"; transducer_form; source_form ])
         | [ target_form; source_form ] ->
             compile_into scope env target_form source_form
                   | _ ->
                       compile_sequence_transform_call scope env name arg_forms)
-              | "take" | "drop" ->
-                  compile_collection_call scope env name arg_forms
     | "take-nth" ->
         compile_sequence_transform_call scope env name arg_forms
               | "next" -> (
@@ -8271,28 +8334,116 @@ let create ~compile_expr =
     | "dorun" | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "run!" -> compile_run_bang scope env arg_forms
-    | "map" -> compile_map_call scope env arg_forms
-    | "keep" -> compile_keep scope env arg_forms
-    | "filter" -> compile_filter scope env arg_forms
-    | "remove" | "take-while" | "drop-while" | "sort" ->
+    | "sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort-by" -> compile_sort_by scope env arg_forms
     | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
-    | "mapcat" -> compile_mapcat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
     | "repeat" ->
         compile_sequence_transform_call scope env name arg_forms
     | "cycle" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "repeatedly" -> compile_repeatedly scope env arg_forms
     | "interleave" | "partition" | "partition-all" ->
         compile_sequence_transform_call scope env name arg_forms
     | "reductions" -> compile_reductions scope env arg_forms
-    | "map-indexed" -> compile_map_indexed scope env arg_forms
     | "filterv" -> compile_filterv scope env arg_forms
               | "mapv" -> compile_mapv scope env arg_forms
     | "reduce-kv" -> compile_reduce_kv scope env arg_forms
+    | "__lg_transformer_sequence" -> (
+        match arg_forms with
+        | [ xform_form; collection_form ] -> (
+            match
+              ( compile_function_arg scope env xform_form,
+                compile_expr scope env collection_form )
+            with
+            | (Error _ as error), _ | _, (Error _ as error) -> error
+            | Ok xform, Ok collection -> (
+                match
+                  ( xform.ty,
+                    Collection_capability.to_seq_expr env collection )
+                with
+                | ( TFn
+                      ( [ TOverloaded_fn downstream_arities ],
+                        TOverloaded_fn transformed_arities ),
+                    Ok (collection_element, sequence) ) -> (
+                    match
+                      ( select_overloaded_arity downstream_arities 2,
+                        select_overloaded_arity transformed_arities 2 )
+                    with
+                    | ( Some (_, downstream),
+                        Some (_, transformed) ) -> (
+                        match
+                          (downstream.fixed_params, transformed.fixed_params)
+                        with
+                        | [ _; output_ty ], [ _; input_ty ]
+                          when argument_compatible input_ty
+                                 collection_element ->
+                            Ok
+                              (typed_ir (TSeq output_ty)
+                                 (apply
+                                    (match Env.target env with
+                                    | Target.Melange ->
+                                        "Lg_runtime.Runtime_seq_melange.transformer_sequence"
+                                    | Target.Native | Target.Js_of_ocaml ->
+                                        "Lg_runtime.Runtime_seq.transformer_sequence")
+                                    [ xform.semantic_expr; sequence ]))
+                        | _ ->
+                            Error.error
+                              "__lg_transformer_sequence expects binary reducing-function arities")
+                    | _ ->
+                        Error.error
+                          "__lg_transformer_sequence expects binary reducing-function arities")
+                | TFn _, Ok _ ->
+                    Error.error
+                      "__lg_transformer_sequence expects a transducer"
+                | _, Error _ ->
+                    Error.error
+                      "__lg_transformer_sequence expects a seqable collection"
+                | _ ->
+                    Error.error
+                      "__lg_transformer_sequence expects a transducer"))
+        | _ -> Error.error "__lg_transformer_sequence expects 2 arguments")
+    | "__lg_reduce_transformed" -> (
+        match arg_forms with
+        | [ _reducer_form; _initial_form; _collection_form ] ->
+            compile_reduce scope env arg_forms
+        | _ -> Error.error "__lg_reduce_transformed expects 3 arguments")
+    | "__lg_complete_transformed" -> (
+        match arg_forms with
+        | [ transformed_form; result_form ] -> (
+            match
+              ( compile_function_arg scope env transformed_form,
+                compile_expr scope env result_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok transformed, Ok result -> (
+                match transformed.ty with
+                | TOverloaded_fn arities -> (
+                    match select_overloaded_arity arities 1 with
+                    | Some (arity_index, arity)
+                      when Option.is_none arity.rest_param -> (
+                        match arity.fixed_params with
+                        | [ parameter_ty ] ->
+                            Result.map
+                              (fun argument ->
+                                typed_ir arity.return_ty
+                                  (Semantic_ir.Apply
+                                     ( overloaded_projection
+                                         transformed.semantic_expr arity_index,
+                                       [ argument ] )))
+                              (adapt_value_to_type env parameter_ty result)
+                        | _ ->
+                            Error.error
+                              "__lg_complete_transformed expects a unary completion arity")
+                    | _ ->
+                        Error.error
+                          "__lg_complete_transformed expects a unary completion arity")
+                | _ ->
+                    Error.error
+                      "__lg_complete_transformed expects an overloaded reducing function"))
+        | _ -> Error.error "__lg_complete_transformed expects 2 arguments")
     | "reduce" -> compile_reduce scope env arg_forms
     | "apply" -> (
         match arg_forms with
@@ -8911,33 +9062,6 @@ let create ~compile_expr =
                           [ target; source ])))
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with
-    | ("take-while" | "drop-while"), [ fn_form ] -> (
-        match compile_function_arg scope env fn_form with
-        | Error _ as error -> error
-        | Ok ({ ty = TFn ([ parameter_ty ], return_ty); _ } as fn) ->
-            let item_name = "__lg_transducer_item" in
-            let predicate =
-              if Types.equal return_ty TBool then fn.semantic_expr
-              else
-                Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar item_name ],
-                    truthiness_expression return_ty
-                      (Semantic_ir.Apply
-                         (fn.semantic_expr, [ Semantic_ir.Ident item_name ])) )
-            in
-            let sequence_name = "__lg_transducer_sequence" in
-            Ok
-              (typed_ir
-                 (TFn ([ TSeq parameter_ty ], TSeq parameter_ty))
-                 (Semantic_ir.Fun
-                    ( [ Semantic_ir.PVar sequence_name ],
-                      Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            ("Lg_runtime.Runtime_seq."
-                            ^ if name = "take-while" then "take_while"
-                              else "drop_while"),
-                          [ predicate; Semantic_ir.Ident sequence_name ] ) )))
-        | Ok _ -> Error.error (name ^ " expects a unary function"))
     | "interleave", collection_forms -> (
         match compile_args_for scope env collection_forms with
         | Error _ as error -> error
@@ -9463,7 +9587,14 @@ let create ~compile_expr =
   and compile_function_arg scope env form =
     let compiled =
       match form with
-      | FSymbol name -> lookup_function scope env name
+      | FSymbol name -> (
+          match lookup_binding scope env name with
+          | Ok binding ->
+              let binding = Types.instantiate_binding binding in
+              Ok
+                (typed_ir binding.ty
+                   (binding_value_expression binding))
+          | Error _ -> lookup_function scope env name)
       | form -> compile_expr scope env form
     in
     Result.bind compiled adapt_set_callable
@@ -9748,7 +9879,11 @@ let create ~compile_expr =
                     let element_candidates =
                       List.fold_left2
                         (fun candidates expected argument ->
-                          match Types.seqable_constraint_element expected with
+                          match
+                            Option.map
+                              (fun (_, element_ty, _) -> element_ty)
+                              (Types.seqable_constraint_info expected)
+                          with
                           | Some (TUnknown | TMeta _ | TVar _) -> (
                               match
                                 Collection_capability.element_type env argument
@@ -9812,18 +9947,32 @@ let create ~compile_expr =
                               if Types.is_dynamic actual then Ok substitutions
                               else
                                 match
-                                  ( Types.seqable_constraint_element template,
+                                  ( Option.map
+                                      (fun (_, element_ty, _) -> element_ty)
+                                      (Types.seqable_constraint_info template),
                                     Collection_capability.element_type env
                                       argument )
                                 with
                                 | Some expected_element, Some actual_element ->
-                                    Result.map
-                                      (fun substitutions ->
-                                        Type_solver.unify substitutions template
-                                          actual
-                                        |> Result.value ~default:substitutions)
-                                      (Type_solver.unify substitutions
-                                         expected_element actual_element)
+                                    (match
+                                       Type_solver.unify substitutions
+                                         expected_element actual_element
+                                     with
+                                    | Ok substitutions ->
+                                        Ok
+                                          (Type_solver.unify substitutions
+                                             template actual
+                                          |> Result.value
+                                               ~default:substitutions)
+                                    | Error _
+                                      when Option.is_some
+                                             (Types.seqable_constraint_info
+                                                expected_element)
+                                           && Collection_capability
+                                              .accepts_seqable env actual_element
+                                      ->
+                                        Ok substitutions
+                                    | Error _ as error -> error)
                                 | None, _ | _, None ->
                                     Ok
                                       (Type_solver.unify substitutions template
@@ -11204,7 +11353,7 @@ let create ~compile_expr =
                           when Types.assignable ~policy:Host_boundary
                                  ~expected:ret ~actual:payload_ty
                        || Types.equal ret TUnknown ->
-                    let caught_value = "__lg_reduced_value" in
+                    let caught_result = "__lg_reduced_result" in
                     let callback_exception =
                       Semantic_ir.Constructor
                         ( "Lg_runtime.Runtime_reduced.Callback_reduced",
@@ -11219,13 +11368,9 @@ let create ~compile_expr =
                                   [
                                     ( Semantic_ir.PConstructor
                                         ( "Some",
-                                          Some (Semantic_ir.PVar caught_value)
+                                          Some (Semantic_ir.PVar caught_result)
                                         ),
-                              Semantic_ir.Apply
-                                ( Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_reduced.reduced",
-                                          [ Semantic_ir.Ident caught_value ] )
-                                    );
+                                      Semantic_ir.Ident caught_result );
                             ( Semantic_ir.PConstructor ("None", None),
                               Semantic_ir.Apply
                                         ( Semantic_ir.Ident "raise",

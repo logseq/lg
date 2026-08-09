@@ -424,13 +424,17 @@ types, and Logseq/Datascript-style wrappers without runtime type inspection.
 `every?`, `not-any?`, `not-every?`, and the current static subset of `some`
 return typed booleans for list, vector, and set predicates.
 
-The sequence migration is incremental. `map`, `filter`, `take`, `drop`,
-`range`, and `repeat` are lazy. `mapv` and `filterv` remain explicit eager
-persistent-vector materializers. `concat`, `sort`,
+The sequence migration is incremental. `map`, `filter`, `remove`, `take`,
+`drop`, `take-while`, `drop-while`, `map-indexed`, `keep`, `mapcat`, `sequence`,
+`repeatedly`, `range`, and `repeat` are source-defined and lazy. Their
+one-arity transducers use one explicit statically typed reducing-function ABI;
+`transduce`, `cat`, and `halt-when` are source-defined over the same ABI.
+`mapv` and `filterv` remain explicit eager persistent-vector materializers.
+`concat`, `sort`,
 `interpose`, `interleave`, `partition`, `partition-all`, `reductions`, and
-`map-indexed` return OCaml lists, `split-at` and `split-with` return persistent
+return OCaml lists, `split-at` and `split-with` return persistent
 vectors of the input collection representation, and same-shape operations such
-as `remove`, `take-while`, `drop-while`, `distinct`, `dedupe`, `butlast`,
+as `distinct`, `dedupe`, `butlast`,
 `take-last`, `drop-last`, `take-nth`, `nthnext`, `nthrest`, and `rseq` currently
 preserve the input collection representation where practical. `dorun` and
 `doall` are explicit realization boundaries.

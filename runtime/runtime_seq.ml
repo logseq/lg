@@ -2,6 +2,65 @@ type 'a t = 'a Seq.t
 
 let memoize sequence = Seq.memoize sequence
 
+let defer thunk =
+  let sequence = lazy (thunk ()) in
+  fun () -> Lazy.force sequence ()
+
+let transformer_sequence transform source =
+  let front = ref [] in
+  let back = ref [] in
+  let enqueue value = back := value :: !back in
+  let dequeue () =
+    match !front with
+    | value :: rest ->
+        front := rest;
+        Some value
+    | [] -> (
+        match List.rev !back with
+        | [] -> None
+        | value :: rest ->
+            back := [];
+            front := rest;
+            Some value)
+  in
+  let initial = () in
+  let downstream =
+    ( (fun () -> initial),
+      ( (fun result -> result),
+        ( (fun result output ->
+            enqueue output;
+            Runtime_reduced.continue result),
+          () ) ) )
+  in
+  let transformed = transform downstream in
+  let complete = fst (snd transformed) in
+  let step = fst (snd (snd transformed)) in
+  let accumulator = ref initial in
+  let remaining = ref source in
+  let completed = ref false in
+  let finish () =
+    if not !completed then (
+      accumulator := complete !accumulator;
+      completed := true)
+  in
+  let rec next () =
+    match dequeue () with
+    | Some value -> Seq.Cons (value, memoize next)
+    | None when !completed -> Seq.Nil
+    | None -> (
+        match (!remaining) () with
+        | Seq.Nil ->
+            finish ();
+            next ()
+        | Seq.Cons (input, rest) ->
+            remaining := rest;
+            let result = step !accumulator input in
+            accumulator := Runtime_reduced.unreduced result;
+            if Runtime_reduced.is_reduced result then finish ();
+            next ())
+  in
+  memoize next
+
 let rec unfold_memoized step state =
   let node =
     lazy

@@ -1,13 +1,17 @@
 type 'a t = {
   value : 'a;
   reduced : bool;
+  halted : bool;
 }
 
 exception Callback_reduced
 
-let continue value = { value; reduced = false }
-let reduced value = { value; reduced = true }
+let continue value = { value; reduced = false; halted = false }
+let reduced value = { value; reduced = true; halted = false }
+let halted value = { value; reduced = true; halted = true }
+let stop result = { result with reduced = true }
 let is_reduced result = result.reduced
+let is_halted result = result.halted
 let unreduced result = result.value
 
 let rec fold_list reducer accumulator = function

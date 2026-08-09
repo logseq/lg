@@ -56,32 +56,3 @@ let update_in target keys function_form argument_forms =
   in
   FList
     (FCoreSymbol Core_update :: target :: update_arguments keys)
-
-let rec apply_transducer collection = function
-  | FList [ FSymbol "map"; function_form ] ->
-      Ok (FList [ FCoreSymbol Core_map; function_form; collection ])
-  | FList [ FSymbol "filter"; predicate_form ] ->
-      Ok (FList [ FCoreSymbol Core_filter; predicate_form; collection ])
-  | FList [ FSymbol "take"; count ] ->
-      Ok (FList [ FCoreSymbol Core_take; count; collection ])
-  | FList [ FSymbol "drop"; count ] ->
-      Ok (FList [ FCoreSymbol Core_drop; count; collection ])
-  | FList [ FSymbol ("take-while" as name); predicate_form ]
-  | FList [ FSymbol ("drop-while" as name); predicate_form ] ->
-      Ok (FList [ FSymbol name; predicate_form; collection ])
-  | FSymbol "cat" ->
-      Ok
-        (FList
-           [
-             FCoreSymbol Core_mapcat;
-             FList
-               [ FSymbol "fn"; FVector [ FSymbol "value" ]; FSymbol "value" ];
-             collection;
-           ])
-  | FList (FSymbol "comp" :: transducers) ->
-      List.fold_left
-        (fun result transducer ->
-          Result.bind result (fun collection ->
-              apply_transducer collection transducer))
-        (Ok collection) transducers
-  | _ -> Error.error "transducers support map, filter, take, drop, and cat"
