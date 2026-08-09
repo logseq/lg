@@ -20,6 +20,10 @@
                 :reason :source-macro-preserves-upstream-single-seq-evaluation-and-binding-control-flow-with-equivalent-explicit-binding-validation}
     while {:status :static-adaptation
            :reason :source-macro-uses-an-explicit-if-do-loop-tail-so-lg-recur-validation-preserves-the-upstream-when-loop-control-flow}
+    -> {:status :ported
+        :reason :source-macro-preserves-upstream-loop-order-symbol-and-list-threading-and-step-form-type-hint-metadata}
+    ->> {:status :ported
+         :reason :source-macro-preserves-upstream-loop-order-symbol-and-list-threading-and-step-form-type-hint-metadata}
     as-> {:status :static-adaptation
           :reason :source-macro-preserves-upstream-left-to-right-single-evaluation-with-a-finite-mapcat-binding-sequence-instead-of-the-upstream-repeat-interleave-construction}
     cond-> {:status :static-adaptation

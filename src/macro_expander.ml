@@ -32,7 +32,8 @@ let is_unqualified_compile_time_primitive = function
   | "clojure.core/concat" | "count" | "take" | "drop" | "/" | "nil?"
   | "even?" | "partition" | "first" | "second" | "last" | "next"
   | "nnext" | "butlast" | "=" | "list" | "cons" | "conj" | "assoc"
-  | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat" | "filter"
+  | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
+  | "filter"
   | "into" | "juxt" | "reduce" | "apply" | "volatile!" | "deref"
   | "vswap!" | "gensym" | "clojure.test/expand-are" ->
       true
@@ -85,9 +86,6 @@ let string_of_value = function
   | Form form -> Ok (string_of_form form)
   | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
       Error.error "str expects macro form values"
-
-let core_form_name name expected =
-  name = expected || String.ends_with ~suffix:("/" ^ expected) name
 
 let form_of_value = function
   | Form form -> Ok form
@@ -364,22 +362,6 @@ let rec eval context = function
       eval_loop context bindings body
   | FList (FSymbol "recur" :: arguments) ->
       Result.map (fun values -> Recur values) (eval_forms context arguments)
-  | FList (FSymbol operator :: initial :: steps)
-    when core_form_name operator "->" || core_form_name operator "->>" ->
-      let operator = if core_form_name operator "->" then "->" else "->>" in
-      let threaded =
-        List.fold_left
-          (fun value step ->
-            match (operator, step) with
-            | "->", FSymbol name | "->>", FSymbol name ->
-                FList [ FSymbol name; value ]
-            | "->", FList (head :: arguments) ->
-                FList (head :: value :: arguments)
-            | "->>", FList forms -> FList (forms @ [ value ])
-            | _ -> step)
-          initial steps
-      in
-      eval context threaded
   | FList (FSymbol "fn" :: FSymbol name :: FVector params :: body) ->
       Ok
         (Closure
@@ -999,10 +981,25 @@ and eval_builtin context name arg_forms =
           Ok (Form (FMap ((key, value) :: List.remove_assoc key entries)))
       | Ok _ -> Error.error "assoc expects a macro map, key, and value"
       | Error _ as error -> error)
+  | "meta" ->
+      unary (function
+        | Form
+            (FList
+              [ FSymbol "__type-hint"; (FSymbol _ as annotation); _value ]) ->
+            Ok (Form (FMap [ (FKeyword ":tag", annotation) ]))
+        | Form _ -> Ok (Form (FMap []))
+        | _ -> Error.error "meta expects a macro form")
   | "with-meta" -> (
       match eval_args () with
-      | Ok [ Form form; Form (FMap _) ] ->
-          Ok (Form (strip_internal_metadata form))
+      | Ok [ Form form; Form (FMap entries) ] ->
+          let form = strip_internal_metadata form in
+          let form =
+            match List.assoc_opt (FKeyword ":tag") entries with
+            | Some (FSymbol _ as annotation) ->
+                FList [ FSymbol "__type-hint"; annotation; form ]
+            | Some _ | None -> form
+          in
+          Ok (Form form)
       | Ok _ -> Error.error "with-meta expects a form and metadata map"
       | Error _ as error -> error)
   | "vary-meta" -> eval_vary_meta context arg_forms
@@ -1369,25 +1366,9 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
       in
       Result.bind (invoke_definition context definition args) form_of_value
 
-let thread_form position value steps =
-  let thread value = function
-    | FSymbol name -> FList [ FSymbol name; value ]
-    | FKeyword _ as keyword -> FList [ keyword; value ]
-    | FList (function_form :: arguments) ->
-        if position = `First then
-          FList (function_form :: value :: arguments)
-        else FList (function_form :: arguments @ [ value ])
-    | step -> FList [ step; value ]
-  in
-  List.fold_left thread value steps
-
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
       Ok (FList forms)
-  | FList (FSymbol operator :: value :: steps)
-    when core_form_name operator "->" || core_form_name operator "->>" ->
-      let position = if core_form_name operator "->" then `First else `Last in
-      expand_all ~scope ~compiler_env (thread_form position value steps)
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name compiler_env with
       | Some definition ->

@@ -4871,6 +4871,9 @@ let create ~compile_expr =
           (String.length name - String.length "clojure.core/")
       else name
     in
+    let record_constructor_name name =
+      String.length name > 2 && name.[0] = '-' && name.[1] = '>'
+    in
     let name =
       match String.rindex_opt name '/' with
       | Some separator ->
@@ -4878,12 +4881,12 @@ let create ~compile_expr =
             String.sub name (separator + 1)
               (String.length name - separator - 1)
           in
-          if String.starts_with ~prefix:"->" member then
+          if record_constructor_name member then
             String.sub name 0 (separator + 1)
             ^ String.sub member 2 (String.length member - 2)
             ^ "."
           else name
-      | None when String.starts_with ~prefix:"->" name ->
+      | None when record_constructor_name name ->
           String.sub name 2 (String.length name - 2) ^ "."
       | None -> name
     in

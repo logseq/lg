@@ -5134,14 +5134,16 @@ let test_referred_update_supports_threaded_nested_calls () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      Lg.Compiler.compile_chunk ~target stdlib.state provider_source
       |> expect_ok
     in
     let _, consumer_ocaml =
       Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
     in
-    (provider_ocaml ^ "\n" ^ consumer_ocaml, consumer_ocaml)
+    ( stdlib.ocaml_source ^ "\n" ^ provider_ocaml ^ "\n" ^ consumer_ocaml,
+      consumer_ocaml )
   in
   let ocaml_source, consumer_ocaml = compile Lg.Target.Native in
   if
@@ -13259,8 +13261,9 @@ let test_threading_and_option_binding_forms_compile () =
     "42:0:42:value=41:5:9:7:42:missing:5:value=41\n" ocaml_source;
   Lg.Compiler.compile_string {|(def bad (if-let [x] x 0))|}
   |> expect_error "if-let requires [name option], then, and else";
-  Lg.Compiler.compile_string {|(def bad (-> 1 2))|}
-  |> expect_error "threading steps must be symbols or call forms";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_basic_thread.cljc"
+    {|(def bad (-> 1 2))|}
+  |> expect_error_contains "is not callable";
   compile_with_stdlib_result Lg.Target.Native "test/bad_some_thread.cljc"
     {|(def bad (some-> (Some 1) 2))|}
   |> expect_error_contains "is not callable";
@@ -20498,13 +20501,13 @@ let test_threaded_forms_accumulate_record_fields () =
 (println (+ (:first result) (:second result)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "threaded_forms_accumulate_record_fields" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_update_missing_structural_field_passes_nil_to_updater () =
   let source =
@@ -20543,11 +20546,11 @@ let test_inline_update_infers_threaded_record_fields () =
         (update-inline :tx-data conj datom))))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore (compile_string_with_stdlib source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_update_conj_infers_field_and_element_types () =
   let source =
@@ -21754,6 +21757,46 @@ let test_source_thread_macros_match_clojurescript () =
   |> expect_error_contains "cond-> requires an even number of clauses";
   compile_with_stdlib_result Lg.Target.Native
     "test/some_thread_source_zero_arity.cljc" "(some->)"
+  |> expect_error_contains "unsupported macro arity 0"
+
+let test_source_basic_thread_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-basic-thread-macro-app
+  (:require [cljs.core :as core :refer [-> ->>]]))
+
+(defrecord Box [answer])
+(defmacro nested-thread [form]
+  (-> form identity))
+(defmacro tagged-form? [form]
+  (= "^float" (str (:tag (meta form)))))
+
+(println (= 6 (-> 1 inc (* 3))))
+(println (= 5 (->> [1 2] (map inc) (reduce +))))
+(println (= 7 (-> (Box. 7) :answer)))
+(println (= 3 (core/-> 1 inc inc)))
+(println (= 5 (clojure.core/->> [2 3] (reduce +))))
+(println (= 3 (nested-thread (+ 1 2))))
+(println (= 1 (-> 1)))
+(println (tagged-form? ^float (identity)))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_basic_thread_macros.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source basic thread macros must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_basic_thread_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_basic_thread_macros.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source basic thread macros must remain static";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/basic_thread_source_zero_arity.cljc" "(->)"
   |> expect_error_contains "unsupported macro arity 0"
 
 let test_namespace_value_shadows_automatic_core_macro () =
@@ -23703,12 +23746,12 @@ let test_thread_last_inferred_functions_pass_collections_to_take_while () =
 (println (pr-str (small-values [1 2 3 1])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "thread_last_inferred_functions_pass_collections_to_take_while"
     "(1 2)\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_sort_accepts_dynamic_collections () =
   let source =
@@ -37946,6 +37989,8 @@ let tests =
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",
       test_source_thread_macros_match_clojurescript );
+    ( "source basic thread macros match ClojureScript",
+      test_source_basic_thread_macros_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

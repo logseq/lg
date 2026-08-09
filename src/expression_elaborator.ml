@@ -193,12 +193,6 @@ and compile_expr_unlocated scope (env : Env.t) = function
             | expanded_bindings :: expanded_body_forms ->
                 compile_let scope env expanded_bindings expanded_body_forms
             | [] -> assert false)
-  | FList (FSymbol ("->" | "clojure.core/->" | "cljs.core/->") :: value :: steps) ->
-      compile_thread scope env `First value steps
-  | FList
-      (FSymbol ("->>" | "clojure.core/->>" | "cljs.core/->>") :: value :: steps)
-    ->
-      compile_thread scope env `Last value steps
   | FList [ FSymbol "if-let"; binding; then_form; else_form ] ->
       compile_if_let scope env binding then_form else_form
   | FList [ FSymbol "if-some"; binding; then_form; else_form ] ->
@@ -381,22 +375,6 @@ and compile_quoted scope env form =
                   ( FList [ FSymbol "quote"; key ],
                     FList [ FSymbol "quote"; value ] )))))
   | form -> compile_expr scope env form
-
-and compile_thread scope env position value steps =
-  let rec expand value = function
-    | [] -> compile_expr scope env value
-    | FSymbol name :: rest -> expand (FList [ FSymbol name; value ]) rest
-    | (FKeyword _ as keyword) :: rest -> expand (FList [ keyword; value ]) rest
-    | FList (FSymbol name :: args) :: rest ->
-        let args =
-          match position with
-          | `First -> value :: args
-          | `Last -> args @ [ value ]
-        in
-        expand (FList (FSymbol name :: args)) rest
-    | _ -> Error.error "threading steps must be symbols or call forms"
-  in
-  expand value steps
 
 and compile_case scope env target clauses =
   let rec grouped_pattern = function

@@ -2320,35 +2320,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | Some index ->
           String.sub name (index + 1) (String.length name - index - 1)
     in
-    if member_name = "->" || member_name = "->>" then
-      match args with
-      | [] -> Ok params
-      | value :: steps ->
-          let thread value step =
-            match step with
-            | FSymbol name -> FList [ FSymbol name; value ]
-            | FList (function_ :: arguments) ->
-                if member_name = "->" then
-                  FList (function_ :: value :: arguments)
-                else FList (function_ :: arguments @ [ value ])
-            | step -> FList [ step; value ]
-          in
-          let rec infer_steps params threaded_value = function
-            | [] -> Ok params
-            | step :: rest ->
-                let threaded = thread threaded_value step in
-                let inference_form =
-                  match step with
-                  | FList _ -> thread value step
-                  | _ -> threaded
-                in
-                Result.bind (infer_form params inference_form) (fun params ->
-                    infer_steps params threaded rest)
-          in
-          Result.bind (infer_form params value) (fun params ->
-              infer_steps params value steps)
-    else if
-      String.starts_with ~prefix:"->" member_name
+    if
+      String.length member_name > 2
+      && member_name.[0] = '-'
+      && member_name.[1] = '>'
     then
       infer_expected_all (Types.dynamic_constraint TUnknown) params args
     else
