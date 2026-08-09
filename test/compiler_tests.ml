@@ -969,11 +969,11 @@ let test_record_literals_disambiguate_subset_shapes () =
 (println (= default-pattern (:pattern (pattern-only :answer))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "record_literals_disambiguate_subset_shapes" "true\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_structural_row_projection_does_not_duplicate_argument_expression () =
   let source =
@@ -2102,13 +2102,13 @@ let test_protocol_result_context_does_not_constrain_arguments () =
 (println (same-database? database database))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "generic protocol results must remain statically typed";
   assert_ocaml_runs "protocol_result_context_does_not_constrain_arguments"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_frontend_location_index_avoids_quadratic_scans () =
   let form_count = 5_000 in
@@ -16337,11 +16337,11 @@ let test_satisfies_question_selects_each_generic_protocol_witness () =
 (println (str (both? 7) ":" (both? "seven")))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "satisfies_question_selects_each_generic_protocol_witness"
     "true:false\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_protocol_methods_use_their_static_receiver_witnesses () =
   let source =
@@ -16848,9 +16848,11 @@ let test_if_heterogeneous_nominal_branches_require_sum_type () =
 (println (= many (hash-set entity)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/if_heterogeneous_nominal_branches.cljc" source
   |> expect_error_contains "define a closed sum type";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_with_stdlib_result Lg.Target.Melange
+    "test/if_heterogeneous_nominal_branches.cljc" source
   |> expect_error_contains "define a closed sum type"
 
 let test_nullable_deftype_uses_custom_printer () =
@@ -17164,11 +17166,11 @@ let test_deftype_fields_accept_clojure_primitive_hints () =
 (println (usable? (Metric. 42 true)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "deftype_fields_accept_clojure_primitive_hints" "true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_deftype_hinted_fields_preserve_static_values () =
   let source =
@@ -21857,6 +21859,45 @@ let test_source_basic_control_macros_match_clojure () =
     "test/source_cond_odd_forms.cljc" "(cond true)"
   |> expect_error_contains "cond requires an even number of forms"
 
+let test_source_logical_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-logical-macro-app
+  (:require [cljs.core :as core :refer [and or]]))
+
+(def calls (atom 0))
+(defn mark [value]
+  (swap! calls inc)
+  value)
+
+(println (= true (and)))
+(println (nil? (or)))
+(println (= :last (and :first :last)))
+(println (= :first (or nil :first :last)))
+(println (= false (and false (mark true))))
+(println (= true (or true (mark false))))
+(println (= 0 @calls))
+(println (= :qualified (core/and true :qualified)))
+(println (= :qualified (clojure.core/or nil :qualified)))
+(println (= false (and false :unreachable)))
+(println (= :ready (or :ready 42)))
+|}
+  in
+  let expected = String.concat "" (List.init 11 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_logical_macros.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source logical macros must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_logical_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_logical_macros.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source logical macros must remain static"
+
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
     compile_chunks_with_stdlib Lg.Target.Native
@@ -23244,12 +23285,12 @@ let test_truthy_guards_preserve_static_optional_numeric_parameters () =
 (println (max-present 1 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "truthy_guards_preserve_static_optional_numeric_parameters"
     "1\n2\n1\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_and_truthy_guard_narrows_nullable_ints () =
   let source =
@@ -25519,11 +25560,11 @@ let test_protocol_function_parameters_keep_nominal_record_types () =
     ((.-pred twice) (Datom. 16))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "protocol_function_parameters_keep_nominal_record_types"
     "true:false\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_cross_namespace_protocol_functions_keep_nominal_record_parameters () =
   let provider =
@@ -27149,7 +27190,8 @@ let test_equality_parameter_requires_a_closed_sum_for_keyword_and_string () =
               (tx-id? :other)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/equality_keyword_string_or.cljc" source
   |> expect_error_contains
        "= arguments must have the same type: string, keyword"
 
@@ -28428,11 +28470,11 @@ let test_nullable_values_pack_across_dynamic_logical_boundaries () =
        (+ (strict-default false 42) 0)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nullable_values_pack_across_dynamic_logical_boundaries"
     "42:7\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nullable_cond_rejects_dynamic_parameter_types () =
   let source =
@@ -29192,7 +29234,7 @@ let test_and_or_single_values_are_unchanged () =
 (println (str all-value ":" (name any-value)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "and_or_single_values_are_unchanged" "value:ready\n"
     ocaml_source
 
@@ -29747,13 +29789,13 @@ let test_map_destructuring_as_preserves_open_map_access () =
 (println (restore-value {:value true :restored false}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "map destructuring :as must stay static";
   assert_ocaml_runs "map_destructuring_as_preserves_open_map_access"
     "42\n7\ntrue\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_row_polymorphic_functions_accept_different_map_shapes () =
   let source =
@@ -31543,17 +31585,20 @@ let test_protocol_witness_packs_closed_variant_receivers () =
            (database/normalize-database view))))))
 |}
   in
+  let native_stdlib = compiled_stdlib Lg.Target.Native in
   let state, provider_source =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk native_stdlib.state provider |> expect_ok
   in
   let _, consumer_source =
     Lg.Compiler.compile_chunk state consumer |> expect_ok
   in
   assert_ocaml_runs "protocol_witness_packs_closed_variant_receivers" "true\n"
-    (provider_source ^ "\n" ^ consumer_source);
+    (String.concat "\n"
+       [ native_stdlib.ocaml_source; provider_source; consumer_source ]);
+  let melange_stdlib = compiled_stdlib Lg.Target.Melange in
   let state, _ =
     Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
-      Lg.Compiler.empty_state provider
+      melange_stdlib.state provider
     |> expect_ok
   in
   ignore
@@ -32808,8 +32853,11 @@ let test_compile_diagnostics_are_empty_for_inferred_record_parameters () =
   (and (:left value) (:right value)))
 |}
   in
-  let compilation =
-    Lg.Compiler.compile_string_with_diagnostics source |> expect_ok
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let _, compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
+      ~filename:"test/inferred_record_diagnostics.cljc" stdlib.state source
+    |> expect_ok
   in
   if compilation.diagnostics <> [] then
     failwith "expected inferred record parameters to compile without diagnostics";
@@ -38042,6 +38090,8 @@ let tests =
       test_source_basic_thread_macros_match_clojurescript );
     ( "source basic control macros match Clojure",
       test_source_basic_control_macros_match_clojure );
+    ( "source logical macros match ClojureScript",
+      test_source_logical_macros_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

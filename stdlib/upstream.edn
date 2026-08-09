@@ -22,6 +22,10 @@
               :reason :source-macro-preserves-upstream-test-once-implicit-do-and-nil-true-branch-semantics}
     cond {:status :static-adaptation
           :reason :source-macro-preserves-upstream-test-order-and-short-circuiting-while-validating-even-forms-and-pruning-literal-true-or-else-tails-for-static-branch-convergence}
+    and {:status :static-adaptation
+         :reason :source-macro-preserves-upstream-left-to-right-short-circuit-and-last-or-first-falsey-value-semantics-through-an-internal-call-site-specialized-static-logical-primitive}
+    or {:status :static-adaptation
+        :reason :source-macro-preserves-upstream-left-to-right-short-circuit-and-first-truthy-or-last-value-semantics-through-an-internal-call-site-specialized-static-logical-primitive}
     doto {:status :ported
           :reason :source-macro-preserves-upstream-single-evaluation-ordered-threading-and-original-result}
     when-first {:status :static-adaptation

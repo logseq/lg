@@ -123,7 +123,8 @@ let narrow_type_predicates scope env condition body =
   let rec narrowed_symbols = function
     | FSymbol name -> [ name ]
     | FList (FSymbol name :: forms)
-      when name = "and" || String.ends_with ~suffix:"/and" name ->
+      when name = "__lg_logical-and"
+           || String.ends_with ~suffix:"/__lg_logical-and" name ->
         List.concat_map narrowed_symbols forms
     | _ -> []
   in
@@ -135,7 +136,8 @@ let narrow_type_predicates scope env condition body =
       when is_core_symbol predicate_name predicate ->
         [ name ]
     | FList (FSymbol name :: forms)
-      when name = "and" || String.ends_with ~suffix:"/and" name ->
+      when name = "__lg_logical-and"
+           || String.ends_with ~suffix:"/__lg_logical-and" name ->
         List.concat_map (symbols_matching predicate_name) forms
     | _ -> []
   in
@@ -146,7 +148,8 @@ let narrow_type_predicates scope env condition body =
            && is_core_symbol "__lg_nil-predicate" nil_predicate ->
         [ name ]
     | FList (FSymbol name :: forms)
-      when name = "and" || String.ends_with ~suffix:"/and" name ->
+      when name = "__lg_logical-and"
+           || String.ends_with ~suffix:"/__lg_logical-and" name ->
         List.concat_map symbols_known_non_nil forms
     | _ -> []
   in
@@ -205,7 +208,8 @@ let rec false_nil_predicate_names = function
          || String.ends_with ~suffix:"/__lg_nil-predicate" predicate ->
       [ name ]
   | FList (FSymbol name :: conditions)
-    when name = "or" || String.ends_with ~suffix:"/or" name ->
+    when name = "__lg_logical-or"
+         || String.ends_with ~suffix:"/__lg_logical-or" name ->
       List.concat_map false_nil_predicate_names conditions
   | _ -> []
 
@@ -1112,7 +1116,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     in
     let condition_env =
       match condition with
-      | FList (FSymbol ("and" | "or") :: _) ->
+      | FList (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) ->
           Env.with_expected_type (Some TBool) env
       | _ -> env
     in
@@ -1314,6 +1318,23 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             )
         )
   and compile_logical scope env operator forms =
+    let literal_truthiness = function
+      | FSymbol "nil" | FBool false -> Some false
+      | FBool true | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
+      | FKeyword _ ->
+          Some true
+      | FSymbol _ | FCoreSymbol _ | FList _ | FVector _ | FMap _ -> None
+    in
+    let rec prune_static_forms = function
+      | [] -> []
+      | [ form ] -> [ form ]
+      | form :: rest -> (
+          match (operator, literal_truthiness form) with
+          | `And, Some true | `Or, Some false -> prune_static_forms rest
+          | `And, Some false | `Or, Some true -> [ form ]
+          | (`And | `Or), None -> form :: prune_static_forms rest)
+    in
+    let forms = prune_static_forms forms in
     let forms =
       match operator with
       | `Or ->
@@ -1339,7 +1360,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   | _ ->
                       narrow_type_predicates scope env
                         (FList
-                           (FSymbol "and" :: List.rev conditions))
+                           (FSymbol "__lg_logical-and" :: List.rev conditions))
                         form
                 in
                 narrowed :: narrow_later (form :: conditions) rest
@@ -1510,7 +1531,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 lower result_ty expressions
             | None ->
                 Error.error
-                  "conditional branches have incompatible types; define a closed sum type containing every branch type"))
+                  ("conditional branches have incompatible types: "
+                  ^ String.concat ", "
+                      (List.map
+                         (fun expression -> Types.source_name expression.ty)
+                         expressions)
+                  ^ "; define a closed sum type containing every branch type")))
   and compile_match scope env target_form clauses =
     let rec parse_pairs acc = function
       | [] -> Ok (List.rev acc)

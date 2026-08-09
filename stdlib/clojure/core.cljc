@@ -57,6 +57,12 @@
              (cond ~@(nnext clauses))))))
     nil))
 
+(defmacro and [& forms]
+  `(__lg_logical-and ~@forms))
+
+(defmacro or [& forms]
+  `(__lg_logical-or ~@forms))
+
 (defmacro doto [x & forms]
   (let [gx (gensym)]
     `(let [~gx ~x]

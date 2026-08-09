@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 265 source entries (30.99%), 90 typed
+macro surfaces. The current baseline is 267 source entries (31.23%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 278 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 276 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -252,6 +252,13 @@ order and short-circuiting, validates even forms at expansion time, and stops
 expanding after literal `true` or `:else` so unreachable heterogeneous tails
 do not weaken static branch types. The Logseq scan finds 275 direct `if-not`,
 5,130 direct `when`, 1,143 direct `when-not`, and 31 direct `cond` forms.
+The public `and` and `or` vars are source macros backed by internal typed
+logical primitives. This retains the pinned ClojureScript left-to-right
+short-circuit and value-return behavior without exposing the public names to
+expression elaboration, inference, or compile-time evaluation. Literal
+truthy/falsey prefixes and unreachable tails are pruned before static branch
+convergence, so `(and true value)` and `(or nil value)` retain `value`'s exact
+type. The Logseq scan finds 3,778 direct `and` and 3,277 direct `or` forms.
 The foundational `->` and `->>` macros now use the pinned ClojureScript source
 loop as well. Symbol, keyword, and call-form steps preserve order, and
 step-form type-hint metadata round-trips through the compile-time `meta` and

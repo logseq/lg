@@ -243,8 +243,10 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_for scope env bindings body
   | FList (FSymbol "for" :: _) ->
       Error.error "for expects a binding vector and body"
-  | FList (FSymbol "and" :: forms) -> compile_logical scope env `And forms
-  | FList (FSymbol "or" :: forms) -> compile_logical scope env `Or forms
+  | FList (FSymbol "__lg_logical-and" :: forms) ->
+      compile_logical scope env `And forms
+  | FList (FSymbol "__lg_logical-or" :: forms) ->
+      compile_logical scope env `Or forms
   | FList (FSymbol "match" :: target :: clauses) ->
       compile_match scope env target clauses
   | FList (FSymbol "try" :: forms) -> compile_try scope env forms
@@ -411,7 +413,7 @@ and compile_case scope env target clauses =
               (fun condition constant ->
                 FList
                   [
-                    FSymbol "or";
+                    FSymbol "__lg_logical-or";
                     condition;
                     FList [ FSymbol "="; FSymbol target_name; constant ];
                   ])

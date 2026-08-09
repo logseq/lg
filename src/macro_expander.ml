@@ -386,9 +386,9 @@ let rec eval context = function
           | Some value -> Ok (Form value)
           | None -> Ok nil)
       | Ok _ -> Ok nil)
-  | FList (FSymbol ("and" | "clojure.core/and") :: forms) ->
+  | FList (FSymbol "__lg_logical-and" :: forms) ->
       eval_and context forms
-  | FList (FSymbol "or" :: forms) -> eval_or context forms
+  | FList (FSymbol "__lg_logical-or" :: forms) -> eval_or context forms
   | FList
       (FSymbol ("condp" | "clojure.core/condp")
       :: predicate :: target :: clauses) ->

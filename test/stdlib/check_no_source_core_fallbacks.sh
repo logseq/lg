@@ -74,6 +74,24 @@ for name in comment doto when-first while if-not when when-not cond '->' '->>' '
   done
 done
 
+if grep -F 'FList (FSymbol "and" :: forms) -> compile_logical' \
+    "$root/src/expression_elaborator.ml" >/dev/null \
+  || grep -F 'FList (FSymbol "or" :: forms) -> compile_logical' \
+    "$root/src/expression_elaborator.ml" >/dev/null \
+  || grep -F 'FSymbol ("and" | "clojure.core/and")' \
+    "$root/src/macro_expander.ml" >/dev/null \
+  || grep -F 'FSymbol "or" :: forms' \
+    "$root/src/macro_expander.ml" >/dev/null \
+  || grep -F 'FList (FSymbol ("and" | "or") :: forms)' \
+    "$root/src/type_inference.ml" >/dev/null \
+  || grep -F 'FList (FSymbol "and" :: conditions)' \
+    "$root/src/type_inference.ml" >/dev/null \
+  || grep -F 'FList (FSymbol "or" :: conditions)' \
+    "$root/src/type_inference.ml" >/dev/null; then
+  echo "clojure.core/and or clojure.core/or still has public-name compiler ownership" >&2
+  exit 1
+fi
+
 if grep -F 'FSymbol "not"' "$root/src/type_inference.ml" >/dev/null \
   || grep -F '"not" | "nil?"' "$root/src/call_elaborator.ml" >/dev/null \
   || grep -F '| "not" -> compile_not' "$root/src/core_boolean.ml" >/dev/null; then

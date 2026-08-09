@@ -1587,7 +1587,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [ FSymbol "satisfies?"; FSymbol _protocol_name; FSymbol receiver ] ->
         [ receiver ]
-    | FList (FSymbol ("and" | "or") :: forms) ->
+    | FList
+        (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: forms) ->
         List.concat_map guarded_protocol_receivers forms
     | _ -> []
   in
@@ -2196,7 +2197,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     in
     loop params forms
   and infer_truthy params = function
-    | FList (FSymbol "and" :: conditions) ->
+    | FList (FSymbol "__lg_logical-and" :: conditions) ->
         let optionalize_guard params = function
           | FSymbol name -> (
               match string_assoc_opt name params with
@@ -2220,7 +2221,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   infer_conditions (optionalize_guard params condition) rest)
         in
         infer_conditions params conditions
-    | FList (FSymbol "or" :: conditions) ->
+    | FList (FSymbol "__lg_logical-or" :: conditions) ->
         (match List.rev conditions with
         | [] -> Ok params
         | last :: reversed_prefix ->
@@ -3781,7 +3782,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         ] ->
         Result.bind (infer_form params value) (fun params ->
             infer_form params metadata)
-    | (FList (FSymbol ("and" | "or") :: _) as form) ->
+    | (FList
+        (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) as form) ->
         infer_truthy params form
     | FList
         [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); value ] ->
