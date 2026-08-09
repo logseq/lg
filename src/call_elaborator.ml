@@ -4068,7 +4068,6 @@ let create ~compile_expr =
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
-  let compile_disj = comparisons.compile_disj in
   let rec stringify_value scope env ~pr value =
     match value.ty with
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
@@ -4181,32 +4180,6 @@ let create ~compile_expr =
                   [ TUnknown; TUnknown ] ))
              (Semantic_ir.Apply
                 (Semantic_ir.Ident "Lg_runtime.Runtime_transient.map_empty", [])))
-    | [ FList [ FSymbol "empty"; source_form ] ] -> (
-        match compile_expr scope env source_form with
-        | Error _ as error -> error
-        | Ok source -> (
-            match Types.dynamic_map_types source.ty with
-            | Some (key_type, value_type) ->
-                Ok
-                  (typed_ir
-                     (TOcaml_app
-                        ( "Lg_runtime.Runtime_transient.map",
-                          [ key_type; value_type ] ))
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_transient.map_empty",
-                          [] )))
-            | None when Types.equal source.ty TUnknown ->
-                Ok
-                  (typed_ir
-                     (TOcaml_app
-                        ( "Lg_runtime.Runtime_transient.map",
-                          [ TUnknown; TUnknown ] ))
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident
-                            "Lg_runtime.Runtime_transient.map_empty",
-                          [] )))
-            | None -> Error.error "transient empty expects a map"))
     | [ collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error
@@ -8331,8 +8304,7 @@ let create ~compile_expr =
     | "count" -> compile_collection_call scope env name arg_forms
     | "conj" -> compile_conj scope env arg_forms
     | "conj!" -> compile_conj_bang scope env arg_forms
-    | "first" | "peek" | "pop" ->
-        compile_collection_call scope env name arg_forms
+    | "first" -> compile_collection_call scope env name arg_forms
     | "subvec" -> compile_subvec scope env arg_forms
     | "nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
@@ -8436,8 +8408,6 @@ let create ~compile_expr =
               | "hash-set" | "sorted-set" ->
                   compile_hash_set scope env arg_forms
     | "set-of" -> compile_set_of env arg_forms
-    | "disj" -> compile_disj scope env arg_forms
-    | "empty" -> compile_collection_call scope env name arg_forms
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
         | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
@@ -12045,7 +12015,18 @@ let create ~compile_expr =
                                     then
                                       dynamic_unpack env expected
                                         argument.semantic_expr
-                                    else Ok argument.semantic_expr
+                                    else
+                                      match optional_payload expected with
+                                      | Some payload
+                                        when method_name = "-reset!"
+                                             && Types.assignable
+                                               ~policy:Host_boundary
+                                               ~expected:payload
+                                               ~actual:argument.ty ->
+                                          adapt_value_to_type env expected
+                                            argument
+                                      | Some _ | None ->
+                                          Ok argument.semantic_expr
                                   in
                                   let rec prepare prepared expected arguments =
                                     match (expected, arguments) with
@@ -12068,14 +12049,19 @@ let create ~compile_expr =
                                         match impl.protocol_id with
                                         | Some protocol_id
                                           when Protocol_id.equal protocol_id
+                                                 Core_protocols.emptyable_id
+                                               && method_name = "-empty" ->
+                                            Some `Empty
+                                        | Some protocol_id
+                                          when Protocol_id.equal protocol_id
                                                  Core_protocols.set_id
                                                && method_name = "-disjoin" ->
-                                            Some "remove"
+                                            Some `Remove
                                         | Some protocol_id
                                           when Protocol_id.equal protocol_id
                                                  Core_protocols.collection_id
                                                && method_name = "-conj" ->
-                                            Some "add"
+                                            Some `Add
                                         | Some _ | None -> None
                                       in
                                       match
@@ -12084,15 +12070,30 @@ let create ~compile_expr =
                                           static_set_operation )
                                       with
                                       | ( TSet element_ty,
+                                          [ collection ],
+                                          Some `Empty ) ->
+                                          Result.map
+                                            (fun set_module ->
+                                              typed_ir ret
+                                                (Semantic_ir.Sequence
+                                                   [
+                                                     collection;
+                                                     Semantic_ir.Ident
+                                                       (set_module ^ ".empty");
+                                                   ]))
+                                            (Types.set_module_name element_ty)
+                                      | ( TSet element_ty,
                                           [ collection; value ],
-                                          Some operation ) ->
+                                          Some (`Remove | `Add as operation) ) ->
                                           Result.map
                                             (fun set_module ->
                                               typed_ir ret
                                                 (Semantic_ir.Apply
                                                    ( Semantic_ir.Ident
                                                        (set_module ^ "."
-                                                      ^ operation),
+                                                      ^ (match operation with
+                                                        | `Remove -> "remove"
+                                                        | `Add -> "add")),
                                                      [ value; collection ] )))
                                             (Types.set_module_name element_ty)
                                       | _ ->

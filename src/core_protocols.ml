@@ -15,6 +15,7 @@ let indexed_id = Protocol_id.create ~owner:[] ~name:"Indexed"
 let nth_method_id = Method_id.create ~owner:[ "Indexed" ] ~name:"-nth"
 let emptyable_id = Protocol_id.create ~owner:[] ~name:"Emptyable"
 let empty_method_id = Method_id.create ~owner:[ "Emptyable" ] ~name:"-empty"
+let stack_id = Protocol_id.create ~owner:[] ~name:"IStack"
 let iindexed_id = Protocol_id.create ~owner:[] ~name:"IIndexed"
 let sequential_id = Protocol_id.create ~owner:[] ~name:"ISequential"
 let sorted_id = Protocol_id.create ~owner:[] ~name:"ISorted"
@@ -136,14 +137,35 @@ let declare_emptyable registry =
     registry
   |> add_or_fail
 
-let add_emptyable receiver ocaml_name registry =
+let add_emptyable receiver ocaml_name collection_ty registry =
   let binding =
     Types.binding ~protocol_id:emptyable_id ocaml_name
-      (TFn ([ TUnknown ], TUnknown))
+      (TFn ([ collection_ty ], collection_ty))
   in
   Protocol_registry.add_implementation emptyable_id empty_method_id receiver
     binding registry
   |> add_or_fail
+
+let declare_stack registry =
+  Protocol_registry.declare stack_id
+    [
+      signature (method_id stack_id "-peek") [ TUnknown ] TUnknown;
+      signature (method_id stack_id "-pop") [ TUnknown ] TUnknown;
+    ]
+    registry
+  |> add_or_fail
+
+let add_stack receiver peek_name pop_name collection_ty element_ty registry =
+  let add method_name ocaml_name method_ty registry =
+    let binding = Types.binding ~protocol_id:stack_id ocaml_name method_ty in
+    Protocol_registry.add_implementation stack_id
+      (method_id stack_id method_name)
+      receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add "-peek" peek_name (TFn ([ collection_ty ], element_ty))
+  |> add "-pop" pop_name (TFn ([ collection_ty ], collection_ty))
 
 let declare_collection_lifecycle_protocols registry =
   let receiver = TVar "equiv_receiver" in
@@ -609,7 +631,27 @@ let initial_registry =
   |> add_indexed (Receiver_id.Host_receiver "array")
        "Lg.Core_protocols.nth_host_array"
   |> declare_emptyable
+  |> add_emptyable Receiver_id.List_receiver
+       "Lg_runtime.Runtime_collection.empty_list" (TList (TVar "empty_element"))
+  |> add_emptyable Receiver_id.Vector_receiver
+       "Lg_runtime.Runtime_collection.empty_vector"
+       (TVector (TVar "empty_element"))
+  |> add_emptyable Receiver_id.String_receiver
+       "Lg_runtime.Runtime_collection.empty_string" TString
+  |> add_emptyable Receiver_id.Set_receiver
+       "Lg_runtime.Runtime_collection.empty_poly_set"
+       (TSet (TVar "empty_element"))
   |> add_emptyable runtime_map_receiver "Lg_runtime.Runtime_map.empty_like"
+       (TOcaml_app
+          ( "Lg_runtime.Runtime_map.t",
+            [ TVar "empty_key"; TVar "empty_value" ] ))
+  |> declare_stack
+  |> add_stack Receiver_id.List_receiver "List.hd" "List.tl"
+       (TList (TVar "stack_element")) (TVar "stack_element")
+  |> add_stack Receiver_id.Vector_receiver
+       "Lg_runtime.Runtime_collection.peek_vector"
+       "Lg_runtime.Runtime_collection.pop_vector"
+       (TVector (TVar "stack_element")) (TVar "stack_element")
   |> declare_collection_lifecycle_protocols |> add_vector_reversible_protocol
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref

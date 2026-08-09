@@ -134,7 +134,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 300 source entries (35.05%), 84 typed
+macro surfaces. The current baseline is 304 source entries (35.51%), 80 typed
 primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
 44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -172,7 +172,7 @@ build-time libraries with source namespaces that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 237 reviewed routes. A separate OCaml-AST
+The call elaborator contributes 233 reviewed routes. A separate OCaml-AST
 extractor now audits 161 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `doseq`,
 `dotimes`, `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as
@@ -183,7 +183,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 226-name compiler dispatch inventory has zero `source-shadowed`
+The current 222-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -201,7 +201,8 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
-`rseq`, `find`, `deref`, `reset!`, `compare-and-set!`,
+`rseq`, `find`, `deref`, `reset!`, `compare-and-set!`, `empty`, `peek`, `pop`,
+`disj`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
 `array-binary-search-right`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
@@ -323,8 +324,9 @@ direct `abs` calls.
 retains a validated static regex constructor while the public var remains
 source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
-routes, plus the public `rseq`, `find`, `deref`, `reset!`, and
-`compare-and-set!` routes, the raw compiler-call inventory contains 226 names.
+routes, plus the public `rseq`, `find`, `deref`, `reset!`,
+`compare-and-set!`, `empty`, `peek`, `pop`, and `disj` routes, the raw
+compiler-call inventory contains 222 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the
@@ -333,6 +335,15 @@ upstream deref/equality/reset control flow and evaluates its arguments once.
 retaining ordinary source definitions;
 generic source functions infer the corresponding protocol witness without
 dynamic packing.
+The collection lifecycle family now follows the same boundary. Public source
+functions and inline forms delegate to ClojureScript's
+`IEmptyableCollection`, `IStack`, and `ISet`. Static implementations cover
+lists, vectors, strings, sets, metadata-preserving hash maps, and explicit
+user protocol implementations. The `disj` inline form nests protocol calls in
+left-to-right argument order and binds the collection once. LG's static API
+continues to reject nil collection receivers, and `peek` retains the existing
+nonempty collection result type because a value-dependent nullable result is
+not yet expressible as one generic source signature.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

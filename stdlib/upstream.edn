@@ -237,6 +237,14 @@
            :reason :current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers}
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
+    empty {:status :static-adaptation
+           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-iemptyablecollection-with-static-list-vector-string-set-and-metadata-preserving-hash-map-implementations-while-lg-requires-a-non-nil-static-receiver}
+    peek {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-and-explicit-protocol-implementations-while-lg-retains-its-current-nonempty-static-result-contract}
+    pop {:status :static-adaptation
+         :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-and-explicit-protocol-implementations-while-lg-requires-a-non-nil-static-receiver}
+    disj {:status :static-adaptation
+          :reason :source-overloads-preserve-upstream-one-two-and-variadic-left-to-right-disjoin-control-flow-and-inline-direct-calls-through-clojurescript-iset-while-lg-requires-a-non-nil-static-set}
     inc {:status :static-adaptation
          :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
     dec {:status :static-adaptation

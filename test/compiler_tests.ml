@@ -732,7 +732,7 @@ let test_hash_map_empty_preserves_metadata () =
 (println (str (count emptied) ":" source))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "hash_map_empty_preserves_metadata" "0:cljs\n"
     ocaml_source
 
@@ -4849,13 +4849,13 @@ let test_clojure_collection_protocol_names_dispatch_statically () =
 (println (str (count bag) ":" (count (empty bag))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "empty must preserve its statically typed receiver";
   assert_ocaml_runs "clojure_collection_protocol_names_dispatch_statically"
     "3:0\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_callback_return_records_are_materialized () =
   let source =
@@ -13901,7 +13901,7 @@ let test_custom_atom_protocol_rejects_invalid_reset_value () =
 (reset! value "wrong")
 |}
   in
-  expect_error_contains "expression was expected of type"
+  expect_error_contains "expected (box, int)"
     (compile_with_stdlib_result Lg.Target.Native
        "test/custom_atom_invalid_reset.cljc" source)
 
@@ -13914,13 +13914,9 @@ let test_custom_atom_protocol_infers_closed_record_state () =
   IDeref
   (-deref [box] @(:cell box))
   IAtom
-  (-compare-and-set! [box old-database new-database]
-    (let [cell (:cell box)]
-      (if (__lg_identical-predicate @cell old-database)
-        (do
-          (reset! cell new-database)
-          true)
-        false))))
+  IReset
+  (-reset! [box new-database]
+    (reset! (:cell box) new-database)))
 (def first-database (record database (value 1)))
 (def second-database (record database (value 2)))
 (def value (record database-box (cell (atom first-database))))
@@ -14406,13 +14402,13 @@ let test_fn_predicate_recognizes_static_functions () =
 let test_ocaml_refs_reject_invalid_operations () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_deref.cljc"
     {|(def value (deref 42))|}
-  |> expect_error_contains "deref expects a reference";
+  |> expect_error_contains "no protocol implementation";
   compile_with_stdlib_result Lg.Target.Native "test/bad_reset_receiver.cljc"
     {|(reset! 42 1)|}
-  |> expect_error_contains "reset! expects a reference";
+  |> expect_error_contains "no protocol implementation";
   compile_with_stdlib_result Lg.Target.Native "test/bad_reset_value.cljc"
     {|(reset! (atom 1) "bad")|}
-  |> expect_error_contains "reset! value must match referenced type"
+  |> expect_error_contains "expected (ref<int>, int)"
 
 let test_float_arithmetic_coerces_mixed_numeric_types () =
   let source = {|(println (+ 1 2.5))|} in
@@ -24912,11 +24908,11 @@ let test_callable_set_parameters_remain_sets_for_conj () =
 (println (str (count once) ":" (count (add-unseen once 1))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "callable_set_parameters_remain_sets_for_conj"
     "1:1\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_computed_sets_are_first_class_predicates () =
   let source =
@@ -25798,8 +25794,11 @@ let test_melange_reduce_and_vswap_use_ocaml_int_directly () =
   let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "melange_reduce_and_vswap_use_ocaml_int_directly" "6:4:0\n"
     native_source;
-  let melange_source =
-    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  let stdlib = compiled_stdlib Lg.Target.Melange in
+  let _, melange_source =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Melange
+      ~filename:"test/melange_reduce_int.cljc" stdlib.state source
+    |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_int_melange" then
     failwith "OCaml int reduction must not need a Melange int64 helper";
@@ -26789,6 +26788,102 @@ let test_reference_protocol_family_has_no_public_name_dispatch () =
               (name ^ " still has public-name compiler dispatch in " ^ path))
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "deref"; "reset!"; "compare-and-set!" ]
+
+let test_source_collection_lifecycle_family_matches_clojurescript () =
+  let source =
+    {|
+(ns app.collection-lifecycle
+  (:require [cljs.core :as core
+             :refer [empty peek pop disj]]))
+
+(deftype StackBox [^int value]
+  IStack
+  (-peek [_] value)
+  (-pop [_] (StackBox. (dec value))))
+
+(deftype EmptyBox [^int value]
+  IEmptyableCollection
+  (-empty [_] (EmptyBox. 0)))
+
+(deftype NumberSet [^:set<int> values]
+  ISet
+  (-disjoin [_ value] (NumberSet. (disj values value))))
+
+(def calls (atom 0))
+(defn make-number-set []
+  (swap! calls inc)
+  (NumberSet. #{1 2 3 4}))
+
+(def stack (StackBox. 3))
+(def popped (core/pop stack))
+(def emptied (empty (EmptyBox. 7)))
+(def updated (core/disj (make-number-set) 2 3 9))
+(def tagged (with-meta {:answer 42} {:source "cljs"}))
+(def empty-tagged (core/empty tagged))
+
+(println (= 3 (peek stack)))
+(println (= 2 (core/peek popped)))
+(println (= 0 (.-value emptied)))
+(println (= #{1 4} (.-values updated)))
+(println (= 1 (deref calls)))
+(println (= #{1 2} (disj #{1 2})))
+(println (= #{1} (disj #{1 2} 2)))
+(println (= [1 2] (pop [1 2 3])))
+(println (= 3 (peek [1 2 3])))
+(println (= "cljs" (:source (meta empty-tagged))))
+|}
+  in
+  let expected = String.concat "" (List.init 10 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_collection_lifecycle.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source collection lifecycle operations must remain static";
+  assert_ocaml_runs "source_collection_lifecycle_family" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_collection_lifecycle.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange collection lifecycle operations must remain static"
+
+let test_source_collection_lifecycle_family_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native "test/bad_empty.cljc"
+    {|(empty 42)|}
+  |> expect_error_contains "empty";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_peek.cljc"
+    {|(peek #{1})|}
+  |> expect_error_contains "peek";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_pop.cljc"
+    {|(pop "abc")|}
+  |> expect_error_contains "pop";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_disj.cljc"
+    {|(disj #{1} "one")|}
+  |> expect_error_contains "expected (set<int>, int)"
+
+let test_collection_lifecycle_family_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name))
+      then failwith (name ^ " is not owned by the source standard library");
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "empty"; "peek"; "pop"; "disj" ]
 
 let test_deftype_protocol_methods_support_multiple_arities () =
   let source =
@@ -28707,12 +28802,12 @@ let test_contextual_equality_callback_preserves_map_key_type () =
 |}
   in
   let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Native source |> expect_ok
   in
   assert_ocaml_runs "contextual_equality_callback_preserves_map_key_type"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_recursive_deftype_helper_requires_closed_sum_results () =
   let source =
@@ -32409,7 +32504,7 @@ let test_set_core_api () =
               (pr-str ys) ":" (pr-str same) ":" (pr-str slim)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "set_core_api" "true:false:4:#{1 2 3 4}:#{1 2 3 4}:#{1 3}\n"
     ocaml_source
 
@@ -32722,8 +32817,9 @@ let test_conj_rejects_set_type_mismatch () =
   |> expect_error_contains "define a sum type"
 
 let test_disj_rejects_set_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (disj (hash-set 1) 1 "two"))|}
-  |> expect_error "disj value type must match set element type"
+  compile_with_stdlib_result Lg.Target.Native "test/disj_type_mismatch.cljc"
+    {|(def xs (disj (hash-set 1) 1 "two"))|}
+  |> expect_error_contains "expected (set<int>, int)"
 
 let test_set_sequence_core_api () =
   let source =
@@ -33095,8 +33191,9 @@ let test_protocol_witness_packs_closed_variant_receivers () =
     |> expect_ok)
 
 let test_empty_rejects_unsupported_values () =
-  Lg.Compiler.compile_string {|(def x (empty 1))|}
-  |> expect_error_contains "empty expects a collection or string"
+  compile_with_stdlib_result Lg.Target.Native "test/empty_unsupported.cljc"
+    {|(def x (empty 1))|}
+  |> expect_error_contains "no protocol implementation"
 
 let test_into_core_api () =
   let source =
@@ -34158,8 +34255,9 @@ let test_reduce_partition_callback_infers_static_accumulator_and_items () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_peek_rejects_unsupported_collections () =
-  Lg.Compiler.compile_string {|(def x (peek (hash-set 1)))|}
-  |> expect_error "peek expects a list or vector"
+  compile_with_stdlib_result Lg.Target.Native "test/peek_unsupported.cljc"
+    {|(def x (peek (hash-set 1)))|}
+  |> expect_error_contains "no protocol implementation"
 
 let test_let_rejects_odd_binding_forms () =
   Lg.Compiler.compile_string {|(def x (let [a 1 b] a))|}
@@ -39959,6 +40057,12 @@ let tests =
       test_source_reference_protocol_family_matches_clojurescript );
     ( "reference protocol family has no public-name dispatch",
       test_reference_protocol_family_has_no_public_name_dispatch );
+    ( "source collection lifecycle family matches ClojureScript",
+      test_source_collection_lifecycle_family_matches_clojurescript );
+    ( "source collection lifecycle family rejects invalid inputs",
+      test_source_collection_lifecycle_family_rejects_invalid_inputs );
+    ( "collection lifecycle family has no public-name dispatch",
+      test_collection_lifecycle_family_has_no_public_name_dispatch );
     ( "deftype protocol methods support multiple arities",
       test_deftype_protocol_methods_support_multiple_arities );
     ( "declared protocol methods support multiple arities",

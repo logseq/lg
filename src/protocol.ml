@@ -26,6 +26,13 @@ let method_basename name =
   | None -> name
   | Some index -> String.sub name (index + 1) (String.length name - index - 1)
 
+let canonical_protocol_name protocol_name =
+  match method_basename protocol_name with
+  | "ISeqable" -> "Seqable"
+  | "ICounted" -> "Counted"
+  | "IEmptyableCollection" -> "Emptyable"
+  | _ -> protocol_name
+
 let marker_binding protocol_id signature =
   Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
     signature.method_ty
@@ -52,13 +59,7 @@ let resolve_protocol_id ~scope env protocol_id =
     | _ -> protocol_id
 
 let find_protocol_id scope env protocol_name =
-  let protocol_name =
-    match method_basename protocol_name with
-    | "ISeqable" -> "Seqable"
-    | "ICounted" -> "Counted"
-    | "IEmptyableCollection" -> "Emptyable"
-    | _ -> protocol_name
-  in
+  let protocol_name = canonical_protocol_name protocol_name in
   let registry = Env.protocols env in
   let scoped_id =
     protocol_id scope protocol_name |> resolve_protocol_id ~scope env
@@ -152,7 +153,14 @@ let satisfied_protocols env receiver_ty =
   |> List.filter_map (fun (protocol_id, _) ->
          let compiler_protocol =
            List.mem (Protocol_id.name protocol_id)
-             [ "Seqable"; "Reducible"; "Counted"; "Indexed"; "Emptyable" ]
+             [
+               "Seqable";
+               "Reducible";
+               "Counted";
+               "Indexed";
+               "Emptyable";
+               "IStack";
+             ]
          in
          if (not compiler_protocol) && type_satisfies env protocol_id receiver_ty
          then Some protocol_id
@@ -268,7 +276,14 @@ let implemented_protocols env receiver_ty =
   |> List.filter_map (fun (protocol_id, _) ->
          let compiler_protocol =
            List.mem (Protocol_id.name protocol_id)
-             [ "Seqable"; "Reducible"; "Counted"; "Indexed"; "Emptyable" ]
+             [
+               "Seqable";
+               "Reducible";
+               "Counted";
+               "Indexed";
+               "Emptyable";
+               "IStack";
+             ]
          in
          if
            (not compiler_protocol)
@@ -439,6 +454,7 @@ let lookup_marker scope env method_name =
     | method_name :: protocol_name :: reversed_owner ->
         let protocol_name =
           String.concat "/" (List.rev (protocol_name :: reversed_owner))
+          |> canonical_protocol_name
         in
         let namespace_owner =
           match Env.resolve_namespace_alias ~scope protocol_name env with

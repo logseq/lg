@@ -3914,14 +3914,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
     | FList
-        [ FSymbol "vreset!"; FSymbol reference; value ]
+        [ FSymbol ("vreset!" | "IReset/-reset!"); FSymbol reference; value ]
       when
         (match string_assoc_opt reference params with
         | Some (TRef _ | TUnknown | TMeta _ | TVar _) | None -> false
         | Some _ -> true) ->
         infer_form params value
     | FList
-        [ FSymbol "vreset!"; FSymbol reference; value ] ->
+        [ FSymbol ("vreset!" | "IReset/-reset!"); FSymbol reference; value ] ->
         let value_ty = inferred_form_type params value in
         let referenced_ty =
           match string_assoc_opt reference params with
@@ -4053,7 +4053,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Some ty -> infer_expected ty params value
         | None -> infer_form params value)
     | FList
-        [ FSymbol "vreset!"; FList [ FKeyword keyword; FSymbol name ]; value ]
+        [
+          FSymbol ("vreset!" | "IReset/-reset!");
+          FList [ FKeyword keyword; FSymbol name ];
+          value;
+        ]
       -> (
         match record_ref_field_value_type params name keyword with
         | Some ty -> infer_expected ty params value
@@ -4380,15 +4384,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList [ FSymbol "empty"; FSymbol collection ] -> (
-        match string_assoc_opt collection params with
-        | Some (TUnknown | TMeta _ | TVar _) ->
-            constrain_symbol (Types.dynamic_constraint TUnknown) params
-              collection
-        | Some ty when Option.is_some (Types.seqable_constraint_info ty) ->
-            Ok
-              (replace_param collection (Types.dynamic_constraint ty) params)
-        | Some _ | None -> Ok params)
     | FList (FSymbol qualified_method :: FSymbol receiver :: _)
       when (match String.split_on_char '/' qualified_method with
            | [ protocol_name; method_name ] ->
@@ -6077,7 +6072,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let rec propagate_record_ref_writes params = function
     | FList
         [
-          FSymbol "vreset!";
+          FSymbol ("vreset!" | "IReset/-reset!");
           FList [ FKeyword keyword; FSymbol receiver ];
           FList [ FSymbol "Some"; FSymbol value ];
         ]

@@ -658,6 +658,47 @@
   [coll]
   (if (seq coll) coll nil))
 
+(defn empty
+  {:inline (fn [coll]
+             (list 'IEmptyableCollection/-empty coll))}
+  [coll]
+  (IEmptyableCollection/-empty coll))
+
+(defn peek
+  {:inline (fn [coll]
+             (list 'IStack/-peek coll))}
+  [coll]
+  (IStack/-peek coll))
+
+(defn pop
+  {:inline (fn [coll]
+             (list 'IStack/-pop coll))}
+  [coll]
+  (IStack/-pop coll))
+
+(defn disj
+  {:inline
+   (fn [coll & keys]
+     (let [result (gensym)]
+       (list
+        'let [result coll]
+        (loop [expression result
+               remaining keys]
+          (if (nil? remaining)
+            expression
+            (recur (list 'ISet/-disjoin expression (first remaining))
+                   (next remaining)))))))}
+  ([coll] coll)
+  ([coll key]
+   (ISet/-disjoin coll key))
+  ([coll key & keys]
+   (loop [result (ISet/-disjoin coll key)
+          remaining keys]
+     (if (seq remaining)
+       (recur (ISet/-disjoin result (first remaining))
+              (rest remaining))
+       result))))
+
 (defn ex-message [ex]
   (__lg_ex-message ex))
 
