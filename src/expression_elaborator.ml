@@ -1529,6 +1529,9 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
 
 and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
     source_name params body_forms =
+  match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
+  | Error _ as error -> error
+  | Ok body_forms -> (
   match Destructure.parse_param_specs params with
   | Error _ as err -> err
   | Ok specs -> (
@@ -1858,7 +1861,7 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
             in
             prepare_recursive_parts self_param_tys overrides
           else
-            prepare_recursive_parts inferred_param_tys param_type_overrides)
+            prepare_recursive_parts inferred_param_tys param_type_overrides))
 
 and prepare_inferred_recursive_fn_with_return ~ocaml_name scope env source_name
     return_ty params body_forms =

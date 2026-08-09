@@ -699,6 +699,23 @@
               (rest remaining))
        result))))
 
+(defn count
+  {:inline (fn [coll]
+             (list '__lg_count coll))}
+  [coll]
+  (ICounted/-count coll))
+
+(defn nth
+  {:inline
+   (fn [coll index & not-found]
+     (if (nil? not-found)
+       (list '__lg_nth coll index)
+       (list '__lg_nth coll index (first not-found))))}
+  ([coll index]
+   (IIndexed/-nth coll index))
+  ([coll index not-found]
+   (IIndexed/-nth coll index not-found)))
+
 (defn ex-message [ex]
   (__lg_ex-message ex))
 

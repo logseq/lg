@@ -895,6 +895,10 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
               !method_types
         in
         let body_forms = List.map (rewrite_field_access receiver) body_forms in
+        let body_forms =
+          Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms
+          |> Result.value ~default:body_forms
+        in
         let lookup_dynamic_key_record_type =
           Expression_support.dynamic_key_record_type env
         in

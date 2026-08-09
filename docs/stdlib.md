@@ -134,7 +134,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 306 source entries (35.75%), 78 typed
+macro surfaces. The current baseline is 308 source entries (35.98%), 76 typed
 primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
 44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -347,6 +347,12 @@ left-to-right argument order and binds the collection once. LG's static API
 continues to reject nil collection receivers, and `peek` retains the existing
 nonempty collection result type because a value-dependent nullable result is
 not yet expressible as one generic source signature.
+`count` and `nth` now follow ClojureScript's `ICounted` and `IIndexed`
+protocols as public source functions. Their inline definitions retain direct
+static specialization for nil, lists, vectors, sets, maps, strings, arrays,
+and indexed defaults. Named protocol functions used as collection callbacks
+are contextualized into concrete closures, so higher-order uses such as
+`(map count)` carry the correct static witness without dynamic storage.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

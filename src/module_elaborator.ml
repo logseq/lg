@@ -150,6 +150,7 @@ let compile_module_apply ?location ?functor_location scope env next_type module_
 let rec compile_module ?location ?signature_name ?signature_location
     ?(register_module = true) scope env next_type module_path module_segment forms =
   let env = inherit_scope_ocaml_value_refers scope module_path env in
+  let env = Require.add_source_core_bindings env module_path in
   let export_function definition public_bindings binding =
     if definition = "defn-" then public_bindings
     else public_bindings @ [ binding ]

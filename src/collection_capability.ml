@@ -664,7 +664,10 @@ let rec count_expr env collection =
       match to_seq_expr env collection with
       | Ok (_, sequence) ->
           Ok (of_host_int (apply "Seq.length" [ sequence ]))
-      | Error _ -> Error.error "count expects a counted or seqable value")
+      | Error _ ->
+          Error.error
+            ("count expects a counted or seqable value, got "
+           ^ Types.source_name collection.ty))
 
 let is_counted env collection =
   Core_protocols.find_counted collection.ty (Compiler_environment.protocols env)
@@ -868,10 +871,13 @@ let nth_expr env collection index =
               Error.error
                 "Indexed/-nth implementation must return a typed value"))
   | None -> (
-      match to_seq_expr env collection with
-      | Error _ -> Error.error "nth expects an indexed or seqable value"
-      | Ok (inner, sequence) ->
-          Ok
-            (typed_ir inner
-               (apply "Lg_runtime.Runtime_seq.nth"
-                  [ host_index; sequence ])))
+      match collection.ty with
+      | TSet _ -> Error.error "nth expects an indexed or sequential value"
+      | _ -> (
+          match to_seq_expr env collection with
+          | Error _ -> Error.error "nth expects an indexed or sequential value"
+          | Ok (inner, sequence) ->
+              Ok
+                (typed_ir inner
+                   (apply "Lg_runtime.Runtime_seq.nth"
+                      [ host_index; sequence ]))))

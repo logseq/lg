@@ -112,8 +112,9 @@ let add_reducible receiver ocaml_name registry =
   |> add_or_fail
 
 let declare_counted registry =
+  let receiver = TVar "counted_receiver" in
   Protocol_registry.declare counted_id
-    [ signature count_method_id [ TUnknown ] TInt ]
+    [ signature count_method_id [ receiver ] TInt ]
     registry
   |> add_or_fail
 
@@ -625,15 +626,20 @@ let initial_registry =
   |> add_reducible (Receiver_id.Host_receiver "Seq")
        "Lg.Core_protocols.reduce_host_seq_alias"
   |> declare_counted
-  |> add_counted Receiver_id.List_receiver "Lg.Core_protocols.count_list"
-  |> add_counted Receiver_id.Vector_receiver "Lg.Core_protocols.count_vector"
-  |> add_counted Receiver_id.Set_receiver "Lg.Core_protocols.count_set"
-  |> add_counted Receiver_id.Array_receiver "Lg.Core_protocols.count_array"
-  |> add_counted Receiver_id.String_receiver "Lg.Core_protocols.count_string"
+  |> add_counted Receiver_id.List_receiver
+       "Lg_runtime.Runtime_collection.count_list"
+  |> add_counted Receiver_id.Vector_receiver
+       "Lg_runtime.Runtime_collection.count_vector"
+  |> add_counted Receiver_id.Set_receiver
+       "Lg_runtime.Runtime_collection.count_set"
+  |> add_counted Receiver_id.Array_receiver
+       "Lg_runtime.Runtime_collection.count_array"
+  |> add_counted Receiver_id.String_receiver
+       "Lg_runtime.Runtime_collection.count_string"
   |> add_counted (Receiver_id.Host_receiver "list")
-       "Lg.Core_protocols.count_host_list"
+       "Lg_runtime.Runtime_collection.count_host_list"
   |> add_counted (Receiver_id.Host_receiver "array")
-       "Lg.Core_protocols.count_host_array"
+       "Lg_runtime.Runtime_collection.count_host_array"
   |> add_counted runtime_map_receiver "Lg_runtime.Runtime_map.count"
   |> declare_indexed
   |> add_indexed Receiver_id.List_receiver "Lg.Core_protocols.nth_list"

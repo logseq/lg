@@ -478,7 +478,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               ty = TFn ([ parameter_ty ], _);
               _;
             }
-          when Option.is_some (Types.seqable_constraint_info parameter_ty) ->
+          when Option.is_some (Types.seqable_constraint_info parameter_ty)
+               || Option.is_some
+                    (Types.protocol_constraint_info parameter_ty) ->
             compile_deferred_call ()
         | Ok function_ -> adapt_set_callable function_
         | Error _ -> compile_deferred_call ())

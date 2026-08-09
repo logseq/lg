@@ -771,29 +771,37 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | Error _ as err -> err
       | Ok [ collection; index ] ->
           Result.bind (int_index index) (fun index ->
-              Collection_capability.nth_expr env collection index)
-    | Ok [ collection; index; default ] ->
-        Result.bind (int_index index) (fun index ->
-            match Collection_capability.to_seq_expr env collection with
-            | Error _ -> Error.error "nth with default expects a seqable value"
-            | Ok (inner, sequence) ->
-                if not (Types.equal inner default.ty) then
-                  Error.error "nth default must match collection element type"
-                else
-                  Ok
-                    (typed_ir inner
-                       (Semantic_ir.Match
-                          ( apply "Lg_runtime.Runtime_seq.nth_opt"
-                              [ index.semantic_expr;
-                                sequence;
-                              ],
-                          [
-                            ( Semantic_ir.PConstructor
-                                  ("Some", Some (Semantic_ir.PVar "value")),
-                                Semantic_ir.Ident "value" );
-                            ( Semantic_ir.PConstructor ("None", None),
-                              default.semantic_expr );
-                          ] ))))
+              match Collection_capability.nth_expr env collection index with
+              | Ok _ as result -> result
+              | Error _ ->
+                  compile_expr scope env
+                    (FList (FSymbol "IIndexed/-nth" :: arg_forms)))
+      | Ok [ collection; index; default ] ->
+          Result.bind (int_index index) (fun index ->
+            if match collection.ty with TSet _ -> true | _ -> false then
+              compile_expr scope env
+                (FList (FSymbol "IIndexed/-nth" :: arg_forms))
+            else
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ ->
+                compile_expr scope env
+                  (FList (FSymbol "IIndexed/-nth" :: arg_forms))
+              | Ok (inner, sequence) ->
+                  if not (Types.equal inner default.ty) then
+                    Error.error "nth default must match collection element type"
+                  else
+                    Ok
+                      (typed_ir inner
+                         (Semantic_ir.Match
+                            ( apply "Lg_runtime.Runtime_seq.nth_opt"
+                                [ index.semantic_expr; sequence ],
+                              [
+                                ( Semantic_ir.PConstructor
+                                    ("Some", Some (Semantic_ir.PVar "value")),
+                                  Semantic_ir.Ident "value" );
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  default.semantic_expr );
+                              ] ))))
       | Ok _ -> Error.error "nth expects 2 or 3 arguments"
     and compile_get scope env arg_forms =
       let unresolved = function TUnknown -> true | _ -> false in

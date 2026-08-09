@@ -197,12 +197,12 @@ let take_drop env name count collection =
 
 let compile env name args =
   match name with
-  | "count" | "first" | "peek" | "pop" | "rest" | "seq" | "empty" -> (
+  | "__lg_count" | "first" | "peek" | "pop" | "rest" | "seq" | "empty" -> (
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> (
           match name with
-          | "count" -> count env collection
+          | "__lg_count" -> count env collection
           | "first" -> first env collection
           | "peek" -> peek collection
           | "pop" -> pop collection

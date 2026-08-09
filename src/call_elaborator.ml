@@ -8182,12 +8182,12 @@ let create ~compile_expr =
     | "cons" -> compile_cons scope env arg_forms
     | "vector" -> compile_vector scope env arg_forms
     | "vector-of" -> compile_vector_of arg_forms
-    | "count" -> compile_collection_call scope env name arg_forms
+    | "__lg_count" -> compile_collection_call scope env name arg_forms
     | "conj" -> compile_conj scope env arg_forms
     | "conj!" -> compile_conj_bang scope env arg_forms
     | "first" -> compile_collection_call scope env name arg_forms
     | "subvec" -> compile_subvec scope env arg_forms
-    | "nth" -> compile_nth scope env arg_forms
+    | "__lg_nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
     | "get-in" -> compile_get_in scope env arg_forms
     | "assoc" | "-assoc" ->

@@ -9,3 +9,11 @@ let empty_vector _ = Rrbvec.empty
 let empty_string _ = ""
 let peek_vector values = Option.get (Rrbvec.peek_back values)
 let pop_vector values = snd (Option.get (Rrbvec.pop_back values))
+
+let count_list = List.length
+let count_vector = Rrbvec.length
+let count_set = Runtime_poly_set.cardinal
+let count_array = Array.length
+let count_string = String.length
+let count_host_list = List.length
+let count_host_array = Array.length

@@ -1085,7 +1085,7 @@ let rec inferred_form_type params = function
       | Some (TFn (parameter_tys, _)) ->
           TFn (parameter_tys, TOcaml "int")
       | _ -> TUnknown)
-  | FList [ FSymbol "count"; _ ] -> TInt
+  | FList [ FSymbol "__lg_count"; _ ] -> TInt
   | FList
       [
         FSymbol ("with-meta" | "clojure.core/with-meta" | "cljs.core/with-meta");
@@ -1163,7 +1163,7 @@ let rec inferred_form_type params = function
       | Some (TArray element_ty | TOcaml_app ("array", [ element_ty ])) ->
           element_ty
       | _ -> TUnknown)
-  | FList [ FSymbol "nth"; FSymbol collection; _index ] -> (
+  | FList [ FSymbol "__lg_nth"; FSymbol collection; _index ] -> (
       match string_assoc_opt collection params with
       | Some
           (TList element_ty | TVector element_ty | TSet element_ty
@@ -1670,7 +1670,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     infer_expected item_ty params item))
               (Ok params) item_tys items
         | _ -> infer_all params items)
-    | FList [ FSymbol "nth"; collection; index ] ->
+    | FList [ FSymbol "__lg_nth"; collection; index ] ->
         Result.bind (infer_sequence_form expected_ty params collection)
           (fun params -> infer_expected TInt params index)
     | FList (FSymbol "conj" :: target :: values) -> (
@@ -4189,7 +4189,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                | _ -> true) ->
             Ok (replace_param name (TNullable ty) params)
         | _ -> infer_expected expected_ty params value)
-    | FList [ FSymbol "count"; collection ] -> (
+    | FList [ FSymbol "__lg_count"; collection ] -> (
         match collection with
         | FSymbol name -> constrain_seqable TUnknown params name
         | form ->
@@ -4443,7 +4443,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             infer_expected
               (if Types.equal index_ty TFloat then TFloat else TInt)
               params index)
-    | FList [ FSymbol "nth"; FSymbol collection; index ] ->
+    | FList [ FSymbol "__lg_nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
     | FList (FSymbol qualified_method :: FSymbol receiver :: _)
