@@ -26789,6 +26789,86 @@ let test_reference_protocol_family_has_no_public_name_dispatch () =
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "deref"; "reset!"; "compare-and-set!" ]
 
+let test_source_volatile_reference_family_matches_clojurescript () =
+  let source =
+    {|
+(ns app.volatile-references
+  (:require [cljs.core :as core :refer [vreset! vswap!]]))
+
+(deftype VolatileBox [^:mutable ^int cell]
+  IDeref
+  (-deref [_] cell)
+  IVolatile
+  (-vreset! [_ new-value] (set! cell new-value)))
+
+(defn reset-through [resetter reference value]
+  (resetter reference value))
+
+(def reference (volatile! 1))
+(def box (VolatileBox. 10))
+
+(println (= 2 (vreset! reference 2)))
+(println (= 3 (core/vswap! reference inc)))
+(println (= 10 (vswap! reference + 3 4)))
+(println (= 11 (reset-through core/vreset! reference 11)))
+(println (= 11 (deref reference)))
+(println (= 20 (core/vreset! box 20)))
+(println (= 25 (vswap! box + 5)))
+(println (= 25 (deref box)))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_volatile_references.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source volatile references must remain statically typed";
+  assert_ocaml_runs "source_volatile_reference_family" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_volatile_references.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange volatile references must remain statically typed"
+
+let test_source_volatile_reference_family_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native "test/bad_vreset_receiver.cljc"
+    {|(vreset! 42 1)|}
+  |> expect_error_contains "IVolatile";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_vreset_value.cljc"
+    {|(vreset! (volatile! 1) "bad")|}
+  |> expect_error_contains "expected";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_vswap_value.cljc"
+    {|(vswap! (volatile! 1) (fn [_] "bad"))|}
+  |> expect_error_contains "expected"
+
+let test_volatile_reference_family_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  if not (string_contains_substring core_source "(defn vreset!") then
+    failwith "vreset! is not owned by the source standard library";
+  if not (string_contains_substring core_source "(defmacro vswap!") then
+    failwith "vswap! is not owned by the source standard library";
+  List.iter
+    (fun name ->
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [
+          "src/call_elaborator.ml";
+          "src/type_inference.ml";
+          "src/macro_expander.ml";
+        ])
+    [ "vreset!"; "vswap!" ]
+
 let test_source_collection_lifecycle_family_matches_clojurescript () =
   let source =
     {|
@@ -40057,6 +40137,12 @@ let tests =
       test_source_reference_protocol_family_matches_clojurescript );
     ( "reference protocol family has no public-name dispatch",
       test_reference_protocol_family_has_no_public_name_dispatch );
+    ( "source volatile reference family matches ClojureScript",
+      test_source_volatile_reference_family_matches_clojurescript );
+    ( "source volatile reference family rejects invalid inputs",
+      test_source_volatile_reference_family_rejects_invalid_inputs );
+    ( "volatile reference family has no public-name dispatch",
+      test_volatile_reference_family_has_no_public_name_dispatch );
     ( "source collection lifecycle family matches ClojureScript",
       test_source_collection_lifecycle_family_matches_clojurescript );
     ( "source collection lifecycle family rejects invalid inputs",

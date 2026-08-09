@@ -878,6 +878,17 @@
   [reference value]
   (IReset/-reset! reference value))
 
+(defn vreset!
+  {:inline (fn [reference value]
+             (list 'IVolatile/-vreset! reference value))}
+  [reference value]
+  (IVolatile/-vreset! reference value))
+
+(defmacro vswap! [reference update-fn & args]
+  `(IVolatile/-vreset!
+    ~reference
+    (~update-fn (IDeref/-deref ~reference) ~@args)))
+
 (defn compare-and-set!
   {:inline
    (fn [reference old-value new-value]

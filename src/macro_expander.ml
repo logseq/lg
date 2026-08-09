@@ -35,7 +35,7 @@ let is_unqualified_compile_time_primitive = function
   | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
   | "filter"
   | "into" | "juxt" | "reduce" | "apply" | "volatile!" | "deref"
-  | "vswap!" | "gensym" | "clojure.test/expand-are" ->
+  | "gensym" | "clojure.test/expand-are" ->
       true
   | _ -> false
 
@@ -1042,7 +1042,6 @@ and eval_builtin context name arg_forms =
       unary (function
         | Volatile value -> Ok !value
         | _ -> Error.error "deref expects a volatile macro value")
-  | "vswap!" -> eval_vswap context arg_forms
   | "gensym" ->
       incr gensym_counter;
       Ok (Form (FSymbol ("G__" ^ string_of_int !gensym_counter)))
@@ -1201,25 +1200,6 @@ and eval_reduce context = function
               in
               loop initial forms))
   | _ -> Error.error "reduce expects a function, initial value, and collection"
-
-and eval_vswap context = function
-  | reference_form :: fn_form :: extra_forms -> (
-      match eval context reference_form with
-      | Error _ as err -> err
-      | Ok (Volatile reference) -> (
-          match eval context fn_form with
-          | Error _ as err -> err
-          | Ok fn -> (
-              match eval_forms context extra_forms with
-              | Error _ as err -> err
-              | Ok extras -> (
-                  match apply_value context fn (!reference :: extras) with
-                  | Error _ as err -> err
-                  | Ok value ->
-                      reference := value;
-                      Ok value)))
-      | Ok _ -> Error.error "vswap! expects a volatile macro value")
-  | _ -> Error.error "vswap! expects a reference and function"
 
 and eval_vary_meta context = function
   | form :: function_form :: extra_forms -> (

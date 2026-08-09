@@ -8,4 +8,8 @@ let set slot value =
   slot := (fun () -> value);
   value
 
+let vreset slot value =
+  slot := (fun () -> value);
+  value
+
 let get slot = !slot ()

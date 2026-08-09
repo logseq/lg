@@ -2951,7 +2951,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           |> Option.value ~default:TUnknown
         in
         let rec infer_slot_writes params = function
-          | FList [ FSymbol "vreset!"; FSymbol slot; value ]
+          | FList [ FSymbol "IVolatile/-vreset!"; FSymbol slot; value ]
             when string_mem slot slots ->
               infer_expected (Types.dynamic_constraint TUnknown) params value
           | FList forms | FVector forms ->
@@ -3914,14 +3914,76 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
     | FList
-        [ FSymbol ("vreset!" | "IReset/-reset!"); FSymbol reference; value ]
+        [
+          FSymbol "IVolatile/-vreset!";
+          FSymbol reference;
+          FList
+            [
+              FSymbol "assoc!";
+              FList [ FSymbol "IDeref/-deref"; FSymbol deref_reference ];
+              key;
+              value;
+            ];
+        ]
+      when String.equal reference deref_reference ->
+        let inferred_or_fresh form =
+          match inferred_form_type params form with
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+          | ty -> ty
+        in
+        let key_ty = inferred_or_fresh key in
+        let value_ty = inferred_or_fresh value in
+        let reference_ty =
+          TRef
+            (TOcaml_app
+               ( "Lg_runtime.Runtime_transient.map",
+                 [ key_ty; value_ty ] ))
+        in
+        Result.bind (constrain_symbol reference_ty params reference)
+          (fun params ->
+            Result.bind (infer_expected key_ty params key) (fun params ->
+                infer_expected value_ty params value))
+    | FList
+        [
+          FSymbol "IVolatile/-vreset!";
+          FSymbol reference;
+          FList
+            [
+              FSymbol "conj!";
+              FList [ FSymbol "IDeref/-deref"; FSymbol deref_reference ];
+              value;
+            ];
+        ]
+      when String.equal reference deref_reference ->
+        let element_ty =
+          match inferred_form_type params value with
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+          | ty -> ty
+        in
+        let reference_ty =
+          TRef
+            (TOcaml_app
+               ("Lg_runtime.Runtime_transient.vector", [ element_ty ]))
+        in
+        Result.bind (constrain_symbol reference_ty params reference)
+          (fun params -> infer_expected element_ty params value)
+    | FList
+        [
+          FSymbol ("IVolatile/-vreset!" | "IReset/-reset!");
+          FSymbol reference;
+          value;
+        ]
       when
         (match string_assoc_opt reference params with
         | Some (TRef _ | TUnknown | TMeta _ | TVar _) | None -> false
         | Some _ -> true) ->
         infer_form params value
     | FList
-        [ FSymbol ("vreset!" | "IReset/-reset!"); FSymbol reference; value ] ->
+        [
+          FSymbol ("IVolatile/-vreset!" | "IReset/-reset!");
+          FSymbol reference;
+          value;
+        ] ->
         let value_ty = inferred_form_type params value in
         let referenced_ty =
           match string_assoc_opt reference params with
@@ -3938,7 +4000,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | value_ty -> infer_expected value_ty params value)
     | FList
         [
-          FSymbol ("swap!" | "vswap!");
+          FSymbol "swap!";
           FSymbol reference;
           FSymbol "conj";
           value;
@@ -3964,7 +4026,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (fun params -> infer_expected element_ty params value))
     | FList
         [
-          FSymbol ("swap!" | "vswap!");
+          FSymbol "swap!";
           FSymbol reference;
           FSymbol "assoc!";
           key;
@@ -3989,7 +4051,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_expected value_ty params value))
     | FList
         [
-          FSymbol ("swap!" | "vswap!");
+          FSymbol "swap!";
           FSymbol reference;
           FSymbol "conj!";
           value;
@@ -4007,7 +4069,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (constrain_symbol reference_ty params reference)
           (fun params -> infer_expected element_ty params value)
     | FList
-        (FSymbol ("swap!" | "vswap!") :: reference :: update_fn
+        (FSymbol "swap!" :: reference :: update_fn
        :: arguments) ->
         Result.bind (infer_form params reference) (fun params ->
             Result.bind (infer_form params update_fn) (fun params ->
@@ -4054,7 +4116,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | None -> infer_form params value)
     | FList
         [
-          FSymbol ("vreset!" | "IReset/-reset!");
+          FSymbol ("IVolatile/-vreset!" | "IReset/-reset!");
           FList [ FKeyword keyword; FSymbol name ];
           value;
         ]
@@ -6072,7 +6134,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let rec propagate_record_ref_writes params = function
     | FList
         [
-          FSymbol ("vreset!" | "IReset/-reset!");
+          FSymbol ("IVolatile/-vreset!" | "IReset/-reset!");
           FList [ FKeyword keyword; FSymbol receiver ];
           FList [ FSymbol "Some"; FSymbol value ];
         ]

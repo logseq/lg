@@ -33,6 +33,7 @@ let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
 let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
+let volatile_id = Protocol_id.create ~owner:[] ~name:"IVolatile"
 let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let lookup_id = Protocol_id.create ~owner:[] ~name:"ILookup"
@@ -319,6 +320,12 @@ let add_reference_protocols registry =
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") reset_id
        "-reset!" "Lg_runtime.Runtime_slot.set"
        (TFn ([ slot; value ], value))
+  |> add Receiver_id.Ref_receiver volatile_id "-vreset!"
+       "Lg_runtime.Runtime_reference.vreset"
+       (TFn ([ reference; value ], value))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") volatile_id
+       "-vreset!" "Lg_runtime.Runtime_slot.vreset"
+       (TFn ([ slot; value ], value))
 
 let declare_compare_and_set registry =
   let value = TVar "atom_value" in
@@ -334,6 +341,13 @@ let declare_reset registry =
   let value = TVar "reset_value" in
   Protocol_registry.declare reset_id
     [ signature (method_id reset_id "-reset!") [ TUnknown; value ] value ]
+    registry
+  |> add_or_fail
+
+let declare_volatile registry =
+  let value = TVar "volatile_value" in
+  Protocol_registry.declare volatile_id
+    [ signature (method_id volatile_id "-vreset!") [ TUnknown; value ] value ]
     registry
   |> add_or_fail
 
@@ -655,7 +669,7 @@ let initial_registry =
   |> declare_collection_lifecycle_protocols |> add_vector_reversible_protocol
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref
-  |> declare_compare_and_set |> declare_reset |> declare_swap
+  |> declare_compare_and_set |> declare_reset |> declare_volatile |> declare_swap
   |> add_reference_protocols
   |> declare_comparable_protocol
   |> declare_set_protocol |> add_static_set_protocol

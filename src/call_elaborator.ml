@@ -3914,43 +3914,6 @@ let atom_state_type scope env receiver_ty =
   | Some { ty = TFn ([ _ ], state_ty); _ } -> Some state_ty
   | Some _ | None -> None
 
-let compile_protocol_reset scope env reset_name reference value =
-  let reference_ty = reference.ty in
-  let type_error () =
-    Error.error
-      (reset_name ^ " expects a reference or IReset as its first argument")
-  in
-  if reset_name <> "IReset/-reset!" then type_error ()
-  else
-    match
-      protocol_implementation scope env "IReset" "-reset!" reference_ty
-    with
-    | None -> type_error ()
-    | Some
-        {
-          ty = TFn ([ receiver_ty; _ ], _);
-          ocaml_name;
-          _;
-        } -> (
-        match atom_state_type scope env reference_ty with
-        | None -> type_error ()
-        | Some state_ty ->
-            Result.bind
-              (adapt_value_to_type env receiver_ty reference)
-              (fun receiver ->
-                match adapt_value_to_type env state_ty value with
-                | Error _ ->
-                    Error.error
-                      "reset! value must match referenced type"
-                | Ok value ->
-                    Ok
-                      (typed_ir state_ty
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident ocaml_name,
-                              [ receiver; value ] )))))
-    | Some _ ->
-        Error.error "IReset/-reset! has an invalid signature"
-
 let compile_protocol_swap ~compile_expr scope env swap_name reference
     function_form extra_forms =
   let reference_ty = reference.ty in
@@ -5544,7 +5507,7 @@ let create ~compile_expr =
                                  [ FSymbol "IDeref/-deref"; FSymbol first_name ];
                                FList
                                  [
-                                   FSymbol "vreset!";
+                                   FSymbol "IVolatile/-vreset!";
                                    FSymbol first_name;
                                    FBool false;
                                  ];
@@ -7471,89 +7434,7 @@ let create ~compile_expr =
             | Some _ -> Error.error ("set! expects a mutable target, got " ^ name)
             | None -> Error.error ("unknown set! target " ^ name))
         | _ -> Error.error "set! expects a target and value")
-    | "vreset!" as reset_name -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ reference; value ] -> (
-            match reference.ty with
-                      | TOcaml_app
-                          ("Lg_runtime.Runtime_slot.t", [ referenced_ty ]) ->
-                          let stored =
-                            if Types.is_dynamic referenced_ty then
-                              pack_dynamic_value env referenced_ty value
-                            else if
-                              Types.assignable ~policy:Host_boundary
-                                ~expected:referenced_ty ~actual:value.ty
-                            then Ok value.semantic_expr
-                            else
-                              Error.error
-                                (reset_name
-                               ^ " value must match referenced type")
-                          in
-                          Result.map
-                            (fun stored ->
-                              typed_ir referenced_ty
-                     (Semantic_ir.Apply
-                                   ( Semantic_ir.Ident
-                                       "Lg_runtime.Runtime_slot.set",
-                                     [ reference.semantic_expr; stored ] )))
-                            stored
-            | TRef referenced_ty ->
-                let reference_name = "__lg_reset_reference" in
-                let value_name = "__lg_reset_value" in
-                let stored_value =
-                  typed_ir value.ty (Semantic_ir.Ident value_name)
-                in
-                (match
-                   if
-                     Types.assignable ~policy:Host_boundary
-                       ~expected:referenced_ty ~actual:value.ty
-                   then adapt_value_to_type env referenced_ty stored_value
-                   else
-                     Error.error
-                       (reset_name ^ " value must match referenced type")
-                 with
-                | Error _ ->
-                    Error.error
-                      (reset_name ^ " value must match referenced type")
-                | Ok stored ->
-                    Ok
-                      (typed_ir value.ty
-                         (Semantic_ir.Let
-                            ( [
-                                ( Semantic_ir.PVar reference_name,
-                                  reference.semantic_expr );
-                                ( Semantic_ir.PVar value_name,
-                                  value.semantic_expr );
-                              ],
-                              Semantic_ir.Sequence
-                                [
-                                  Semantic_ir.Infix
-                                    ( ":=",
-                                      Semantic_ir.Ident reference_name,
-                                      stored );
-                                  Semantic_ir.Ident value_name;
-                                ] ))))
-            | reference_ty when Types.is_dynamic reference_ty ->
-                Error.error
-                  (reset_name
-                 ^ " requires a statically typed reference and replacement")
-            | TUnknown | TMeta _ | TVar _ ->
-                Ok
-                  (typed_ir value.ty
-                     (Semantic_ir.Sequence
-                                  [
-                                    Semantic_ir.Infix
-                                      ( ":=",
-                                        reference.semantic_expr,
-                                        value.semantic_expr );
-                                    value.semantic_expr;
-                        ]))
-            | _ ->
-                compile_protocol_reset scope env reset_name reference
-                  value)
-        | Ok _ -> Error.error (reset_name ^ " expects 2 arguments"))
-    | ("swap!" | "vswap!") as swap_name -> (
+    | "swap!" as swap_name -> (
         match arg_forms with
         | reference_form :: function_form :: extra_forms -> (
             match compile_expr scope env reference_form with
@@ -12018,7 +11899,8 @@ let create ~compile_expr =
                                     else
                                       match optional_payload expected with
                                       | Some payload
-                                        when method_name = "-reset!"
+                                        when (method_name = "-reset!"
+                                             || method_name = "-vreset!")
                                              && Types.assignable
                                                ~policy:Host_boundary
                                                ~expected:payload
