@@ -24495,11 +24495,9 @@ let test_filterv_filters_static_vectors_directly () =
     compile_with_stdlib Lg.Target.Melange "test/filterv_static.cljc" source
   in
   if
-    (not (string_contains_substring melange_source "V.filter"))
-    || string_contains_substring melange_source "List.filter"
-  then
-    failwith
-      "filterv must filter a static vector without a list representation"
+    string_contains_substring melange_source "List.filter"
+    || string_contains_substring melange_source "S.to_list"
+  then failwith "source filterv must not lower through an intermediate list"
 
 let test_mapv_maps_static_vectors_directly () =
   let source =
@@ -26560,16 +26558,14 @@ let test_concat_lifts_values_into_nullable_element_types () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_sequence_functions_reject_bad_functions () =
-  Lg.Compiler.compile_string {|(def x (filterv (fn [^:string s] true) [1 2]))|}
-  |> expect_error "filterv expects a predicate matching collection elements"
+  compile_with_stdlib_result Lg.Target.Native "test/bad_filterv.cljc"
+    {|(def x (filterv (fn [^:string s] true) [1 2]))|}
+  |> expect_error_contains "incompatible arguments"
 
 let test_batched_sequence_functions_reject_bad_counts () =
-  Lg.Compiler.compile_string {|(def x (repeat "3" 1))|}
-  |> expect_error "repeat count must be int"
-
-let test_batched_sequence_functions_reject_bad_partition_size () =
-  Lg.Compiler.compile_string {|(def x (partition 0 [1 2]))|}
-  |> expect_error "partition size must be positive"
+  compile_with_stdlib_result Lg.Target.Native "test/bad_repeat.cljc"
+    {|(def x (repeat "3" 1))|}
+  |> expect_error_contains "incompatible arguments"
 
 let test_batched_sequence_functions_reject_reduce_kv_non_collection () =
   Lg.Compiler.compile_string
@@ -40431,8 +40427,6 @@ let tests =
       test_batched_sequence_functions_reject_bad_functions );
     ( "batched sequence functions reject bad counts",
       test_batched_sequence_functions_reject_bad_counts );
-    ( "batched sequence functions reject bad partition size",
-      test_batched_sequence_functions_reject_bad_partition_size );
     ( "batched sequence functions reject reduce-kv non-collection",
       test_batched_sequence_functions_reject_reduce_kv_non_collection );
     ( "interleave accepts multiple collections",

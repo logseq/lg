@@ -427,13 +427,15 @@ return typed booleans for list, vector, and set predicates.
 The sequence migration is incremental. `map`, `filter`, `remove`, `take`,
 `drop`, `take-while`, `drop-while`, `map-indexed`, `keep`, `keep-indexed`,
 `mapcat`, `sequence`, `repeatedly`, `take-nth`, `random-sample`,
-`partition-all`, `partitionv-all`, `range`, `repeat`, and `cycle` are
-source-defined and lazy. Their
+`partition`, `partition-all`, `partitionv-all`, `range`, `repeat`, and `cycle`
+are source-defined and lazy. Their
 one-arity transducers use one explicit statically typed reducing-function ABI;
 `transduce`, `cat`, and `halt-when` are source-defined over the same ABI.
-`mapv` and `filterv` remain explicit eager persistent-vector materializers.
+`filterv` is a source reduction directly into a persistent vector, without an
+intermediate list. `mapv` remains an explicit eager persistent-vector
+materializer.
 `concat`, `sort`,
-`interpose`, `interleave`, `partition`, `reductions`, and
+`interpose`, `interleave`, `reductions`, and
 return OCaml lists, `split-at` and `split-with` return persistent
 vectors of the input collection representation, and same-shape operations such
 as `distinct`, `dedupe`, `butlast`,

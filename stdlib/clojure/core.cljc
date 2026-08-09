@@ -671,6 +671,41 @@
   ([probability coll]
    (filter (fn [_] (< (rand) probability)) coll)))
 
+(defn filterv [pred coll]
+  (reduce
+    (fn [result input]
+      (if (pred input)
+        (conj result input)
+        result))
+    []
+    coll))
+
+(defn- partition-seq [n step coll]
+  (lazy-seq
+   (if coll
+     (let [part (take n coll)]
+       (if (= n (count part))
+         (cons part (partition-seq n step (drop step coll)))
+         nil))
+     nil)))
+
+(defn- padded-partition-seq [n step pad coll]
+  (lazy-seq
+   (if coll
+     (let [part (take n coll)]
+       (if (= n (count part))
+         (cons part (padded-partition-seq n step pad (drop step coll)))
+         (seq (list (take n (concat part pad))))))
+     nil)))
+
+(defn partition
+  ([n coll]
+   (partition-seq n n (seq coll)))
+  ([n step coll]
+   (partition-seq n step (seq coll)))
+  ([n step pad coll]
+   (padded-partition-seq n step pad (seq coll))))
+
 (defn- partition-all-seq [n step coll]
   (lazy-seq
    (if coll

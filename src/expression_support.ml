@@ -44,10 +44,14 @@ let rec truthiness_expression ty expression =
           Semantic_ir.Apply
             (Semantic_ir.Ident (name ^ "__truthy"), [ expression ])
       | _ ->
-          Semantic_ir.Apply
-            ( Semantic_ir.Apply
-                (Semantic_ir.Ident "fst", [ expression ]),
-              [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]) ] ))
+          let value_name = "__lg_truthy_constrained_value" in
+          let value = Semantic_ir.Ident value_name in
+          Semantic_ir.Let
+            ( [ (Semantic_ir.PVar value_name, expression) ],
+              Semantic_ir.Apply
+                ( Semantic_ir.Apply
+                    (Semantic_ir.Ident "fst", [ value ]),
+                  [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ value ]) ] ) ))
   | TBool -> expression
   | TNil -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]
   | TNullable payload_ty ->

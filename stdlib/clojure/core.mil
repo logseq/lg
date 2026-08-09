@@ -86,6 +86,14 @@
   :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;value;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;value;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;seqable<value;storage>;seq<value>>>)
 (signature clojure.core/random-sample [value storage accumulator]
   :overload<fn<float;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;value;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;value;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<float;seqable<value;storage>;seq<value>>>)
+(signature clojure.core/filterv [value storage predicate-result]
+  :fn<fn<value;truthy<predicate-result>>;seqable<value;storage>;vector<value>>)
+(signature clojure.core/partition-seq [value]
+  :fn<int;int;seq<value>;seq<seq<value>>>)
+(signature clojure.core/padded-partition-seq [value pad-storage]
+  :fn<int;int;seqable<value;pad-storage>;seq<value>;seq<seq<value>>>)
+(signature clojure.core/partition [value storage pad-storage]
+  :overload<fn<int;seqable<value;storage>;seq<seq<value>>>;fn<int;int;seqable<value;storage>;seq<seq<value>>>;fn<int;int;seqable<value;pad-storage>;seqable<value;storage>;seq<seq<value>>>>)
 (signature clojure.core/partition-all-seq [value]
   :fn<int;int;seq<value>;seq<seq<value>>>)
 (signature clojure.core/partition-all [value storage accumulator]

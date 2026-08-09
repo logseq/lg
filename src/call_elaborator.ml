@@ -4054,7 +4054,6 @@ let create ~compile_expr =
   let compile_reductions = sequence.compile_reductions in
   let compile_partition_by = sequence.compile_partition_by in
   let compile_run_bang = sequence.compile_run_bang in
-  let compile_filterv = sequence.compile_filterv in
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
@@ -8338,10 +8337,9 @@ let create ~compile_expr =
     | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
-    | "interleave" | "partition" ->
+    | "interleave" ->
         compile_sequence_transform_call scope env name arg_forms
     | "reductions" -> compile_reductions scope env arg_forms
-    | "filterv" -> compile_filterv scope env arg_forms
               | "mapv" -> compile_mapv scope env arg_forms
     | "reduce-kv" -> compile_reduce_kv scope env arg_forms
     | "__lg_transformer_sequence" -> (
@@ -9134,8 +9132,6 @@ let create ~compile_expr =
                                "Lg_runtime.Runtime_seq.interleave",
                              [ Semantic_ir.List sequences ] )))
                     (prepare_collections [] prepared)))
-    | "partition", FInt size :: _ when size <= 0 ->
-        Error.error (name ^ " size must be positive")
     | "sort", [ comparator_form; collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error

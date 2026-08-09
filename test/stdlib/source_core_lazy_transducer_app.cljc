@@ -109,3 +109,27 @@
 (println (= [9 9 9 9] (vec (take 4 (repeat 9)))))
 (println (= [8 8 8] (vec (repeat 3 8))))
 (println (= [1 2 1 2 1] (vec (take 5 (cycle [1 2])))))
+(println (= [2 4] (filterv even? [1 2 3 4])))
+(def filterv-predicate-calls (atom 0))
+(def filterv-once
+  (filterv
+    (fn [value]
+      (swap! filterv-predicate-calls inc)
+      (even? value))
+    [1 2 3]))
+(println (= [2] filterv-once))
+(println (= 3 @filterv-predicate-calls))
+(def default-partitions (partition 2 [1 2 3 4 5]))
+(println
+  (and (= [1 2] (vec (first default-partitions)))
+       (= [3 4] (vec (second default-partitions)))
+       (= 2 (count default-partitions))))
+(def stepped-partitions (partition 2 2 [1 2 3 4 5]))
+(println
+  (and (= [1 2] (vec (first stepped-partitions)))
+       (= [3 4] (vec (second stepped-partitions)))
+       (= 2 (count stepped-partitions))))
+(def padded-partitions (partition 2 2 [0] [1 2 3]))
+(println
+  (and (= [1 2] (vec (first padded-partitions)))
+       (= [3 0] (vec (second padded-partitions)))))

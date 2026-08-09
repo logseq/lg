@@ -4782,18 +4782,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        fresh_type_variable "group_by_key" ))
                   params name
             | form -> infer_form params form)
-    | FList [ FSymbol "filterv"; predicate; collection ] ->
-        let inferred_element_ty =
-          inferred_unary_function_param params predicate
-        in
-        let element_ty =
-          match inferred_element_ty with
-          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "filterv_item"
-          | ty -> ty
-        in
-        Result.bind (infer_sequence_form element_ty params collection)
-          (fun params ->
-            infer_expected (TFn ([ element_ty ], TBool)) params predicate)
     | FList (FSymbol "mapv" :: fn :: collection_forms)
       when List.length collection_forms >= 2 -> (
         let collection_element_ty collection =

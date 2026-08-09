@@ -279,61 +279,6 @@ let interleave collections =
                   body,
                   [ Semantic_ir.List []; Semantic_ir.List exprs ] )))
 
-let partition size collection =
-  if not (Types.equal size.ty TInt) then Error.error "partition size must be int"
-  else
-    match collection_to_list_expr collection with
-    | Error _ -> Error.error "partition expects a collection"
-    | Ok (inner, list_expr) ->
-        let take_body return_done return_empty =
-          Semantic_ir.If
-            ( Semantic_ir.Infix
-                ("=", Semantic_ir.Ident "n", Semantic_ir.Int 0),
-              return_done
-                (Semantic_ir.Tuple
-                   [ apply "List.rev" [ Semantic_ir.Ident "acc" ];
-                     Semantic_ir.Ident "xs" ]),
-              Semantic_ir.Match
-                ( Semantic_ir.Ident "xs",
-                  [ (Semantic_ir.PList [], return_empty);
-                    ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                      apply "take"
-                        [ Semantic_ir.Infix
-                            ("-", Semantic_ir.Ident "n", Semantic_ir.Int 1);
-                          Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
-                          Semantic_ir.Ident "rest" ] ) ] ) )
-        in
-        let partition_body =
-          Semantic_ir.Match
-            ( apply "take"
-                [ Semantic_ir.Ident "size"; Semantic_ir.List []; Semantic_ir.Ident "xs" ],
-              [ (Semantic_ir.PConstructor ("None", None), apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-                ( Semantic_ir.PConstructor
-                    ( "Some",
-                      Some
-                        (Semantic_ir.PTuple
-                           [ Semantic_ir.PVar "chunk"; Semantic_ir.PVar "rest" ]) ),
-                  apply "partition"
-                    [ Semantic_ir.Cons (Semantic_ir.Ident "chunk", Semantic_ir.Ident "acc");
-                      Semantic_ir.Ident "rest" ] ) ] )
-        in
-        let expr =
-          Semantic_ir.Let
-            ( [ (Semantic_ir.PVar "size", size.semantic_expr) ],
-              Semantic_ir.LetRecIn
-                ( "take",
-                  [ Semantic_ir.PVar "n"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-                  take_body
-                    (fun value -> Semantic_ir.Constructor ("Some", Some value))
-                    (Semantic_ir.Constructor ("None", None)),
-                  Semantic_ir.LetRec
-                    ( "partition",
-                      [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-                      partition_body,
-                      [ Semantic_ir.List []; list_expr ] ) ) )
-        in
-        Ok (typed_ir (TList (TList inner)) expr)
-
 let dorun collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "dorun expects a collection"
@@ -494,7 +439,6 @@ let compile name args =
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
   | "interleave", collections -> interleave collections
-  | "partition", [ size; collection ] -> partition size collection
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
   | "into", [ target; source ] -> into target source
@@ -505,6 +449,5 @@ let compile name args =
   | ("sort" | "vec" | "set" | "dorun"
     | "doall"),
     _ -> Error.error (name ^ " expects 1 arguments")
-  | "partition", _ -> Error.error "partition expects size and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

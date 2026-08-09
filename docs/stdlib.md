@@ -146,8 +146,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 415 source entries (48.48%), 62 typed
-primitives, 12 special forms, 27 host boundaries, 138 static-typing blockers,
+macro surfaces. The current baseline is 417 source entries (48.71%), 62 typed
+primitives, 12 special forms, 27 host boundaries, 136 static-typing blockers,
 44 out-of-scope Spec entries, and 158 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is

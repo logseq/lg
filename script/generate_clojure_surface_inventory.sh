@@ -52,7 +52,7 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 208; then
+if test "$dispatch_count" -ne 206; then
   echo "compiler call dispatch changed: expected 212 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
@@ -62,7 +62,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition partition-by rand reduce reduce-kv reductions remove repeatedly rest run! select-keys some some-fn sort sort-by take take-while update-in vals", xs)
+    split("apply assoc-in comp concat doall dorun drop drop-while every-pred filter fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition-by rand reduce reduce-kv reductions remove repeatedly rest run! select-keys some some-fn sort sort-by take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -75,7 +75,6 @@ awk '
     for (i in xs) blocked_reason[xs[i]] = "upstream-lazy-sequence-or-transducer-behavior-is-not-source-expressible"
     split("doall dorun run!", xs)
     for (i in xs) blocked_reason[xs[i]] = "sequence-realization-and-effect-order-remain-a-compiler-runtime-boundary"
-    blocked_reason["filterv"] = "generic-seqable-callback-projection-emits-an-unbound-capability-witness"
     blocked_reason["group-by"] = "nested-seqable-callback-capability-projection-conflates-logical-items-with-witness-storage"
     blocked_reason["into"] = "target-collection-representation-and-transducer-overload-require-dependent-types"
     split("max min", xs)
@@ -84,7 +83,6 @@ awk '
     blocked_reason["rand"] = "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type"
     split("next rest", xs)
     for (i in xs) blocked_reason[xs[i]] = "nil-versus-empty-sequence-semantics-remain-a-collection-capability-boundary"
-    blocked_reason["partition"] = "multi-arity-lazy-padding-and-transducer-cases-are-not-source-expressible"
     blocked_reason["partition-by"] = "lazy-partitions-and-generic-key-capability-cannot-yet-share-one-source-signature"
     split("reduce reduce-kv reductions", xs)
     for (i in xs) blocked_reason[xs[i]] = "multi-arity-reduced-short-circuit-and-collection-specific-callback-typing-remain-compiler-owned"
@@ -155,8 +153,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 144; then
-  echo "compiler form dispatch changed: expected 144 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 143; then
+  echo "compiler form dispatch changed: expected 143 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
