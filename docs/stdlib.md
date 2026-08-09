@@ -140,16 +140,20 @@ When a pinned ClojureScript checkout is supplied, the report also contains an
 core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 856 function/macro entries, including 667
+pinned surface currently contains 907 function/macro entries, including 667
 entries in `cljs.core`. Each row is
 classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 426 source entries (49.77%), 62 typed
+macro surfaces. The current baseline is 438 source entries (48.29%), 62 typed
 primitives, 12 special forms, 27 host boundaries, 127 static-typing blockers,
-44 out-of-scope Spec entries, and 158 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 197 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
+The denominator now includes the complete pinned `cljs.math` public surface.
+Its first source batch provides the trigonometric functions, logarithms,
+square root, exponential, degree/radian conversion, and the `E`/`PI` constants
+through static OCaml float operations on both Native and Melange.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.

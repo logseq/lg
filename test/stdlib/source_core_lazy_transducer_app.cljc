@@ -1,5 +1,6 @@
 (ns source-core-lazy-transducer-app
-  (:require [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
+  (:require [cljs.math :as math]
+            [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]))
 
 (def lazy-realizations (atom 0))
 (def delayed-values
@@ -205,3 +206,15 @@
                (if (= value 3) (reduced result) (+ result value)))
              0
              [1 2 3 4])))
+(println (= 0.0 (math/sin 0.0)))
+(println (= 1.0 (math/cos 0.0)))
+(println (= 0.0 (math/tan 0.0)))
+(println (= 0.0 (math/asin 0.0)))
+(println (= 0.0 (math/acos 1.0)))
+(println (= 0.0 (math/atan 0.0)))
+(println (= math/PI (math/to-radians 180.0)))
+(println (= 180.0 (math/to-degrees math/PI)))
+(println (= 1.0 (math/exp 0.0)))
+(println (= 0.0 (math/log 1.0)))
+(println (= 2.0 (math/log10 100.0)))
+(println (= 3.0 (math/sqrt 9.0)))

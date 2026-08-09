@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.data clojure.walk clojure.zip]
+ [clojure.core clojure.string clojure.edn cljs.reader cljs.math clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -773,6 +773,28 @@
                      :reason :returns-a-javascript-date-which-has-no-shared-native-source-representation}
     read {:status :blocked-static-typing
           :reason :pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain}}}
+
+  cljs.math
+  {:source "src/main/cljs/cljs/math.cljs"
+   :implementation "cljs/math.cljc"
+   :interface "cljs/math.mil"
+   :definitions
+   {E {:status :ported}
+    PI {:status :ported}
+    DEGREES-TO-RADIANS {:status :ported}
+    RADIANS-TO-DEGREES {:status :ported}
+    sin {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    cos {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    tan {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    asin {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    acos {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    atan {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    to-radians {:status :ported}
+    to-degrees {:status :ported}
+    exp {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    log {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    log10 {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    sqrt {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

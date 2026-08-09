@@ -9,6 +9,8 @@
   clojure/edn.cljc
   cljs/reader.mil
   cljs/reader.cljc
+  cljs/math.mil
+  cljs/math.cljc
   clojure/set.mil
   clojure/set.cljc
   clojure/data.mil
@@ -34,6 +36,8 @@
    %{dep:clojure/edn.cljc}
    %{dep:cljs/reader.mil}
    %{dep:cljs/reader.cljc}
+   %{dep:cljs/math.mil}
+   %{dep:cljs/math.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
    %{dep:clojure/data.mil}
@@ -60,6 +64,8 @@
   clojure/edn.cljc
   cljs/reader.mil
   cljs/reader.cljc
+  cljs/math.mil
+  cljs/math.cljc
   clojure/set.mil
   clojure/set.cljc
   clojure/data.mil
@@ -85,6 +91,8 @@
    %{dep:clojure/edn.cljc}
    %{dep:cljs/reader.mil}
    %{dep:cljs/reader.cljc}
+   %{dep:cljs/math.mil}
+   %{dep:cljs/math.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
    %{dep:clojure/data.mil}
