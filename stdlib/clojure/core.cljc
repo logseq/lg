@@ -425,6 +425,16 @@
   [^:int x]
   (__lg_long x))
 
+(defn unchecked-int
+  {:inline (fn [x] (list '__lg_long x))}
+  [^:int x]
+  (__lg_long x))
+
+(defn unchecked-long
+  {:inline (fn [x] (list '__lg_long x))}
+  [^:int x]
+  (__lg_long x))
+
 (defn char?
   {:inline (fn [x] (list '__lg_char-predicate x))}
   [x]

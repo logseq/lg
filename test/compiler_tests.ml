@@ -21945,7 +21945,8 @@ let test_source_numeric_coercions_match_clojurescript () =
   (:require
     [cljs.core :as core
      :refer [int long double byte float short unchecked-byte unchecked-char
-             unchecked-short unchecked-float unchecked-double]]))
+             unchecked-short unchecked-float unchecked-double
+             unchecked-int unchecked-long]]))
 
 (def int-coercion int)
 (def long-coercion core/long)
@@ -21958,6 +21959,8 @@ let test_source_numeric_coercions_match_clojurescript () =
 (def unchecked-short-coercion unchecked-short)
 (def unchecked-float-coercion core/unchecked-float)
 (def unchecked-double-coercion clojure.core/unchecked-double)
+(def unchecked-int-coercion unchecked-int)
+(def unchecked-long-coercion core/unchecked-long)
 (def float-factors (array 2.0))
 (defn multiply-double [value]
   (Float.mul (double value) (aget float-factors 0)))
@@ -21988,9 +21991,15 @@ let test_source_numeric_coercions_match_clojurescript () =
 (println (= 17 (unchecked-short 17)))
 (println (= 18.5 (core/unchecked-float 18.5)))
 (println (= 19.5 (clojure.core/unchecked-double 19.5)))
+(println (= 20 (unchecked-int 20.9)))
+(println (= -21 (core/unchecked-long -21.9)))
+(println (= 22 (clojure.core/unchecked-int 22.9)))
+(println (= -23 (unchecked-long -23.9)))
+(println (= 24 (unchecked-int-coercion 24)))
+(println (= 25 (unchecked-long-coercion 25)))
 |}
   in
-  let expected = String.concat "" (List.init 26 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 32 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/source_numeric_coercions.cljc"
       source
@@ -22026,6 +22035,8 @@ let test_source_numeric_coercions_match_clojurescript () =
       "unchecked-short";
       "unchecked-float";
       "unchecked-double";
+      "unchecked-int";
+      "unchecked-long";
     ];
   List.iter
     (fun name ->
@@ -22033,7 +22044,14 @@ let test_source_numeric_coercions_match_clojurescript () =
         ("test/" ^ name ^ "_source_wrong_type.cljc")
         ("(def result (" ^ name ^ " \"1\"))")
       |> expect_error_contains (name ^ " expects a numeric value"))
-    [ "int"; "long"; "double" ]
+    [ "int"; "long"; "double" ];
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_wrong_type.cljc")
+        ("(def result (" ^ name ^ " \"1\"))")
+      |> expect_error_contains "expects a numeric value")
+    [ "unchecked-int"; "unchecked-long" ]
 
 let test_source_control_macros_match_clojurescript () =
   let source =

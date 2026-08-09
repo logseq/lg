@@ -137,6 +137,10 @@
          :reason :source-function-preserves-first-class-int-coercion-while-the-upstream-inline-macro-specializes-direct-int-float-or-int64-calls-through-an-internal-static-primitive}
     long {:status :static-adaptation
           :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-specialize-int-float-or-int64-values-through-an-internal-static-primitive}
+    unchecked-int {:status :static-adaptation
+                   :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-long-fix-primitive-to-model-pinned-fix-separately-from-int-within-the-current-static-int-domain}
+    unchecked-long {:status :static-adaptation
+                    :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-existing-long-fix-primitive-within-the-current-static-int-domain}
     char? {:status :static-adaptation
            :reason :source-function-provides-a-first-class-char-predicate-and-inline-static-type-test-because-lg-characters-are-distinct-from-clojurescript-one-character-javascript-strings}
     identical? {:status :static-adaptation

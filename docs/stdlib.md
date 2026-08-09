@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 275 source entries (32.16%), 88 typed
+macro surfaces. The current baseline is 277 source entries (32.40%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
-44 out-of-scope Spec entries, and 252 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 250 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -300,8 +300,12 @@ function.
 `exn -> option<exn>` primitive.
 `re-pattern` adds the 240th internal route as a validated static regex
 constructor while the public var remains source-defined.
-The numeric coercions `int`, `long`, and `double` are source functions with
-inline source specialization over internal typed primitives. `byte` and
+The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
+`unchecked-long` are source functions with inline source specialization over
+internal typed primitives. The unchecked pair deliberately shares the
+`__lg_long` truncation boundary: pinned ClojureScript implements both with
+`fix`, rather than the `int` function's `bit-or` source operation. This keeps
+the distinction explicit within LG's current static integer domain. `byte` and
 `float` preserve the pinned ClojureScript identity function and inline macro.
 This keeps higher-order calls and namespace exports in the aggregate stdlib
 while removing the public conversion names from compiler dispatch. The Logseq
