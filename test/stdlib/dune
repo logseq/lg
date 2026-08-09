@@ -874,6 +874,15 @@
   (run sh %{dep:check_source_core_bootstrap.sh} ../..)))
 
 (rule
+ (alias runtest)
+ (deps
+  check_audited_core_boundaries.sh
+  ../../script/extract_stdlib_manifest_status.clj
+  ../../stdlib/upstream.edn)
+ (action
+  (run sh %{dep:check_audited_core_boundaries.sh} ../..)))
+
+(rule
  (alias no-source-core-bit-dispatch)
  (deps
   check_no_source_core_bit_dispatch.sh

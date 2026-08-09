@@ -147,8 +147,8 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 343 source entries (40.07%), 62 typed
-primitives, 12 special forms, 15 host boundaries, 173 static-typing blockers,
-44 out-of-scope Spec entries, and 207 deferred entries. The deferred set is the
+primitives, 12 special forms, 28 host boundaries, 189 static-typing blockers,
+44 out-of-scope Spec entries, and 178 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -576,6 +576,23 @@ The ClojureScript `divide` macro is source-defined with its unary, binary, and
 variadic arities. Ordered `let` bindings retain JavaScript's left-to-right
 operand evaluation when the expansion is emitted as OCaml, while division
 remains left-associated and delegates to LG's typed `/` primitive.
+
+The inventory explicitly classifies the audited clone, dependent-result,
+transducer, tagged-literal, and metadata-transform surfaces. `clone` cannot be
+replaced by identity because `identical?` observes the fresh collection objects
+created by ClojureScript, while `cloneable?`, `record?`, and `tagged-literal?`
+are first-class predicates over arbitrary values. `replace`, `partitionv-all`,
+and `random-sample` combine transducer arities with representation-dependent
+lazy or vector results. `spread`, `trampoline`, `swap-vals!`, `vary-meta`, and
+`vec-lite` each require a heterogeneous or dependent function relationship
+that the current static source type system cannot express without narrowing an
+upstream arity.
+
+JavaScript loose equality and falsiness macros, Closure `Uri`, JavaScript
+symbols and object constructors, CLJS `Var` and `Inst` values, analyzer-only
+casts, and the host writer/newline functions are recorded as host boundaries.
+Native implementations do not substitute Clojure truthiness or unrelated
+nominal types for those target-specific behaviors.
 
 `flatten` and `memoize` are explicit blockers rather than partial Logseq-facing
 ports. Arbitrarily nested `flatten` input can yield heterogeneous leaf types and

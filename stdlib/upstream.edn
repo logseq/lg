@@ -570,6 +570,64 @@
              :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}
     frequencies {:status :static-adaptation
                  :reason :persistent-reduce-preserves-upstream-counting-semantics-without-a-transient-representation-boundary}
+    clone {:status :blocked-static-typing
+           :reason :fresh-clone-identity-is-observable-and-cannot-be-preserved-for-every-immutable-static-collection-representation}
+    cloneable? {:status :blocked-static-typing
+                :reason :first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value}
+    default-dispatch-val {:status :blocked-static-typing
+                          :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    ifn? {:status :blocked-static-typing
+          :reason :first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability}
+    partitionv-all {:status :blocked-static-typing
+                    :reason :one-arity-stateful-transducer-and-two-or-three-arity-lazy-vector-partitions-cannot-share-one-source-function-type}
+    random-sample {:status :blocked-static-typing
+                   :reason :one-arity-stateful-filter-transducer-and-two-arity-lazy-sequence-cannot-share-one-source-function-type}
+    record? {:status :blocked-static-typing
+             :reason :first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value}
+    replace {:status :blocked-static-typing
+             :reason :one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type}
+    spread {:status :blocked-static-typing
+            :reason :argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence}
+    swap-vals! {:status :blocked-static-typing
+                :reason :atomic-old-new-results-require-callback-arity-overloads-inside-the-reference-operation-rather-than-a-non-atomic-deref-and-swap-composition}
+    tagged-literal {:status :blocked-static-typing
+                    :reason :tagged-literal-forms-accept-arbitrary-clojure-values-without-a-public-closed-source-value-domain}
+    tagged-literal? {:status :blocked-static-typing
+                     :reason :first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value}
+    trampoline {:status :blocked-static-typing
+                :reason :step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply}
+    unsafe-bit-and {:status :blocked-static-typing
+                    :reason :javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve}
+    vary-meta {:status :blocked-static-typing
+               :reason :metadata-transform-callbacks-span-five-fixed-arities-plus-variadic-apply-while-preserving-the-receiver-type}
+    vec-lite {:status :blocked-static-typing
+              :reason :one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation}
+    coercive-= {:status :host-boundary
+                :reason :javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent}
+    coercive-boolean {:status :host-boundary
+                      :reason :javascript-falsiness-for-zero-nan-empty-string-null-and-undefined-differs-from-clojure-truthiness}
+    coercive-not {:status :host-boundary
+                  :reason :javascript-falsiness-for-zero-nan-empty-string-null-and-undefined-differs-from-clojure-truthiness}
+    coercive-not= {:status :host-boundary
+                   :reason :javascript-loose-inequality-crosses-static-type-domains-and-has-no-portable-native-equivalent}
+    inst-ms {:status :host-boundary
+             :reason :clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation}
+    inst? {:status :host-boundary
+           :reason :clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation}
+    js-symbol? {:status :host-boundary
+                :reason :javascript-symbol-is-a-target-specific-nominal-host-type}
+    newline {:status :host-boundary
+             :reason :uses-dynamic-print-function-and-flush-options-from-the-clojurescript-host-printing-runtime}
+    object? {:status :host-boundary
+             :reason :tests-the-javascript-object-constructor-and-has-no-equivalent-native-object-category}
+    unsafe-cast {:status :host-boundary
+                 :reason :emits-a-javascript-closure-type-cast-and-assignment-for-the-analyzer}
+    uri? {:status :host-boundary
+          :reason :tests-the-google-closure-uri-class-which-has-no-native-source-representation}
+    var? {:status :host-boundary
+          :reason :tests-the-clojurescript-javascript-var-wrapper-which-lg-does-not-expose-as-a-source-value}
+    write-all {:status :host-boundary
+               :reason :writes-through-clojurescript-iwriter-and-target-printing-effects-rather-than-a-portable-pure-value}
     update-vals {:status :static-adaptation
                  :reason :persistent-reduce-kv-preserves-key-value-transformation-and-typed-map-metadata-without-a-transient-representation-boundary}
     update-keys {:status :static-adaptation
