@@ -67,9 +67,10 @@ Multi-file compilation prepares each source once. The parsed forms provide
 both required OCaml packages and the subsequent incremental compilation input;
 the CLI does not parse the same file again after restoring a compiler state.
 State-producing compilation does not read or write prefix caches: its explicit
-state artifact is already the reusable checkpoint. The default cold-build gate
-covers the full aggregate-stdlib plus DataScript path and enforces a 10-second
-limit without a cache-related environment setting or persisted cache entry.
+state artifact is already the reusable checkpoint. The cold-build gate covers
+the full aggregate-stdlib plus DataScript path and enforces a fixed 10-second
+limit. The limit cannot be relaxed through configuration, and the gate removes
+cache-related environment settings before building from a clean tree.
 
 Generic `set<element>` source functions use LG's statically typed generic set
 representation internally. Calls from concrete persistent set modules convert
