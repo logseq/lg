@@ -321,9 +321,15 @@ let compiled_stdlib target =
         List.fold_left
           (fun (state, outputs) (source_filename, source_text) ->
             let state, output =
-              Lg.Compiler.compile_chunk_with_filename ~target
-                ~filename:source_filename state source_text
-              |> expect_ok
+              match
+                Lg.Compiler.compile_chunk_with_filename ~target
+                  ~filename:source_filename state source_text
+              with
+              | Ok compiled -> compiled
+              | Error (error : Lg.Compiler.compile_error) ->
+                  failwith
+                    ("failed to compile " ^ source_filename ^ ": "
+                   ^ error.message)
             in
             (state, output :: outputs))
           (Lg.Compiler.empty_state, []) (stdlib_sources ())
@@ -26641,13 +26647,75 @@ let test_rseq_dispatches_to_reversible_protocol () =
 (println (pr-str (rseq (ReversibleBox. [1 2 3]))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/rseq_protocol.cljc" source
+  in
   assert_ocaml_runs "rseq_dispatches_to_reversible_protocol" "[3 2 1]\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_with_stdlib Lg.Target.Melange "test/rseq_protocol.cljc" source);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Js_of_ocaml "test/rseq_protocol.cljc" source)
+
+let test_source_collection_projection_family_matches_clojurescript () =
+  let source =
+    {|
+(ns app.collection-projections
+  (:require [cljs.core :as core :refer [find rseq]]))
+
+(deftype ReversibleBox [values]
+  IReversible
+  (-rseq [_] [3 2 1]))
+
+(def values (hash-map 'a 1 'b 2))
+
+(println (= [3 2 1] (rseq (ReversibleBox. [1 2 3]))))
+(println (= [3 2 1] (core/rseq [1 2 3])))
+(println
+  (when-some [entry (find values 'a)]
+    (and (= 'a (key entry)) (= 1 (val entry)))))
+(println (nil? (core/find values 'missing)))
+|}
+  in
+  let expected = String.concat "" (List.init 4 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_collection_projections.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source collection projections must remain statically typed";
+  assert_ocaml_runs "source_collection_projection_family" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_collection_projections.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange collection projections must remain statically typed"
+
+let test_collection_projection_family_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name))
+      then failwith (name ^ " is not owned by the source standard library");
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          if
+            string_contains_substring compiler_source
+              ("\"" ^ name ^ "\"")
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "rseq"; "find" ]
 
 let test_deftype_protocol_methods_support_multiple_arities () =
   let source =
@@ -37574,7 +37642,7 @@ let test_parsetree_backend_builds_native_sequence_navigation_expressions () =
     [
       {|(def result (next (list 1 2)))|};
       {|(def result (next [1 2]))|};
-      {|(def result (rseq [1 2]))|};
+      {|(def result (IReversible/-rseq [1 2]))|};
     ]
 
 let test_parsetree_backend_builds_native_let_expressions () =
@@ -39808,6 +39876,10 @@ let tests =
       test_optional_record_fields_keep_precise_types );
     ( "rseq dispatches to reversible protocol",
       test_rseq_dispatches_to_reversible_protocol );
+    ( "source collection projection family matches ClojureScript",
+      test_source_collection_projection_family_matches_clojurescript );
+    ( "collection projection family has no public-name dispatch",
+      test_collection_projection_family_has_no_public_name_dispatch );
     ( "deftype protocol methods support multiple arities",
       test_deftype_protocol_methods_support_multiple_arities );
     ( "declared protocol methods support multiple arities",

@@ -4105,7 +4105,6 @@ let create ~compile_expr =
   let compile_subvec = collection.compile_subvec in
   let compile_nth = collection.compile_nth in
   let compile_static_get = collection.compile_get in
-  let compile_find = collection.compile_find in
   let compile_static_assoc = collection.compile_assoc in
   let compile_dissoc = collection.compile_dissoc in
   let compile_merge = collection.compile_merge in
@@ -8499,7 +8498,6 @@ let create ~compile_expr =
     | "nth" -> compile_nth scope env arg_forms
     | "get" -> compile_get scope env arg_forms
     | "get-in" -> compile_get_in scope env arg_forms
-    | "find" -> compile_find scope env arg_forms
     | "assoc" | "-assoc" ->
         compile_assoc scope env arg_forms
     | "assoc-in" -> compile_assoc_in scope env arg_forms
@@ -8547,14 +8545,6 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
-    | "rseq" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ ({ ty = (TList _ | TVector _); _ } as collection) ] ->
-            Core_sequence.compile env name [ collection ]
-        | Ok [ _ ] ->
-            compile_protocol_call scope env "IReversible/-rseq" arg_forms
-        | Ok _ -> Error.error "rseq expects 1 arguments")
     | "some" -> compile_some scope env arg_forms
     | "partition-by" -> compile_partition_by scope env arg_forms
     | "dorun" | "doall" ->

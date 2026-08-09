@@ -134,8 +134,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 294 source entries (34.35%), 88 typed
-primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
+macro surfaces. The current baseline is 297 source entries (34.70%), 87 typed
+primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
 44 out-of-scope Spec entries, and 233 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -183,7 +183,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 231-name compiler dispatch inventory has zero `source-shadowed`
+The current 229-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -201,6 +201,7 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
+`rseq`, `find`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
 `array-binary-search-right`,
 the upstream four-argument `amap` macro, the typed `asort!` extension,
@@ -322,7 +323,11 @@ direct `abs` calls.
 retains a validated static regex constructor while the public var remains
 source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
-routes, the raw compiler-call inventory contains 231 names.
+routes, plus the public `rseq` and `find` routes, the raw compiler-call
+inventory contains 229 names. Both functions now inline their pinned
+ClojureScript protocol calls while retaining ordinary source definitions;
+generic source functions infer the corresponding protocol witness without
+dynamic packing.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

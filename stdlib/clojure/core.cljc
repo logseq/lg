@@ -1274,6 +1274,16 @@
 (defn val [map-entry]
   (stdlib/snd map-entry))
 
+(defn rseq
+  {:inline (fn [rev] (list 'IReversible/-rseq rev))}
+  [rev]
+  (IReversible/-rseq rev))
+
+(defn find
+  {:inline (fn [coll key] (list 'IFind/-find coll key))}
+  [coll key]
+  (IFind/-find coll key))
+
 (defn keyword-identical? [left right]
   (= left right))
 

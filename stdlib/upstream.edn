@@ -107,6 +107,10 @@
                  :reason :source-function-and-inline-specialization-use-clojurescript-isequential-marker-protocol-satisfaction-without-name-based-compiler-dispatch}
     reversible? {:status :static-adaptation
                  :reason :source-function-and-inline-specialization-use-clojurescript-ireversible-protocol-satisfaction-without-name-based-compiler-dispatch}
+    rseq {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
+    find {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ifind-for-static-runtime-maps-and-explicit-protocol-implementations}
     sorted? {:status :static-adaptation
              :reason :source-function-and-inline-specialization-use-clojurescript-isorted-protocol-satisfaction-without-name-based-compiler-dispatch-while-lg-has-no-built-in-sorted-collection-yet}
     zero? {:status :static-adaptation

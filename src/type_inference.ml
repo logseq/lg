@@ -4396,6 +4396,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Ok
               (replace_param collection (Types.dynamic_constraint ty) params)
         | Some _ | None -> Ok params)
+    | FList (FSymbol qualified_method :: FSymbol receiver :: _)
+      when (match String.split_on_char '/' qualified_method with
+           | [ protocol_name; method_name ] ->
+               String.starts_with ~prefix:"-" method_name
+               && Option.is_some (lookup_protocol_constraint protocol_name)
+           | _ -> false) -> (
+        match String.split_on_char '/' qualified_method with
+        | [ protocol_name; _method_name ] -> (
+            match lookup_protocol_constraint protocol_name with
+            | Some constraint_ty ->
+                constrain_symbol constraint_ty params receiver
+            | None -> assert false)
+        | _ -> Ok params)
     | FList [ FSymbol "satisfies?"; FSymbol protocol_name; FSymbol receiver ]
       -> (
         match lookup_protocol_constraint protocol_name with
