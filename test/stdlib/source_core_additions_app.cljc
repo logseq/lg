@@ -1,6 +1,7 @@
 (ns source-core-additions-app
   (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
+            [clojure.walk :as walk :refer [keywordize-keys postwalk-replace prewalk-replace stringify-keys]]
             [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
 
 (println (= 4 (bit-and-not 7 3)))
@@ -649,3 +650,58 @@
 (println
  (= "#lg/unknown [5 6]"
     (runtime-edn/write-string (reader/read-string "#lg/unknown [5 6]"))))
+
+(def walk-one (reader/read-string "1"))
+(def walk-two (reader/read-string "2"))
+(def walk-twenty (reader/read-string "20"))
+(def walk-vector-two (reader/read-string "[2]"))
+(def walk-vector-twenty (reader/read-string "[20]"))
+(defn walk-replace-two [^:Lg_edn_backend.t value]
+  (if (= value walk-two) walk-twenty value))
+(defn walk-expand [^:Lg_edn_backend.t value]
+  (if (= value walk-one)
+    walk-vector-two
+    (if (= value walk-two) walk-twenty value)))
+
+(println
+ (= (reader/read-string "[1 20]")
+    (walk/walk walk-replace-two identity (reader/read-string "[1 2]"))))
+(println
+ (= (reader/read-string "[[2]]")
+    (walk/postwalk walk-expand (reader/read-string "[1]"))))
+(println
+ (= (reader/read-string "[[20]]")
+    (walk/prewalk walk-expand (reader/read-string "[1]"))))
+(println
+ (= (reader/read-string "{:a {:b 1}}")
+    (keywordize-keys (reader/read-string "{\"a\" {\"b\" 1}}"))))
+(println
+ (= (reader/read-string "{\"a\" {\"b\" 1}}")
+    (stringify-keys (reader/read-string "{:a {:b 1}}"))))
+
+(def walk-replacements (reader/read-string "{1 [2], 2 20}"))
+(println
+ (= (reader/read-string "[[20]]")
+    (prewalk-replace walk-replacements (reader/read-string "[1]"))))
+(println
+ (= (reader/read-string "[[2]]")
+    (postwalk-replace walk-replacements (reader/read-string "[1]"))))
+(def source-postwalk walk/postwalk)
+(println
+ (= (reader/read-string "[1 20]")
+    (source-postwalk walk-replace-two (reader/read-string "[1 2]"))))
+(println
+ (= (reader/read-string "[1 20]")
+    (clojure.walk/postwalk walk-replace-two (reader/read-string "[1 2]"))))
+
+(def walk-zero (reader/read-string "0"))
+(defn walk-collapse-numbers [^:Lg_edn_backend.t value]
+  (if (= value walk-one)
+    walk-zero
+    (if (= value walk-two) walk-zero value)))
+(println
+ (= (reader/read-string "#{0}")
+    (walk/walk walk-collapse-numbers identity (reader/read-string "#{1 2}"))))
+(println
+ (= (reader/read-string "{:a 2}")
+    (keywordize-keys (reader/read-string "{\"a\" 1, :a 2}"))))

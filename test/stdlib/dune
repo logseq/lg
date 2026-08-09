@@ -189,6 +189,16 @@
 
 (rule
  (alias runtest)
+ (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
+  clojure_walk_bad_keywordize_arity.cljc ../../bin/lg_cli.exe)
+ (action
+  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_walk_bad_keywordize_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
@@ -1030,6 +1040,18 @@
  (action
   (run sh %{dep:check_source_string_bootstrap.sh} ../..)))
 
+(rule
+ (alias source-walk-bootstrap)
+ (deps
+  check_source_walk_bootstrap.sh
+  ../../script/extract_stdlib_manifest_status.clj
+  ../../stdlib/upstream.edn
+  ../../runtime/runtime_walk.ml
+  ../../src/core_namespaces.ml
+  (source_tree ../../stdlib/clojure))
+ (action
+  (run sh %{dep:check_source_walk_bootstrap.sh} ../..)))
+
 (alias
  (name runtest)
  (deps
@@ -1038,4 +1060,5 @@
   (alias no-source-core-fallbacks)
   (alias source-namespace-migration)
   (alias source-string-bootstrap)
+  (alias source-walk-bootstrap)
   (alias ../../stdlib/stdlib-melange)))

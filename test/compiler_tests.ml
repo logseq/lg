@@ -297,6 +297,8 @@ let stdlib_sources =
          "stdlib/cljs/reader.cljc";
          "stdlib/clojure/set.mil";
          "stdlib/clojure/set.cljc";
+         "stdlib/clojure/walk.mil";
+         "stdlib/clojure/walk.cljc";
        ]
       |> List.map (fun path ->
              (path, read_file (Filename.concat (repo_root ()) path))))
@@ -24044,7 +24046,8 @@ let test_clojure_walk_rejects_dynamic_source_parameters () =
 (println (= 2 @visited))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/clojure_walk_dynamic_source.cljc" source
   |> expect_error_contains "dynamic is not a source type"
 
 let test_clojure_data_diff_requires_closed_recursive_values () =

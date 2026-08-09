@@ -248,7 +248,8 @@ if test -n "$clojurescript_root"; then
     'clojure.string|stdlib/clojure/string.cljc' \
     'clojure.set|stdlib/clojure/set.cljc' \
     'clojure.edn|stdlib/clojure/edn.cljc' \
-    'cljs.reader|stdlib/cljs/reader.cljc'; do
+    'cljs.reader|stdlib/cljs/reader.cljc' \
+    'clojure.walk|stdlib/clojure/walk.cljc'; do
     namespace=${namespace_and_source%%|*}
     source=${namespace_and_source#*|}
     bb "$lg_root/script/extract_clojurescript_public_vars.clj" "$namespace" \
@@ -360,7 +361,8 @@ for namespace in \
     ownership=compiler-owned
   elif test "$namespace" = clojure.string \
     || test "$namespace" = clojure.edn \
-    || test "$namespace" = cljs.reader; then
+    || test "$namespace" = cljs.reader \
+    || test "$namespace" = clojure.walk; then
     ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.set; then
     ownership=source
@@ -380,9 +382,13 @@ cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 clojure.string/escape|source
 clojure.string/split|host-boundary
-clojure.walk/walk|host-boundary
-clojure.walk/prewalk|host-boundary
-clojure.walk/postwalk|host-boundary
+clojure.walk/walk|source
+clojure.walk/prewalk|source
+clojure.walk/postwalk|source
+clojure.walk/keywordize-keys|source
+clojure.walk/stringify-keys|source
+clojure.walk/prewalk-replace|source
+clojure.walk/postwalk-replace|source
 EOF
 
 stdlib_sources=$(rg --files "$lg_root/stdlib" -g '*.cljc')

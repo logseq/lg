@@ -1,13 +1,10 @@
 let bindings = function
   | "clojure.data" -> Core_data.bindings
   | "clojure.string" -> Core_string.bindings
-  | "clojure.walk" -> Core_walk.bindings
   | _ -> []
 
 let is_core_namespace = function
-  | "clojure.core" | "cljs.core" | "clojure.data"
-  | "clojure.walk" ->
-      true
+  | "clojure.core" | "cljs.core" | "clojure.data" -> true
   | _ -> false
 
 let lookup_qualified_member name =

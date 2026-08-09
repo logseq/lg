@@ -146,8 +146,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 347 source entries (40.54%), 62 typed
-primitives, 12 special forms, 28 host boundaries, 192 static-typing blockers,
+macro surfaces. The current baseline is 354 source entries (41.36%), 62 typed
+primitives, 12 special forms, 28 host boundaries, 185 static-typing blockers,
 44 out-of-scope Spec entries, and 171 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -571,10 +571,14 @@ readable and display printing need distinct static printer witnesses;
 occurs 3 times and is blocked on its public heterogeneous location vectors and
 metadata-held generic callbacks. `cljs.spec.alpha` and `clojure.spec.alpha`
 are explicitly out of scope; their Logseq references remain visible in the
-inventory but do not count against migration completion. `clojure.walk` and `clojure.data` remain explicitly blocked because
-their upstream algorithms traverse heterogeneous Clojure trees; a valid port
-must use a closed value domain rather than the existing `Runtime_dynamic.t`
-boundary.
+inventory but do not count against migration completion. The aggregate now
+contains all seven public `clojure.walk` functions over the closed
+`Lg_edn_backend.t` tree domain. Its source definitions preserve upstream
+pre-order, post-order, map-entry, key-conversion, and replacement order while a
+small typed runtime primitive rebuilds one collection level. The former
+`Runtime_dynamic.t` implementation and compiler namespace route are gone.
+`clojure.data` remains blocked until its recursive diff result is represented
+by an equally explicit closed domain.
 
 The source core also includes ClojureScript's `key-test`, `equiv-map`, `reduceable?`,
 `vector-lite`, `hash-map-lite`, and `set-lite`. `IReduce` is a source-facing

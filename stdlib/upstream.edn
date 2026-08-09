@@ -4,7 +4,7 @@
  :license "EPL-1.0"}
 
  :aggregate-namespaces
- [clojure.core clojure.string clojure.edn cljs.reader clojure.set]
+ [clojure.core clojure.string clojure.edn cljs.reader clojure.set clojure.walk]
 
  :namespaces
  {clojure.core
@@ -716,8 +716,23 @@
 
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"
-   :status :blocked
-   :reason :requires-closed-heterogeneous-clojure-value-domain}
+   :implementation "clojure/walk.cljc"
+   :interface "clojure/walk.mil"
+   :definitions
+   {walk {:status :static-adaptation
+          :reason :source-public-function-preserves-upstream-inner-before-outer-order-over-the-closed-edn-tree-domain-while-a-minimal-typed-primitive-rebuilds-one-collection-level}
+    postwalk {:status :ported
+              :reason :source-recursion-preserves-upstream-depth-first-post-order}
+    prewalk {:status :ported
+             :reason :source-recursion-preserves-upstream-pre-order-and-revisits-transformed-children}
+    keywordize-keys {:status :static-adaptation
+                     :reason :source-postwalk-preserves-upstream-map-only-recursion-while-a-closed-edn-map-key-primitive-converts-string-keys}
+    stringify-keys {:status :static-adaptation
+                    :reason :source-postwalk-preserves-upstream-map-only-recursion-while-a-closed-edn-map-key-primitive-converts-keyword-keys}
+    prewalk-replace {:status :static-adaptation
+                     :reason :source-prewalk-preserves-upstream-replacement-order-over-a-closed-edn-replacement-map}
+    postwalk-replace {:status :static-adaptation
+                      :reason :source-postwalk-preserves-upstream-replacement-order-over-a-closed-edn-replacement-map}}}
 
   clojure.zip
   {:source "src/main/cljs/clojure/zip.cljs"

@@ -11,6 +11,8 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  clojure/walk.mil
+  clojure/walk.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
@@ -30,6 +32,8 @@
    %{dep:cljs/reader.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
+   %{dep:clojure/walk.mil}
+   %{dep:clojure/walk.cljc}
    -o
    lg_stdlib_native.ml)))
 
@@ -50,6 +54,8 @@
   cljs/reader.cljc
   clojure/set.mil
   clojure/set.cljc
+  clojure/walk.mil
+  clojure/walk.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
@@ -69,6 +75,8 @@
    %{dep:cljs/reader.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
+   %{dep:clojure/walk.mil}
+   %{dep:clojure/walk.cljc}
    -o
    lg_stdlib_melange.ml)))
 
