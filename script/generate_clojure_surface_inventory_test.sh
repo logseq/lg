@@ -65,6 +65,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/completing" && $3 == "sou
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "blocked-static-typing" && $4 == "nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/mask" || $2 == "clojure.core/bitpos") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/dec" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/bit-not" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/bit-and" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"

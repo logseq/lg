@@ -22104,6 +22104,60 @@ let test_source_unchecked_extrema_macros_match_clojurescript () =
       |> expect_error_contains "unsupported macro arity 0")
     [ "unchecked-max"; "unchecked-min" ]
 
+let test_source_hamt_bit_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-hamt-bit-macros-app
+  (:require [cljs.core :as core :refer [mask bitpos]]))
+
+(def calls (atom 0))
+(def masked
+  (mask
+    (do (swap! calls inc) -1)
+    (do (swap! calls inc) 5)))
+(def positioned
+  (core/bitpos
+    (do (swap! calls inc) 32)
+    (do (swap! calls inc) 5)))
+
+(println (= 31 masked))
+(println (= 2 positioned))
+(println (= 4 @calls))
+(println (= 31 (clojure.core/mask -1 0)))
+(println (= 1 (mask 32 5)))
+(println (= 1 (cljs.core/bitpos 0 0)))
+(println (= 8 (bitpos 96 5)))
+|}
+  in
+  let expected = String.concat "" (List.init 7 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_hamt_bit_macros.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source HAMT bit macros must remain static";
+  assert_ocaml_runs "source_hamt_bit_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_hamt_bit_macros.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source HAMT bit macros must remain static";
+  List.iter
+    (fun (name, arguments) ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_arity.cljc")
+        ("(def result (" ^ name ^ arguments ^ "))")
+      |> expect_error_contains "unsupported macro arity")
+    [
+      ("mask", "");
+      ("mask", " 1");
+      ("mask", " 1 2 3");
+      ("bitpos", "");
+      ("bitpos", " 1");
+      ("bitpos", " 1 2 3");
+    ]
+
 let test_source_control_macros_match_clojurescript () =
   let source =
     {|
@@ -38597,6 +38651,8 @@ let tests =
       test_source_numeric_coercions_match_clojurescript );
     ( "source unchecked extrema macros match ClojureScript",
       test_source_unchecked_extrema_macros_match_clojurescript );
+    ( "source HAMT bit macros match ClojureScript",
+      test_source_hamt_bit_macros_match_clojurescript );
     ( "source control macros match ClojureScript",
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",

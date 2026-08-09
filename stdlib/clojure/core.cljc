@@ -958,6 +958,12 @@
   [x n]
   (bit-shift-right-zero-fill x n))
 
+(defmacro mask [hash shift]
+  `(bit-and (unsigned-bit-shift-right ~hash ~shift) 0x01f))
+
+(defmacro bitpos [hash shift]
+  `(bit-shift-left 1 (mask ~hash ~shift)))
+
 (defn bit-count
   "Returns the number of set bits in `value`."
   [value]

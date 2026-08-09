@@ -52,7 +52,7 @@ if ! grep -E '^\(defmacro array-values([[:space:]]|$)' \
   exit 1
 fi
 
-for name in comment doto when-first while if-not when when-not cond and or if-let when-let if-some when-some unchecked-max unchecked-min '->' '->>' 'as->' 'cond->' 'cond->>' 'some->' 'some->>'; do
+for name in comment doto when-first while if-not when when-not cond and or if-let when-let if-some when-some unchecked-max unchecked-min mask bitpos '->' '->>' 'as->' 'cond->' 'cond->>' 'some->' 'some->>'; do
   if ! grep -E "^\\(defmacro ${name}([[:space:]]|$)" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a macro" >&2

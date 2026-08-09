@@ -313,6 +313,10 @@
                  :reason :variadic-source-port-reduces-through-a-statically-typed-binary-helper}
     unsigned-bit-shift-right {:status :static-adaptation
                               :reason :source-alias-of-the-existing-typed-logical-shift-wrapper}
+    mask {:status :static-adaptation
+          :reason :source-macro-preserves-the-upstream-logical-right-shift-and-five-bit-hamt-index-mask-through-existing-static-bit-operations}
+    bitpos {:status :static-adaptation
+            :reason :source-macro-preserves-the-upstream-one-shifted-by-the-masked-hamt-index-composition-through-existing-static-bit-operations}
     bit-count {:status :ported}
     second {:status :ported}
     last {:status :static-adaptation
