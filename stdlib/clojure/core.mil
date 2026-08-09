@@ -113,6 +113,9 @@
 (signature clojure.core/m3-hash-int :fn<int;int>)
 (signature clojure.core/m3-hash-unencoded-chars :fn<string;int>)
 (signature clojure.core/hash-string* :fn<option<string>;int>)
+(signature clojure.core/hash-double :fn<float;int>)
+(signature clojure.core/hash-keyword :fn<keyword;int>)
+(signature clojure.core/hash-string :fn<option<string>;int>)
 (signature clojure.core/mix-collection-hash :fn<int;int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
@@ -159,6 +162,8 @@
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/array-from [value]
   :fn<seqable<value>;array<value>>)
+(signature clojure.core/array-index-of [value]
+  :fn<array<value>;value;int>)
 (signature clojure.core/array-binary-search-left [element key]
   :fn<fn<element;key;int>;array<element>;int;key;float>)
 (signature clojure.core/array-binary-search-right [element key]

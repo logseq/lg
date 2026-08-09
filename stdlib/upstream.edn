@@ -163,6 +163,8 @@
                    :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-long-fix-primitive-to-model-pinned-fix-separately-from-int-within-the-current-static-int-domain}
     unchecked-long {:status :static-adaptation
                     :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-existing-long-fix-primitive-within-the-current-static-int-domain}
+    char {:status :blocked-static-typing
+          :reason :upstream-same-arity-function-accepts-either-an-integer-code-unit-or-a-string-while-current-static-function-types-cannot-express-that-first-class-overload-without-rejecting-one-supported-input-domain}
     char? {:status :static-adaptation
            :reason :source-function-provides-a-first-class-char-predicate-and-inline-static-type-test-because-lg-characters-are-distinct-from-clojurescript-one-character-javascript-strings}
     identical? {:status :static-adaptation
@@ -304,6 +306,12 @@
                              :reason :source-port-preserves-upstream-utf16-code-unit-pairing-odd-tail-and-byte-length-finalization-over-a-linear-utf8-to-utf16-code-unit-array-boundary}
     hash-string* {:status :static-adaptation
                   :reason :source-port-preserves-upstream-null-empty-and-thirty-one-times-hash-plus-utf16-code-unit-loop-over-linear-code-unit-conversion-and-a-melange-untruncated-number-addition-boundary}
+    hash-double {:status :static-adaptation
+                 :reason :source-port-delegates-the-static-float-domain-to-the-existing-clojurescript-compatible-hash-boundary}
+    hash-keyword {:status :static-adaptation
+                  :reason :source-port-delegates-the-static-keyword-domain-to-the-existing-clojurescript-compatible-keyword-hash-boundary-without-exposing-keywords-as-strings}
+    hash-string {:status :static-adaptation
+                 :reason :source-port-preserves-the-upstream-hash-string-result-through-hash-string-star-while-omitting-the-observationally-invisible-mutable-javascript-cache}
     mix-collection-hash {:status :ported
                          :reason :source-port-preserves-upstream-seed-key-mix-hash-mix-and-count-finalization-order}
     even? {:status :static-adaptation
@@ -459,6 +467,8 @@
                   :reason :lg-datascript-source-macro-expands-one-or-more-values-to-the-homogeneous-typed-array-primitive-avoiding-runtime-dynamic-storage-and-generic-shape-feedback}
     array-from {:status :static-adaptation
                 :reason :lg-datascript-source-compatibility-alias-copies-any-statically-typed-seqable-through-to-array}
+    array-index-of {:status :ported
+                    :reason :source-port-preserves-the-upstream-even-key-slot-scan-equality-check-and-minus-one-missing-result}
     array-binary-search-left {:status :static-adaptation
                               :reason :lg-datascript-source-extension-preserves-the-existing-left-bound-binary-search-loop-with-static-array-comparator-and-key-types}
     array-binary-search-right {:status :static-adaptation

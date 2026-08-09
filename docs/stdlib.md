@@ -137,9 +137,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 325 source entries (37.97%), 63 typed
-primitives, 12 special forms, 15 host boundaries, 168 static-typing blockers,
-44 out-of-scope Spec entries, and 229 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 329 source entries (38.43%), 63 typed
+primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
+44 out-of-scope Spec entries, and 224 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -163,6 +163,9 @@ that witness without dynamic packing.
 `rand` remains compiler-owned because its one-argument public API accepts both
 int and float bounds, while source signatures cannot yet express same-arity
 overloads without rejecting one of those existing cases.
+`char` is blocked for the same first-class overload limitation: the upstream
+one-argument function accepts either an integer code unit or a string. A
+single-domain port would silently narrow ClojureScript compatibility.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
@@ -216,6 +219,7 @@ the upstream four-argument `amap` macro, the typed `asort!` extension,
 `update-keys`, `replicate`, `key`, `val`, `parse-boolean`, `random-uuid`,
 `parse-uuid`, `system-time`, `parse-long`, `parse-double`, `merge-with`, `NaN?`,
 `gensym`, `infinite?`, `keyword-identical?`, `symbol-identical?`, `hash-long`,
+`hash-double`, `hash-keyword`, `hash-string`, `array-index-of`,
 `special-symbol?`, `distinct?`, `not=`, and the
 derived bit functions, plus `splitv-at` and the ClojureScript array-hint identity functions
 `booleans`, `bytes`, `chars`, `shorts`, `ints`, `floats`, `doubles`, and

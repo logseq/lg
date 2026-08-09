@@ -933,6 +933,15 @@
         0))
     0))
 
+(defn hash-double [value]
+  (hash value))
+
+(defn hash-keyword [value]
+  (hash value))
+
+(defn hash-string [value]
+  (hash-string* value))
+
 (defn mix-collection-hash [hash-basis count]
   (let [h1 m3-seed
         k1 (m3-mix-K1 hash-basis)
@@ -1096,6 +1105,14 @@
 
 (defn array-from [coll]
   (to-array coll))
+
+(defn array-index-of [values key]
+  (let [length (alength values)]
+    (loop [index 0]
+      (cond
+        (<= length index) -1
+        (= key (aget values index)) index
+        :else (recur (+ index 2))))))
 
 (defn array-binary-search-left [compare values right key]
   (loop [left 0

@@ -267,6 +267,70 @@
  (deps
   check_compile_error.sh
   ../../stdlib/lg_stdlib_native.state
+  source_core_hash_double_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_hash_double_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_hash_keyword_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_hash_keyword_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_hash_string_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_hash_string_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_array_index_of_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_array_index_of_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
   source_core_parse_long_bad_arity.cljc
   ../../bin/lg_cli.exe)
  (action
