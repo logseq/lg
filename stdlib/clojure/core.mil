@@ -90,6 +90,8 @@
   :fn<fn<input;output>;seqable<input;storage>;option<unit>>)
 (signature clojure.core/group-by [input key storage]
   :fn<fn<input;key>;seqable<input;storage>;map<key;vector<input>>>)
+(signature clojure.core/reduce [input accumulator storage]
+  :overload<fn<fn<input;input;input>;seqable<input;storage>;input>;fn<fn<accumulator;input;accumulator>;accumulator;seqable<input;storage>;accumulator>>)
 (signature clojure.core/reductions [input accumulator storage]
   :overload<fn<fn<input;input;input>;seqable<input;storage>;list<input>>;fn<fn<accumulator;input;accumulator>;accumulator;seqable<input;storage>;list<accumulator>>>)
 (signature clojure.core/reduce-kv [key value accumulator]

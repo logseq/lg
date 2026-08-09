@@ -7,7 +7,7 @@
 
 (defn- bubble-max-key [key-fn coll]
   (let [maximal
-        (reduce
+        (__lg_reduce
          (fn [best candidate]
            (if (> (key-fn candidate) (key-fn best))
              candidate
@@ -19,8 +19,8 @@
 
 (defn- union-two [s1 s2]
   (if (< (count s1) (count s2))
-    (reduce conj s2 s1)
-    (reduce conj s1 s2)))
+    (__lg_reduce conj s2 s1)
+    (__lg_reduce conj s1 s2)))
 
 (defn union
   "Return a set that is the union of the input sets."
@@ -28,12 +28,12 @@
   ([s1] s1)
   ([s1 s2] (union-two s1 s2))
   ([s1 s2 & sets]
-   (reduce union-two (union-two s1 s2) sets)))
+   (__lg_reduce union-two (union-two s1 s2) sets)))
 
 (defn- intersection-two [s1 s2]
   (if (< (count s2) (count s1))
     (intersection-two s2 s1)
-    (reduce (fn [result item]
+    (__lg_reduce (fn [result item]
               (if (contains? s2 item)
                 result
                 (disj result item)))
@@ -45,24 +45,24 @@
   ([s1] s1)
   ([s1 s2] (intersection-two s1 s2))
   ([s1 s2 & sets]
-   (reduce intersection-two (intersection-two s1 s2) sets)))
+   (__lg_reduce intersection-two (intersection-two s1 s2) sets)))
 
 (defn- difference-two [s1 s2]
   (if (< (count s1) (count s2))
-    (reduce (fn [result item]
+    (__lg_reduce (fn [result item]
               (if (contains? s2 item)
                 (disj result item)
                 result))
             s1
             s1)
-    (reduce disj s1 s2)))
+    (__lg_reduce disj s1 s2)))
 
 (defn difference
   "Return the first set without elements of the remaining sets."
   ([s1] s1)
   ([s1 s2] (difference-two s1 s2))
   ([s1 s2 & sets]
-   (reduce difference-two (difference-two s1 s2) sets)))
+   (__lg_reduce difference-two (difference-two s1 s2) sets)))
 
 (defn subset?
   "Return whether set1 is a subset of set2."
@@ -79,7 +79,7 @@
 (defn select
   "Returns the elements of `xset` for which `pred` is truthy."
   [pred xset]
-  (reduce
+  (__lg_reduce
    (fn [result value]
      (if (pred value) result (disj result value)))
    xset

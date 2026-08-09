@@ -103,7 +103,7 @@
   (map-from-keyvals keyvals))
 
 (defn- set-from-coll [coll]
-  (reduce (fn [result value] (conj result value)) #{} coll))
+  (__lg_reduce (fn [result value] (conj result value)) #{} coll))
 
 (defn set
   {:inline (fn [coll] (list '__lg_set coll))}
@@ -573,7 +573,7 @@
     ([] (rf))
     ([result] (rf result))
     ([result input]
-     (runtime-reduced/continue (reduce rf result input)))))
+     (runtime-reduced/continue (__lg_reduce rf result input)))))
 
 (defn halt-when
   ([pred]
@@ -669,12 +669,23 @@
   (dorun (map proc coll)))
 
 (defn group-by [f coll]
-  (reduce
+  (__lg_reduce
     (fn [result input]
       (let [key (f input)]
         (assoc result key (conj (get result key []) input))))
     {}
     coll))
+
+(defn reduce
+  {:inline (fn
+             ([f coll]
+              (list '__lg_reduce f coll))
+             ([f init coll]
+              (list '__lg_reduce f init coll)))}
+  ([f coll]
+   (__lg_reduce f coll))
+  ([f init coll]
+   (__lg_reduce f init coll)))
 
 (defn reductions
   ([f coll]
@@ -684,7 +695,7 @@
 
 (defn reduce-kv
   {:inline (fn [f init coll]
-             (list 'IKVReduce/-kv-reduce coll f init))}
+             (list '__lg_reduce-kv f init coll))}
   [f init coll]
   (IKVReduce/-kv-reduce coll f init))
 
@@ -716,7 +727,7 @@
    (filter (fn [_] (< (rand) probability)) coll)))
 
 (defn filterv [pred coll]
-  (reduce
+  (__lg_reduce
     (fn [result input]
       (if (pred input)
         (conj result input)
@@ -1426,7 +1437,7 @@
   ([x y]
    (bit-and-two x y))
   ([x y & more]
-   (reduce bit-and-two (bit-and-two x y) more)))
+   (__lg_reduce bit-and-two (bit-and-two x y) more)))
 
 (defn- bit-or-two [x y]
   (runtime-int/bit-or x y))
@@ -1435,7 +1446,7 @@
   ([x y]
    (bit-or-two x y))
   ([x y & more]
-   (reduce bit-or-two (bit-or-two x y) more)))
+   (__lg_reduce bit-or-two (bit-or-two x y) more)))
 
 (defn- bit-xor-two [x y]
   (runtime-int/bit-xor x y))
@@ -1444,7 +1455,7 @@
   ([x y]
    (bit-xor-two x y))
   ([x y & more]
-   (reduce bit-xor-two (bit-xor-two x y) more)))
+   (__lg_reduce bit-xor-two (bit-xor-two x y) more)))
 
 (defn bit-shift-left [x n]
   (runtime-int/shift-left x n))
@@ -1905,7 +1916,7 @@
   ([x y]
    (bit-and-not-two x y))
   ([x y & more]
-   (reduce bit-and-not-two (bit-and-not-two x y) more)))
+   (__lg_reduce bit-and-not-two (bit-and-not-two x y) more)))
 
 (defn unsigned-bit-shift-right
   "Returns `x` shifted right by `n` bits without sign extension."
@@ -2020,7 +2031,7 @@
    (take (- (count coll) n) coll)))
 
 (defn reverse [coll]
-  (reduce (fn [result item] (conj result item)) (list) coll))
+  (__lg_reduce (fn [result item] (conj result item)) (list) coll))
 
 (defn interpose [separator coll]
   (drop 1 (interleave (repeat separator) coll)))
@@ -2211,7 +2222,7 @@
       (assoc m k v))))
 
 (defn- merge-two-with [f m1 m2]
-  (reduce (fn [m entry] (merge-entry-with f m entry))
+  (__lg_reduce (fn [m entry] (merge-entry-with f m entry))
           m1
           (seq m2)))
 
@@ -2222,7 +2233,7 @@
   ([_f]
    nil)
   ([f first-map & maps]
-   (reduce (fn [m1 m2] (merge-two-with f m1 m2))
+   (__lg_reduce (fn [m1 m2] (merge-two-with f m1 m2))
            (if-some [m first-map] m {})
            maps)))
 
@@ -2254,7 +2265,7 @@
    (let [_ k] x))
   ([k x y] (if (> (k x) (k y)) x y))
   ([k x y & more]
-   (reduce (fn [best item] (max-key k best item))
+   (__lg_reduce (fn [best item] (max-key k best item))
            (max-key k x y)
            more)))
 
@@ -2263,14 +2274,14 @@
    (let [_ k] x))
   ([k x y] (if (< (k x) (k y)) x y))
   ([k x y & more]
-   (reduce (fn [best item] (min-key k best item))
+   (__lg_reduce (fn [best item] (min-key k best item))
            (min-key k x y)
            more)))
 
 (defn frequencies
   "Returns a map from each distinct item in `coll` to its occurrence count."
   [coll]
-  (reduce
+  (__lg_reduce
    (fn [counts value]
      (assoc counts value (inc (get counts value 0))))
    {}

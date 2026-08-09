@@ -197,3 +197,11 @@
      (reduce-kv (fn [result _key value] (+ result value))
                 0
                 {:a 1 :b 2 :c 3})))
+(println (= 6 (reduce (fn [left right] (+ left right)) [1 2 3])))
+(println (= 16 (reduce (fn [result value] (+ result value)) 10 [1 2 3])))
+(println
+  (= 3
+     (reduce (fn [result value]
+               (if (= value 3) (reduced result) (+ result value)))
+             0
+             [1 2 3 4])))

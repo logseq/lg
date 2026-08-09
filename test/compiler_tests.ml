@@ -16392,7 +16392,7 @@ let test_reduce_infers_callback_from_initializer_and_collection () =
 (println (total-length ["Ada" "OCaml"]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "reduce callback inference must remain static";
   assert_ocaml_runs "reduce_infers_callback_from_initializer_and_collection"
@@ -25840,7 +25840,7 @@ let test_reduce_accepts_all_builtin_seqable_types () =
 (println (reduce (fn [acc x] (+ acc x)) 0 host-seq))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_accepts_all_builtin_seqable_types"
     "3\n3\n3\n3\nab\n9\n" ocaml_source
 
@@ -26126,7 +26126,7 @@ let test_reduce_infers_destructured_items_when_collection_is_generic () =
 (println (pair-total [[1 2] [3 4]]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "reduce_infers_destructured_items_when_collection_is_generic" "10\n"
     ocaml_source
@@ -29876,7 +29876,7 @@ let test_reduce_rejects_heterogeneous_vector_accumulator_slots () =
        (= {} (nth empty-result 1))))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_with_stdlib source
   |> expect_error_contains "heterogeneous vector"
 
 let test_conj_rejects_an_untyped_first_class_reference () =
@@ -33775,12 +33775,12 @@ let test_reduce_infers_seqable_record_fields () =
 (println (sum-values {:values [1 2 3]}))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "concrete record fields must remain static through reduce";
   assert_ocaml_runs "reduce_infers_seqable_record_fields" "6\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_thread_macros_accept_keyword_steps () =
   let source =
@@ -33946,10 +33946,10 @@ let test_reduce_kv_accepts_typed_record_maps () =
 (println (get copied :answer 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_kv_accepts_typed_record_maps" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_kv_preserves_captured_value_bindings () =
   let source =

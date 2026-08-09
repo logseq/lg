@@ -1325,9 +1325,9 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
-  | FList [ FSymbol "reduce"; _reducer; FMap []; _collection ] ->
+  | FList [ FSymbol "__lg_reduce"; _reducer; FMap []; _collection ] ->
       Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
-  | FList [ FSymbol "reduce"; _reducer; init; _collection ] ->
+  | FList [ FSymbol "__lg_reduce"; _reducer; init; _collection ] ->
       inferred_form_type params init
   | FList
       [
@@ -2845,7 +2845,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let inferred_initializer_type scope_params value =
           let inferred_ty =
             match value with
-            | FList [ FSymbol "reduce"; reducer; init; _collection ] ->
+            | FList [ FSymbol "__lg_reduce"; reducer; init; _collection ] ->
                 let accumulator_ty =
                   match init with
                   | FMap [] ->
@@ -4863,7 +4863,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       params name
                 | Some _ | None -> infer_form params fn)
             | _ -> infer_expected (TFn ([ element_ty ], TUnknown)) params fn)
-    | FList [ FSymbol "reduce"; reducer; init; collection ] -> (
+    | FList [ FSymbol "__lg_reduce"; reducer; init; collection ] -> (
         let declared_accumulator_ty, declared_element_ty =
           match reducer with
           | FSymbol name -> (
@@ -4931,7 +4931,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_expected
                   (TFn ([ accumulator_ty; element_ty ], TUnknown))
                   params reducer)))
-    | FList [ FSymbol "reduce"; reducer; collection ] ->
+    | FList [ FSymbol "__lg_reduce"; reducer; collection ] ->
         let declared_element_ty =
           match reducer with
           | FSymbol name -> (
@@ -5776,8 +5776,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                            (FSymbol apply_name :: function_form :: arguments))
                   | None -> Ok params)
               | FList [ FSymbol reduce_name; reducer; init; FSymbol collection ]
-                when reduce_name = "reduce"
-                     || String.ends_with ~suffix:"/reduce" reduce_name -> (
+                when reduce_name = "__lg_reduce" -> (
                   match string_assoc_opt collection aliases with
                   | Some value ->
                       infer_form params

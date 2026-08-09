@@ -1330,6 +1330,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     ]
                   in
                   compile_for "List.fold_left" TInt value_ty entries
+              | TRecord fields -> (
+                  match Types.homogeneous_record_value_type fields with
+                  | Some value_ty ->
+                      compile_for "Lg_runtime.Runtime_map.fold_left" TKeyword
+                        value_ty collection.semantic_expr
+                  | None ->
+                      Error.error
+                        "reduce-kv requires map values with one static type")
               | map_type -> (
                   match Types.dynamic_map_types map_type with
                   | Some (key_ty, value_ty) ->

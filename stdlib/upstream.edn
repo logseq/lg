@@ -327,8 +327,10 @@
                :reason :source-port-preserves-all-two-three-and-four-argument-lazy-arities-with-named-sequence-recursion-and-static-pad-storage}
     reductions {:status :static-adaptation
                 :reason :source-public-arities-delegate-the-overloaded-zero-or-binary-reducer-and-seqable-adaptation-boundary-to-a-private-typed-primitive}
+    reduce {:status :static-adaptation
+            :reason :source-public-arities-inline-to-a-private-typed-primitive-that-preserves-reduced-short-circuit-empty-identity-and-collection-specific-accumulator-specialization}
     reduce-kv {:status :static-adaptation
-               :reason :source-public-function-dispatches-through-ikvreduce-with-static-map-first-class-typing-and-call-site-inlining-for-vector-protocol-witnesses}
+               :reason :source-public-function-dispatches-first-class-maps-through-ikvreduce-and-inlines-direct-calls-to-a-private-typed-empty-accumulator-inference-primitive-with-vector-protocol-parity}
     take-nth {:status :static-adaptation
               :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
     partition-all {:status :static-adaptation
