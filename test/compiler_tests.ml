@@ -15433,6 +15433,56 @@ let test_delay_is_lazy_memoized_and_derefable () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_source_completing_matches_clojurescript_arities () =
+  let source =
+    {|
+(ns source-completing-app
+  (:require [cljs.core :as core :refer [completing]]))
+
+(defn sum
+  ([] 10)
+  ([left right] (+ left right)))
+(defn finish [value] (+ value 100))
+(defn join
+  ([] "")
+  ([^:string left ^:string right] (str left right)))
+
+(def build completing)
+(def completed-default (build sum))
+(def completed-custom (core/completing sum finish))
+(def completed-qualified (clojure.core/completing sum))
+(def completed-string (completing join))
+
+(println (= 10 (completed-default)))
+(println (= 7 (completed-default 7)))
+(println (= 5 (completed-default 2 3)))
+(println (= 105 (completed-custom 5)))
+(println (= 5 (completed-custom 2 3)))
+(println (= 9 (completed-qualified 4 5)))
+(println (= "" (completed-string)))
+(println (= "a" (completed-string "a")))
+(println (= "ab" (completed-string "a" "b")))
+|}
+  in
+  let expected = String.concat "" (List.init 9 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_completing.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source completing must remain static";
+  assert_ocaml_runs "source_completing" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_completing.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source completing must remain static";
+  compile_with_stdlib_result Lg.Target.Native "test/completing_zero.cljc"
+    "(def result (completing))"
+  |> expect_error_contains "called with unsupported arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/completing_three.cljc"
+    "(def result (completing + identity identity))"
+  |> expect_error_contains "called with unsupported arity 3"
+
 let test_multi_arity_defn_dispatches_variadic_fallback () =
   let source =
     {|
@@ -37893,6 +37943,8 @@ let tests =
       test_future_call_returns_a_realized_derefable_value );
     ( "delay is lazy memoized and derefable",
       test_delay_is_lazy_memoized_and_derefable );
+    ( "source completing matches ClojureScript arities",
+      test_source_completing_matches_clojurescript_arities );
     ( "multi-arity defn dispatches variadic fallback",
       test_multi_arity_defn_dispatches_variadic_fallback );
     ( "variadic defn destructures rest arguments",

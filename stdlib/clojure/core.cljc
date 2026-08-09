@@ -211,6 +211,18 @@
 (defn identity [x]
   x)
 
+(defn completing
+  ([f]
+   (fn
+     ([] (f))
+     ([x] x)
+     ([x y] (f x y))))
+  ([f cf]
+   (fn
+     ([] (f))
+     ([x] (cf x))
+     ([x y] (f x y)))))
+
 (defn complement [f]
   (fn [x]
     (not (f x))))

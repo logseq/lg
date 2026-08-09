@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 274 source entries (32.05%), 88 typed
+macro surfaces. The current baseline is 275 source entries (32.16%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
-44 out-of-scope Spec entries, and 253 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 252 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -258,6 +258,14 @@ domain; the first two retain their existing narrow runtime result boundary.
 Their generated ML now delegates matching and flag handling to named
 `Runtime_string.regex_*_groups` functions instead of emitting target-specific
 regex state machines at each call site.
+`completing` is a pure source higher-order function with no runtime primitive.
+Its sidecar signature retains the reducing callback's zero- and two-argument
+relations and the returned function's zero-, one-, and two-argument result
+types. The one-argument public clause emits the same identity completion
+directly instead of recursively invoking the two-argument clause, because LG's
+rigid overload parameters cannot re-instantiate `identity` across that internal
+cross-arity call. Observable callback order and results remain the pinned
+ClojureScript behavior.
 The broader public static predicate family is defined as ClojureScript-style
 source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element

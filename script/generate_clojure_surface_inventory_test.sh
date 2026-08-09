@@ -61,6 +61,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/array-seq" && $3 == "sour
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/into-array" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/inc" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/completing" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/dec" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/bit-not" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/bit-and" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"

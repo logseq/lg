@@ -55,6 +55,8 @@
     some->> {:status :static-adaptation
              :reason :source-macro-preserves-upstream-thread-last-order-and-nil-short-circuiting-with-a-finite-mapcat-binding-sequence}
     identity {:status :ported}
+    completing {:status :static-adaptation
+                :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}
     constantly {:status :static-adaptation
