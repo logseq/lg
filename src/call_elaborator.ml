@@ -8011,7 +8011,7 @@ let create ~compile_expr =
               | "__lg_number-predicate" | "__lg_string-predicate"
               | "__lg_keyword-predicate" | "__lg_vector-predicate"
               | "__lg_list-predicate" | "__lg_seq-predicate"
-              | "__lg_set-predicate" | "__lg_map-predicate"
+              | "__lg_set-predicate"
               | "__lg_fn-predicate" | "__lg_coll-predicate"
               | "__lg_associative-predicate" | "indexed?" ->
                   compile_boolean_call scope env name arg_forms

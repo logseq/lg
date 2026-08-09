@@ -377,7 +377,7 @@ let rec infer_map_type pattern lookup_local_ty =
                      TNullable ty
                  | None, ty -> ty
                in
-               make_field keyword ty)
+               make_map_field keyword ty)
       in
       let fields =
         match parsed.as_name with

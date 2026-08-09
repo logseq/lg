@@ -112,10 +112,19 @@ let create ~compile_expr =
       | Ok _ -> Error.error "compare expects 2 arguments"
     and compile_hash_set scope env arg_forms =
       match arg_forms with
-      | [] ->
-          Ok
-            (typed_ir (TSet TUnknown)
-               (Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty"))
+      | [] -> (
+          match Compiler_environment.expected_type env with
+          | Some (TSet element_ty as set_ty)
+            when not (Type_solver.is_open element_ty) ->
+              Result.map
+                (fun set_module ->
+                  typed_ir set_ty
+                    (Semantic_ir.Ident (set_module ^ ".empty")))
+                (set_module_name env element_ty)
+          | Some _ | None ->
+              Ok
+                (typed_ir (TSet TUnknown)
+                   (Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty")))
       | _ :: _ -> (
           match compile_args_for scope env arg_forms with
           | Error _ as err -> err

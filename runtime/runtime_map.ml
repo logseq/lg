@@ -341,6 +341,11 @@ let get_option_by operations map key =
 let get_option map key = get_option_by generic_operations map key
 let get_option_dynamic map key = get_option_by dynamic_operations map key
 
+let get_exn map key =
+  match get_option map key with
+  | Some value -> value
+  | None -> invalid_arg "Runtime_map.get_exn: key not found"
+
 let get_default map key default =
   Option.value (get_option map key) ~default
 
@@ -528,6 +533,9 @@ let equiv_by operations value_equal left right =
             | Some (_, right_value) -> value_equal value right_value
             | None -> false)
           true left)
+
+let equiv left right =
+  equiv_by generic_operations Runtime_static_value.equal left right
 
 let to_list map =
   fold_left (fun entries entry -> entry :: entries) [] map |> List.rev

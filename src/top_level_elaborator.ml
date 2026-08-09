@@ -40,7 +40,8 @@ let allocate_function_return_record env next_type
     (parts : Expression_support.compiled_fn_parts) =
   match parts.body.ty with
   | TRecord fields
-    when List.exists
+    when (not (Types.is_homogeneous_record fields))
+         && List.exists
               (fun (field : field) -> not (Types.is_dynamic field.ty))
               fields ->
       let nested =
@@ -106,6 +107,12 @@ let allocate_function_local_records env next_type
   let current_next_type = ref next_type in
   let items = ref [] in
   let rec materialize_type = function
+    | TRecord fields when Types.is_homogeneous_record fields ->
+        TRecord
+          (List.map
+             (fun (field : field) ->
+               { field with ty = materialize_type field.ty })
+             fields)
     | TRecord fields ->
         let fields =
           List.map
@@ -250,7 +257,7 @@ let allocate_function_local_records env next_type
       (fun (key, (binding : binding)) ->
         let ty =
           match binding.ty with
-          | TRecord fields ->
+          | TRecord fields when not (Types.is_homogeneous_record fields) ->
               TRecord
                 (List.map
                    (fun (field : field) ->
@@ -2398,7 +2405,7 @@ let rec compile scope env next_type form =
           | Error _ as err -> err
           | Ok () -> (
               match expr.ty with
-          | TRecord fields ->
+          | TRecord fields when not (Types.is_homogeneous_record fields) ->
                   let nested =
                     allocate_nested_anonymous_records ~owner:"" env next_type
                       fields

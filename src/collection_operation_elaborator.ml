@@ -804,6 +804,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         else if Types.is_dynamic actual.ty && not (Types.is_dynamic expected)
         then dynamic_unpack env expected actual.semantic_expr
         else if
+          match (expected, actual.ty) with TSet _, TSet _ -> true | _ -> false
+        then
+          let expected_element, actual_element =
+            match (expected, actual.ty) with
+            | TSet expected_element, TSet actual_element ->
+                (expected_element, actual_element)
+            | _ -> assert false
+          in
+          Result.bind (Types.set_module_name expected_element)
+            (fun expected_module ->
+              Result.map
+                (fun actual_module ->
+                  if String.equal expected_module actual_module then
+                    actual.semantic_expr
+                  else
+                    apply (expected_module ^ ".of_list")
+                      [
+                        apply (actual_module ^ ".elements")
+                          [ actual.semantic_expr ];
+                      ])
+                (Types.set_module_name actual_element))
+        else if
           Types.assignable ~policy:Host_boundary ~expected ~actual:actual.ty
           || Types.defer_to_ocaml ~expected ~actual:actual.ty
         then
@@ -832,6 +854,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        ] )))
               (pack_dynamic_value env dynamic default))
       in
+      let result_value_type value_ty default =
+        match (value_ty, Env.expected_type env) with
+        | TSet _, Some (TSet _ as expected)
+          when Type_solver.is_open value_ty
+               && not (Type_solver.is_open expected) ->
+            expected
+        | _ when unresolved value_ty -> (
+            match default with
+            | Some (default, _) when not (unresolved default.ty) -> default.ty
+            | None | Some _ -> Types.dynamic_constraint TUnknown)
+        | _ -> value_ty
+      in
       let compile_transient_get target key default =
         match target.ty with
         | TOcaml_app
@@ -847,14 +881,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   "Lg_runtime.Runtime_transient." ^ name
                   ^ if Types.is_dynamic key_ty then "_dynamic" else ""
                 in
-                let result_value_ty =
-                  if unresolved value_ty then
-                    match default with
-                    | Some (default, _) when not (unresolved default.ty) ->
-                        default.ty
-                    | None | Some _ -> Types.dynamic_constraint TUnknown
-                  else value_ty
-                in
+                let result_value_ty = result_value_type value_ty default in
                 match default with
                 | None when Types.is_dynamic result_value_ty ->
                     Ok
@@ -907,14 +934,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             in
             Result.bind (adapt_transient_value key_ty key) (fun key ->
                 let operation name = runtime_map_operation key_ty name in
-                let result_value_ty =
-                  if unresolved value_ty then
-                    match default with
-                    | Some (default, _) when not (unresolved default.ty) ->
-                        default.ty
-                    | None | Some _ -> Types.dynamic_constraint TUnknown
-                  else value_ty
-                in
+                let result_value_ty = result_value_type value_ty default in
                 match default with
                 | None when Types.is_dynamic result_value_ty ->
                     Ok
@@ -1411,6 +1431,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   with
                   | Some result -> Ok result
                   | None -> Error.error "get key must be a keyword"))
+              | TRecord fields, _
+                when Types.is_homogeneous_record fields ->
+                  let value_ty =
+                    Types.homogeneous_record_value_type fields |> Option.get
+                  in
+                  compile_runtime_map_get
+                    { target with ty = Types.dynamic_map TKeyword value_ty }
+                    index None
               | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]), _ ->
                   compile_runtime_map_get target index None
               | _ -> (
@@ -1629,6 +1657,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   with
                   | Some result -> Ok result
                   | None -> Error.error "get key must be a keyword")
+              | TRecord fields, _
+                when Types.is_homogeneous_record fields ->
+                  let value_ty =
+                    Types.homogeneous_record_value_type fields |> Option.get
+                  in
+                  compile_runtime_map_get
+                    { target with ty = Types.dynamic_map TKeyword value_ty }
+                    index (Some (default, default_form = FSymbol "nil"))
               | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]), _ ->
                   compile_runtime_map_get target index
                     (Some (default, default_form = FSymbol "nil"))
@@ -2493,11 +2529,54 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   coerce_expression_to_type resolved_key_ty key.ty
                     key.semantic_expr
                 in
+                let first_parameter_ty = List.hd parameter_tys in
+                let lookup =
+                  apply "Lg_runtime.Runtime_map.get_option"
+                    [ target.semantic_expr; key_expression ]
+                in
                 let old_value =
-                  typed_ir
-                    (TOcaml_app ("option", [ value_ty ]))
-                    (apply "Lg_runtime.Runtime_map.get_option"
-                       [ target.semantic_expr; key_expression ])
+                  match first_parameter_ty with
+                  | TNullable constrained
+                  | TOcaml_app ("option", [ constrained ]) ->
+                      let expression =
+                        match Types.nil_predicate_constraint_info constrained with
+                        | None -> lookup
+                        | Some witness_value_ty ->
+                            let found = "__lg_update_present_value" in
+                            let witness_argument =
+                              "__lg_update_nil_predicate_value"
+                            in
+                            let witness_value =
+                              Semantic_ir.Ident witness_argument
+                            in
+                            let witness =
+                              Semantic_ir.Fun
+                                ( [ Semantic_ir.PVar witness_argument ],
+                                  Expression_support.nil_predicate_expression
+                                    witness_value_ty witness_value )
+                            in
+                            Semantic_ir.Match
+                              ( lookup,
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Constructor ("None", None) );
+                                  ( Semantic_ir.PConstructor
+                                      ("Some", Some (Semantic_ir.PVar found)),
+                                    Semantic_ir.Constructor
+                                      ( "Some",
+                                        Some
+                                          (Semantic_ir.Tuple
+                                             [
+                                               witness;
+                                               Semantic_ir.Ident found;
+                                             ]) ) );
+                                ] )
+                      in
+                      typed_ir first_parameter_ty expression
+                  | _ ->
+                      typed_ir value_ty
+                        (apply "Lg_runtime.Runtime_map.get_exn"
+                           [ target.semantic_expr; key_expression ])
                 in
                 Result.bind
                   (prepare_updater_arguments [] parameter_tys
@@ -2570,6 +2649,38 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       | None -> assert false))
           | _ -> Error.error "update expects a function")
     in
+    let compile_missing_homogeneous_field target fields keyword fn extra_args =
+      match fn.ty with
+      | TFn (parameter_tys, return_ty)
+        when List.length parameter_tys = List.length extra_args + 1 ->
+          let parameter_tys, return_ty =
+            instantiate_updater parameter_tys return_ty extra_args
+          in
+          let first_parameter_ty = List.hd parameter_tys in
+          let accepts_missing =
+            match first_parameter_ty with
+            | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+            | _ -> false
+          in
+          if not accepts_missing then
+            Error.error "update of a missing key requires a nullable updater"
+          else
+            let old_value =
+              typed_ir first_parameter_ty
+                (Semantic_ir.Constructor ("None", None))
+            in
+            Result.bind
+              (prepare_updater_arguments [] parameter_tys
+                 (old_value :: extra_args))
+              (fun arguments ->
+                let result =
+                  typed_ir return_ty
+                    (Semantic_ir.Apply (fn.semantic_expr, arguments))
+                in
+                Structural_map.assoc target fields keyword result)
+      | TFn _ -> Error.error "update function argument count mismatch"
+      | _ -> Error.error "update expects a function"
+    in
       match arg_forms with
       | target_form :: FKeyword keyword :: fn_form :: extra_forms -> (
           let with_context context = function
@@ -2623,6 +2734,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               match target.ty with
               | TRecord fields | TNamed_record { fields; _ } -> (
                   match find_field keyword fields with
+                  | None
+                    when (match target.ty with
+                         | TRecord fields ->
+                             Types.is_homogeneous_record fields
+                         | _ -> false) ->
+                      compile_missing_homogeneous_field target fields keyword fn
+                        extra_args
                   | None ->
                       compile_extension target fields keyword fn extra_args
                   | Some field -> (

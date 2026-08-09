@@ -224,9 +224,9 @@ scope of the standard-library migration. The same scan finds 677 `some?` and
 macros for automatic
 core refer, `cljs.core` alias/refer, and qualified `clojure.core` calls while
 preserving single evaluation and nullable flow narrowing. The source
-`seqable?` also restores the upstream `nil`, structural-map, and static-array
-cases; `counted?` uses the existing static `ICounted` registry and recognizes
-structural maps until all maps use the persistent hash-map protocol receiver.
+`seqable?` also restores the upstream `nil`, map, and static-array cases;
+`counted?` uses the existing static `ICounted` registry and recognizes the
+persistent hash-map protocol receiver.
 The same scan finds 115 `not-empty` occurrences. Its source macro preserves the
 upstream `seq` guard while specializing the nullable result to the concrete
 input collection type, including metadata-bearing persistent maps, so this is
@@ -281,11 +281,13 @@ The broader public static predicate family is defined as ClojureScript-style
 source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element
 types where applicable, so compatible higher-order uses remain ordinary vars.
-Direct calls expand to non-public `__lg_*-predicate` primitives for call-site
-type tests and guard narrowing. This removes 22 Clojure public names from
-compiler dispatch without generating dynamic function adapters. Predicate
-arguments are evaluated exactly once even when the result is statically known,
-and persistent Hashmaps participate in `map?`, `coll?`, and `associative?`.
+Most direct calls expand to non-public `__lg_*-predicate` primitives for
+call-site type tests and guard narrowing. `map?` is the first collection
+predicate moved fully to the ClojureScript protocol model: its source function
+and inline specialization use `satisfies? IMap`, and no map-specific
+name-based compiler dispatch remains. Predicate arguments are evaluated exactly
+once even when the result is statically known, and persistent Hashmaps and
+`defrecord` values participate in `map?` through `IMap`.
 The Logseq scan finds 166 direct `coll?` occurrences and 47 direct `sorted?`
 occurrences.
 `zero?`, `pos?`, and `neg?` now pair source functions for static first-class

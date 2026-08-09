@@ -183,7 +183,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
         | None ->
             fields
             |> List.map (fun (field : field) ->
-                   field_part field (Semantic_ir.Field (expr.semantic_expr, field.ocaml_name)))
+                   field_part field (Structural_map.field_expr expr field))
       in
       wrap_expr "{"
         (apply "String.concat" [ Semantic_ir.String ", "; Semantic_ir.List parts ])

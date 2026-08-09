@@ -438,7 +438,8 @@ and pattern_constraint_type = function
   | TVector ty -> TVector (pattern_constraint_type ty)
   | TSet ty -> TSet (pattern_constraint_type ty)
   | TSeq ty -> TSeq (pattern_constraint_type ty)
-  | TRecord _ -> TOcaml "_"
+  | TRecord fields as ty ->
+      if Types.is_homogeneous_record fields then ty else TOcaml "_"
   | TFn (parameters, return_type) ->
       TFn
         ( List.map pattern_constraint_type parameters,

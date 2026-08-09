@@ -632,6 +632,83 @@ let test_hash_map_constructs_structural_maps () =
   assert_ocaml_runs "hash_map_constructs_structural_maps" "Ada:36\n"
     ocaml_source
 
+let test_homogeneous_map_literals_default_to_hash_maps () =
+  let source =
+    {|
+(def literal {:a 1 :b 2})
+(def constructed (hash-map :b 2 :a 1))
+(println
+  (str (= 2 (count literal)) ":"
+       (= 1 (get literal :a)) ":"
+       (= literal constructed) ":"
+       (satisfies? ILookup literal) ":"
+       (satisfies? IAssociative literal) ":"
+       (satisfies? IMap literal) ":"
+       (satisfies? IKVReduce literal)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    not
+      (string_contains_substring native_source "M.of_list")
+  then
+    failwith
+      ("homogeneous map literals must lower to Runtime_map HAMTs:\n"
+      ^ native_source);
+  if string_contains_substring native_source "type nonrec" then
+    failwith "homogeneous map literals must not create structural record types";
+  assert_ocaml_runs "homogeneous_map_literals_default_to_hash_maps"
+    "true:true:true:true:true:true:true\n" native_source;
+  let melange_source =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring melange_source "M.of_list")
+  then failwith "Melange homogeneous map literals must lower to Runtime_map HAMTs"
+
+let test_homogeneous_hash_maps_flow_through_functions_and_destructuring () =
+  let source =
+    {|
+(defn value-at [m]
+  (get m :a 0))
+(defn keyword-value-at [m]
+  (:a m 0))
+(defn total [{:keys [a b] :or {a 0 b 0}}]
+  (+ a b))
+(def literal {:a 1 :b 2})
+(println
+  (str (value-at literal) ":"
+       (keyword-value-at literal) ":"
+       (total literal)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "homogeneous_hash_maps_flow_through_functions" "1:1:3\n"
+    native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_hash_map_update_preserves_present_and_missing_value_semantics () =
+  let source =
+    {|
+(def nested (update {:inner {:count 40}} :inner update :count + 2))
+(defn replace-missing [old replacement]
+  (if (nil? old) replacement old))
+(def without-a (dissoc {:a 1} :a))
+(def added (update without-a :a replace-missing 42))
+(println
+  (str (get (get nested :inner {:count 0}) :count 0)
+       ":"
+       (:a added 0)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "hash_map_update_present_and_missing" "42:42\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_hash_map_rejects_duplicate_fields () =
   Lg.Compiler.compile_string {|(def x (hash-map :name "Ada" :name "Grace"))|}
   |> expect_error "duplicate field :name"
@@ -789,7 +866,7 @@ let test_dissoc_accepts_nullable_keys () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_anonymous_maps_reuse_equal_shapes () =
+let test_homogeneous_maps_do_not_emit_anonymous_record_types () =
   let source =
     {|
 (def x {:a 1 :b 2})
@@ -799,11 +876,11 @@ let test_anonymous_maps_reuse_equal_shapes () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if count_generated_anonymous_record_types ocaml_source <> 1 then
-    failwith "equal anonymous map shapes must emit one OCaml record type";
+  if count_generated_anonymous_record_types ocaml_source <> 0 then
+    failwith "homogeneous maps must not emit anonymous OCaml record types";
   assert_ocaml_runs "anonymous_maps_reuse_equal_shapes" "3\n" ocaml_source
 
-let test_anonymous_map_shape_ignores_field_order () =
+let test_homogeneous_map_shape_ignores_field_order () =
   let source =
     {|
 (def left {:a 1 :b 2})
@@ -812,11 +889,11 @@ let test_anonymous_map_shape_ignores_field_order () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if count_generated_anonymous_record_types ocaml_source <> 1 then
-    failwith "anonymous map field order must not create a new type";
+  if count_generated_anonymous_record_types ocaml_source <> 0 then
+    failwith "homogeneous map field order must not emit record types";
   assert_ocaml_runs "anonymous_map_shape_ignores_field_order" "2\n" ocaml_source
 
-let test_anonymous_map_operations_reuse_result_shapes () =
+let test_homogeneous_map_operations_stay_on_hamt_storage () =
   let source =
     {|
 (def base {:a 1})
@@ -828,8 +905,17 @@ let test_anonymous_map_operations_reuse_result_shapes () =
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if count_generated_anonymous_record_types ocaml_source <> 2 then
-    failwith "map operations must reuse existing result shapes";
+  if count_generated_anonymous_record_types ocaml_source <> 0 then
+    failwith "homogeneous map operations must stay on HAMT storage";
+  if count_substring ocaml_source "M.of_list" <> 2 then
+    failwith
+      ("assoc, merge, and dissoc must not rebuild HAMTs with M.of_list:\n"
+      ^ ocaml_source);
+  List.iter
+    (fun operation ->
+      if not (string_contains_substring ocaml_source operation) then
+        failwith ("missing HAMT operation " ^ operation))
+    [ "M.assoc"; "M.merge"; "M.dissoc" ];
   assert_ocaml_runs "anonymous_map_operations_reuse_result_shapes" "3:2\n"
     ocaml_source
 
@@ -21594,6 +21680,79 @@ let test_source_predicates_are_statically_first_class () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange first-class source predicates must remain static"
 
+let test_map_predicate_uses_the_clojurescript_imap_protocol () =
+  let source =
+    {|
+(ns source-imap-predicate-app
+  (:require [cljs.core :refer [map?]]))
+
+(deftype ProtocolMap [^int id ^string label]
+  IMap
+  (-dissoc [this _key] this))
+
+(println (map? (ProtocolMap. 1 "map")))
+(println (not (map? [1])))
+(println (map? {:answer 42}))
+|}
+  in
+  let expected = "true\ntrue\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_imap_predicate.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "map? must dispatch through a static IMap protocol witness";
+  assert_ocaml_runs "map_predicate_uses_the_clojurescript_imap_protocol"
+    expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_imap_predicate.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange map? must use a static IMap protocol witness"
+
+let test_defrecord_automatically_satisfies_the_clojurescript_imap_protocol () =
+  let source =
+    {|
+(defrecord Point [^int x ^int y])
+
+(println (map? (->Point 1 2)))
+(println (satisfies? IMap (->Point 3 4)))
+|}
+  in
+  let expected = "true\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/defrecord_imap_predicate.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "defrecord IMap evidence must remain static";
+  assert_ocaml_runs "defrecord_automatically_satisfies_imap" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/defrecord_imap_predicate.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange defrecord IMap evidence must remain static"
+
+let test_map_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_map-predicate" in
+  let paths =
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+  in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith ("map? still has name-based compiler dispatch in " ^ path))
+    paths
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -37296,6 +37455,12 @@ let tests =
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
     ( "hash-map constructs structural maps",
       test_hash_map_constructs_structural_maps );
+    ( "homogeneous map literals default to hash maps",
+      test_homogeneous_map_literals_default_to_hash_maps );
+    ( "homogeneous hash maps flow through functions and destructuring",
+      test_homogeneous_hash_maps_flow_through_functions_and_destructuring );
+    ( "hash map update preserves present and missing value semantics",
+      test_hash_map_update_preserves_present_and_missing_value_semantics );
     ( "hash-map empty preserves metadata",
       test_hash_map_empty_preserves_metadata );
     ("hash-map hash is unordered", test_hash_map_hash_is_unordered);
@@ -37309,11 +37474,12 @@ let tests =
     ( "hash-map rejects odd key value forms",
       test_hash_map_rejects_odd_key_value_forms );
     ("map literals accept computed keys", test_map_literals_accept_computed_keys);
-    ("anonymous maps reuse equal shapes", test_anonymous_maps_reuse_equal_shapes);
-    ( "anonymous map shape ignores field order",
-      test_anonymous_map_shape_ignores_field_order );
-    ( "anonymous map operations reuse result shapes",
-      test_anonymous_map_operations_reuse_result_shapes );
+    ( "homogeneous maps do not emit anonymous record types",
+      test_homogeneous_maps_do_not_emit_anonymous_record_types );
+    ( "homogeneous map shape ignores field order",
+      test_homogeneous_map_shape_ignores_field_order );
+    ( "homogeneous map operations stay on HAMT storage",
+      test_homogeneous_map_operations_stay_on_hamt_storage );
     ( "module local anonymous maps reuse equal shapes",
       test_module_local_anonymous_maps_reuse_equal_shapes );
     ( "function local nested maps emit record types",
@@ -38911,6 +39077,12 @@ let tests =
       test_source_static_predicate_family_matches_clojurescript );
     ( "source predicates are statically first-class",
       test_source_predicates_are_statically_first_class );
+    ( "map predicate uses the ClojureScript IMap protocol",
+      test_map_predicate_uses_the_clojurescript_imap_protocol );
+    ( "defrecord automatically satisfies the ClojureScript IMap protocol",
+      test_defrecord_automatically_satisfies_the_clojurescript_imap_protocol );
+    ( "map predicate has no name-based compiler dispatch",
+      test_map_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

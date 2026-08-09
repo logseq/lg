@@ -42,11 +42,19 @@ lg type checks programs before emitting OCaml.
 
 Vectors are homogeneous.
 
-Maps are structural records when created from map literals.
+Homogeneous keyword-keyed map literals use the ClojureScript-shaped persistent
+HAMT. The compiler retains their known keyword row for static field inference,
+but generated OCaml constructs `Runtime_map` values rather than anonymous
+records. Explicit `type-record`, `defrecord`, and heterogeneous fixed-field
+records remain OCaml records.
 
-`hash-map` creates structural records from keyword/value pairs.
+`hash-map` uses the same HAMT representation for homogeneous keyword/value
+pairs.
 
-`assoc` can add one or more fields to a structural map, but it cannot change the type of an existing field.
+`assoc` can add one or more keys to a statically known HAMT shape, but it cannot
+change the homogeneous value type. `assoc`, `merge`, and `dissoc` call the HAMT
+operations directly, so updates copy only the affected trie paths rather than
+rebuilding the complete map from a list.
 
 Updating an existing field of a declared record preserves its nominal
 `Type_id`, including protocol receiver identity. Adding a field produces a new
@@ -54,15 +62,17 @@ structural map because ordinary OCaml records have a closed field set.
 
 `assoc` can update one or more persistent vector indexes when the replacement values match the element type.
 
-`dissoc` can remove one or more known fields from a structural map.
+`dissoc` can remove one or more known keys from a statically shaped map.
 
-`get` on a structural map requires a literal keyword that exists in the map type.
+`get` accepts a computed keyword for homogeneous HAMTs. Known literal keywords
+also retain their precise compile-time field result.
 
 Three-argument `get` can return a default for an absent literal key; when the key is present, the default must match the field type.
 
 `update` can pass extra arguments after the update function, but the function must return the existing field or vector element type.
 
-Keyword call syntax such as `(:name user)` is supported for structural maps.
+Keyword call syntax such as `(:name user)` is supported for persistent maps and
+records.
 
 `if` branches must have the same type for lg-owned core types. When branch
 results are OCaml-owned types such as aliases, option/result applications, or

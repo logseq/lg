@@ -199,7 +199,11 @@ let rec core_type ?(type_variables = []) = function
         args (core_type ~type_variables ret)
   | Types.TOverloaded_fn arities ->
       core_type ~type_variables (Types.overloaded_storage_type arities)
-  | Types.TRecord _ -> type_constructor "record" []
+  | Types.TRecord fields -> (
+      match Types.homogeneous_record_value_type fields with
+      | Some value_ty ->
+          core_type ~type_variables (Types.dynamic_map Types.TKeyword value_ty)
+      | None -> type_constructor "record" [])
   | Types.TNamed_record record ->
       Ast_helper.Typ.constr ~loc
         (lid (longident_of_string record.type_name))

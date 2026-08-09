@@ -70,6 +70,10 @@ let field_expr target field =
       | None -> Semantic_ir.Field (target.semantic_expr, field.ocaml_name))
   | None -> (
       match target.ty with
+      | TRecord fields when Types.is_homogeneous_record fields ->
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_exn",
+              [ target.semantic_expr; Semantic_ir.String field.keyword ] )
       | TNamed_record record ->
           Semantic_ir.Field
             ( Semantic_ir.Constraint
@@ -84,15 +88,29 @@ let record_expr fields values =
   {
     ty = TRecord fields;
     semantic_expr =
-      (match values with
-      | [] -> Semantic_ir.Unit
-      | _ ->
-          Semantic_ir.annotate (TRecord fields)
-            (Semantic_ir.Record
-               ( List.map
-                   (fun ((field : field), value) -> (field.ocaml_name, value))
-                   values,
-                 None )));
+      (if Types.is_homogeneous_record fields then
+         Semantic_ir.annotate (TRecord fields)
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.of_list",
+                [
+                  Semantic_ir.List
+                    (List.map
+                       (fun ((field : field), value) ->
+                         Semantic_ir.Tuple
+                           [ Semantic_ir.String field.keyword; value ])
+                       values);
+                ] ))
+       else
+         match values with
+         | [] -> Semantic_ir.Unit
+         | _ ->
+             Semantic_ir.annotate (TRecord fields)
+               (Semantic_ir.Record
+                  ( List.map
+                      (fun ((field : field), value) ->
+                        (field.ocaml_name, value))
+                      values,
+                    None )));
     record_values = Some values;
     return_param_index = None;
   }
@@ -114,15 +132,21 @@ let as_named_record record target =
   named_record_expr record (values_for target record.fields)
 
 let replace_field target fields keyword expression =
-  let values =
-    fields
-    |> List.map (fun (field : field) ->
-           if field.keyword = keyword then (field, expression)
-           else (field, field_expr target field))
+  let replacement_values () =
+    List.map
+      (fun (field : field) ->
+        if field.keyword = keyword then (field, expression)
+        else (field, field_expr target field))
+      fields
   in
   match target.ty with
-  | TNamed_record record -> named_record_expr record values
-  | _ -> record_expr fields values
+  | TRecord target_fields when Types.is_homogeneous_record target_fields ->
+      typed_ir (TRecord fields)
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+             [ target.semantic_expr; Semantic_ir.String keyword; expression ] ))
+  | TNamed_record record -> named_record_expr record (replacement_values ())
+  | _ -> record_expr fields (replacement_values ())
 
 let extension_get target fields keyword =
   match Types.find_record_extension_field fields with
@@ -207,12 +231,30 @@ let assoc target fields keyword value =
   | Some _ ->
       Ok (replace_field target fields keyword value.semantic_expr)
   | None ->
-      let new_field = make_field keyword value.ty in
+      let runtime_map =
+        fields <> []
+        && List.for_all (fun (field : field) -> field.runtime_map) fields
+      in
+      let new_field = make_field ~runtime_map keyword value.ty in
       let old_fields = fields in
       let fields = old_fields @ [ new_field ] in
-      let values = values_for target old_fields in
-      let values = values @ [ (new_field, value.semantic_expr) ] in
-      Ok (record_expr fields values)
+      if
+        Types.is_homogeneous_record old_fields
+        && Types.is_homogeneous_record fields
+      then
+        Ok
+          (typed_ir (TRecord fields)
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_map.assoc",
+                  [
+                    target.semantic_expr;
+                    Semantic_ir.String keyword;
+                    value.semantic_expr;
+                  ] )))
+      else
+        let values = values_for target old_fields in
+        let values = values @ [ (new_field, value.semantic_expr) ] in
+        Ok (record_expr fields values)
 
 let rec assoc_many target pairs =
   match (target.ty, pairs) with
@@ -226,10 +268,27 @@ let rec assoc_many target pairs =
 let dissoc target fields keyword =
   match find_field keyword fields with
   | None -> Error.error ("cannot dissoc unknown field " ^ keyword)
+  | Some removed
+    when removed.runtime_map && List.length fields = 1 ->
+      Ok
+        (typed_ir (Types.dynamic_map TKeyword removed.ty)
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.dissoc",
+                [ target.semantic_expr; Semantic_ir.String keyword ] )))
   | Some _ ->
-      let fields = List.filter (fun (field : field) -> field.keyword <> keyword) fields in
-      let values = values_for target fields in
-      Ok (record_expr fields values)
+      let target_is_runtime_map = Types.is_homogeneous_record fields in
+      let fields =
+        List.filter (fun (field : field) -> field.keyword <> keyword) fields
+      in
+      if target_is_runtime_map && Types.is_homogeneous_record fields then
+        Ok
+          (typed_ir (TRecord fields)
+             (Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_map.dissoc",
+                  [ target.semantic_expr; Semantic_ir.String keyword ] )))
+      else
+        let values = values_for target fields in
+        Ok (record_expr fields values)
 
 let rec dissoc_many target keywords =
   match (target.ty, keywords) with
@@ -291,7 +350,26 @@ let merge maps =
           match result with
           | Error _ as err -> err
           | Ok (fields, values) ->
-              Ok (record_expr fields values))
+              let runtime_maps =
+                Types.is_homogeneous_record fields
+                && List.for_all
+                     (fun map ->
+                       match map.ty with
+                       | TRecord map_fields ->
+                           Types.is_homogeneous_record map_fields
+                       | _ -> false)
+                     maps
+              in
+              if runtime_maps then
+                Ok
+                  (typed_ir (TRecord fields)
+                     (List.fold_left
+                        (fun merged right ->
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Lg_runtime.Runtime_map.merge",
+                              [ merged; right.semantic_expr ] ))
+                        first.semantic_expr rest))
+              else Ok (record_expr fields values))
       | _ -> Error.error "merge expects maps")
 
 let update_value target fields keyword value_ty value_expr =

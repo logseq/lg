@@ -34,6 +34,8 @@ let of_type = function
   | TArray _ -> Some Array_receiver
   | TRef _ -> Some Ref_receiver
   | TTuple _ -> Some Tuple_receiver
+  | TRecord fields when Types.is_homogeneous_record fields ->
+      Some (Host_receiver "Lg_runtime.Runtime_map.t")
   | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
   | TNamed_record record -> Some (Record_receiver record.type_id)
   | TNil | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TFn _

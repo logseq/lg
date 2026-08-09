@@ -396,9 +396,29 @@ let rec equal left right =
       && List.for_all2 equal_fn_arity left right
   | TRecord left, TRecord right ->
       List.length left = List.length right
-      && List.for_all2
-           (fun l r -> l.keyword = r.keyword && equal l.ty r.ty)
-           left right
+      &&
+      if
+        List.for_all (fun (field : field) -> field.runtime_map) left
+        && List.for_all (fun (field : field) -> field.runtime_map) right
+      then
+        List.for_all
+          (fun left_field ->
+            match
+              List.find_opt
+                (fun right_field ->
+                  left_field.keyword = right_field.keyword)
+                right
+            with
+            | Some right_field -> equal left_field.ty right_field.ty
+            | None -> false)
+          left
+      else
+        List.for_all2
+          (fun l r ->
+            l.keyword = r.keyword
+            && l.runtime_map = r.runtime_map
+            && equal l.ty r.ty)
+          left right
   | TNamed_record left, TNamed_record right ->
       Type_id.equal left.type_id right.type_id
   | _ -> false
@@ -408,6 +428,38 @@ and equal_fn_arity left right =
   && List.for_all2 equal left.fixed_params right.fixed_params
   && Option.equal equal left.rest_param right.rest_param
   && equal left.return_ty right.return_ty
+
+let homogeneous_record_value_type fields =
+  let concrete_storage_type = function
+    | TNullable _ -> None
+    | ty when Option.is_some (capability_constraint_value ty) -> None
+    | ty when Option.is_some (seqable_constraint_info ty) -> None
+    | ty -> Some ty
+  in
+  if
+    fields = []
+    || not (List.for_all (fun (field : field) -> field.runtime_map) fields)
+    || List.exists
+         (fun (field : field) -> field.keyword = record_extension_keyword)
+         fields
+  then None
+  else
+    match fields with
+    | [] -> None
+    | (first : field) :: rest ->
+        Option.bind (concrete_storage_type first.ty) (fun first_ty ->
+            if
+              List.for_all
+                (fun (field : field) ->
+                  match concrete_storage_type field.ty with
+                  | Some field_ty -> equal first_ty field_ty
+                  | None -> false)
+                rest
+            then Some first_ty
+            else None)
+
+let is_homogeneous_record fields =
+  Option.is_some (homogeneous_record_value_type fields)
 
 let is_numeric = function TInt | TFloat -> true | _ -> false
 
@@ -761,7 +813,10 @@ let rec ocaml_name = function
       (args |> List.map argument_name |> String.concat " -> ")
       ^ " -> " ^ ocaml_name ret
   | TOverloaded_fn arities -> ocaml_name (overloaded_storage_type arities)
-  | TRecord _ -> "record"
+  | TRecord fields -> (
+      match homogeneous_record_value_type fields with
+      | Some value_ty -> ocaml_name (dynamic_map TKeyword value_ty)
+      | None -> "record")
   | TNamed_record record -> (
       let type_name = ocaml_record_type_name record.type_name in
       match record.type_arguments with
@@ -1057,14 +1112,18 @@ let rec refresh_named_record (fresh : named_record) ty =
 
 let find_field keyword fields =
   List.find_opt (fun field -> field.keyword = keyword) fields
-let make_field ?location ?(mutable_ = false) keyword ty =
+let make_field ?location ?(mutable_ = false) ?(runtime_map = false) keyword ty =
   {
     keyword;
     ocaml_name = Names.keyword_to_ocaml_name keyword;
     ty;
     mutable_;
+    runtime_map;
     location;
   }
+
+let make_map_field ?location keyword ty =
+  make_field ?location ~runtime_map:true keyword ty
 
 let make_record_extension_field ?(ty = record_extension_type) () =
   make_field record_extension_keyword ty

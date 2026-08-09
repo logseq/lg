@@ -783,7 +783,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               let fields =
                 pairs
                 |> List.map (fun (keyword, _form, value) ->
-                       make_field keyword value.ty)
+                       make_map_field keyword value.ty)
               in
               let values =
                 List.map2
@@ -791,18 +791,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     (field, value.semantic_expr))
                   fields pairs
               in
-              Ok
-                {
-                  (typed_ir (TRecord fields)
-                     (Semantic_ir.Record
-                        ( List.map
-                            (fun ((field : field), value) ->
-                              (field.ocaml_name, value))
-                            values,
-                          None )))
-                  with
-                  record_values = Some values;
-                })
+              Ok (Structural_map.record_expr fields values))
       | pair :: rest -> (
           match compile_pair pair with
           | Ok pair -> loop (pair :: acc) rest

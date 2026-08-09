@@ -90,7 +90,7 @@
     set? {:status :static-adaptation
           :reason :source-function-provides-a-polymorphic-first-class-set-predicate-while-its-inline-definition-specializes-direct-calls-to-the-static-set-representation}
     map? {:status :static-adaptation
-          :reason :source-function-provides-a-polymorphic-first-class-map-predicate-while-its-inline-definition-specializes-direct-calls-to-structural-and-persistent-hash-map-representations}
+          :reason :source-function-and-inline-specialization-use-clojurescript-imap-protocol-satisfaction-without-name-based-compiler-dispatch}
     fn? {:status :static-adaptation
          :reason :source-function-provides-a-first-class-unary-function-predicate-while-its-inline-definition-specializes-direct-calls-to-static-function-types}
     coll? {:status :static-adaptation

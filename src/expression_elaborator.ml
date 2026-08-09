@@ -1977,9 +1977,20 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
             parameter_tys
       | _ -> []
   in
+  let expected_return_ty =
+    match expected_type with
+    | Some (TFn (_, ((TRecord _ | TNamed_record _) as return_ty))) ->
+        Some return_ty
+    | Some
+        (TOverloaded_fn
+          [ { return_ty = ((TRecord _ | TNamed_record _) as return_ty); _ } ])
+      ->
+        Some return_ty
+    | Some _ | None -> None
+  in
   let env = Env.with_expected_type None env in
   match
-    prepare_fn ~param_type_overrides ?variadic_rest_index
+    prepare_fn ~param_type_overrides ?variadic_rest_index ?expected_return_ty
       ~refine_open_overrides:true scope env params body_forms
   with
   | Error _ as err -> err

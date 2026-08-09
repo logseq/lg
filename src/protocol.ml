@@ -110,6 +110,15 @@ let receiver_id = function
 
 let registry_receiver_id = Receiver_id.of_type
 
+let source_type_implicitly_satisfies protocol_id receiver_ty =
+  Protocol_id.owner protocol_id = []
+  && Protocol_id.name protocol_id = "IMap"
+  &&
+  match receiver_ty with
+  | TRecord _ -> true
+  | TNamed_record { nominal = false; _ } -> true
+  | _ -> false
+
 let type_satisfies env protocol_id receiver_ty =
   let satisfies registry =
     match
@@ -125,7 +134,8 @@ let type_satisfies env protocol_id receiver_ty =
           declaration.methods
     | None, _ | _, None -> false
   in
-  satisfies (Env.protocols env)
+  source_type_implicitly_satisfies protocol_id receiver_ty
+  || satisfies (Env.protocols env)
   ||
   match Env.protocol_evidence env with
   | Some evidence -> satisfies evidence

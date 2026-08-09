@@ -66,11 +66,10 @@ first, then OCaml lowering:
 Sets use persistent OCaml `Set.Make` modules rather than list-backed values.
 The runtime provides comparators for `int`, `string` (including keywords and
 symbols), and `bool`, plus typed `list` and `Rrbvec` vector values containing
-those scalar types. Every top-level structural map is emitted as a named OCaml
-record with a sibling `Set.Make` module using `Stdlib.compare`, so records can
-be set elements without sacrificing static types. Same-shaped records are
-projected to the set element record type at `hash-set`, `conj`, `contains?`, and
-`disj` boundaries.
+those scalar types. Homogeneous keyword maps use the persistent HAMT while the
+compiler retains their known-key row for static lookup. Explicit records remain
+named OCaml records with sibling `Set.Make` modules, so records can be set
+elements without sacrificing static types.
 
 Source standard-library namespaces are bootstrapped through the ordinary
 incremental compiler state instead of compiler-owned public-name dispatch.
@@ -89,25 +88,26 @@ Supported prototype forms:
 (println label)
 ```
 
-The compiler infers record-like map shapes automatically:
+The compiler infers statically shaped maps automatically:
 
-- `{:name "Ada", :age 36}` becomes an OCaml record with `string` and `int`
-  fields.
+- A homogeneous literal such as `{:left 1, :right 2}` becomes a persistent
+  HAMT while retaining both known keys in its static type.
 - `[36 37 38]` becomes an `Rrbvec.t` persistent vector.
 - `(list 1 2 3)` becomes a typed OCaml list.
 - `:admin?` is a distinct `keyword` value in the static type system, and
   `(symbol "user" "name")` creates a distinct `symbol` value.
-- `(hash-map :name "Ada" :age 36)` creates the same structural map shape as a
-  map literal.
-- `(assoc x :age 36 :admin? true)` produces a new record shape with added or
-  updated fields.
+- `(hash-map :left 1 :right 2)` creates the same statically shaped HAMT as a map
+  literal.
+- `(assoc x :age 36 :admin? true)` produces a new statically known HAMT shape
+  with added or updated fields; homogeneous updates copy only affected trie
+  paths.
 - `(assoc [1 2 3] 1 42)` updates a persistent vector index.
 - `(subvec [1 2 3] 1 3)` returns a persistent vector slice.
-- `(dissoc y :age :admin?)` produces a new record shape with those fields
-  removed.
+- `(dissoc y :age :admin?)` produces a new statically known HAMT shape with
+  those fields removed.
 - `(get x :missing default)` returns a typed default when the field is absent.
-- `merge`, `update`, and `select-keys` work on structural maps when field
-  keys are known statically.
+- `merge`, `update`, and `select-keys` work on statically known maps; homogeneous
+  `merge` uses the persistent HAMT directly.
 - `(update x :age + 1)` passes the current field value plus extra arguments to
   the update function.
 - `(update xs 0 inc)` updates a persistent vector index.

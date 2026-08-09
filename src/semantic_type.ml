@@ -38,6 +38,7 @@ and field = {
   ocaml_name : string;
   ty : ty;
   mutable_ : bool;
+  runtime_map : bool;
   location : Location.t option;
 }
 

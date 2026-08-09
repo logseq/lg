@@ -758,6 +758,12 @@ let add_record_field_constraint name keyword field_ty params =
       (Ok fields) inferred_fields
   in
   let merge_fields fields =
+    let runtime_map =
+      match find_field keyword fields with
+      | Some field -> field.runtime_map
+      | None -> false
+    in
+    let make_constrained_field ty = make_field ~runtime_map keyword ty in
     let directly_seqable = function
       | TList _ | TVector _ | TSeq _
       | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
@@ -766,26 +772,26 @@ let add_record_field_constraint name keyword field_ty params =
     in
     let replace_field_type ty =
       Ok
-        (make_field keyword ty
+        (make_constrained_field ty
         :: List.filter
              (fun candidate -> candidate.keyword <> keyword)
              fields)
     in
     match find_field keyword fields with
-    | None -> Ok (make_field keyword field_ty :: fields)
+    | None -> Ok (make_constrained_field field_ty :: fields)
     | Some field when Types.equal field.ty field_ty -> Ok fields
     | Some field -> (
         match (field.ty, field_ty) with
         | (TUnknown | TMeta _ | TVar _), field_ty ->
             Ok
-              (make_field keyword field_ty
+              (make_constrained_field field_ty
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | _, (TUnknown | TMeta _ | TVar _) -> Ok fields
         | TRef TUnknown, TRef value_ty ->
             Ok
-              (make_field keyword (TRef value_ty)
+              (make_constrained_field (TRef value_ty)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
@@ -796,14 +802,14 @@ let add_record_field_constraint name keyword field_ty params =
               (merge_nested_fields existing_fields inferred_fields)
               (fun nested_fields ->
                 Ok
-                  (make_field keyword (TNullable (TRecord nested_fields))
+                  (make_constrained_field (TNullable (TRecord nested_fields))
                   :: List.filter
                        (fun candidate -> candidate.keyword <> keyword)
                        fields))
         | TRecord existing_fields, TNullable (TRecord inferred_fields) ->
             Result.map
               (fun nested_fields ->
-                make_field keyword (TNullable (TRecord nested_fields))
+                make_constrained_field (TNullable (TRecord nested_fields))
                 :: List.filter
                      (fun candidate -> candidate.keyword <> keyword)
                      fields)
@@ -811,7 +817,7 @@ let add_record_field_constraint name keyword field_ty params =
         | TNullable (TRecord existing_fields), TRecord inferred_fields ->
             Result.map
               (fun nested_fields ->
-                make_field keyword (TNullable (TRecord nested_fields))
+                make_constrained_field (TNullable (TRecord nested_fields))
                 :: List.filter
                      (fun candidate -> candidate.keyword <> keyword)
                      fields)
@@ -830,13 +836,13 @@ let add_record_field_constraint name keyword field_ty params =
                || Option.is_some (Types.protocol_constraint_info existing)
                || Option.is_some (Types.protocol_constraint_info inferred) ->
             Ok
-              (make_field keyword (refine_type existing inferred)
+              (make_constrained_field (refine_type existing inferred)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | existing, inferred when same_refinable_wrapper existing inferred ->
             Ok
-              (make_field keyword (refine_type existing inferred)
+              (make_constrained_field (refine_type existing inferred)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
@@ -847,7 +853,7 @@ let add_record_field_constraint name keyword field_ty params =
               Option.get (Types.seqable_constraint_element inferred)
             in
             Ok
-              (make_field keyword
+              (make_constrained_field
                  (Types.substitute_type_variables
                     [ (Type_solver.Declared parameter, element_ty) ]
                     existing)
@@ -857,7 +863,7 @@ let add_record_field_constraint name keyword field_ty params =
         | ((TRecord _ | TNamed_record _) as existing), inferred
           when Option.is_some (Types.seqable_constraint_info inferred) ->
             Ok
-              (make_field keyword existing
+              (make_constrained_field existing
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
@@ -872,21 +878,21 @@ let add_record_field_constraint name keyword field_ty params =
         | existing, ((TRecord _ | TNamed_record _) as inferred)
           when Option.is_some (Types.seqable_constraint_info existing) ->
             Ok
-              (make_field keyword inferred
+              (make_constrained_field inferred
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | TMap_keys, inferred
           when Option.is_some (Types.seqable_constraint_info inferred) ->
             Ok
-              (make_field keyword (refine_type TMap_keys inferred)
+              (make_constrained_field (refine_type TMap_keys inferred)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | existing, TMap_keys
           when Option.is_some (Types.seqable_constraint_info existing) ->
             Ok
-              (make_field keyword (refine_type existing TMap_keys)
+              (make_constrained_field (refine_type existing TMap_keys)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
@@ -896,7 +902,8 @@ let add_record_field_constraint name keyword field_ty params =
              ^ " because it is already " ^ Types.source_name field.ty))
   in
   let rec add_constraint = function
-    | TUnknown | TMeta _ | TVar _ -> Ok (TRecord [ make_field keyword field_ty ])
+    | TUnknown | TMeta _ | TVar _ ->
+        Ok (TRecord [ make_field keyword field_ty ])
     | TMap_keys ->
         Ok
           (Types.dynamic_map TKeyword
@@ -1263,7 +1270,7 @@ let rec inferred_form_type params = function
              (fun (key, value) ->
                match key with
                | FKeyword keyword ->
-                   make_field keyword (inferred_form_type params value)
+                   make_map_field keyword (inferred_form_type params value)
                | _ -> assert false)
              pairs)
       else
@@ -2256,7 +2263,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword
           (TRecord
-             [ make_field nested_keyword (Types.dynamic_constraint TUnknown) ])
+             [
+               make_field nested_keyword
+                 (Types.dynamic_constraint TUnknown);
+             ])
           params
     | form -> infer_form params form
   and infer_collection params = function
@@ -3808,7 +3818,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_list-predicate";
                "__lg_seq-predicate";
                "__lg_set-predicate";
-               "__lg_map-predicate";
                "__lg_fn-predicate";
                "__lg_coll-predicate";
              ] ->
@@ -4323,6 +4332,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (constrain_symbol target_ty params target) (fun params ->
             Result.bind (infer_expected key_ty params key) (fun params ->
                 infer_all params (updater :: extra_arguments)))
+    | FList
+        [
+          FSymbol ("get" | "clojure.core/get");
+          FSymbol target;
+          FKeyword keyword;
+          default;
+        ] ->
+        let field_ty = inferred_form_type params default in
+        Result.bind
+          (add_record_field_constraint target keyword field_ty params)
+          (fun params -> infer_expected field_ty params default)
     | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
         let infer_map () =
@@ -5132,7 +5152,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword
           (TRecord
-             [ make_field nested_keyword (Types.dynamic_constraint TUnknown) ])
+             [
+               make_field nested_keyword
+                 (Types.dynamic_constraint TUnknown);
+             ])
           params
     | FList
         [
@@ -5163,7 +5186,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword field_ty params
     | FList [ FKeyword keyword; FSymbol name; default ] ->
         let field_ty = inferred_form_type params default in
-        Result.bind (add_record_field_constraint name keyword field_ty params)
+        Result.bind
+          (add_record_field_constraint name keyword field_ty params)
           (fun params -> infer_expected field_ty params default)
     | FList
         [

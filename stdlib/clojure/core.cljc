@@ -307,9 +307,11 @@
   (__lg_set-predicate x))
 
 (defn map?
-  {:inline (fn [x] (list '__lg_map-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'IMap x))}
   [x]
-  (__lg_map-predicate x))
+  (if (nil? x)
+    false
+    (satisfies? IMap x)))
 
 (defn fn?
   {:inline (fn [x] (list '__lg_fn-predicate x))}

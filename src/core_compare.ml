@@ -114,6 +114,24 @@ let rec equality_expr ?env left right =
   | TNil, _ | _, TNil ->
       Semantic_ir.Sequence
         [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
+  | left_ty, right_ty
+    when Option.is_some (Types.dynamic_map_types left_ty)
+         && Option.is_some (Types.dynamic_map_types right_ty) -> (
+      match
+        (Types.dynamic_map_types left_ty, Types.dynamic_map_types right_ty)
+      with
+      | Some (left_key, left_value), Some (right_key, right_value) ->
+          if
+            Types.same_shape left_key right_key
+            && Types.same_shape left_value right_value
+          then
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.equiv",
+                [ left.semantic_expr; right.semantic_expr ] )
+          else
+            Semantic_ir.Sequence
+              [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
+      | _ -> assert false)
   | _ -> (match (left.ty, right.ty) with
   | left_ty, right_ty
     when Types.is_dynamic left_ty && Types.is_dynamic right_ty ->

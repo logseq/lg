@@ -102,6 +102,7 @@ let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)
                 ocaml_name = Names.sanitize_name field_name;
                 ty;
                 mutable_ = false;
+                runtime_map = false;
                 location = Source_context.find name_form;
               })
     | _ -> Error.error "type-record fields must be (name :type)"

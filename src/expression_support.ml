@@ -905,6 +905,12 @@ type nested_record_allocation = {
 
 let allocate_nested_anonymous_records ~owner env next_type fields =
   let rec allocate_type env next_type items = function
+    | TRecord fields when Types.is_homogeneous_record fields ->
+        let allocated = allocate_fields env next_type items fields in
+        ( TRecord allocated.nested_fields,
+          allocated.env,
+          allocated.next_type,
+          allocated.items )
     | TRecord fields ->
         let allocated = allocate_fields env next_type items fields in
         let record =
@@ -1522,9 +1528,9 @@ let parameterize_row_fields fields =
   (fields, List.rev !parameters)
 
 let direct_row_fields ?(allow_nullable = false) = function
-  | TRecord fields -> Some fields
+  | TRecord fields when not (Types.is_homogeneous_record fields) -> Some fields
   | TNullable (TRecord fields) | TOcaml_app ("option", [ TRecord fields ])
-    when allow_nullable ->
+    when allow_nullable && not (Types.is_homogeneous_record fields) ->
       Some fields
   | _ -> None
 
@@ -1751,7 +1757,11 @@ let constrain_record_function_argument_expr fn element_ty =
 
 let rec concrete_constraint_type = function
   | ty when Types.is_dynamic ty -> true
-  | TUnknown | TMeta _ | TVar _ | TRecord _ | TOverloaded_fn _ -> false
+  | TUnknown | TMeta _ | TVar _ | TOverloaded_fn _ -> false
+  | TRecord fields -> (
+      match Types.homogeneous_record_value_type fields with
+      | Some value_ty -> concrete_constraint_type value_ty
+      | None -> false)
   | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
   | TSeq ty ->
       concrete_constraint_type ty
@@ -1770,6 +1780,9 @@ let param_constraint_name = function
   | TFn _ as ty when concrete_constraint_type ty -> Some (Types.ocaml_name ty)
   | (TNullable _ | TList _ | TVector _ | TSet _ | TSeq _) as ty
     when concrete_constraint_type ty ->
+      Some (Types.ocaml_name ty)
+  | TRecord fields as ty
+    when Types.is_homogeneous_record fields && concrete_constraint_type ty ->
       Some (Types.ocaml_name ty)
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
     | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _) as ty ->
