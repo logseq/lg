@@ -99,3 +99,10 @@
 (println (= [0 2 4] (vec (sequence (take-nth 2) [0 1 2 3 4 5]))))
 (println (= [1 2 3] (vec (random-sample 1.0 [1 2 3]))))
 (println (= [] (vec (sequence (random-sample 0.0) [1 2 3]))))
+(def lazy-partitions (partition-all 2 [1 2 3]))
+(println
+  (and (= [1 2] (vec (first lazy-partitions)))
+       (= [3] (vec (second lazy-partitions)))))
+(println (= [[1 2] [3]] (vec (sequence (partition-all 2) [1 2 3]))))
+(println (= [[1 2] [3]] (vec (partitionv-all 2 [1 2 3]))))
+(println (= [[1 2] [3]] (vec (sequence (partitionv-all 2) [1 2 3]))))

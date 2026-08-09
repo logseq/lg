@@ -651,6 +651,55 @@
   ([probability coll]
    (filter (fn [_] (< (rand) probability)) coll)))
 
+(defn- partition-all-seq [n step coll]
+  (lazy-seq
+   (if coll
+     (cons (take n coll)
+           (partition-all-seq n step (drop step coll)))
+     nil)))
+
+(defn partition-all
+  ([n]
+   (fn [rf]
+     (let [buffer (volatile! [])]
+       (fn
+         ([] (rf))
+         ([result]
+          (let [pending @buffer]
+            (if (empty? pending)
+              (rf result)
+              (do
+                (vreset! buffer [])
+                (rf (runtime-reduced/unreduced (rf result pending)))))))
+         ([result input]
+          (let [pending (conj @buffer input)]
+            (if (= n (count pending))
+              (do
+                (vreset! buffer [])
+                (rf result pending))
+              (do
+                (vreset! buffer pending)
+                (runtime-reduced/continue result)))))))))
+  ([n coll]
+   (partition-all-seq n n (seq coll)))
+  ([n step coll]
+   (partition-all-seq n step (seq coll))))
+
+(defn- partitionv-all-seq [n step coll]
+  (lazy-seq
+   (if coll
+     (cons (vec (take n coll))
+           (partitionv-all-seq n step (drop step coll)))
+     nil)))
+
+(defn partitionv-all
+  ([n]
+   (partition-all n))
+  ([n coll]
+   (partitionv-all n n coll))
+  ([n step coll]
+   (partitionv-all-seq n step (seq coll))))
+
 (defn identity [x]
   x)
 

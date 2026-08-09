@@ -305,6 +305,8 @@
                 :reason :source-port-preserves-infinite-delayed-generation-and-finite-take-composition}
     take-nth {:status :static-adaptation
               :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
+    partition-all {:status :static-adaptation
+                   :reason :source-port-preserves-stateful-vector-buffering-completion-flush-and-lazy-partial-tail-partitions-without-the-javascript-array-list-fast-path}
     deref {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ideref-with-static-protocol-implementations-for-refs-lazy-values-futures-and-slots-while-var-quotes-remain-a-compile-time-reference}
     reset! {:status :static-adaptation
@@ -628,8 +630,8 @@
                           :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     ifn? {:status :blocked-static-typing
           :reason :first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability}
-    partitionv-all {:status :blocked-static-typing
-                    :reason :one-arity-stateful-transducer-and-two-or-three-arity-lazy-vector-partitions-cannot-share-one-source-function-type}
+    partitionv-all {:status :static-adaptation
+                    :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
     random-sample {:status :ported
                    :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary}
     record? {:status :blocked-static-typing

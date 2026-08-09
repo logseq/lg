@@ -146,8 +146,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 411 source entries (48.01%), 62 typed
-primitives, 12 special forms, 27 host boundaries, 142 static-typing blockers,
+macro surfaces. The current baseline is 413 source entries (48.25%), 62 typed
+primitives, 12 special forms, 27 host boundaries, 140 static-typing blockers,
 44 out-of-scope Spec entries, and 158 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -158,9 +158,10 @@ type tests. Their pinned ClojureScript functions are first-class: `delay?`
 accepts every value type, while `force` returns either a delay's payload or the
 unchanged non-delay input. LG cannot yet express those relationships through
 one static source function without a typed instance/forceable capability.
-`keep-indexed`, `take-nth`, and `random-sample` now share the source lazy-sequence
-and reducing-function foundation, so their collection and stateful transducer
-arities are both source-defined.
+`keep-indexed`, `take-nth`, `random-sample`, `partition-all`, and
+`partitionv-all` now share the source lazy-sequence and reducing-function
+foundation, so their collection and stateful transducer arities are both
+source-defined.
 The existing compiler-owned `doseq` expansion remains a visible blocker rather
 than counting as supported: it rejects the upstream `:while` binding modifier
 and cannot yet preserve termination of the current nested loop when `:while`
@@ -626,9 +627,9 @@ The inventory explicitly classifies the audited clone, dependent-result,
 transducer, tagged-literal, and metadata-transform surfaces. `clone` cannot be
 replaced by identity because `identical?` observes the fresh collection objects
 created by ClojureScript, while `cloneable?`, `record?`, and `tagged-literal?`
-are first-class predicates over arbitrary values. `replace` and
-`partitionv-all` still combine transducer arities with representation-dependent
-lazy or vector results. `spread`, `trampoline`, `swap-vals!`, `vary-meta`, and
+are first-class predicates over arbitrary values. `replace` still combines a
+transducer arity with representation-dependent lazy or vector results.
+`spread`, `trampoline`, `swap-vals!`, `vary-meta`, and
 `vec-lite` each require a heterogeneous or dependent function relationship
 that the current static source type system cannot express without narrowing an
 upstream arity.

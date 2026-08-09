@@ -8342,7 +8342,7 @@ let create ~compile_expr =
         compile_sequence_transform_call scope env name arg_forms
     | "cycle" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "interleave" | "partition" | "partition-all" ->
+    | "interleave" | "partition" ->
         compile_sequence_transform_call scope env name arg_forms
     | "reductions" -> compile_reductions scope env arg_forms
     | "filterv" -> compile_filterv scope env arg_forms
@@ -9138,7 +9138,7 @@ let create ~compile_expr =
                                "Lg_runtime.Runtime_seq.interleave",
                              [ Semantic_ir.List sequences ] )))
                     (prepare_collections [] prepared)))
-    | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
+    | "partition", FInt size :: _ when size <= 0 ->
         Error.error (name ^ " size must be positive")
     | "sort", [ comparator_form; collection_form ] -> (
         match compile_expr scope env collection_form with

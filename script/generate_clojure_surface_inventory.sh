@@ -52,7 +52,7 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 211; then
+if test "$dispatch_count" -ne 210; then
   echo "compiler call dispatch changed: expected 212 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
@@ -62,7 +62,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition partition-all partition-by rand reduce reduce-kv reductions remove repeat repeatedly rest run! select-keys some some-fn sort sort-by take take-while update-in vals", xs)
+    split("apply assoc-in comp concat cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition partition-by rand reduce reduce-kv reductions remove repeat repeatedly rest run! select-keys some some-fn sort sort-by take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -84,8 +84,7 @@ awk '
     blocked_reason["rand"] = "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type"
     split("next rest", xs)
     for (i in xs) blocked_reason[xs[i]] = "nil-versus-empty-sequence-semantics-remain-a-collection-capability-boundary"
-    split("partition partition-all", xs)
-    for (i in xs) blocked_reason[xs[i]] = "multi-arity-lazy-padding-and-transducer-cases-are-not-source-expressible"
+    blocked_reason["partition"] = "multi-arity-lazy-padding-and-transducer-cases-are-not-source-expressible"
     blocked_reason["partition-by"] = "lazy-partitions-and-generic-key-capability-cannot-yet-share-one-source-signature"
     split("reduce reduce-kv reductions", xs)
     for (i in xs) blocked_reason[xs[i]] = "multi-arity-reduced-short-circuit-and-collection-specific-callback-typing-remain-compiler-owned"
