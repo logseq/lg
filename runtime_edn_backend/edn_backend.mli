@@ -160,9 +160,14 @@ val json_array_opt : json -> json array option
 val json_is_null : json -> bool
 val json_to_edn : json -> t
 val regex_valid : string -> bool
+val regex_valid_with_flags : pattern:string -> flags:string -> bool
 val regex_find : string -> string -> bool
 val regex_find_groups : pattern:string -> string -> regex_match option
+val regex_find_groups_with_flags :
+  pattern:string -> flags:string -> string -> regex_match option
 val regex_matches_groups : pattern:string -> string -> regex_match option
+val regex_matches_groups_with_flags :
+  pattern:string -> flags:string -> string -> regex_match option
 val regex_all_groups : pattern:string -> string -> regex_match array
 val regex_replace :
   all:bool -> pattern:string -> replacement:string -> string -> string

@@ -102,6 +102,11 @@ if ! grep -F '(defn ex-cause' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   exit 1
 fi
 
+if ! grep -F '(defn re-pattern' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/re-pattern is not source-defined as a function" >&2
+  exit 1
+fi
+
 if ! grep -F '[clojure.core ' \
   "$root/stdlib/upstream.edn" >/dev/null; then
   echo "clojure.core is not first in aggregate stdlib order" >&2

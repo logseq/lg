@@ -731,6 +731,21 @@ let regex_valid pattern =
   let _ = Re.Perl.compile_pat pattern in
   true
 
+let regex_options flags =
+  flags |> String.to_seq
+  |> Seq.fold_left
+       (fun options -> function
+         | 'i' -> `Caseless :: options
+         | 'm' -> `Multiline :: options
+         | 's' -> `Dotall :: options
+         | 'd' | 'u' -> options
+         | flag -> invalid_arg (Printf.sprintf "unsupported regex flag %c" flag))
+       []
+
+let regex_valid_with_flags ~pattern ~flags =
+  let _ = Re.Perl.compile_pat ~opts:(regex_options flags) pattern in
+  true
+
 let regex_find pattern source =
   Re.execp (Re.Perl.compile_pat pattern) source
 
@@ -746,9 +761,20 @@ let regex_find_groups ~pattern source =
   Re.exec_opt (Re.Perl.compile_pat pattern) source
   |> Option.map regex_match
 
+let regex_find_groups_with_flags ~pattern ~flags source =
+  Re.exec_opt (Re.Perl.compile_pat ~opts:(regex_options flags) pattern) source
+  |> Option.map regex_match
+
 let regex_matches_groups ~pattern source =
   Re.exec_opt
     (Re.compile (Re.whole_string (Re.Perl.re pattern)))
+    source
+  |> Option.map regex_match
+
+let regex_matches_groups_with_flags ~pattern ~flags source =
+  Re.exec_opt
+    (Re.compile
+       (Re.whole_string (Re.Perl.re ~opts:(regex_options flags) pattern)))
     source
   |> Option.map regex_match
 

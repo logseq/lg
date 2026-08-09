@@ -830,6 +830,10 @@ let regex_valid pattern =
   let _ = Js.Re.fromString pattern in
   true
 
+let regex_valid_with_flags ~pattern ~flags =
+  let _ = Js.Re.fromStringWithFlags pattern ~flags in
+  true
+
 let regex_find pattern source =
   Js.Re.fromString pattern |> Js.Re.test ~str:source
 
@@ -847,6 +851,11 @@ let regex_find_groups ~pattern source =
   |> Js.Re.exec ~str:source
   |> Option.map regex_match
 
+let regex_find_groups_with_flags ~pattern ~flags source =
+  Js.Re.fromStringWithFlags pattern ~flags
+  |> Js.Re.exec ~str:source
+  |> Option.map regex_match
+
 let regex_matches_groups ~pattern source =
   match Js.Re.fromString pattern |> Js.Re.exec ~str:source with
   | None -> None
@@ -855,6 +864,18 @@ let regex_matches_groups ~pattern source =
       let matched =
         Js.Nullable.toOption captures.(0)
         |> Option.value ~default:""
+      in
+      if Js.Re.index result = 0 && String.length matched = String.length source
+      then Some (regex_match result)
+      else None
+
+let regex_matches_groups_with_flags ~pattern ~flags source =
+  match Js.Re.fromStringWithFlags pattern ~flags |> Js.Re.exec ~str:source with
+  | None -> None
+  | Some result ->
+      let captures = Js.Re.captures result in
+      let matched =
+        Js.Nullable.toOption captures.(0) |> Option.value ~default:""
       in
       if Js.Re.index result = 0 && String.length matched = String.length source
       then Some (regex_match result)

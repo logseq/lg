@@ -612,6 +612,11 @@
 (defn ex-cause [ex]
   (__lg_ex-cause ex))
 
+(defn re-pattern
+  {:inline (fn [expression] (list '__lg_re-pattern expression))}
+  [expression]
+  (__lg_re-pattern expression))
+
 (defn inc [x]
   (+ x 1))
 

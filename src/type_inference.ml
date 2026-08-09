@@ -1088,6 +1088,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | FList [ FSymbol "__lg_ex-message"; _ ] -> TNullable TString
   | FList [ FSymbol "__lg_ex-cause"; _ ] -> TNullable (TOcaml "exn")
+  | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
       match string_assoc_opt fn params with
@@ -5032,6 +5033,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-cause"; arg ] ->
         infer_expected (TOcaml "exn") params arg
+    | FList [ FSymbol "__lg_re-pattern"; arg ] ->
+        let expected_ty =
+          if Types.equal (inferred_form_type params arg) TRegex then TRegex
+          else TString
+        in
+        infer_expected expected_ty params arg
     | FList [ FSymbol "__lg_double"; (FSymbol _ as arg) ] ->
         let expected_ty =
           if Types.equal (inferred_form_type params arg) TFloat then TFloat

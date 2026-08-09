@@ -7216,6 +7216,16 @@ let create ~compile_expr =
                  (apply "Lg_runtime.Runtime_exception.cause" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ex-cause expects an exception"
         | Ok _ -> Error.error "ex-cause expects 1 arguments")
+    | "__lg_re-pattern" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ ({ ty = TRegex; _ } as expression) ] -> Ok expression
+        | Ok [ { ty = TString; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TRegex
+                 (apply "Lg_runtime.Runtime_string.regex" [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "re-pattern expects a string or regex"
+        | Ok _ -> Error.error "re-pattern expects 1 argument")
     | "reify" -> (
         match arg_forms with
                   | FSymbol protocol_name :: method_forms -> (
@@ -8419,147 +8429,21 @@ let create ~compile_expr =
                       in
                       Result.map
                         (fun source ->
-                          let regex_name = "__lg_regex" in
-                          let groups_name = "__lg_regex_groups" in
-                          let pattern =
+                          let matcher =
+                            if regex_operation = "re-matches" then
+                              "Lg_runtime.Runtime_string.regex_matches_groups"
+                            else "Lg_runtime.Runtime_string.regex_find_groups"
+                          in
+                          let groups =
                             Semantic_ir.Apply
-                              ( Semantic_ir.Ident
-                                  "Lg_runtime.Runtime_string.regex_pattern",
-                                [ expression.semantic_expr ] )
+                              ( Semantic_ir.Ident matcher,
+                                [ expression.semantic_expr; source ] )
                           in
-                          let match_value captures =
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident
-                                  "Lg_runtime.Runtime_dynamic.regex_match",
-                                [
-                                  Semantic_ir.Constructor ("Some", Some captures);
-                                ] )
-                          in
-                          let no_match =
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident
-                                  "Lg_runtime.Runtime_dynamic.regex_match",
-                                [ Semantic_ir.Constructor ("None", None) ] )
-                          in
-                          let result =
-                            match Env.target env with
-                            | Target.Melange ->
-                                let regex_pattern =
-                                  if regex_operation = "re-matches" then
-                                    Codegen.concat_expr
-                                      [
-                                        Semantic_ir.String "^(?:";
-                                        pattern;
-                                        Semantic_ir.String ")$";
-                                      ]
-                                  else pattern
-                                in
-                                let regex =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "Js.Re.fromString",
-                                      [ regex_pattern ] )
-                                in
-                                let execution =
-                                  Semantic_ir.Labelled_apply
-                                    ( Semantic_ir.Ident "Js.Re.exec",
-                                      [
-                                        (Some "str", source);
-                                        (None, Semantic_ir.Ident regex_name);
-                                      ] )
-                                in
-                                let captures =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "List.map",
-                                      [
-                                        Semantic_ir.Ident "Js.Nullable.toOption";
-                                        Semantic_ir.Apply
-                                          ( Semantic_ir.Ident "Array.to_list",
-                                            [
-                                              Semantic_ir.Apply
-                                                ( Semantic_ir.Ident
-                                                    "Js.Re.captures",
-                                                  [
-                                                    Semantic_ir.Ident
-                                                      groups_name;
-                                                  ] );
-                                            ] );
-                                      ] )
-                                in
-                                Semantic_ir.Let
-                                  ( [ (Semantic_ir.PVar regex_name, regex) ],
-                                    Semantic_ir.Match
-                                      ( execution,
-                                        [
-                                          ( Semantic_ir.PConstructor
-                                              ("None", None),
-                                            no_match );
-                                          ( Semantic_ir.PConstructor
-                                              ( "Some",
-                                                Some
-                                                  (Semantic_ir.PVar groups_name)
-                                              ),
-                                            match_value captures );
-                                        ] ) )
-                            | Target.Native | Target.Js_of_ocaml ->
-                                let regex_expression =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "Re.Perl.re",
-                                      [ pattern ] )
-                                in
-                                let regex_expression =
-                                  if regex_operation = "re-matches" then
-                                    Semantic_ir.Apply
-                                      ( Semantic_ir.Ident "Re.whole_string",
-                                        [ regex_expression ] )
-                                  else regex_expression
-                                in
-                                let regex =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "Re.compile",
-                                      [ regex_expression ] )
-                                in
-                                let execution =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "Re.exec_opt",
-                                      [ Semantic_ir.Ident regex_name; source ]
-                                    )
-                                in
-                                let index_name = "__lg_regex_group_index" in
-                                let captures =
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "List.init",
-                                      [
-                                        Semantic_ir.Apply
-                                          ( Semantic_ir.Ident "Re.group_count",
-                                            [ Semantic_ir.Ident regex_name ] );
-                                        Semantic_ir.Fun
-                                          ( [ Semantic_ir.PVar index_name ],
-                                            Semantic_ir.Apply
-                                              ( Semantic_ir.Ident
-                                                  "Re.Group.get_opt",
-                                                [
-                                                  Semantic_ir.Ident groups_name;
-                                                  Semantic_ir.Ident index_name;
-                                                ] ) );
-                                      ] )
-                                in
-                                Semantic_ir.Let
-                                  ( [ (Semantic_ir.PVar regex_name, regex) ],
-                                    Semantic_ir.Match
-                                      ( execution,
-                                        [
-                                          ( Semantic_ir.PConstructor
-                                              ("None", None),
-                                            no_match );
-                                          ( Semantic_ir.PConstructor
-                                              ( "Some",
-                                                Some
-                                                  (Semantic_ir.PVar groups_name)
-                                              ),
-                                            match_value captures );
-                                        ] ) )
-                          in
-                          typed_ir (Types.dynamic_constraint TUnknown) result)
+                          typed_ir (Types.dynamic_constraint TUnknown)
+                            (Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_dynamic.regex_match",
+                                 [ groups ] )))
                         source
                   | Ok _ ->
                       Error.error

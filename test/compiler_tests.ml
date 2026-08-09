@@ -12024,6 +12024,58 @@ let test_regex_match_alternatives_require_a_closed_sum () =
   compile_string_with_stdlib source
   |> expect_error_contains "subs called with incompatible arguments"
 
+let test_source_re_pattern_matches_clojurescript () =
+  let static_source =
+    {|
+(ns source-re-pattern-static-app
+  (:require [cljs.core :refer [re-pattern]]))
+
+(def pattern-of re-pattern)
+(def pattern (pattern-of "a+"))
+|}
+  in
+  let native_static_source =
+    compile_with_stdlib Lg.Target.Native "test/source_re_pattern_static.cljc"
+      static_source
+  in
+  if string_contains_substring native_static_source "Runtime_dynamic" then
+    failwith "source re-pattern must remain static";
+  assert_ocaml_compiles "source_re_pattern_static" native_static_source;
+  let melange_static_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_re_pattern_static.cljc"
+      static_source
+  in
+  if string_contains_substring melange_static_source "Runtime_dynamic" then
+    failwith "Melange source re-pattern must remain static";
+  let source =
+    {|
+(ns source-re-pattern-app
+  (:require [cljs.core :as core :refer [re-pattern]]))
+
+(def pattern-of re-pattern)
+(println (boolean (re-find (pattern-of "a+") "caa")))
+(println (boolean (re-find (core/re-pattern "(?i)a+") "cAA")))
+(println (boolean (re-find (clojure.core/re-pattern "(?s)a.b") "a\nb")))
+(println (boolean (re-find (re-pattern #"a+") "caa")))
+|}
+  in
+  let expected = String.concat "" (List.init 4 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_re_pattern.cljc" source
+  in
+  assert_ocaml_runs "source_re_pattern" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_re_pattern.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "test/re_pattern_zero.cljc"
+    "(def result (re-pattern))"
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native "test/re_pattern_two.cljc"
+    "(def result (re-pattern \"a\" \"b\"))"
+  |> expect_error_contains "unsupported macro arity 2";
+  compile_with_stdlib_result Lg.Target.Native "test/re_pattern_type.cljc"
+    "(def result (re-pattern 1))"
+  |> expect_error_contains "re-pattern expects a string or regex"
+
 let test_contains_callbacks_use_static_membership_witnesses () =
   let source =
     {|
@@ -37458,6 +37510,8 @@ let tests =
       test_re_find_returns_clojure_match_values );
     ( "regex match alternatives require a closed sum",
       test_regex_match_alternatives_require_a_closed_sum );
+    ( "source re-pattern matches ClojureScript",
+      test_source_re_pattern_matches_clojurescript );
     ( "contains callbacks use static membership witnesses",
       test_contains_callbacks_use_static_membership_witnesses );
     ( "anonymous functions rewrite placeholders inside maps",

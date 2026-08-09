@@ -94,12 +94,50 @@ let replace_first source match_value replacement =
 
 let regex_prefix = "\000lg-regex:"
 
-let regex_pattern expression =
+let regex_source expression =
   if String.starts_with ~prefix:regex_prefix expression then
     String.sub expression
       (String.length regex_prefix)
       (String.length expression - String.length regex_prefix)
   else invalid_arg "expected an LG regular expression"
+
+let regex_parts expression =
+  let source = regex_source expression in
+  if String.starts_with ~prefix:"(?" source then
+    match String.index_from_opt source 2 ')' with
+    | Some close ->
+        let flags = String.sub source 2 (close - 2) in
+        if
+          String.for_all
+            (function 'i' | 'd' | 'm' | 's' | 'u' | 'x' -> true | _ -> false)
+            flags
+        then
+          ( String.sub source (close + 1) (String.length source - close - 1),
+            flags )
+        else (source, "")
+    | None -> (source, "")
+  else (source, "")
+
+let regex_pattern expression = fst (regex_parts expression)
+
+let regex expression =
+  let tagged = regex_prefix ^ expression in
+  let pattern, flags = regex_parts tagged in
+  let _ = Lg_edn_backend.regex_valid_with_flags ~pattern ~flags in
+  tagged
+
+let regex_captures match_ =
+  Array.to_list match_.Lg_edn_backend.captures
+
+let regex_find_groups expression source =
+  let pattern, flags = regex_parts expression in
+  Lg_edn_backend.regex_find_groups_with_flags ~pattern ~flags source
+  |> Option.map regex_captures
+
+let regex_matches_groups expression source =
+  let pattern, flags = regex_parts expression in
+  Lg_edn_backend.regex_matches_groups_with_flags ~pattern ~flags source
+  |> Option.map regex_captures
 
 let split source separator =
   let literal_regex pattern =

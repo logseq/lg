@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 273 source entries (31.93%), 90 typed
-primitives, 5 special forms, 15 host boundaries, 162 static-typing blockers,
-44 out-of-scope Spec entries, and 266 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 274 source entries (32.05%), 88 typed
+primitives, 5 special forms, 15 host boundaries, 165 static-typing blockers,
+44 out-of-scope Spec entries, and 264 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -160,7 +160,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 239-name compiler dispatch inventory has zero `source-shadowed`
+The current 240-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
@@ -228,6 +228,19 @@ map currently stored in the documented exception-only dynamic payload.
 `js-obj` and `js->clj` are explicit JavaScript host boundaries: neither has a
 portable Native representation, and treating them as ordinary maps would lose
 JavaScript identity and interop semantics.
+`re-pattern` is a first-class source `string -> regex` function with inline
+specialization that preserves the upstream identity case for a regex argument.
+The internal constructor validates the pattern once and retains the pinned
+ClojureScript `(?flags)` prefix behavior. Melange passes those flags to
+JavaScript `RegExp`; Native maps `i`, `m`, and `s` to the OCaml Re backend,
+ignores the unobservable match-indices flag `d`, and uses the backend's string
+semantics for `u`. The unsupported JavaScript `x` flag remains an error.
+`re-find`, `re-matches`, and `re-seq` remain explicitly blocked from source
+porting because their capture-count-dependent results need a closed match-value
+domain; the first two retain their existing narrow runtime result boundary.
+Their generated ML now delegates matching and flag handling to named
+`Runtime_string.regex_*_groups` functions instead of emitting target-specific
+regex state machines at each call site.
 The broader public static predicate family is defined as ClojureScript-style
 source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element
@@ -260,6 +273,8 @@ minimal typed `exn -> option<string>` primitive behind its public source
 function.
 `ex-cause` adds the 239th internal route as the corresponding closed
 `exn -> option<exn>` primitive.
+`re-pattern` adds the 240th internal route as a validated static regex
+constructor while the public var remains source-defined.
 The numeric coercions `int`, `long`, and `double` are source functions with
 inline source specialization over internal typed primitives. `byte` and
 `float` preserve the pinned ClojureScript identity function and inline macro.

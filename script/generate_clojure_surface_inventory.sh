@@ -47,8 +47,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 239; then
-  echo "compiler call dispatch changed: expected 239 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 240; then
+  echo "compiler call dispatch changed: expected 240 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -91,6 +91,10 @@ awk '
     for (i in xs) blocked_reason[xs[i]] = "comparator-overloads-and-seqable-capability-adaptation-remain-compiler-owned"
     blocked_reason["take-nth"] = "one-arity-stateful-transducer-and-lazy-two-arity-sequence-are-not-source-expressible"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
+    blocked["re-find"] = 1
+    blocked["re-matches"] = 1
+    blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
+    blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
@@ -99,6 +103,7 @@ awk '
     for (i in xs) narrowing[xs[i]] = 1
     internal_abi["__lg_ex-message"] = "static-exception-message-extraction-primitive"
     internal_abi["__lg_ex-cause"] = "static-optional-exception-cause-primitive"
+    internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_vector-predicate __lg_list-predicate __lg_seq-predicate __lg_set-predicate __lg_map-predicate __lg_fn-predicate __lg_coll-predicate __lg_associative-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_sequential-predicate __lg_reversible-predicate __lg_sorted-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }

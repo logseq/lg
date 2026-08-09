@@ -625,5 +625,13 @@ be required with `:as` or `:refer`. Its current subset includes `blank?`,
 `trimr`, and `upper-case`. `replace` and `split` currently use literal string
 matches, not regex patterns.
 
+`clojure.core/re-pattern` is source-defined as a first-class string-to-regex
+function. Direct calls also preserve the ClojureScript regex-identity case.
+Melange uses JavaScript `RegExp` flags. Native maps `i`, `m`, and `s` to OCaml
+Re; `d` has no observable index result in LG, `u` follows the Native string
+backend, and unsupported `x` is rejected. Capture-dependent `re-find`,
+`re-matches`, and `re-seq` results are not yet source-portable without a closed
+match-value type.
+
 Host package aliases are explicit in top-level `require`; they do not introduce
 a lg namespace layer.

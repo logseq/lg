@@ -159,6 +159,14 @@
               :reason :source-function-exposes-the-upstream-exception-info-cause-as-a-closed-optional-exception-through-a-minimal-internal-runtime-primitive}
     ex-info {:status :host-boundary
              :reason :two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary}
+    re-pattern {:status :static-adaptation
+                :reason :source-string-to-regex-function-and-inline-regex-identity-preserve-upstream-first-class-logseq-use-and-direct-call-overload-through-a-minimal-validated-static-regex-primitive}
+    re-find {:status :blocked-static-typing
+             :reason :capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary}
+    re-matches {:status :blocked-static-typing
+                :reason :capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary}
+    re-seq {:status :blocked-static-typing
+            :reason :lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core}
     ex-data {:status :blocked-static-typing
              :reason :exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type}
     js-obj {:status :host-boundary

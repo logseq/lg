@@ -97,6 +97,8 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "-" && $3 == "typed-primitive" {foun
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-message" && $3 == "typed-primitive" && $4 == "static-exception-message-extraction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-primitive" && $4 == "static-optional-exception-cause-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-pattern" && $3 == "typed-primitive" && $4 == "validated-static-regex-construction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "re-find" && $3 == "blocked-static-typing" && $4 == "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "rand" && $3 == "blocked-static-typing" && $4 == "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '
   $1 == "compiler-call" && $3 == "blocked-static-typing" &&
