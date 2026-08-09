@@ -69,6 +69,76 @@
     underive {:status :static-adaptation
               :reason :source-two-and-three-arity-function-preserves-global-mutation-explicit-persistence-missing-edge-identity-and-upstream-full-closure-rebuild-through-a-closed-edn-runtime-algorithm}
     identity {:status :ported}
+    -seq {:status :typed-primitive
+          :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -reduce {:status :typed-primitive
+             :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -count {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -nth {:status :typed-primitive
+          :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -empty {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -peek {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -pop {:status :typed-primitive
+          :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -equiv {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -hash {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -rseq {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -as-transient {:status :typed-primitive
+                   :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -conj! {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -persistent! {:status :typed-primitive
+                  :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -disjoin! {:status :typed-primitive
+               :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -sorted-seq {:status :typed-primitive
+                 :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -sorted-seq-from {:status :typed-primitive
+                      :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -entry-key {:status :typed-primitive
+                :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -comparator {:status :typed-primitive
+                 :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -deref {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -compare-and-set! {:status :typed-primitive
+                       :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -reset! {:status :typed-primitive
+             :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -vreset! {:status :typed-primitive
+              :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -swap! {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -compare {:status :typed-primitive
+              :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -lookup {:status :typed-primitive
+             :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -conj {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -contains-key? {:status :typed-primitive
+                    :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -assoc {:status :typed-primitive
+            :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -find {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -dissoc {:status :typed-primitive
+             :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -kv-reduce {:status :typed-primitive
+                :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -meta {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -with-meta {:status :typed-primitive
+                :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -disjoin {:status :typed-primitive
+              :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
+    -assoc-n {:status :typed-primitive
+              :reason :compiler-registered-static-protocol-method-for-closed-receiver-specific-dispatch}
     completing {:status :static-adaptation
                 :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}
     complement {:status :static-adaptation

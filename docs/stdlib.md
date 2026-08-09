@@ -148,9 +148,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 453 source entries (45.62%), 62 typed
-primitives, 12 special forms, 31 host boundaries, 128 static-typing blockers,
-51 out-of-scope entries, and 256 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 453 source entries (45.62%), 96 typed
+primitives, 12 special forms, 29 host boundaries, 128 static-typing blockers,
+51 out-of-scope entries, and 224 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -164,6 +164,11 @@ and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver
 extensions still take precedence. Default methods are emitted as ordinary
 polymorphic OCaml functions and survive precompiled-state chunk loading.
+Thirty-four public `cljs.core` protocol methods are now separately classified
+as the compiler-registered static protocol ABI used by built-in collection,
+reference, metadata, comparison, and transient receiver implementations. They
+are no longer hidden in the deferred bucket; future source migration can
+replace these entries protocol family by protocol family.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.

@@ -6,6 +6,7 @@
 (defn- classification [status]
   (case status
     (:ported :static-adaptation) "source"
+    :typed-primitive "typed-primitive"
     :host-primitive "host-boundary"
     (:blocked :blocked-static-typing) "blocked-static-typing"
     :host-boundary "host-boundary"
