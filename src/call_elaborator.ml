@@ -7186,6 +7186,16 @@ let create ~compile_expr =
         | Ok [ ({ ty = TFloat; _ } as value) ] -> Ok value
         | Ok [ _ ] -> Error.error "double expects a numeric value"
         | Ok _ -> Error.error "double expects 1 argument")
+    | "__lg_ex-message" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ { ty = TOcaml "exn"; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir (TNullable TString)
+                 (apply "Lg_runtime.Runtime_exception.message"
+                    [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "ex-message expects an exception"
+        | Ok _ -> Error.error "ex-message expects 1 arguments")
     | "reify" -> (
         match arg_forms with
                   | FSymbol protocol_name :: method_forms -> (

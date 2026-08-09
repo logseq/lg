@@ -153,6 +153,14 @@
             :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-uses-the-upstream-seq-fallback-for-all-supported-static-seqables}
     not-empty {:status :static-adaptation
                :reason :polymorphic-vector-source-function-returns-an-optional-vector-while-its-inline-definition-preserves-the-upstream-seq-guard-and-each-direct-call-input-collection-type}
+    ex-message {:status :static-adaptation
+                :reason :source-function-exposes-a-first-class-exn-to-optional-string-contract-through-a-minimal-internal-runtime-exception-message-primitive}
+    ex-data {:status :blocked-static-typing
+             :reason :exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type}
+    js-obj {:status :host-boundary
+            :reason :javascript-object-construction-has-no-portable-native-ocaml-representation-and-cannot-be-modeled-as-a-static-clojure-map-without-changing-identity-and-interop-semantics}
+    js->clj {:status :host-boundary
+             :reason :recursive-conversion-of-arbitrary-javascript-object-graphs-requires-a-javascript-host-value-boundary-and-open-heterogeneous-result-domain-unavailable-on-native}
     integer? {:status :static-adaptation
               :reason :source-function-provides-a-first-class-integer-predicate-while-its-inline-definition-specializes-direct-calls-because-lg-separates-integral-and-floating-static-types}
     pos-int? {:status :static-adaptation

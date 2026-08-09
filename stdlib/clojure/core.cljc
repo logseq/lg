@@ -606,6 +606,9 @@
   [coll]
   (if (seq coll) coll nil))
 
+(defn ex-message [ex]
+  (__lg_ex-message ex))
+
 (defn inc [x]
   (+ x 1))
 

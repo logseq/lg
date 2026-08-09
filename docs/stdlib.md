@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 271 source entries (31.70%), 90 typed
-primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 272 deferred entries. The deferred set is the
+macro surfaces. The current baseline is 272 source entries (31.81%), 90 typed
+primitives, 5 special forms, 15 host boundaries, 162 static-typing blockers,
+44 out-of-scope Spec entries, and 267 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -160,12 +160,12 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 237-name compiler dispatch inventory has zero `source-shadowed`
+The current 238-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
-`sequential?`, `reversible?`, and `sorted?` source macros, plus `some?`,
+`sequential?`, `reversible?`, and `sorted?` source functions, plus `some?`,
 `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
@@ -217,6 +217,13 @@ direct-call definitions, avoiding an implicit union or dynamic adapter.
 function instances and inline direct calls across the broader supported
 collection domains. Direct `not-empty` retains its input collection type while
 the first-class vector instance returns an optional vector.
+`ex-message` is a source function over a minimal internal
+`exn -> option<string>` primitive and works as a normal static function value.
+`ex-data` remains blocked because its upstream result is an open heterogeneous
+map currently stored in the documented exception-only dynamic payload.
+`js-obj` and `js->clj` are explicit JavaScript host boundaries: neither has a
+portable Native representation, and treating them as ordinary maps would lose
+JavaScript identity and interop semantics.
 The broader public static predicate family is defined as ClojureScript-style
 source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element
@@ -237,13 +244,16 @@ inline specialization. The same function/inline boundary now covers `some?`,
 compatible higher-order use without dynamic adapters. `abs` likewise pairs a
 source integer function with a typed direct-call macro so float
 negative zero, NaN, and infinity retain the pinned ClojureScript `Math.abs`
-behavior. These additions bring the raw dispatch inventory to 237: the public
+behavior. These additions brought the raw dispatch inventory to 237: the public
 routes are replaced by internal routes, while `char?` and `abs` add two minimal
 static primitives for previously deferred source vars. LG's distinct `char`
 type is an explicit adaptation from ClojureScript's one-character JavaScript
 string representation. The Logseq scan finds 163 direct `zero?`, 160 direct
 `pos?`, 42 direct `neg?`, 42 direct `identical?`, 23 direct `array?`, and 6
 direct `abs` calls.
+`ex-message` adds the 238th internal route, classified explicitly as the
+minimal typed `exn -> option<string>` primitive behind its public source
+function.
 The numeric coercions `int`, `long`, and `double` are source functions with
 inline source specialization over internal typed primitives. `byte` and
 `float` preserve the pinned ClojureScript identity function and inline macro.

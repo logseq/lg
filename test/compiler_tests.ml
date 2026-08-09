@@ -21724,6 +21724,40 @@ let test_source_collection_predicates_are_statically_first_class () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange first-class collection predicates must remain static"
 
+let test_source_ex_message_matches_clojurescript () =
+  let source =
+    {|
+(ns source-ex-message-app
+  (:require [cljs.core :as core :refer [ex-message]]))
+
+(def message-of ex-message)
+(def error (Failure "boom"))
+(println (if-some [message (message-of error)] (= "boom" message) false))
+(println (if-some [message (core/ex-message error)] (= "boom" message) false))
+(println (if-some [message (clojure.core/ex-message error)]
+           (= "boom" message)
+           false))
+|}
+  in
+  let expected = String.concat "" (List.init 3 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_ex_message.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source ex-message must remain static";
+  assert_ocaml_runs "source_ex_message" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_ex_message.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source ex-message must remain static";
+  compile_with_stdlib_result Lg.Target.Native "test/ex_message_zero.cljc"
+    "(def result (ex-message))"
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/ex_message_two.cljc"
+    "(def result (ex-message (Failure \"a\") (Failure \"b\")))"
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_source_numeric_coercions_match_clojurescript () =
   let source =
     {|
@@ -38300,6 +38334,8 @@ let tests =
       test_source_identifier_predicates_are_statically_first_class );
     ( "source collection predicates are statically first-class",
       test_source_collection_predicates_are_statically_first_class );
+    ( "source ex-message matches ClojureScript",
+      test_source_ex_message_matches_clojurescript );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
     ( "source control macros match ClojureScript",
