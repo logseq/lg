@@ -127,15 +127,16 @@ When a pinned ClojureScript checkout is supplied, the report also contains an
 `upstream-var` row for every public function and macro read from the reviewed
 core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
-and excludes private definitions. The pinned surface currently contains 855
-function/macro entries, including 666 entries in `cljs.core`. Each row is
+recurses through top-level `if` branches, and excludes private definitions. The
+pinned surface currently contains 856 function/macro entries, including 667
+entries in `cljs.core`. Each row is
 classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 285 source entries (33.33%), 88 typed
+macro surfaces. The current baseline is 292 source entries (34.11%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
-44 out-of-scope Spec entries, and 241 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 235 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -183,7 +184,10 @@ Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
 The current 240-name compiler dispatch inventory has zero `source-shadowed`
-entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
+entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
+`int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
+`m3-hash-int`, `mix-collection-hash`, `even?`, `odd?`, `every?`, `ffirst`,
+`fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
@@ -339,6 +343,17 @@ source definition. Its inline form delegates to `boolean`, substituting the
 argument once while preserving ClojureScript's exact nil-and-false-only falsey
 rule for static values; the macro evaluator keeps a separate compile-time
 primitive for evaluating upstream macro bodies.
+The Murmur3 integer chain used by ClojureScript's persistent HashMap is now
+ordinary source: `int-rotate-left`, the portable 16-bit `imul` fallback,
+`m3-mix-K1`, `m3-mix-H1`, `m3-fmix`, `m3-hash-int`, and
+`mix-collection-hash`. Their operation order and signed 32-bit results match
+the pinned source. Three small `Runtime_int` operations provide only the
+representation boundary that LG's wider Native integer domain cannot express:
+signed 32-bit coercion, masked signed left shift, and unsigned 32-bit right
+shift. The public helpers remain first-class source vars and introduce no
+dynamic values. The inventory extractor now sees `imul` inside its upstream
+top-level feature-selection `if`, correcting the audited surface from 855 to
+856 entries.
 The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or

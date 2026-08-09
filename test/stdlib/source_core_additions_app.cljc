@@ -349,3 +349,13 @@
 (def source-realized? realized?)
 (println (source-realized? completed-future))
 (println (core/realized? completed-future))
+
+(def source-imul core/imul)
+(def source-hash-int clojure.core/m3-hash-int)
+(println (= 878082066 (core/int-rotate-left 305419896 8)))
+(println (= 2147483643 (source-imul 2147483647 5)))
+(println (= -1017931171 (core/m3-mix-K1 1)))
+(println (= 651101558 (core/m3-mix-H1 0 (core/m3-mix-K1 1))))
+(println (= -68075478 (core/m3-fmix 651101558 4)))
+(println (= 1982413648 (source-hash-int -1)))
+(println (= -196466786 (core/mix-collection-hash -1 3)))

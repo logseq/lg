@@ -36,6 +36,17 @@ let shift_left value count = value lsl count
 let shift_right value count = value asr count
 let logical_shift_right value count = value lsr count
 
+let int32 value = Int32.of_int value |> Int32.to_int
+
+let shift_left_32 value count =
+  Int32.shift_left (Int32.of_int value) (count land 31) |> Int32.to_int
+
+let logical_shift_right_32 value count =
+  Int64.of_int value
+  |> Int64.logand 0xffffffffL
+  |> fun value -> Int64.shift_right_logical value (count land 31)
+  |> Int64.to_int
+
 let format_hex value width =
   if width < 0 || width > Sys.max_string_length then
     invalid_arg "hex width is out of range";

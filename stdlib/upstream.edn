@@ -233,6 +233,25 @@
          :reason :source-port-preserves-the-upstream-subtract-one-body-for-the-current-static-integer-numeric-domain}
     bit-not {:status :static-adaptation
              :reason :source-port-expresses-the-current-static-integer-complement-as-xor-with-negative-one}
+    int-rotate-left {:status :static-adaptation
+                     :reason :source-port-preserves-upstream-two-shift-or-control-flow-through-minimal-signed-32-bit-shift-and-coercion-runtime-primitives}
+    imul {:status :static-adaptation
+          :reason :source-port-uses-the-upstream-portable-sixteen-bit-multiplication-fallback-with-minimal-signed-and-unsigned-32-bit-runtime-coercions}
+    m3-seed {:status :ported}
+    m3-C1 {:status :static-adaptation
+           :reason :source-constant-uses-an-explicit-signed-32-bit-coercion-because-lg-int-retains-the-wider-native-integer-domain}
+    m3-C2 {:status :static-adaptation
+           :reason :source-constant-uses-an-explicit-signed-32-bit-coercion-because-lg-int-retains-the-wider-native-integer-domain}
+    m3-mix-K1 {:status :static-adaptation
+               :reason :source-port-preserves-upstream-multiply-rotate-multiply-order-over-the-static-signed-32-bit-helper-chain}
+    m3-mix-H1 {:status :static-adaptation
+               :reason :source-port-preserves-upstream-xor-rotate-multiply-add-order-with-explicit-signed-32-bit-boundary-coercions}
+    m3-fmix {:status :static-adaptation
+             :reason :source-port-preserves-upstream-finalization-order-through-the-static-unsigned-32-bit-shift-primitive}
+    m3-hash-int {:status :ported
+                 :reason :source-port-preserves-upstream-zero-fast-path-and-four-byte-murmur3-mix-chain}
+    mix-collection-hash {:status :ported
+                         :reason :source-port-preserves-upstream-seed-key-mix-hash-mix-and-count-finalization-order}
     even? {:status :static-adaptation
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}

@@ -94,6 +94,13 @@
 (signature clojure.core/bit-shift-left :fn<int;int;int>)
 (signature clojure.core/bit-shift-right :fn<int;int;int>)
 (signature clojure.core/bit-not :fn<int;int>)
+(signature clojure.core/int-rotate-left :fn<int;int;int>)
+(signature clojure.core/imul :fn<int;int;int>)
+(signature clojure.core/m3-mix-K1 :fn<int;int>)
+(signature clojure.core/m3-mix-H1 :fn<int;int;int>)
+(signature clojure.core/m3-fmix :fn<int;int;int>)
+(signature clojure.core/m3-hash-int :fn<int;int>)
+(signature clojure.core/mix-collection-hash :fn<int;int;int>)
 (signature clojure.core/reduced [value]
   :fn<value;Lg_runtime.Runtime_reduced.t<value>>)
 (signature clojure.core/reset-vals! [value]

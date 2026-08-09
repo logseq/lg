@@ -38,9 +38,16 @@
         [(str namespace "/" (name definition-name)) kind]))))
 
 (defn- top-level-definitions [namespace form]
-  (if (and (seq? form) (= 'do (first form)))
-    (mapcat #(top-level-definitions namespace %) (rest form))
-    (some-> (definition namespace form) vector)))
+  (let [operator (when (seq? form) (first form))]
+    (cond
+      (= 'do operator)
+      (mapcat #(top-level-definitions namespace %) (rest form))
+
+      (= 'if operator)
+      (mapcat #(top-level-definitions namespace %) (drop 2 form))
+
+      :else
+      (some-> (definition namespace form) vector))))
 
 (let [[namespace & paths] *command-line-args*]
   (when (or (string/blank? namespace) (empty? paths))

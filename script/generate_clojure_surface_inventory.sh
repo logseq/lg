@@ -234,8 +234,8 @@ if test -n "$clojurescript_root"; then
     >>"$tmp/upstream-vars"
   LC_ALL=C sort -u "$tmp/upstream-vars" -o "$tmp/upstream-vars"
   upstream_var_count=$(wc -l <"$tmp/upstream-vars" | tr -d ' ')
-  if test "$upstream_var_count" -ne 855; then
-    echo "ClojureScript public function/macro surface changed: expected 855 entries, found $upstream_var_count" >&2
+  if test "$upstream_var_count" -ne 856; then
+    echo "ClojureScript public function/macro surface changed: expected 856 entries, found $upstream_var_count" >&2
     echo "review the pinned upstream files and classifications before updating the count" >&2
     exit 1
   fi

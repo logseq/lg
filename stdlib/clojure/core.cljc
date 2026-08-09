@@ -704,6 +704,64 @@
 (defn bit-not [x]
   (bit-xor-two x -1))
 
+(defn int-rotate-left [x n]
+  (runtime-int/int32
+   (bit-or
+    (runtime-int/shift-left-32 x n)
+    (runtime-int/logical-shift-right-32 x (- n)))))
+
+(defn imul [a b]
+  (let [ah (bit-and (runtime-int/logical-shift-right-32 a 16) 0xffff)
+        al (bit-and a 0xffff)
+        bh (bit-and (runtime-int/logical-shift-right-32 b 16) 0xffff)
+        bl (bit-and b 0xffff)]
+    (runtime-int/int32
+     (+ (* al bl)
+        (runtime-int/logical-shift-right-32
+         (runtime-int/shift-left-32 (+ (* ah bl) (* al bh)) 16)
+         0)))))
+
+(def m3-seed 0)
+(def m3-C1 (runtime-int/int32 0xcc9e2d51))
+(def m3-C2 (runtime-int/int32 0x1b873593))
+
+(defn m3-mix-K1 [k1]
+  (-> (runtime-int/int32 k1)
+      (imul m3-C1)
+      (int-rotate-left 15)
+      (imul m3-C2)))
+
+(defn m3-mix-H1 [h1 k1]
+  (runtime-int/int32
+   (-> (runtime-int/int32 h1)
+       (bit-xor (runtime-int/int32 k1))
+       (int-rotate-left 13)
+       (imul 5)
+       (+ (runtime-int/int32 0xe6546b64)))))
+
+(defn m3-fmix [h1 len]
+  (as-> (runtime-int/int32 h1) h1
+    (bit-xor h1 len)
+    (bit-xor h1 (runtime-int/logical-shift-right-32 h1 16))
+    (imul h1 (runtime-int/int32 0x85ebca6b))
+    (bit-xor h1 (runtime-int/logical-shift-right-32 h1 13))
+    (imul h1 (runtime-int/int32 0xc2b2ae35))
+    (runtime-int/int32
+     (bit-xor h1 (runtime-int/logical-shift-right-32 h1 16)))))
+
+(defn m3-hash-int [input]
+  (if (zero? input)
+    input
+    (let [k1 (m3-mix-K1 input)
+          h1 (m3-mix-H1 m3-seed k1)]
+      (m3-fmix h1 4))))
+
+(defn mix-collection-hash [hash-basis count]
+  (let [h1 m3-seed
+        k1 (m3-mix-K1 hash-basis)
+        h1 (m3-mix-H1 h1 k1)]
+    (m3-fmix h1 count)))
+
 (defn reduced [x]
   (runtime-reduced/reduced x))
 

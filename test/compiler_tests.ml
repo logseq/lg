@@ -22799,6 +22799,71 @@ let test_hash_combine_matches_clojure_32_bit_overflow () =
     {|(hash-combine 1 "2")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_murmur3_helpers_match_clojurescript () =
+  let source =
+    {|
+(ns source-murmur3-app
+  (:require [cljs.core :as core :refer [imul m3-fmix]]))
+
+(def multiply imul)
+(def rotate core/int-rotate-left)
+(def mix-k clojure.core/m3-mix-K1)
+(def mix-h cljs.core/m3-mix-H1)
+(def hash-int core/m3-hash-int)
+(def finish-collection mix-collection-hash)
+
+(println
+  (str (rotate 305419896 8) ":"
+       (rotate -1 15) ":"
+       (multiply 2147483647 5) ":"
+       (multiply 305419896 1985229328) ":"
+       m3-C1 ":" core/m3-C2 ":"
+       (mix-k 1) ":" (mix-k -1) ":"
+       (mix-h 0 (mix-k 1)) ":"
+       (m3-fmix (mix-h 0 (mix-k 1)) 4) ":"
+       (hash-int 0) ":" (hash-int 1) ":" (hash-int -1) ":"
+       (hash-int 2147483647) ":" (hash-int -2147483648) ":"
+       (finish-collection 1 0) ":"
+       (finish-collection -1 3) ":"
+       (finish-collection 2147483647 42)))
+|}
+  in
+  let expected =
+    "878082066:-1:2147483643:193517440:-862048943:461845907:\
+     -1017931171:-1141985264:651101558:-68075478:0:-68075478:1982413648:\
+     -1653689534:-1718298732:-2017569654:-196466786:868392874\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_murmur3.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source Murmur3 helpers must remain statically typed";
+  assert_ocaml_runs "source_murmur3_helpers" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_murmur3.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source Murmur3 helpers must remain statically typed"
+
+let test_source_murmur3_helpers_preserve_fixed_arities_and_types () =
+  List.iter
+    (fun (name, arguments) ->
+      compile_with_stdlib_result Lg.Target.Native "test/murmur3_arity.cljc"
+        (Printf.sprintf "(%s%s)" name arguments)
+      |> expect_error_contains "called with incompatible arguments")
+    [
+      ("int-rotate-left", " 1");
+      ("imul", " 1");
+      ("m3-mix-K1", " 1 2");
+      ("m3-mix-H1", " 1");
+      ("m3-fmix", " 1 2 3");
+      ("m3-hash-int", "");
+      ("mix-collection-hash", " 1");
+    ];
+  compile_with_stdlib_result Lg.Target.Native "test/murmur3_type.cljc"
+    {|(m3-hash-int "1")|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_source_integer_helpers_are_qualified_first_class_vars () =
   let source =
     {|
@@ -38840,6 +38905,10 @@ let tests =
       test_batched_numeric_scalar_core_functions_reject_non_int_bit_args );
     ( "hash-combine matches Clojure 32-bit overflow",
       test_hash_combine_matches_clojure_32_bit_overflow );
+    ( "source Murmur3 helpers match ClojureScript",
+      test_source_murmur3_helpers_match_clojurescript );
+    ( "source Murmur3 helpers preserve fixed arities and types",
+      test_source_murmur3_helpers_preserve_fixed_arities_and_types );
     ( "source integer helpers are qualified first-class vars",
       test_source_integer_helpers_are_qualified_first_class_vars );
     ( "source random and logical shift helpers are first-class vars",

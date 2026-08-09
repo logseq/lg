@@ -33,6 +33,9 @@ cat >"$tmp/clojurescript/core.cljs" <<'EOF'
 (defn- private-function [x] x)
 (defn ^:private metadata-private-function [x] x)
 #?(:cljs (defn conditional-function [x] x))
+(if true
+  (defn branch-defined-function [x] x)
+  (defn branch-defined-function [x] x))
 EOF
 cat >"$tmp/clojurescript/core.cljc" <<'EOF'
 (ns cljs.core)
@@ -47,6 +50,7 @@ bb "$root/script/extract_clojurescript_public_vars.clj" cljs.core \
 
 awk -F '\t' '$1 == "cljs.core/public-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 == "cljs.core/conditional-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 == "cljs.core/branch-defined-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 == "cljs.core/public-macro" && $2 == "macro" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 ~ /private/ {found=1} END {exit found}' "$tmp/upstream-vars.tsv"
 
