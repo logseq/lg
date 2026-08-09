@@ -133,7 +133,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 189 source entries (22.11%), 133 typed
+macro surfaces. The current baseline is 217 source entries (25.38%), 105 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
 44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
@@ -162,7 +162,11 @@ name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
 The current 235-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
-`not`, the call-site-specialized `some?`, `boolean?`, `empty?`, `not-empty`, `integer?`,
+`not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
+`string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
+`fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
+`sequential?`, `reversible?`, and `sorted?` source macros, plus `some?`,
+`boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
 `qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
@@ -206,11 +210,20 @@ branches through internal typed helpers so the guarded branch remains readable
 source without restoring public-name dispatch; these two newly needed helper
 routes explain why removing nine public routes reduces the raw dispatch count
 by seven.
+The broader public static predicate family now resolves through source macros
+while non-public `__lg_*-predicate` primitives retain call-site type tests and
+guard narrowing. This removes 22 Clojure public names from compiler dispatch;
+the raw dispatch count remains 235 because internal typed primitives replace
+those public routes one-for-one. Predicate arguments are evaluated exactly
+once even when the result is statically known, and persistent Hashmaps now
+participate in `map?`, `coll?`, and `associative?`. The Logseq scan finds 166
+direct `coll?` occurrences and 47 direct `sorted?` occurrences.
 `indexed?` remains compiler-owned because LG's current `Indexed` capability
 also covers linear list lookup and therefore cannot stand in for upstream's
-constant-time `IIndexed` contract. `true?` and `false?`
-remain minimal typed primitives because the pinned ClojureScript source itself
-delegates those arbitrary-value identity checks to compiler primitives. A repository-wide Logseq symbol scan
+constant-time `IIndexed` contract. `true?` and `false?` retain the minimal
+internal typed identity primitive used by the pinned ClojureScript
+implementation, but their public vars now come from the source standard
+library. A repository-wide Logseq symbol scan
 also finds 824 `random-uuid`, 46 `parse-uuid`, and 14 `system-time`
 occurrences; those three core functions now resolve from the aggregate source
 artifact, including `cljs.core` aliases and refers. The same scan finds 30

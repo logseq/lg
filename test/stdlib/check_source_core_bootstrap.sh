@@ -45,6 +45,9 @@ if ! grep -E '^\(defmacro array-values([[:space:]]|$)' \
 fi
 
 for name in \
+  'nil?' 'true?' 'false?' 'int?' 'number?' 'string?' 'keyword?' 'symbol?' \
+  'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
+  'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
   'some?' 'boolean?' 'empty?' 'not-empty' 'integer?' 'ident?' 'counted?' 'seqable?' \
   'nat-int?' 'pos-int?' 'neg-int?' \
   'simple-symbol?' 'qualified-symbol?' \

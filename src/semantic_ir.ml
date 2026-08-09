@@ -139,6 +139,16 @@ let rec unlocated = function
       unlocated conversion
   | expression -> expression
 
+let rec evaluate_for_effect expression =
+  match unlocated expression with
+  | Record (fields, _) ->
+      Sequence
+        (List.map
+           (fun (_, value) -> evaluate_for_effect value)
+           fields
+        @ [ Unit ])
+  | _ -> expression
+
 let rec never_returns = function
   | Typed (_, expression) | Located (_, _, expression) ->
       never_returns expression

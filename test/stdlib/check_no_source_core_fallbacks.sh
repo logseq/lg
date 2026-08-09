@@ -15,15 +15,35 @@ for name in identity complement boolean some? boolean? empty? not-empty integer?
     src/sequence_call_elaborator.ml \
     src/special_form_elaborator.ml \
     src/type_inference.ml; do
-    # The first-class diagnostic is a static boundary, not a vec implementation.
-    if test "$name" = vec && test "$file" = src/expression_support.ml; then
-      continue
+    # First-class diagnostics are static boundaries, not implementations.
+    if test "$file" = src/expression_support.ml; then
+      case "$name" in
+        nil\?|true\?|false\?|number\?|string\?|keyword\?|symbol\?|vec)
+          continue
+          ;;
+      esac
     fi
     if grep -F "\"$name\"" "$root/$file" >/dev/null; then
       echo "clojure.core/$name is still compiler-dispatched in $file" >&2
       exit 1
     fi
   done
+done
+
+public_predicates='nil? true? false? int? number? string? keyword? symbol? vector? list? seq? set? map? fn? coll? associative? rational? float? double? sequential? reversible? sorted?'
+dispatch_names=$(ocaml -I +compiler-libs ocamlcommon.cma \
+  "$root/script/extract_ocaml_string_dispatch.ml" \
+  "$root/src/call_elaborator.ml")
+for name in $public_predicates; do
+  if printf '%s\n' "$dispatch_names" | grep -Fx "$name" >/dev/null; then
+    echo "clojure.core/$name is still publicly dispatched in call_elaborator.ml" >&2
+    exit 1
+  fi
+  if grep -E "^[[:space:]]*\\| \"$name\"([[:space:]]|->|\\|)" \
+    "$root/src/core_boolean.ml" "$root/src/core_predicate.ml" >/dev/null; then
+    echo "clojure.core/$name is still implemented by a public compiler predicate" >&2
+    exit 1
+  fi
 done
 
 if grep -F 'FSymbol "not"' "$root/src/type_inference.ml" >/dev/null \

@@ -3853,24 +3853,24 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [ FSymbol ("meta" | "clojure.core/meta" | "cljs.core/meta"); value ] ->
         infer_form params value
     | FList [ FSymbol predicate; FSymbol value ]
-      when has_source_name predicate "symbol?" ->
+      when has_source_name predicate "__lg_symbol-predicate" ->
         constrain_symbol_predicate params value
     | FList [ FSymbol predicate; FSymbol value ]
       when List.exists
              (has_source_name predicate)
              [
-               "keyword?";
-               "string?";
-               "int?";
-               "number?";
+               "__lg_keyword-predicate";
+               "__lg_string-predicate";
+               "__lg_int-predicate";
+               "__lg_number-predicate";
                "array?";
-               "vector?";
-               "list?";
-               "seq?";
-               "set?";
-               "map?";
-               "fn?";
-               "coll?";
+               "__lg_vector-predicate";
+               "__lg_list-predicate";
+               "__lg_seq-predicate";
+               "__lg_set-predicate";
+               "__lg_map-predicate";
+               "__lg_fn-predicate";
+               "__lg_coll-predicate";
              ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
@@ -4158,7 +4158,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (add_record_field_constraint name keyword (TRef value_ty)
                      params)
                   (fun params -> infer_form params value)))
-    | FList [ FSymbol "nil?"; value ] ->
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_nil-predicate" ->
         let inferred_ty = inferred_form_type params value in
         let expected_ty =
           match inferred_ty with
@@ -4448,7 +4449,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList [ FSymbol "sequential?"; FSymbol collection ] ->
+    | FList [ FSymbol predicate; FSymbol collection ]
+      when has_source_name predicate "__lg_sequential-predicate" ->
         constrain_optional_seqable ~sequential:true
           TUnknown params collection
     | FList [ FSymbol "empty"; FSymbol collection ] -> (

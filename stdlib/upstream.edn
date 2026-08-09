@@ -19,14 +19,54 @@
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}
     not {:status :ported}
+    nil? {:status :static-adaptation
+          :reason :source-macro-delegates-upstream-nil-identity-to-an-internal-call-site-specialized-static-predicate-and-preserves-single-evaluation}
+    true? {:status :static-adaptation
+           :reason :source-macro-preserves-the-upstream-compiler-primitive-boundary-through-an-internal-static-boolean-identity-predicate}
+    false? {:status :static-adaptation
+            :reason :source-macro-preserves-the-upstream-compiler-primitive-boundary-through-an-internal-static-boolean-identity-predicate}
+    int? {:status :static-adaptation
+          :reason :source-macro-exposes-the-public-var-while-an-internal-static-type-predicate-preserves-guard-narrowing}
+    number? {:status :static-adaptation
+             :reason :source-macro-specializes-the-upstream-javascript-number-test-to-the-supported-static-integer-and-float-domains}
+    string? {:status :static-adaptation
+             :reason :source-macro-specializes-the-upstream-string-test-at-each-static-call-site}
+    keyword? {:status :static-adaptation
+              :reason :source-macro-exposes-the-public-var-while-an-internal-static-type-predicate-preserves-keyword-guard-narrowing}
+    symbol? {:status :static-adaptation
+             :reason :source-macro-exposes-the-public-var-while-an-internal-static-type-predicate-preserves-symbol-guard-narrowing}
+    vector? {:status :static-adaptation
+             :reason :source-macro-specializes-the-upstream-ivector-test-to-the-static-vector-representation}
+    list? {:status :static-adaptation
+           :reason :source-macro-specializes-the-upstream-ilist-test-to-the-static-list-representation}
+    seq? {:status :static-adaptation
+          :reason :source-macro-specializes-the-upstream-iseq-test-to-the-supported-static-list-and-sequence-representations}
+    set? {:status :static-adaptation
+          :reason :source-macro-specializes-the-upstream-iset-test-to-the-static-set-representation}
+    map? {:status :static-adaptation
+          :reason :source-macro-specializes-the-upstream-imap-test-to-structural-and-persistent-hash-map-representations}
+    fn? {:status :static-adaptation
+         :reason :source-macro-specializes-the-upstream-javascript-function-and-fn-protocol-test-to-static-function-types}
+    coll? {:status :static-adaptation
+           :reason :source-macro-specializes-the-upstream-icollection-test-to-supported-static-collection-and-persistent-hash-map-representations}
+    associative? {:status :static-adaptation
+                  :reason :source-macro-specializes-the-upstream-iassociative-test-to-vector-structural-map-and-persistent-hash-map-representations}
+    rational? {:status :static-adaptation
+               :reason :source-macro-preserves-the-current-static-integer-rational-domain-without-an-open-number-hierarchy}
+    float? {:status :static-adaptation
+            :reason :source-macro-specializes-the-upstream-javascript-number-subtype-test-to-the-static-float-domain}
+    double? {:status :static-adaptation
+             :reason :source-macro-specializes-the-upstream-javascript-number-subtype-test-to-the-static-float-domain}
+    sequential? {:status :static-adaptation
+                 :reason :source-macro-exposes-the-upstream-public-var-while-the-internal-static-predicate-preserves-optional-sequential-capability-narrowing}
+    reversible? {:status :static-adaptation
+                 :reason :source-macro-specializes-the-upstream-ireversible-test-to-supported-string-list-and-vector-representations}
+    sorted? {:status :static-adaptation
+             :reason :source-macro-preserves-the-current-false-result-because-lg-sorted-collections-do-not-yet-have-a-distinct-static-isorted-representation}
     some? {:status :static-adaptation
            :reason :source-macro-preserves-the-upstream-not-nil-body-while-specializing-the-generic-nil-predicate-at-each-static-call-site}
     boolean? {:status :static-adaptation
               :reason :source-macro-preserves-the-upstream-true-or-false-control-flow-and-binds-the-argument-once-before-static-call-site-specialization}
-    true? {:status :typed-primitive
-           :reason :upstream-source-delegates-to-the-cljs-core-compiler-primitive-and-arbitrary-static-values-require-type-directed-literal-identity}
-    false? {:status :typed-primitive
-            :reason :upstream-source-delegates-to-the-cljs-core-compiler-primitive-and-arbitrary-static-values-require-type-directed-literal-identity}
     empty? {:status :static-adaptation
             :reason :source-macro-uses-the-upstream-seq-fallback-for-all-static-seqables-because-composing-optional-seqable-and-counted-capabilities-would-leak-compiler-protocol-witness-helpers-into-generated-runtime-code}
     not-empty {:status :static-adaptation

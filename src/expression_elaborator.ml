@@ -30,6 +30,24 @@ let callable_expression_counter = ref 0
 let dotimes_counter = ref 0
 let multi_arity_fn_counter = ref 0
 
+let rec contains_source_macro scope env = function
+  | FList (FSymbol ("quote" | "syntax-quote") :: _) -> false
+  | FList (FSymbol name :: forms) ->
+      Option.is_some (Env.find_macro ~scope name env)
+      || Option.is_some (Env.find_inline_macro ~scope name env)
+      || List.exists (contains_source_macro scope env) forms
+  | FList forms | FVector forms ->
+      List.exists (contains_source_macro scope env) forms
+  | FMap entries ->
+      List.exists
+        (fun (key, value) ->
+          contains_source_macro scope env key
+          || contains_source_macro scope env value)
+        entries
+  | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _
+  | FFloat _ | FChar _ | FBool _ ->
+      false
+
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
   | Error error ->
@@ -164,7 +182,18 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
   | FList (FSymbol "let" :: bindings :: body_forms) ->
-      compile_let scope env bindings body_forms
+      let forms = bindings :: body_forms in
+      if
+        Env.source_macros_expanded env
+        || not (List.exists (contains_source_macro scope env) forms)
+      then compile_let scope env bindings body_forms
+      else
+        Result.bind
+          (Macro_expander.expand_all_forms ~scope ~compiler_env:env forms)
+          (function
+            | expanded_bindings :: expanded_body_forms ->
+                compile_let scope env expanded_bindings expanded_body_forms
+            | [] -> assert false)
   | FList (FSymbol ("->" | "clojure.core/->" | "cljs.core/->") :: value :: steps) ->
       compile_thread scope env `First value steps
   | FList

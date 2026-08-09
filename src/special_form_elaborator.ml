@@ -148,7 +148,7 @@ let narrow_type_predicates scope env condition body =
     | FList
         [ FSymbol negation; FList [ FSymbol nil_predicate; FSymbol name ] ]
       when is_core_symbol "not" negation
-           && is_core_symbol "nil?" nil_predicate ->
+           && is_core_symbol "__lg_nil-predicate" nil_predicate ->
         [ name ]
     | FList (FSymbol name :: forms)
       when name = "and" || String.ends_with ~suffix:"/and" name ->
@@ -200,14 +200,14 @@ let narrow_type_predicates scope env condition body =
       names body
   in
   body
-  |> narrow "symbol?" "__lg_symbol-value"
-  |> narrow "keyword?" "__lg_keyword-value"
-  |> narrow "int?" "__lg_int-value"
+  |> narrow "__lg_symbol-predicate" "__lg_symbol-value"
+  |> narrow "__lg_keyword-predicate" "__lg_keyword-value"
+  |> narrow "__lg_int-predicate" "__lg_int-value"
 
 let rec false_nil_predicate_names = function
   | FList [ FSymbol predicate; FSymbol name ]
-    when predicate = "nil?"
-         || String.ends_with ~suffix:"/nil?" predicate ->
+    when predicate = "__lg_nil-predicate"
+         || String.ends_with ~suffix:"/__lg_nil-predicate" predicate ->
       [ name ]
   | FList (FSymbol name :: conditions)
     when name = "or" || String.ends_with ~suffix:"/or" name ->

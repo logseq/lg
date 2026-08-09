@@ -1271,7 +1271,45 @@ and select_arity (definition : Macro_definition.t) args :
        ^ string_of_int (List.length args))
 
 let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
-  if definition.name = "declare+" then
+  let direct_unary_expansion =
+    match (definition.arities, args) with
+    | ( [
+          {
+            Macro_definition.params = [ FSymbol parameter ];
+            body =
+              [
+                FList
+                  [
+                    FSymbol "syntax-quote";
+                    FList
+                      [
+                        FSymbol callee;
+                        FList [ FSymbol "unquote"; FSymbol argument ];
+                      ];
+                  ];
+              ];
+          };
+        ],
+        [ value ] )
+      when String.equal parameter argument ->
+        let callee =
+          if String.contains callee '/' then callee
+          else
+            let is_macro =
+              Option.is_some
+                (Env.find_macro ~scope:definition.namespace callee compiler_env)
+              || Option.is_some
+                   (Env.find_inline_macro ~scope:definition.namespace callee
+                      compiler_env)
+            in
+            if is_macro then definition.namespace ^ "/" ^ callee else callee
+        in
+        Some (FList [ FSymbol callee; value ])
+    | _ -> None
+  in
+  match direct_unary_expansion with
+  | Some expanded -> Ok expanded
+  | None when definition.name = "declare+" ->
     let rec declared_name = function
       | FList [ FSymbol "__type-hint"; _; FSymbol name ] :: _ -> Ok name
       | FSymbol metadata :: rest when String.starts_with ~prefix:"^" metadata ->
@@ -1282,18 +1320,18 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
     Result.map
       (fun name -> FList [ FSymbol "declare"; FSymbol name ])
       (declared_name args)
-  else
-  let macro_environment =
-    Form (FMap [ (FKeyword ":ns", FString scope) ])
-  in
-  let context =
-    {
-      compiler_env;
-      namespace = definition.namespace;
-      locals = [ ("&env", macro_environment) ];
-    }
-  in
-  Result.bind (invoke_definition context definition args) form_of_value
+  | None ->
+      let macro_environment =
+        Form (FMap [ (FKeyword ":ns", FString scope) ])
+      in
+      let context =
+        {
+          compiler_env;
+          namespace = definition.namespace;
+          locals = [ ("&env", macro_environment) ];
+        }
+      in
+      Result.bind (invoke_definition context definition args) form_of_value
 
 let thread_form position value steps =
   let thread value = function

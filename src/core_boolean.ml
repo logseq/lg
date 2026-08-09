@@ -5,10 +5,17 @@ let one_arg name args =
   | [ arg ] -> Ok arg
   | _ -> Error.error (name ^ " expects 1 arguments")
 
+let evaluated_argument arg =
+  Semantic_ir.evaluate_for_effect arg.semantic_expr
+
 let type_predicate name predicate args =
   match one_arg name args with
   | Error _ as err -> err
-  | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (predicate arg.ty)))
+  | Ok arg ->
+      Ok
+        (typed_ir TBool
+           (Semantic_ir.Sequence
+              [ evaluated_argument arg; Semantic_ir.Bool (predicate arg.ty) ]))
 
 let compile_predicate name args expected_ty =
   type_predicate name (fun actual_ty -> Types.equal actual_ty expected_ty) args
@@ -27,7 +34,7 @@ let compile_bool_literal_predicate name args expected =
         else if Types.equal arg.ty TBool then
           Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)
         else
-          Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Bool false ]
+          Semantic_ir.Sequence [ evaluated_argument arg; Semantic_ir.Bool false ]
       in
       Ok (typed_ir TBool expression)
 
@@ -41,7 +48,11 @@ let compile_runtime_type_predicate name runtime_function predicate args =
         (typed_ir TBool
            (Semantic_ir.Apply
               (Semantic_ir.Ident runtime_function, [ arg.semantic_expr ])))
-  | Ok arg -> Ok (typed_ir TBool (Semantic_ir.Bool (predicate arg.ty)))
+  | Ok arg ->
+      Ok
+        (typed_ir TBool
+           (Semantic_ir.Sequence
+              [ evaluated_argument arg; Semantic_ir.Bool (predicate arg.ty) ]))
 
 let compile_string_family_predicate name ~keyword args =
   match one_arg name args with
@@ -70,7 +81,10 @@ let compile_string_family_predicate name ~keyword args =
           Ok (typed_ir TBool expression)
       | actual ->
           let matches = if keyword then Types.equal actual TKeyword else Types.equal actual TString in
-          Ok (typed_ir TBool (Semantic_ir.Bool matches)))
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Sequence
+                  [ evaluated_argument arg; Semantic_ir.Bool matches ])))
 
 let compile_nil_predicate name args expected_nil =
   match one_arg name args with
@@ -86,56 +100,61 @@ let compile_nil_predicate name args expected_nil =
 
 let compile name args =
   match name with
-  | "nil?" -> compile_nil_predicate name args true
-  | "true?" -> compile_bool_literal_predicate name args true
-  | "false?" -> compile_bool_literal_predicate name args false
-  | "int?" ->
+  | "__lg_nil-predicate" -> compile_nil_predicate name args true
+  | "__lg_true-predicate" -> compile_bool_literal_predicate name args true
+  | "__lg_false-predicate" -> compile_bool_literal_predicate name args false
+  | "__lg_int-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_int"
         (function TInt -> true | _ -> false)
         args
-  | "number?" ->
+  | "__lg_number-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_number"
         Types.is_numeric args
-  | "string?" -> compile_string_family_predicate name ~keyword:false args
-  | "keyword?" -> compile_string_family_predicate name ~keyword:true args
-  | "vector?" ->
+  | "__lg_string-predicate" ->
+      compile_string_family_predicate name ~keyword:false args
+  | "__lg_keyword-predicate" ->
+      compile_string_family_predicate name ~keyword:true args
+  | "__lg_vector-predicate" ->
       compile_runtime_type_predicate name
         "Lg_runtime.Runtime_dynamic.is_vector"
         (function TVector _ -> true | _ -> false)
         args
-  | "list?" ->
+  | "__lg_list-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_list"
         (function TList _ -> true | _ -> false)
         args
-  | "seq?" ->
+  | "__lg_seq-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_seq"
         (function TList _ | TSeq _ -> true | _ -> false)
         args
-  | "set?" ->
+  | "__lg_set-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_set"
         (function TSet _ -> true | _ -> false)
         args
-  | "map?" ->
+  | "__lg_map-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_map"
         (function
           | TRecord _ | TNamed_record { nominal = false; _ } -> true
+          | ty when Option.is_some (Types.dynamic_map_types ty) -> true
           | _ -> false)
         args
-  | "fn?" ->
+  | "__lg_fn-predicate" ->
       compile_type_predicate name (function TFn _ -> true | _ -> false) args
-  | "coll?" ->
+  | "__lg_coll-predicate" ->
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_coll"
         (function
           | TList _ | TVector _ | TSeq _ | TSet _ | TRecord _
           | TNamed_record { nominal = false; _ } ->
               true
+          | ty when Option.is_some (Types.dynamic_map_types ty) -> true
           | _ -> false)
         args
-  | "associative?" ->
+  | "__lg_associative-predicate" ->
       compile_type_predicate
         name
         (function
           | TVector _ | TRecord _ | TNamed_record { nominal = false; _ } -> true
+          | ty when Option.is_some (Types.dynamic_map_types ty) -> true
           | _ -> false)
         args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args

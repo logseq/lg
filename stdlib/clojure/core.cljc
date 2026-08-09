@@ -40,28 +40,93 @@
 (defn not [x]
   (if x false true))
 
+(defmacro nil? [x]
+  `(__lg_nil-predicate ~x))
+
+(defmacro true? [x]
+  `(__lg_true-predicate ~x))
+
+(defmacro false? [x]
+  `(__lg_false-predicate ~x))
+
+(defmacro int? [x]
+  `(__lg_int-predicate ~x))
+
+(defmacro number? [x]
+  `(__lg_number-predicate ~x))
+
+(defmacro string? [x]
+  `(__lg_string-predicate ~x))
+
+(defmacro keyword? [x]
+  `(__lg_keyword-predicate ~x))
+
+(defmacro symbol? [x]
+  `(__lg_symbol-predicate ~x))
+
+(defmacro vector? [x]
+  `(__lg_vector-predicate ~x))
+
+(defmacro list? [x]
+  `(__lg_list-predicate ~x))
+
+(defmacro seq? [x]
+  `(__lg_seq-predicate ~x))
+
+(defmacro set? [x]
+  `(__lg_set-predicate ~x))
+
+(defmacro map? [x]
+  `(__lg_map-predicate ~x))
+
+(defmacro fn? [x]
+  `(__lg_fn-predicate ~x))
+
+(defmacro coll? [x]
+  `(__lg_coll-predicate ~x))
+
+(defmacro associative? [x]
+  `(__lg_associative-predicate ~x))
+
+(defmacro rational? [x]
+  `(__lg_rational-predicate ~x))
+
+(defmacro float? [x]
+  `(__lg_float-predicate ~x))
+
+(defmacro double? [x]
+  `(__lg_double-predicate ~x))
+
+(defmacro sequential? [x]
+  `(__lg_sequential-predicate ~x))
+
+(defmacro reversible? [x]
+  `(__lg_reversible-predicate ~x))
+
+(defmacro sorted? [x]
+  `(__lg_sorted-predicate ~x))
+
 (defmacro some? [x]
-  `(not (nil? ~x)))
+  `(not (__lg_nil-predicate ~x)))
 
 (defmacro boolean? [x]
   `(let [value# ~x]
-     (or (true? value#) (false? value#))))
+     (or (__lg_true-predicate value#) (__lg_false-predicate value#))))
 
 (defmacro integer? [x]
-  `(let [value# ~x]
-     (int? value#)))
+  `(__lg_int-predicate ~x))
 
 (defmacro pos-int? [x]
   `(let [value# ~x]
-     (if (int? value#) (pos? value#) false)))
+     (if (__lg_int-predicate value#) (pos? value#) false)))
 
 (defmacro neg-int? [x]
   `(let [value# ~x]
-     (if (int? value#) (neg? value#) false)))
+     (if (__lg_int-predicate value#) (neg? value#) false)))
 
 (defmacro nat-int? [x]
   `(let [value# ~x]
-     (if (int? value#) (not (neg? value#)) false)))
+     (if (__lg_int-predicate value#) (not (neg? value#)) false)))
 
 (defmacro ident? [x]
   `(let [value# ~x]
@@ -77,19 +142,27 @@
 
 (defmacro simple-symbol? [x]
   `(let [value# ~x]
-     (if (symbol? value#) (nil? (namespace value#)) false)))
+     (if (__lg_symbol-predicate value#)
+       (__lg_nil-predicate (namespace value#))
+       false)))
 
 (defmacro qualified-symbol? [x]
   `(let [value# ~x]
-     (if (symbol? value#) (some? (namespace value#)) false)))
+     (if (__lg_symbol-predicate value#)
+       (not (__lg_nil-predicate (namespace value#)))
+       false)))
 
 (defmacro simple-keyword? [x]
   `(let [value# ~x]
-     (if (keyword? value#) (nil? (namespace value#)) false)))
+     (if (__lg_keyword-predicate value#)
+       (__lg_nil-predicate (namespace value#))
+       false)))
 
 (defmacro qualified-keyword? [x]
   `(let [value# ~x]
-     (if (keyword? value#) (some? (namespace value#)) false)))
+     (if (__lg_keyword-predicate value#)
+       (not (__lg_nil-predicate (namespace value#)))
+       false)))
 
 (defmacro counted? [x]
   `(let [value# ~x]

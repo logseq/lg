@@ -97,6 +97,8 @@ awk '
     for (i in xs) primitive[xs[i]] = 1
     split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
     for (i in xs) narrowing[xs[i]] = 1
+    split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_vector-predicate __lg_list-predicate __lg_seq-predicate __lg_set-predicate __lg_map-predicate __lg_fn-predicate __lg_coll-predicate __lg_associative-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_sequential-predicate __lg_reversible-predicate __lg_sorted-predicate", xs)
+    for (i in xs) type_predicate[xs[i]] = 1
   }
   {
     classification = "typed-primitive"
@@ -114,6 +116,9 @@ awk '
     } else if (narrowing[$0]) {
       classification = "typed-primitive"
       reason = "static-guard-narrowing-primitive"
+    } else if (type_predicate[$0]) {
+      classification = "typed-primitive"
+      reason = "internal-static-type-predicate-primitive"
     } else if (primitive[$0]) {
       classification = "typed-primitive"
       reason = "static-scalar-primitive"

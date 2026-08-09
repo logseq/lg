@@ -5,6 +5,9 @@ let one_arg name args =
   | [ arg ] -> Ok arg
   | _ -> Error.error (name ^ " expects 1 arguments")
 
+let evaluated_argument arg =
+  Semantic_ir.evaluate_for_effect arg.semantic_expr
+
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
 let compile name args =
@@ -12,11 +15,16 @@ let compile name args =
   | Error _ as err -> err
   | Ok arg ->
       let bool value = Ok (typed_ir TBool value) in
-      let static_bool value = bool (Semantic_ir.Bool value) in
+      let static_bool value =
+        bool
+          (Semantic_ir.Sequence
+             [ evaluated_argument arg; Semantic_ir.Bool value ])
+      in
       match name with
-      | "rational?" -> static_bool (Types.equal arg.ty TInt)
-      | "float?" | "double?" -> static_bool (Types.equal arg.ty TFloat)
-      | "symbol?"
+      | "__lg_rational-predicate" -> static_bool (Types.equal arg.ty TInt)
+      | "__lg_float-predicate" | "__lg_double-predicate" ->
+          static_bool (Types.equal arg.ty TFloat)
+      | "__lg_symbol-predicate"
         when Option.is_some
                (Types.symbol_predicate_constraint_info arg.ty) ->
           let projected =
@@ -31,15 +39,15 @@ let compile name args =
                     [ apply "snd" [ arg.semantic_expr ] ] )
           in
           bool (apply "Option.is_some" [ projected ])
-      | "symbol?"
+      | "__lg_symbol-predicate"
         when Types.is_dynamic arg.ty || Types.equal arg.ty TUnknown ->
           bool
             (apply "Lg_runtime.Runtime_dynamic.is_symbol"
                [ arg.semantic_expr ])
-      | "symbol?" -> static_bool (Types.equal arg.ty TSymbol)
-      | "sequential?" ->
+      | "__lg_symbol-predicate" -> static_bool (Types.equal arg.ty TSymbol)
+      | "__lg_sequential-predicate" ->
           static_bool (match arg.ty with TList _ | TVector _ -> true | _ -> false)
-      | "reversible?" ->
+      | "__lg_reversible-predicate" ->
           static_bool (match arg.ty with TString | TList _ | TVector _ -> true | _ -> false)
-      | "sorted?" -> static_bool false
+      | "__lg_sorted-predicate" -> static_bool false
       | _ -> Error.error ("unknown function " ^ name)

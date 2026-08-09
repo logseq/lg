@@ -4,6 +4,20 @@ open Lowered
 module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
+
+let compile_source_expr scope env form =
+  let rec compile = function
+    | FList (FSymbol name :: args) as form -> (
+        match Env.find_macro ~scope name env with
+        | None -> compile_expr scope env form
+        | Some definition ->
+            Result.bind
+              (Macro_expander.expand ~scope ~compiler_env:env definition args)
+              compile)
+    | form -> compile_expr scope env form
+  in
+  compile form
+
 let prepare_fn = Expression_elaborator.prepare_fn
 let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 
@@ -2307,7 +2321,7 @@ let rec compile scope env next_type form =
       ] -> (
       let expected_ty = sidecar_function_signature scope env name in
       let expr_env = Env.with_expected_type expected_ty env in
-      match compile_expr scope expr_env expr_form with
+      match compile_source_expr scope expr_env expr_form with
       | Error _ as error -> error
       | Ok expr ->
           let expr =
@@ -2356,7 +2370,7 @@ let rec compile scope env next_type form =
       in
       let expr_env = Env.with_expected_type expected_ty env in
       let expr =
-        Result.bind (compile_expr scope expr_env expr_form) (fun expr ->
+        Result.bind (compile_source_expr scope expr_env expr_form) (fun expr ->
             match expected_ty with
             | None -> Ok expr
             | Some expected ->
@@ -2522,7 +2536,7 @@ let rec compile scope env next_type form =
              | _ -> None)
       in
       let inherited_inline_macros = Env.inline_macros env in
-      let runtime_env = Env.with_inline_macros [] env in
+      let runtime_env = Env.clear_inline_macros env in
       Result.bind
         (compile scope runtime_env next_type
            (FList (FSymbol definition :: name_form :: rest)))

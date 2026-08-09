@@ -1081,7 +1081,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                           (List.map (fun (_spec, ty) -> ty) typed_specs)
                           body_forms
                     | None ->
-                        compile_body scope env
+                        compile_body scope
+                          (Env.with_source_macros_expanded true env)
                           "function body requires at least one form" body_forms
                   in
                   match compiled_body with

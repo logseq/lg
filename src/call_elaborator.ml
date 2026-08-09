@@ -7957,10 +7957,14 @@ let create ~compile_expr =
                   Core_compare.compile ~env
                     (if name = "==" then "=" else name)
                     args))
-              | "nil?" | "true?" | "false?" | "int?"
-              | "number?" | "string?" | "keyword?" | "vector?"
-              | "list?" | "seq?" | "set?" | "map?" | "fn?" | "coll?"
-              | "associative?" | "indexed?" ->
+              | "__lg_nil-predicate" | "__lg_true-predicate"
+              | "__lg_false-predicate" | "__lg_int-predicate"
+              | "__lg_number-predicate" | "__lg_string-predicate"
+              | "__lg_keyword-predicate" | "__lg_vector-predicate"
+              | "__lg_list-predicate" | "__lg_seq-predicate"
+              | "__lg_set-predicate" | "__lg_map-predicate"
+              | "__lg_fn-predicate" | "__lg_coll-predicate"
+              | "__lg_associative-predicate" | "indexed?" ->
                   compile_boolean_call scope env name arg_forms
     | "instance?" -> (
         match arg_forms with
@@ -8022,7 +8026,7 @@ let create ~compile_expr =
           (resolve_name
           ^ " cannot be used without a closed result type; define a closed sum \
              type containing the supported Vars")
-    | "sequential?" -> (
+    | "__lg_sequential-predicate" -> (
         match compile_args () with
         | Error _ as error -> error
         | Ok [ receiver ] -> (
@@ -8067,8 +8071,9 @@ let create ~compile_expr =
                                     ]))
             | None -> Core_predicate.compile name [ receiver ])
         | Ok _ -> Error.error "sequential? expects 1 arguments")
-              | "rational?" | "float?" | "double?" | "symbol?"
-              | "reversible?" | "sorted?"
+              | "__lg_rational-predicate" | "__lg_float-predicate"
+              | "__lg_double-predicate" | "__lg_symbol-predicate"
+              | "__lg_reversible-predicate" | "__lg_sorted-predicate"
                 -> (
         match compile_args () with
         | Error _ as err -> err
