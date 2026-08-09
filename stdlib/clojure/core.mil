@@ -11,6 +11,8 @@
 
 (signature clojure.core/boolean [value]
   :fn<truthy<value>;bool>)
+(signature clojure.core/truth_ [value]
+  :fn<truthy<value>;bool>)
 (signature clojure.core/not [value]
   :fn<truthy<value>;bool>)
 (signature clojure.core/nil? [value]

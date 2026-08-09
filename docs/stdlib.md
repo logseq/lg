@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 283 source entries (33.10%), 88 typed
+macro surfaces. The current baseline is 285 source entries (33.33%), 88 typed
 primitives, 12 special forms, 15 host boundaries, 170 static-typing blockers,
-44 out-of-scope Spec entries, and 243 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 241 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -183,7 +183,7 @@ Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
 The current 240-name compiler dispatch inventory has zero `source-shadowed`
-entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
+entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
@@ -334,6 +334,11 @@ and explicit-prefix behavior and a typed integer atom counter. LG initializes
 that internal counter eagerly because a global cannot change statically from
 `nil` to `atom<int>`; macro expansion retains its separate compiler-time gensym
 primitive, which is macro/compiler behavior rather than runtime public dispatch.
+The public function and inline-macro surfaces of `truth_` now resolve from one
+source definition. Its inline form delegates to `boolean`, substituting the
+argument once while preserving ClojureScript's exact nil-and-false-only falsey
+rule for static values; the macro evaluator keeps a separate compile-time
+primitive for evaluating upstream macro bodies.
 The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or

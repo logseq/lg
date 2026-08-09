@@ -237,6 +237,11 @@
 (defn boolean [x]
   (if x true false))
 
+(defn truth_
+  {:inline (fn [x] (list 'boolean x))}
+  [x]
+  (boolean x))
+
 (defn not [x]
   (if x false true))
 

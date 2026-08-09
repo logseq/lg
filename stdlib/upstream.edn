@@ -62,6 +62,8 @@
     constantly {:status :static-adaptation
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}
+    truth_ {:status :static-adaptation
+            :reason :source-function-and-single-substitution-inline-definition-preserve-clojurescript-nil-and-false-only-falsey-semantics-without-the-upstream-javascript-boolean-tagged-expression}
     not {:status :ported}
     nil? {:status :static-adaptation
           :reason :source-function-provides-a-polymorphic-optional-value-predicate-while-its-inline-definition-specializes-direct-calls-through-an-internal-static-nil-predicate}

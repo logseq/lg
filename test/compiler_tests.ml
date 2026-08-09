@@ -22269,6 +22269,52 @@ let test_source_gensym_matches_clojurescript () =
     {|(def generated (gensym 1))|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_truth_function_matches_clojurescript () =
+  let source =
+    {|
+(ns source-truth-function-app
+  (:require [cljs.core :as core :refer [truth_]]))
+
+(def calls (atom 0))
+(def evaluated-once
+  (truth_
+    (do
+      (swap! calls inc)
+      0)))
+(def truthiness clojure.core/truth_)
+
+(println (not (truth_ nil)))
+(println (not (core/truth_ false)))
+(println (cljs.core/truth_ true))
+(println (truth_ 0))
+(println (truth_ ""))
+(println evaluated-once)
+(println (= 1 @calls))
+(println (not (truthiness nil)))
+(println (truthiness 42))
+|}
+  in
+  let expected = String.concat "" (List.init 9 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_truth_function.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source truth_ must remain static";
+  assert_ocaml_runs "source_truth_function" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_truth_function.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source truth_ must remain static";
+  List.iter
+    (fun arguments ->
+      compile_with_stdlib_result Lg.Target.Native "test/truth_function_arity.cljc"
+        ("(def result (truth_" ^ arguments ^ "))")
+      |> expect_error_contains "unsupported macro arity")
+    [ ""; " true false" ]
+
 let test_source_control_macros_match_clojurescript () =
   let source =
     {|
@@ -38768,6 +38814,8 @@ let tests =
       test_source_caching_hash_macro_matches_clojurescript );
     ( "source gensym matches ClojureScript",
       test_source_gensym_matches_clojurescript );
+    ( "source truth function matches ClojureScript",
+      test_source_truth_function_matches_clojurescript );
     ( "source control macros match ClojureScript",
       test_source_control_macros_match_clojurescript );
     ( "source thread macros match ClojureScript",
