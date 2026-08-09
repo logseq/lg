@@ -461,7 +461,7 @@ let resume_saved_compiler_state ~target ~packages = function
       Result.bind (read_cached_prefix_state key) (fun state ->
           Lg.Compiler.restore_ocaml_environment ~target ~packages state [])
 
-let compile_files target input_paths =
+let compile_files ?(use_cache = true) target input_paths =
   let rec loop prefix_key compiler_state packages outputs diagnostics =
     function
     | [] ->
@@ -486,7 +486,9 @@ let compile_files target input_paths =
             let source_packages =
               Lg.Compiler.prepared_source_required_packages prepared
             in
-            match read_cached_prefix_output prefix_key with
+            match
+              if use_cache then read_cached_prefix_output prefix_key else None
+            with
             | Some cached ->
                 report_cache_hit input_path;
                 loop prefix_key (Cached prefix_key)
@@ -509,6 +511,8 @@ let compile_files target input_paths =
                     | Error _ as err -> err
                     | Ok (state, compilation) ->
                         if
+                          use_cache
+                          &&
                           Sys.time () -. started_at
                           >= compile_cache_min_seconds ()
                         then
@@ -564,7 +568,8 @@ let compile_chunk_from_saved_state target state_path input_path =
             |> Result.map (fun (state, compilation) ->
                    (state, packages, compilation))))
 
-let compile_files_from_saved_state target state_path input_paths =
+let compile_files_from_saved_state ?(use_cache = true) target state_path
+    input_paths =
   let saved = read_saved_compilation_state state_path in
   if saved.target <> target then
     Error
@@ -605,7 +610,9 @@ let compile_files_from_saved_state target state_path input_paths =
               let prefix_key =
                 next_prefix_key ~target prefix_key input_path source
               in
-              match read_cached_prefix_output prefix_key with
+              match
+                if use_cache then read_cached_prefix_output prefix_key else None
+              with
               | Some cached ->
                   report_cache_hit input_path;
                   compile prefix_key (Cached prefix_key)
@@ -626,6 +633,8 @@ let compile_files_from_saved_state target state_path input_paths =
                       | Error _ as err -> err
                       | Ok (state, compilation) ->
                           if
+                            use_cache
+                            &&
                             Sys.time () -. started_at
                             >= compile_cache_min_seconds ()
                           then
@@ -689,7 +698,7 @@ let () =
           report_diagnostics diagnostics;
           write_output (Some output_path) ocaml_source)
   | Compile_files_state { state_path; input_paths; output_path } -> (
-      match compile_files target input_paths with
+      match compile_files ~use_cache:false target input_paths with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
@@ -708,7 +717,10 @@ let () =
           write_output (Some output_path) ocaml_source)
   | Compile_files_from_state
       { state_path; output_state_path; input_paths; output_path } -> (
-      match compile_files_from_saved_state target state_path input_paths with
+      match
+        compile_files_from_saved_state ~use_cache:false target state_path
+          input_paths
+      with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;

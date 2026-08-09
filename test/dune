@@ -426,6 +426,21 @@
 (rule
  (alias runtest)
  (deps
+  cli_state_cache_test.sh
+  ../bin/lg_cli.exe
+  ../examples/multi_file/math.cljc
+  ../examples/multi_file/main.cljc)
+ (action
+  (run
+   sh
+   %{dep:cli_state_cache_test.sh}
+   %{exe:../bin/lg_cli.exe}
+   %{dep:../examples/multi_file/math.cljc}
+   %{dep:../examples/multi_file/main.cljc})))
+
+(rule
+ (alias runtest)
+ (deps
   no_raw_ir_regression.sh
   (source_tree ../src)
   (source_tree ../docs)

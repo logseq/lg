@@ -114,21 +114,35 @@ printf '%s\n' '(def continued Math/magnitude-plus-two)' > "$continuation_source"
 
 LG_CACHE_DIR="$multi_dir/state-cache" \
   "$cli" --compile-files-state "$base_state" "$math_source" -o "$base_output"
+if [ -d "$multi_dir/state-cache/compile-files" ]; then
+  echo "state-producing compilation wrote redundant prefix cache" >&2
+  exit 1
+fi
 LG_CACHE_DIR="$multi_dir/state-cache" \
   "$cli" --compile-files-from-state "$base_state" "$suffix_state" \
     "$main_source" "$continuation_source" -o "$suffix_output"
-LG_CACHE_DIR="$multi_dir/state-cache" LG_COMPILE_CACHE_DEBUG=1 \
+if [ -d "$multi_dir/state-cache/compile-files" ]; then
+  echo "state-producing continuation wrote redundant prefix cache" >&2
+  exit 1
+fi
+LG_CACHE_DIR="$multi_dir/state-cache" \
   "$cli" --compile-files-from-state "$base_state" "$cached_suffix_state" \
     "$main_source" "$continuation_source" -o "$cached_suffix_output" \
     2> "$suffix_cache_stderr"
-grep -q "compile cache hit: $main_source" "$suffix_cache_stderr"
-grep -q "compile cache hit: $continuation_source" "$suffix_cache_stderr"
+if grep -q "compile cache hit:" "$suffix_cache_stderr"; then
+  echo "state-producing continuation read a prefix cache" >&2
+  exit 1
+fi
 cmp "$suffix_output" "$cached_suffix_output"
 
 printf '%s\n' '(def post continued)' > "$post_source"
 "$cli" --compile-chunk-from "$cached_suffix_state" "$post_source" \
   -o "$continuation_output"
 grep -q 'let post = continued' "$continuation_output"
+
+LG_CACHE_DIR="$multi_dir/state-cache" \
+  "$cli" --compile-files-from "$base_state" "$main_source" \
+    "$continuation_source" -o "$partial_output"
 
 printf '%s\n' '(def continued-value Math/magnitude-plus-two)' \
   > "$continuation_source"

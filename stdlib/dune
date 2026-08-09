@@ -14,27 +14,24 @@
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
-  (setenv
-   LG_DISABLE_COMPILE_CACHE
-   1
-   (run
-    %{exe:../bin/lg_cli.exe}
-    --target
-    native
-    --compile-files-state
-    lg_stdlib_native.state
-    %{dep:clojure/core.mil}
-    %{dep:clojure/core.cljc}
-    %{dep:clojure/string.mil}
-    %{dep:clojure/string.cljc}
-    %{dep:clojure/edn.mil}
-    %{dep:clojure/edn.cljc}
-    %{dep:cljs/reader.mil}
-    %{dep:cljs/reader.cljc}
-    %{dep:clojure/set.mil}
-    %{dep:clojure/set.cljc}
-    -o
-    lg_stdlib_native.ml))))
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files-state
+   lg_stdlib_native.state
+   %{dep:clojure/core.mil}
+   %{dep:clojure/core.cljc}
+   %{dep:clojure/string.mil}
+   %{dep:clojure/string.cljc}
+   %{dep:clojure/edn.mil}
+   %{dep:clojure/edn.cljc}
+   %{dep:cljs/reader.mil}
+   %{dep:cljs/reader.cljc}
+   %{dep:clojure/set.mil}
+   %{dep:clojure/set.cljc}
+   -o
+   lg_stdlib_native.ml)))
 
 (alias
  (name stdlib-native)
@@ -56,27 +53,24 @@
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
  (action
-  (setenv
-   LG_DISABLE_COMPILE_CACHE
-   1
-   (run
-    %{exe:../bin/lg_cli.exe}
-    --target
-    melange
-    --compile-files-state
-    lg_stdlib_melange.state
-    %{dep:clojure/core.mil}
-    %{dep:clojure/core.cljc}
-    %{dep:clojure/string.mil}
-    %{dep:clojure/string.cljc}
-    %{dep:clojure/edn.mil}
-    %{dep:clojure/edn.cljc}
-    %{dep:cljs/reader.mil}
-    %{dep:cljs/reader.cljc}
-    %{dep:clojure/set.mil}
-    %{dep:clojure/set.cljc}
-    -o
-    lg_stdlib_melange.ml))))
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files-state
+   lg_stdlib_melange.state
+   %{dep:clojure/core.mil}
+   %{dep:clojure/core.cljc}
+   %{dep:clojure/string.mil}
+   %{dep:clojure/string.cljc}
+   %{dep:clojure/edn.mil}
+   %{dep:clojure/edn.cljc}
+   %{dep:cljs/reader.mil}
+   %{dep:cljs/reader.cljc}
+   %{dep:clojure/set.mil}
+   %{dep:clojure/set.cljc}
+   -o
+   lg_stdlib_melange.ml)))
 
 (alias
  (name stdlib-melange)

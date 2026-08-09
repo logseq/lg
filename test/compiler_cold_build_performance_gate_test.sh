@@ -16,7 +16,6 @@ cd "$repo_root"
 dune clean
 
 if ! /usr/bin/time -p \
-  env LG_DISABLE_COMPILE_CACHE=1 \
   dune build test/datascript_conn_native_runtime.ml \
   >"$build_log" 2>"$timing_file"; then
   cat "$build_log" >&2
