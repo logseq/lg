@@ -313,6 +313,8 @@
           :reason :source-port-preserves-left-to-right-effect-order-and-nil-result-by-realizing-the-source-map-sequence}
     group-by {:status :static-adaptation
               :reason :source-port-preserves-input-order-within-persistent-vector-buckets-and-default-hash-map-accumulation-without-javascript-transients}
+    partition-by {:status :static-adaptation
+                  :reason :source-port-preserves-lazy-partition-order-and-stateful-transducer-flushing-with-typed-vectors-instead-of-the-javascript-array-list-buffer}
     doall {:status :blocked-static-typing
            :reason :source-port-can-realize-the-input-but-overloaded-return-storage-inference-currently-specializes-the-seqable-storage-variable-to-the-element-type-instead-of-preserving-the-original-collection-representation}
     filterv {:status :static-adaptation

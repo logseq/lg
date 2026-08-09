@@ -2657,20 +2657,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword
           (Types.seqable_constraint element_ty)
           params
-    | FList [ FSymbol "partition-by"; function_form; collection ] ->
-        let source_element_ty =
-          match element_ty with
-          | TList item_ty | TSeq item_ty -> item_ty
-          | _ -> inferred_unary_function_param params function_form
-        in
-        Result.bind
-          (infer_sequence_form source_element_ty params collection)
-          (fun params ->
-            infer_expected
-              (TFn
-                 ( [ source_element_ty ],
-                   fresh_type_variable "partition_key" ))
-              params function_form)
     | (FList (FSymbol _ :: _) as form) ->
         infer_expected (Types.seqable_constraint element_ty) params form
     | form ->
@@ -4925,21 +4911,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_expected accumulator_ty params init) (fun params ->
             let element_ty =
               match (declared_element_ty, collection) with
-              | ( (TUnknown | TMeta _ | TVar _),
-                  FList
-                    [
-                      FSymbol "partition-by";
-                      function_form;
-                      _source_collection;
-                    ] ) ->
-                  let partition_item_ty =
-                    inferred_unary_function_param params function_form
-                  in
-                  let reducer_item_ty =
-                    Types.seqable_constraint_element inferred_element_ty
-                    |> Option.value ~default:TUnknown
-                  in
-                  TList (refine_type partition_item_ty reducer_item_ty)
               | (TUnknown | TMeta _ | TVar _), _ -> (
                   match collection with
                   | FSymbol collection -> (
@@ -5520,25 +5491,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               pairs (result :: pattern constant :: acc) rest
         in
         infer_match params target (pairs [] clauses)
-    | FList
-        [
-          FSymbol "partition-by";
-          FKeyword keyword;
-          FSymbol collection;
-        ] ->
-        constrain_seqable
-          (TRecord
-             [ make_field keyword (Types.dynamic_constraint TUnknown) ])
-          params collection
-    | FList
-        [
-          FSymbol "partition-by";
-          (FList (FSymbol "fn" :: _) as function_form);
-          FSymbol collection;
-        ] ->
-        constrain_seqable
-          (inferred_unary_function_param params function_form)
-          params collection
     | FList [ FSymbol ("__lg_set" | "doall"); collection ] ->
         infer_collection params collection
     | FList

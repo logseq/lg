@@ -155,3 +155,9 @@
 (println
   (= {1 ["a" "c"] 2 ["bb"]}
      (group-by (fn [value] (count value)) ["a" "bb" "c"])))
+(println
+  (= [[1 3] [2 4] [5]]
+     (mapv vec (partition-by odd? [1 3 2 4 5]))))
+(println
+  (= [[1 3] [2 4] [5]]
+     (into [] (partition-by odd?) [1 3 2 4 5])))

@@ -787,6 +787,64 @@
   ([n step coll]
    (partitionv-all-seq n step (seq coll))))
 
+(defn- partition-by-run [f expected coll]
+  (lazy-seq
+   (if coll
+     (let [value (nth coll 0)]
+       (if (= expected (f value))
+         (cons value (partition-by-run f expected (next coll)))
+         nil))
+     nil)))
+
+(defn- partition-by-seq [f coll]
+  (lazy-seq
+   (when-let [values (seq coll)]
+     (let [fst (nth values 0)
+           fv (f fst)
+           run (cons fst
+                     (partition-by-run f fv (next values)))]
+       (cons run
+             (partition-by-seq
+              f
+              (lazy-seq (drop (count run) values))))))))
+
+(defn partition-by
+  ([f]
+   (fn [rf]
+     (let [buffer (volatile! [])
+           keys (volatile! [])]
+       (fn
+         ([] (rf))
+         ([result]
+          (let [pending @buffer]
+            (if (empty? pending)
+              (rf result)
+              (do
+                (vreset! buffer [])
+                (vreset! keys [])
+                (rf (runtime-reduced/unreduced (rf result pending)))))))
+         ([result input]
+          (let [key (f input)
+                pending @buffer]
+            (if (or (empty? pending)
+                    (= key (nth @keys 0)))
+              (do
+                (vreset! buffer (conj pending input))
+                (vreset! keys [key])
+                (runtime-reduced/continue result))
+              (do
+                (vreset! buffer [])
+                (vreset! keys [])
+                (let [ret (rf result pending)]
+                  (if (reduced? ret)
+                    ret
+                    (do
+                      (vreset! buffer [input])
+                      (vreset! keys [key])
+                      ret)))))))))))
+  ([f coll]
+   (partition-by-seq f coll)))
+
 (defn identity [x]
   x)
 

@@ -14,7 +14,6 @@ type t = {
   compile_mapcat : call;
   compile_repeatedly : call;
   compile_reductions : call;
-  compile_partition_by : call;
   compile_map_indexed : call;
   compile_mapv : call;
   compile_reduce_kv : call;
@@ -997,140 +996,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
               | _, Error _ -> Error.error "reductions expects a collection"))
     | _ ->
         Error.error "reductions expects function, optional init, and collection"
-    and compile_partition_by scope env arg_forms =
-      match arg_forms with
-    | [ fn_form; collection_form ] -> (
-        match compile_expr scope env collection_form with
-        | Error _ as error -> error
-        | Ok collection -> (
-            match collection_to_list_expr env collection with
-            | Error _ -> Error.error "partition-by expects a collection"
-            | Ok (inner, list_expr) -> (
-                match
-                  compile_function_arg_for_collection scope env inner fn_form
-                with
-                | Error _ as error -> error
-                | Ok fn -> (
-            match fn.ty with
-            | TFn ([ param_ty ], key_ty)
-              when Types.equal param_ty inner ->
-                  ignore key_ty;
-                  let finish_call =
-                  apply "finish"
-                    [ Semantic_ir.Ident "groups"; Semantic_ir.Ident "current" ]
-                  in
-                  let start_new_group =
-                    Semantic_ir.Let
-                    ( [
-                        ( Semantic_ir.PVar "groups",
-                            Semantic_ir.Match
-                              ( Semantic_ir.Ident "current",
-                              [
-                                ( Semantic_ir.PList [],
-                                  Semantic_ir.Ident "groups" );
-                                  ( Semantic_ir.PAny,
-                                    Semantic_ir.Cons
-                                    ( apply "List.rev"
-                                        [ Semantic_ir.Ident "current" ],
-                                      Semantic_ir.Ident "groups" ) );
-                              ] ) );
-                      ],
-                        apply "partition"
-                        [
-                          Semantic_ir.Ident "groups";
-                            Semantic_ir.List [ Semantic_ir.Ident "item" ];
-                          Semantic_ir.Constructor
-                            ("Some", Some (Semantic_ir.Ident "key"));
-                          Semantic_ir.Ident "rest";
-                        ] )
-                  in
-                  let partition_body =
-                    Semantic_ir.Match
-                      ( Semantic_ir.Ident "xs",
-                      [
-                        (Semantic_ir.PList [], finish_call);
-                        ( Semantic_ir.PCons
-                            (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                            Semantic_ir.Let
-                            ( [
-                                ( Semantic_ir.PVar "key",
-                                  Semantic_ir.Apply
-                                    ( fn.semantic_expr,
-                                      [ Semantic_ir.Ident "item" ] ) );
-                              ],
-                                Semantic_ir.Match
-                                  ( Semantic_ir.Ident "current_key",
-                                  [
-                                    ( Semantic_ir.PConstructor
-                                        ( "Some",
-                                          Some (Semantic_ir.PVar "previous") ),
-                                        Semantic_ir.If
-                                          ( Semantic_ir.Infix
-                                            ( "=",
-                                              Semantic_ir.Ident "previous",
-                                                Semantic_ir.Ident "key" ),
-                                            apply "partition"
-                                            [
-                                              Semantic_ir.Ident "groups";
-                                                Semantic_ir.Cons
-                                                  ( Semantic_ir.Ident "item",
-                                                    Semantic_ir.Ident "current" );
-                                                Semantic_ir.Ident "current_key";
-                                              Semantic_ir.Ident "rest";
-                                            ],
-                                            start_new_group ) );
-                                    (Semantic_ir.PAny, start_new_group);
-                                  ] ) ) );
-                      ] )
-                  in
-                  let finish_body =
-                    Semantic_ir.Match
-                      ( Semantic_ir.Ident "current",
-                      [
-                        ( Semantic_ir.PList [],
-                          apply "List.rev" [ Semantic_ir.Ident "groups" ] );
-                          ( Semantic_ir.PAny,
-                            apply "List.rev"
-                            [
-                              Semantic_ir.Cons
-                                ( apply "List.rev"
-                                    [ Semantic_ir.Ident "current" ],
-                                  Semantic_ir.Ident "groups" );
-                            ] );
-                      ] )
-                  in
-                  Ok
-                    (typed_ir (TList (TList inner))
-                       (Semantic_ir.Let
-                          ( [
-                              ( Semantic_ir.PVar "finish",
-                                Semantic_ir.Fun
-                                  ( [
-                                      Semantic_ir.PVar "groups";
-                                      Semantic_ir.PVar "current";
-                                    ],
-                                    finish_body ) );
-                            ],
-                            Semantic_ir.LetRec
-                              ( "partition",
-                                [
-                                  Semantic_ir.PVar "groups";
-                                  Semantic_ir.PVar "current";
-                                  Semantic_ir.PVar "current_key";
-                                  Semantic_ir.PVar "xs";
-                                ],
-                                partition_body,
-                                [
-                                  Semantic_ir.List [];
-                                  Semantic_ir.List [];
-                                  Semantic_ir.Constructor ("None", None);
-                                  list_expr;
-                                ] ) )))
-            | TFn _ ->
-                Error.error
-                  "partition-by function type does not match collection"
-              | _ -> Error.error "partition-by expects a function"))))
-      | _ -> Error.error "partition-by expects function and collection"
     and compile_map_indexed scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
@@ -2095,7 +1960,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     compile_mapcat;
     compile_repeatedly;
     compile_reductions;
-    compile_partition_by;
     compile_map_indexed;
     compile_mapv;
     compile_reduce_kv;

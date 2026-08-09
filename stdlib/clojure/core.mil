@@ -90,6 +90,12 @@
   :fn<fn<input;output>;seqable<input;storage>;option<unit>>)
 (signature clojure.core/group-by [input key storage]
   :fn<fn<input;key>;seqable<input;storage>;map<key;vector<input>>>)
+(signature clojure.core/partition-by-run [input key]
+  :fn<fn<input;key>;key;seq<input>;seq<input>>)
+(signature clojure.core/partition-by-seq [input key storage]
+  :fn<fn<input;key>;seqable<input;storage>;seq<seq<input>>>)
+(signature clojure.core/partition-by [input key storage accumulator]
+  :overload<fn<fn<input;key>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;vector<input>;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;key>;seqable<input;storage>;seq<seq<input>>>>)
 (signature clojure.core/take-nth-seq [value]
   :fn<int;seq<value>;seq<value>>)
 (signature clojure.core/take-nth [value storage accumulator]

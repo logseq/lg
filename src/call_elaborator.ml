@@ -4052,7 +4052,6 @@ let create ~compile_expr =
   let compile_vals = collection.compile_vals in
   let compile_sort_by = sequence.compile_sort_by in
   let compile_reductions = sequence.compile_reductions in
-  let compile_partition_by = sequence.compile_partition_by in
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
@@ -8326,7 +8325,6 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
     | "some" -> compile_some scope env arg_forms
-    | "partition-by" -> compile_partition_by scope env arg_forms
     | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort" ->
