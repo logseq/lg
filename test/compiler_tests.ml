@@ -11329,8 +11329,9 @@ let test_var_quote_resolves_static_function_values () =
 
 let test_var_quote_dereferences_qualified_chunk_values () =
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, values_source =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state
+      Lg.Compiler.compile_chunk ~target stdlib.state
         {|
 (ns values)
 (def ^:private answer 42)
@@ -11345,7 +11346,7 @@ let test_var_quote_dereferences_qualified_chunk_values () =
 |}
       |> expect_ok
     in
-    values_source ^ "\n" ^ app_source
+    stdlib.ocaml_source ^ "\n" ^ values_source ^ "\n" ^ app_source
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "var_quote_dereferences_qualified_chunk_values" "42\n"
@@ -13809,7 +13810,7 @@ let test_ocaml_refs_support_read_and_assignment () =
 (println (str reset-result ":" (deref cell)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "ocaml_refs_support_read_and_assignment" "42:42\n"
     ocaml_source
 
@@ -13825,11 +13826,11 @@ let test_custom_ideref_dispatches_nominal_return_values () =
 (println @value)
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "custom_ideref_dispatches_nominal_return_values" "42\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_custom_compare_and_set_dispatches () =
   let source =
@@ -13901,7 +13902,8 @@ let test_custom_atom_protocol_rejects_invalid_reset_value () =
 |}
   in
   expect_error_contains "expression was expected of type"
-    (Lg.Compiler.compile_string source)
+    (compile_with_stdlib_result Lg.Target.Native
+       "test/custom_atom_invalid_reset.cljc" source)
 
 let test_custom_atom_protocol_infers_closed_record_state () =
   let source =
@@ -13928,11 +13930,11 @@ let test_custom_atom_protocol_infers_closed_record_state () =
     (:value @value)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "custom_atom_protocol_infers_closed_record_state" "true:2\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nullable_custom_ideref_receivers_are_unwrapped () =
   let source =
@@ -13945,11 +13947,11 @@ let test_nullable_custom_ideref_receivers_are_unwrapped () =
 (println (deref (restore-box)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nullable_custom_ideref_receivers_are_unwrapped" "42\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_weak_references_support_typed_cache_values () =
   let source =
@@ -14194,7 +14196,7 @@ let test_volatile_nil_uses_contextual_option_reference_type () =
     None 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "volatile_nil_uses_contextual_option_reference_type" "7\n"
     ocaml_source
 
@@ -14206,7 +14208,7 @@ let test_local_volatile_nil_infers_value_from_reset () =
   (println (+ (deref slot) 1)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "local_volatile_nil_infers_value_from_reset" "5\n"
     ocaml_source
 
@@ -14220,14 +14222,15 @@ let test_atom_nil_infers_nullable_record_from_map_destructuring () =
     (println (= 42 value))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "atom_nil_infers_nullable_record_from_map_destructuring"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_top_level_atom_nil_uses_explicit_option_storage () =
-  Lg.Compiler.compile_string {|(def slot (atom nil))|}
+  compile_with_stdlib_result Lg.Target.Native "test/atom_nil.cljc"
+    {|(def slot (atom nil))|}
   |> expect_error_contains
        "atom nil requires an explicit option element type";
   let source =
@@ -14240,13 +14243,13 @@ let test_top_level_atom_nil_uses_explicit_option_storage () =
     None 0))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "explicit option atom storage must not use Runtime_dynamic";
   assert_ocaml_runs "top_level_atom_nil_uses_explicit_option_storage" "42\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_arrays_reject_invalid_operations () =
   Lg.Compiler.compile_string {|(def values (array 1 "two"))|}
@@ -14401,11 +14404,14 @@ let test_fn_predicate_recognizes_static_functions () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_refs_reject_invalid_operations () =
-  Lg.Compiler.compile_string {|(def value (deref 42))|}
+  compile_with_stdlib_result Lg.Target.Native "test/bad_deref.cljc"
+    {|(def value (deref 42))|}
   |> expect_error_contains "deref expects a reference";
-  Lg.Compiler.compile_string {|(reset! 42 1)|}
+  compile_with_stdlib_result Lg.Target.Native "test/bad_reset_receiver.cljc"
+    {|(reset! 42 1)|}
   |> expect_error_contains "reset! expects a reference";
-  Lg.Compiler.compile_string {|(reset! (atom 1) "bad")|}
+  compile_with_stdlib_result Lg.Target.Native "test/bad_reset_value.cljc"
+    {|(reset! (atom 1) "bad")|}
   |> expect_error_contains "reset! value must match referenced type"
 
 let test_float_arithmetic_coerces_mixed_numeric_types () =
@@ -16061,7 +16067,8 @@ let test_declared_type_scheme_survives_incremental_compilation () =
   then failwith "incremental type schemes must remain static"
 
 let test_mutable_function_values_remain_monomorphic () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native
+    "test/mutable_function_values.cljc"
     {|
 (def cell (atom (fn [value] value)))
 (def number-result ((deref cell) 42))
@@ -16446,7 +16453,7 @@ let test_top_level_defs_project_function_returned_structural_records_once () =
 (println (str (:value updated) ":" (deref calls)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs
     "top_level_defs_project_function_returned_structural_records_once" "1.5:1\n"
     ocaml_source
@@ -17494,11 +17501,11 @@ let test_defrecord_fields_infer_host_records_from_protocol_methods () =
 (println (match (read-root container) (Some value) value None 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "defrecord_fields_infer_host_records_from_protocol_methods"
     "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_defrecord_inferred_generic_fields_preserve_value_types () =
   let source =
@@ -19620,14 +19627,15 @@ let test_records_implement_namespaced_protocol_aliases () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, provider_source =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
-      |> expect_ok
+      Lg.Compiler.compile_chunk ~target stdlib.state provider |> expect_ok
     in
     let _, consumer_source =
       Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
     in
-    provider_source ^ "\n" ^ consumer_source
+    String.concat "\n"
+      [ stdlib.ocaml_source; provider_source; consumer_source ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "records_implement_namespaced_protocol_aliases" "42:1\n"
@@ -25787,11 +25795,11 @@ let test_melange_reduce_and_vswap_use_ocaml_int_directly () =
 (println (str (reduce + 0 (array 1 2 3)) ":" (deref total) ":" (deref untouched)))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "melange_reduce_and_vswap_use_ocaml_int_directly" "6:4:0\n"
     native_source;
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_int_melange" then
     failwith "OCaml int reduction must not need a Melange int64 helper";
@@ -25873,7 +25881,7 @@ let test_reduce_realizes_lazy_seq_once () =
 (println (deref calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "reduce_realizes_lazy_seq_once" "0\n6\n3\n6\n3\n"
     ocaml_source
 
@@ -26079,7 +26087,7 @@ let test_count_prefers_custom_counted_over_seqable () =
 (println (deref seq-calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "count_prefers_custom_counted_over_seqable" "3\n0\n"
     ocaml_source
 
@@ -26205,7 +26213,7 @@ let test_seqable_dictionary_arguments_evaluate_once () =
 (println (deref calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "seqable_dictionary_arguments_evaluate_once" "6\n1\n"
     ocaml_source
 
@@ -26428,7 +26436,7 @@ let test_generic_sequence_navigation_evaluates_arguments_once () =
 (println (deref calls))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_sequence_navigation_evaluates_arguments_once"
     "(2 3)\n1\n" ocaml_source
 
@@ -26716,6 +26724,71 @@ let test_collection_projection_family_has_no_public_name_dispatch () =
               (name ^ " still has public-name compiler dispatch in " ^ path))
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "rseq"; "find" ]
+
+let test_source_reference_protocol_family_matches_clojurescript () =
+  let source =
+    {|
+(ns app.reference-protocols
+  (:require [cljs.core :as core
+             :refer [deref reset! compare-and-set!]]))
+
+(deftype ReadableBox [^int value]
+  IDeref
+  (-deref [_] value))
+
+(deftype ResettableBox [^int value]
+  IReset
+  (-reset! [_ new-value] new-value))
+
+(def reference (atom 1))
+
+(println (= 7 (deref (ReadableBox. 7))))
+(println (= 8 (core/reset! (ResettableBox. 7) 8)))
+(println (= 1 (core/deref reference)))
+(println (= 2 (reset! reference 2)))
+(println (compare-and-set! reference 2 3))
+(println (= 3 @reference))
+(println (not (core/compare-and-set! reference 2 4)))
+(println (= 3 (deref reference)))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_reference_protocols.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source reference protocols must remain statically typed";
+  assert_ocaml_runs "source_reference_protocol_family" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_reference_protocols.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange reference protocols must remain statically typed"
+
+let test_reference_protocol_family_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name))
+      then failwith (name ^ " is not owned by the source standard library");
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "deref"; "reset!"; "compare-and-set!" ]
 
 let test_deftype_protocol_methods_support_multiple_arities () =
   let source =
@@ -31120,11 +31193,11 @@ let test_macro_slots_preserve_closed_seqable_alternatives () =
        (first-through-slot (StringList (list "list")))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "macro_slots_preserve_closed_seqable_alternatives"
     "vector:list\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_destructuring_preserves_row_polymorphic_function_calls () =
   let source =
@@ -32292,7 +32365,7 @@ let test_record_constructors_preserve_explicit_ref_fields () =
 (println (deref (:value holder)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if
     string_contains_substring ocaml_source
       "Lg_runtime.Runtime_dynamic.nominal_tag"
@@ -32301,9 +32374,9 @@ let test_record_constructors_preserve_explicit_ref_fields () =
   assert_ocaml_runs "record_constructors_preserve_explicit_ref_fields" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_nil_and_sequential_guards_preserve_seqability () =
   let source =
@@ -32504,8 +32577,9 @@ let test_local_variadic_functions_preserve_dynamic_parameter_constraints () =
 
 let test_aliased_multi_arity_functions_preserve_record_return_types () =
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, impl_source =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state
+      Lg.Compiler.compile_chunk ~target stdlib.state
         {|
 (ns impl)
 (type-record conn-state
@@ -32557,7 +32631,8 @@ let test_aliased_multi_arity_functions_preserve_record_return_types () =
 |}
       |> expect_ok
     in
-    String.concat "\n" [ impl_source; api_source; app_source ]
+    String.concat "\n"
+      [ stdlib.ocaml_source; impl_source; api_source; app_source ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs
@@ -39880,6 +39955,10 @@ let tests =
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",
       test_collection_projection_family_has_no_public_name_dispatch );
+    ( "source reference protocol family matches ClojureScript",
+      test_source_reference_protocol_family_matches_clojurescript );
+    ( "reference protocol family has no public-name dispatch",
+      test_reference_protocol_family_has_no_public_name_dispatch );
     ( "deftype protocol methods support multiple arities",
       test_deftype_protocol_methods_support_multiple_arities );
     ( "declared protocol methods support multiple arities",

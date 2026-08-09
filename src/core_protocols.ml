@@ -268,6 +268,36 @@ let declare_deref registry =
     registry
   |> add_or_fail
 
+let add_reference_protocols registry =
+  let value = TVar "reference_value" in
+  let reference = TRef value in
+  let lazy_value = TOcaml_app ("Lazy.t", [ value ]) in
+  let future = TOcaml_app ("Lg_runtime.Runtime_future.t", [ value ]) in
+  let slot = TOcaml_app ("Lg_runtime.Runtime_slot.t", [ value ]) in
+  let add receiver protocol_id method_name ocaml_name method_ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name method_ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
+      receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add Receiver_id.Ref_receiver deref_id "-deref"
+       "Lg_runtime.Runtime_reference.deref"
+       (TFn ([ reference ], value))
+  |> add (Receiver_id.Host_receiver "Lazy.t") deref_id "-deref" "Lazy.force"
+       (TFn ([ lazy_value ], value))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_future.t") deref_id
+       "-deref" "Lg_runtime.Runtime_future.get" (TFn ([ future ], value))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") deref_id
+       "-deref" "Lg_runtime.Runtime_slot.get" (TFn ([ slot ], value))
+  |> add Receiver_id.Ref_receiver reset_id "-reset!"
+       "Lg_runtime.Runtime_reference.reset"
+       (TFn ([ reference; value ], value))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") reset_id
+       "-reset!" "Lg_runtime.Runtime_slot.set"
+       (TFn ([ slot; value ], value))
+
 let declare_compare_and_set registry =
   let value = TVar "atom_value" in
   Protocol_registry.declare atom_id
@@ -584,6 +614,7 @@ let initial_registry =
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
+  |> add_reference_protocols
   |> declare_comparable_protocol
   |> declare_set_protocol |> add_static_set_protocol
   |> declare_map_protocols |> add_runtime_map_protocols

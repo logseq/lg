@@ -219,6 +219,12 @@
               :reason :source-function-uses-a-distinct-clojurescript-iindexed-protocol-so-linear-internal-indexed-list-access-does-not-claim-constant-time-satisfaction}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
+    deref {:status :static-adaptation
+           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ideref-with-static-protocol-implementations-for-refs-lazy-values-futures-and-slots-while-var-quotes-remain-a-compile-time-reference}
+    reset! {:status :static-adaptation
+            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireset-with-static-protocol-implementations-for-refs-and-slots}
+    compare-and-set! {:status :static-adaptation
+                      :reason :source-port-preserves-upstream-deref-equality-reset-control-flow-and-its-inline-specialization-evaluates-all-three-arguments-once-through-static-ideref-and-ireset-calls}
     ensure-reduced {:status :blocked-static-typing
                     :reason :same-arity-return-type-depends-on-whether-the-input-is-already-a-parameterized-reduced-value}
     delay? {:status :blocked-static-typing

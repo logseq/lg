@@ -3907,75 +3907,6 @@ let protocol_implementation scope env protocol_name method_name receiver_ty =
     (fun marker ->
       Protocol.lookup_marker_impl env marker method_name receiver_ty)
 
-let compile_compare_and_set scope env reference old_value new_value =
-  let type_error reference_ty =
-    Error.error
-      ("compare-and-set! expects a reference or IAtom, got "
-      ^ Types.source_name reference_ty)
-  in
-  match reference.ty with
-  | TRef referenced_ty ->
-      let reference_name = "__lg_cas_reference" in
-      let old_name = "__lg_cas_old" in
-      let new_name = "__lg_cas_new" in
-      Result.bind
-        (adapt_value_to_type env referenced_ty
-           (typed_ir old_value.ty (Semantic_ir.Ident old_name)))
-        (fun adapted_old ->
-          Result.map
-            (fun adapted_new ->
-              typed_ir TBool
-                (Semantic_ir.Let
-                   ( [
-                       (Semantic_ir.PVar reference_name, reference.semantic_expr);
-                       (Semantic_ir.PVar old_name, old_value.semantic_expr);
-                       (Semantic_ir.PVar new_name, new_value.semantic_expr);
-                     ],
-                     Semantic_ir.If
-                       ( Semantic_ir.Infix
-                           ( "==",
-                             Semantic_ir.Prefix
-                               ("!", Semantic_ir.Ident reference_name),
-                             adapted_old ),
-                         Semantic_ir.Sequence
-                           [
-                             Semantic_ir.Infix
-                               ( ":=",
-                                 Semantic_ir.Ident reference_name,
-                                 adapted_new );
-                             Semantic_ir.Bool true;
-                           ],
-                         Semantic_ir.Bool false ) )))
-            (adapt_value_to_type env referenced_ty
-               (typed_ir new_value.ty (Semantic_ir.Ident new_name))))
-  | reference_ty -> (
-      match
-        protocol_implementation scope env "IAtom" "-compare-and-set!"
-          reference_ty
-      with
-      | None -> type_error reference_ty
-      | Some
-          {
-            ty = TFn ([ receiver_ty; old_ty; new_ty ], TBool);
-            ocaml_name;
-            _;
-          } ->
-          Result.bind
-            (adapt_value_to_type env receiver_ty reference)
-            (fun receiver ->
-              Result.bind
-                (adapt_value_to_type env old_ty old_value)
-                (fun old_value ->
-                  Result.map
-                    (fun new_value ->
-                      typed_ir TBool
-                        (Semantic_ir.Apply
-                           ( Semantic_ir.Ident ocaml_name,
-                             [ receiver; old_value; new_value ] )))
-                    (adapt_value_to_type env new_ty new_value)))
-      | Some _ ->
-          Error.error "IAtom/-compare-and-set! has an invalid signature")
-
 let atom_state_type scope env receiver_ty =
   match
     protocol_implementation scope env "IDeref" "-deref" receiver_ty
@@ -3989,7 +3920,7 @@ let compile_protocol_reset scope env reset_name reference value =
     Error.error
       (reset_name ^ " expects a reference or IReset as its first argument")
   in
-  if reset_name <> "reset!" then type_error ()
+  if reset_name <> "IReset/-reset!" then type_error ()
   else
     match
       protocol_implementation scope env "IReset" "-reset!" reference_ty
@@ -5637,7 +5568,7 @@ let create ~compile_expr =
                              [
                                FSymbol "if";
                                FList
-                                 [ FSymbol "deref"; FSymbol first_name ];
+                                 [ FSymbol "IDeref/-deref"; FSymbol first_name ];
                                FList
                                  [
                                    FSymbol "vreset!";
@@ -7522,92 +7453,6 @@ let create ~compile_expr =
         match arg_forms with
         | [ symbol ] -> compile_expr scope env symbol
         | _ -> Error.error "var expects one symbol")
-    | "deref" -> (
-        match arg_forms with
-        | [ FList (FSymbol marker :: symbol :: _) ]
-          when is_var_quote_marker marker ->
-            compile_expr scope env symbol
-        | _ -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ reference ] ->
-            let rec compile_reference reference =
-              match reference.ty with
-              | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
-                  compile_reference
-                    { reference with
-                      ty = value_ty;
-                      semantic_expr =
-                        Semantic_ir.Apply
-                          ( Semantic_ir.Ident "Option.get",
-                            [ reference.semantic_expr ] );
-                    }
-            | TOcaml_app ("Lazy.t", [ value_ty ]) ->
-                Ok
-                  (typed_ir value_ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lazy.force",
-                          [ reference.semantic_expr ] )))
-            | TOcaml_app ("Lg_runtime.Runtime_future.t", [ value_ty ]) ->
-                Ok
-                  (typed_ir value_ty
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_future.get",
-                          [ reference.semantic_expr ] )))
-                      | TOcaml_app ("Lg_runtime.Runtime_slot.t", [ value_ty ])
-                        ->
-                Ok
-                  (typed_ir value_ty
-                     (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_slot.get",
-                          [ reference.semantic_expr ] )))
-            | TRef value_ty ->
-                Ok
-                  (typed_ir value_ty
-                     (Semantic_ir.Prefix ("!", reference.semantic_expr)))
-            | ty when Types.is_dynamic ty ->
-                Error.error
-                  "deref requires a statically typed reference or IDeref \
-                   implementation"
-            | TUnknown | TMeta _ | TVar _ ->
-                Ok
-                  (typed_ir TUnknown
-                     (Semantic_ir.Prefix ("!", reference.semantic_expr)))
-            | ty ->
-                (match
-                   Protocol.lookup_protocol_marker scope env "IDeref" "-deref"
-                 with
-                | Some marker -> (
-                    match
-                      Protocol.lookup_marker_impl env marker "-deref" ty
-                    with
-                    | Some
-                        {
-                          ty = TFn ([ parameter_ty ], return_ty);
-                          ocaml_name;
-                          _;
-                        } ->
-                        Result.map
-                          (fun receiver ->
-                            typed_ir return_ty
-                              (Semantic_ir.Apply
-                                 ( Semantic_ir.Ident ocaml_name,
-                                   [ receiver ] )))
-                          (adapt_value_to_type env parameter_ty reference)
-                    | Some _ ->
-                        Error.error "IDeref/-deref has an invalid signature"
-                    | None ->
-                        Error.error
-                          ("deref expects a reference, got "
-                          ^ Types.source_name ty))
-                | None ->
-                    Error.error
-                      ("deref expects a reference, got "
-                      ^ Types.source_name ty))
-            in
-            compile_reference reference
-        | Ok _ -> Error.error "deref expects 1 argument"))
     | "set!" -> (
         match arg_forms with
         | [ FList [ FSymbol field_access; target_form ]; value_form ]
@@ -7653,13 +7498,7 @@ let create ~compile_expr =
             | Some _ -> Error.error ("set! expects a mutable target, got " ^ name)
             | None -> Error.error ("unknown set! target " ^ name))
         | _ -> Error.error "set! expects a target and value")
-    | "compare-and-set!" -> (
-        match compile_args () with
-        | Error _ as error -> error
-        | Ok [ reference; old_value; new_value ] ->
-            compile_compare_and_set scope env reference old_value new_value
-        | Ok _ -> Error.error "compare-and-set! expects 3 arguments")
-    | ("reset!" | "vreset!") as reset_name -> (
+    | "vreset!" as reset_name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ reference; value ] -> (

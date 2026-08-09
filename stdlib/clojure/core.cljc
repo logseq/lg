@@ -820,6 +820,44 @@
 (defn reduced [x]
   (runtime-reduced/reduced x))
 
+(defn deref
+  {:inline
+   (fn [reference]
+     (if (and (seq? reference)
+              (or (= 'var (first reference))
+                  (= '__lg-var-quote (first reference))))
+       (second reference)
+       (list 'IDeref/-deref reference)))}
+  [reference]
+  (IDeref/-deref reference))
+
+(defn reset!
+  {:inline (fn [reference value]
+             (list 'IReset/-reset! reference value))}
+  [reference value]
+  (IReset/-reset! reference value))
+
+(defn compare-and-set!
+  {:inline
+   (fn [reference old-value new-value]
+     (let [target (gensym)
+           expected (gensym)
+           replacement (gensym)]
+       (list
+        'let [target reference
+              expected old-value
+              replacement new-value]
+        (list 'if
+              (list '= (list 'IDeref/-deref target) expected)
+              (list 'do
+                    (list 'IReset/-reset! target replacement)
+                    true)
+              false))))}
+  [reference old-value new-value]
+  (if (= (deref reference) old-value)
+    (do (reset! reference new-value) true)
+    false))
+
 (defn reset-vals! [reference new-value]
   (let [old-value (deref reference)]
     [old-value (reset! reference new-value)]))

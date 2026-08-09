@@ -1057,7 +1057,7 @@ let rec inferred_form_type params = function
       | result :: _ ->
           TOcaml_app ("Lazy.t", [ inferred_form_type params result ])
       | [] -> TOcaml_app ("Lazy.t", [ TUnknown ]))
-  | FList [ FSymbol "deref"; FSymbol reference ] -> (
+  | FList [ FSymbol "IDeref/-deref"; FSymbol reference ] -> (
       match string_assoc_opt reference params with
       | Some (TRef value_ty) -> value_ty
       | Some (TOcaml_app ("Lazy.t", [ value_ty ])) -> value_ty
@@ -1815,7 +1815,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_all params (List.rev reversed_prefix)) (fun params ->
                 infer_expected expected_ty params result)
         | [] -> Ok params)
-    | FList [ FSymbol "deref"; FSymbol reference ] -> (
+    | FList [ FSymbol "IDeref/-deref"; FSymbol reference ] -> (
         match string_assoc_opt reference params with
         | Some (TOcaml_app ("Lazy.t", [ _ ])) ->
             constrain_symbol
@@ -2951,7 +2951,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           |> Option.value ~default:TUnknown
         in
         let rec infer_slot_writes params = function
-          | FList [ FSymbol ("vreset!" | "reset!"); FSymbol slot; value ]
+          | FList [ FSymbol "vreset!"; FSymbol slot; value ]
             when string_mem slot slots ->
               infer_expected (Types.dynamic_constraint TUnknown) params value
           | FList forms | FVector forms ->
@@ -2993,7 +2993,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | Error _ as error -> error
               | Ok params -> infer_values params rest)
           | (FMap _ as pattern)
-            :: (FList [ FSymbol "deref"; FSymbol _ ] as source)
+            :: (FList [ FSymbol "IDeref/-deref"; FSymbol _ ] as source)
             :: rest -> (
               let map_ty =
                 Destructure.infer_pattern_type pattern lookup_inferred_local
@@ -3900,7 +3900,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 Result.bind result (fun params ->
                     infer_expected expected params argument))
               (Ok params) parameter_tys arguments)
-    | FList [ FSymbol "deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
+    | FList
+        [ FSymbol "IDeref/-deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
         add_record_field_constraint name keyword (TRef TUnknown) params
     | FList
         [
@@ -3913,22 +3914,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
     | FList
-        [ FSymbol "compare-and-set!"; reference; old_value; new_value ] -> (
-        match inferred_form_type params reference with
-        | TRef referenced_ty ->
-            Result.bind (infer_expected referenced_ty params old_value)
-              (fun params ->
-                infer_expected referenced_ty params new_value)
-        | _ -> infer_all params [ reference; old_value; new_value ])
-    | FList
-        [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ]
+        [ FSymbol "vreset!"; FSymbol reference; value ]
       when
         (match string_assoc_opt reference params with
         | Some (TRef _ | TUnknown | TMeta _ | TVar _) | None -> false
         | Some _ -> true) ->
         infer_form params value
     | FList
-        [ FSymbol ("reset!" | "vreset!"); FSymbol reference; value ] ->
+        [ FSymbol "vreset!"; FSymbol reference; value ] ->
         let value_ty = inferred_form_type params value in
         let referenced_ty =
           match string_assoc_opt reference params with
@@ -6084,7 +6077,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let rec propagate_record_ref_writes params = function
     | FList
         [
-          FSymbol ("vreset!" | "reset!");
+          FSymbol "vreset!";
           FList [ FKeyword keyword; FSymbol receiver ];
           FList [ FSymbol "Some"; FSymbol value ];
         ]
