@@ -665,6 +665,17 @@
   ([n coll]
    (dorun-n-seq n (seq coll))))
 
+(defn run! [proc coll]
+  (dorun (map proc coll)))
+
+(defn group-by [f coll]
+  (reduce
+    (fn [result input]
+      (let [key (f input)]
+        (assoc result key (conj (get result key []) input))))
+    {}
+    coll))
+
 (defn- take-nth-seq [n coll]
   (lazy-seq
    (if coll

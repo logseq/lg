@@ -15,7 +15,6 @@ type t = {
   compile_repeatedly : call;
   compile_reductions : call;
   compile_partition_by : call;
-  compile_run_bang : call;
   compile_map_indexed : call;
   compile_mapv : call;
   compile_reduce_kv : call;
@@ -1132,53 +1131,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   "partition-by function type does not match collection"
               | _ -> Error.error "partition-by expects a function"))))
       | _ -> Error.error "partition-by expects function and collection"
-    and compile_run_bang scope env arg_forms =
-      match arg_forms with
-    | [ fn_form; collection_form ] -> (
-          match compile_expr scope env collection_form with
-          | Error _ as error -> error
-          | Ok collection -> (
-              match Collection_capability.to_seq_expr env collection with
-            | Error _ ->
-                Error.error
-                  ("run! expects a collection, got "
-                  ^ Types.source_name collection.ty)
-              | Ok (inner, sequence) -> (
-                  match
-                    compile_function_arg_for_collection scope env inner fn_form
-                  with
-                  | Error _ as error -> error
-                  | Ok ({ ty = TFn ([ param_ty ], _); _ } as fn)
-                  when Types.assignable ~policy:Host_boundary ~expected:param_ty
-                         ~actual:inner ->
-                      let reducer =
-                        typed_ir (TFn ([ TUnit; inner ], TUnit))
-                          (Semantic_ir.Fun
-                             ( [ Semantic_ir.PUnit; Semantic_ir.PVar "item" ],
-                               Semantic_ir.Sequence
-                                 [
-                                   apply "ignore"
-                                     [
-                                       Semantic_ir.Apply
-                                         ( fn.semantic_expr,
-                                           [ Semantic_ir.Ident "item" ] );
-                                     ];
-                                   Semantic_ir.Unit;
-                                 ] ))
-                      in
-                      let initial = typed_ir TUnit Semantic_ir.Unit in
-                      Result.map
-                        (fun reduction ->
-                          typed_ir TUnit
-                            (Semantic_ir.Let
-                               ( [ (Semantic_ir.PUnit, reduction) ],
-                                 Semantic_ir.Unit )))
-                        (reduce_expression env ~result_ty:TUnit reducer initial
-                           collection sequence)
-                  | Ok { ty = TFn _; _ } ->
-                    Error.error "run! function type does not match collection"
-                  | Ok _ -> Error.error "run! expects a function")))
-      | _ -> Error.error "run! expects function and collection"
     and compile_map_indexed scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
@@ -2144,7 +2096,6 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     compile_repeatedly;
     compile_reductions;
     compile_partition_by;
-    compile_run_bang;
     compile_map_indexed;
     compile_mapv;
     compile_reduce_kv;

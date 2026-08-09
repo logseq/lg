@@ -86,6 +86,10 @@
   :fn<int;seq<value>;option<unit>>)
 (signature clojure.core/dorun [value storage]
   :overload<fn<seqable<value;storage>;option<unit>>;fn<int;seqable<value;storage>;option<unit>>>)
+(signature clojure.core/run! [input output storage]
+  :fn<fn<input;output>;seqable<input;storage>;option<unit>>)
+(signature clojure.core/group-by [input key storage]
+  :fn<fn<input;key>;seqable<input;storage>;map<key;vector<input>>>)
 (signature clojure.core/take-nth-seq [value]
   :fn<int;seq<value>;seq<value>>)
 (signature clojure.core/take-nth [value storage accumulator]

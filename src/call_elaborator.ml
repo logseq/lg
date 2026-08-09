@@ -4053,7 +4053,6 @@ let create ~compile_expr =
   let compile_sort_by = sequence.compile_sort_by in
   let compile_reductions = sequence.compile_reductions in
   let compile_partition_by = sequence.compile_partition_by in
-  let compile_run_bang = sequence.compile_run_bang in
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
@@ -8330,11 +8329,9 @@ let create ~compile_expr =
     | "partition-by" -> compile_partition_by scope env arg_forms
     | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
-    | "run!" -> compile_run_bang scope env arg_forms
     | "sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "sort-by" -> compile_sort_by scope env arg_forms
-    | "group-by" -> compile_group_by scope env arg_forms
     | "concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
     | "interleave" ->
@@ -9391,99 +9388,6 @@ let create ~compile_expr =
                    FList (FSymbol "or" :: calls);
                  ];
              ])
-  and compile_group_by scope env arg_forms =
-    match arg_forms with
-    | [ function_form; collection_form ] -> (
-        match compile_expr scope env collection_form with
-        | Error _ as error -> error
-        | Ok collection -> (
-            match Collection_capability.to_seq_expr env collection with
-            | Error _ -> Error.error "group-by expects a seqable value"
-            | Ok (inner, sequence) -> (
-                let item_name = "__lg_group_by_item" in
-                let compile_deferred_function name =
-                  let function_env =
-                    Env.add
-                      (Names.scoped_key scope item_name)
-                      (Types.binding item_name inner)
-                      env
-                  in
-                  compile_expr scope function_env
-                    (FList [ FSymbol name; FSymbol item_name ])
-                  |> Result.map (fun body ->
-                         typed_ir
-                           (TFn ([ inner ], body.ty))
-                           (Semantic_ir.Fun
-                              ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
-                in
-                let key_function =
-                  match function_form with
-                  | FKeyword keyword ->
-                      let function_env =
-                        Env.add
-                          (Names.scoped_key scope item_name)
-                          (Types.binding item_name inner)
-                          env
-                      in
-                      compile_expr scope function_env
-                        (FList [ FKeyword keyword; FSymbol item_name ])
-                          |> Result.map (fun body ->
-                          typed_ir
-                            (TFn ([ inner ], body.ty))
-                               (Semantic_ir.Fun
-                                  ( [ constrained_identifier_pattern item_name
-                                        inner ],
-                                    body.semantic_expr )))
-                  | FSymbol name -> (
-                      match compile_function_arg scope env function_form with
-                      | Ok function_ -> Ok function_
-                      | Error _ -> compile_deferred_function name)
-                  | form -> compile_function_arg scope env form
-                in
-                match key_function with
-                | Error _ as error -> error
-                | Ok
-                    ({ ty = TFn ([ parameter_ty ], key_ty); _ } as key_function)
-                  when Types.assignable ~policy:Host_boundary
-                         ~expected:parameter_ty ~actual:inner -> (
-                    let item_ty =
-                      match inner with
-                      | TUnknown | TMeta _ | TVar _ -> parameter_ty
-                      | ty -> ty
-                    in
-                    let adapted_key_function =
-                      if Types.is_dynamic parameter_ty
-                         && not (Types.is_dynamic item_ty)
-                      then
-                        let item =
-                          typed_ir item_ty (Semantic_ir.Ident item_name)
-                        in
-                        Result.map
-                          (fun packed_item ->
-                            Semantic_ir.Fun
-                              ( [ constrained_identifier_pattern item_name
-                                    item_ty ],
-                                Semantic_ir.Apply
-                                  ( key_function.semantic_expr,
-                                    [ packed_item ] ) ))
-                          (pack_dynamic_value env parameter_ty item)
-                      else Ok key_function.semantic_expr
-                    in
-                    match adapted_key_function with
-                    | Error _ as error -> error
-                    | Ok adapted_key_function ->
-                        Ok
-                          (typed_ir
-                             (Types.dynamic_map key_ty (TVector item_ty))
-                             (Semantic_ir.Apply
-                                ( Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_map.group_by",
-                                  [ adapted_key_function; sequence ] ))))
-                | Ok { ty = TFn _; _ } ->
-                    Error.error
-                      "group-by function type does not match collection"
-                | Ok _ -> Error.error "group-by expects a function")))
-    | _ -> Error.error "group-by expects function and collection"
   and compile_get_in scope env arg_forms =
     let compile_dynamic_get_in target_form path_form default_form =
       let dynamic_ty = Types.dynamic_constraint TUnknown in

@@ -144,3 +144,14 @@
 (println (= 3 @dorun-calls))
 (dorun dorun-values)
 (println (= 3 @dorun-calls))
+(def run-values (atom []))
+(def run-result
+  (run!
+    (fn [value]
+      (swap! run-values conj value))
+    [1 2 3]))
+(println (nil? run-result))
+(println (= [1 2 3] @run-values))
+(println
+  (= {1 ["a" "c"] 2 ["bb"]}
+     (group-by (fn [value] (count value)) ["a" "bb" "c"])))

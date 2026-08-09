@@ -24117,9 +24117,9 @@ let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
 
 let test_batched_predicate_collection_core_functions_reject_bad_run_function ()
     =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/bad_run_function.cljc"
     {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
-  |> expect_error "run! function type does not match collection"
+  |> expect_error_contains "Type int is not compatible with type string"
 
 let test_doseq_infers_seqable_parameters () =
   let source =

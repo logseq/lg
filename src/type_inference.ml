@@ -4765,23 +4765,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        fresh_type_variable "unary_map_result" ))
                   params name
             | form -> infer_form params form)
-    | FList [ FSymbol "group-by"; fn; collection ] ->
-        let inferred_element_ty = inferred_unary_function_param params fn in
-        let element_ty =
-          match inferred_element_ty with
-          | TUnknown | TMeta _ | TVar _ -> fresh_type_variable "group_by_item"
-          | ty -> ty
-        in
-        Result.bind (infer_sequence_form element_ty params collection)
-          (fun params ->
-            match fn with
-            | FSymbol name ->
-                constrain_symbol
-                  (TFn
-                     ( [ element_ty ],
-                       fresh_type_variable "group_by_key" ))
-                  params name
-            | form -> infer_form params form)
     | FList (FSymbol "mapv" :: fn :: collection_forms)
       when List.length collection_forms >= 2 -> (
         let collection_element_ty collection =
@@ -5558,15 +5541,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params collection
     | FList [ FSymbol ("__lg_set" | "doall"); collection ] ->
         infer_collection params collection
-    | FList
-        [
-          FSymbol "run!";
-          (FList (FSymbol "fn" :: _fn_params :: _body_forms) as function_form);
-          collection;
-        ] ->
-        let element_ty = inferred_unary_function_param params function_form in
-        Result.bind (infer_sequence_form element_ty params collection)
-          (fun params -> infer_form params function_form)
     | FList
         [
           FSymbol "pr-sequential-writer";
