@@ -96,7 +96,7 @@
     coll? {:status :static-adaptation
            :reason :source-function-provides-a-polymorphic-first-class-vector-instance-while-its-inline-definition-specializes-direct-calls-to-supported-static-collection-representations}
     associative? {:status :static-adaptation
-                  :reason :source-function-provides-a-polymorphic-first-class-map-instance-while-its-inline-definition-specializes-direct-calls-to-vector-structural-map-and-persistent-hash-map-representations}
+                  :reason :source-function-and-inline-specialization-use-clojurescript-iassociative-protocol-satisfaction-without-name-based-compiler-dispatch}
     rational? {:status :static-adaptation
                :reason :source-function-and-inline-definition-preserve-the-current-static-integer-rational-domain-without-an-open-number-hierarchy}
     float? {:status :static-adaptation

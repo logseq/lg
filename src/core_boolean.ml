@@ -137,13 +137,5 @@ let compile name args =
           | ty when Option.is_some (Types.dynamic_map_types ty) -> true
           | _ -> false)
         args
-  | "__lg_associative-predicate" ->
-      compile_type_predicate
-        name
-        (function
-          | TVector _ | TRecord _ | TNamed_record { nominal = false; _ } -> true
-          | ty when Option.is_some (Types.dynamic_map_types ty) -> true
-          | _ -> false)
-        args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | _ -> Error.error ("unknown function " ^ name)

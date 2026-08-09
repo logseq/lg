@@ -324,9 +324,9 @@
   (__lg_coll-predicate x))
 
 (defn associative?
-  {:inline (fn [x] (list '__lg_associative-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'IAssociative x))}
   [x]
-  (__lg_associative-predicate x))
+  (satisfies? IAssociative x))
 
 (defn rational?
   {:inline (fn [x] (list '__lg_rational-predicate x))}

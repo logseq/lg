@@ -8013,7 +8013,7 @@ let create ~compile_expr =
               | "__lg_seq-predicate"
               | "__lg_set-predicate"
               | "__lg_fn-predicate" | "__lg_coll-predicate"
-              | "__lg_associative-predicate" | "indexed?" ->
+              | "indexed?" ->
                   compile_boolean_call scope env name arg_forms
     | "instance?" -> (
         match arg_forms with

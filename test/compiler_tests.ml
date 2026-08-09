@@ -21802,6 +21802,73 @@ let test_vector_predicate_has_no_name_based_compiler_dispatch () =
         failwith ("vector? still has name-based compiler dispatch in " ^ path))
     paths
 
+let test_associative_predicate_uses_the_clojurescript_protocol () =
+  let source =
+    {|
+(ns source-iassociative-predicate-app
+  (:require [cljs.core :refer [associative?]]))
+
+(deftype ProtocolAssociative [^int id ^string label]
+  IAssociative
+  (-contains-key? [_ key] (= key :id))
+  (-assoc [this _key _value] this))
+
+(defrecord Point [^int x ^int y])
+
+(println (associative? (ProtocolAssociative. 1 "associative")))
+(println (associative? [1]))
+(println (associative? {:answer 42}))
+(println (associative? (->Point 1 2)))
+(println (not (associative? (list 1))))
+(println (-contains-key? [1 2] 1))
+(println (= [1 9] (-assoc [1 2] 1 9)))
+|}
+  in
+  let expected = "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_iassociative_predicate.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith
+      "associative? must dispatch through a static IAssociative protocol witness";
+  if
+    not
+      (string_contains_substring native_source
+         "(1 >= 0) && (1 < (V.length (V.of_list [1; 2])))")
+  then
+    failwith "vector -contains-key? should emit a readable bounds check";
+  if
+    not (string_contains_substring native_source "V.set (V.of_list [1; 2]) 1 9")
+  then failwith "vector -assoc should emit a readable persistent update";
+  assert_ocaml_runs
+    "associative_predicate_uses_the_clojurescript_iassociative_protocol"
+    expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_iassociative_predicate.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange associative? must use a static IAssociative witness"
+
+let test_associative_predicate_has_no_name_based_compiler_dispatch () =
+  let forbidden = "__lg_associative-predicate" in
+  let paths =
+    [
+      "stdlib/clojure/core.cljc";
+      "src/core_boolean.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+  in
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source forbidden then
+        failwith
+          ("associative? still has name-based compiler dispatch in " ^ path))
+    paths
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -39136,6 +39203,10 @@ let tests =
       test_vector_predicate_uses_the_clojurescript_ivector_protocol );
     ( "vector predicate has no name-based compiler dispatch",
       test_vector_predicate_has_no_name_based_compiler_dispatch );
+    ( "associative predicate uses the ClojureScript IAssociative protocol",
+      test_associative_predicate_uses_the_clojurescript_protocol );
+    ( "associative predicate has no name-based compiler dispatch",
+      test_associative_predicate_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

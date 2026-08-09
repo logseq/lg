@@ -111,12 +111,12 @@ let receiver_id = function
 let registry_receiver_id = Receiver_id.of_type
 
 let source_type_implicitly_satisfies protocol_id receiver_ty =
-  Protocol_id.owner protocol_id = []
-  && Protocol_id.name protocol_id = "IMap"
-  &&
-  match receiver_ty with
-  | TRecord _ -> true
-  | TNamed_record { nominal = false; _ } -> true
+  match
+    (Protocol_id.owner protocol_id, Protocol_id.name protocol_id, receiver_ty)
+  with
+  | [], ("IMap" | "IAssociative"), TRecord _ -> true
+  | [], ("IMap" | "IAssociative"), TNamed_record { nominal = false; _ } ->
+      true
   | _ -> false
 
 let type_satisfies env protocol_id receiver_ty =

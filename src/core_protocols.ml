@@ -372,6 +372,22 @@ let declare_vector_protocol registry =
        Receiver_id.Vector_receiver implementation
   |> add_or_fail
 
+let add_vector_associative_protocols registry =
+  let element = TVar "vector_element" in
+  let vector = TVector element in
+  let add method_name ocaml_name ty registry =
+    let binding = Types.binding ~protocol_id:associative_id ocaml_name ty in
+    Protocol_registry.add_implementation associative_id
+      (method_id associative_id method_name)
+      Receiver_id.Vector_receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add "-contains-key?" "Lg_runtime.Runtime_vector.contains_index"
+       (TFn ([ vector; TInt ], TBool))
+  |> add "-assoc" "Lg_runtime.Runtime_vector.assoc"
+       (TFn ([ vector; TInt; element ], vector))
+
 let add_indexed receiver ocaml_name registry =
   let binding =
     Types.binding ~protocol_id:indexed_id ocaml_name
@@ -440,7 +456,7 @@ let initial_registry =
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol
   |> declare_map_protocols |> add_runtime_map_protocols
-  |> declare_vector_protocol
+  |> declare_vector_protocol |> add_vector_associative_protocols
   |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
