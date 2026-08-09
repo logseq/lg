@@ -104,11 +104,11 @@
     double? {:status :static-adaptation
              :reason :source-function-provides-a-first-class-float-predicate-and-inline-specialization-for-the-static-float-domain}
     sequential? {:status :static-adaptation
-                 :reason :source-function-provides-a-polymorphic-first-class-vector-instance-while-its-inline-definition-preserves-optional-sequential-capability-narrowing}
+                 :reason :source-function-and-inline-specialization-use-clojurescript-isequential-marker-protocol-satisfaction-without-name-based-compiler-dispatch}
     reversible? {:status :static-adaptation
                  :reason :source-function-and-inline-specialization-use-clojurescript-ireversible-protocol-satisfaction-without-name-based-compiler-dispatch}
     sorted? {:status :static-adaptation
-             :reason :source-function-provides-a-polymorphic-first-class-vector-instance-and-inline-false-result-because-lg-sorted-collections-do-not-yet-have-a-distinct-static-isorted-representation}
+             :reason :source-function-and-inline-specialization-use-clojurescript-isorted-protocol-satisfaction-without-name-based-compiler-dispatch-while-lg-has-no-built-in-sorted-collection-yet}
     zero? {:status :static-adaptation
            :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-numeric-zero-predicate}
     pos? {:status :static-adaptation
@@ -211,8 +211,8 @@
               :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-maps-and-static-icounted-protocol-satisfaction}
     seqable? {:status :static-adaptation
               :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-nil-maps-and-static-iseqable-implementations}
-    indexed? {:status :blocked-static-typing
-              :reason :lg-indexed-capability-currently-includes-linear-list-lookup-and-cannot-represent-clojurescript-constant-time-iindexed-without-a-distinct-static-protocol}
+    indexed? {:status :static-adaptation
+              :reason :source-function-uses-a-distinct-clojurescript-iindexed-protocol-so-linear-internal-indexed-list-access-does-not-claim-constant-time-satisfaction}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
     ensure-reduced {:status :blocked-static-typing

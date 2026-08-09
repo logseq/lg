@@ -183,7 +183,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 234-name compiler dispatch inventory has zero `source-shadowed`
+The current 231-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -321,8 +321,8 @@ direct `abs` calls.
 `exn -> option<exn>` routes behind their public source functions. `re-pattern`
 retains a validated static regex constructor while the public var remains
 source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
-`associative?`, and `reversible?` name routes, the raw compiler-call inventory
-contains 234 names.
+`associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
+routes, the raw compiler-call inventory contains 231 names.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the
@@ -419,9 +419,12 @@ the upstream `repeat`/`interleave` construction so macro expansion does not
 materialize an infinite compile-time sequence. The Logseq scan finds 5 direct
 `as->`, 584 direct `cond->`, 38 direct `cond->>`, 1,082 direct `some->`, and
 148 direct `some->>` calls.
-`indexed?` remains compiler-owned because LG's current `Indexed` capability
-also covers linear list lookup and therefore cannot stand in for upstream's
-constant-time `IIndexed` contract. `true?` and `false?` retain the minimal
+`indexed?` now uses a distinct public `IIndexed` protocol, so LG's internal
+linear-list `Indexed` capability does not incorrectly claim the upstream
+constant-time contract. `ISequential` is represented as a real zero-method
+marker protocol with explicit per-type evidence, and `ISorted` preserves all
+four upstream method arities for user-defined implementations. `true?` and
+`false?` retain the minimal
 internal typed identity primitive used by the pinned ClojureScript
 implementation, but their public vars now come from the source standard
 library. A repository-wide Logseq symbol scan

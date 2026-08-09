@@ -328,6 +328,10 @@
   [x]
   (satisfies? IAssociative x))
 
+(defn indexed?
+  [x]
+  (satisfies? IIndexed x))
+
 (defn rational?
   {:inline (fn [x] (list '__lg_rational-predicate x))}
   [x]
@@ -344,9 +348,9 @@
   (__lg_double-predicate x))
 
 (defn sequential?
-  {:inline (fn [x] (list '__lg_sequential-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'ISequential x))}
   [x]
-  (__lg_sequential-predicate x))
+  (satisfies? ISequential x))
 
 (defn reversible?
   {:inline (fn [x] (list 'satisfies? 'IReversible x))}
@@ -354,9 +358,9 @@
   (satisfies? IReversible x))
 
 (defn sorted?
-  {:inline (fn [x] (list '__lg_sorted-predicate x))}
+  {:inline (fn [x] (list 'satisfies? 'ISorted x))}
   [x]
-  (__lg_sorted-predicate x))
+  (satisfies? ISorted x))
 
 (defn zero?
   {:inline (fn [x] (list '__lg_zero-predicate x))}

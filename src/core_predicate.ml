@@ -45,8 +45,5 @@ let compile name args =
             (apply "Lg_runtime.Runtime_dynamic.is_symbol"
                [ arg.semantic_expr ])
       | "__lg_symbol-predicate" -> static_bool (Types.equal arg.ty TSymbol)
-      | "__lg_sequential-predicate" ->
-          static_bool (match arg.ty with TList _ | TVector _ -> true | _ -> false)
-      | "__lg_sorted-predicate" -> static_bool false
       | "__lg_char-predicate" -> static_bool (Types.equal arg.ty TChar)
       | _ -> Error.error ("unknown function " ^ name)

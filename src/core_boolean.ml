@@ -124,5 +124,4 @@ let compile name args =
         args
   | "__lg_fn-predicate" ->
       compile_type_predicate name (function TFn _ -> true | _ -> false) args
-  | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
   | _ -> Error.error ("unknown function " ^ name)

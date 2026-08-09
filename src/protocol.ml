@@ -128,12 +128,16 @@ let type_satisfies env protocol_id receiver_ty =
         registry_receiver_id receiver_ty )
     with
     | Some declaration, Some receiver_id ->
-        Protocol_registry.Method_map.for_all
-          (fun method_id _ ->
-            Option.is_some
-              (Protocol_registry.find_implementation protocol_id method_id
-                 receiver_id registry))
-          declaration.methods
+        if Protocol_registry.Method_map.is_empty declaration.methods then
+          Protocol_registry.has_marker_implementation protocol_id receiver_id
+            registry
+        else
+          Protocol_registry.Method_map.for_all
+            (fun method_id _ ->
+              Option.is_some
+                (Protocol_registry.find_implementation protocol_id method_id
+                   receiver_id registry))
+            declaration.methods
     | None, _ | _, None -> false
   in
   source_type_implicitly_satisfies protocol_id receiver_ty

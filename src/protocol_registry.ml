@@ -62,10 +62,19 @@ end
 module Implementation_map = Map.Make (Implementation_key)
 module Emitted_name_map = Map.Make (String)
 
+module Marker_implementation_key = struct
+  type t = Protocol_id.t * receiver_id
+
+  let compare = Stdlib.compare
+end
+
+module Marker_implementation_set = Set.Make (Marker_implementation_key)
+
 type t = {
   declarations : declaration Protocol_map.t;
   method_protocols : Protocol_id.t list Method_lookup_map.t;
   implementations : Types.binding Implementation_map.t;
+  marker_implementations : Marker_implementation_set.t;
   implementation_locations : Location.t Implementation_map.t;
   implementation_names : Implementation_key.t Emitted_name_map.t;
 }
@@ -75,6 +84,7 @@ let empty =
     declarations = Protocol_map.empty;
     method_protocols = Method_lookup_map.empty;
     implementations = Implementation_map.empty;
+    marker_implementations = Marker_implementation_set.empty;
     implementation_locations = Implementation_map.empty;
     implementation_names = Emitted_name_map.empty;
   }
@@ -204,6 +214,18 @@ let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt
     (protocol_id, method_id, receiver_id)
     registry.implementations
+
+let add_marker_implementation protocol_id receiver_id registry =
+  {
+    registry with
+    marker_implementations =
+      Marker_implementation_set.add (protocol_id, receiver_id)
+        registry.marker_implementations;
+  }
+
+let has_marker_implementation protocol_id receiver_id registry =
+  Marker_implementation_set.mem (protocol_id, receiver_id)
+    registry.marker_implementations
 
 let replace_implementation protocol_id method_id receiver_id binding registry =
   let key = (protocol_id, method_id, receiver_id) in
@@ -340,6 +362,17 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
               binding implementations)
       source.implementations target.implementations
   in
+  let marker_implementations =
+    Marker_implementation_set.fold
+      (fun (protocol_id, receiver_id) markers ->
+        match remap_owner (Protocol_id.owner protocol_id) with
+        | None -> markers
+        | Some _ ->
+            Marker_implementation_set.add
+              (remap_protocol protocol_id, remap_receiver receiver_id)
+              markers)
+      source.marker_implementations target.marker_implementations
+  in
   let implementation_locations =
     Implementation_map.fold
       (fun (protocol_id, method_id, receiver_id) location locations ->
@@ -364,6 +397,7 @@ let export_owner ~from_owner ~to_owner ~from_module ~to_module source target =
     declarations;
     method_protocols;
     implementations;
+    marker_implementations;
     implementation_locations;
     implementation_names;
   }

@@ -15,6 +15,9 @@ let indexed_id = Protocol_id.create ~owner:[] ~name:"Indexed"
 let nth_method_id = Method_id.create ~owner:[ "Indexed" ] ~name:"-nth"
 let emptyable_id = Protocol_id.create ~owner:[] ~name:"Emptyable"
 let empty_method_id = Method_id.create ~owner:[ "Emptyable" ] ~name:"-empty"
+let iindexed_id = Protocol_id.create ~owner:[] ~name:"IIndexed"
+let sequential_id = Protocol_id.create ~owner:[] ~name:"ISequential"
+let sorted_id = Protocol_id.create ~owner:[] ~name:"ISorted"
 let runtime_map_receiver =
   Receiver_id.Host_receiver "Lg_runtime.Runtime_map.t"
 let reversible_id = Protocol_id.create ~owner:[] ~name:"IReversible"
@@ -174,6 +177,78 @@ let declare_collection_lifecycle_protocols registry =
            [ TUnknown; TUnknown ] TUnknown;
        ]
   |> add_or_fail
+
+let declare_protocol_predicate_family registry =
+  let indexed_element = TVar "indexed_element" in
+  let indexed_receiver = TVar "indexed_receiver" in
+  registry
+  |> Protocol_registry.declare iindexed_id
+       [
+         {
+           Protocol_registry.method_id = method_id iindexed_id "-nth";
+           method_ty =
+             TOverloaded_fn
+               [
+                 {
+                   fixed_params = [ indexed_receiver; TInt ];
+                   rest_param = None;
+                   return_ty = indexed_element;
+                 };
+                 {
+                   fixed_params = [ indexed_receiver; TInt; indexed_element ];
+                   rest_param = None;
+                   return_ty = indexed_element;
+                 };
+               ];
+         };
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare sequential_id []
+  |> add_or_fail
+  |> Protocol_registry.declare sorted_id
+       [
+         signature (method_id sorted_id "-sorted-seq")
+           [ TUnknown; TBool ] TUnknown;
+         signature (method_id sorted_id "-sorted-seq-from")
+           [ TUnknown; TUnknown; TBool ] TUnknown;
+         signature (method_id sorted_id "-entry-key")
+           [ TUnknown; TUnknown ] TUnknown;
+         signature (method_id sorted_id "-comparator") [ TUnknown ] TUnknown;
+       ]
+  |> add_or_fail
+
+let add_protocol_predicate_family registry =
+  let element = TVar "indexed_element" in
+  let vector = TVector element in
+  let indexed_binding =
+    Types.binding ~protocol_id:iindexed_id
+      ~overload_targets:
+        [ "Lg_runtime.Runtime_vector.nth"; "Lg_runtime.Runtime_vector.nth_default" ]
+      "Lg_runtime.Runtime_vector.nth"
+      (TOverloaded_fn
+         [
+           {
+             fixed_params = [ vector; TInt ];
+             rest_param = None;
+             return_ty = element;
+           };
+           {
+             fixed_params = [ vector; TInt; element ];
+             rest_param = None;
+             return_ty = element;
+           };
+         ])
+  in
+  let add_marker receiver registry =
+    Protocol_registry.add_marker_implementation sequential_id receiver registry
+  in
+  registry
+  |> Protocol_registry.add_implementation iindexed_id
+       (method_id iindexed_id "-nth") Receiver_id.Vector_receiver indexed_binding
+  |> add_or_fail
+  |> add_marker Receiver_id.List_receiver
+  |> add_marker Receiver_id.Vector_receiver
+  |> add_marker Receiver_id.Seq_receiver
 
 let add_vector_reversible_protocol registry =
   let element = TVar "reversible_element" in
@@ -506,6 +581,7 @@ let initial_registry =
   |> declare_emptyable
   |> add_emptyable runtime_map_receiver "Lg_runtime.Runtime_map.empty_like"
   |> declare_collection_lifecycle_protocols |> add_vector_reversible_protocol
+  |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_swap
   |> declare_comparable_protocol

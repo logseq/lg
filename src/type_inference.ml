@@ -623,6 +623,23 @@ let constrain_seqable element_ty params name =
   | None -> Ok params
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
+let constrain_optional_sequential element_ty params name =
+  let rec add_constraint = function
+    | (TUnknown | TMeta _ | TVar _) as value_ty ->
+        Types.optional_sequential_constraint element_ty (TNullable value_ty)
+    | (TNullable _ | TOcaml_app ("option", [ _ ])) as value_ty ->
+        Types.optional_sequential_constraint element_ty value_ty
+    | existing -> (
+        match Types.protocol_constraint_info existing with
+        | Some (_, _, value_ty) ->
+            Types.protocol_constraint_with_value existing
+              (add_constraint value_ty)
+        | None -> existing)
+  in
+  match string_assoc_opt name params with
+  | None -> Ok params
+  | Some existing -> Ok (replace_param name (add_constraint existing) params)
+
 let constrain_contains key_ty params name =
   let add_constraint = function
     | TUnknown | TMeta _ | TVar _ -> Types.contains_constraint key_ty
@@ -634,40 +651,6 @@ let constrain_contains key_ty params name =
               value_ty
         | None ->
             Types.contains_constraint_with_value key_ty existing)
-  in
-  match string_assoc_opt name params with
-  | None -> Ok params
-  | Some existing -> Ok (replace_param name (add_constraint existing) params)
-
-let constrain_optional_seqable ?(sequential = false) element_ty params name =
-  let make_optional element_ty value_ty =
-    if sequential then Types.optional_sequential_constraint element_ty value_ty
-    else Types.optional_seqable_constraint element_ty value_ty
-  in
-  let rec add_constraint = function
-    | (TUnknown | TMeta _ | TVar _) as value_ty ->
-        make_optional element_ty (TNullable value_ty)
-    | (TNullable _ | TOcaml_app ("option", [ _ ])) as value_ty ->
-        make_optional element_ty value_ty
-    | TOcaml_app (constraint_name, [ existing_element; value_ty ])
-      when constraint_name = Types.seqable_constraint_name
-           || constraint_name = Types.optional_seqable_constraint_name
-           || constraint_name = Types.optional_sequential_constraint_name ->
-        let element_ty =
-          if Types.equal existing_element TUnknown then element_ty
-          else existing_element
-        in
-        if constraint_name = Types.seqable_constraint_name then
-          Types.seqable_constraint_with_value element_ty value_ty
-        else if constraint_name = Types.optional_seqable_constraint_name then
-          Types.optional_seqable_constraint element_ty value_ty
-        else Types.optional_sequential_constraint element_ty value_ty
-    | existing -> (
-        match Types.protocol_constraint_info existing with
-        | Some (_, _, value_ty) ->
-            Types.protocol_constraint_with_value existing
-              (add_constraint value_ty)
-        | None -> existing)
   in
   match string_assoc_opt name params with
   | None -> Ok params
@@ -4404,10 +4387,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList [ FSymbol predicate; FSymbol collection ]
-      when has_source_name predicate "__lg_sequential-predicate" ->
-        constrain_optional_seqable ~sequential:true
-          TUnknown params collection
     | FList [ FSymbol "empty"; FSymbol collection ] -> (
         match string_assoc_opt collection params with
         | Some (TUnknown | TMeta _ | TVar _) ->
@@ -4421,6 +4400,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       -> (
         match lookup_protocol_constraint protocol_name with
         | None -> Error.error ("unknown protocol " ^ protocol_name)
+        | Some _ when Protocol_id.name (Protocol_id.of_string protocol_name) = "ISequential" ->
+            constrain_optional_sequential TUnknown params receiver
         | Some constraint_ty ->
             constrain_symbol
               (Types.guarded_protocol_constraint constraint_ty)

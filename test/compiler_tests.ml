@@ -22032,6 +22032,87 @@ let test_reversible_predicate_has_no_name_based_compiler_dispatch () =
       "src/type_inference.ml";
     ]
 
+let test_protocol_predicate_family_matches_clojurescript () =
+  let source =
+    {|
+(ns source-protocol-predicate-family-app
+  (:require [cljs.core :as core
+             :refer [indexed? sequential? sorted?]]))
+
+(deftype ProtocolIndexed [^int value]
+  IIndexed
+  (-nth [_ _index] value)
+  (-nth [_ index not-found] (if (= index 0) value not-found)))
+
+(deftype ProtocolSequential [^int value]
+  ISequential)
+
+(deftype ProtocolSorted [^int value]
+  ISorted
+  (-sorted-seq [_ _ascending] [value])
+  (-sorted-seq-from [_ _key _ascending] [value])
+  (-entry-key [_ entry] entry)
+  (-comparator [_]
+    (fn [^int left ^int right] (compare left right))))
+
+(def evaluations (atom 0))
+
+(println (indexed? (ProtocolIndexed. 7)))
+(println (core/indexed? [1 2]))
+(println (not (indexed? (list 1 2))))
+(println (= 2 (IIndexed/-nth [1 2] 1)))
+(println (= 9 (IIndexed/-nth [1 2] 9 9)))
+(println (sequential? (ProtocolSequential. 1)))
+(println (sequential? [1]))
+(println (sequential? (list 1)))
+(println (sequential? (seq [1])))
+(println (not (sequential? #{1})))
+(println (not (sequential? "a")))
+(println (sorted? (ProtocolSorted. 1)))
+(println (not (sorted? [1])))
+(println (indexed? (do (swap! evaluations inc) [1])))
+(println (= 1 @evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 15 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_protocol_predicate_family.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "protocol predicates must use static protocol witnesses";
+  assert_ocaml_runs "protocol_predicate_family_matches_clojurescript" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_protocol_predicate_family.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange protocol predicates must use static protocol witnesses"
+
+let test_protocol_predicate_family_has_no_name_based_compiler_dispatch () =
+  let compiler_paths =
+    [
+      "src/core_boolean.ml";
+      "src/core_predicate.ml";
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+    ]
+  in
+  List.iter
+    (fun (name, forbidden) ->
+      List.iter
+        (fun path ->
+          let source = read_file (Filename.concat (repo_root ()) path) in
+          if string_contains_substring source forbidden then
+            failwith (name ^ " still has name-based compiler dispatch in " ^ path))
+        compiler_paths)
+    [
+      ("indexed?", "\"indexed?\"");
+      ("sequential?", "__lg_sequential-predicate");
+      ("sorted?", "__lg_sorted-predicate");
+    ]
+
 let test_source_primitive_predicates_and_abs_match_clojurescript () =
   let source =
     {|
@@ -39382,6 +39463,10 @@ let tests =
       test_reversible_predicate_uses_the_clojurescript_protocol );
     ( "reversible predicate has no name-based compiler dispatch",
       test_reversible_predicate_has_no_name_based_compiler_dispatch );
+    ( "protocol predicate family matches ClojureScript",
+      test_protocol_predicate_family_matches_clojurescript );
+    ( "protocol predicate family has no name-based compiler dispatch",
+      test_protocol_predicate_family_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",

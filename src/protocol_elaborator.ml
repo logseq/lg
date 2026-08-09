@@ -97,6 +97,23 @@ let add_implementation ?location env method_name receiver_ty marker binding =
           in
           Ok (Env.with_protocol_evidence protocol_evidence env))
 
+let add_marker_implementation env protocol_id receiver_ty =
+  match Protocol.registry_receiver_id receiver_ty with
+  | None ->
+      Error.error
+        ("marker protocol implementations do not support receiver type "
+       ^ source_name receiver_ty)
+  | Some receiver_id ->
+      let add registry =
+        Protocol_registry.add_marker_implementation protocol_id receiver_id
+          registry
+      in
+      let env = Env.with_protocols (add (Env.protocols env)) env in
+      Ok
+        (Env.with_protocol_evidence
+           (Option.map add (Env.protocol_evidence env))
+           env)
+
 let update_overloaded_implementation env method_name receiver_ty
     (marker : binding) (binding : binding) =
   match
@@ -248,6 +265,24 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
   match protocol_receiver_type scope env receiver_form with
   | Error _ as err -> err
   | Ok receiver_ty ->
+      let marker_protocol =
+        Option.bind
+          (Protocol.find_protocol_id scope env protocol_name)
+          (fun protocol_id ->
+            Option.bind
+              (Protocol_registry.find_protocol protocol_id (Env.protocols env))
+              (fun declaration ->
+                if
+                  method_forms = []
+                  && Protocol_registry.Method_map.is_empty declaration.methods
+                then Some protocol_id
+                else None))
+      in
+      if Option.is_some marker_protocol then
+        Result.map
+          (fun env -> (scope, env, next_type, Group []))
+          (add_marker_implementation env (Option.get marker_protocol) receiver_ty)
+      else
       let select_method_arity (marker : binding) argument_count =
         match marker.ty with
         | TOverloaded_fn arities ->

@@ -1349,7 +1349,23 @@ let rec compile scope env next_type form =
           let rec predeclare_methods env names current_interface = function
             | [] -> Ok (env, List.sort_uniq String.compare names)
             | FSymbol interface_name :: rest ->
-                predeclare_methods env names (Some interface_name) rest
+                let registered =
+                  match Protocol.find_protocol_id scope env interface_name with
+                  | None -> Ok env
+                  | Some protocol_id -> (
+                      match
+                        Protocol_registry.find_protocol protocol_id
+                          (Env.protocols env)
+                      with
+                      | Some declaration
+                        when Protocol_registry.Method_map.is_empty
+                               declaration.methods ->
+                          Protocol_elaborator.add_marker_implementation env
+                            protocol_id receiver_ty
+                      | Some _ | None -> Ok env)
+                in
+                Result.bind registered (fun env ->
+                    predeclare_methods env names (Some interface_name) rest)
             | FList (FSymbol method_name :: arities) :: rest
               when arities <> []
                    && List.for_all
@@ -3173,7 +3189,8 @@ let rec compile scope env next_type form =
             let binding =
               match Env.find_opt key env with
               | Some binding
-                when not (Types.equal binding.ty (TOcaml "__declared_fn")) ->
+                when String.equal binding.ocaml_name ocaml_name
+                     && not (Types.equal binding.ty (TOcaml "__declared_fn")) ->
                   binding
               | _ -> (
                   match sidecar_function_signature scope env name with

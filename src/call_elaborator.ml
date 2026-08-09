@@ -5214,8 +5214,7 @@ let create ~compile_expr =
               ( Protocol.find_protocol_id scope env protocol_name,
                 compile_expr scope env receiver_form )
             with
-                      | None, _ ->
-                          Error.error ("unknown protocol " ^ protocol_name)
+            | None, _ -> Error.error ("unknown protocol " ^ protocol_name)
             | _, (Error _ as error) -> error
             | Some _, Ok receiver when Types.is_dynamic receiver.ty ->
                 Error.error
@@ -5223,31 +5222,49 @@ let create ~compile_expr =
                    closed sum type for alternative receiver types"
             | Some protocol_id, Ok receiver ->
                 let expression =
-                  if has_protocol_constraint protocol_id receiver.ty then
-                      match
-                                    protocol_witness_expression protocol_id
-                                      receiver
-                      with
-                      | Some witness ->
-                          Semantic_ir.Match
-                            ( witness,
-                                          [
-                                            ( Semantic_ir.PConstructor
-                                                ("None", None),
-                                  Semantic_ir.Bool false );
-                                ( Semantic_ir.PConstructor
-                                    ("Some", Some Semantic_ir.PAny),
-                                  Semantic_ir.Bool true );
-                              ] )
-                      | None -> Semantic_ir.Bool false
-                              else
-                      Semantic_ir.Sequence
-                                    [
-                                      receiver.semantic_expr;
-                          Semantic_ir.Bool
-                                        (Protocol.type_satisfies env protocol_id
-                                           receiver.ty);
-                        ]
+                  if
+                    Protocol_id.name protocol_id = "ISequential"
+                    && Option.is_some
+                         (Types.seqable_constraint_info receiver.ty)
+                  then
+                    match Types.seqable_constraint_info receiver.ty with
+                    | Some ((`Optional | `Optional_sequential), _, _) -> (
+                        match Semantic_ir.unlocated receiver.semantic_expr with
+                        | Semantic_ir.Ident name ->
+                            Semantic_ir.Match
+                              ( Semantic_ir.Ident (name ^ "__seq_optional"),
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Bool false );
+                                  ( Semantic_ir.PConstructor
+                                      ("Some", Some Semantic_ir.PAny),
+                                    Semantic_ir.Bool true );
+                                ] )
+                        | _ -> Semantic_ir.Bool false)
+                    | Some (`Required, _, _) ->
+                        Semantic_ir.Sequence
+                          [ receiver.semantic_expr; Semantic_ir.Bool true ]
+                    | None -> assert false
+                  else if has_protocol_constraint protocol_id receiver.ty then
+                    match protocol_witness_expression protocol_id receiver with
+                    | Some witness ->
+                        Semantic_ir.Match
+                          ( witness,
+                            [
+                              ( Semantic_ir.PConstructor ("None", None),
+                                Semantic_ir.Bool false );
+                              ( Semantic_ir.PConstructor
+                                  ("Some", Some Semantic_ir.PAny),
+                                Semantic_ir.Bool true );
+                            ] )
+                    | None -> Semantic_ir.Bool false
+                  else
+                    Semantic_ir.Sequence
+                      [
+                        receiver.semantic_expr;
+                        Semantic_ir.Bool
+                          (Protocol.type_satisfies env protocol_id receiver.ty);
+                      ]
                 in
                 Ok (typed_ir TBool expression))
         | _ -> Error.error "satisfies? expects a protocol and value")
@@ -8011,8 +8028,7 @@ let create ~compile_expr =
               | "__lg_number-predicate" | "__lg_string-predicate"
               | "__lg_keyword-predicate" | "__lg_list-predicate"
               | "__lg_seq-predicate"
-              | "__lg_fn-predicate"
-              | "indexed?" ->
+              | "__lg_fn-predicate" ->
                   compile_boolean_call scope env name arg_forms
     | "instance?" -> (
         match arg_forms with
@@ -8074,54 +8090,9 @@ let create ~compile_expr =
           (resolve_name
           ^ " cannot be used without a closed result type; define a closed sum \
              type containing the supported Vars")
-    | "__lg_sequential-predicate" -> (
-        match compile_args () with
-        | Error _ as error -> error
-        | Ok [ receiver ] -> (
-            if Types.is_dynamic receiver.ty then
-              Ok
-                (typed_ir TBool
-                   (Semantic_ir.Apply
-                      ( Semantic_ir.Ident
-                          "Lg_runtime.Runtime_dynamic.is_sequential",
-                        [ receiver.semantic_expr ] )))
-            else
-            match Types.seqable_constraint_info receiver.ty with
-            | Some ((`Optional | `Optional_sequential), _, _) -> (
-                            match
-                              Semantic_ir.unlocated receiver.semantic_expr
-                            with
-                | Semantic_ir.Ident name ->
-                    Ok
-                      (typed_ir TBool
-                         (Semantic_ir.Match
-                                        ( Semantic_ir.Ident
-                                            (name ^ "__seq_optional"),
-                                          [
-                                            ( Semantic_ir.PConstructor
-                                                ("None", None),
-                                  Semantic_ir.Bool false );
-                                ( Semantic_ir.PConstructor
-                                    ("Some", Some Semantic_ir.PAny),
-                                  Semantic_ir.Bool true );
-                              ] )))
-                | _ ->
-                    Error.error
-                                  "sequential? constrained value must be a \
-                                   function parameter")
-            | Some (`Required, _, _) ->
-                Ok
-                  (typed_ir TBool
-                     (Semantic_ir.Sequence
-                                    [
-                                      receiver.semantic_expr;
-                                      Semantic_ir.Bool true;
-                                    ]))
-            | None -> Core_predicate.compile name [ receiver ])
-        | Ok _ -> Error.error "sequential? expects 1 arguments")
     | "__lg_rational-predicate" | "__lg_float-predicate"
     | "__lg_double-predicate" | "__lg_symbol-predicate"
-    | "__lg_sorted-predicate" | "__lg_char-predicate" -> (
+    | "__lg_char-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_predicate.compile name args)
