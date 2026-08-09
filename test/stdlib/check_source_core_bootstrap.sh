@@ -65,7 +65,10 @@ for name in \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
   'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' \
   'char?' 'identical?' 'array?' 'array-value?' 'reduced?' \
-  'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?'; do
+  'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?' \
+  'ident?' 'simple-ident?' 'qualified-ident?' \
+  'simple-symbol?' 'qualified-symbol?' \
+  'simple-keyword?' 'qualified-keyword?'; do
   if ! grep -F "(defn $name" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a function" >&2
@@ -79,10 +82,7 @@ for name in \
 done
 
 for name in \
-  'empty?' 'not-empty' 'ident?' 'counted?' 'seqable?' \
-  'simple-symbol?' 'qualified-symbol?' \
-  'simple-keyword?' 'qualified-keyword?' \
-  'simple-ident?' 'qualified-ident?'; do
+  'empty?' 'not-empty' 'counted?' 'seqable?'; do
   if ! grep -F "(defmacro $name " \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a macro" >&2

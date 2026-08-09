@@ -209,7 +209,10 @@ guarded source control flow. LG narrows `int?`, `keyword?`, and `symbol?`
 branches through internal typed helpers so the guarded branch remains readable
 source without restoring public-name dispatch; these two newly needed helper
 routes explain why removing nine public routes reduces the raw dispatch count
-by seven.
+by seven. The identifier family is also available as source functions with
+static symbol or keyword signatures. The heterogeneous `ident?` variants use a
+keyword runtime instance and retain keyword-or-symbol behavior in their inline
+direct-call definitions, avoiding an implicit union or dynamic adapter.
 The broader public static predicate family is defined as ClojureScript-style
 source functions with source inline definitions. The runtime function bodies
 have concrete static signatures, including polymorphic collection element

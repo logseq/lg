@@ -21644,6 +21644,48 @@ let test_source_scalar_predicates_are_statically_first_class () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange first-class scalar predicates must remain static"
 
+let test_source_identifier_predicates_are_statically_first_class () =
+  let source =
+    {|
+(ns source-first-class-identifier-predicate-app
+  (:require [cljs.core :as core
+             :refer [ident? simple-ident? qualified-ident?
+                     simple-symbol? qualified-symbol?
+                     simple-keyword? qualified-keyword?]]))
+
+(def ident-predicate ident?)
+(def simple-ident-predicate simple-ident?)
+(def qualified-ident-predicate qualified-ident?)
+(def simple-symbol-predicate core/simple-symbol?)
+(def qualified-symbol-predicate qualified-symbol?)
+(def simple-keyword-predicate clojure.core/simple-keyword?)
+(def qualified-keyword-predicate qualified-keyword?)
+
+(println (ident-predicate :value))
+(println (simple-ident-predicate :value))
+(println (qualified-ident-predicate :app/value))
+(println (simple-symbol-predicate 'value))
+(println (qualified-symbol-predicate 'app/value))
+(println (simple-keyword-predicate :value))
+(println (qualified-keyword-predicate :app/value))
+|}
+  in
+  let expected = String.concat "" (List.init 7 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_first_class_identifier_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class identifier predicates must remain static";
+  assert_ocaml_runs "source_first_class_identifier_predicates" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_first_class_identifier_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange first-class identifier predicates must remain static"
+
 let test_source_numeric_coercions_match_clojurescript () =
   let source =
     {|
@@ -38216,6 +38258,8 @@ let tests =
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",
       test_source_scalar_predicates_are_statically_first_class );
+    ( "source identifier predicates are statically first-class",
+      test_source_identifier_predicates_are_statically_first_class );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
     ( "source control macros match ClojureScript",

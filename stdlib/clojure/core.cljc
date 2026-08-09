@@ -489,41 +489,82 @@
   [x]
   (if (__lg_int-predicate x) (not (neg? x)) false))
 
-(defmacro ident? [x]
-  `(let [value# ~x]
-     (or (keyword? value#) (symbol? value#))))
+(defn ident?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or (list 'keyword? value) (list 'symbol? value)))))}
+  [x]
+  (__lg_keyword-predicate x))
 
-(defmacro simple-ident? [x]
-  `(let [value# ~x]
-     (or (simple-keyword? value#) (simple-symbol? value#))))
+(defn simple-ident?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or
+                   (list 'simple-keyword? value)
+                   (list 'simple-symbol? value)))))}
+  [x]
+  (simple-keyword? x))
 
-(defmacro qualified-ident? [x]
-  `(let [value# ~x]
-     (or (qualified-keyword? value#) (qualified-symbol? value#))))
+(defn qualified-ident?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'or
+                   (list 'qualified-keyword? value)
+                   (list 'qualified-symbol? value)))))}
+  [x]
+  (qualified-keyword? x))
 
-(defmacro simple-symbol? [x]
-  `(let [value# ~x]
-     (if (__lg_symbol-predicate value#)
-       (__lg_nil-predicate (namespace value#))
-       false)))
+(defn simple-symbol?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_symbol-predicate value)
+                   (list '__lg_nil-predicate (list 'namespace value))
+                   false))))}
+  [x]
+  (__lg_nil-predicate (namespace x)))
 
-(defmacro qualified-symbol? [x]
-  `(let [value# ~x]
-     (if (__lg_symbol-predicate value#)
-       (not (__lg_nil-predicate (namespace value#)))
-       false)))
+(defn qualified-symbol?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_symbol-predicate value)
+                   (list 'not
+                         (list '__lg_nil-predicate (list 'namespace value)))
+                   false))))}
+  [x]
+  (not (__lg_nil-predicate (namespace x))))
 
-(defmacro simple-keyword? [x]
-  `(let [value# ~x]
-     (if (__lg_keyword-predicate value#)
-       (__lg_nil-predicate (namespace value#))
-       false)))
+(defn simple-keyword?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_keyword-predicate value)
+                   (list '__lg_nil-predicate (list 'namespace value))
+                   false))))}
+  [x]
+  (__lg_nil-predicate (namespace x)))
 
-(defmacro qualified-keyword? [x]
-  `(let [value# ~x]
-     (if (__lg_keyword-predicate value#)
-       (not (__lg_nil-predicate (namespace value#)))
-       false)))
+(defn qualified-keyword?
+  {:inline
+   (fn [x]
+     (let [value (gensym)]
+       (list 'let [value x]
+             (list 'if (list '__lg_keyword-predicate value)
+                   (list 'not
+                         (list '__lg_nil-predicate (list 'namespace value)))
+                   false))))}
+  [x]
+  (not (__lg_nil-predicate (namespace x))))
 
 (defmacro counted? [x]
   `(let [value# ~x]

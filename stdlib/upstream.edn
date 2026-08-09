@@ -162,19 +162,19 @@
     nat-int? {:status :static-adaptation
               :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-not-negative-branches-for-the-supported-lg-int-domain}
     ident? {:status :static-adaptation
-            :reason :source-macro-preserves-upstream-keyword-or-symbol-control-flow-and-binds-the-argument-once-before-static-predicate-specialization}
+            :reason :source-function-provides-a-first-class-keyword-instance-while-its-single-evaluation-inline-definition-preserves-upstream-keyword-or-symbol-control-flow}
     simple-ident? {:status :static-adaptation
-                   :reason :source-macro-composes-the-upstream-simple-keyword-and-simple-symbol-cases-because-lg-represents-their-common-guard-as-two-static-branches}
+                   :reason :source-function-provides-a-first-class-keyword-instance-while-its-inline-definition-composes-the-upstream-simple-keyword-and-simple-symbol-static-branches}
     qualified-ident? {:status :static-adaptation
-                      :reason :source-macro-composes-the-upstream-qualified-keyword-and-qualified-symbol-cases-and-uses-static-option-presence-for-namespace-truthiness}
+                      :reason :source-function-provides-a-first-class-keyword-instance-while-its-inline-definition-composes-qualified-keyword-and-qualified-symbol-static-branches}
     simple-symbol? {:status :static-adaptation
-                    :reason :source-macro-preserves-the-upstream-symbol-and-nil-namespace-branches-with-static-guard-narrowing}
+                    :reason :source-function-provides-a-first-class-symbol-predicate-while-its-inline-definition-preserves-upstream-type-guard-and-nil-namespace-branches}
     qualified-symbol? {:status :static-adaptation
-                       :reason :source-macro-preserves-the-upstream-symbol-and-present-namespace-branches-and-uses-static-option-presence-for-boolean-coercion}
+                       :reason :source-function-provides-a-first-class-symbol-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
     simple-keyword? {:status :static-adaptation
-                     :reason :source-macro-preserves-the-upstream-keyword-and-nil-namespace-branches-with-static-guard-narrowing}
+                     :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-upstream-type-guard-and-nil-namespace-branches}
     qualified-keyword? {:status :static-adaptation
-                        :reason :source-macro-preserves-the-upstream-keyword-and-present-namespace-branches-and-uses-static-option-presence-for-boolean-coercion}
+                        :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
     counted? {:status :static-adaptation
               :reason :source-macro-preserves-upstream-icounted-protocol-satisfaction-through-the-static-core-protocol-registry-and-recognizes-structural-maps-before-they-are-fully-backed-by-the-persistent-hash-map-protocol-receiver}
     seqable? {:status :static-adaptation
