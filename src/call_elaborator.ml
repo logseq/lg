@@ -707,7 +707,8 @@ let resolve_named_record_application env = function
             |> List.map (fun (parameter, argument) ->
                    (Type_solver.Declared parameter, argument))
           in
-          Type_solver.apply substitutions (TNamed_record record)
+          Type_solver.apply (Type_solver.of_list substitutions)
+            (TNamed_record record)
       | [] | _ :: _ :: _ -> ty)
   | ty -> ty
 
@@ -2182,7 +2183,7 @@ let named_record_can_specialize expected actual =
     List.length expected = List.length actual
     && List.for_all2
          (fun expected actual ->
-           Result.is_ok (Type_solver.unify [] actual expected))
+           Result.is_ok (Type_solver.unify Type_solver.empty actual expected))
          expected actual
   in
   match (expected, actual) with
@@ -5982,11 +5983,12 @@ let create ~compile_expr =
                       List.length record.type_parameters
                       = List.length record.type_arguments
                     then
-                      List.map2
+                      Type_solver.of_list
+                        (List.map2
                         (fun parameter argument ->
                           (Type_solver.Declared parameter, argument))
-                        record.type_parameters record.type_arguments
-                    else []
+                        record.type_parameters record.type_arguments)
+                    else Type_solver.empty
                   in
                   Some
                     (List.map
@@ -8548,7 +8550,7 @@ let create ~compile_expr =
                   match merge_branch_types left right with
                   | Some _ as merged -> merged
                   | None -> (
-                      match Type_solver.unify [] left right with
+                      match Type_solver.unify Type_solver.empty left right with
                       | Error _ -> None
                       | Ok substitutions ->
                           Some
@@ -9642,7 +9644,7 @@ let create ~compile_expr =
                       compile_non_callbacks (index + 1))
               in
               let infer_substitutions () =
-                let substitutions = ref [] in
+                let substitutions = ref Type_solver.empty in
                 Array.iteri
                   (fun index argument ->
                     match argument with
@@ -9846,7 +9848,7 @@ let create ~compile_expr =
                           else
                             Type_solver.unify substitutions template actual
                             |> Result.value ~default:substitutions)
-                        [] arity.fixed_params fixed_args
+                        Type_solver.empty arity.fixed_params fixed_args
                     in
                     let fixed_param_tys =
                       List.map2 specialize_expected arity.fixed_params fixed_args
@@ -9925,7 +9927,8 @@ let create ~compile_expr =
                                     align_optional_inference expected arg.ty
                                   in
                                   Result.is_ok
-                                    (Type_solver.unify [] expected actual)
+                                    (Type_solver.unify Type_solver.empty expected
+                                       actual)
                               else
                                 named_argument_compatible expected arg.ty)
                             extra_args
@@ -10245,7 +10248,7 @@ let create ~compile_expr =
                             else Error conflict)
                   | _ -> assert false
                 in
-                match infer_arguments [] param_tys actual_tys with
+                match infer_arguments Type_solver.empty param_tys actual_tys with
                 | Error conflict when Type_solver.conflict_is_occurs conflict ->
                     Error.error
                       (name
@@ -11434,7 +11437,7 @@ let create ~compile_expr =
             | Some payload, None -> payload
             | _ -> ty
           in
-          Type_solver.unify [] template expected
+          Type_solver.unify Type_solver.empty template expected
           |> Result.map (fun substitutions -> Type_solver.apply substitutions ty)
           |> Result.value ~default:ty
       | _ -> ty
@@ -11886,7 +11889,7 @@ let create ~compile_expr =
                                           (fun substitutions ->
                                             Type_solver.unify substitutions
                                               expected argument.ty))
-                                      (Ok []) param_tys args
+                                      (Ok Type_solver.empty) param_tys args
                                     |> Result.map (fun substitutions ->
                                            Type_solver.apply substitutions
                                              (TFn (param_tys, return_ty)))

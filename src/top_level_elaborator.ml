@@ -1920,7 +1920,7 @@ let rec compile scope env next_type form =
                       rest))
       in
       let refine_predeclared_bindings env name predeclared_ty actual_ty =
-        match Type_solver.unify [] predeclared_ty actual_ty with
+        match Type_solver.unify Type_solver.empty predeclared_ty actual_ty with
         | Error _ ->
             Error.error
               ("recursive function " ^ name

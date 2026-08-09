@@ -1216,9 +1216,11 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
   in
   let binding_abi_equal (left : Types.binding) (right : Types.binding) =
     (match (left.scheme, right.scheme) with
+    | Some left, Some right when left == right -> true
     | Some left, Some right ->
         Types.source_name (Type_solver.canonical_scheme_body left)
         = Types.source_name (Type_solver.canonical_scheme_body right)
+    | None, None when left.ty == right.ty -> true
     | None, None -> Types.source_name left.ty = Types.source_name right.ty
     | Some _, None | None, Some _ -> false)
     && left.row_param_types = right.row_param_types

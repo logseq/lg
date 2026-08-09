@@ -1660,7 +1660,7 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   in
   let actual = TTuple [ TInt; TFn ([ TInt; TString ], TString) ] in
   let substitutions =
-    Lg.Type_solver.unify [] template actual
+    Lg.Type_solver.unify Lg.Type_solver.empty template actual
     |> Result.fold ~ok:Fun.id ~error:(fun _ ->
            failwith "compatible shared constraints must unify")
   in
@@ -1676,7 +1676,7 @@ let test_type_solver_preserves_shared_and_independent_variables () =
   if Lg.Type_solver.apply preserved (TVar "value") <> TInt then
     failwith "unknown evidence must not erase a concrete solution";
   match
-    Lg.Type_solver.unify [] (TVar "recursive")
+    Lg.Type_solver.unify Lg.Type_solver.empty (TVar "recursive")
       (TVector (TVar "recursive"))
   with
   | Error _ -> ()
@@ -1834,7 +1834,7 @@ let test_empty_type_substitutions_preserve_type_identity () =
   let ty =
     TFn ([ TRecord [ make_field ":name" TString ] ], TSeq (TVector TString))
   in
-  if not (Lg.Type_solver.apply [] ty == ty) then
+  if not (Lg.Type_solver.apply Lg.Type_solver.empty ty == ty) then
     failwith "empty substitutions must not copy an unchanged type tree"
 
 let test_symbol_id_hash_survives_state_roundtrip () =
@@ -1855,7 +1855,8 @@ let test_unrelated_type_substitutions_preserve_type_identity () =
   if
     not
       (Lg.Type_solver.apply
-         [ (Lg.Type_solver.Declared "other", TInt) ]
+         (Lg.Type_solver.of_list
+            [ (Lg.Type_solver.Declared "other", TInt) ])
          ty
       == ty)
   then
@@ -1877,7 +1878,7 @@ let test_type_solver_applies_deep_substitutions_linearly () =
   let started_at = Sys.time () in
   let applied =
     Lg.Type_solver.apply
-      [ (Lg.Type_solver.Declared "leaf", TInt) ]
+      (Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "leaf", TInt) ])
       template
   in
   let elapsed = Sys.time () -. started_at in
@@ -1914,7 +1915,7 @@ let test_type_solver_preserves_shared_substitution_dags () =
   let started_at = Sys.time () in
   let applied =
     Lg.Type_solver.apply
-      [ (Lg.Type_solver.Declared "leaf", TInt) ]
+      (Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "leaf", TInt) ])
       template
   in
   let elapsed = Sys.time () -. started_at in
@@ -1936,7 +1937,7 @@ let test_type_solver_applies_wide_substitutions_linearly () =
   let started_at = Sys.time () in
   let applied =
     Lg.Type_solver.apply
-      [ (Lg.Type_solver.Declared "element", TInt) ]
+      (Lg.Type_solver.of_list [ (Lg.Type_solver.Declared "element", TInt) ])
       template
   in
   let elapsed = Sys.time () -. started_at in
@@ -1962,7 +1963,8 @@ let test_type_solver_unifies_deep_types_linearly () =
   let started_at = Sys.time () in
   (match
      Lg.Type_solver.infer
-       [ (Lg.Type_solver.Declared "unrelated", TString) ]
+       (Lg.Type_solver.of_list
+          [ (Lg.Type_solver.Declared "unrelated", TString) ])
        ~template:left ~actual:right
    with
   | Ok _ -> ()
@@ -1986,7 +1988,7 @@ let test_type_solver_adds_independent_substitutions_linearly () =
              (TVar ("value-" ^ string_of_int index)) TInt
            |> Result.fold ~ok:Fun.id ~error:(fun _ ->
                   failwith "independent substitutions must unify"))
-         []
+         Lg.Type_solver.empty
   in
   let elapsed = Sys.time () -. started_at in
   if
@@ -1998,6 +2000,47 @@ let test_type_solver_adds_independent_substitutions_linearly () =
     failwith
       (Printf.sprintf
          "adding independent substitutions must be linear (%.3fs)" elapsed)
+
+let test_type_solver_indexes_independent_substitutions () =
+  let open Lg.Types in
+  let substitution_count = 20_000 in
+  let substitutions =
+    List.init substitution_count Fun.id
+    |> List.fold_left
+         (fun substitutions index ->
+           Lg.Type_solver.unify substitutions
+             (TVar ("indexed-" ^ string_of_int index)) TInt
+           |> Result.fold ~ok:Fun.id ~error:(fun _ ->
+                  failwith "independent substitutions must unify"))
+         Lg.Type_solver.empty
+  in
+  let template =
+    TTuple
+      (List.init substitution_count (fun index ->
+           TVar ("indexed-" ^ string_of_int index)))
+  in
+  let started_at = Sys.time () in
+  let applied = Lg.Type_solver.apply substitutions template in
+  let elapsed = Sys.time () -. started_at in
+  (match applied with
+  | TTuple items when List.for_all (( = ) TInt) items -> ()
+  | _ -> failwith "indexed substitutions must replace every variable");
+  if elapsed >= 0.10 then
+    failwith
+      (Printf.sprintf
+         "independent substitution lookup must be indexed (%.3fs)" elapsed)
+
+let test_type_solver_of_list_preserves_first_binding () =
+  let open Lg.Types in
+  let substitutions =
+    Lg.Type_solver.of_list
+      [
+        (Lg.Type_solver.Declared "value", TInt);
+        (Lg.Type_solver.Declared "value", TString);
+      ]
+  in
+  if Lg.Type_solver.apply substitutions (TVar "value") <> TInt then
+    failwith "of_list must preserve association-list lookup precedence"
 
 let test_generic_record_calls_freshen_callee_type_variables () =
   let source =
@@ -28358,6 +28401,64 @@ let test_nested_simple_let_inference_visits_body_linearly () =
       ^ string_of_int !known_lookups
       ^ " known-function lookups")
 
+let test_unobserved_calls_do_not_precompute_argument_types () =
+  let open Lg.Ast in
+  let lookup_function_ty name =
+    if String.equal name "consume" then
+      Ok (Lg.Types.TFn ([ Lg.Types.TVector Lg.Types.TInt ], Lg.Types.TInt))
+    else Lg.Error.error ("unknown function " ^ name)
+  in
+  let argument = FVector (List.init 64 (fun index -> FInt index)) in
+  let body =
+    List.init 4_000 (fun _ -> FList [ FSymbol "consume"; argument ])
+  in
+  let infer ?observe_call () =
+    Gc.full_major ();
+    let before = Gc.allocated_bytes () in
+    ignore
+      (Lg.Type_inference.infer_params ?observe_call ~lookup_function_ty
+         ~lookup_protocol_constraint:(fun _ -> None)
+         ~lookup_dynamic_key_record_type:(fun _ -> None)
+         ~resolve_named_record:Fun.id [] body
+      |> expect_ok);
+    Gc.allocated_bytes () -. before
+  in
+  let unobserved = infer () in
+  let observed = infer ~observe_call:(fun _ _ _ -> ()) () in
+  if observed -. unobserved < 200_000. then
+    failwith
+      (Printf.sprintf
+         "unobserved calls retained eager argument-type traversal: %.0f vs %.0f bytes"
+         unobserved observed)
+
+let test_call_observer_receives_static_argument_types () =
+  let open Lg.Ast in
+  let observed = ref [] in
+  let lookup_function_ty name =
+    if String.equal name "consume" then
+      Ok
+        (Lg.Types.TFn
+           ([ Lg.Types.TInt; Lg.Types.TString ], Lg.Types.TInt))
+    else Lg.Error.error ("unknown function " ^ name)
+  in
+  ignore
+    (Lg.Type_inference.infer_params ~lookup_function_ty
+       ~lookup_protocol_constraint:(fun _ -> None)
+       ~lookup_dynamic_key_record_type:(fun _ -> None)
+       ~resolve_named_record:Fun.id
+       ~observe_call:(fun name _forms types -> observed := (name, types) :: !observed)
+       []
+       [ FList [ FSymbol "consume"; FInt 42; FString "answer" ] ]
+    |> expect_ok);
+  if
+    not
+      (List.exists
+         (fun (name, types) ->
+           String.equal name "consume"
+           && types = [ Lg.Types.TInt; Lg.Types.TString ])
+         !observed)
+  then failwith "call observer did not receive the static argument types"
+
 let test_global_function_alias_keeps_contextual_inference () =
   let lookup_function_ty name =
     if String.equal name "known" then
@@ -38483,6 +38584,10 @@ let tests =
       test_type_solver_unifies_deep_types_linearly );
     ( "type solver adds independent substitutions linearly",
       test_type_solver_adds_independent_substitutions_linearly );
+    ( "type solver indexes independent substitutions",
+      test_type_solver_indexes_independent_substitutions );
+    ( "type solver of_list preserves first binding",
+      test_type_solver_of_list_preserves_first_binding );
     ( "generic record calls freshen callee type variables",
       test_generic_record_calls_freshen_callee_type_variables );
     ( "static sequences adapt to option callback parameters",
@@ -40443,6 +40548,10 @@ let tests =
       test_typecheck_validates_full_compile_after_evidence_stabilizes );
     ( "nested simple let inference visits body linearly",
       test_nested_simple_let_inference_visits_body_linearly );
+    ( "unobserved calls do not precompute argument types",
+      test_unobserved_calls_do_not_precompute_argument_types );
+    ( "call observer receives static argument types",
+      test_call_observer_receives_static_argument_types );
     ( "global function alias keeps contextual inference",
       test_global_function_alias_keeps_contextual_inference );
     ( "destructured let keeps provisional body inference",

@@ -2688,14 +2688,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 = List.length actual.type_arguments -> (
                           let current_ty = TNamed_record current in
                           let actual_ty = TNamed_record actual in
-                          match Type_solver.unify [] current_ty actual_ty with
+                          match
+                            Type_solver.unify Type_solver.empty current_ty
+                              actual_ty
+                          with
                           | Ok substitutions ->
                               Type_solver.apply substitutions current_ty
                           | Error _ -> current_ty)
                       | current, actual
                         when Type_solver.is_open current
                              && Types.same_shape current actual -> (
-                          match Type_solver.unify [] current actual with
+                          match
+                            Type_solver.unify Type_solver.empty current actual
+                          with
                           | Ok substitutions ->
                               Type_solver.apply substitutions current
                           | Error _ -> current)
@@ -2784,7 +2789,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         | Some ty
                           when Type_solver.is_open fallback
                                && Types.same_shape fallback ty -> (
-                            match Type_solver.unify [] fallback ty with
+                            match
+                              Type_solver.unify Type_solver.empty fallback ty
+                            with
                             | Ok substitutions ->
                                 Type_solver.apply substitutions fallback
                             | Error _ -> fallback)

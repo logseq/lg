@@ -1247,15 +1247,17 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                           let substitutions =
                             match inferred_ty with
                             | TMeta { id; _ } ->
-                                [
-                                  ( Type_solver.Metavariable id,
-                                    TNullable payload_ty );
-                                ]
+                                Type_solver.of_list
+                                  [
+                                    ( Type_solver.Metavariable id,
+                                      TNullable payload_ty );
+                                  ]
                             | TVar name ->
-                                [
-                                  ( Type_solver.Declared name,
-                                    TNullable payload_ty );
-                                ]
+                                Type_solver.of_list
+                                  [
+                                    ( Type_solver.Declared name,
+                                      TNullable payload_ty );
+                                  ]
                             | _ -> assert false
                           in
                           {
@@ -1572,7 +1574,7 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                   Result.bind result (fun substitutions ->
                       if Types.equal actual TUnknown then Ok substitutions
                       else Type_solver.unify substitutions expected actual))
-                (Ok []) recursion_parameter_tys actual_tys
+                (Ok Type_solver.empty) recursion_parameter_tys actual_tys
             in
             (match result with
             | Error conflict -> Type_solver.conflict_is_occurs conflict

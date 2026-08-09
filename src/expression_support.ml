@@ -231,7 +231,7 @@ let rec merge_branch_types left right =
   | TNamed_record left_record, TNamed_record right_record
     when Type_id.equal left_record.type_id right_record.type_id
          && left_record.type_arguments <> right_record.type_arguments -> (
-      match Type_solver.unify [] left right with
+      match Type_solver.unify Type_solver.empty left right with
       | Ok substitutions -> Some (Type_solver.apply substitutions left)
       | Error _ -> None)
   | left, right when Types.equal left right -> Some left
@@ -358,7 +358,7 @@ let rec merge_branch_types left right =
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty
     | TMeta _, _ | _, TMeta _ -> (
-        match Type_solver.unify [] left right with
+        match Type_solver.unify Type_solver.empty left right with
         | Ok substitutions -> Some (Type_solver.apply substitutions left)
         | Error _ -> None)
     | TUnknown, ty | ty, TUnknown -> Some ty
@@ -1269,6 +1269,7 @@ let dynamic_key_record_type env expected_field_ty =
                            argument <> TVar parameter)
                     |> List.map (fun (parameter, argument) ->
                            (Type_solver.Declared parameter, argument))
+                    |> Type_solver.of_list
                   in
                   Some
                     (Types.substitute_type_variables substitutions
@@ -1334,7 +1335,7 @@ let dynamic_key_record_type env expected_field_ty =
                  Result.bind substitutions (fun substitutions ->
                      Type_solver.unify substitutions first_ty
                        (resolve_named_application field.ty)))
-               (Ok [])
+               (Ok Type_solver.empty)
         in
         let substitutions =
           Result.bind substitutions (fun substitutions ->

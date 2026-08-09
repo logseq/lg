@@ -46,7 +46,7 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
                | None -> false
              in
              let open_type_compatible =
-               match Type_solver.unify [] expected.ty actual.ty with
+               match Type_solver.unify Type_solver.empty expected.ty actual.ty with
                | Ok _ -> true
                | Error _ -> false
              in
@@ -215,10 +215,11 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
         when List.length type_parameters = List.length arguments ->
           let substitutions = List.combine type_parameters arguments in
           Types.substitute_type_variables
-            (List.map
+            (Type_solver.of_list
+               (List.map
                (fun (parameter, argument) ->
                  (Type_solver.Declared parameter, argument))
-               substitutions)
+               substitutions))
             manifest
           |> infer_named_record ~allow_dynamic_fields scope env
       | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
@@ -546,8 +547,8 @@ let reconcile_shared_parameter_variables original resolved =
         match Type_solver.unify substitutions template actual with
         | Ok substitutions -> substitutions
         | Error _ -> substitutions)
-      [] original resolved
-    |> List.filter (fun (variable, _ty) -> List.mem variable shared)
+      Type_solver.empty original resolved
+    |> Type_solver.filter (fun variable _ty -> List.mem variable shared)
   in
   List.map
     (fun (name, ty) -> (name, Type_solver.apply substitutions ty))
@@ -817,7 +818,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
           let rec refine_destructured_type pattern ty =
             let refine_from_local name ty =
               let inferred_ty = lookup_inferred name in
-              Type_solver.unify [] ty inferred_ty
+              Type_solver.unify Type_solver.empty ty inferred_ty
               |> Result.map (fun substitutions ->
                      Type_solver.apply substitutions ty)
               |> Result.value ~default:ty

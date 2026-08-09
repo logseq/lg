@@ -413,7 +413,7 @@ and infer_sequence_type forms lookup_local_ty =
                | None -> Some ty
                | Some existing when Types.equal existing ty -> Some existing
                | Some existing -> (
-                   match Type_solver.unify [] existing ty with
+                   match Type_solver.unify Type_solver.empty existing ty with
                    | Ok substitutions ->
                        Some (Type_solver.apply substitutions existing)
                    | Error _ -> Some (Types.dynamic_constraint TUnknown)))

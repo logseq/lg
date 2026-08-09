@@ -895,10 +895,11 @@ let record_fields = function
           = List.length record.type_arguments
         then
           let substitutions =
-            List.map2
+            Type_solver.of_list
+              (List.map2
               (fun parameter argument ->
                 (Type_solver.Declared parameter, argument))
-              record.type_parameters record.type_arguments
+              record.type_parameters record.type_arguments)
           in
           List.map
             (fun (field : field) ->
@@ -1157,7 +1158,7 @@ let instantiate_type ~templates ~actuals ty =
   if List.length templates <> List.length actuals then ty
   else
     let substitutions =
-      infer_list_substitutions [] templates actuals
+      infer_list_substitutions Type_solver.empty templates actuals
     in
     substitute_type_variables substitutions ty
 
@@ -1168,7 +1169,7 @@ let instantiate_type_fields ~templates ~actuals ty =
       List.fold_left2
         (fun substitutions template actual ->
           infer_type_substitutions substitutions ~template ~actual)
-        [] templates actuals
+        Type_solver.empty templates actuals
     in
     let instantiated = substitute_type_variables substitutions ty in
     let rec refine_open_type template actual =
@@ -1250,12 +1251,11 @@ let instantiate_receiver_method_type receiver_ty method_ty =
         match template_receiver with
         | TNamed_record { type_parameters = [ parameter ]; _ } ->
             let substitutions =
-              infer_type_substitutions [] ~template:template_receiver
+              infer_type_substitutions Type_solver.empty
+                ~template:template_receiver
                 ~actual:receiver_ty
             in
-            (match
-               List.assoc_opt (Type_solver.Declared parameter) substitutions
-             with
+            (match Type_solver.find_opt (Type_solver.Declared parameter) substitutions with
             | Some TUnknown | None -> None
             | Some ty -> Some ty)
         | template_receiver -> (
@@ -1263,7 +1263,8 @@ let instantiate_receiver_method_type receiver_ty method_ty =
             | Some (_, _, TVar parameter) ->
                 Some
                   (substitute_type_variables
-                     [ (Type_solver.Declared parameter, receiver_ty) ]
+                     (Type_solver.of_list
+                        [ (Type_solver.Declared parameter, receiver_ty) ])
                      (TVar parameter))
             | Some _ | None -> None)
       in

@@ -393,7 +393,7 @@ let edn_function_call_compatible callee call =
     when List.length callee_params = List.length call_params ->
       List.for_all2
         (fun expected actual ->
-          Result.is_ok (Type_solver.unify [] expected actual)
+          Result.is_ok (Type_solver.unify Type_solver.empty expected actual)
           || edn_function_argument_compatible expected actual)
         callee_params call_params
   | _ -> false
@@ -410,7 +410,9 @@ let rec constrain_symbol expected_ty params name =
           scheme.quantified
       then
         let instantiated = Type_solver.instantiate scheme in
-        (match Type_solver.unify [] instantiated expected_ty with
+        (match
+           Type_solver.unify Type_solver.empty instantiated expected_ty
+         with
         | Ok _ -> Ok params
         | Error _
           when edn_function_call_compatible instantiated expected_ty ->
@@ -426,8 +428,8 @@ let rec constrain_symbol expected_ty params name =
 
 and constrain_monomorphic_symbol expected_ty params name existing_ty =
       let substitutions =
-        Type_solver.unify [] existing_ty expected_ty
-        |> Result.value ~default:[]
+        Type_solver.unify Type_solver.empty existing_ty expected_ty
+        |> Result.value ~default:Type_solver.empty
       in
       let params =
         List.map
@@ -578,7 +580,7 @@ let constrain_seqable element_ty params name =
         else Types.optional_sequential_constraint element_ty value_ty
     | TNamed_record { type_parameters = [ parameter ]; _ } as record_ty ->
         Types.substitute_type_variables
-          [ (Type_solver.Declared parameter, element_ty) ]
+          (Type_solver.of_list [ (Type_solver.Declared parameter, element_ty) ])
           record_ty
     | TVector existing_element ->
         TVector (refine_type existing_element element_ty)
@@ -838,7 +840,8 @@ let add_record_field_constraint name keyword field_ty params =
             Ok
               (make_constrained_field
                  (Types.substitute_type_variables
-                    [ (Type_solver.Declared parameter, element_ty) ]
+                    (Type_solver.of_list
+                       [ (Type_solver.Declared parameter, element_ty) ])
                     existing)
               :: List.filter
                    (fun candidate -> candidate.keyword <> keyword)
@@ -925,7 +928,8 @@ let add_record_field_constraint name keyword field_ty params =
                     { type_parameters = [ parameter ]; _ } as named,
                   Some element_ty ) ->
                   Types.substitute_type_variables
-                    [ (Type_solver.Declared parameter, element_ty) ]
+                    (Type_solver.of_list
+                       [ (Type_solver.Declared parameter, element_ty) ])
                     named
               | (TRecord _ | TNamed_record _ | TMap_keys), Some _ ->
                   field.ty
@@ -956,7 +960,9 @@ let add_record_field_constraint name keyword field_ty params =
                         (Types.seqable_constraint_info inferred_ty) ->
                 Ok record_ty
             | _, inferred_ty -> (
-            match Type_solver.unify [] field.ty inferred_ty with
+            match
+              Type_solver.unify Type_solver.empty field.ty inferred_ty
+            with
             | Ok substitutions ->
                 Ok (Type_solver.apply substitutions record_ty)
             | Error _
@@ -1510,8 +1516,7 @@ let rec rewrite_simple_aliases aliases = function
   | form -> form
 
 let infer_params ?expected_return_ty ?(materialize_open_equality = false)
-    ?(observe_call = fun _ _ _ -> ())
-    ~lookup_function_ty
+    ?observe_call ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
   let lookup_loop_initializer_type =
@@ -1637,6 +1642,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     let substitutions =
       Type_solver.variables ty
       |> List.map (fun variable -> (variable, fresh_type_variable "call"))
+      |> Type_solver.of_list
     in
     Type_solver.apply substitutions ty
   in
@@ -2119,12 +2125,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   TSeq return_ty )
                 when String.equal name Types.seqable_constraint_name
                      && Result.is_ok
-                          (Type_solver.unify [] parameter_ty return_ty) ->
+                          (Type_solver.unify Type_solver.empty parameter_ty
+                             return_ty) ->
                   TSeq element_ty
               | _ -> expected_ty
             in
             match
-              Type_solver.unify [] return_ty_for_unification expected_return_ty
+              Type_solver.unify Type_solver.empty return_ty_for_unification
+                expected_return_ty
             with
             | Error _ -> infer_form params form
             | Ok substitutions ->
@@ -2417,7 +2425,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               else
                 Types.infer_type_substitutions substitutions
                   ~template:expected ~actual)
-            [] param_tys args
+            Type_solver.empty param_tys args
         in
         let param_tys =
           List.map
@@ -2481,7 +2489,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   else
                     Types.infer_type_substitutions substitutions
                       ~template:expected ~actual)
-                [] expected_tys args
+                Type_solver.empty expected_tys args
             in
             let expected_tys =
               List.map
@@ -3366,7 +3374,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (fun substitutions template actual ->
                     Type_solver.unify substitutions template actual
                     |> Result.value ~default:substitutions)
-                  [] payload_tys refined_payload_tys
+                  Type_solver.empty payload_tys refined_payload_tys
               in
               ( Type_solver.apply substitutions return_ty,
                 List.concat_map snd refined )
@@ -3409,7 +3417,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   (fun substitutions template actual ->
                     Type_solver.unify substitutions template actual
                     |> Result.value ~default:substitutions)
-                  [] payload_tys refined_payload_tys
+                  Type_solver.empty payload_tys refined_payload_tys
               in
               Some (Type_solver.apply substitutions return_ty, bindings)
           | Ok _ | Error _ -> None)
@@ -3459,7 +3467,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     | Some inferred_ty ->
                         Type_solver.unify substitutions initial_ty inferred_ty
                         |> Result.value ~default:substitutions)
-                  [] bindings
+                  Type_solver.empty bindings
               in
               let expected_ty = Type_solver.apply substitutions expected_ty in
               let params =
@@ -6136,7 +6144,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_arguments params parameter_tys arguments
             | _ -> infer_unknown_field ()))
     | FList (FSymbol name :: args) ->
-        observe_call name args (List.map (inferred_form_type params) args);
+        Option.iter
+          (fun observe ->
+            observe name args (List.map (inferred_form_type params) args))
+          observe_call;
         infer_known_call name params args
     | FVector forms -> infer_all params forms
     | FMap pairs ->

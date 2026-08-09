@@ -195,6 +195,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               List.combine record.type_parameters arguments
               |> List.map (fun (parameter, argument) ->
                      (Type_solver.Declared parameter, argument))
+              |> Type_solver.of_list
             in
             let field =
               {
@@ -3072,7 +3073,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               apply "Lg_runtime.Runtime_seq.map"
                 [ Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item); sequence ])
             (dynamic_unpack env key_ty (Semantic_ir.Ident item_name))
-        else if Result.is_ok (Type_solver.unify [] key_ty actual_ty) then
+        else if
+          Result.is_ok (Type_solver.unify Type_solver.empty key_ty actual_ty)
+        then
           Ok sequence
         else Error.error "select-keys key type must match map key type"
       in

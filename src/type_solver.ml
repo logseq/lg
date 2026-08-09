@@ -4,7 +4,38 @@ type variable =
   | Metavariable of int
   | Declared of string
 
-type substitutions = (variable * ty) list
+let variable_equal left right =
+  match (left, right) with
+  | Metavariable left, Metavariable right -> left = right
+  | Declared left, Declared right -> String.equal left right
+  | Metavariable _, Declared _ | Declared _, Metavariable _ -> false
+
+module Variable_map = Persistent_hash_map.Make (struct
+  type t = variable
+
+  let equal = variable_equal
+
+  let hash = function
+    | Metavariable id -> id lsl 1
+    | Declared name -> (Hashtbl.hash name lsl 1) lor 1
+end)
+
+type substitutions = ty Variable_map.t
+
+let empty = Variable_map.empty
+let find_opt = Variable_map.find_opt
+let add = Variable_map.add
+
+let of_list bindings =
+  List.fold_right
+    (fun (variable, ty) substitutions -> add variable ty substitutions)
+    bindings empty
+
+let filter predicate substitutions =
+  Variable_map.fold
+    (fun variable ty filtered ->
+      if predicate variable ty then add variable ty filtered else filtered)
+    substitutions empty
 
 type conflict = {
   left : ty;
@@ -13,22 +44,10 @@ type conflict = {
 
 let next_metavariable = ref 0
 
-let variable_equal left right =
-  match (left, right) with
-  | Metavariable left, Metavariable right -> left = right
-  | Declared left, Declared right -> String.equal left right
-  | Metavariable _, Declared _ | Declared _, Metavariable _ -> false
-
 let fresh ?location () =
   let id = !next_metavariable in
   incr next_metavariable;
   TMeta { id; location }
-
-let rec variable_assoc_opt variable = function
-  | [] -> None
-  | (candidate, value) :: rest ->
-      if variable_equal candidate variable then Some value
-      else variable_assoc_opt variable rest
 
 let rec variable_mem variable = function
   | [] -> false
@@ -47,15 +66,26 @@ let map_preserving_identity map values =
   map_values values
 
 let apply substitutions ty =
-  match substitutions with
-  | [] -> ty
-  | _ ->
+  if Variable_map.cardinal substitutions = 0 then ty
+  else
       let visiting = ref [] in
       let last_mapped = ref None in
+      let memoized_node = function
+        | TNullable _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ | TList _
+        | TVector _ | TSet _ | TSeq _ | TFn _ | TOverloaded_fn _ | TRecord _
+        | TNamed_record _ ->
+            true
+        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
+        | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _
+        | TOcaml _ ->
+            false
+      in
       let rec apply_ty ty =
-        match !last_mapped with
-        | Some (original, mapped) when original == ty -> mapped
-        | Some _ | None ->
+        if not (memoized_node ty) then apply_uncached ty
+        else
+          match !last_mapped with
+          | Some (original, mapped) when original == ty -> mapped
+          | Some _ | None ->
             let mapped = apply_uncached ty in
             last_mapped := Some (ty, mapped);
             mapped
@@ -67,41 +97,40 @@ let apply substitutions ty =
           let mapped = apply_ty replacement in
           visiting := previous;
           mapped
+      and apply_inner original build inner =
+        let mapped = apply_ty inner in
+        if mapped == inner then original else build mapped
+      and apply_field (field : field) =
+        let field_ty = apply_ty field.ty in
+        if field_ty == field.ty then field else { field with ty = field_ty }
       and apply_uncached ty =
-        let apply_inner build inner =
-          let mapped = apply_ty inner in
-          if mapped == inner then ty else build mapped
-        in
-        let apply_field (field : field) =
-          let field_ty = apply_ty field.ty in
-          if field_ty == field.ty then field else { field with ty = field_ty }
-        in
         match ty with
         | TMeta { id; _ } -> (
-            match variable_assoc_opt (Metavariable id) substitutions with
+            match find_opt (Metavariable id) substitutions with
             | None -> ty
             | Some (TMeta replacement) when replacement.id = id -> ty
             | Some replacement ->
                 apply_replacement (Metavariable id) ty replacement)
         | TVar name -> (
-            match variable_assoc_opt (Declared name) substitutions with
+            match find_opt (Declared name) substitutions with
             | None -> ty
             | Some (TVar candidate) when String.equal candidate name -> ty
             | Some replacement ->
                 apply_replacement (Declared name) ty replacement)
-        | TNullable inner -> apply_inner (fun inner -> TNullable inner) inner
+        | TNullable inner ->
+            apply_inner ty (fun inner -> TNullable inner) inner
         | TOcaml_app (name, arguments) ->
             let mapped = map_preserving_identity apply_ty arguments in
             if mapped == arguments then ty else TOcaml_app (name, mapped)
         | TTuple items ->
             let mapped = map_preserving_identity apply_ty items in
             if mapped == items then ty else TTuple mapped
-        | TArray inner -> apply_inner (fun inner -> TArray inner) inner
-        | TRef inner -> apply_inner (fun inner -> TRef inner) inner
-        | TList inner -> apply_inner (fun inner -> TList inner) inner
-        | TVector inner -> apply_inner (fun inner -> TVector inner) inner
-        | TSet inner -> apply_inner (fun inner -> TSet inner) inner
-        | TSeq inner -> apply_inner (fun inner -> TSeq inner) inner
+        | TArray inner -> apply_inner ty (fun inner -> TArray inner) inner
+        | TRef inner -> apply_inner ty (fun inner -> TRef inner) inner
+        | TList inner -> apply_inner ty (fun inner -> TList inner) inner
+        | TVector inner -> apply_inner ty (fun inner -> TVector inner) inner
+        | TSet inner -> apply_inner ty (fun inner -> TSet inner) inner
+        | TSeq inner -> apply_inner ty (fun inner -> TSeq inner) inner
         | TFn (parameters, return_ty) ->
             let mapped_parameters =
               map_preserving_identity apply_ty parameters
@@ -195,7 +224,7 @@ let bind substitutions variable ty =
     match ty with
     | TUnknown -> Ok substitutions
     | _ when occurs variable ty -> Error { left = variable_ty; right = ty }
-    | _ -> Ok ((variable, ty) :: substitutions)
+    | _ -> Ok (add variable ty substitutions)
 
 let bind_meta substitutions meta ty =
   bind substitutions (Metavariable meta.id) ty
@@ -263,7 +292,7 @@ let rec is_open = function
       false
 
 let force substitutions variable ty =
-  (variable, ty) :: substitutions
+  add variable ty substitutions
 
 let matching_fields left right =
   left
@@ -278,7 +307,7 @@ let resolve_head substitutions ty =
     let resolve_variable variable =
       if variable_mem variable visiting then ty
       else
-        match variable_assoc_opt variable substitutions with
+        match find_opt variable substitutions with
         | None -> ty
         | Some replacement -> resolve (variable :: visiting) replacement
     in
@@ -467,8 +496,8 @@ let generalize ty =
                let name = inferred_name id in
                ( Inferred_variable { metavariable_id = id; name }
                  :: quantified,
-                 (Metavariable id, TVar name) :: substitutions ))
-         ([], [])
+                 add (Metavariable id) (TVar name) substitutions ))
+         ([], empty)
   in
   let quantified =
     List.rev quantified
@@ -477,11 +506,12 @@ let generalize ty =
 
 let instantiate scheme =
   let substitutions =
-    List.map
-      (function
-        | Declared_variable name -> (Declared name, fresh ())
-        | Inferred_variable { name; _ } -> (Declared name, fresh ()))
-      scheme.quantified
+    List.fold_left
+      (fun substitutions -> function
+        | Declared_variable name -> add (Declared name) (fresh ()) substitutions
+        | Inferred_variable { name; _ } ->
+            add (Declared name) (fresh ()) substitutions)
+      empty scheme.quantified
   in
   apply substitutions scheme.body
 
@@ -491,12 +521,14 @@ let canonical_scheme_body scheme =
     | Inferred_variable { name; _ } -> ("inferred", name)
   in
   let substitutions =
-    List.mapi
-      (fun index variable ->
+    List.fold_left
+      (fun (index, substitutions) variable ->
         let category, name = variable_name variable in
-        ( Declared name,
-          TVar
-            ("__lg_scheme_" ^ category ^ "_" ^ string_of_int index) ))
-      scheme.quantified
+        ( index + 1,
+          add (Declared name)
+            (TVar ("__lg_scheme_" ^ category ^ "_" ^ string_of_int index))
+            substitutions ))
+      (0, empty) scheme.quantified
+    |> snd
   in
   apply substitutions scheme.body

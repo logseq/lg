@@ -122,7 +122,7 @@ let drop_list_expr count source =
 let remove fn collection =
   match (fn.ty, collection_to_list_expr collection) with
   | TFn ([ param_ty ], TBool), Ok (inner, list_expr)
-    when Result.is_ok (Type_solver.unify [] param_ty inner) ->
+    when Result.is_ok (Type_solver.unify Type_solver.empty param_ty inner) ->
       let filtered =
         apply "List.filter"
           [ Semantic_ir.Fun
