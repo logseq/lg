@@ -47,6 +47,26 @@
   `(let [value# ~x]
      (or (true? value#) (false? value#))))
 
+(defmacro integer? [x]
+  `(let [value# ~x]
+     (int? value#)))
+
+(defmacro ident? [x]
+  `(let [value# ~x]
+     (or (keyword? value#) (symbol? value#))))
+
+(defmacro counted? [x]
+  `(let [value# ~x]
+     (or (map? value#) (satisfies? ICounted value#))))
+
+(defmacro seqable? [x]
+  `(let [value# ~x]
+     (or (nil? value#) (map? value#) (satisfies? ISeqable value#))))
+
+(defmacro empty? [coll]
+  `(let [coll# ~coll]
+     (not (seq coll#))))
+
 (defn inc [x]
   (+ x 1))
 

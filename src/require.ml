@@ -131,15 +131,8 @@ let add_source_core_bindings env scope =
            definition env)
        env
 
-let remove_source_core_binding env scope name =
+let remove_source_core_macro_alias env scope name =
   let scoped_key = Names.scoped_key scope name in
-  let core_key = Names.scoped_key "clojure.core" name in
-  let env =
-    match (Env.find_opt scoped_key env, Env.find_opt core_key env) with
-    | Some scoped, Some core when scoped.ocaml_name = core.ocaml_name ->
-        Env.remove scoped_key env
-    | _ -> env
-  in
   let env =
     match Env.find_macro ~scope:"clojure.core" name env with
     | Some definition -> Env.remove_macro_alias ~alias:scoped_key definition env
@@ -149,6 +142,17 @@ let remove_source_core_binding env scope name =
   | Some definition ->
       Env.remove_inline_macro_alias ~alias:scoped_key definition env
   | None -> env
+
+let remove_source_core_binding env scope name =
+  let scoped_key = Names.scoped_key scope name in
+  let core_key = Names.scoped_key "clojure.core" name in
+  let env =
+    match (Env.find_opt scoped_key env, Env.find_opt core_key env) with
+    | Some scoped, Some core when scoped.ocaml_name = core.ocaml_name ->
+        Env.remove scoped_key env
+    | _ -> env
+  in
+  remove_source_core_macro_alias env scope name
 
 let ensure_namespace env module_name =
   if

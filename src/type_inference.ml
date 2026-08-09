@@ -4448,8 +4448,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList [ FSymbol "seqable?"; FSymbol collection ] ->
-        constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->
         constrain_optional_seqable ~sequential:true
           TUnknown params collection
@@ -4536,9 +4534,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params collection
     | FList
         [
-          FSymbol
-            (("first" | "seq" | "rest" | "next" | "empty?")
-            as operation);
+          FSymbol (("first" | "seq" | "rest" | "next") as operation);
           FSymbol collection;
         ] ->
         constrain_seqable
@@ -4547,8 +4543,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params collection
     | FList
         [
-          FSymbol
-            ("first" | "seq" | "rest" | "next" | "empty?");
+          FSymbol ("first" | "seq" | "rest" | "next");
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
@@ -4558,9 +4553,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params
     | FList
         [
-          FSymbol
-            (("first" | "seq" | "rest" | "next" | "empty?")
-            as operation);
+          FSymbol (("first" | "seq" | "rest" | "next") as operation);
           collection;
         ] ->
         infer_expected

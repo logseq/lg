@@ -12144,7 +12144,7 @@ let test_typed_empty_vectors () =
 (println (str (empty? xs) ":" (count ys) ":" (first ys)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_empty_vectors" "true:1:42\n" ocaml_source
 
 let test_vector_of_rejects_malformed_types () =
@@ -20998,7 +20998,7 @@ let test_seqable_predicate_checks_closed_sum_values () =
        (seqable-value? (Scalar 1))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "closed seqable values must remain static";
   assert_ocaml_runs "seqable_predicate_checks_closed_sum_values"
@@ -21148,6 +21148,101 @@ let test_source_some_and_boolean_predicates_preserve_static_contracts () =
   compile_with_stdlib_result Lg.Target.Native "test/boolean_two_arity.cljc"
     {|(def result (boolean? true false))|}
   |> expect_error_contains "unsupported macro arity 2"
+
+let test_source_collection_and_scalar_predicates_match_clojurescript () =
+  let source =
+    {|
+(ns source-protocol-predicate-app
+  (:require [cljs.core :as core
+             :refer [empty? integer? ident? counted? seqable?]]))
+
+(def evaluations (atom 0))
+(println (empty? nil))
+(println (empty? []))
+(println (empty? (list)))
+(println (empty? ""))
+(println (empty? {}))
+(println (empty? #{}))
+(println (core/empty? [1]))
+(println (clojure.core/empty? "x"))
+(println (integer? 1))
+(println (integer? 1.0))
+(println (core/integer? "1"))
+(println (ident? :name))
+(println (ident? 'name))
+(println (clojure.core/ident? "name"))
+(println (counted? [1]))
+(println (counted? (list 1)))
+(println (core/counted? (array-values 1)))
+(println (counted? {}))
+(println (counted? (seq [1])))
+(println (seqable? nil))
+(println (seqable? (array-values 1)))
+(println (seqable? {}))
+(println (seqable? (seq [1])))
+(println (seqable? 1))
+(println (empty? (do (swap! evaluations inc) [])))
+(println (= 1 @evaluations))
+(println (integer? (do (swap! evaluations inc) 1)))
+(println (= 2 @evaluations))
+(println (ident? (do (swap! evaluations inc) :name)))
+(println (= 3 @evaluations))
+(println (counted? (do (swap! evaluations inc) [1])))
+(println (= 4 @evaluations))
+(println (seqable? (do (swap! evaluations inc) [1])))
+(println (= 5 @evaluations))
+(println (= 5 @evaluations))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_protocol_predicates.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source protocol predicates must preserve static values";
+  assert_ocaml_runs "source_collection_and_scalar_predicates"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue\nfalse\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_protocol_predicates.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source protocol predicates must preserve static values";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_zero_arity.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0";
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_two_arity.cljc")
+        ("(def result (" ^ name ^ " 1 2))")
+      |> expect_error_contains "unsupported macro arity 2")
+    [ "empty?"; "integer?"; "ident?"; "counted?"; "seqable?" ];
+  compile_with_stdlib_result Lg.Target.Native "test/empty_non_seqable.cljc"
+    {|(def result (empty? 1))|}
+  |> expect_error_contains "seq expects a seqable value"
+
+let test_namespace_value_shadows_automatic_core_macro () =
+  let native_source =
+    compile_chunks_with_stdlib Lg.Target.Native
+      [
+        ( "test/source_macro_shadow_provider.cljc",
+          {|
+(ns source-macro-shadow.provider)
+(defn seqable? [_value] true)
+|} );
+        ( "test/source_macro_shadow_consumer.cljc",
+          {|
+(ns source-macro-shadow.consumer
+  (:require [source-macro-shadow.provider :as provider]))
+(println (provider/seqable? 1))
+|} );
+      ]
+  in
+  assert_ocaml_runs "namespace_value_shadows_automatic_core_macro" "true\n"
+    native_source
 
 let test_batched_core_functions_infer_int_params () =
   let source =
@@ -22868,7 +22963,7 @@ let test_batched_identifier_and_constructor_core_functions_work () =
        (ident? simple) ":" (simple-ident? simple) ":" (qualified-ident? qualified)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
     "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
      4):true:true:true:true:false:true:false:true:false:true:true:true\n"
@@ -26399,7 +26494,7 @@ let test_vector_preserves_nullable_collection_elements () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "vector_preserves_nullable_collection_elements"
     "ok\n" ocaml_source
 
@@ -28940,7 +29035,7 @@ let test_row_types_bind_nested_capability_parameters () =
 (println "ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "row_types_bind_nested_capability_parameters" "ok\n"
     ocaml_source
 
@@ -29517,7 +29612,7 @@ let test_sequence_core_api_on_vectors () =
 (println (str (first mapped) ":" (nth mapped 2) ":" (count filtered) ":" total ":" (first tail) ":" (empty? tail)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "sequence_core_api_on_vectors" "2:4:2:6:2:false\n"
     ocaml_source
 
@@ -30430,7 +30525,7 @@ let test_list_core_api () =
 (println (str (first zs) ":" (nth tail 1) ":" (count zs) ":" (empty? (rest (rest (rest (rest zs)))))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "list_core_api" "0:2:4:true\n" ocaml_source
 
 let test_sequence_core_api_on_lists () =
@@ -30554,12 +30649,12 @@ let test_empty_core_api () =
      (map-preserving (fn [value] value) [1 2])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "empty_core_api"
     "true:true:true:true\ntrue\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let assert_zero_arity_generic_collection_specializes name provider consumer =
   let native_stdlib = compiled_stdlib Lg.Target.Native in
@@ -30777,11 +30872,11 @@ let test_into_accepts_inferred_seqable_parameters () =
 (println (str (count appended) ":" (= 1 (first appended))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "into_accepts_inferred_seqable_parameters" "3:true\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_eduction_applies_map_filter_and_cat_transducers () =
   let source =
@@ -31490,7 +31585,7 @@ let test_typed_empty_sets () =
               (contains? zs 2) ":" (pr-str zs)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_empty_sets" "true:3:true:false:#{1 3}\n" ocaml_source
 
 let test_sets_reject_nil_elements () =
@@ -31509,11 +31604,11 @@ let test_set_of_rejects_types_without_comparators () =
 
 let test_set_of_preserves_supported_host_comparator_aliases () =
   let source = {|(println (empty? (set-of :ordering)))|} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "set_of_preserves_supported_host_comparator_aliases"
     "true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_keyword_type_annotations_for_empty_collections () =
   let source =
@@ -31551,7 +31646,7 @@ let test_typed_empty_lists () =
 (println (str (empty? xs) ":" (count ys) ":" (first ys)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_empty_lists" "true:1:42\n" ocaml_source
 
 let test_empty_lists_infer_type_from_branch_context () =
@@ -31589,7 +31684,7 @@ let test_rest_is_empty_safe () =
 (println (str (empty? xs) ":" (pr-str xs) ":" (empty? ys) ":" (pr-str ys)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "rest_is_empty_safe" "true:():true:()\n" ocaml_source
 
 let test_closed_lists_preserve_optional_values () =
@@ -35279,7 +35374,7 @@ let test_parsetree_backend_builds_native_scalar_expressions () =
   List.iter expect_structured_value_expression
     [
       {|(def answer 42)|};
-      {|(def result (integer? 1))|};
+      {|(def result (int? 1))|};
       {|(def result (name :user/name))|};
       {|(def result (namespace :user/name))|};
       {|(def result (keyword "user" "name"))|};
@@ -37196,6 +37291,10 @@ let tests =
       test_source_array_values_rejects_invalid_arguments );
     ( "source some? and boolean? preserve static contracts",
       test_source_some_and_boolean_predicates_preserve_static_contracts );
+    ( "source collection and scalar predicates match ClojureScript",
+      test_source_collection_and_scalar_predicates_match_clojurescript );
+    ( "namespace value shadows automatic core macro",
+      test_namespace_value_shadows_automatic_core_macro );
     ( "batched core functions infer int params",
       test_batched_core_functions_infer_int_params );
     ( "batched numeric/scalar core functions work",

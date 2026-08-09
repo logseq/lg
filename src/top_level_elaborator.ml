@@ -981,7 +981,16 @@ let inferred =
   in
   inferred
 
-let rec compile scope env next_type = function
+let rec compile scope env next_type form =
+  let env =
+    match form with
+    | FList
+        (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
+      ->
+        Require.remove_source_core_macro_alias env scope name
+    | _ -> env
+  in
+  match form with
   | FList
       [
         FSymbol "do";

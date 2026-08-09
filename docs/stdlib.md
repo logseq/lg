@@ -133,8 +133,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 174 source entries (20.35%), 148 typed
-primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
+macro surfaces. The current baseline is 179 source entries (20.94%), 142 typed
+primitives, 5 special forms, 12 host boundaries, 162 static-typing blockers,
 44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -160,9 +160,11 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 248-name compiler dispatch inventory has zero `source-shadowed`
+The current 243-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
-`not`, the call-site-specialized `some?` and `boolean?` source macros, `reduced`, `reset-vals!`, `inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
+`not`, the call-site-specialized `some?`, `boolean?`, `empty?`, `integer?`,
+`ident?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
+`inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
@@ -183,9 +185,17 @@ derived bit functions, plus `splitv-at` and the ClojureScript array-hint identit
 `cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
 reader/walk/data boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same scan finds 677 `some?` and
-44 `boolean?` occurrences. Both now resolve through source macros for automatic
+44 `boolean?` occurrences. It also finds 537 `empty?`, 77 `integer?`, one
+`counted?`, and one `seqable?` occurrence. These now resolve through source
+macros for automatic
 core refer, `cljs.core` alias/refer, and qualified `clojure.core` calls while
-preserving single evaluation and nullable flow narrowing. `true?` and `false?`
+preserving single evaluation and nullable flow narrowing. The source
+`seqable?` also restores the upstream `nil`, structural-map, and static-array
+cases; `counted?` uses the existing static `ICounted` registry and recognizes
+structural maps until all maps use the persistent hash-map protocol receiver.
+`indexed?` remains compiler-owned because LG's current `Indexed` capability
+also covers linear list lookup and therefore cannot stand in for upstream's
+constant-time `IIndexed` contract. `true?` and `false?`
 remain minimal typed primitives because the pinned ClojureScript source itself
 delegates those arbitrary-value identity checks to compiler primitives. A repository-wide Logseq symbol scan
 also finds 824 `random-uuid`, 46 `parse-uuid`, and 14 `system-time`

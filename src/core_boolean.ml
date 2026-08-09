@@ -139,21 +139,4 @@ let compile name args =
           | _ -> false)
         args
   | "indexed?" -> compile_type_predicate name (function TVector _ -> true | _ -> false) args
-  | "seqable?" ->
-      compile_runtime_type_predicate name
-        "Lg_runtime.Runtime_dynamic.is_seqable"
-        (function
-          | TString | TList _ | TVector _ | TSet _ | TRecord _
-          | TNamed_record { nominal = false; _ } ->
-              true
-          | _ -> false)
-        args
-  | "counted?" ->
-      compile_type_predicate name
-        (function
-          | TString | TList _ | TVector _ | TSet _ | TRecord _
-          | TNamed_record { nominal = false; _ } ->
-              true
-          | _ -> false)
-        args
   | _ -> Error.error ("unknown function " ^ name)

@@ -7954,7 +7954,7 @@ let create ~compile_expr =
               | "nil?" | "true?" | "false?" | "int?"
               | "number?" | "string?" | "keyword?" | "vector?"
               | "list?" | "seq?" | "set?" | "map?" | "fn?" | "coll?"
-              | "associative?" | "indexed?" | "seqable?" | "counted?" ->
+              | "associative?" | "indexed?" ->
                   compile_boolean_call scope env name arg_forms
     | "instance?" -> (
         match arg_forms with
@@ -8006,7 +8006,7 @@ let create ~compile_expr =
                           "instance? requires a statically known record type; match a closed sum type")
                   ))
         | _ -> Error.error "instance? expects a record type and value")
-              | "integer?" | "nat-int?" | "pos-int?" | "neg-int?"
+              | "nat-int?" | "pos-int?" | "neg-int?"
               | "name"
               | "namespace" | "keyword" | "symbol" -> (
         match compile_args () with
@@ -8064,7 +8064,7 @@ let create ~compile_expr =
         | Ok _ -> Error.error "sequential? expects 1 arguments")
               | "rational?" | "float?" | "double?" | "symbol?"
               | "simple-symbol?" | "qualified-symbol?"
-              | "simple-keyword?" | "qualified-keyword?" | "ident?"
+              | "simple-keyword?" | "qualified-keyword?"
               | "simple-ident?" | "qualified-ident?" | "reversible?" | "sorted?"
                 -> (
         match compile_args () with
@@ -8577,7 +8577,7 @@ let create ~compile_expr =
     | "persistent!" -> compile_persistent_bang scope env arg_forms
               | "hash-map" | "array-map" | "sorted-map" ->
                   compile_hash_map scope env arg_forms
-              | "rest" | "seq" | "empty?" ->
+              | "rest" | "seq" ->
                   compile_collection_call scope env name arg_forms
     | "not-empty" -> compile_not_empty scope env arg_forms
     | "into" -> (
@@ -8840,16 +8840,6 @@ let create ~compile_expr =
   and compile_boolean_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
-    | Ok [ ({ ty = TNamed_record { nominal = true; _ }; _ } as argument) ]
-      when name = "seqable?" ->
-        Ok
-          (typed_ir TBool
-             (Semantic_ir.Sequence
-                [
-                  argument.semantic_expr;
-                  Semantic_ir.Bool
-                    (Collection_capability.accepts_seqable env argument.ty);
-                ]))
     | Ok args -> Core_boolean.compile name args
   and compile_collection_call scope env name arg_forms =
     let argument_env =

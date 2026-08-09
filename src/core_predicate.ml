@@ -74,8 +74,6 @@ let compile name args =
           match arg.ty with
           | TKeyword -> bool (has_slash arg.semantic_expr)
           | _ -> static_bool false)
-      | "ident?" ->
-          static_bool (match arg.ty with TKeyword | TSymbol -> true | _ -> false)
       | "simple-ident?" -> (
           match arg.ty with
           | TKeyword | TSymbol -> bool (Semantic_ir.Prefix ("not", has_slash arg.semantic_expr))

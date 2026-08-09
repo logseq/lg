@@ -263,11 +263,6 @@ let compile_symbol name args =
 
 let compile name args =
   match name with
-  | "integer?" -> (
-      match one_arg name args with
-      | Error _ as err -> err
-      | Ok arg ->
-          Ok (typed_ir TBool (Semantic_ir.Bool (Types.equal arg.ty TInt))))
   | "nat-int?" ->
       int_predicate name args (fun expr ->
           Semantic_ir.Infix (">=", expr, Semantic_ir.Int 0))

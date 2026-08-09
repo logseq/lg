@@ -80,45 +80,6 @@ let rest env collection = Collection_capability.rest_expr env collection
 
 let seq env collection = Collection_capability.seq_expr env collection
 
-let rec empty_question env collection =
-  match collection.ty with
-  | TNil ->
-      Ok
-        (typed_ir TBool
-           (Semantic_ir.Sequence
-              [ collection.semantic_expr; Semantic_ir.Bool true ]))
-  | TNullable value_ty ->
-      let value_name = "__lg_optional_collection" in
-      let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
-      empty_question env value
-      |> Result.map (fun present ->
-             typed_ir TBool
-               (Semantic_ir.Match
-                  ( collection.semantic_expr,
-                    [ ( Semantic_ir.PConstructor ("None", None),
-                        Semantic_ir.Bool true );
-                      ( Semantic_ir.PConstructor
-                          ("Some", Some (Semantic_ir.PVar value_name)),
-                        present.semantic_expr );
-                    ] )))
-  | TList _ -> Ok (typed_ir TBool (Semantic_ir.Infix ("=", collection.semantic_expr, Semantic_ir.List [])) )
-  | TSet inner ->
-      Types.set_module_name inner
-      |> Result.map (fun set_module ->
-             typed_ir TBool (apply (set_module ^ ".is_empty") [ collection.semantic_expr ]))
-  | TVector _ -> Ok (typed_ir TBool (apply "Rrbvec.is_empty" [ collection.semantic_expr ]))
-  | TString -> Ok (typed_ir TBool (Semantic_ir.Infix ("=", collection.semantic_expr, Semantic_ir.String "")))
-  | _ -> (
-      match Collection_capability.to_seq_expr env collection with
-      | Ok (_, sequence) ->
-          Ok
-            (typed_ir TBool
-               (apply "Lg_runtime.Runtime_seq.is_empty" [ sequence ]))
-      | Error _ ->
-          Error.error
-            ("empty? expects a seqable value, got "
-            ^ Types.source_name collection.ty))
-
 let empty env collection =
   let seqable_value =
     match Semantic_ir.unlocated collection.semantic_expr with
@@ -236,8 +197,7 @@ let take_drop env name count collection =
 
 let compile env name args =
   match name with
-  | "count" | "first" | "peek" | "pop" | "rest" | "seq"
-  | "empty?" | "empty" -> (
+  | "count" | "first" | "peek" | "pop" | "rest" | "seq" | "empty" -> (
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> (
@@ -248,7 +208,6 @@ let compile env name args =
           | "pop" -> pop collection
           | "rest" -> rest env collection
           | "seq" -> seq env collection
-          | "empty?" -> empty_question env collection
           | "empty" -> empty env collection
           | _ -> assert false))
   | "take" | "drop" -> (
