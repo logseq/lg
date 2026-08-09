@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 261 source entries (30.53%), 90 typed
+macro surfaces. The current baseline is 265 source entries (30.99%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 282 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 278 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -245,6 +245,13 @@ source macros. `doto` preserves single evaluation and effect order;
 `when-first` preserves one `seq` evaluation; and `while` uses an explicit
 `if`/`do` tail solely to make LG's static `recur` validation see the same loop
 edge as the upstream `when` expansion.
+The imported Clojure control macros `if-not`, `when`, `when-not`, and `cond`
+are source macros as well. Their public-name expression, inference,
+loop-tail, and macro-evaluator cases have been removed. `cond` retains test
+order and short-circuiting, validates even forms at expansion time, and stops
+expanding after literal `true` or `:else` so unreachable heterogeneous tails
+do not weaken static branch types. The Logseq scan finds 275 direct `if-not`,
+5,130 direct `when`, 1,143 direct `when-not`, and 31 direct `cond` forms.
 The foundational `->` and `->>` macros now use the pinned ClojureScript source
 loop as well. Symbol, keyword, and call-form steps preserve order, and
 step-form type-hint metadata round-trips through the compile-time `meta` and

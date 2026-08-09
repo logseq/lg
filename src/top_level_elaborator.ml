@@ -1533,18 +1533,17 @@ let rec compile scope env next_type form =
                         List.mem name
                           [
                             "binding";
-                            "cond";
                             "do";
                             "fn";
                             "if";
                             "let";
                             "match";
                             "try";
-                            "when";
                             "deref";
                             "pr-sequential-writer";
                             "pr-writer";
                           ]
+                        || Option.is_some (Env.find_macro ~scope name env)
                       in
                       ((not special_form)
                       && not (String.starts_with ~prefix:"-" name)

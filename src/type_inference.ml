@@ -1036,6 +1036,21 @@ let rec inferred_form_type params = function
   | FChar _ -> TChar
   | FString _ -> TString
   | FBool _ -> TBool
+  | FSymbol "nil" -> TNil
+  | FList (FSymbol "do" :: body_forms) -> (
+      match List.rev body_forms with
+      | result :: _ -> inferred_form_type params result
+      | [] -> TNil)
+  | FList [ FSymbol "if"; _condition; then_form; else_form ] ->
+      Expression_support.merge_branch_types
+        (inferred_form_type params then_form)
+        (inferred_form_type params else_form)
+      |> Option.value ~default:TUnknown
+  | FList [ FSymbol "if"; _condition; then_form ] ->
+      Expression_support.merge_branch_types
+        (inferred_form_type params then_form)
+        TNil
+      |> Option.value ~default:TUnknown
   | FKeyword _ -> TKeyword
   | FList
       [
@@ -1276,7 +1291,7 @@ let rec returned_vector_type params = function
       match returned_vector_type params collection with
       | Some vector_ty -> Some vector_ty
       | None -> Some (TVector (Types.dynamic_constraint TUnknown)))
-  | FList [ FSymbol ("if" | "if-not"); _condition; then_form; else_form ] -> (
+  | FList [ FSymbol "if"; _condition; then_form; else_form ] -> (
       match
         ( returned_vector_type params then_form,
           returned_vector_type params else_form )
@@ -1645,6 +1660,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   in
   let rec infer_expected expected_ty params = function
     | FSymbol name -> constrain_symbol expected_ty params name
+    | FList (FSymbol "do" :: body_forms) -> (
+        match List.rev body_forms with
+        | result :: reversed_prefix ->
+            Result.bind
+              (infer_all params (List.rev reversed_prefix))
+              (fun params -> infer_expected expected_ty params result)
+        | [] -> Ok params)
     | FList (FSymbol "tuple" :: items) -> (
         match expected_ty with
         | TTuple item_tys when List.length item_tys = List.length items ->
@@ -1757,25 +1779,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   condition)
               (with_branch (fun () ->
                    infer_expected then_expected params then_form)))
-    | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
-        Result.bind (infer_truthy params condition) (fun params ->
-            let previous_hints = !branch_hint_symbols in
-            let then_expected =
-              branch_expected_type params expected_ty then_form else_form
-            in
-            Result.bind
-              (with_branch (fun () ->
-                   infer_expected then_expected params then_form))
-              (fun inferred ->
-                let else_expected =
-                  branch_expected_type inferred expected_ty else_form then_form
-                in
-                Result.map
-                  (fun inferred ->
-                    restore_branch_evidence params inferred previous_hints
-                      condition)
-                  (with_branch (fun () ->
-                       infer_expected else_expected inferred else_form))))
     | ( FList
           [
             FSymbol ("if-some" | "if-let");
@@ -5422,52 +5425,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 restore_branch_evidence params inferred previous_hints
                   condition)
               (with_branch (fun () -> infer_form params then_form)))
-    | FList [ FSymbol "if-not"; condition; then_form; else_form ] -> (
-        match infer_truthy params condition with
-        | Error _ as err -> err
-        | Ok params ->
-            let previous_hints = !branch_hint_symbols in
-            (
-            match with_branch (fun () -> infer_form params then_form) with
-            | Error _ as err -> err
-            | Ok inferred ->
-                Result.map
-                  (fun inferred ->
-                    restore_branch_evidence params inferred previous_hints
-                      condition)
-                  (with_branch (fun () -> infer_form inferred else_form))))
-    | FList (FSymbol "when" :: condition :: body_forms) -> (
-        match infer_truthy params condition with
-        | Error _ as err -> err
-        | Ok params ->
-            let previous_hints = !branch_hint_symbols in
-            (match condition with
-            | FSymbol name when not (string_mem name !branch_hint_symbols) ->
-                branch_hint_symbols := name :: !branch_hint_symbols
-            | _ -> ());
-            Result.map
-              (fun inferred ->
-                restore_branch_evidence params inferred previous_hints
-                  condition)
-              (with_branch (fun () -> infer_all params body_forms)))
-    | FList (FSymbol "cond" :: clauses) ->
-        let rec infer_clauses params = function
-          | [] -> Ok params
-          | [ form ] -> infer_form params form
-          | FKeyword ":else" :: value_form :: rest -> (
-              match infer_form params value_form with
-              | Error _ as err -> err
-              | Ok params -> infer_clauses params rest)
-          | FBool true :: value_form :: _ -> infer_form params value_form
-          | test_form :: value_form :: rest -> (
-              match infer_truthy params test_form with
-              | Error _ as err -> err
-              | Ok params -> (
-                  match infer_form params value_form with
-                  | Error _ as err -> err
-                  | Ok params -> infer_clauses params rest))
-        in
-        infer_clauses params clauses
     | FList (FSymbol "try" :: forms) ->
         let is_catch = function
           | FList (FSymbol "catch" :: _) -> true

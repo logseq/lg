@@ -14,6 +14,14 @@
    :definitions
    {comment {:status :ported
              :reason :source-macro-preserves-the-upstream-ignored-body-and-nil-result}
+    if-not {:status :static-adaptation
+            :reason :source-macro-swaps-the-ordinary-if-branches-directly-so-upstream-two-and-three-argument-control-flow-retains-static-branch-narrowing}
+    when {:status :ported
+          :reason :source-macro-preserves-upstream-test-once-implicit-do-and-nil-false-branch-semantics}
+    when-not {:status :ported
+              :reason :source-macro-preserves-upstream-test-once-implicit-do-and-nil-true-branch-semantics}
+    cond {:status :static-adaptation
+          :reason :source-macro-preserves-upstream-test-order-and-short-circuiting-while-validating-even-forms-and-pruning-literal-true-or-else-tails-for-static-branch-convergence}
     doto {:status :ported
           :reason :source-macro-preserves-upstream-single-evaluation-ordered-threading-and-original-result}
     when-first {:status :static-adaptation

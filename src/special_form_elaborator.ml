@@ -15,8 +15,6 @@ type t = {
     string -> Env.t -> (Ast.form * Ast.form) list -> expression_result;
   compile_if :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
-  compile_if_not :
-    string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_if_let :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
   compile_if_some :
@@ -27,9 +25,6 @@ type t = {
     string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
   compile_let_some :
     string -> Env.t -> Ast.form -> Ast.form -> Ast.form -> expression_result;
-  compile_when :
-    string -> Env.t -> Ast.form -> Ast.form list -> expression_result;
-  compile_cond : string -> Env.t -> Ast.form list -> expression_result;
   compile_logical :
     string -> Env.t -> [ `And | `Or ] -> Ast.form list -> expression_result;
   compile_match :
@@ -1115,6 +1110,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     let else_form =
       narrow_false_nil_predicates scope env condition else_form
     in
+    let condition_env =
+      match condition with
+      | FList (FSymbol ("and" | "or") :: _) ->
+          Env.with_expected_type (Some TBool) env
+      | _ -> env
+    in
     let compile_tuple_branch expected_types = function
       | FVector forms when List.length expected_types = List.length forms ->
           let rec compile values expected_types forms =
@@ -1176,7 +1177,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | _ -> Error.error "if tuple branch must be a vector"
     in
     match
-      ( compile_expr scope env condition,
+      ( compile_expr scope condition_env condition,
         compile_expr scope env then_form,
         compile_expr scope env else_form )
     with
@@ -1312,153 +1313,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 )
             )
         )
-  and compile_if_not scope env condition then_form else_form =
-    let else_form = narrow_type_predicates scope env condition else_form in
-    match
-      ( compile_expr scope env condition,
-        compile_expr scope env then_form,
-        compile_expr scope env else_form )
-    with
-    | (Error _ as err), _, _ -> err
-    | _, (Error _ as err), _ -> err
-    | _, _, (Error _ as err) -> err
-    | Ok condition, Ok then_expr, Ok else_expr -> (
-        match condition_expression condition with
-        | Error _ as err -> err
-        | Ok condition_code -> (
-            match merge_branch_expressions then_expr else_expr with
-            | Some (result_ty, then_code, else_code) ->
-              Ok
-                (typed_ir result_ty
-                   (Semantic_ir.If
-                      ( Semantic_ir.Apply
-                          (Semantic_ir.Ident "not", [ condition_code ]),
-                        then_code,
-                        else_code )))
-            | None ->
-                Error.error
-                  ("conditional branches have incompatible types: "
-                  ^ Types.source_name then_expr.ty ^ " and "
-                  ^ Types.source_name else_expr.ty
-                  ^ "; define a closed sum type containing every branch type")))
-  and compile_when scope env condition body_forms =
-    let body_forms =
-      match body_forms with
-      | [] -> []
-      | [ body ] -> [ narrow_type_predicates scope env condition body ]
-      | forms ->
-          [
-            narrow_type_predicates scope env condition
-              (FList (FSymbol "do" :: forms));
-          ]
-    in
-    let condition_env =
-      match condition with
-      | FList (FSymbol ("and" | "or") :: _) ->
-          Env.with_expected_type (Some TBool) env
-      | _ -> env
-    in
-    let body =
-      Result.bind
-        (compile_body scope env "when body requires at least one form" body_forms)
-        (fun body ->
-          match Env.expected_type env with
-          | Some (TNullable inner | TOcaml_app ("option", [ inner ]))
-            when Option.is_none (optional_payload body.ty) ->
-              Result.map (typed_ir inner)
-                (adapt_branch_expression env inner body)
-          | Some _ | None -> Ok body)
-    in
-    match
-      (compile_expr scope condition_env condition, body)
-    with
-    | (Error _ as err), _ -> err
-    | _, (Error _ as err) -> err
-    | Ok condition, Ok body -> (
-        match condition_expression condition with
-        | Error _ as err -> err
-        | Ok condition_code -> (
-            let nil = typed_ir TNil (Semantic_ir.Constructor ("None", None)) in
-            match merge_branch_expressions body nil with
-            | Some (result_ty, body_code, nil_code) ->
-                Ok
-                  (typed_ir result_ty
-                     (Semantic_ir.If (condition_code, body_code, nil_code)))
-            | None -> Error.error "when body cannot be made nullable"))
-  and compile_cond scope env clauses =
-    let parse_pairs clauses =
-      let rec loop acc = function
-        | [] -> Ok (List.rev acc, FSymbol "nil")
-        | [ _ ] -> Error.error "cond requires test/expression pairs"
-        | [ FKeyword ":else"; else_form ] -> Ok (List.rev acc, else_form)
-        | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
-        | FBool true :: value_form :: _ -> Ok (List.rev acc, value_form)
-        | test_form :: value_form :: rest ->
-            loop ((test_form, value_form) :: acc) rest
-      in
-      loop [] clauses
-    in
-    let compile_test form =
-      match compile_expr scope env form with
-      | Error _ as err -> err
-      | Ok test -> Ok test
-    in
-    let rec compile_pairs acc = function
-      | [] -> Ok (List.rev acc)
-      | (test_form, value_form) :: rest -> (
-          match (compile_test test_form, compile_expr scope env value_form) with
-          | (Error _ as err), _ -> err
-          | _, (Error _ as err) -> err
-          | Ok test, Ok value -> compile_pairs ((test, value) :: acc) rest)
-    in
-    match parse_pairs clauses with
-    | Error _ as err -> err
-    | Ok (pairs, else_form) -> (
-        match (compile_pairs [] pairs, compile_expr scope env else_form) with
-        | (Error _ as err), _ -> err
-        | _, (Error _ as err) -> err
-        | Ok pairs, Ok else_expr -> (
-            let branch_types =
-              else_expr.ty :: List.map (fun (_, value) -> value.ty) pairs
-            in
-            let merged_result_ty =
-              List.fold_left
-                (fun merged (_test, value) ->
-                  Option.bind merged (fun ty -> merge_branch_types ty value.ty))
-                (Some else_expr.ty) pairs
-            in
-            match merged_result_ty with
-            | Some result_ty ->
-              let rec adapt_pairs adapted = function
-                | [] -> Ok (List.rev adapted)
-                | (test, value) :: rest ->
-                    Result.bind
-                      (adapt_branch_expression env result_ty value)
-                      (fun value ->
-                        adapt_pairs ((test, value) :: adapted) rest)
-              in
-              (match
-                 ( adapt_pairs [] pairs,
-                   adapt_branch_expression env result_ty else_expr )
-               with
-              | (Error _ as error), _ -> error
-              | _, (Error _ as error) -> error
-              | Ok pairs, Ok else_expr ->
-                  let expression =
-                    List.fold_right
-                      (fun (test, value) acc ->
-                        Semantic_ir.If
-                          ( truthiness_expression test.ty test.semantic_expr,
-                            value,
-                            acc ))
-                      pairs else_expr
-                  in
-                  Ok (typed_ir result_ty expression))
-            | None ->
-                Error.error
-                  ("conditional branches have incompatible types: "
-                  ^ String.concat ", " (List.map Types.source_name branch_types)
-                  ^ "; define a closed sum type containing every branch type")))
   and compile_logical scope env operator forms =
     let forms =
       match operator with
@@ -2270,15 +2124,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       (typed_ir result_ty
                          (Semantic_ir.If
                             (condition_code, then_expr, else_expr))))))
-    | FList [ FSymbol "if-not"; condition_form; then_form; else_form ] ->
-        compile_loop_tail scope env loop_name param_tys
-          (FList
-             [
-               FSymbol "if";
-               FList [ FSymbol "not"; condition_form ];
-               then_form;
-               else_form;
-             ])
     | FList
         [
           FSymbol "if-some";
@@ -2448,20 +2293,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                    FVector [ FSymbol target_name; target ];
                    body;
                  ]))
-    | FList (FSymbol "cond" :: clauses) ->
-        let rec expand = function
-          | [] -> Ok (FSymbol "nil")
-          | [ _ ] -> Error.error "cond requires test/expression pairs"
-          | [ FKeyword ":else"; else_form ] -> Ok else_form
-          | FKeyword ":else" :: _ -> Error.error "cond :else must be last"
-          | test_form :: value_form :: rest ->
-              Result.map
-                (fun else_form ->
-                  FList [ FSymbol "if"; test_form; value_form; else_form ])
-                (expand rest)
-        in
-        Result.bind (expand clauses) (fun form ->
-            compile_loop_tail scope env loop_name param_tys form)
     | (FList (FSymbol name :: args) as form) -> (
         match Env.find_macro ~scope name env with
         | None -> compile_expr scope env form
@@ -3388,14 +3219,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     compile_vector;
     compile_map;
     compile_if;
-    compile_if_not;
     compile_if_let;
     compile_if_some;
     compile_when_let;
     compile_when_some;
     compile_let_some;
-    compile_when;
-    compile_cond;
     compile_match;
     compile_logical;
     compile_body;

@@ -341,11 +341,6 @@ let rec eval context = function
           else
             eval context
               (match else_forms with form :: _ -> form | [] -> FSymbol "nil"))
-  | FList (FSymbol "when" :: condition :: body) -> (
-      match eval context condition with
-      | Error _ as err -> err
-      | Ok condition ->
-          if truthy condition then eval_body context body else Ok nil)
   | FList [ FSymbol "when-some"; FVector [ pattern; expression ]; body ] -> (
       match eval context expression with
       | Error _ as err -> err
@@ -394,8 +389,6 @@ let rec eval context = function
   | FList (FSymbol ("and" | "clojure.core/and") :: forms) ->
       eval_and context forms
   | FList (FSymbol "or" :: forms) -> eval_or context forms
-  | FList (FSymbol ("cond" | "clojure.core/cond") :: clauses) ->
-      eval_cond context clauses
   | FList
       (FSymbol ("condp" | "clojure.core/condp")
       :: predicate :: target :: clauses) ->

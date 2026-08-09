@@ -22,6 +22,41 @@
 
 (defmacro comment [& _body])
 
+(defmacro if-not
+  ([test then]
+   `(if ~test nil ~then))
+  ([test then else]
+   `(if ~test ~else ~then)))
+
+(defmacro when [test & body]
+  (if body
+    `(if ~test
+       (do ~@body)
+       nil)
+    `(if ~test nil nil)))
+
+(defmacro when-not [test & body]
+  (if body
+    `(if ~test
+       nil
+       (do ~@body))
+    `(if ~test nil nil)))
+
+(defmacro cond [& clauses]
+  (assert (even? (count clauses))
+          "cond requires an even number of forms")
+  (if clauses
+    (let [test (first clauses)
+          expression (second clauses)]
+      (if (= true test)
+        expression
+        (if (= :else test)
+          expression
+          `(if ~test
+             ~expression
+             (cond ~@(nnext clauses))))))
+    nil))
+
 (defmacro doto [x & forms]
   (let [gx (gensym)]
     `(let [~gx ~x]

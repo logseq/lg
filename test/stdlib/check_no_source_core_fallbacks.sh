@@ -58,11 +58,16 @@ for name in $public_source_primitives; do
   fi
 done
 
-for name in comment doto when-first while '->' '->>' 'as->' 'cond->' 'cond->>' 'some->' 'some->>'; do
+for name in comment doto when-first while if-not when when-not cond '->' '->>' 'as->' 'cond->' 'cond->>' 'some->' 'some->>'; do
   for file in src/call_elaborator.ml src/expression_elaborator.ml \
     src/macro_expander.ml src/special_form_elaborator.ml src/top_level_elaborator.ml \
     src/type_inference.ml; do
-    if grep -F "\"$name\"" "$root/$file" >/dev/null; then
+    matches=$(grep -F "\"$name\"" "$root/$file" || true)
+    if test "$name" = when && test "$file" = src/special_form_elaborator.ml; then
+      matches=$(printf '%s\n' "$matches" \
+        | grep -v 'pattern_form; guard_form' || true)
+    fi
+    if test -n "$matches"; then
       echo "clojure.core/$name is still compiler-owned in $file" >&2
       exit 1
     fi

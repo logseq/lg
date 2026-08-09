@@ -2028,11 +2028,11 @@ let test_optional_sequences_flow_to_required_seqable_parameters () =
 (println (item-count (when true [1 2])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "optional_sequences_flow_to_required_seqable_parameters"
     "0\n2\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_cross_chunk_keyword_lookup_on_typed_sequence_records () =
   let provider =
@@ -5194,14 +5194,15 @@ let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      Lg.Compiler.compile_chunk ~target stdlib.state provider_source
       |> expect_ok
     in
     let _, consumer_ocaml =
       Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
     in
-    provider_ocaml ^ "\n" ^ consumer_ocaml
+    stdlib.ocaml_source ^ "\n" ^ provider_ocaml ^ "\n" ^ consumer_ocaml
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs
@@ -12958,7 +12959,7 @@ let test_ocaml_owned_branch_types_are_checked_by_ocaml () =
 (println "aliases-ok")
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "ocaml_owned_branch_types_are_checked_by_ocaml"
     "aliases-ok\n" ocaml_source
 
@@ -15027,14 +15028,14 @@ let test_variadic_signature_lifts_generic_map_returns_to_option () =
     (= 1 (get selected :value 0))))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "nullable variadic map returns must stay static";
   assert_ocaml_runs
     "variadic_signature_lifts_generic_map_returns_to_option"
     "true\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_option_map_parameters_adapt_record_shaped_literals_before_lifting () =
   let source =
@@ -18207,9 +18208,11 @@ let test_loop_protocol_vectors_require_sum_elements () =
 (println (count (-run (LoopFrame. 0))))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/loop_protocol_vectors.cljc" source
   |> expect_error_contains "heterogeneous vector";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_with_stdlib_result Lg.Target.Melange
+    "test/loop_protocol_vectors.cljc" source
   |> expect_error_contains "define a sum type"
 
 let test_cond_protocol_vectors_require_sum_elements () =
@@ -18232,9 +18235,11 @@ let test_cond_protocol_vectors_require_sum_elements () =
 (println (count (-run (CondFrame. 0))))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native "test/cond_protocol_vectors.cljc"
+    source
   |> expect_error_contains "heterogeneous vector";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_with_stdlib_result Lg.Target.Melange
+    "test/cond_protocol_vectors.cljc" source
   |> expect_error_contains "define a sum type"
 
 let test_if_nullable_protocol_vectors_require_sum_elements () =
@@ -18291,9 +18296,11 @@ let test_cond_nullable_protocol_vectors_require_sum_elements () =
 (println (frame-count (CondFrame. 2)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/cond_nullable_protocol_vectors.cljc" source
   |> expect_error_contains "heterogeneous vector";
-  Lg.Compiler.compile_string ~target:Lg.Target.Melange source
+  compile_with_stdlib_result Lg.Target.Melange
+    "test/cond_nullable_protocol_vectors.cljc" source
   |> expect_error_contains "define a sum type"
 
 let test_if_some_heterogeneous_vectors_require_sum_elements () =
@@ -18423,11 +18430,11 @@ let test_nominal_sequence_branches_lift_into_nullable_results () =
        (first-is-datom? 3)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nominal_sequence_branches_lift_into_nullable_results"
     "1:1:0:1:true:true\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_cross_module_dynamic_protocol_results_require_static_sum () =
   let set_source =
@@ -18513,8 +18520,9 @@ let test_cross_module_dynamic_protocol_results_require_static_sum () =
 |}
   in
   let reject target =
+    let stdlib = compiled_stdlib target in
     let state, _set_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state set_source
+      Lg.Compiler.compile_chunk ~target stdlib.state set_source
       |> expect_ok
     in
     let state, _db_ocaml =
@@ -20209,13 +20217,13 @@ let test_assoc_accepts_protocol_constrained_named_records () =
   (println [(:value updated) (count (:items updated))]))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_accepts_protocol_constrained_named_records" "[42 2]\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_nested_named_records_resolve_protocol_receivers () =
   let source =
@@ -20613,11 +20621,11 @@ let test_inline_update_infers_transient_collection_boundaries () =
       (update-inline :aevt persistent!)))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
+  ignore (compile_string_with_stdlib source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_nested_update_infers_optional_map_value_collections () =
   let util_source =
@@ -20883,12 +20891,13 @@ let test_conditional_forms_work () =
 (println (str status ":" label))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "conditional_forms_work" "when-fired\nopen:ready\n"
     ocaml_source
 
 let test_if_not_requires_closed_sum_for_mixed_branch_types () =
-  Lg.Compiler.compile_string {|(println (pr-str (if-not true 1 "one")))|}
+  compile_with_stdlib_result Lg.Target.Native "test/if_not_mixed.cljc"
+    {|(println (pr-str (if-not true 1 "one")))|}
   |> expect_error_contains
        "define a closed sum type containing every branch type"
 
@@ -20909,27 +20918,27 @@ let test_cond_literal_true_is_exhaustive () =
 (println (cond false 0 true 1 false "unreachable"))
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "cond_literal_true_is_exhaustive" "2\n1\n" native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_cond_requires_closed_sum_for_mixed_branch_types () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native "test/cond_mixed.cljc"
     {|(println (pr-str (cond false 1 :else "one")))|}
   |> expect_error_contains
        "define a closed sum type containing every branch type"
 
 let test_cond_accepts_clojure_truthy_tests () =
   let ocaml_source =
-    Lg.Compiler.compile_string {|(println (cond 1 "one" :else "fallback"))|}
+    compile_string_with_stdlib {|(println (cond 1 "one" :else "fallback"))|}
     |> expect_ok
   in
   assert_ocaml_runs "cond_accepts_clojure_truthy_tests" "one\n" ocaml_source
 
 let test_when_returns_nullable_value () =
   let ocaml_source =
-    Lg.Compiler.compile_string
+    compile_string_with_stdlib
       {|(println (if-some [value (when true 1)] value 0))|}
     |> expect_ok
   in
@@ -20954,7 +20963,7 @@ let test_conditional_forms_accept_truthy_params () =
 (println (str (status 1) ":" (status false)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "conditional_forms_accept_truthy_params" "open:closed\n"
     ocaml_source
 
@@ -21798,6 +21807,55 @@ let test_source_basic_thread_macros_match_clojurescript () =
   compile_with_stdlib_result Lg.Target.Native
     "test/basic_thread_source_zero_arity.cljc" "(->)"
   |> expect_error_contains "unsupported macro arity 0"
+
+let test_source_basic_control_macros_match_clojure () =
+  let source =
+    {|
+(ns source-basic-control-macro-app
+  (:require [cljs.core :as core :refer [if-not when when-not cond]]))
+
+(def evaluations (atom 0))
+(def selected
+  (cond
+    (do (swap! evaluations inc) false) 1
+    (do (swap! evaluations inc) true) 2
+    :else 3))
+
+(println (= 1 (if-not false 1 2)))
+(println (= 2 (if-not true 1 2)))
+(println (nil? (if-not true 1)))
+(println (= 3 (when true 1 2 3)))
+(println (nil? (when false 1)))
+(println (= 4 (when-not false 4)))
+(println (nil? (when-not true 4)))
+(println (= 2 selected))
+(println (= 2 @evaluations))
+(println (= 5 (core/if-not nil 5 6)))
+(println (= 7 (clojure.core/cond false 6 :else 7)))
+(def empty-body-evaluations (atom 0))
+(println (nil? (when (do (swap! empty-body-evaluations inc) true))))
+(println (nil? (when-not (do (swap! empty-body-evaluations inc) false))))
+(println (= 2 @empty-body-evaluations))
+(println (nil? (cond)))
+|}
+  in
+  let expected = String.concat "" (List.init 15 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_basic_control_macros.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source basic control macros must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_basic_control_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_basic_control_macros.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source basic control macros must remain static";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cond_odd_forms.cljc" "(cond true)"
+  |> expect_error_contains "cond requires an even number of forms"
 
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
@@ -23205,11 +23263,11 @@ let test_and_truthy_guard_narrows_nullable_ints () =
        (if (positive-result true -1) "yes" "no")))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "and_truthy_guard_narrows_nullable_ints" "yes:no:no\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_or_nil_guard_narrows_nullable_records () =
   let source =
@@ -23437,7 +23495,8 @@ let test_untyped_heterogeneous_record_fields_are_rejected () =
        (-render (second boxes))))
   |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/untyped_heterogeneous_record_fields.cljc" source
   |> expect_error_contains "define a sum type containing these types"
 
 let test_callable_set_parameters_remain_sets_for_conj () =
@@ -24388,14 +24447,14 @@ let test_reduce_refines_empty_set_accumulators_without_widening_static_sets () =
   (str (count numbers) ":" (count entries) ":" (count datom-values)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "closed set accumulators must remain statically represented";
   assert_ocaml_runs
     "reduce_refines_empty_set_accumulators_without_widening_static_sets"
     "2:2:2\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_realizes_lazy_seq_once () =
   let source =
@@ -27071,12 +27130,12 @@ let test_logical_or_with_throw_preserves_peer_type () =
 |}
   in
   let native_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok
+    compile_string_with_stdlib ~target:Lg.Target.Native source |> expect_ok
   in
   assert_ocaml_runs "logical_or_with_throw_preserves_peer_type" "2\n"
     native_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_equality_parameter_requires_a_closed_sum_for_keyword_and_string () =
   let source =
@@ -30107,14 +30166,8 @@ let test_cross_module_fnil_updates_closed_vector_maps () =
 |}
   in
   let compile target =
-    let state, util_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
-      |> expect_ok
-    in
-    let _, db_ocaml =
-      Lg.Compiler.compile_chunk ~target state db_source |> expect_ok
-    in
-    util_ocaml ^ "\n" ^ db_ocaml
+    compile_chunks_with_stdlib target
+      [ ("test/util.cljc", util_source); ("test/db.cljc", db_source) ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "cross_module_fnil_updates_closed_vector_maps"
@@ -36093,8 +36146,6 @@ let test_parsetree_backend_builds_native_conditional_expressions () =
     Lg.Compiler.compile_parsetree
       {|
 (def answer (if true 42 0))
-(def fallback (if-not false 7 9))
-(when true (println "ready"))
 |}
     |> expect_ok
   in
@@ -36104,10 +36155,8 @@ let test_parsetree_backend_builds_native_conditional_expressions () =
     | _ -> failwith "expected one value binding"
   in
   match structure with
-  | [ if_item; if_not_item; when_item ] ->
-      let expressions =
-        List.map value_expression [ if_item; if_not_item; when_item ]
-      in
+  | [ if_item ] ->
+      let expressions = List.map value_expression [ if_item ] in
       if
         not
           (List.for_all
@@ -36144,7 +36193,7 @@ let test_parsetree_backend_builds_native_match_expressions () =
 
 let test_parsetree_backend_builds_native_cond_expressions () =
   expect_structured_value_expression
-    {|(def result (cond false 0 true 1 :else 2))|}
+    {|(def result (if false 0 (if true 1 2)))|}
 
 let test_parsetree_backend_builds_native_integer_expressions () =
   expect_structured_value_expression
@@ -37991,6 +38040,8 @@ let tests =
       test_source_thread_macros_match_clojurescript );
     ( "source basic thread macros match ClojureScript",
       test_source_basic_thread_macros_match_clojurescript );
+    ( "source basic control macros match Clojure",
+      test_source_basic_control_macros_match_clojure );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

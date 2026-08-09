@@ -232,13 +232,6 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_if scope env condition then_form else_form
   | FList [ FSymbol "if"; condition; then_form ] ->
       compile_if scope env condition then_form (FSymbol "nil")
-  | FList [ FSymbol "if-not"; condition; then_form; else_form ] ->
-      compile_if_not scope env condition then_form else_form
-  | FList (FSymbol "when" :: condition :: body_forms) ->
-      compile_when scope env condition body_forms
-  | FList (FSymbol "when-not" :: condition :: body_forms) ->
-      compile_when scope env (FList [ FSymbol "not"; condition ]) body_forms
-  | FList (FSymbol "cond" :: clauses) -> compile_cond scope env clauses
   | FList (FSymbol "condp" :: predicate :: target :: clauses) ->
       compile_condp scope env predicate target clauses
   | FList (FSymbol "case" :: target :: clauses) ->
@@ -455,7 +448,9 @@ and compile_doseq scope env bindings body_forms =
           (expand rest)
     | FKeyword ":when" :: condition :: rest ->
         Result.map
-          (fun body -> FList [ FSymbol "when"; condition; body ])
+          (fun body ->
+            FList
+              [ FSymbol "if"; condition; body; FSymbol "nil" ])
           (expand rest)
     | FKeyword ":while" :: _ -> Error.error "doseq :while is not supported yet"
     | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
@@ -550,10 +545,6 @@ and compile_if scope env condition then_form else_form =
   (Lazy.force context).special_forms.compile_if scope env condition then_form
     else_form
 
-and compile_if_not scope env condition then_form else_form =
-  (Lazy.force context).special_forms.compile_if_not scope env condition
-    then_form else_form
-
 and compile_if_let scope env binding then_form else_form =
   (Lazy.force context).special_forms.compile_if_let scope env binding then_form
     else_form
@@ -573,12 +564,6 @@ and compile_when_some scope env binding body_forms =
 and compile_let_some scope env bindings then_form else_form =
   (Lazy.force context).special_forms.compile_let_some scope env bindings
     then_form else_form
-
-and compile_when scope env condition body_forms =
-  (Lazy.force context).special_forms.compile_when scope env condition body_forms
-
-and compile_cond scope env clauses =
-  (Lazy.force context).special_forms.compile_cond scope env clauses
 
 and compile_condp scope env predicate target clauses =
   incr condp_counter;
