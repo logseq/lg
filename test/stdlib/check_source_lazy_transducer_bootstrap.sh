@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 
-for name in filter remove take drop take-while drop-while map-indexed keep mapcat cat halt-when transduce sequence repeatedly; do
+for name in filter remove take drop take-while drop-while map-indexed keep keep-indexed mapcat cat halt-when transduce sequence repeatedly take-nth random-sample; do
   if ! grep -E "^\\(defn ${name}([[:space:]]|$)" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2
@@ -19,7 +19,7 @@ for name in lazy-seq lazy-cat; do
   fi
 done
 
-if rg -n 'apply_transducer|\| "(filter|remove|take|drop|take-while|drop-while|map-indexed|keep|mapcat|cat|halt-when|transduce|sequence)" -> compile_' \
+if rg -n 'apply_transducer|\| "(filter|remove|take|drop|take-while|drop-while|map-indexed|keep|keep-indexed|mapcat|cat|halt-when|transduce|sequence|repeatedly|take-nth|random-sample)" -> compile_' \
   "$root/src/call_elaborator.ml" \
   "$root/src/core_form_expansion.ml" >/dev/null; then
   echo "lazy/transducer functions are still publicly compiler-dispatched" >&2

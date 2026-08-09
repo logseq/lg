@@ -24110,10 +24110,6 @@ let test_batched_predicate_collection_core_functions_work () =
      item:2\n"
     ocaml_source
 
-let test_batched_predicate_collection_core_functions_reject_bad_counts () =
-  Lg.Compiler.compile_string {|(def x (take-nth 0 [1 2]))|}
-  |> expect_error "take-nth n must be positive"
-
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
@@ -40231,8 +40227,6 @@ let tests =
       test_partition_by_keyword_infers_seqable_record_parameters );
     ( "partition-by emits a nonrecursive finish helper",
       test_partition_by_emits_nonrecursive_finish_helper );
-    ( "batched predicate/collection core functions reject bad counts",
-      test_batched_predicate_collection_core_functions_reject_bad_counts );
     ( "batched predicate/collection core functions reject bad predicates",
       test_batched_predicate_collection_core_functions_reject_bad_predicates );
     ( "batched predicate/collection core functions reject bad run function",

@@ -52,7 +52,7 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 212; then
+if test "$dispatch_count" -ne 211; then
   echo "compiler call dispatch changed: expected 212 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
@@ -62,7 +62,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition partition-all partition-by rand reduce reduce-kv reductions remove repeat repeatedly rest run! select-keys some some-fn sort sort-by take take-nth take-while update-in vals", xs)
+    split("apply assoc-in comp concat cycle doall dorun drop drop-while every-pred filter filterv fnil get-in group-by interleave into juxt keep map map-indexed mapcat mapv max merge min next partial partition partition-all partition-by rand reduce reduce-kv reductions remove repeat repeatedly rest run! select-keys some some-fn sort sort-by take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -93,7 +93,6 @@ awk '
     blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
     split("sort sort-by", xs)
     for (i in xs) blocked_reason[xs[i]] = "comparator-overloads-and-seqable-capability-adaptation-remain-compiler-owned"
-    blocked_reason["take-nth"] = "one-arity-stateful-transducer-and-lazy-two-arity-sequence-are-not-source-expressible"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
     blocked["hash-unordered-coll"] = 1
     blocked_reason["hash-unordered-coll"] = "generic-elements-require-an-ihash-capability-witness-inside-the-source-function-and-current-sidecar-function-types-cannot-carry-that-witness"
@@ -157,7 +156,7 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 146; then
+if test "$form_dispatch_count" -ne 145; then
   echo "compiler form dispatch changed: expected 146 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1

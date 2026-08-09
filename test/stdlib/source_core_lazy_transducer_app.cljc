@@ -82,3 +82,20 @@
 
 (println (= [1 2 3] (vec (lazy-cat [1] (list 2 3)))))
 (println (= [7 7 7] (vec (repeatedly 3 (fn [] 7)))))
+(println
+  (= [10 32]
+     (vec (keep-indexed
+            (fn [index value]
+              (if (even? index) (Some (+ index value)) None))
+            [10 20 30 40]))))
+(println
+  (= [10 32]
+     (vec (sequence
+            (keep-indexed
+              (fn [index value]
+                (if (even? index) (Some (+ index value)) None)))
+            [10 20 30 40]))))
+(println (= [0 2 4] (vec (take-nth 2 [0 1 2 3 4 5]))))
+(println (= [0 2 4] (vec (sequence (take-nth 2) [0 1 2 3 4 5]))))
+(println (= [1 2 3] (vec (random-sample 1.0 [1 2 3]))))
+(println (= [] (vec (sequence (random-sample 0.0) [1 2 3]))))

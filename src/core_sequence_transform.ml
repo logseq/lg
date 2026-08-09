@@ -387,47 +387,6 @@ let partition name size collection =
         in
         Ok (typed_ir (TList (TList inner)) expr)
 
-let take_nth count collection =
-  if not (Types.equal count.ty TInt) then Error.error "take-nth n must be int"
-  else
-    match collection_to_list_expr collection with
-    | Error _ -> Error.error "take-nth expects a collection"
-    | Ok (_inner, list_expr) ->
-        let next_index =
-          Semantic_ir.Infix
-            ("+", Semantic_ir.Ident "index", Semantic_ir.Int 1)
-        in
-        let body =
-          Semantic_ir.Match
-            ( Semantic_ir.Ident "xs",
-              [ (Semantic_ir.PList [], apply "List.rev" [ Semantic_ir.Ident "acc" ]);
-                ( Semantic_ir.PCons (Semantic_ir.PVar "item", Semantic_ir.PVar "rest"),
-                  Semantic_ir.If
-                    ( Semantic_ir.Infix
-                        ( "=",
-                          Semantic_ir.Infix
-                            ( "mod",
-                              Semantic_ir.Ident "index",
-                              count.semantic_expr ),
-                          Semantic_ir.Int 0 ),
-                      apply "take_nth"
-                        [ next_index;
-                          Semantic_ir.Cons (Semantic_ir.Ident "item", Semantic_ir.Ident "acc");
-                          Semantic_ir.Ident "rest" ],
-                      apply "take_nth"
-                        [ next_index;
-                          Semantic_ir.Ident "acc";
-                          Semantic_ir.Ident "rest" ] ) ) ] )
-        in
-        let list_expr =
-          Semantic_ir.LetRec
-            ( "take_nth",
-              [ Semantic_ir.PVar "index"; Semantic_ir.PVar "acc"; Semantic_ir.PVar "xs" ],
-              body,
-              [ Semantic_ir.Int 0; Semantic_ir.List []; list_expr ] )
-        in
-        Ok (typed_ir collection.ty (collection_from_list_expr collection.ty list_expr))
-
 let dorun collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "dorun expects a collection"
@@ -593,7 +552,6 @@ let compile name args =
   | "interleave", collections -> interleave collections
   | ("partition" | "partition-all"), [ size; collection ] ->
       partition name size collection
-  | "take-nth", [ count; collection ] -> take_nth count collection
   | "dorun", [ collection ] -> dorun collection
   | "doall", [ collection ] -> doall collection
   | "into", [ target; source ] -> into target source
@@ -608,6 +566,5 @@ let compile name args =
   | "cycle", _ -> Error.error "cycle expects 1 collection"
   | ("partition" | "partition-all"), _ ->
       Error.error (name ^ " expects size and collection")
-  | "take-nth", _ -> Error.error "take-nth expects n and collection"
   | "into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)

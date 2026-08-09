@@ -303,6 +303,8 @@
               :reason :source-port-preserves-one-arity-seq-normalization-and-two-arity-lazy-transformer-buffering-while-upstream-multi-collection-transformer-iteration-remains-dependent-variadic-work}
     repeatedly {:status :ported
                 :reason :source-port-preserves-infinite-delayed-generation-and-finite-take-composition}
+    take-nth {:status :static-adaptation
+              :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
     deref {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ideref-with-static-protocol-implementations-for-refs-lazy-values-futures-and-slots-while-var-quotes-remain-a-compile-time-reference}
     reset! {:status :static-adaptation
@@ -319,8 +321,8 @@
             :reason :first-class-instance-predicate-must-accept-every-static-value-type-but-lg-has-no-universal-static-instance-capability}
     force {:status :blocked-static-typing
            :reason :first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value}
-    keep-indexed {:status :blocked-static-typing
-                  :reason :one-arity-stateful-transducer-and-two-arity-lazy-optional-result-filter-cannot-yet-share-one-source-function-type}
+    keep-indexed {:status :static-adaptation
+                  :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-optional-result-filter-while-omitting-the-javascript-chunked-sequence-fast-path}
     doseq {:status :blocked-static-typing
            :reason :current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers}
     reset-vals! {:status :static-adaptation
@@ -628,8 +630,8 @@
           :reason :first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability}
     partitionv-all {:status :blocked-static-typing
                     :reason :one-arity-stateful-transducer-and-two-or-three-arity-lazy-vector-partitions-cannot-share-one-source-function-type}
-    random-sample {:status :blocked-static-typing
-                   :reason :one-arity-stateful-filter-transducer-and-two-arity-lazy-sequence-cannot-share-one-source-function-type}
+    random-sample {:status :ported
+                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary}
     record? {:status :blocked-static-typing
              :reason :first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value}
     replace {:status :blocked-static-typing

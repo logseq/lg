@@ -5572,16 +5572,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_collection params collection
     | FList
         [
-          FSymbol
-            "take-nth";
-          count;
-          collection;
-        ] -> (
-        match infer_expected TInt params count with
-        | Error _ as err -> err
-        | Ok params -> infer_collection params collection)
-    | FList
-        [
           FSymbol "run!";
           (FList (FSymbol "fn" :: _fn_params :: _body_forms) as function_form);
           collection;

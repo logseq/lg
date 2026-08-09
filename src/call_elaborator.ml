@@ -8323,8 +8323,6 @@ let create ~compile_expr =
             compile_into scope env target_form source_form
                   | _ ->
                       compile_sequence_transform_call scope env name arg_forms)
-    | "take-nth" ->
-        compile_sequence_transform_call scope env name arg_forms
               | "next" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -9142,8 +9140,6 @@ let create ~compile_expr =
                     (prepare_collections [] prepared)))
     | ("partition" | "partition-all"), FInt size :: _ when size <= 0 ->
         Error.error (name ^ " size must be positive")
-    | "take-nth", FInt count :: _ when count <= 0 ->
-        Error.error "take-nth n must be positive"
     | "sort", [ comparator_form; collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error

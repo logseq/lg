@@ -25,7 +25,6 @@ cloneable?	blocked-static-typing	first-class-protocol-predicate-must-accept-ever
 default-dispatch-val	blocked-static-typing	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
 ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability
 partitionv-all	blocked-static-typing	one-arity-stateful-transducer-and-two-or-three-arity-lazy-vector-partitions-cannot-share-one-source-function-type
-random-sample	blocked-static-typing	one-arity-stateful-filter-transducer-and-two-arity-lazy-sequence-cannot-share-one-source-function-type
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type
 spread	blocked-static-typing	argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence

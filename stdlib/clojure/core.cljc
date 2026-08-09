@@ -524,6 +524,30 @@
   ([f coll]
    (keep-seq f (seq coll))))
 
+(defn- keep-indexed-seq [f index coll]
+  (lazy-seq
+   (if coll
+     (let [value (f index (nth coll 0))]
+       (if-some [kept value]
+         (cons kept (keep-indexed-seq f (inc index) (rest coll)))
+         (keep-indexed-seq f (inc index) (rest coll))))
+     nil)))
+
+(defn keep-indexed
+  ([f]
+   (fn [rf]
+     (let [index (volatile! -1)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (let [value (f (vswap! index inc) input)]
+            (if-some [kept value]
+              (rf result kept)
+              (runtime-reduced/continue result))))))))
+  ([f coll]
+   (keep-indexed-seq f 0 (seq coll))))
+
 (defn- mapcat-seq [f current colls]
   (lazy-seq
    (if current
@@ -599,6 +623,33 @@
     (cons (f) (repeatedly f))))
   ([n f]
    (take n (repeatedly f))))
+
+(defn- take-nth-seq [n coll]
+  (lazy-seq
+   (if coll
+     (cons (nth coll 0)
+           (take-nth-seq n (drop n coll)))
+     nil)))
+
+(defn take-nth
+  ([n]
+   (fn [rf]
+     (let [index (volatile! -1)]
+       (fn
+         ([] (rf))
+         ([result] (rf result))
+         ([result input]
+          (if (zero? (rem (vswap! index inc) n))
+            (rf result input)
+            (runtime-reduced/continue result)))))))
+  ([n coll]
+   (take-nth-seq n (seq coll))))
+
+(defn random-sample
+  ([probability]
+   (filter (fn [_] (< (rand) probability))))
+  ([probability coll]
+   (filter (fn [_] (< (rand) probability)) coll)))
 
 (defn identity [x]
   x)
