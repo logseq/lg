@@ -211,6 +211,8 @@
            :reason :first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value}
     keep-indexed {:status :blocked-static-typing
                   :reason :one-arity-stateful-transducer-and-two-arity-lazy-optional-result-filter-cannot-yet-share-one-source-function-type}
+    doseq {:status :blocked-static-typing
+           :reason :current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers}
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
     inc {:status :static-adaptation

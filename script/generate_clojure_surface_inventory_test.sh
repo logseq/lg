@@ -87,6 +87,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/uuid?" && $3 == "blocked-
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/delay?" && $3 == "blocked-static-typing" && $4 == "first-class-instance-predicate-must-accept-every-static-value-type-but-lg-has-no-universal-static-instance-capability" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/force" && $3 == "blocked-static-typing" && $4 == "first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/keep-indexed" && $3 == "blocked-static-typing" && $4 == "one-arity-stateful-transducer-and-two-arity-lazy-optional-result-filter-cannot-yet-share-one-source-function-type" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/doseq" && $3 == "blocked-static-typing" && $4 == "current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.test" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -103,6 +104,11 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-prim
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-pattern" && $3 == "typed-primitive" && $4 == "validated-static-regex-construction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "re-find" && $3 == "blocked-static-typing" && $4 == "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "rand" && $3 == "blocked-static-typing" && $4 == "same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && $2 == "doseq" && $3 == "blocked-static-typing" && $4 == "current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && $2 == "for" && $3 == "special-form" && $4 == "compiler-owned-binding-modifier-and-lazy-sequence-expansion" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && ($2 == "case" || $2 == "condp") && $3 == "special-form" && $4 == "compiler-owned-source-control-flow-expansion" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && ($2 == "fn" || $2 == "let" || $2 == "loop") && $3 == "special-form" && $4 == "compiler-owned-syntax-or-control-flow" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && ($2 == "cat" || $2 == "or" || $2 == "when") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '
   $1 == "compiler-call" && $3 == "blocked-static-typing" &&
   ($4 == "" || $4 == "requires-variadic-dependent-lazy-or-capability-type-support") {

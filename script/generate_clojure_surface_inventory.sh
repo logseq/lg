@@ -19,10 +19,15 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 call_elaborator="$lg_root/src/call_elaborator.ml"
+expression_elaborator="$lg_root/src/expression_elaborator.ml"
+type_inference="$lg_root/src/type_inference.ml"
 core_namespaces="$lg_root/src/core_namespaces.ml"
 
-if ! test -f "$call_elaborator" || ! test -f "$core_namespaces"; then
-  echo "LG_ROOT must contain src/call_elaborator.ml and src/core_namespaces.ml" >&2
+if ! test -f "$call_elaborator" \
+  || ! test -f "$expression_elaborator" \
+  || ! test -f "$type_inference" \
+  || ! test -f "$core_namespaces"; then
+  echo "LG_ROOT must contain the compiler elaborators and src/core_namespaces.ml" >&2
   exit 2
 fi
 
@@ -142,6 +147,60 @@ awk '
 
 cat "$tmp/compiler-status"
 
+# Public forms can also be dispatched before call elaboration. Extract only
+# symbols in the head position of FList patterns so generated forms and nested
+# pattern syntax do not masquerade as public compiler routes.
+ocaml -I +compiler-libs ocamlcommon.cma \
+  "$lg_root/script/extract_ocaml_form_symbol_patterns.ml" \
+  "$expression_elaborator" "$type_inference" \
+  >"$tmp/compiler-forms"
+
+form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
+if test "$form_dispatch_count" -ne 163; then
+  echo "compiler form dispatch changed: expected 163 names, found $form_dispatch_count" >&2
+  echo "review and classify every added or removed form before updating the count" >&2
+  exit 1
+fi
+
+awk -F '\t' '
+  FNR == NR {
+    if ($1 == "compiler-call") {
+      call_status[$2] = $3
+      call_reason[$2] = $4
+    }
+    next
+  }
+  {
+    name = $0
+    canonical = name
+    sub(/^(clojure|cljs)\.core\//, "", canonical)
+    status = "typed-primitive"
+    reason = "static-form-elaboration-or-compiler-internal-form"
+    if (canonical == "case" || canonical == "condp") {
+      status = "special-form"
+      reason = "compiler-owned-source-control-flow-expansion"
+    } else if (canonical == "doseq") {
+      status = "blocked-static-typing"
+      reason = "current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers"
+    } else if (canonical == "for") {
+      status = "special-form"
+      reason = "compiler-owned-binding-modifier-and-lazy-sequence-expansion"
+    } else if (canonical == "dotimes") {
+      status = "special-form"
+      reason = "compiler-owned-bounded-loop-expansion"
+    } else if (canonical ~ /^(catch|do|if|let|let\*|loop|recur|fn|quote|try|syntax-quote|match|let-some)$/) {
+      status = "special-form"
+      reason = "compiler-owned-syntax-or-control-flow"
+    } else if (canonical in call_status) {
+      status = call_status[canonical]
+      reason = call_reason[canonical]
+    }
+    print "compiler-form\t" name "\t" status "\t" reason
+  }
+' "$tmp/compiler-status" "$tmp/compiler-forms" >"$tmp/compiler-form-status"
+
+cat "$tmp/compiler-form-status"
+
 bb "$lg_root/script/extract_stdlib_manifest_status.clj" \
   "$lg_root/stdlib/upstream.edn" >"$tmp/manifest-status"
 
@@ -196,9 +255,32 @@ if test -n "$clojurescript_root"; then
   done
   LC_ALL=C sort -u "$tmp/source-vars" -o "$tmp/source-vars"
 
+  awk -F '\t' '
+    FILENAME == ARGV[1] && $1 == "compiler-call" {
+      compiler[$2] = 1
+      next
+    }
+    FILENAME == ARGV[2] && $1 == "compiler-form" {
+      name = $2
+      sub(/^(clojure|cljs)\.core\//, "", name)
+      compiler[name] = 1
+      next
+    }
+    FILENAME == ARGV[3] && $1 ~ /^cljs\.core\// {
+      name = $1
+      sub(/^cljs\.core\//, "", name)
+      if (name in compiler) {
+        print "source core var still has name-based compiler dispatch: " name > "/dev/stderr"
+        failed = 1
+      }
+    }
+    END {exit failed}
+  ' "$tmp/compiler-status" "$tmp/compiler-form-status" "$tmp/source-vars"
+
   awk -F '\t' '{print "source-var\t" $1 "\t" $2}' \
     "$tmp/source-vars" >"$tmp/upstream-status-input"
-  cat "$tmp/compiler-status" "$tmp/manifest-status" \
+  cat "$tmp/compiler-status" "$tmp/compiler-form-status" \
+    "$tmp/manifest-status" \
     >>"$tmp/upstream-status-input"
   awk -F '\t' '{print "upstream-var\t" $1 "\t" $2}' \
     "$tmp/upstream-vars" >>"$tmp/upstream-status-input"
@@ -211,6 +293,13 @@ if test -n "$clojurescript_root"; then
     $1 == "compiler-call" {
       compiler_status[$2] = $3
       compiler_reason[$2] = $4
+      next
+    }
+    $1 == "compiler-form" {
+      name = $2
+      sub(/^(clojure|cljs)\.core\//, "", name)
+      form_status[name] = $3
+      form_reason[name] = $4
       next
     }
     $1 == "definition" {
@@ -245,6 +334,9 @@ if test -n "$clojurescript_root"; then
       } else if (namespace == "cljs.core" && name in compiler_status) {
         status = compiler_status[name]
         reason = compiler_reason[name]
+      } else if (namespace == "cljs.core" && name in form_status) {
+        status = form_status[name]
+        reason = form_reason[name]
       } else if (namespace in namespace_status &&
                  (namespace_status[namespace] == "blocked-static-typing" ||
                   namespace_status[namespace] == "host-boundary" ||

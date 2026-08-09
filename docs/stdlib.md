@@ -134,8 +134,8 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 274 source entries (32.05%), 88 typed
-primitives, 5 special forms, 15 host boundaries, 168 static-typing blockers,
-44 out-of-scope Spec entries, and 261 deferred entries. The deferred set is the
+primitives, 12 special forms, 15 host boundaries, 169 static-typing blockers,
+44 out-of-scope Spec entries, and 253 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -147,6 +147,10 @@ unchanged non-delay input. LG cannot yet express those relationships through
 one static source function without a typed instance/forceable capability.
 `keep-indexed` is also blocked as a whole: porting only its two-argument lazy
 sequence clause would silently omit the one-argument stateful transducer.
+The existing compiler-owned `doseq` expansion remains a visible blocker rather
+than counting as supported: it rejects the upstream `:while` binding modifier
+and cannot yet preserve termination of the current nested loop when `:while`
+follows a `:let` modifier.
 `rand` remains compiler-owned because its one-argument public API accepts both
 int and float bounds, while source signatures cannot yet express same-arity
 overloads without rejecting one of those existing cases.
@@ -162,6 +166,12 @@ build-time libraries with source namespaces that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
+The call elaborator contributes 240 reviewed routes. A separate OCaml-AST
+extractor now audits 163 form-head pattern routes in expression elaboration and
+type inference; this closes the former gap where `case`, `condp`, `doseq`,
+`dotimes`, `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as
+unclassified deferred upstream vars. Both counts are pinned, so adding a new
+name-based form path requires an explicit inventory review.
 Every `blocked-static-typing` entry must have a concrete, machine-checked
 reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
