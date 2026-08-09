@@ -397,6 +397,10 @@ single-concrete-comparable capability witnesses.
 reference runtime. `weak-ref` remains a compiler boundary so Native and
 Melange both reject non-heap values before code generation.
 
+`future-call` is source-defined with a polymorphic zero-argument callback and
+typed future result. `enable-console-print!` is a source-defined no-op on both
+targets because LG does not use ClojureScript's mutable JavaScript print Vars.
+
 `map`, `filter`, `take`, and `drop` return typed memoized lazy seqs. Already
 realized nodes are cached, so repeated traversal does not rerun producer side
 effects. Lists, vectors, sets, arrays, strings, and host `Seq.t`, list, and array

@@ -339,6 +339,8 @@
             :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-javascript-array-test-to-lg-static-array-types}
     array-value? {:status :static-adaptation
                   :reason :polymorphic-lg-source-extension-and-inline-definition-alias-the-static-array-type-test-without-adding-an-open-runtime-value-boundary}
+    enable-console-print! {:status :static-adaptation
+                           :reason :source-zero-arity-compatibility-function-preserves-lg-no-op-console-setup-because-printing-is-already-routed-through-the-target-runtime}
     reduced? {:status :static-adaptation
               :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-reduced-instance-test-to-the-parameterized-runtime-reduction-sentinel}
     some? {:status :static-adaptation

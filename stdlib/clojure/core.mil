@@ -25,6 +25,10 @@
   :fn<weak<value>;option<value>>)
 (signature clojure.core/weak-clear! [value]
   :fn<weak<value>;unit>)
+(signature clojure.core/future-call [value]
+  :fn<fn<value>;Lg_runtime.Runtime_future.t<value>>)
+(signature clojure.core/enable-console-print!
+  :fn<unit>)
 
 (signature clojure.core/map-seq [input output]
   :fn<fn<input;output>;seq<input>;seq<output>>)

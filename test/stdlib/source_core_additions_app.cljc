@@ -9,6 +9,9 @@
 
 (println (= 4 (bit-and-not 7 3)))
 (println (= 8 (bit-and-not 15 3 4)))
+(def source-enable-console-print! enable-console-print!)
+(source-enable-console-print!)
+(println true)
 (defrecord WeakSourceBox [^int value])
 (def retained-weak-source-box (WeakSourceBox. 7))
 (def weak-source-reference (weak-ref retained-weak-source-box))
@@ -385,7 +388,8 @@
 (println (not (core/ratio? 1)))
 (println (not (clojure.core/decimal? "1")))
 
-(def completed-future (future-call (fn [] 42)))
+(def source-future-call future-call)
+(def completed-future (source-future-call (fn [] 42)))
 (def source-realized? realized?)
 (println (source-realized? completed-future))
 (println (core/realized? completed-future))

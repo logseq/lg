@@ -2009,11 +2009,23 @@
   #?(:melange (runtime-time-melange/now)
      :default (runtime-time/now)))
 
-(defn weak-deref [reference]
+(defn weak-deref
+  {:inline (fn [reference]
+             (list '__lg_weak-deref reference))}
+  [reference]
   (runtime-weak/get reference))
 
-(defn weak-clear! [reference]
+(defn weak-clear!
+  {:inline (fn [reference]
+             (list '__lg_weak-clear! reference))}
+  [reference]
   (runtime-weak/clear reference))
+
+(defn future-call [f]
+  (runtime-future/call f))
+
+(defn enable-console-print! []
+  nil)
 
 (def gensym_counter (atom 0))
 

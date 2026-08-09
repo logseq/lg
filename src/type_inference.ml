@@ -1806,7 +1806,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         match Types.weak_element expected_ty with
         | Some value_ty -> infer_expected value_ty params value
         | None -> infer_form params value)
-    | FList [ FSymbol "weak-deref"; reference ] -> (
+    | FList [ FSymbol "__lg_weak-deref"; reference ] -> (
         match expected_ty with
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
             infer_expected (Types.weak_type value_ty) params reference
@@ -3872,12 +3872,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword (TRef TUnknown) params
     | FList
         [
-          FSymbol ("weak-deref" | "weak-clear!");
+          FSymbol ("__lg_weak-deref" | "__lg_weak-clear!");
           FList [ FKeyword keyword; FSymbol name ];
         ] ->
         add_record_field_constraint name keyword
           (Types.weak_type TUnknown) params
-    | FList [ FSymbol ("weak-deref" | "weak-clear!"); FSymbol name ] ->
+    | FList
+        [ FSymbol ("__lg_weak-deref" | "__lg_weak-clear!"); FSymbol name ] ->
         constrain_symbol (Types.weak_type TUnknown) params name
     | FList [ FSymbol "weak-ref"; value ] -> infer_form params value
     | FList

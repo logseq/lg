@@ -14221,9 +14221,9 @@ let test_weak_references_reject_invalid_calls () =
   Lg.Compiler.compile_string {|(weak-ref 42)|}
   |> expect_error_contains "weak-ref expects a heap value";
   compile_string_with_stdlib {|(weak-deref 42)|}
-  |> expect_error_contains "Lg_runtime.Runtime_weak.t";
+  |> expect_error_contains "weak-deref expects a weak reference";
   compile_string_with_stdlib {|(weak-clear! 42)|}
-  |> expect_error_contains "Lg_runtime.Runtime_weak.t"
+  |> expect_error_contains "weak-clear! expects a weak reference"
 
 let test_concise_standard_type_annotations () =
   let source =
@@ -15569,6 +15569,14 @@ let test_future_call_returns_a_realized_derefable_value () =
     "true\n42\ntrue\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_source_future_and_console_reject_invalid_calls () =
+  compile_string_with_stdlib {|(future-call 42)|}
+  |> expect_error_contains "future-call";
+  compile_string_with_stdlib {|(future-call (fn [value] value))|}
+  |> expect_error_contains "future-call";
+  compile_string_with_stdlib {|(enable-console-print! :unexpected)|}
+  |> expect_error_contains "enable-console-print!"
 
 let test_delay_is_lazy_memoized_and_derefable () =
   let source =
@@ -39548,6 +39556,8 @@ let tests =
       test_def_accepts_docstring_before_initializer );
     ( "future-call returns a realized derefable value",
       test_future_call_returns_a_realized_derefable_value );
+    ( "source future and console reject invalid calls",
+      test_source_future_and_console_reject_invalid_calls );
     ( "delay is lazy memoized and derefable",
       test_delay_is_lazy_memoized_and_derefable );
     ( "source completing matches ClojureScript arities",

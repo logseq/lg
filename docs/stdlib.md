@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 484 source entries (49.14%), 90 typed
-primitives, 43 special forms, 98 host boundaries, 219 static-typing blockers,
+macro surfaces. The current baseline is 486 source entries (49.34%), 89 typed
+primitives, 43 special forms, 97 host boundaries, 219 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -270,6 +270,10 @@ ordinary precompiled `clojure.core` source functions with explicit
 `weak<value>` signatures. They call the shared runtime weak-reference API;
 only `weak-ref` remains compiler-owned because its public contract must reject
 immediate values that cannot be held by the target weak-reference mechanism.
+`future-call` is likewise a precompiled source wrapper over the typed future
+runtime and preserves its zero-argument callback result type. The source
+`enable-console-print!` compatibility function remains a no-op because LG
+printing is already selected by the Native or Melange runtime.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
 commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout

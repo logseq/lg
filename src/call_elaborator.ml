@@ -5162,10 +5162,6 @@ let create ~compile_expr =
               (adapt_value_to_type env TFloat value)
         | Ok _ -> Error.error (function_name ^ " expects 1 argument")
         | Error _ as error -> error)
-    | "enable-console-print!" -> (
-        match arg_forms with
-        | [] -> Ok (typed_ir TNil Semantic_ir.Unit)
-        | _ -> Error.error "enable-console-print! expects 0 arguments")
     | "clj->js" -> (
         match compile_args () with
         | Ok [ value ] -> Ok value
@@ -6914,6 +6910,36 @@ let create ~compile_expr =
                  (apply make [ value_expression ]))
         | Ok [ _ ] -> Error.error "weak-ref expects a heap value"
         | Ok _ -> Error.error "weak-ref expects 1 argument")
+    | "__lg_weak-deref" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference ] -> (
+            match Types.weak_element reference.ty with
+            | Some value_ty ->
+                Ok
+                  (typed_ir (TOcaml_app ("option", [ value_ty ]))
+                     (apply "Lg_runtime.Runtime_weak.get"
+                        [ reference.semantic_expr ]))
+            | None ->
+                Error.error
+                  ("weak-deref expects a weak reference, got "
+                 ^ Types.source_name reference.ty))
+        | Ok _ -> Error.error "weak-deref expects 1 argument")
+    | "__lg_weak-clear!" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference ] -> (
+            match Types.weak_element reference.ty with
+            | Some _ ->
+                Ok
+                  (typed_ir TUnit
+                     (apply "Lg_runtime.Runtime_weak.clear"
+                        [ reference.semantic_expr ]))
+            | None ->
+                Error.error
+                  ("weak-clear! expects a weak reference, got "
+                 ^ Types.source_name reference.ty))
+        | Ok _ -> Error.error "weak-clear! expects 1 argument")
     | "tuple" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -7392,21 +7418,6 @@ let create ~compile_expr =
                        [ Semantic_ir.Fun ([], body.semantic_expr) ] )))
               (compile_body scope env
                  "delay expects at least one body form" body_forms))
-    | "future-call" -> (
-        match arg_forms with
-        | [ function_form ] -> (
-            match compile_function_arg scope env function_form with
-            | Error _ as error -> error
-            | Ok { ty = TFn ([], return_ty); semantic_expr; _ } ->
-                Ok
-                  (typed_ir
-                     (TOcaml_app
-                        ("Lg_runtime.Runtime_future.t", [ return_ty ]))
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_future.call",
-                          [ semantic_expr ] )))
-            | Ok _ -> Error.error "future-call expects a zero-argument function")
-        | _ -> Error.error "future-call expects one function")
     | "volatile!" -> (
         match arg_forms with
         | [ FSymbol "nil" ] -> (
