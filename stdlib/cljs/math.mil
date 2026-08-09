@@ -26,3 +26,7 @@
 (signature cljs.math/hypot :fn<float;float;float>)
 (signature cljs.math/expm1 :fn<float;float>)
 (signature cljs.math/log1p :fn<float;float>)
+(signature cljs.math/cbrt :fn<float;float>)
+(signature cljs.math/pow :fn<float;float;float>)
+(signature cljs.math/IEEE-fmod :fn<float;float;float>)
+(signature cljs.math/random :fn<float>)

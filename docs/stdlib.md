@@ -146,15 +146,17 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 447 source entries (49.28%), 62 typed
+macro surfaces. The current baseline is 451 source entries (49.72%), 62 typed
 primitives, 12 special forms, 27 host boundaries, 127 static-typing blockers,
-44 out-of-scope Spec entries, and 188 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 184 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
 logarithms, square root, exponential functions, stable hypotenuse,
 ceiling/floor, degree/radian conversion, and the `E`/`PI` constants through
-static OCaml float operations on both Native and Melange.
+static OCaml float operations on both Native and Melange. Cube root, power,
+floating remainder, and random use small explicitly typed cross-target runtime
+boundaries rather than dynamic values.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.

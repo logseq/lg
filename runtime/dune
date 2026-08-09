@@ -6,6 +6,7 @@
   (per_module
    ((pps melange.ppx)
     runtime_array_melange
+    runtime_math_melange
     runtime_seq_melange
     runtime_time_melange
     runtime_weak_melange)))

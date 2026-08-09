@@ -803,7 +803,11 @@
     tanh {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
     hypot {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
     expm1 {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
-    log1p {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}}}
+    log1p {:status :static-adaptation :reason :source-wrapper-over-the-static-ocaml-float-primitive}
+    cbrt {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-math-primitives}
+    pow {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-math-primitives}
+    IEEE-fmod {:status :static-adaptation :reason :source-wrapper-over-native-and-melange-static-floating-remainder-primitives}
+    random {:status :static-adaptation :reason :source-wrapper-over-the-existing-cross-target-pseudorandom-float-boundary}}}
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"

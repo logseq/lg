@@ -4,7 +4,10 @@
 ; This LG port follows ClojureScript's cljs.math source API.
 
 (ns cljs.math
-  (:require [ocaml.Stdlib :as stdlib]))
+  (:require [ocaml.Lg_runtime.Runtime_math :as runtime-math]
+            [ocaml.Lg_runtime.Runtime_math_melange :as runtime-math-melange]
+            [ocaml.Lg_runtime.Runtime_random :as runtime-random]
+            [ocaml.Stdlib :as stdlib]))
 
 (def E 2.718281828459045)
 (def PI 3.141592653589793)
@@ -38,3 +41,17 @@
 (defn hypot [x y] (stdlib/hypot x y))
 (defn expm1 [x] (stdlib/expm1 x))
 (defn log1p [x] (stdlib/log1p x))
+(defn cbrt [a]
+  #?(:melange (runtime-math-melange/cbrt a)
+     :default (runtime-math/cbrt a)))
+
+(defn pow [a b]
+  #?(:melange (runtime-math-melange/pow a b)
+     :default (runtime-math/pow a b)))
+
+(defn IEEE-fmod [x y]
+  #?(:melange (runtime-math-melange/fmod x y)
+     :default (runtime-math/fmod x y)))
+
+(defn random []
+  (runtime-random/rand 1.0))
