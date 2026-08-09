@@ -149,8 +149,8 @@ boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
 macro surfaces. The current baseline is 478 source entries (48.53%), 96 typed
-primitives, 12 special forms, 34 host boundaries, 159 static-typing blockers,
-51 out-of-scope entries, and 155 deferred entries. The deferred set is the
+primitives, 39 special forms, 60 host boundaries, 165 static-typing blockers,
+51 out-of-scope entries, and 96 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
@@ -190,6 +190,12 @@ including both `prim-seq` arities, without introducing the JavaScript-only
 character table lives in a typed runtime helper because the current LG lexer
 cannot express delimiter characters such as braces and brackets as char
 literals; the boundary is `string -> string` and does not use dynamic values.
+All pinned public `cljs.core` macros now have explicit ownership and zero remain
+deferred. Compiler/analyzer declarations and namespace-environment operations
+are special forms; JavaScript syntax and host-object macros are host boundaries;
+multimethod, per-object protocol extension, and dynamic root-rebinding macros
+carry concrete static blockers. These classifications do not count as source
+coverage.
 The `clojure.core.protocols` aggregate namespace defines `Datafiable/datafy`
 and `Navigable/nav` in source. Static protocol dispatch now supports an
 upstream-compatible `:default` implementation, while concrete receiver

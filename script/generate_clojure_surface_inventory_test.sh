@@ -70,6 +70,23 @@ awk -F '\t' '$1 ~ /private/ {found=1} END {exit found}' "$tmp/upstream-vars.tsv"
 
 bb "$root/script/extract_stdlib_manifest_status.clj" \
   "$root/stdlib/upstream.edn" >"$tmp/manifest-status.tsv"
+awk -F '\t' '
+  BEGIN {
+    split(".. await copy-arguments declare defmethod defmulti defn- defonce defprotocol defrecord deftype es6-iterable exists? extend-protocol extend-type gen-apply-to gen-apply-to-simple goog-define implements? import import-macros js-arguments js-comment js-debugger js-delete js-fn? js-in js-inline-comment js-mod js-str letfn load-file* macroexpand macroexpand-1 memfn ns-imports ns-interns ns-publics ns-unmap refer-clojure refer-global require require-global require-macros simple-benchmark specify specify! str_ this-as time unchecked-get unchecked-set undefined? use use-macros with-redefs", names, " ")
+    for (i in names) required["clojure.core/" names[i]] = 1
+  }
+  $1 == "definition" && ($2 in required) &&
+  $3 != "deferred" && $4 != "" {classified[$2] = 1}
+  END {
+    for (name in required) {
+      if (!(name in classified)) {
+        print "unclassified cljs.core macro: " name > "/dev/stderr"
+        failed = 1
+      }
+    }
+    exit failed
+  }
+' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.set/union" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/random-uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"

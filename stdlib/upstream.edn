@@ -862,6 +862,118 @@
           :reason :tests-the-clojurescript-javascript-var-wrapper-which-lg-does-not-expose-as-a-source-value}
     write-all {:status :host-boundary
                :reason :writes-through-clojurescript-iwriter-and-target-printing-effects-rather-than-a-portable-pure-value}
+    declare {:status :special-form
+             :reason :compiler-owned-forward-binding-declaration}
+    defn- {:status :special-form
+           :reason :compiler-owned-private-function-definition-syntax}
+    defonce {:status :special-form
+             :reason :compiler-owned-single-initialization-definition-syntax}
+    defprotocol {:status :special-form
+                 :reason :compiler-owned-static-protocol-declaration-syntax}
+    defrecord {:status :special-form
+               :reason :compiler-owned-static-record-declaration-syntax}
+    deftype {:status :special-form
+             :reason :compiler-owned-static-type-declaration-syntax}
+    extend-protocol {:status :special-form
+                     :reason :compiler-owned-static-multi-receiver-protocol-extension-syntax}
+    extend-type {:status :special-form
+                 :reason :compiler-owned-static-protocol-extension-syntax}
+    letfn {:status :special-form
+           :reason :compiler-owned-mutually-recursive-local-function-binding-syntax}
+    import {:status :special-form
+            :reason :compiler-owned-host-module-import-and-name-resolution-syntax}
+    import-macros {:status :special-form
+                   :reason :analyzer-owned-macro-namespace-import-syntax}
+    ns-imports {:status :special-form
+                :reason :analyzer-owned-namespace-import-introspection}
+    ns-interns {:status :special-form
+                :reason :analyzer-owned-namespace-intern-introspection}
+    ns-publics {:status :special-form
+                :reason :analyzer-owned-public-var-introspection}
+    ns-unmap {:status :special-form
+              :reason :analyzer-owned-namespace-binding-mutation}
+    refer-clojure {:status :special-form
+                   :reason :compiler-owned-core-refer-environment-update}
+    refer-global {:status :special-form
+                  :reason :analyzer-owned-global-refer-environment-update}
+    require {:status :special-form
+             :reason :compiler-owned-namespace-loading-and-alias-environment-update}
+    require-global {:status :special-form
+                    :reason :analyzer-owned-global-namespace-loading}
+    require-macros {:status :special-form
+                    :reason :analyzer-owned-macro-namespace-loading}
+    use {:status :special-form
+         :reason :compiler-owned-namespace-loading-and-refer-environment-update}
+    use-macros {:status :special-form
+                :reason :analyzer-owned-macro-namespace-loading-and-refer-update}
+    macroexpand {:status :special-form
+                 :reason :analyzer-owned-recursive-macro-expansion}
+    macroexpand-1 {:status :special-form
+                   :reason :analyzer-owned-single-step-macro-expansion}
+    gen-apply-to {:status :special-form
+                  :reason :analyzer-owned-generated-function-apply-dispatch}
+    gen-apply-to-simple {:status :special-form
+                         :reason :analyzer-owned-generated-fixed-arity-apply-dispatch}
+    load-file* {:status :special-form
+                :reason :compiler-owned-node-file-loading-hook}
+    .. {:status :host-boundary
+        :reason :javascript-property-and-method-chain-expansion}
+    await {:status :host-boundary
+           :reason :javascript-promise-await-expansion-has-no-native-equivalent}
+    copy-arguments {:status :host-boundary
+                    :reason :copies-the-javascript-arguments-object}
+    es6-iterable {:status :host-boundary
+                  :reason :installs-the-javascript-symbol-iterator-method}
+    exists? {:status :host-boundary
+             :reason :tests-javascript-global-name-existence}
+    goog-define {:status :host-boundary
+                 :reason :emits-a-google-closure-compile-time-define}
+    js-arguments {:status :host-boundary
+                  :reason :constructs-the-javascript-arguments-object}
+    js-comment {:status :host-boundary
+                :reason :emits-raw-javascript-comments}
+    js-debugger {:status :host-boundary
+                 :reason :emits-the-javascript-debugger-statement}
+    js-delete {:status :host-boundary
+               :reason :emits-the-javascript-delete-operator}
+    js-fn? {:status :host-boundary
+            :reason :tests-javascript-function-values}
+    js-in {:status :host-boundary
+           :reason :emits-the-javascript-in-operator}
+    js-inline-comment {:status :host-boundary
+                       :reason :emits-raw-inline-javascript-comments}
+    js-mod {:status :host-boundary
+            :reason :emits-javascript-remainder-number-semantics}
+    js-str {:status :host-boundary
+            :reason :emits-javascript-string-coercion}
+    memfn {:status :host-boundary
+           :reason :creates-a-javascript-method-invocation-function}
+    simple-benchmark {:status :host-boundary
+                      :reason :uses-javascript-date-timing-and-console-printing}
+    str_ {:status :host-boundary
+          :reason :emits-javascript-primitive-string-concatenation}
+    this-as {:status :host-boundary
+             :reason :binds-the-javascript-this-value}
+    time {:status :host-boundary
+          :reason :uses-javascript-date-timing-and-console-printing}
+    unchecked-get {:status :host-boundary
+                   :reason :performs-unchecked-javascript-property-access}
+    unchecked-set {:status :host-boundary
+                   :reason :performs-unchecked-javascript-property-mutation}
+    undefined? {:status :host-boundary
+                :reason :tests-the-javascript-undefined-value}
+    defmethod {:status :blocked-static-typing
+               :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
+    defmulti {:status :blocked-static-typing
+              :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
+    implements? {:status :blocked-static-typing
+                  :reason :analyzer-protocol-mask-testing-must-accept-arbitrary-static-value-types}
+    specify {:status :blocked-static-typing
+             :reason :per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
+    specify! {:status :blocked-static-typing
+              :reason :mutable-per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
+    with-redefs {:status :blocked-static-typing
+                 :reason :temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation}
     update-vals {:status :static-adaptation
                  :reason :persistent-reduce-kv-preserves-key-value-transformation-and-typed-map-metadata-without-a-transient-representation-boundary}
     update-keys {:status :static-adaptation
