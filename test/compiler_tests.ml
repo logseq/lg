@@ -21634,6 +21634,60 @@ let test_source_numeric_coercions_match_clojurescript () =
       |> expect_error_contains (name ^ " expects a numeric value"))
     [ "int"; "long"; "double" ]
 
+let test_source_control_macros_match_clojurescript () =
+  let source =
+    {|
+(ns source-control-macro-app
+  (:require [cljs.core :as core :refer [comment doto when-first while]]))
+
+(def comment-effects (atom 0))
+(comment (swap! comment-effects inc) unknown-comment-symbol)
+(core/comment (swap! comment-effects inc))
+(def state
+  (doto (atom 0)
+    (reset! 2)
+    (swap! inc)))
+(def qualified-state
+  (clojure.core/doto (atom 1)
+    (swap! inc)))
+(def loop-count (atom 0))
+(while (< @loop-count 3)
+  (swap! loop-count inc))
+
+(println (= 0 @comment-effects))
+(println (= 3 @state))
+(println (= 2 @qualified-state))
+(println (= 4 (when-first [value [4 5]] value)))
+(println (nil? (core/when-first [value []] value)))
+(println (= 3 @loop-count))
+(println (nil? (clojure.core/while false (swap! loop-count inc))))
+|}
+  in
+  let expected = String.concat "" (List.init 7 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_control_macros.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source control macros must not introduce dynamic dispatch";
+  assert_ocaml_runs "source_control_macros" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_control_macros.cljc"
+      source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source control macros must remain static";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/doto_source_zero_arity.cljc" "(doto)"
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/when_first_source_non_vector.cljc" "(when-first value 1)"
+  |> expect_error_contains "when-first requires a vector for its binding";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/when_first_source_wrong_binding_count.cljc"
+    "(when-first [value] value)"
+  |> expect_error_contains "when-first requires exactly 2 forms"
+
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
     compile_chunks_with_stdlib Lg.Target.Native
@@ -37820,6 +37874,8 @@ let tests =
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
+    ( "source control macros match ClojureScript",
+      test_source_control_macros_match_clojurescript );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

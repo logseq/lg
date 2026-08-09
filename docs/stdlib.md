@@ -133,9 +133,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 250 source entries (29.24%), 90 typed
+macro surfaces. The current baseline is 254 source entries (29.71%), 90 typed
 primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
-44 out-of-scope Spec entries, and 293 deferred entries. The deferred set is the
+44 out-of-scope Spec entries, and 289 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
@@ -240,6 +240,11 @@ The pinned identity function/inline-macro definitions for `short`,
 `unchecked-byte`, `unchecked-char`, `unchecked-short`, `unchecked-float`, and
 `unchecked-double` are also pure source definitions. They need no compiler or
 runtime ABI and preserve polymorphic first-class identity behavior.
+The `comment`, `doto`, `when-first`, and `while` macros are now precompiled
+source macros. `doto` preserves single evaluation and effect order;
+`when-first` preserves one `seq` evaluation; and `while` uses an explicit
+`if`/`do` tail solely to make LG's static `recur` validation see the same loop
+edge as the upstream `when` expansion.
 `indexed?` remains compiler-owned because LG's current `Indexed` capability
 also covers linear list lookup and therefore cannot stand in for upstream's
 constant-time `IIndexed` contract. `true?` and `false?` retain the minimal

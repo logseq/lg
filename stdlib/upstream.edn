@@ -12,7 +12,15 @@
    :implementation "clojure/core.cljc"
    :interface "clojure/core.mil"
    :definitions
-   {identity {:status :ported}
+   {comment {:status :ported
+             :reason :source-macro-preserves-the-upstream-ignored-body-and-nil-result}
+    doto {:status :ported
+          :reason :source-macro-preserves-upstream-single-evaluation-ordered-threading-and-original-result}
+    when-first {:status :static-adaptation
+                :reason :source-macro-preserves-upstream-single-seq-evaluation-and-binding-control-flow-with-equivalent-explicit-binding-validation}
+    while {:status :static-adaptation
+           :reason :source-macro-uses-an-explicit-if-do-loop-tail-so-lg-recur-validation-preserves-the-upstream-when-loop-control-flow}
+    identity {:status :ported}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}
     constantly {:status :static-adaptation

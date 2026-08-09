@@ -20,6 +20,36 @@
             [ocaml.Lg_runtime.Runtime_time_melange :as runtime-time-melange]
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]))
 
+(defmacro comment [& _body])
+
+(defmacro doto [x & forms]
+  (let [gx (gensym)]
+    `(let [~gx ~x]
+       ~@(map (fn [form]
+                (if (seq? form)
+                  `(~(first form) ~gx ~@(next form))
+                  `(~form ~gx)))
+              forms)
+       ~gx)))
+
+(defmacro when-first [bindings & body]
+  (assert (vector? bindings)
+          "when-first requires a vector for its binding")
+  (assert (= 2 (count bindings))
+          "when-first requires exactly 2 forms in its binding vector")
+  (let [[name source] bindings]
+    `(when-let [source# (seq ~source)]
+       (let [~name (first source#)]
+         ~@body))))
+
+(defmacro while [test & body]
+  `(loop []
+     (if ~test
+       (do
+         ~@body
+         (recur))
+       nil)))
+
 (defn identity [x]
   x)
 
