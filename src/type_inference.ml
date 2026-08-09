@@ -4451,8 +4451,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "sequential?"; FSymbol collection ] ->
         constrain_optional_seqable ~sequential:true
           TUnknown params collection
-    | FList [ FSymbol "not-empty"; FSymbol collection ] ->
-        constrain_optional_seqable TUnknown params collection
     | FList [ FSymbol "empty"; FSymbol collection ] -> (
         match string_assoc_opt collection params with
         | Some (TUnknown | TMeta _ | TVar _) ->

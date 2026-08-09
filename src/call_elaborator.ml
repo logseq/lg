@@ -8600,7 +8600,6 @@ let create ~compile_expr =
                   compile_hash_map scope env arg_forms
               | "rest" | "seq" ->
                   compile_collection_call scope env name arg_forms
-    | "not-empty" -> compile_not_empty scope env arg_forms
     | "into" -> (
         match arg_forms with
         | [ target_form; FSymbol "cat"; source_form ] -> (
@@ -9671,46 +9670,6 @@ let create ~compile_expr =
     | Ok (_ :: _ :: _) -> compile_static_conj scope env arg_forms
     | Ok _ -> Error.error "conj expects collection and values"
 
-  and compile_not_empty scope env arg_forms =
-    match compile_args_for scope env arg_forms with
-    | Error _ as error -> error
-    | Ok [ collection ] ->
-        let value_name = "__lg_not_empty_value" in
-        let value =
-          typed_ir collection.ty (Semantic_ir.Ident value_name)
-        in
-        (match Collection_capability.to_seq_expr env value with
-        | Error _ ->
-            Error.error
-              ("not-empty expects a seqable value, got "
-             ^ Types.source_name collection.ty)
-        | Ok (_, sequence) ->
-            let result_ty, empty, present =
-              match collection.ty with
-              | TNil ->
-                  (TNil, Semantic_ir.Constructor ("None", None),
-                   Semantic_ir.Constructor ("None", None))
-              | TNullable _ | TOcaml_app ("option", [ _ ]) | TOcaml "option" ->
-                  ( collection.ty,
-                    Semantic_ir.Constructor ("None", None),
-                    Semantic_ir.Ident value_name )
-              | ty ->
-                  ( TNullable ty,
-                    Semantic_ir.Constructor ("None", None),
-                    Semantic_ir.Constructor
-                      ("Some", Some (Semantic_ir.Ident value_name)) )
-            in
-            Ok
-              (typed_ir result_ty
-                 (Semantic_ir.Let
-                    ( [ (Semantic_ir.PVar value_name, collection.semantic_expr) ],
-                      Semantic_ir.If
-                        ( Semantic_ir.Apply
-                            ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
-                              [ sequence ] ),
-                          empty,
-                          present ) ))))
-    | Ok _ -> Error.error "not-empty expects 1 arguments"
   and compile_some_fn scope env function_forms =
     match function_forms with
     | [] -> Error.error "some-fn expects at least 1 function"

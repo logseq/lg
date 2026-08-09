@@ -15,13 +15,10 @@ type t = {
   target : Target.t;
   symbols : Types.binding Symbol_map.t;
   record_symbols : Types.binding Symbol_map.t;
-  record_bindings_by_lookup :
-    (Symbol_id.t * Types.binding) list String_map.t;
-  bindings_by_name : (Symbol_id.t * Types.binding) list String_map.t;
-  bindings_by_emitted_name :
-    (Symbol_id.t * Types.binding) list String_map.t;
-  opened_bindings_by_scope :
-    (Symbol_id.t * Types.binding) list String_map.t;
+  record_bindings_by_lookup : Symbol_id.t list String_map.t;
+  bindings_by_name : Symbol_id.t list String_map.t;
+  bindings_by_emitted_name : Symbol_id.t list String_map.t;
+  opened_bindings_by_scope : Symbol_id.t list String_map.t;
   protocols : Protocol_registry.t;
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
@@ -74,7 +71,7 @@ let mem name env = Symbol_map.mem (Symbol_id.of_string name) env.symbols
 let remove_indexed_binding key id index =
   let rec remove = function
     | [] as bindings -> bindings
-    | (candidate, _) :: rest when Symbol_id.equal candidate id -> rest
+    | candidate :: rest when Symbol_id.equal candidate id -> rest
     | binding :: rest as bindings ->
         let updated_rest = remove rest in
         if updated_rest == rest then bindings else binding :: updated_rest
@@ -86,6 +83,13 @@ let remove_indexed_binding key id index =
       if updated == bindings then index
       else if updated = [] then String_map.remove key index
       else String_map.add key updated index
+
+let add_indexed_binding key id index =
+  String_map.update key
+    (function
+      | None -> Some [ id ]
+      | Some bindings -> Some (id :: bindings))
+    index
 
 let internal_scope ~prefix name =
   let scope_start = String.length prefix in
@@ -143,59 +147,52 @@ let add name binding env =
   let previous = Symbol_map.find_opt id env.symbols in
   let bindings_by_name =
     match previous with
-    | None -> env.bindings_by_name
-    | Some _ ->
-        remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name
-  in
-  let bindings_by_name =
-    String_map.update (Symbol_id.name id)
-      (function
-        | None -> Some [ (id, binding) ]
-        | Some bindings -> Some ((id, binding) :: bindings))
-      bindings_by_name
+    | None ->
+        add_indexed_binding (Symbol_id.name id) id env.bindings_by_name
+    | Some _ -> env.bindings_by_name
   in
   let bindings_by_emitted_name =
     match previous with
+    | Some previous
+      when String.equal previous.Types.ocaml_name binding.Types.ocaml_name ->
+        env.bindings_by_emitted_name
     | None -> env.bindings_by_emitted_name
     | Some previous ->
         remove_indexed_binding previous.Types.ocaml_name id
           env.bindings_by_emitted_name
   in
   let bindings_by_emitted_name =
-    String_map.update binding.Types.ocaml_name
-      (function
-        | None -> Some [ (id, binding) ]
-        | Some bindings -> Some ((id, binding) :: bindings))
-      bindings_by_emitted_name
+    match previous with
+    | Some previous
+      when String.equal previous.Types.ocaml_name binding.Types.ocaml_name ->
+        bindings_by_emitted_name
+    | None | Some _ ->
+        add_indexed_binding binding.Types.ocaml_name id bindings_by_emitted_name
   in
+  let previous_record_key = Option.bind previous (record_lookup_index_key name) in
+  let next_record_key = record_lookup_index_key name binding in
   let record_bindings_by_lookup =
-    match Option.bind previous (record_lookup_index_key name) with
-    | None -> env.record_bindings_by_lookup
-    | Some key ->
+    match (previous_record_key, next_record_key) with
+    | Some previous_key, Some next_key when String.equal previous_key next_key ->
+        env.record_bindings_by_lookup
+    | None, _ -> env.record_bindings_by_lookup
+    | Some key, _ ->
         remove_indexed_binding key id env.record_bindings_by_lookup
   in
   let record_bindings_by_lookup =
-    match record_lookup_index_key name binding with
-    | None -> record_bindings_by_lookup
-    | Some key ->
-        String_map.update key
-          (function
-            | None -> Some [ (id, binding) ]
-            | Some bindings -> Some ((id, binding) :: bindings))
-          record_bindings_by_lookup
+    match (previous_record_key, next_record_key) with
+    | Some previous_key, Some next_key when String.equal previous_key next_key ->
+        record_bindings_by_lookup
+    | _, None -> record_bindings_by_lookup
+    | _, Some key ->
+        add_indexed_binding key id record_bindings_by_lookup
   in
   let opened_bindings_by_scope =
-    match opened_scope name with
-    | None -> env.opened_bindings_by_scope
-    | Some scope ->
-        let index =
-          remove_indexed_binding scope id env.opened_bindings_by_scope
-        in
-        String_map.update scope
-          (function
-            | None -> Some [ (id, binding) ]
-            | Some bindings -> Some ((id, binding) :: bindings))
-          index
+    match (previous, opened_scope name) with
+    | Some _, Some _ -> env.opened_bindings_by_scope
+    | None, Some scope ->
+        add_indexed_binding scope id env.opened_bindings_by_scope
+    | _, None -> env.opened_bindings_by_scope
   in
   {
     env with
@@ -211,7 +208,12 @@ let add name binding env =
   }
 
 let add_bindings bindings env =
-  List.fold_left (fun env (name, binding) -> add name binding env) env bindings
+  List.fold_left
+    (fun env (name, binding) ->
+      match find_opt name env with
+      | Some previous when previous == binding -> env
+      | Some _ | None -> add name binding env)
+    env bindings
 
 let of_bindings bindings = add_bindings bindings empty
 
@@ -252,21 +254,26 @@ let find_record_binding f env =
 
 let bindings_named name env =
   String_map.find_opt name env.bindings_by_name
-  |> Option.value ~default:[] |> List.map snd
+  |> Option.value ~default:[]
+  |> List.filter_map (fun id -> Symbol_map.find_opt id env.symbols)
 
 let bindings_emitted_as name env =
   String_map.find_opt name env.bindings_by_emitted_name
   |> Option.value ~default:[]
-  |> List.map (fun (id, binding) -> (Symbol_id.to_string id, binding))
+  |> List.filter_map (fun id ->
+         Symbol_map.find_opt id env.symbols
+         |> Option.map (fun binding -> (Symbol_id.to_string id, binding)))
 
 let record_bindings_named ~scope ~type_name env =
   String_map.find_opt (scope ^ "\000" ^ type_name)
     env.record_bindings_by_lookup
-  |> Option.value ~default:[] |> List.map snd
+  |> Option.value ~default:[]
+  |> List.filter_map (fun id -> Symbol_map.find_opt id env.symbols)
 
 let opened_bindings scope env =
   String_map.find_opt scope env.opened_bindings_by_scope
-  |> Option.value ~default:[] |> List.map snd
+  |> Option.value ~default:[]
+  |> List.filter_map (fun id -> Symbol_map.find_opt id env.symbols)
 
 let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }

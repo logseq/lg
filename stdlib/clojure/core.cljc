@@ -103,6 +103,10 @@
   `(let [coll# ~coll]
      (not (seq coll#))))
 
+(defmacro not-empty [coll]
+  `(let [coll# ~coll]
+     (if (seq coll#) coll# nil)))
+
 (defn inc [x]
   (+ x 1))
 

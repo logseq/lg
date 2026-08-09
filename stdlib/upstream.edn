@@ -29,6 +29,8 @@
             :reason :upstream-source-delegates-to-the-cljs-core-compiler-primitive-and-arbitrary-static-values-require-type-directed-literal-identity}
     empty? {:status :static-adaptation
             :reason :source-macro-uses-the-upstream-seq-fallback-for-all-static-seqables-because-composing-optional-seqable-and-counted-capabilities-would-leak-compiler-protocol-witness-helpers-into-generated-runtime-code}
+    not-empty {:status :static-adaptation
+               :reason :call-site-source-macro-preserves-the-upstream-seq-guard-and-the-input-concrete-collection-type-in-the-present-option-branch}
     integer? {:status :static-adaptation
               :reason :source-macro-specializes-to-lg-int-because-lg-separates-integral-and-floating-static-types-and-binds-the-argument-once-to-preserve-evaluation}
     pos-int? {:status :static-adaptation

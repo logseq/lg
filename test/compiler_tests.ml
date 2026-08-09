@@ -1902,11 +1902,11 @@ let test_generic_record_calls_freshen_callee_type_variables () =
   (println (count (:attrs limited))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_record_calls_freshen_callee_type_variables" "1\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_static_sequences_adapt_to_option_callback_parameters () =
   let source =
@@ -21224,6 +21224,82 @@ let test_source_collection_and_scalar_predicates_match_clojurescript () =
     {|(def result (empty? 1))|}
   |> expect_error_contains "seq expects a seqable value"
 
+let test_source_not_empty_preserves_concrete_collections () =
+  let source =
+    {|
+(ns source-not-empty-app
+  (:require [cljs.core :as core :refer [not-empty]]))
+
+(def evaluations (atom 0))
+(def ^:map<keyword;int> populated-map {:answer 42})
+(def empty-map (dissoc populated-map :answer))
+(def tagged-map
+  (with-meta populated-map {:source "upstream"}))
+
+(println (nil? (not-empty nil)))
+(println (nil? (not-empty (vector-of :int))))
+(println (nil? (not-empty (list-of :int))))
+(println (nil? (not-empty (set-of :int))))
+(println (nil? (not-empty empty-map)))
+(println (nil? (not-empty "")))
+(println (nil? (not-empty (array-of :int))))
+(println
+  (if-some [values (not-empty [1])]
+    (= [1 2] (conj values 2))
+    false))
+(println
+  (if-some [values (not-empty (list 1))]
+    (= (list 0 1) (conj values 0))
+    false))
+(println
+  (if-some [values (not-empty (hash-set 1))]
+    (contains? (conj values 2) 2)
+    false))
+(println
+  (if-some [values (not-empty populated-map)]
+    (= 42 (:answer values))
+    false))
+(println
+  (if-some [value (not-empty "Ada")]
+    (= "Ada" value)
+    false))
+(println
+  (if-some [values (not-empty (array-values 1 2))]
+    (= 2 (alength values))
+    false))
+(println (nil? (core/not-empty (vector-of :int))))
+(println (some? (clojure.core/not-empty [1])))
+(println
+  (if-some [value (not-empty tagged-map)]
+    (= "upstream" (:source (meta value)))
+    false))
+(println (nil? (not-empty (do (swap! evaluations inc) []))))
+(println (= 1 @evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 18 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_not_empty.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source not-empty must preserve static collection types";
+  assert_ocaml_runs "source_not_empty_preserves_concrete_collections" expected
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_not_empty.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source not-empty must preserve static collection types";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/not_empty_zero_arity.cljc" {|(def result (not-empty))|}
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/not_empty_two_arity.cljc" {|(def result (not-empty [] []))|}
+  |> expect_error_contains "unsupported macro arity 2";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/not_empty_non_seqable.cljc" {|(def result (not-empty 1))|}
+  |> expect_error_contains "seq expects a seqable value"
+
 let test_namespace_value_shadows_automatic_core_macro () =
   let native_source =
     compile_chunks_with_stdlib Lg.Target.Native
@@ -37401,6 +37477,8 @@ let tests =
       test_source_some_and_boolean_predicates_preserve_static_contracts );
     ( "source collection and scalar predicates match ClojureScript",
       test_source_collection_and_scalar_predicates_match_clojurescript );
+    ( "source not-empty preserves concrete collections",
+      test_source_not_empty_preserves_concrete_collections );
     ( "namespace value shadows automatic core macro",
       test_namespace_value_shadows_automatic_core_macro );
     ( "source integer and identifier predicates match ClojureScript",

@@ -133,8 +133,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 188 source entries (21.99%), 133 typed
-primitives, 5 special forms, 12 host boundaries, 162 static-typing blockers,
+macro surfaces. The current baseline is 189 source entries (22.11%), 133 typed
+primitives, 5 special forms, 12 host boundaries, 161 static-typing blockers,
 44 out-of-scope Spec entries, and 311 deferred entries. The deferred set is the
 explicit queue for further source-port and compiler/macro-boundary review.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
@@ -160,9 +160,9 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 236-name compiler dispatch inventory has zero `source-shadowed`
+The current 235-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `even?`, `odd?`, `every?`, `ffirst`, `fnext`, `nfirst`, `nnext`,
-`not`, the call-site-specialized `some?`, `boolean?`, `empty?`, `integer?`,
+`not`, the call-site-specialized `some?`, `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
 `qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
@@ -195,6 +195,10 @@ preserving single evaluation and nullable flow narrowing. The source
 `seqable?` also restores the upstream `nil`, structural-map, and static-array
 cases; `counted?` uses the existing static `ICounted` registry and recognizes
 structural maps until all maps use the persistent hash-map protocol receiver.
+The same scan finds 115 `not-empty` occurrences. Its source macro preserves the
+upstream `seq` guard while specializing the nullable result to the concrete
+input collection type, including metadata-bearing persistent maps, so this is
+no longer classified as a dependent-result blocker.
 The Logseq scan finds 18 uses of the integer sign predicates and 55 uses of the
 simple/qualified identifier-family predicates. These now follow the upstream
 guarded source control flow. LG narrows `int?`, `keyword?`, and `symbol?`

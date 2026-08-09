@@ -934,7 +934,8 @@ let declaration_bindings ast env =
       if is_declared_key key 0 then Some (key, binding) else None)
     env
   |> List.map (fun (key, (binding : Types.binding)) ->
-         (key, { binding with forward_declared = true }))
+         if binding.forward_declared then (key, binding)
+         else (key, { binding with forward_declared = true }))
   |> List.sort_uniq (fun (left, _) (right, _) -> String.compare left right)
 
 let stabilization_ast ?(signed_names = []) ast =
