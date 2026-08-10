@@ -1046,6 +1046,9 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                                inferred) ->
                                        Type_inference.refine_type ty
                                          (Types.constraint_value_type inferred)
+                                   | TNamed_record _, inferred
+                                     when Types.is_dynamic inferred ->
+                                       ty
                                    | TRecord _, TNamed_record record
                                      when Types.row_compatible ~expected:ty
                                             ~actual:inferred_ty ->

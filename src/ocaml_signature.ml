@@ -92,6 +92,7 @@ let rec of_compiler_type =
         | "Stdlib" :: rest -> String.concat "." rest
         | _ -> name
       in
+      let name = Names.canonical_runtime_path name in
       let arguments = List.map of_compiler_type arguments in
       match (name, arguments) with
       | "int", [] -> TInt

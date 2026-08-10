@@ -484,11 +484,19 @@ and constrain_monomorphic_symbol expected_ty params name existing_ty =
       let params =
         List.map
           (fun (param_name, param_ty) ->
-            (param_name, Type_solver.apply substitutions param_ty))
+            ( param_name,
+              Type_solver.apply substitutions param_ty
+              |> Types.deduplicate_protocol_constraints ))
           params
       in
-      let existing_ty = Type_solver.apply substitutions existing_ty in
-      let expected_ty = Type_solver.apply substitutions expected_ty in
+      let existing_ty =
+        Type_solver.apply substitutions existing_ty
+        |> Types.deduplicate_protocol_constraints
+      in
+      let expected_ty =
+        Type_solver.apply substitutions expected_ty
+        |> Types.deduplicate_protocol_constraints
+      in
       let refined = refine_type existing_ty expected_ty in
       Ok (replace_param name refined params)
 
@@ -596,4 +604,3 @@ let rec materialize_dynamic_unknown = function
         ( List.map materialize_dynamic_unknown parameters,
           materialize_dynamic_unknown return_ty )
   | ty -> ty
-

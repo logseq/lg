@@ -206,7 +206,7 @@
        (:max-eid db)
        (:max-tx db)
        (freeze-fn
-        (Datascript_runtime.Serialization_value.schema_to_value
+        (Datascript_runtime.Serialization_value.keyword_schema_to_value
          (:schema db)))
        frozen-attrs
        kws
@@ -221,7 +221,7 @@
        db/tx0
        (:max-eid db)
        (:max-tx db)
-       (Datascript_runtime.Serialization_value.schema_to_string
+       (Datascript_runtime.Serialization_value.keyword_schema_to_string
         (:schema db))
        frozen-attrs
        kws
@@ -325,12 +325,12 @@
         tx0      (Datascript_runtime.Serialization_value.prepared_tx0 prepared)
         schema   (match thaw-codec
                     (CustomCodec thaw-fn)
-                    (Datascript_runtime.Serialization_value.schema_of_value
+                    (Datascript_runtime.Serialization_value.keyword_schema_of_value
                      (thaw-fn
                       (Datascript_runtime.Serialization_value.prepared_schema_value
                        prepared)))
                     DefaultCodec
-                    (Datascript_runtime.Serialization_value.schema_of_string
+                    (Datascript_runtime.Serialization_value.keyword_schema_of_string
                      (Datascript_runtime.Serialization_value.prepared_schema_source
                       prepared)))
          _        (when-some [schema-map schema]

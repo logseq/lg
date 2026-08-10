@@ -190,9 +190,23 @@ val schema_to_string :
   option ->
   string
 
+val keyword_schema_to_string :
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
+  option ->
+  string
+
 val schema_of_string :
   string ->
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+  option
+
+val keyword_schema_of_string :
+  string ->
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
   option
 
 type datom_reader_value
@@ -215,9 +229,23 @@ val schema_to_value :
   option ->
   t
 
+val keyword_schema_to_value :
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
+  option ->
+  t
+
 val schema_of_value :
   t ->
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
+  option
+
+val keyword_schema_of_value :
+  t ->
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
   option
 val format : t -> format
 val as_legacy : t -> t

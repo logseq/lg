@@ -1131,8 +1131,12 @@ let schema_of_edn = function
 let schema_to_string schema =
   schema |> schema_to_edn |> Lg_edn_backend.to_edn_string
 
+let keyword_schema_to_string schema = schema_to_string schema
+
 let schema_of_string source =
   source |> Lg_edn_backend.of_edn_string |> schema_of_edn
+
+let keyword_schema_of_string source = schema_of_string source
 
 type datom_reader_value = {
   entity : int;
@@ -1226,4 +1230,6 @@ let reader_database_schema value = value.reader_schema
 let reader_database_datoms value = value.reader_datoms
 
 let schema_to_value = schema_to_edn
+let keyword_schema_to_value schema = schema_to_value schema
 let schema_of_value = schema_of_edn
+let keyword_schema_of_value value = schema_of_value value

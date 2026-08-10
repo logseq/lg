@@ -327,6 +327,23 @@ let protocol_parameter_overrides receiver_ty = function
         parameter_tys
   | _ -> [ Some receiver_ty ]
 
+let refine_protocol_implementation_type expected actual =
+  let refine_position expected actual =
+    match actual with
+    | TUnknown | TMeta _ | TVar _ -> (
+        match expected with
+        | TUnknown | TMeta _ | TVar _ -> actual
+        | expected -> expected)
+    | actual -> actual
+  in
+  match (expected, actual) with
+  | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+    when List.length expected_params = List.length actual_params ->
+      TFn
+        ( List.map2 refine_position expected_params actual_params,
+          refine_position expected_return actual_return )
+  | _, actual -> actual
+
 let predeclare_implementations_from_evidence scope env receiver_form
     protocol_name method_forms =
   match
@@ -634,7 +651,9 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                             { name = ocaml_name;
                                               value_type =
                                                 Protocol.refine_deferred_type
-                                                  env expr.ty;
+                                                  env
+                                                  (refine_protocol_implementation_type
+                                                     marker.ty expr.ty);
                                               return_param_index =
                                                 binding.return_param_index;
                                               expression = expr.semantic_expr;

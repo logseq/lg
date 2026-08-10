@@ -22,6 +22,7 @@ type t = {
   opened_bindings_by_scope : Symbol_id.t list String_map.t;
   unresolved_declaration_names : int String_map.t;
   unresolved_declaration_binding_names : int String_map.t;
+  explicit_declaration_names : unit String_map.t;
   protocols : Protocol_registry.t;
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
@@ -50,6 +51,7 @@ let empty =
     opened_bindings_by_scope = String_map.empty;
     unresolved_declaration_names = String_map.empty;
     unresolved_declaration_binding_names = String_map.empty;
+    explicit_declaration_names = String_map.empty;
     protocols = Core_protocols.initial_registry;
     protocol_evidence = None;
     modules = Module_registry.empty;
@@ -421,6 +423,16 @@ let unresolved_declaration name env =
 
 let unresolved_declaration_binding name env =
   String_map.mem name env.unresolved_declaration_binding_names
+
+let add_explicit_declaration name env =
+  {
+    env with
+    explicit_declaration_names =
+      String_map.add name () env.explicit_declaration_names;
+  }
+
+let explicitly_declared name env =
+  String_map.mem name env.explicit_declaration_names
 
 let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }

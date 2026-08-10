@@ -427,6 +427,10 @@ let expression_references_declaration env expression =
     (fun name -> Env.unresolved_declaration name env)
     expression
 
+let requires_stable_forward_binding env env_key expression =
+  expression_references_declaration env expression
+  || Env.explicitly_declared env_key env
+
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
@@ -1771,12 +1775,27 @@ let rec compile scope env next_type form =
                             expression_references_declaration env
                               implementation.semantic_expr
                           then
+                            let implementation_type =
+                              match current_interface with
+                              | Some protocol_name -> (
+                                  match
+                                    Protocol.lookup_protocol_marker
+                                      ~refine:false scope env protocol_name
+                                      method_name
+                                  with
+                                  | Some marker ->
+                                      Protocol_elaborator
+                                      .refine_protocol_implementation_type
+                                        marker.ty implementation.ty
+                                  | None -> implementation.ty)
+                              | None -> implementation.ty
+                            in
                             Deferred_value_binding
                               {
                                 name = ocaml_name;
                                 value_type =
                                   Protocol.refine_deferred_type env
-                                    implementation.ty;
+                                    implementation_type;
                                 return_param_index =
                                   implementation.return_param_index;
                                 expression = implementation.semantic_expr;
@@ -1866,30 +1885,39 @@ let rec compile scope env next_type form =
                    (FSymbol ("defn" | "defn-") :: FSymbol name
                    :: (FVector _ as params) :: _) ->
                    let key = Names.scoped_key scope name in
-                   (match Env.find_opt key env with
-                   | Some (binding : binding)
-                     when not
-                            (Types.equal binding.ty
-                               (TOcaml "__declared_fn")) ->
-                       env
-                   | Some _ | None ->
-                     Env.add key
-                       (Types.binding
-                          (Names.ocaml_binding_name scope name)
-                          (match Destructure.parse_param_specs params with
-                          | Ok specs ->
-                              let parameter_tys =
-                                List.map
-                                  (fun (spec : Destructure.param_spec) ->
-                                    Option.value spec.explicit_ty
-                                      ~default:(Type_solver.fresh ())
-                                    |> Function_elaborator.infer_named_record
-                                         scope env)
-                                  specs
-                              in
-                              TFn (parameter_tys, Type_solver.fresh ())
-                          | Error _ -> TOcaml "__declared_fn"))
-                       env)
+                   let ocaml_name = Names.ocaml_binding_name scope name in
+                   (match sidecar_function_signature scope env name with
+                   | Some ty ->
+                       Env.add key
+                         (Types.binding ocaml_name
+                            (Function_elaborator.infer_named_record scope env
+                               ty))
+                         env
+                   | None -> (
+                       match Env.find_opt key env with
+                       | Some (binding : binding)
+                         when not
+                                (Types.equal binding.ty
+                                   (TOcaml "__declared_fn")) ->
+                           env
+                       | Some _ | None ->
+                           Env.add key
+                             (Types.binding ocaml_name
+                                (match Destructure.parse_param_specs params with
+                                | Ok specs ->
+                                    let parameter_tys =
+                                      List.map
+                                        (fun (spec : Destructure.param_spec) ->
+                                          Option.value spec.explicit_ty
+                                            ~default:(Type_solver.fresh ())
+                                          |> Function_elaborator
+                                             .infer_named_record scope env)
+                                        specs
+                                    in
+                                    TFn
+                                      (parameter_tys, Type_solver.fresh ())
+                                | Error _ -> TOcaml "__declared_fn"))
+                             env))
                | _ -> env)
              env
       in
@@ -2031,10 +2059,15 @@ let rec compile scope env next_type form =
             let ocaml_name = Names.ocaml_binding_name scope name in
             let recursive = function_is_recursive scope name body_forms in
             let predeclared_type =
-              Env.find_opt (Names.scoped_key scope name) env
-              |> Option.map (fun (binding : binding) ->
-                     Function_elaborator.infer_named_record scope env
-                       binding.ty)
+              match sidecar_function_signature scope env name with
+              | Some ty ->
+                  Some
+                    (Function_elaborator.infer_named_record scope env ty)
+              | None ->
+                  Env.find_opt (Names.scoped_key scope name) env
+                  |> Option.map (fun (binding : binding) ->
+                         Function_elaborator.infer_named_record scope env
+                           binding.ty)
             in
             let declared_return_ty =
               match predeclared_type with
@@ -2081,7 +2114,10 @@ let rec compile scope env next_type form =
                     scope env params body_forms
             in
             match prepared with
-            | Error _ as err -> err
+            | Error error ->
+                Error
+                  (Error.with_location_if_missing
+                     (Source_context.find name_form) error)
             | Ok parts ->
                 let env, next_type, return_type_items, parts =
                   allocate_function_return_record env next_type parts
@@ -2115,6 +2151,9 @@ let rec compile scope env next_type form =
                     let env =
                       Env.add (Names.scoped_key scope name) binding env
                     in
+                    let type_annotation =
+                      recursive_type_annotation scope env name
+                    in
                     let rows =
                       return_type_items @ local_type_items
                       @ row_type_items row_param_types param_tys
@@ -2128,7 +2167,7 @@ let rec compile scope env next_type form =
                                  ( Source_node_id.of_location location,
                                    location ));
                         type_annotation =
-                          recursive_type_annotation scope env name;
+                          type_annotation;
                         expression = expr.semantic_expr;
                       }
                     in
@@ -2748,7 +2787,7 @@ let rec compile scope env next_type form =
               in
               let binding, value_item =
                 if
-                  expression_references_declaration env
+                  requires_stable_forward_binding env env_key
                     prepared.expr.semantic_expr
                 then
                   let value_type = deferred_value_type env prepared.expr in
@@ -2839,7 +2878,9 @@ let rec compile scope env next_type form =
                   in
                   let type_items = row_type_items row_param_types param_tys in
                   let binding, value_item =
-                    if expression_references_declaration env expr.semantic_expr
+                    if
+                      requires_stable_forward_binding env env_key
+                        expr.semantic_expr
                     then
                       let value_type = deferred_value_type env expr in
                       ( { binding with ty = value_type },
@@ -2920,7 +2961,10 @@ let rec compile scope env next_type form =
               let binding = binding_of_expr ~row_param_types ocaml_name expr in
               let type_items = row_type_items row_param_types param_tys in
               let binding, value_item =
-                if expression_references_declaration env expr.semantic_expr then
+                if
+                  requires_stable_forward_binding env env_key
+                    expr.semantic_expr
+                then
                   let value_type = deferred_value_type env expr in
                   ( { binding with ty = value_type },
                     Deferred_value_binding
@@ -2987,7 +3031,9 @@ let rec compile scope env next_type form =
                     @ row_type_items row_param_types param_tys
                   in
                   let binding, value_item =
-                    if expression_references_declaration env expr.semantic_expr
+                    if
+                      requires_stable_forward_binding env env_key
+                        expr.semantic_expr
                     then
                       let value_type = deferred_value_type env expr in
                       ( { binding with ty = value_type },
@@ -3235,7 +3281,8 @@ let rec compile scope env next_type form =
                   | None ->
                       Types.binding ocaml_name (TOcaml "__declared_fn"))
             in
-            add_declarations (Env.add key binding env) rest
+            let env = Env.add key binding env in
+            add_declarations (Env.add_explicit_declaration key env) rest
         | _ -> Error.error "declare expects symbols"
       in
       Result.map

@@ -4882,18 +4882,9 @@
     %{dep:datascript-listen-melange/test/datascript_listen_melange.js}))))
 
 (rule
- (target datascript_filter_native.ml)
+ (target datascript_filter_native_chunk.ml)
  (deps
-  ../stdlib/clojure/core.mli
-  ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mli
-  ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mli
-  ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mli
-  ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mli
-  ../stdlib/clojure/set.cljc
+  ../stdlib/lg_stdlib_native.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mli
@@ -4932,17 +4923,8 @@
    %{exe:../bin/lg_cli.exe}
    --target
    native
-   --compile-files
-   %{dep:../stdlib/clojure/core.mli}
-   %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mli}
-   %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mli}
-   %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mli}
-   %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mli}
-   %{dep:../stdlib/clojure/set.cljc}
+   --compile-files-from
+   %{dep:../stdlib/lg_stdlib_native.state}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
@@ -4975,6 +4957,16 @@
    -o
    %{target})))
 
+(rule
+ (target datascript_filter_native.ml)
+ (deps ../stdlib/lg_stdlib_native.ml datascript_filter_native_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:datascript_filter_native_chunk.ml})))))
+
 (executable
  (name datascript_filter_native)
  (modules datascript_filter_native)
@@ -4994,18 +4986,9 @@
   lg-test.alcotest))
 
 (rule
- (target datascript_filter_melange.ml)
+ (target datascript_filter_melange_chunk.ml)
  (deps
-  ../stdlib/clojure/core.mli
-  ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mli
-  ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mli
-  ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mli
-  ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mli
-  ../stdlib/clojure/set.cljc
+  ../stdlib/lg_stdlib_melange.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
   ../datascript/me/tonsky/persistent_sorted_set.mli
@@ -5042,17 +5025,8 @@
    %{exe:../bin/lg_cli.exe}
    --target
    melange
-   --compile-files
-   %{dep:../stdlib/clojure/core.mli}
-   %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mli}
-   %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mli}
-   %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mli}
-   %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mli}
-   %{dep:../stdlib/clojure/set.cljc}
+   --compile-files-from
+   %{dep:../stdlib/lg_stdlib_melange.state}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
@@ -5083,6 +5057,16 @@
    %{dep:../test_runner/clojure/run.cljc}
    -o
    %{target})))
+
+(rule
+ (target datascript_filter_melange.ml)
+ (deps ../stdlib/lg_stdlib_melange.ml datascript_filter_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:datascript_filter_melange_chunk.ml})))))
 
 (melange.emit
  (target datascript-filter-melange)

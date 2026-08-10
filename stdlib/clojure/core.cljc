@@ -159,7 +159,7 @@
   (-kv-reduce [coll reducer initial]))
 
 (defprotocol IEquiv
-  (-equiv [value other]))
+  (-equiv [value other] :bool))
 
 (defprotocol IHash
   (-hash [value]))

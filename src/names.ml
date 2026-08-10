@@ -176,8 +176,8 @@ let compact_runtime_aliases =
     ("Lg_runtime.Core_set", "Lg_runtime.Lg_set");
   ]
 
-let compact_runtime_path name =
-  let rec compact = function
+let replace_runtime_path_prefix aliases name =
+  let rec replace = function
     | [] -> name
     | (prefix, alias) :: rest ->
         if String.equal name prefix then alias
@@ -187,9 +187,17 @@ let compact_runtime_path name =
             alias
             ^ String.sub name (String.length prefix)
                 (String.length name - String.length prefix)
-          else compact rest
+          else replace rest
   in
-  compact compact_runtime_aliases
+  replace aliases
+
+let compact_runtime_path name =
+  replace_runtime_path_prefix compact_runtime_aliases name
+
+let canonical_runtime_path name =
+  compact_runtime_aliases
+  |> List.map (fun (canonical, compact) -> (compact, canonical))
+  |> fun aliases -> replace_runtime_path_prefix aliases name
 
 let replace_runtime_path source pattern replacement =
   let pattern_length = String.length pattern in

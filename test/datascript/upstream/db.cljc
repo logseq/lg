@@ -147,6 +147,9 @@
 
 (declare equiv-datom datom-hash)
 
+(signature datascript.db/equiv-datom
+  :fn<datascript.db/Datom;datascript.db/Datom;bool>)
+
 (defprotocol IDatom
   (datom-tx [datom] :int)
   (datom-added [datom] :bool)
@@ -170,7 +173,7 @@
     (Stdlib.ignore 0))
 
   IEquiv
-  (-equiv [d o]
+  (-equiv [d ^:datascript.db/Datom o]
     (equiv-datom d o))
 
   IHash
@@ -295,9 +298,6 @@
    (if-some [value a] value attr-wildcard)
    (if-some [value v] value value-wildcard)
    (if-some [value tx] value default-tx)))
-
-(signature datascript.db/equiv-datom
-  :fn<datascript.db/Datom;datascript.db/Datom;bool>)
 
 (defn ^:private equiv-datom [d o]
   (and (== (.-e d) (.-e o))
@@ -538,6 +538,16 @@
     ^:option<Datascript_runtime.Data_value.t> end]
    :seq<Datom>))
 
+(defn- search-slice [index lower upper]
+  (match (set/slice index lower upper)
+    (Some values) values
+    None (seq [])))
+
+(defn- search-rslice [index upper lower]
+  (match (set/rslice index upper lower)
+    (Some values) values
+    None (seq [])))
+
 (defn  index-component-keyword
   [ component]
   (if-some [component component]
@@ -690,32 +700,32 @@
                                 (= value candidate)
                                 false))]
              (case-tree [e a (some? v) tx]
-                        [(set/slice eavt (datom-bound e a v tx e0 tx0) (datom-bound e a v tx e0 tx0)) ;; e a v tx
-                         (set/slice eavt (datom-bound e a v nil e0 tx0) (datom-bound e a v nil e0 txmax)) ;; e a v _
-                         (->> (set/slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ tx
+                        [(search-slice eavt (datom-bound e a v tx e0 tx0) (datom-bound e a v tx e0 tx0)) ;; e a v tx
+                         (search-slice eavt (datom-bound e a v nil e0 tx0) (datom-bound e a v nil e0 txmax)) ;; e a v _
+                         (->> (search-slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ tx
                               (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
-                         (set/slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ _
-                         (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v tx
+                         (search-slice eavt (datom-bound e a nil nil e0 tx0) (datom-bound e a nil nil e0 txmax)) ;; e a _ _
+                         (->> (search-slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v tx
                               (->Eduction (filter (fn [d] (and (pred (.-v d))
                                                                       (= tx (datom-tx d)))))))
-                         (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v _
+                         (->> (search-slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ v _
                               (->Eduction (filter (fn [d] (pred (.-v d))))))
-                         (->> (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ tx
+                         (->> (search-slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ tx
                               (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
-                         (set/slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ _
+                         (search-slice eavt (datom-bound e nil nil nil e0 tx0) (datom-bound e nil nil nil e0 txmax)) ;; e _ _ _
                          (if (if-some [attr a] (contains? (-attrs-by db :db/index) attr) false) ;; _ a v tx
-                           (->> (set/slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
+                           (->> (search-slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
                                 (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
-                           (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
+                           (->> (search-slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
                                 (->Eduction (filter (fn [d] (and (pred (.-v d))
                                                                         (= tx (datom-tx d))))))))
                          (if (if-some [attr a] (contains? (-attrs-by db :db/index) attr) false) ;; _ a v _
-                           (set/slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
-                           (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
+                           (search-slice avet (datom-bound nil a v nil e0 tx0) (datom-bound nil a v nil emax txmax))
+                           (->> (search-slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax))
                                 (->Eduction (filter (fn [d] (pred (.-v d)))))))
-                         (->> (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ tx
+                         (->> (search-slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ tx
                               (->Eduction (filter (fn [d] (= tx (datom-tx d))))))
-                         (set/slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ _
+                         (search-slice aevt (datom-bound nil a nil nil e0 tx0) (datom-bound nil a nil nil emax txmax)) ;; _ a _ _
                          (filter (fn [d] (and (pred (.-v d))
                                                      (= tx (datom-tx d)))) (set/set-seq eavt))  ;; _ _ v tx
                          (filter (fn [d] (pred (.-v d))) (set/set-seq eavt))             ;; _ _ v
@@ -731,7 +741,7 @@
                              {:error :index-access
                               :index :avet
                               :components (tuple c0 c1 c2 c3)}))))
-           (set/slice (typed-index db index)
+           (search-slice (typed-index db index)
                       (components->pattern db index c0 c1 c2 c3 e0 tx0)
                       (components->pattern db index c0 c1 c2 c3 emax txmax)))
 
@@ -743,7 +753,7 @@
                                   {:error :index-access
                                    :index :avet
                                    :components (tuple c0 c1 c2 c3)}))))
-                (set/slice (typed-index db index)
+                (search-slice (typed-index db index)
                            (components->pattern db index c0 c1 c2 c3 e0 tx0)
                            (datom-bound nil nil nil nil emax txmax)))
 
@@ -755,7 +765,7 @@
                                    {:error :index-access
                                     :index :avet
                                     :components (tuple c0 c1 c2 c3)}))))
-                 (set/rslice (typed-index db index)
+                 (search-rslice (typed-index db index)
                              (components->pattern db index c0 c1 c2 c3 emax txmax)
                              (datom-bound nil nil nil nil e0 tx0)))
 
@@ -766,7 +776,7 @@
                                :index :avet
                                :components (tuple attr nil nil nil)}))
                 (validate-attr attr (tuple '-index-range 'db attr start end))
-                (set/slice (.-avet db)
+                (search-slice (.-avet db)
                            (resolve-datom db nil attr start nil e0 tx0)
                            (resolve-datom db nil attr end nil emax txmax))))
 
@@ -993,7 +1003,7 @@
    (match schema
      None "{}"
      (Some _)
-     (Datascript_runtime.Serialization_value.schema_to_string
+     (Datascript_runtime.Serialization_value.keyword_schema_to_string
       schema))
    ", :datoms ["
    (reduce
@@ -1094,10 +1104,10 @@
 
 (defn-  fsearch
   [ data
-    e
-    a
-   v
-    tx]
+    ^:option<int> e
+    ^:option<keyword> a
+    ^:option<Datascript_runtime.Data_value.t> v
+    ^:option<int> tx]
   (first (-search data (search-pattern e a v tx))))
 
 (defn  search-ea
@@ -2700,6 +2710,9 @@
     (FilteredDatabaseView filtered)
     (:unfiltered-db filtered)))
 
+(signature datascript.db/database-view-ref?
+  :fn<datascript.db/database-view;keyword;bool>)
+
 (defn  database-view-ref?
   [ database  attr]
   (ref? (database-view-unfiltered-db database) attr))
@@ -2834,6 +2847,9 @@
       (raise
        (Invalid_argument
         "Nothing found for entity reference")))))
+
+(signature datascript.db/entid-some
+  :fn<datascript.db/DB;option<Datascript_runtime.Data_value.entity_ref>;option<int>>)
 
 (defn  entid-some
   [ db
@@ -3048,8 +3064,14 @@
     (raise (Invalid_argument
             "Unknown schema tuple attribute"))))
 
-(signature datascript.db/empty-queued-tuples
+(signature datascript.db/empty-tuple-queue
   :fn<unit;map<keyword;vector<option<Datascript_runtime.Data_value.t>>>>)
+
+(defn empty-tuple-queue []
+  {})
+
+(signature datascript.db/empty-queued-tuples
+  :fn<unit;map<int;map<keyword;vector<option<Datascript_runtime.Data_value.t>>>>>)
 
 (defn empty-queued-tuples []
   {})
@@ -3096,7 +3118,7 @@
       (let [e      (.-e datom)
             v      (if (datom-added datom) (.-v datom) nil)
             queue  (or (-> report' :queued-tuples (get e))
-                       (empty-queued-tuples))
+                       (empty-tuple-queue))
             tuples
             (if-some [tuples (get (-attr-tuples db) a)]
               tuples
@@ -3109,6 +3131,9 @@
          :queued-tuples
          (assoc (.-queued-tuples report') e queue')))
       report')))
+
+(signature datascript.db/resolve-upserts
+  :fn<datascript.db/DB;map<keyword;Datascript_runtime.Data_value.t>;tuple<map<keyword;Datascript_runtime.Data_value.t>;map<keyword;map<Datascript_runtime.Data_value.t;int>>>>)
 
 (defn- resolve-upserts
   "Returns a tuple of the remaining entity attributes and resolved upserts.
@@ -3448,6 +3473,9 @@
         (prepare value)))
     (prepare value)))
 
+(signature datascript.db/assoc-auto-tempid-entity-value
+  :fn<datascript.db/DB;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.t>)
+
 (defn- assoc-auto-tempid-entity-value
   [db
    value]
@@ -3697,7 +3725,7 @@
     None
     (Some (Datascript_runtime.Data_value.tuple_of_vector values))))
 
-(defn flush-tuples [report]
+(defn flush-tuples [^TxReport report]
   (let [db (:db-after report)]
     (reduce-kv
      (fn [entities eid tuples+values]
@@ -3776,6 +3804,9 @@
                     (.-value-tempids report)
                     (.-used-tempid-eids report))]
         (tuple report (Datascript_runtime.Data_value.Entity_id eid))))))
+
+(signature datascript.db/resolve-tx-entity
+  :fn<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref;tuple<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref>>)
 
 (defn resolve-tx-entity
   [report
@@ -3879,6 +3910,9 @@
        " "
        (data-value-description new-value)
        "]'. Tempids are allowed in :db/add only")))))
+
+(signature datascript.db/mark-entity-used
+  :fn<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref;datascript.db/TxReport>)
 
 (defn  mark-entity-used
   [ report
@@ -4247,6 +4281,9 @@
               (assoc (:tempids report) key upserted-eid))
        upserted-eid))))
 
+(signature datascript.db/bind-upserted-entity
+  :fn<datascript.db/TxReport;Datascript_runtime.Data_value.entity_ref;int;datascript.db/TxReport>)
+
 (defn- bind-upserted-entity
   [report
    entity-ref
@@ -4424,7 +4461,7 @@
 
               TxFlushTuples
               (let [queued (flush-tuples report)
-                    report (assoc report :queued-tuples {})]
+                    report (assoc report :queued-tuples (empty-queued-tuples))]
                 (TxStep
                  (tuple
                   report
@@ -4695,7 +4732,7 @@
         (if (empty? (:queued-tuples report))
           (TxFinished (finish-transaction report))
           (let [queued (flush-tuples report)
-                report (assoc report :queued-tuples {})]
+                report (assoc report :queued-tuples (empty-queued-tuples))]
             (transact-tx-data-loop
              report queued 0 continuations))))))
 

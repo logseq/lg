@@ -93,7 +93,7 @@ let freshen_deferred_type ?return_param_index ty =
         in
         let value_ty =
           if Types.equal value_ty Types.TUnknown then
-            Types.dynamic_constraint Types.TUnknown
+            fresh_variable ()
           else freshen value_ty
         in
         Types.TOcaml_app (name, [ element_ty; value_ty ])
@@ -408,58 +408,105 @@ let rec provided_value_names = function
   | Lowered.Open_module _ | Lowered.Include_module _ ->
       []
 
-let rec expand_deferred_item = function
-  | Lowered.Deferred_value_binding
-      { name; value_type; return_param_index; expression } ->
-      let immediate, deferred =
-        expand_deferred_binding name value_type return_param_index expression
-      in
-      ( Lowered.Group immediate,
-        List.map (fun initialize -> (expression, initialize)) deferred )
-  | Lowered.Group items ->
-      let immediate, deferred = expand_deferred_items items in
-      (Lowered.Group immediate, deferred)
-  | item -> (item, [])
+let rec item_references_identifier name = function
+  | Lowered.Value_binding { expression; _ }
+  | Lowered.Recursive_value_binding { expression; _ }
+  | Lowered.Deferred_value_binding { expression; _ } ->
+      Semantic_ir.exists_identifier (String.equal name) expression
+  | Lowered.Recursive_value_bindings bindings ->
+      List.exists
+        (fun (binding : Lowered.recursive_value) ->
+          Semantic_ir.exists_identifier (String.equal name) binding.expression)
+        bindings
+  | Lowered.Record_def { values; _ } ->
+      List.exists
+        (fun (_, expression) ->
+          Semantic_ir.exists_identifier (String.equal name) expression)
+        values
+  | Lowered.Projected_record_def { source; _ } ->
+      Semantic_ir.exists_identifier (String.equal name) source
+  | Lowered.Group items -> List.exists (item_references_identifier name) items
+  | Lowered.Module_def { items; _ } | Lowered.Module_functor { items; _ } ->
+      List.exists (item_references_identifier name) items
+  | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
+  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Module_alias _ | Lowered.Module_apply _
+  | Lowered.Module_signature _ | Lowered.Open_module _
+  | Lowered.Include_module _ ->
+      false
 
-and expand_deferred_items items =
-  List.fold_left
-    (fun (immediate, deferred) item ->
-      let item_immediate, item_deferred = expand_deferred_item item in
-      (item_immediate :: immediate, deferred @ item_deferred))
-    ([], []) items
-  |> fun (immediate, deferred) -> (List.rev immediate, deferred)
+let insert_after_leading_types insertions item =
+  let is_leading_type = function
+    | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+    | Lowered.Polymorphic_holder_type _ | Lowered.Comment _ ->
+        true
+    | _ -> false
+  in
+  let rec split leading = function
+    | item :: rest when is_leading_type item -> split (item :: leading) rest
+    | rest -> List.rev_append leading (insertions @ rest)
+  in
+  match item with
+  | Lowered.Group items -> Lowered.Group (split [] items)
+  | item -> Lowered.Group (insertions @ [ item ])
 
 let order_deferred_items items =
   let providers = List.map provided_value_names items in
-  let scheduled = Array.make (List.length items) [] in
-  let immediate =
-    List.mapi
-      (fun index item ->
-        let immediate, deferred = expand_deferred_item item in
+  let item_count = List.length items in
+  let scheduled = Array.make item_count [] in
+  let hoisted = Array.make item_count [] in
+  let earliest_reference name before =
+    let rec find index =
+      if index >= before then before
+      else if item_references_identifier name (List.nth items index) then index
+      else find (index + 1)
+    in
+    find 0
+  in
+  let schedule_initializer index expression initialize =
+    let target =
+      providers
+      |> List.mapi (fun provider_index names ->
+             if
+               List.exists
+                 (fun name ->
+                   Semantic_ir.exists_identifier (String.equal name) expression)
+                 names
+             then provider_index
+             else index)
+      |> List.fold_left max index
+    in
+    scheduled.(target) <- initialize :: scheduled.(target)
+  in
+  let rec expand index = function
+    | Lowered.Deferred_value_binding
+        { name; value_type; return_param_index; expression } ->
+        let immediate, deferred =
+          expand_deferred_binding name value_type return_param_index expression
+        in
         List.iter
           (fun (expression, initialize) ->
-            let target =
-              providers
-              |> List.mapi (fun provider_index names ->
-                     if
-                       List.exists
-                         (fun name ->
-                           Semantic_ir.exists_identifier
-                             (String.equal name)
-                             expression)
-                         names
-                     then provider_index
-                     else index)
-              |> List.fold_left max index
-            in
-            scheduled.(target) <- scheduled.(target) @ [ initialize ])
-          deferred;
-        immediate)
-      items
+            schedule_initializer index expression initialize)
+          (List.map (fun initialize -> (expression, initialize)) deferred);
+        let target = earliest_reference name index in
+        if target < index then (
+          hoisted.(target) <- Lowered.Group immediate :: hoisted.(target);
+          Lowered.Group [])
+        else Lowered.Group immediate
+    | Lowered.Group items -> Lowered.Group (List.map (expand index) items)
+    | item -> item
+  in
+  let immediate =
+    List.mapi (fun index item -> expand index item) items
   in
   immediate
   |> List.mapi (fun index item ->
-         match scheduled.(index) with
+         let item =
+           match List.rev hoisted.(index) with
+           | [] -> item
+           | insertions -> insert_after_leading_types insertions item
+         in
+         match List.rev scheduled.(index) with
          | [] -> item
          | initializers -> (
              match item with
@@ -850,6 +897,10 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             let can_defer =
               form_references_unresolved_declaration scope env form
               || form_references_names unresolved_names form
+              || (unresolved_names <> []
+                 && String.starts_with
+                      ~prefix:"missing protocol implementation for "
+                      error.Error.message)
             in
             if can_defer then
               let first_error =

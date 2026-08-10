@@ -472,6 +472,7 @@ let is_generated_callback_argument name =
   || String.starts_with ~prefix:"__lg_branch_optional_payload" name
   || String.starts_with ~prefix:"__lg_erased_seqable_item" name
   || String.starts_with ~prefix:"__lg_constrained_argument" name
+  || String.starts_with ~prefix:"__lg_adapt_collection_item" name
 
 let protocol_witness_expression protocol_id receiver =
   match Semantic_ir.unlocated receiver.semantic_expr with
@@ -728,6 +729,24 @@ let constrained_value_projection expression =
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Tuple [ _witness; value ] -> value
   | _ -> Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+
+let constrained_witness_projection expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Tuple [ witness; _value ] -> witness
+  | _ -> Semantic_ir.Apply (Semantic_ir.Ident "fst", [ expression ])
+
+let project_protocol_constraint protocol_id argument =
+  let rec project ty expression =
+    match Types.protocol_constraint_info ty with
+    | Some (candidate_id, _, value_ty) ->
+        let witness = constrained_witness_projection expression in
+        let value = constrained_value_projection expression in
+        if Protocol_id.equal candidate_id protocol_id then
+          Some (witness, typed_ir value_ty value)
+        else project value_ty value
+    | None -> None
+  in
+  project argument.ty (constrained_argument_expression argument)
 
 let rec constrained_value_expression ty expression =
   match Types.protocol_constraint_info ty with
@@ -1396,6 +1415,7 @@ let rec constrained_storage_type expected actual =
           | _ -> Types.constraint_value_type actual)))
 
 let rec pack_constrained_value ?row_type_name env expected argument =
+  let expected = Types.deduplicate_protocol_constraints expected in
   let requires_binding =
     match
       (argument.record_values, Semantic_ir.unlocated argument.semantic_expr)
@@ -1784,6 +1804,9 @@ let rec pack_constrained_value ?row_type_name env expected argument =
   | Some _ when Types.is_dynamic argument.ty ->
       dynamic_unpack env expected argument.semantic_expr
   | Some (protocol_id, witness_ty, value_ty) ->
+      let projected_protocol =
+        project_protocol_constraint protocol_id argument
+      in
       let rec witness_method_types = function
         | TUnit -> Ok []
         | TTuple [ method_ty; rest ] ->
@@ -2040,25 +2063,22 @@ let rec pack_constrained_value ?row_type_name env expected argument =
             Error.error "protocol witness implementation type mismatch"
       in
       let witness =
-        match Types.protocol_constraint_info argument.ty with
-        | Some (argument_protocol, _, _)
-          when Protocol_id.equal protocol_id argument_protocol ->
-            Ok
-              (protocol_witness_expression protocol_id argument
-              |> Option.value
-                   ~default:(Semantic_ir.Constructor ("None", None)))
-        | _ when has_protocol_constraint protocol_id argument.ty ->
-            Ok
-              (protocol_witness_expression protocol_id argument
-              |> Option.value
-                   ~default:(Semantic_ir.Constructor ("None", None)))
-        | _ -> (
+        match projected_protocol with
+        | Some (witness, _) -> Ok witness
+        | None -> (
             let implementations =
               Protocol.witness_implementations env protocol_id
                 (Types.constraint_value_type argument.ty)
             in
             match implementations with
-            | None -> Ok (Semantic_ir.Constructor ("None", None))
+            | None -> (
+                match Types.constraint_value_type argument.ty with
+                | TNamed_record record ->
+                    Error.error
+                      ("missing protocol implementation for "
+                      ^ Protocol_id.to_string protocol_id
+                      ^ " on " ^ Type_id.to_string record.type_id)
+                | _ -> Ok (Semantic_ir.Constructor ("None", None)))
             | Some implementations ->
                 let shared_name =
                   let implementation_key =
@@ -2104,7 +2124,12 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                       (adapt_methods [] method_tys implementations)))
       in
       Result.bind witness (fun witness ->
-          pack_constrained_value env value_ty argument
+          let value_argument =
+            match projected_protocol with
+            | Some (_, value) -> value
+            | None -> argument
+          in
+          pack_constrained_value env value_ty value_argument
           |> Result.map (fun value -> Semantic_ir.Tuple [ witness; value ]))
   | None -> (
       match expected with
@@ -2486,6 +2511,10 @@ let rec pack_constrained_value ?row_type_name env expected argument =
               | _, (Error _ as error) -> error
               | Ok adapter, Ok value ->
                   Ok (Semantic_ir.Tuple [ adapter; value ])))
+                | expected
+                  when (not (has_capability_constraint expected))
+                       && has_capability_constraint argument.ty ->
+                    Ok (constrained_argument_value argument)
                 | TNamed_record expected
                   when (match argument.ty with
                        | TNamed_record actual ->
@@ -10279,19 +10308,33 @@ let create ~compile_expr =
                       | [ element_ty ] -> Some element_ty
                       | [] | _ :: _ :: _ -> None
                     in
-                    let specialize_expected expected argument =
+                    let specialize_expected substitutions expected argument =
                       match expected with
-                      | TOcaml_app (constraint_name, [ (TUnknown | TMeta _ | TVar _); _ ])
+                      | TOcaml_app
+                          ( constraint_name,
+                            [ ((TUnknown | TMeta _ | TVar _) as element_template);
+                              _;
+                            ] )
                         when constraint_name = Types.seqable_constraint_name
                              || constraint_name
                                 = Types.optional_seqable_constraint_name
                              || constraint_name
                                 = Types.optional_sequential_constraint_name ->
-                          (match element_ty with
-                          | Some element_ty ->
+                          let specialized_element =
+                            Type_solver.apply substitutions element_template
+                          in
+                          (match specialized_element with
+                          | TUnknown | TMeta _ | TVar _ -> (
+                              match element_ty with
+                              | Some element_ty ->
+                                  TOcaml_app
+                                    ( constraint_name,
+                                      [ element_ty; argument.ty ] )
+                              | None -> expected)
+                          | specialized_element ->
                               TOcaml_app
-                                (constraint_name, [ element_ty; argument.ty ])
-                          | None -> expected)
+                                ( constraint_name,
+                                  [ specialized_element; argument.ty ] ))
                       | TUnknown | TMeta _ | TVar _ -> (
                           match element_ty with
                           | Some _ -> argument.ty
@@ -10393,16 +10436,11 @@ let create ~compile_expr =
                                                 (Type_solver.apply substitutions
                                                    expected_element)) ->
                                         Ok
-                                          (match expected_element with
-                                          | TVar name ->
-                                              Type_solver.add
-                                                (Type_solver.Declared name)
-                                                actual_element substitutions
-                                          | TMeta meta ->
-                                              Type_solver.add
-                                                (Type_solver.Metavariable meta.id)
-                                                actual_element substitutions
-                                          | _ -> substitutions)
+                                          (Protocol.infer_constraint_substitutions
+                                             env substitutions
+                                             (Type_solver.apply substitutions
+                                                expected_element)
+                                             actual_element)
                                     | Error _ as error -> error)
                                 | None, _ | _, None ->
                                     Ok
@@ -10417,7 +10455,9 @@ let create ~compile_expr =
                       | Error _ -> (false, Type_solver.empty)
                     in
                     let fixed_param_tys =
-                      List.map2 specialize_expected arity.fixed_params fixed_args
+                      List.map2
+                        (specialize_expected substitutions)
+                        arity.fixed_params fixed_args
                       |> List.map (Type_solver.apply substitutions)
                     in
                     let rest_param_ty =
@@ -10470,6 +10510,13 @@ let create ~compile_expr =
                     in
                     let return_ty =
                       Type_solver.apply substitutions return_ty
+                    in
+                    let storage_return_ty = return_ty in
+                    let return_ty =
+                      match return_ty with
+                      | TSeq element_ty ->
+                          TSeq (Types.constraint_value_type element_ty)
+                      | return_ty -> return_ty
                     in
                     let row_param_types =
                       List.nth_opt fn.overload_row_param_types arity_index
@@ -10756,7 +10803,7 @@ let create ~compile_expr =
                                       arity_index
                               in
                               let call =
-                                typed_ir arity.return_ty
+                                typed_ir storage_return_ty
                                   (Semantic_ir.Apply (target, arguments))
                               in
                               let adapted_call =

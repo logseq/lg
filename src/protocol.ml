@@ -221,6 +221,19 @@ let apply_method_signature
       { implementation with ty = TFn (parameters, declared_return) }
   | _ -> implementation
 
+let find_implementation_or_evidence env protocol_id method_id receiver_id =
+  match
+    Protocol_registry.find_implementation_or_default protocol_id method_id
+      receiver_id (Env.protocols env)
+  with
+  | Some _ as implementation -> implementation
+  | None -> (
+      match Env.protocol_evidence env with
+      | Some evidence ->
+          Protocol_registry.find_implementation_or_default protocol_id
+            method_id receiver_id evidence
+      | None -> None)
+
 let witness_implementations env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
@@ -231,8 +244,8 @@ let witness_implementations env protocol_id receiver_ty =
         declaration.methods
         |> Protocol_registry.Method_map.bindings
         |> List.map (fun (method_id, signature) ->
-               Protocol_registry.find_implementation_or_default protocol_id
-                 method_id receiver_id (Env.protocols env)
+               find_implementation_or_evidence env protocol_id method_id
+                 receiver_id
                |> Option.map (fun implementation ->
                       implementation
                       |> instantiate_receiver_binding receiver_ty

@@ -12061,6 +12061,34 @@ let test_forward_declared_multi_arity_functions_initialize_lazily () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_forward_declared_non_recursive_implementation_keeps_stable_binding () =
+  let source =
+    {|
+(ns test.forward)
+(signature test.forward/value->later :fn<test.forward/Caller;int>)
+(declare value->later)
+(defprotocol ICall
+  (-call [caller] :int))
+(defrecord Caller [^:int seed]
+  ICall
+  (-call [caller] (value->later caller)))
+(defn value->later [^Caller caller]
+  (.-seed (Caller. (inc (.-seed caller)))))
+(println (-call (Caller. 41)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if
+    not
+      (string_contains_substring native_source
+         "test_forward_value__later__implementation_holder")
+  then failwith "forward declaration must emit a stable implementation holder";
+  assert_ocaml_runs
+    "forward_declared_non_recursive_implementation_keeps_stable_binding"
+    "42\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_forward_declared_mutual_recursion_reuses_stabilized_signatures () =
   let source =
     {|
@@ -12080,6 +12108,132 @@ let test_forward_declared_mutual_recursion_reuses_stabilized_signatures () =
   assert_ocaml_runs
     "forward_declared_mutual_recursion_reuses_stabilized_signatures" "3\n"
     native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_mutually_recursive_calls_adapt_seqable_arguments () =
+  let source =
+    {|
+(ns test.forward)
+(signature test.forward/walk :fn<seqable<int>;int;int>)
+(signature test.forward/step :fn<vector<int>;int;int>)
+(declare walk step)
+(defn walk [values depth]
+  (if (= depth 0)
+    (count values)
+    (step (vec values) (dec depth))))
+(defn step [values depth]
+  (walk values depth))
+(println (walk [1 2 3] 1))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "mutually_recursive_calls_adapt_seqable_arguments" "3\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_deferred_seqable_signatures_quantify_storage () =
+  let source =
+    {|
+(ns test.forward)
+(signature test.forward/count-values :fn<seqable<string>;int>)
+(declare count-values)
+(defn invoke [^:vector<string> values]
+  (count-values values))
+(defn count-values [values]
+  (count values))
+(println (invoke ["a" "b"]))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic.t -> string Seq.t"
+  then failwith "deferred seqable storage must stay statically polymorphic";
+  assert_ocaml_runs "deferred_seqable_signatures_quantify_storage" "2\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_nested_protocol_capabilities_forward_without_repacking () =
+  let source =
+    {|
+(defprotocol IA
+  (-a [value] :int))
+(defprotocol IB
+  (-b [value] :int))
+(deftype Both [^int value]
+  IA
+  (-a [value] (.-value value))
+  IB
+  (-b [value] (inc (.-value value))))
+(defn only-b [value]
+  (-b value))
+(defn both
+  ([value]
+   (+ (-a value) (only-b value)))
+  ([value extra]
+   (+ extra (both value))))
+(println (both (Both. 20) 1))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nested_protocol_capabilities_forward_without_repacking"
+    "42\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_subset_forwarding_strips_unused_inner_capabilities () =
+  let source =
+    {|
+(defprotocol IA2
+  (-a2 [value] :int))
+(defprotocol IB2
+  (-b2 [value] :int))
+(defprotocol IC2
+  (-c2 [value] :int))
+(deftype AllThree [^int value]
+  IA2
+  (-a2 [value] (.-value value))
+  IB2
+  (-b2 [value] (inc (.-value value)))
+  IC2
+  (-c2 [value] (+ 2 (.-value value))))
+(defn a-and-b [value]
+  (+ (-a2 value) (-b2 value)))
+(defn all-three [value]
+  (+ (a-and-b value) (-c2 value)))
+(println (all-three (AllThree. 20)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_subset_forwarding_strips_unused_inner_capabilities" "63\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_forward_declared_static_record_builds_protocol_witness () =
+  let source =
+    {|
+(ns test.forward-protocol)
+(defprotocol IValue
+  (-value [value] :int))
+(defrecord Box [^int value]
+  IValue
+  (-value [box] (.-value box)))
+(signature test.forward-protocol/read-box
+  :fn<test.forward-protocol/Box;int>)
+(declare read-box)
+(defn read-value [value]
+  (-value value))
+(defn read-box [box]
+  (read-value box))
+(println (read-box (Box. 42)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "forward_declared_static_record_builds_protocol_witness"
+    "42\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -35746,6 +35900,54 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
     (compile_with_stdlib Lg.Target.Melange "test/eduction_transducers.cljc"
        source)
 
+let test_eduction_preserves_statically_typed_sequence_elements () =
+  let source =
+    {|
+(ns test.eduction)
+(defprotocol IValue
+  (-value [item] :int))
+(deftype Item [^:int value]
+  IValue
+  (-value [_] value))
+(defprotocol ISearch
+  (-search [search] :seq<Item>))
+(deftype Search [^:seq<Item> items]
+  ISearch
+  (-search [_]
+    (->Eduction
+      (filter (fn [item] (pos? (-value item))))
+      items)))
+(deftype ExtendedSearch [^:seq<Item> items])
+(extend-type ExtendedSearch
+  ISearch
+  (-search [search]
+    (->Eduction
+      (filter (fn [item] (pos? (-value item))))
+      (.-items search))))
+(def populated
+  (-search
+    (Search. (seq [(Item. -1) (Item. 0) (Item. 2) (Item. 3)]))))
+(def empty-result (-search (Search. (seq []))))
+(def extended
+  (-search
+    (ExtendedSearch.
+      (seq [(Item. -2) (Item. 4) (Item. 5)]))))
+(println
+  (str (pr-str (mapv (fn [^Item item] (-value item)) populated)) ":"
+       (count empty-result) ":"
+       (pr-str (mapv (fn [^Item item] (-value item)) extended))))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/eduction_typed_sequence_elements.cljc" source
+  in
+  assert_ocaml_runs "eduction_preserves_statically_typed_sequence_elements"
+    "[2 3]:0:[4 5]\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/eduction_typed_sequence_elements.cljc" source)
+
 let test_take_while_transducers_compile_and_truncate_sequences () =
   let source =
     {|
@@ -41205,8 +41407,21 @@ let tests =
       test_destructured_row_parameter_stays_structural );
     ( "forward-declared multi-arity functions initialize lazily",
       test_forward_declared_multi_arity_functions_initialize_lazily );
+    ( "forward-declared non-recursive implementations keep stable bindings",
+      test_forward_declared_non_recursive_implementation_keeps_stable_binding
+    );
     ( "forward-declared mutual recursion reuses stabilized signatures",
       test_forward_declared_mutual_recursion_reuses_stabilized_signatures );
+    ( "mutually recursive calls adapt seqable arguments",
+      test_mutually_recursive_calls_adapt_seqable_arguments );
+    ( "deferred seqable signatures quantify storage",
+      test_deferred_seqable_signatures_quantify_storage );
+    ( "nested protocol capabilities forward without repacking",
+      test_nested_protocol_capabilities_forward_without_repacking );
+    ( "protocol subset forwarding strips unused inner capabilities",
+      test_protocol_subset_forwarding_strips_unused_inner_capabilities );
+    ( "forward-declared static record builds protocol witness",
+      test_forward_declared_static_record_builds_protocol_witness );
     ( "fnil wraps core conj with default collection",
       test_fnil_wraps_core_conj_with_default_collection );
     ( "protocol witnesses do not hide heterogeneous branches",
@@ -43194,6 +43409,8 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ( "Eduction preserves statically typed sequence elements",
+      test_eduction_preserves_statically_typed_sequence_elements );
     ( "take-while transducers compile and truncate sequences",
       test_take_while_transducers_compile_and_truncate_sequences );
     ( "into applies composed transducers",

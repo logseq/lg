@@ -77,7 +77,6 @@ let test_supports_top_level_nested_and_default_conditionals () =
 #?(:native (def platform-value 40)
    :default (def platform-value 0))
 (def values ["first" #?(:native "native-nested" :default "default-nested")])
-(println (str platform-value ":" (nth values 1)))
 |}
   in
   let generated = compile Lg.Target.Native source in

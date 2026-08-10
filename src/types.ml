@@ -302,13 +302,6 @@ let sorted_constraint_info ty =
       | Some _ | None -> None)
   | Some _ | None -> None
 
-let protocol_constraint_with_value constraint_ty value_ty =
-  match constraint_ty with
-  | TOcaml_app (name, [ witness_ty; _ ])
-    when Option.is_some (protocol_constraint_id name) ->
-      TOcaml_app (name, [ witness_ty; value_ty ])
-  | ty -> ty
-
 let capability_constraint_value ty =
   match protocol_constraint_info ty with
   | Some (_, _, value_ty) -> Some value_ty
@@ -376,6 +369,73 @@ let rec constraint_value_type ty =
              || name = optional_sequential_constraint_name ->
           constraint_value_type value_ty
       | value_ty -> value_ty))
+
+let rec remove_protocol_constraint protocol_id ty =
+  match protocol_constraint_info ty with
+  | Some (candidate_id, _, value_ty)
+    when Protocol_id.equal candidate_id protocol_id ->
+      remove_protocol_constraint protocol_id value_ty
+  | Some (_, witness_ty, value_ty) -> (
+      match ty with
+      | TOcaml_app (name, [ _; _ ]) ->
+          TOcaml_app
+            ( name,
+              [ witness_ty; remove_protocol_constraint protocol_id value_ty ] )
+      | _ -> ty)
+  | None -> ty
+
+let protocol_witness_with_receiver value_ty witness_ty =
+  let receiver_ty = constraint_value_type value_ty in
+  let with_receiver = function
+    | TFn (_ :: parameters, return_ty) ->
+        TFn (receiver_ty :: parameters, return_ty)
+    | TOverloaded_fn arities ->
+        TOverloaded_fn
+          (List.map
+             (fun arity ->
+               match arity.fixed_params with
+               | _ :: parameters ->
+                   { arity with fixed_params = receiver_ty :: parameters }
+               | [] -> arity)
+             arities)
+    | ty -> ty
+  in
+  match protocol_witness_method_types witness_ty with
+  | Some method_types ->
+      protocol_witness_type (List.map with_receiver method_types)
+  | None -> witness_ty
+
+let rec deduplicate_protocol_constraints ty =
+  match protocol_constraint_info ty with
+  | Some (protocol_id, witness_ty, value_ty) -> (
+      match ty with
+      | TOcaml_app (name, [ _; _ ]) ->
+          let value_ty =
+            value_ty |> deduplicate_protocol_constraints
+            |> remove_protocol_constraint protocol_id
+          in
+          let witness_ty =
+            protocol_witness_with_receiver value_ty witness_ty
+          in
+          TOcaml_app (name, [ witness_ty; value_ty ])
+      | _ -> ty)
+  | None -> ty
+
+let protocol_constraint_with_value constraint_ty value_ty =
+  match constraint_ty with
+  | TOcaml_app (name, [ witness_ty; _ ])
+    when Option.is_some (protocol_constraint_id name) -> (
+      match protocol_constraint_id name with
+      | Some protocol_id ->
+          let value_ty = remove_protocol_constraint protocol_id value_ty in
+          let witness_ty =
+            protocol_witness_with_receiver value_ty witness_ty
+          in
+          TOcaml_app
+            (name, [ witness_ty; value_ty ])
+          |> deduplicate_protocol_constraints
+      | None -> constraint_ty)
+  | ty -> ty
 
 let protocol_witness_name value_name protocol_id =
   value_name ^ "__protocol_"
