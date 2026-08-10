@@ -301,8 +301,8 @@
                    :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-long-fix-primitive-to-model-pinned-fix-separately-from-int-within-the-current-static-int-domain}
     unchecked-long {:status :static-adaptation
                     :reason :source-function-preserves-first-class-int-coercion-while-direct-calls-reuse-the-existing-long-fix-primitive-within-the-current-static-int-domain}
-    char {:status :blocked-static-typing
-          :reason :upstream-same-arity-function-accepts-either-an-integer-code-unit-or-a-string-while-current-static-function-types-cannot-express-that-first-class-overload-without-rejecting-one-supported-input-domain}
+    char {:status :static-adaptation
+          :reason :source-function-dispatches-int-string-and-char-inputs-through-a-static-protocol-capability-and-preserves-upstream-invalid-input-errors-within-lgs-eight-bit-char-domain}
     char? {:status :static-adaptation
            :reason :source-function-provides-a-first-class-char-predicate-and-inline-static-type-test-because-lg-characters-are-distinct-from-clojurescript-one-character-javascript-strings}
     identical? {:status :static-adaptation

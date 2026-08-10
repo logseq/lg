@@ -52,6 +52,15 @@ let last_index_of_int source needle = last_index_of source needle
 
 let length source = String.length source
 
+let char_of_int code =
+  if code < 0 || code > 255 then
+    invalid_arg "Argument to char must be an 8-bit character code"
+  else Char.chr code
+
+let char_of_string source =
+  if String.length source = 1 then source.[0]
+  else invalid_arg "Argument to char must be a character or number"
+
 let utf8_scalar_at source index =
   let source_length = String.length source in
   if index < 0 || index >= source_length then

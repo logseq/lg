@@ -24592,6 +24592,53 @@ let test_doall_is_source_owned_and_preserves_collection_storage () =
   assert_ocaml_runs "source_doall" "true\n" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange "app/source_doall.cljc" source)
 
+let test_char_is_source_owned_and_uses_static_coercion_protocol () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn char") then
+    failwith "char must be implemented by the source standard library";
+  let source =
+    {|
+(ns app.source-char
+  (:require [cljs.core :as core :refer [char]]))
+
+(def coerce-char char)
+
+(def invalid-string?
+  (try
+    (char "ab")
+    false
+    (catch (Invalid_argument _) true)))
+
+(def invalid-type?
+  (try
+    (char true)
+    false
+    (catch (Invalid_argument _) true)))
+
+(def invalid-code?
+  (try
+    (char 256)
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (and (= \A (coerce-char 65))
+       (= \b (char "b"))
+       (= \c (core/char \c))
+       invalid-string?
+       invalid-type?
+       invalid-code?))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_char.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source char must use static protocol capabilities";
+  assert_ocaml_runs "source_char" "true\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/source_char.cljc" source)
+
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
@@ -41063,6 +41110,8 @@ let tests =
       test_source_split_with_accepts_boolean_params );
     ( "doall is source-owned and preserves collection storage",
       test_doall_is_source_owned_and_preserves_collection_storage );
+    ( "char is source-owned and uses static coercion protocol",
+      test_char_is_source_owned_and_uses_static_coercion_protocol );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",

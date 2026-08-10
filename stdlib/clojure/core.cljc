@@ -28,6 +28,26 @@
   (-name [value])
   (-namespace [value]))
 
+;; ClojureScript char accepts multiple runtime input domains. A private
+;; protocol keeps that dispatch first-class and statically witnessed in LG.
+(defprotocol ^:private ICharCoercion
+  (-char [value]))
+
+(extend-type :int
+  ICharCoercion
+  (-char [value] (runtime-string/char-of-int value)))
+
+(extend-type :string
+  ICharCoercion
+  (-char [value] (runtime-string/char-of-string value)))
+
+(extend-type :char
+  ICharCoercion
+  (-char [value] value))
+
+(defn char [value]
+  (-char value))
+
 ;; These declarations mirror the statically supported portion of the
 ;; ClojureScript core protocol surface. The compiler registry supplies typed
 ;; implementations for built-in receivers; source records and types can extend

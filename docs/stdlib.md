@@ -212,6 +212,11 @@ source `dorun` implementation and returns the original collection rather than
 substituting a vector or another eager representation. Its explicit
 `seqable<value; storage> -> storage` relationship preserves vector, list, and
 other statically known collection storage without a dynamic value boundary.
+`char` is source-owned through a private static coercion protocol implemented
+for integers, one-character strings, and LG chars. Invalid strings and
+unsupported static inputs retain the upstream runtime error behavior. Integer
+conversion is restricted to LG's OCaml-backed eight-bit char domain rather
+than silently pretending to support JavaScript UTF-16 code units.
 `conj` is source-owned with the complete zero, one, two, and variadic upstream
 arity family. Lists, vectors, sets, sequences, user `ICollection`
 implementations, and statically typed map-entry tuples preserve their result

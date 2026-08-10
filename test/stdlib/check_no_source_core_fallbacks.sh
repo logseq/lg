@@ -77,6 +77,11 @@ public_predicates='nil? true? false? int? number? string? keyword? symbol? vecto
 dispatch_names=$(ocaml -I +compiler-libs ocamlcommon.cma \
   "$root/script/extract_ocaml_string_dispatch.ml" \
   "$root/src/call_elaborator.ml")
+if printf '%s\n' "$dispatch_names" | grep -Fx 'char' >/dev/null \
+  || grep -F 'FSymbol "char"' "$root/src/type_inference.ml" >/dev/null; then
+  echo "clojure.core/char still has public-name compiler ownership" >&2
+  exit 1
+fi
 for name in $public_predicates; do
   if printf '%s\n' "$dispatch_names" | grep -Fx "$name" >/dev/null; then
     echo "clojure.core/$name is still publicly dispatched in call_elaborator.ml" >&2
