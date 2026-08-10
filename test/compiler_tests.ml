@@ -34289,6 +34289,83 @@ let test_common_higher_order_helpers () =
      11]:15:10:true:false:-1:1:4:1:(:normal :a/a :a/z :db/id)\n"
     ocaml_source
 
+let test_source_juxt_matches_clojurescript_arities () =
+  let source =
+    {|
+(ns app.source-juxt
+  (:require [cljs.core :as core :refer [juxt]]))
+
+(def calls (atom 0))
+(defn mark [value]
+  (swap! calls (fn [state] (+ (* state 100) value))))
+(defn left
+  ([] (do (mark 10) 10))
+  ([x] (do (mark 11) (+ x 10)))
+  ([x y] (do (mark 12) (+ x y 10)))
+  ([x y z] (do (mark 13) (+ x y z 10)))
+  ([x y z & more]
+   (do (mark 14) (apply + (+ x y z 10) more))))
+(defn right
+  ([] (do (mark 20) 20))
+  ([x] (do (mark 21) (+ x 20)))
+  ([x y] (do (mark 22) (+ x y 20)))
+  ([x y z] (do (mark 23) (+ x y z 20)))
+  ([x y z & more]
+   (do (mark 24) (apply + (+ x y z 20) more))))
+(defn middle
+  ([] 30)
+  ([x] (+ x 30))
+  ([x y] (+ x y 30))
+  ([x y z] (+ x y z 30))
+  ([x y z & more] (apply + (+ x y z 30) more)))
+(defn fourth
+  ([] 40)
+  ([x] (+ x 40))
+  ([x y] (+ x y 40))
+  ([x y z] (+ x y z 40))
+  ([x y z & more] (apply + (+ x y z 40) more)))
+
+(def build (identity juxt))
+(def one (build left))
+(def two (build left right))
+(def three (build left right middle))
+(def four (build left right middle fourth))
+(def referred (juxt (fn [x] (+ x 1)) (fn [x] (+ x 2))))
+(def aliased (core/juxt (fn [x] (+ x 3)) (fn [x] (+ x 4))))
+(def qualified
+  (clojure.core/juxt (fn [x] (+ x 5)) (fn [x] (+ x 6))))
+(def direct-calls (atom 0))
+(defn direct-mark [value]
+  (swap! direct-calls (fn [state] (+ (* state 10) value))))
+(def direct-order
+  (juxt (fn [x] (do (direct-mark 1) (+ x 1)))
+        (fn [x] (do (direct-mark 2) (+ x 2)))))
+
+(println (= [10] (one)))
+(println (= [11 21] (two 1)))
+(println (= [13 23 33] (three 1 2)))
+(println (= [16 26 36 46] (four 1 2 3)))
+(println (= [20 30 40 50] (apply four [1 2 3 4])))
+(println (= 101121122213231424 @calls))
+(println (= [2 3] (referred 1)))
+(println (= [4 5] (aliased 1)))
+(println (= [6 7] (qualified 1)))
+(println (= [2 3] (direct-order 1)))
+(println (= 12 @direct-calls))
+|}
+  in
+  let expected = String.concat "" (List.init 11 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_juxt.cljc" source
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source juxt must preserve static overloaded function values";
+  assert_ocaml_runs "source_juxt_matches_clojurescript_arities" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_juxt.cljc" source)
+
 let test_source_predicate_combinators_match_clojurescript () =
   let source =
     {|
@@ -42818,6 +42895,8 @@ let tests =
     ( "source conj preserves ClojureScript collection categories",
       test_source_conj_preserves_clojurescript_collection_categories );
     ("common higher-order helpers work", test_common_higher_order_helpers);
+    ( "source juxt matches ClojureScript arities",
+      test_source_juxt_matches_clojurescript_arities );
     ( "source predicate combinators match ClojureScript",
       test_source_predicate_combinators_match_clojurescript );
     ( "source predicate combinators reject mismatched predicates",

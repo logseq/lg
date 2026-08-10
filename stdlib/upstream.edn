@@ -197,6 +197,8 @@
                 :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-short-circuit-order-and-boolean-results-while-homogeneous-static-predicate-inputs-replace-open-ifn-dispatch}
     some-fn {:status :static-adaptation
              :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-first-truthy-short-circuit-order-and-values-while-the-four-or-more-predicate-case-uses-explicit-typed-loops-to-avoid-erasing-function-valued-sequence-elements}
+    juxt {:status :static-adaptation
+          :reason :source-port-preserves-upstream-one-two-three-and-variadic-function-constructor-arities-returned-zero-one-two-three-and-variadic-arities-left-to-right-call-order-and-homogeneous-static-vector-results-while-a-private-unary-specialization-keeps-common-direct-calls-statically-typed}
     constantly {:status :static-adaptation
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}

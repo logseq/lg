@@ -3723,6 +3723,96 @@
                  (recur (next remaining))))
              nil))))))))
 
+(defn- juxt-apply [function x y z args]
+  (apply function x y z args))
+
+(defn juxt
+  {:inline (fn [& functions] (cons '__lg_juxt functions))}
+  ([f]
+   (fn
+     ([] (vector (f)))
+     ([x] (vector (f x)))
+     ([x y] (vector (f x y)))
+     ([x y z] (vector (f x y z)))
+     ([x y z & args] (vector (apply f x y z args)))))
+  ([f g]
+   (fn
+     ([]
+      (let [f-result (f)
+            g-result (g)]
+        (vector f-result g-result)))
+     ([x]
+      (let [f-result (f x)
+            g-result (g x)]
+        (vector f-result g-result)))
+     ([x y]
+      (let [f-result (f x y)
+            g-result (g x y)]
+        (vector f-result g-result)))
+     ([x y z]
+      (let [f-result (f x y z)
+            g-result (g x y z)]
+        (vector f-result g-result)))
+     ([x y z & args]
+      (let [f-result (apply f x y z args)
+            g-result (apply g x y z args)]
+        (vector f-result g-result)))))
+  ([f g h]
+   (fn
+     ([]
+      (let [f-result (f)
+            g-result (g)
+            h-result (h)]
+        (vector f-result g-result h-result)))
+     ([x]
+      (let [f-result (f x)
+            g-result (g x)
+            h-result (h x)]
+        (vector f-result g-result h-result)))
+     ([x y]
+      (let [f-result (f x y)
+            g-result (g x y)
+            h-result (h x y)]
+        (vector f-result g-result h-result)))
+     ([x y z]
+      (let [f-result (f x y z)
+            g-result (g x y z)
+            h-result (h x y z)]
+        (vector f-result g-result h-result)))
+     ([x y z & args]
+      (let [f-result (apply f x y z args)
+            g-result (apply g x y z args)
+            h-result (apply h x y z args)]
+        (vector f-result g-result h-result)))))
+  ([f g h & fs]
+   (let [functions (list* f g h fs)]
+     (fn
+       ([]
+        (reduce (fn [results function]
+                  (conj results (function)))
+                []
+                functions))
+       ([x]
+        (reduce (fn [results function]
+                  (conj results (function x)))
+                []
+                functions))
+       ([x y]
+        (reduce (fn [results function]
+                  (conj results (function x y)))
+                []
+                functions))
+       ([x y z]
+        (reduce (fn [results function]
+                  (conj results (function x y z)))
+                []
+                functions))
+       ([x y z & args]
+        (reduce (fn [results function]
+                  (conj results (juxt-apply function x y z args)))
+                []
+                functions))))))
+
 (defn not-any? [pred coll]
   (loop [remaining (seq coll)]
     (if remaining

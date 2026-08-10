@@ -530,7 +530,12 @@ Function helpers include `apply`, `comp`, `partial`, `identity`, `constantly`,
 are source ports with the pinned ClojureScript constructor arities and returned
 zero-, one-, two-, three-, and variadic arities. They retain predicate order and
 short-circuiting over homogeneous static predicate inputs; `some-fn` preserves
-the first truthy static result. `apply` supports integer binary reducers over
+the first truthy static result. `juxt` is also source-defined with the pinned
+one-, two-, three-, and variadic constructor arities and returned zero- through
+three-argument plus variadic arities. Explicit sequential bindings preserve
+ClojureScript's left-to-right callback order on OCaml; a private unary direct-call
+specialization keeps the common homogeneous static callback case concise.
+`apply` supports integer binary reducers over
 typed lists, vectors, and sets, with optional fixed leading integer arguments.
 
 Comparison helpers include `distinct?`, `compare`, `max-key`, and `min-key` for

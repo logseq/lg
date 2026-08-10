@@ -4476,7 +4476,7 @@ let create ~compile_expr =
   let compile_apply = functions.compile_apply in
   let compile_comp = functions.compile_comp in
   let compile_partial = functions.compile_partial in
-  let compile_juxt = functions.compile_juxt in
+  let compile_static_juxt = functions.compile_static_juxt in
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
@@ -8967,7 +8967,7 @@ let create ~compile_expr =
         | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
-    | "juxt" -> compile_juxt scope env arg_forms
+    | "__lg_juxt" -> compile_static_juxt scope env arg_forms
     | "__lg_compare" -> (
         match compile_args () with
         | Error _ as error -> error

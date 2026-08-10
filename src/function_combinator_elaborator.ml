@@ -10,7 +10,7 @@ type t = {
   compile_apply : call;
   compile_comp : call;
   compile_partial : call;
-  compile_juxt : call;
+  compile_static_juxt : call;
 }
 
 let compile_args_for compile_expr scope env arg_forms =
@@ -942,8 +942,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | TFn _ -> Error.error "partial requires fewer arguments than function arity"
               | _ -> Error.error "partial expects a function"))
       | _ -> Error.error "partial expects a function"
-    
-    and compile_juxt scope env arg_forms =
+
+    and compile_static_juxt scope env arg_forms =
       let compile_fns =
         arg_forms
         |> List.fold_left
@@ -964,8 +964,32 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           let rec collect arg_ty ret_ty exprs = function
             | [] -> Ok (arg_ty, ret_ty, List.rev exprs)
             | fn :: rest -> (
-                match fn.ty with
-                | TFn ([ current_arg ], current_ret)
+                let unary =
+                  match fn.ty with
+                  | TFn ([ current_arg ], current_ret) ->
+                      Some
+                        ( current_arg,
+                          current_ret,
+                          Semantic_ir.Apply
+                            (fn.semantic_expr, [ Semantic_ir.Ident "x" ]) )
+                  | TOverloaded_fn arities ->
+                      arities
+                      |> List.mapi (fun index arity -> (index, arity))
+                      |> List.find_map (fun (index, arity) ->
+                             match (arity.fixed_params, arity.rest_param) with
+                             | [ current_arg ], None ->
+                                 Some
+                                   ( current_arg,
+                                     arity.return_ty,
+                                     Semantic_ir.Apply
+                                       ( overloaded_projection fn.semantic_expr
+                                           index,
+                                         [ Semantic_ir.Ident "x" ] ) )
+                             | _ -> None)
+                  | _ -> None
+                in
+                match unary with
+                | Some (current_arg, current_ret, expression)
                   when option_for_all
                          (fun arg_ty ->
                            Types.assignable ~policy:Host_boundary ~expected:arg_ty
@@ -973,40 +997,50 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                          arg_ty
                        && option_for_all
                             (fun ret_ty ->
-                            Types.assignable ~policy:Host_boundary
-                              ~expected:ret_ty ~actual:current_ret)
+                              Types.assignable ~policy:Host_boundary
+                                ~expected:ret_ty ~actual:current_ret)
                             ret_ty ->
                     collect (Some current_arg) (Some current_ret)
-                    (Semantic_ir.Apply
-                       (fn.semantic_expr, [ Semantic_ir.Ident "x" ])
-                    :: exprs)
+                      (expression :: exprs)
                       rest
-                | TFn ([ current_arg ], _)
+                | Some (current_arg, _, _)
                   when option_for_all
                          (fun arg_ty ->
                            Types.assignable ~policy:Host_boundary ~expected:arg_ty
                              ~actual:current_arg)
                          arg_ty ->
                     Error.error "juxt functions must return the same type"
-              | TFn _ ->
-                  Error.error
-                    "juxt functions must accept the same argument type"
-                | _ -> Error.error "juxt expects functions")
+                | Some _ ->
+                    Error.error
+                      "juxt functions must accept the same argument type"
+                | None -> Error.error "juxt expects unary functions")
           in
           match collect None None [] fns with
           | Error _ as err -> err
           | Ok (Some arg_ty, Some ret_ty, exprs) ->
+              let result_bindings, results =
+                exprs
+                |> List.mapi (fun index expression ->
+                       let name = "__lg_juxt_result_" ^ string_of_int index in
+                       ( (Semantic_ir.PVar name, expression),
+                         Semantic_ir.Ident name ))
+                |> List.split
+              in
               Ok
-              (typed_ir
-                 (TFn ([ arg_ty ], TVector ret_ty))
+                (typed_ir
+                   (TFn ([ arg_ty ], TVector ret_ty))
                    (Semantic_ir.Fun
                       ( [ Semantic_ir.PVar "x" ],
-                        apply "Rrbvec.of_list" [ Semantic_ir.List exprs ] )))
+                        Semantic_ir.Let
+                          ( result_bindings,
+                            apply "Rrbvec.of_list"
+                              [ Semantic_ir.List results ] ) )))
           | Ok _ -> Error.error "juxt expects at least 1 function")
+
   in
   {
     compile_apply;
     compile_comp;
     compile_partial;
-    compile_juxt;
+    compile_static_juxt;
   }
