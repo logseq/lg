@@ -89,21 +89,21 @@
 (signature datascript.impl.entity/entity-reference-set
   :fn<vector<option<datascript.impl.entity/Entity>>;datascript.impl.entity/EntityReferenceSet>)
 
+(signature datascript.impl.entity/entity-reference-option-member?
+  :fn<option<datascript.impl.entity/Entity>;vector<option<datascript.impl.entity/Entity>>;bool>)
+
 (defn entity-reference-option-member?
-  [target values]
+  [^:option<datascript.impl.entity/Entity> target
+   ^:vector<option<datascript.impl.entity/Entity>> values]
   (if-some [candidate (first values)]
     (if
-      (match target
-        (Some left)
-        (match candidate
-          (Some right) (equiv-entity left right)
-          None false)
-        None
-        (match candidate
-          (Some _) false
-          None true))
+      (if-some [left target]
+        (if-some [right candidate]
+          (equiv-entity left right)
+          false)
+        (nil? candidate))
       true
-      (recur target (subvec values 1)))
+      (entity-reference-option-member? target (subvec values 1)))
     false))
 
 (defn entity-reference-set

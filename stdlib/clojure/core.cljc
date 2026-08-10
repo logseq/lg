@@ -212,6 +212,25 @@
 (defprotocol IVolatile
   (-vreset! [reference value]))
 
+(type-variant persistent-tree-map-node [key value]
+  TreeMapEmpty
+  (TreeMapRed
+   :key
+   :value
+   :persistent-tree-map-node<key;value>
+   :persistent-tree-map-node<key;value>)
+  (TreeMapBlack
+   :key
+   :value
+   :persistent-tree-map-node<key;value>
+   :persistent-tree-map-node<key;value>))
+
+(type-record persistent-tree-map [key value]
+  (comparator :fn<key;key;int>)
+  (tree :persistent-tree-map-node<key;value>)
+  (size :int)
+  (metadata :Lg_edn_backend.t))
+
 (extend-type :keyword
   INamed
   (-name [value] (__lg_builtin-name value))
@@ -471,6 +490,570 @@
   [& values]
   (runtime-array/of-seq (seq values)))
 
+(defn- tree-map-balance-black [key value left right]
+  (match (tuple left right)
+    (tuple
+     (TreeMapRed left-key left-value
+                 (TreeMapRed far-key far-value far-left far-right)
+                 near-right)
+     other-right)
+    (TreeMapRed
+     left-key left-value
+     (TreeMapBlack far-key far-value far-left far-right)
+     (TreeMapBlack key value near-right other-right))
+
+    (tuple
+     (TreeMapRed left-key left-value
+                 near-left
+                 (TreeMapRed near-key near-value near-left-child near-right-child))
+     other-right)
+    (TreeMapRed
+     near-key near-value
+     (TreeMapBlack left-key left-value near-left near-left-child)
+     (TreeMapBlack key value near-right-child other-right))
+
+    (tuple
+     other-left
+     (TreeMapRed right-key right-value
+                 (TreeMapRed near-key near-value near-left-child near-right-child)
+                 far-right))
+    (TreeMapRed
+     near-key near-value
+     (TreeMapBlack key value other-left near-left-child)
+     (TreeMapBlack right-key right-value near-right-child far-right))
+
+    (tuple
+     other-left
+     (TreeMapRed right-key right-value
+                 near-left
+                 (TreeMapRed far-key far-value far-left far-right)))
+    (TreeMapRed
+     right-key right-value
+     (TreeMapBlack key value other-left near-left)
+     (TreeMapBlack far-key far-value far-left far-right))
+
+    (tuple other-left other-right)
+    (TreeMapBlack key value other-left other-right)))
+
+(defn- tree-map-redden [tree]
+  (match tree
+    (TreeMapBlack key value left right)
+    (TreeMapRed key value left right)
+    _
+    (raise (Invalid_argument "red-black tree invariant violation"))))
+
+(defn- tree-map-balance-left-insert [key value inserted right]
+  (match inserted
+    (TreeMapRed inserted-key inserted-value
+                (TreeMapRed left-key left-value left-left left-right)
+                inserted-right)
+    (TreeMapRed
+     inserted-key inserted-value
+     (TreeMapBlack left-key left-value left-left left-right)
+     (TreeMapBlack key value inserted-right right))
+
+    (TreeMapRed inserted-key inserted-value inserted-left
+                (TreeMapRed right-key right-value right-left right-right))
+    (TreeMapRed
+     right-key right-value
+     (TreeMapBlack inserted-key inserted-value inserted-left right-left)
+     (TreeMapBlack key value right-right right))
+
+    _
+    (TreeMapBlack key value inserted right)))
+
+(defn- tree-map-balance-right-insert [key value left inserted]
+  (match inserted
+    (TreeMapRed inserted-key inserted-value inserted-left
+                (TreeMapRed right-key right-value right-left right-right))
+    (TreeMapRed
+     inserted-key inserted-value
+     (TreeMapBlack key value left inserted-left)
+     (TreeMapBlack right-key right-value right-left right-right))
+
+    (TreeMapRed inserted-key inserted-value
+                (TreeMapRed left-key left-value left-left left-right)
+                inserted-right)
+    (TreeMapRed
+     left-key left-value
+     (TreeMapBlack key value left left-left)
+     (TreeMapBlack inserted-key inserted-value left-right inserted-right))
+
+    _
+    (TreeMapBlack key value left inserted)))
+
+(defn- tree-map-balance-left-delete [key value deleted right]
+  (match deleted
+    (TreeMapRed deleted-key deleted-value deleted-left deleted-right)
+    (TreeMapRed
+     key value
+     (TreeMapBlack deleted-key deleted-value deleted-left deleted-right)
+     right)
+
+    _
+    (match right
+      (TreeMapBlack right-key right-value right-left right-right)
+      (tree-map-balance-right-insert
+       key value deleted
+       (TreeMapRed right-key right-value right-left right-right))
+
+      (TreeMapRed right-key right-value
+                  (TreeMapBlack pivot-key pivot-value pivot-left pivot-right)
+                  right-right)
+      (TreeMapRed
+       pivot-key pivot-value
+       (TreeMapBlack key value deleted pivot-left)
+       (tree-map-balance-right-insert
+        right-key right-value pivot-right (tree-map-redden right-right)))
+
+      _
+      (raise (Invalid_argument "red-black tree invariant violation")))))
+
+(defn- tree-map-balance-right-delete [key value left deleted]
+  (match deleted
+    (TreeMapRed deleted-key deleted-value deleted-left deleted-right)
+    (TreeMapRed
+     key value left
+     (TreeMapBlack deleted-key deleted-value deleted-left deleted-right))
+
+    _
+    (match left
+      (TreeMapBlack left-key left-value left-left left-right)
+      (tree-map-balance-left-insert
+       key value (TreeMapRed left-key left-value left-left left-right) deleted)
+
+      (TreeMapRed left-key left-value left-left
+                  (TreeMapBlack pivot-key pivot-value pivot-left pivot-right))
+      (TreeMapRed
+       pivot-key pivot-value
+       (tree-map-balance-left-insert
+        left-key left-value (tree-map-redden left-left) pivot-left)
+       (TreeMapBlack key value pivot-right deleted))
+
+      _
+      (raise (Invalid_argument "red-black tree invariant violation")))))
+
+(defn- tree-map-append [left right]
+  (match (tuple left right)
+    (tuple TreeMapEmpty other)
+    other
+
+    (tuple other TreeMapEmpty)
+    other
+
+    (tuple
+     (TreeMapRed left-key left-value left-left left-right)
+     (TreeMapRed right-key right-value right-left right-right))
+    (let [appended (tree-map-append left-right right-left)]
+      (match appended
+        (TreeMapRed pivot-key pivot-value pivot-left pivot-right)
+        (TreeMapRed
+         pivot-key pivot-value
+         (TreeMapRed left-key left-value left-left pivot-left)
+         (TreeMapRed right-key right-value pivot-right right-right))
+        _
+        (TreeMapRed
+         left-key left-value left-left
+         (TreeMapRed right-key right-value appended right-right))))
+
+    (tuple
+     (TreeMapRed left-key left-value left-left left-right)
+     other-right)
+    (TreeMapRed
+     left-key left-value left-left
+     (tree-map-append left-right other-right))
+
+    (tuple
+     other-left
+     (TreeMapRed right-key right-value right-left right-right))
+    (TreeMapRed
+     right-key right-value
+     (tree-map-append other-left right-left) right-right)
+
+    (tuple
+     (TreeMapBlack left-key left-value left-left left-right)
+     (TreeMapBlack right-key right-value right-left right-right))
+    (let [appended (tree-map-append left-right right-left)]
+      (match appended
+        (TreeMapRed pivot-key pivot-value pivot-left pivot-right)
+        (TreeMapRed
+         pivot-key pivot-value
+         (TreeMapBlack left-key left-value left-left pivot-left)
+         (TreeMapBlack right-key right-value pivot-right right-right))
+        _
+        (tree-map-balance-left-delete
+         left-key left-value left-left
+         (TreeMapBlack right-key right-value appended right-right))))))
+
+(defn- tree-map-remove-node [comparator tree removed-key]
+  (match tree
+    TreeMapEmpty
+    (tuple TreeMapEmpty false)
+
+    (TreeMapRed key value left right)
+    (let [compared (comparator removed-key key)]
+      (cond
+        (= compared 0)
+        (tuple (tree-map-append left right) true)
+
+        (< compared 0)
+        (let [removed (tree-map-remove-node comparator left removed-key)]
+          (if (stdlib/snd removed)
+            (tuple
+             (match left
+               (TreeMapBlack _ _ _ _)
+               (tree-map-balance-left-delete
+                key value (stdlib/fst removed) right)
+               _
+               (TreeMapRed key value (stdlib/fst removed) right))
+             true)
+            (tuple tree false)))
+
+        :else
+        (let [removed (tree-map-remove-node comparator right removed-key)]
+          (if (stdlib/snd removed)
+            (tuple
+             (match right
+               (TreeMapBlack _ _ _ _)
+               (tree-map-balance-right-delete
+                key value left (stdlib/fst removed))
+               _
+               (TreeMapRed key value left (stdlib/fst removed)))
+             true)
+            (tuple tree false)))))
+
+    (TreeMapBlack key value left right)
+    (let [compared (comparator removed-key key)]
+      (cond
+        (= compared 0)
+        (tuple (tree-map-append left right) true)
+
+        (< compared 0)
+        (let [removed (tree-map-remove-node comparator left removed-key)]
+          (if (stdlib/snd removed)
+            (tuple
+             (match left
+               (TreeMapBlack _ _ _ _)
+               (tree-map-balance-left-delete
+                key value (stdlib/fst removed) right)
+               _
+               (TreeMapRed key value (stdlib/fst removed) right))
+             true)
+            (tuple tree false)))
+
+        :else
+        (let [removed (tree-map-remove-node comparator right removed-key)]
+          (if (stdlib/snd removed)
+            (tuple
+             (match right
+               (TreeMapBlack _ _ _ _)
+               (tree-map-balance-right-delete
+                key value left (stdlib/fst removed))
+               _
+               (TreeMapRed key value left (stdlib/fst removed)))
+             true)
+            (tuple tree false)))))))
+
+(defn- tree-map-insert-node [comparator tree key value]
+  (match tree
+    TreeMapEmpty
+    (tuple (TreeMapRed key value TreeMapEmpty TreeMapEmpty) true)
+
+    (TreeMapRed node-key node-value left right)
+    (let [compared (comparator key node-key)]
+      (cond
+        (< compared 0)
+        (let [inserted (tree-map-insert-node comparator left key value)]
+          (tuple
+           (TreeMapRed node-key node-value (stdlib/fst inserted) right)
+           (stdlib/snd inserted)))
+
+        (> compared 0)
+        (let [inserted (tree-map-insert-node comparator right key value)]
+          (tuple
+           (TreeMapRed node-key node-value left (stdlib/fst inserted))
+           (stdlib/snd inserted)))
+
+        :else
+        (tuple (TreeMapRed key value left right) false)))
+
+    (TreeMapBlack node-key node-value left right)
+    (let [compared (comparator key node-key)]
+      (cond
+        (< compared 0)
+        (let [inserted (tree-map-insert-node comparator left key value)]
+          (tuple
+           (tree-map-balance-black
+            node-key node-value (stdlib/fst inserted) right)
+           (stdlib/snd inserted)))
+
+        (> compared 0)
+        (let [inserted (tree-map-insert-node comparator right key value)]
+          (tuple
+           (tree-map-balance-black
+            node-key node-value left (stdlib/fst inserted))
+           (stdlib/snd inserted)))
+
+        :else
+        (tuple (TreeMapBlack key value left right) false)))))
+
+(defn- tree-map-blacken [tree]
+  (match tree
+    TreeMapEmpty TreeMapEmpty
+    (TreeMapRed key value left right)
+    (TreeMapBlack key value left right)
+    (TreeMapBlack key value left right)
+    (TreeMapBlack key value left right)))
+
+(defn- tree-map-empty [comparator metadata]
+  (record persistent-tree-map
+          (comparator comparator)
+          (tree TreeMapEmpty)
+          (size 0)
+          (metadata metadata)))
+
+(defn- tree-map-assoc [mapping key value]
+  (let [inserted
+        (tree-map-insert-node
+         (:comparator mapping) (:tree mapping) key value)]
+    (record persistent-tree-map
+            (comparator (:comparator mapping))
+            (tree (tree-map-blacken (stdlib/fst inserted)))
+            (size (if (stdlib/snd inserted)
+                    (inc (:size mapping))
+                    (:size mapping)))
+            (metadata (:metadata mapping)))))
+
+(defn- tree-map-singleton [comparator metadata key value]
+  (tree-map-assoc (tree-map-empty comparator metadata) key value))
+
+(defn- tree-map-get-node [comparator tree key]
+  (match tree
+    TreeMapEmpty nil
+    (TreeMapRed node-key node-value left right)
+    (let [compared (comparator key node-key)]
+      (cond
+        (< compared 0) (tree-map-get-node comparator left key)
+        (> compared 0) (tree-map-get-node comparator right key)
+        :else (Some node-value)))
+    (TreeMapBlack node-key node-value left right)
+    (let [compared (comparator key node-key)]
+      (cond
+        (< compared 0) (tree-map-get-node comparator left key)
+        (> compared 0) (tree-map-get-node comparator right key)
+        :else (Some node-value)))))
+
+(defn- tree-map-get [mapping key]
+  (tree-map-get-node (:comparator mapping) (:tree mapping) key))
+
+(defn- tree-map-pairs [tree tail]
+  (match tree
+    TreeMapEmpty tail
+    (TreeMapRed key value left right)
+    (tree-map-pairs left (cons (tuple key value) (tree-map-pairs right tail)))
+    (TreeMapBlack key value left right)
+    (tree-map-pairs left (cons (tuple key value) (tree-map-pairs right tail)))))
+
+(defn- tree-map-reverse-pairs [tree tail]
+  (match tree
+    TreeMapEmpty tail
+    (TreeMapRed key value left right)
+    (tree-map-reverse-pairs
+     right (cons (tuple key value) (tree-map-reverse-pairs left tail)))
+    (TreeMapBlack key value left right)
+    (tree-map-reverse-pairs
+     right (cons (tuple key value) (tree-map-reverse-pairs left tail)))))
+
+(defn- tree-map-seq [mapping ascending?]
+  (if ascending?
+    (tree-map-pairs (:tree mapping) (seq []))
+    (tree-map-reverse-pairs (:tree mapping) (seq []))))
+
+(defn- tree-map-seq-from-node
+  [comparator tree start-key ascending? tail]
+  (match tree
+    TreeMapEmpty tail
+    (TreeMapRed key value left right)
+    (let [compared (comparator key start-key)]
+      (if ascending?
+        (if (< compared 0)
+          (tree-map-seq-from-node comparator right start-key true tail)
+          (tree-map-seq-from-node
+           comparator left start-key true
+           (cons (tuple key value)
+                 (tree-map-seq-from-node
+                  comparator right start-key true tail))))
+        (if (> compared 0)
+          (tree-map-seq-from-node comparator left start-key false tail)
+          (tree-map-seq-from-node
+           comparator right start-key false
+           (cons (tuple key value)
+                 (tree-map-seq-from-node
+                  comparator left start-key false tail))))))
+    (TreeMapBlack key value left right)
+    (let [compared (comparator key start-key)]
+      (if ascending?
+        (if (< compared 0)
+          (tree-map-seq-from-node comparator right start-key true tail)
+          (tree-map-seq-from-node
+           comparator left start-key true
+           (cons (tuple key value)
+                 (tree-map-seq-from-node
+                  comparator right start-key true tail))))
+        (if (> compared 0)
+          (tree-map-seq-from-node comparator left start-key false tail)
+          (tree-map-seq-from-node
+           comparator right start-key false
+           (cons (tuple key value)
+                 (tree-map-seq-from-node
+                  comparator left start-key false tail))))))))
+
+(defn- tree-map-seq-from [mapping start-key ascending?]
+  (tree-map-seq-from-node
+   (:comparator mapping) (:tree mapping) start-key ascending? (seq [])))
+
+(defn- tree-map-entry-key [_mapping entry]
+  (key entry))
+
+(defn- tree-map-comparator [mapping]
+  (:comparator mapping))
+
+(defn- tree-map-dissoc [mapping removed-key]
+  (let [removed
+        (tree-map-remove-node
+         (:comparator mapping) (:tree mapping) removed-key)]
+    (if (stdlib/snd removed)
+      (record persistent-tree-map
+              (comparator (:comparator mapping))
+              (tree (tree-map-blacken (stdlib/fst removed)))
+              (size (dec (:size mapping)))
+              (metadata (:metadata mapping)))
+      mapping)))
+
+(extend-type persistent-tree-map
+  ISeqable
+  (-seq [mapping]
+    (tree-map-seq mapping true))
+  ICollection
+  (-conj [mapping entry]
+    (tree-map-assoc mapping (key entry) (val entry)))
+  ILookup
+  (-lookup [mapping key]
+    (tree-map-get mapping key))
+  (-lookup [mapping key not-found]
+    (match (tree-map-get mapping key)
+      (Some value) value
+      None not-found))
+  IAssociative
+  (-contains-key? [mapping key]
+    (match (tree-map-get mapping key)
+      None false
+      (Some _) true))
+  (-assoc [mapping key value]
+    (tree-map-assoc mapping key value))
+  IMap
+  (-dissoc [mapping key]
+    (tree-map-dissoc mapping key))
+  ICounted
+  (-count [mapping]
+    (:size mapping))
+  IEmptyableCollection
+  (-empty [mapping]
+    (tree-map-empty (:comparator mapping) (:metadata mapping)))
+  IMeta
+  (-meta [mapping]
+    (:metadata mapping))
+  IWithMeta
+  (-with-meta [mapping metadata]
+    (record persistent-tree-map
+            (comparator (:comparator mapping))
+            (tree (:tree mapping))
+            (size (:size mapping))
+            (metadata metadata)))
+  ISorted
+  (-sorted-seq [mapping ascending?]
+    (tree-map-seq mapping ascending?))
+  (-sorted-seq-from [mapping key ascending?]
+    (tree-map-seq-from mapping key ascending?))
+  (-entry-key [mapping entry]
+    (tree-map-entry-key mapping entry))
+  (-comparator [mapping]
+    (tree-map-comparator mapping)))
+
+(defn sorted-map
+  {:inline
+   (fn [& keyvals]
+     (let [left (gensym)
+           right (gensym)
+           comparator (list 'fn [left right]
+                            (list 'stdlib/compare left right))
+           metadata (list 'meta {})]
+       (if (nil? keyvals)
+         (list 'tree-map-empty comparator metadata)
+         (let [tail (next keyvals)]
+           (if (nil? tail)
+             (raise (Invalid_argument "No value supplied for key"))
+             (loop [remaining (next tail)
+                    expression
+                    (list 'tree-map-singleton comparator metadata
+                          (first keyvals) (first tail))]
+               (if (nil? remaining)
+                 expression
+                 (let [remaining-tail (next remaining)]
+                   (if (nil? remaining-tail)
+                     (raise (Invalid_argument "No value supplied for key"))
+                     (recur (next remaining-tail)
+                            (list 'tree-map-assoc expression
+                                  (first remaining)
+                                  (first remaining-tail))))))))))))}
+  ([] (tree-map-empty (fn [left right] (stdlib/compare left right)) (meta {})))
+  ([k1 v1]
+   (tree-map-singleton
+    (fn [left right] (stdlib/compare left right)) (meta {}) k1 v1))
+  ([k1 v1 k2 v2]
+   (tree-map-assoc (sorted-map k1 v1) k2 v2))
+  ([k1 v1 k2 v2 k3 v3]
+   (tree-map-assoc (sorted-map k1 v1 k2 v2) k3 v3))
+  ([k1 v1 k2 v2 k3 v3 k4 v4]
+   (tree-map-assoc (sorted-map k1 v1 k2 v2 k3 v3) k4 v4)))
+
+(defn sorted-map-by
+  {:inline
+   (fn [comparator & keyvals]
+     (let [comparator-name (gensym)
+           metadata (list 'meta {})
+           expression
+           (if (nil? keyvals)
+             (list 'tree-map-empty comparator-name metadata)
+             (let [tail (next keyvals)]
+               (if (nil? tail)
+                 (raise (Invalid_argument "No value supplied for key"))
+                 (loop [remaining (next tail)
+                        expression
+                        (list 'tree-map-singleton comparator-name metadata
+                              (first keyvals) (first tail))]
+                   (if (nil? remaining)
+                     expression
+                     (let [remaining-tail (next remaining)]
+                       (if (nil? remaining-tail)
+                         (raise (Invalid_argument "No value supplied for key"))
+                         (recur (next remaining-tail)
+                                (list 'tree-map-assoc expression
+                                      (first remaining)
+                                      (first remaining-tail))))))))))]
+       (list 'let [comparator-name comparator] expression))) }
+  ([comparator]
+   (tree-map-empty comparator (meta {})))
+  ([comparator k1 v1]
+   (tree-map-singleton comparator (meta {}) k1 v1))
+  ([comparator k1 v1 k2 v2]
+   (tree-map-assoc (sorted-map-by comparator k1 v1) k2 v2))
+  ([comparator k1 v1 k2 v2 k3 v3]
+   (tree-map-assoc (sorted-map-by comparator k1 v1 k2 v2) k3 v3))
+  ([comparator k1 v1 k2 v2 k3 v3 k4 v4]
+   (tree-map-assoc
+    (sorted-map-by comparator k1 v1 k2 v2 k3 v3) k4 v4)))
+
 (defn- map-from-keyvals [keyvals]
   (loop [remaining (seq keyvals)
          result {}]
@@ -700,8 +1283,8 @@
     `(let [~result ~expr
            ~@(mapcat (fn [step] [result step]) (butlast steps))]
        ~(if (empty? steps)
-          result
-      (last steps)))))
+          result)
+       (last steps))))
 
 (defmacro lazy-seq [& body]
   `(__lg_defer_seq (fn [] (do ~@body))))
@@ -1073,11 +1656,11 @@
 
 (defn group-by [f coll]
   (__lg_reduce
-    (fn [result input]
-      (let [key (f input)]
-        (assoc result key (conj (get result key []) input))))
-    {}
-    coll))
+   (fn [result input]
+     (let [key (f input)]
+       (assoc result key (conj (get result key []) input))))
+   {}
+   coll))
 
 (defn reduce
   {:inline (fn
@@ -1131,12 +1714,12 @@
 
 (defn filterv [pred coll]
   (__lg_reduce
-    (fn [result input]
-      (if (pred input)
-        (conj result input)
-        result))
-    []
-    coll))
+   (fn [result input]
+     (if (pred input)
+       (conj result input)
+       result))
+   []
+   coll))
 
 (defn- partition-seq [n step coll]
   (lazy-seq
@@ -2664,9 +3247,9 @@
     (if remaining-keys
       (if remaining-values
         (recur
-          (assoc result (nth remaining-keys 0) (nth remaining-values 0))
-          (next remaining-keys)
-          (next remaining-values))
+         (assoc result (nth remaining-keys 0) (nth remaining-values 0))
+         (next remaining-keys)
+         (next remaining-values))
         result)
       result)))
 
@@ -2704,7 +3287,9 @@
   [value metadata]
   (__lg_with-meta value metadata))
 
-(defn meta [value]
+(defn meta
+  {:inline (fn [value] (list 'IMeta/-meta value))}
+  [value]
   (IMeta/-meta value))
 
 (defn- vary-meta-apply [update-fn metadata a b c d args]
@@ -2732,8 +3317,8 @@
    (with-meta value (update-fn (meta value) a b c d)))
   ([value update-fn a b c d & args]
    (with-meta
-    value
-    (vary-meta-apply update-fn (meta value) a b c d args))))
+     value
+     (vary-meta-apply update-fn (meta value) a b c d args))))
 
 (defn keyword-identical? [left right]
   (= left right))
@@ -2763,8 +3348,8 @@
 
 (defn- merge-two-with [f m1 m2]
   (__lg_reduce (fn [m entry] (merge-entry-with f m entry))
-          m1
-          (seq m2)))
+               m1
+               (seq m2)))
 
 (defn merge-with
   "Returns a map consisting of all input maps. When a key occurs in more than
@@ -2774,8 +3359,8 @@
    nil)
   ([f first-map & maps]
    (__lg_reduce (fn [m1 m2] (merge-two-with f m1 m2))
-           (if-some [m first-map] m {})
-           maps)))
+                (if-some [m first-map] m {})
+                maps)))
 
 (defn vec [coll]
   (rrb-vector/of-list (runtime-seq/to-list (seq coll))))
@@ -2806,8 +3391,8 @@
   ([k x y] (if (> (k x) (k y)) x y))
   ([k x y & more]
    (__lg_reduce (fn [best item] (max-key k best item))
-           (max-key k x y)
-           more)))
+                (max-key k x y)
+                more)))
 
 (defn min-key
   ([k x]
@@ -2815,8 +3400,8 @@
   ([k x y] (if (< (k x) (k y)) x y))
   ([k x y & more]
    (__lg_reduce (fn [best item] (min-key k best item))
-           (min-key k x y)
-           more)))
+                (min-key k x y)
+                more)))
 
 (defn frequencies
   "Returns a map from each distinct item in `coll` to its occurrence count."
@@ -2899,8 +3484,8 @@
        (let [tail (next remaining)]
          (if (seq tail)
            (recur (ITransientAssociative/-assoc! result
-                                                  (first remaining)
-                                                  (first tail))
+                                                 (first remaining)
+                                                 (first tail))
                   (next tail))
            (stdlib/invalid-arg "assoc! expects an even number of key/value forms")))
        result))))

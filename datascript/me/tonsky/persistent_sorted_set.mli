@@ -121,6 +121,24 @@
      :fn<tree<value>;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;float>))
 
 #?(:native
+   (signature me.tonsky.persistent-sorted-set/-next-path
+     [value owner write]
+     :fn<tree<value>;int;int;option<storage<value;owner;write>>;option<int>>)
+   :cljs
+   (signature me.tonsky.persistent-sorted-set/-next-path
+     [value owner write]
+     :fn<tree<value>;float;int;option<storage<value;owner;write>>;option<float>>))
+
+#?(:native
+   (signature me.tonsky.persistent-sorted-set/-distance
+     [value owner write]
+     :fn<btset<value;owner;write>;tree<value>;int;int;int;int>)
+   :cljs
+   (signature me.tonsky.persistent-sorted-set/-distance
+     [value owner write]
+     :fn<btset<value;owner;write>;tree<value>;float;float;int;int>))
+
+#?(:native
    (signature me.tonsky.persistent-sorted-set/slice-bounds-with-keys
      [value owner write]
      :fn<tree<value>;value;value;fn<value;value;ordering>;int;option<storage<value;owner;write>>;option<tuple<int;int;array<value>>>>)
@@ -133,6 +151,14 @@
   [value owner write]
   :fn<option<iterator<value;owner;write>>;seq<value>>)
 
+(signature me.tonsky.persistent-sorted-set/set-seq
+  [value owner write]
+  :fn<btset<value;owner;write>;seq<value>>)
+
+(signature me.tonsky.persistent-sorted-set/set-addresses
+  [value owner write]
+  :fn<btset<value;owner;write>;vector<int>>)
+
 (signature me.tonsky.persistent-sorted-set/from-sequential
   [value]
   :fn<fn<value;value;ordering>;seqable<value>;btset<value;unit;unit>>)
@@ -140,6 +166,9 @@
 (signature me.tonsky.persistent-sorted-set/seek-first
   [value owner write]
   :fn<btset<value;owner;write>;value;fn<value;value;ordering>;option<value>>)
+
+(signature me.tonsky.persistent-sorted-set/seek [value storage]
+  :overload<fn<seqable<value;storage>;value;seq<value>>;fn<seqable<value;storage>;value;fn<value;value;ordering>;seq<value>>>)
 
 (signature me.tonsky.persistent-sorted-set/set-slice-reduce-with
   [value owner write result]

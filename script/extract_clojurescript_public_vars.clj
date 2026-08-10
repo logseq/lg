@@ -1,11 +1,16 @@
 #!/usr/bin/env bb
 
-(require '[clojure.java.io :as io]
-         '[clojure.string :as string]
+(require '[clojure.string :as string]
          '[clojure.tools.reader :as reader]
          '[clojure.tools.reader.reader-types :as reader-types])
 
 (def ^:private eof (Object.))
+
+(defn- reader-compatible-source [path]
+  ;; LG type applications use semicolons inside one token, for example
+  ;; :fn<key;key;int>. tools.reader treats those semicolons as comments, but
+  ;; this inventory only needs top-level definition names and visibility.
+  (string/replace (slurp path) #"(?<=\S);(?=\S)" "_"))
 
 (defn- private-options? [values]
   (some (fn [value]
@@ -17,7 +22,7 @@
       (private-options? (drop 2 form))))
 
 (defn- read-forms [path features]
-  (with-open [input (io/reader path)]
+  (with-open [input (java.io.StringReader. (reader-compatible-source path))]
     (let [source (reader-types/indexing-push-back-reader input)]
       (loop [forms []]
         (let [form (binding [reader/*default-data-reader-fn* (fn [_tag] identity)

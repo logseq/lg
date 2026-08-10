@@ -211,10 +211,10 @@
    :array<int>)
   (-copy-tuple
    [relation
-    tuple
-    indexes
-    target
-    target-indexes]
+    ^:array<datascript.lg.query-types/result> tuple
+    ^:array<int> indexes
+    ^:array<datascript.lg.query-types/result> target
+    ^:array<int> target-indexes]
    :unit)
   (-union
    [relation other]
@@ -471,8 +471,8 @@
 
   (-getter [relation symbol]
     (if-some [index (get (relation-offset-map relation) symbol)]
-      (fn [tuple]
-        (aget tuple index))
+      (fn [^:array<datascript.lg.query-types/result> tuple]
+        (aget tuple (int index)))
       (Stdlib.invalid_arg
        (str "Unknown relation symbol " symbol))))
 
@@ -487,12 +487,17 @@
            (str "Unknown relation symbol " symbol))))
       requested-symbols)))
 
-  (-copy-tuple [_relation tuple indexes target target-indexes]
+  (-copy-tuple
+    [_relation
+     ^:array<datascript.lg.query-types/result> tuple
+     ^:array<int> indexes
+     ^:array<datascript.lg.query-types/result> target
+     ^:array<int> target-indexes]
     (dotimes [index (alength indexes)]
       (aset
        target
-       (aget target-indexes index)
-       (aget tuple (aget indexes index))))
+       (aget target-indexes (int index))
+       (aget tuple (aget indexes (int index)))))
     (Stdlib.ignore 0))
 
   (-union [relation other]
@@ -569,12 +574,12 @@
         rows
         (-fold
          left
-         (fn [rows
-              left-row]
+         (fn [^:vector<array<datascript.lg.query-types/result>> rows
+              ^:array<datascript.lg.query-types/result> left-row]
            (-fold
             right
-            (fn [rows
-                 right-row]
+            (fn [^:vector<array<datascript.lg.query-types/result>> rows
+                 ^:array<datascript.lg.query-types/result> right-row]
               (conj
                rows
                (query-types/join-rows
@@ -1102,10 +1107,11 @@
       false)))
 
 (defn- matches-pattern?
-  [row
-   pattern]
+  [^:array<datascript.lg.query-types/result> row
+   ^:vector<datascript.parser/pattern-element> pattern]
   (reduce-kv
-   (fn [matches index element]
+   (fn [^:bool matches ^:int index
+        ^:datascript.parser/pattern-element element]
      (if matches
        (if-some [constant
                  (parser/pattern-element-constant element)]
@@ -1771,12 +1777,15 @@
     symbols)))
 
 (defn- fill-collect-specimen!
-  [relation row symbols specimen]
+  [^:datascript.query-v3/relation-v3 relation
+   ^:array<datascript.lg.query-types/result> row
+   ^:vector<string> symbols
+   ^:datascript.query-v3/collect-specimen-v3 specimen]
   (reduce-kv
-   (fn [_ index symbol]
+   (fn [_ ^:int index ^:string symbol]
      (if-some [relation-index
                (get (relation-offset-map relation) symbol)]
-       (aset specimen index (Some (aget row relation-index)))
+       (aset specimen index (Some (aget row (int relation-index))))
        (Stdlib.ignore 0))
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)

@@ -21,7 +21,7 @@
  {clojure.core
   {:source "src/main/cljs/cljs/core.cljs"
    :implementation "clojure/core.cljc"
-   :interface "clojure/core.mil"
+   :interface "clojure/core.mli"
    :definitions
    {comment {:status :ported
              :reason :source-macro-preserves-the-upstream-ignored-body-and-nil-result}
@@ -1200,8 +1200,8 @@
                    :reason :mutates-the-target-specific-global-output-print-callback}
     set-validator! {:status :blocked-static-typing
                     :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
-    sorted-map-by {:status :blocked-static-typing
-                   :reason :lg-has-no-persistent-sorted-map-source-representation-carrying-a-key-comparator}
+    sorted-map-by {:status :static-adaptation
+                   :reason :source-persistent-red-black-tree-carries-a-static-key-comparator-returning-int-while-clojurescript-also-normalizes-boolean-predicate-comparators}
     sorted-set-by {:status :blocked-static-typing
                    :reason :lg-has-no-persistent-sorted-set-source-representation-carrying-an-element-comparator}
     string-iter {:status :host-boundary
@@ -1228,7 +1228,7 @@
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
    :implementation "clojure/string.cljc"
-   :interface "clojure/string.mil"
+   :interface "clojure/string.mli"
    :definitions
    {blank? {:status :static-adaptation :reason :typed-host-string-primitive}
     capitalize {:status :static-adaptation :reason :typed-host-string-primitive}
@@ -1266,7 +1266,7 @@
   clojure.edn
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "clojure/edn.cljc"
-   :interface "clojure/edn.mil"
+   :interface "clojure/edn.mli"
    :definitions
    {read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
@@ -1276,7 +1276,7 @@
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "cljs/reader.cljc"
-   :interface "cljs/reader.mil"
+   :interface "cljs/reader.mli"
    :definitions
    {read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
@@ -1298,7 +1298,7 @@
   cljs.math
   {:source "src/main/cljs/cljs/math.cljs"
    :implementation "cljs/math.cljc"
-   :interface "cljs/math.mil"
+   :interface "cljs/math.mli"
    :definitions
    {E {:status :ported}
     PI {:status :ported}
@@ -1376,7 +1376,7 @@
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :implementation "clojure/data.cljc"
-   :interface "clojure/data.mil"
+   :interface "clojure/data.mli"
    :definitions
   {diff {:status :static-adaptation
           :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}
@@ -1388,7 +1388,7 @@
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"
    :implementation "clojure/walk.cljc"
-   :interface "clojure/walk.mil"
+   :interface "clojure/walk.mli"
    :definitions
    {walk {:status :static-adaptation
           :reason :source-public-function-preserves-upstream-inner-before-outer-order-over-the-closed-edn-tree-domain-while-a-minimal-typed-primitive-rebuilds-one-collection-level}
@@ -1408,7 +1408,7 @@
   clojure.zip
   {:source "src/main/cljs/clojure/zip.cljs"
    :implementation "clojure/zip.cljc"
-   :interface "clojure/zip.mil"
+   :interface "clojure/zip.mli"
    :definitions
    {zipper {:status :static-adaptation
             :reason :source-algorithm-uses-a-parameterized-closed-location-path-and-callback-context-instead-of-an-upstream-heterogeneous-metadata-vector}
@@ -1474,7 +1474,7 @@
     "TTL uses the cross-target source system-time function and an injected float timestamp at the typed runtime boundary, making expiry tests deterministic without sleeping."
     "The source deftypes implement defcache's ILookup, IAssociative, IMap, ICounted, ICollection, IEquiv, IEmptyableCollection, and ISeqable behavior; map entries use LG's statically typed key/value tuple representation."
     "ClojureScript's JavaScript-only IIterable iterator remains a host boundary because the shared Native and Melange source surface has no JavaScript iterator type."
-    "No cljs.cache sidecar .mil file is introduced; runtime boundaries expose ordinary OCaml .mli interfaces."]}
+    "cljs.cache needs no LG signature sidecar; runtime boundaries expose ordinary OCaml .mli interfaces."]}
 
   clojure.test
   {:source :jvm-only
@@ -1504,7 +1504,7 @@
   clojure.set
   {:source "src/main/cljs/clojure/set.cljs"
    :implementation "clojure/set.cljc"
-   :interface "clojure/set.mil"
+   :interface "clojure/set.mli"
    :definitions
    {union {:status :static-adaptation
            :reason :typed-binary-helper}

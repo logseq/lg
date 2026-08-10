@@ -59,6 +59,12 @@
   (ArrayRelationV3 :datascript.query-v3/relation-state)
   (CollRelationV3 :datascript.query-v3/relation-state))
 
+(signature datascript.query-v3/relation-offset-map
+  :fn<datascript.query-v3/relation-v3;map<string;int>>)
+
+(signature datascript.query-v3/clause-variable-symbols
+  :fn<vector<datascript.parser/clause>;vector<string>>)
+
 (type-variant collect-transform-v3
   (RelationCollectTransformV3
    :datascript.query-v3/relation-v3

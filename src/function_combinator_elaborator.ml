@@ -28,7 +28,7 @@ let compile_args_for compile_expr scope env arg_forms =
   loop [] arg_forms
 
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
-    ~pack_constrained_value =
+    ~pack_constrained_value ~adapt_value_to_type =
   let compile_args_for = compile_args_for compile_expr in
   let overloaded_apply_counter = ref 0 in
   let rec require_callable_value expression =
@@ -614,41 +614,147 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           match compiled with
           | Error _ as err -> err
           | Ok fns -> (
-              let rec check_chain = function
-                | [] -> Error.error "comp expects at least 1 function"
-                | [ fn ] -> (
-                    match fn.ty with
-                    | TFn ([ arg ], ret) -> Ok (arg, ret)
-                    | TFn _ -> Error.error "comp expects unary functions"
-                    | _ -> Error.error "comp expects functions")
-                | left :: (right :: _ as rest) -> (
-                    match (left.ty, right.ty) with
-                  | ( TFn ([ left_arg ], _left_ret),
-                      TFn ([ _right_arg ], right_ret) )
-                      when Types.equal left_arg right_ret ->
-                      check_chain rest
-                      |> Result.map (fun (arg, _ret) ->
-                            match List.hd fns with
-                          | { ty = TFn ([ _ ], final_ret); _ } ->
-                              (arg, final_ret)
-                            | _ -> (arg, right_ret))
-                  | TFn _, TFn _ ->
-                      Error.error "comp function types do not line up"
-                    | _ -> Error.error "comp expects functions")
+              let concrete_seqable_element = function
+                | TArray element | TList element | TVector element
+                | TSet element | TSeq element ->
+                    Some element
+                | ty -> Types.next_seq_element ty
               in
-              match check_chain fns with
+              let rec unify_assignable substitutions ~expected ~actual =
+                let expected = Type_solver.apply substitutions expected in
+                let actual = Type_solver.apply substitutions actual in
+                match Type_solver.unify substitutions expected actual with
+                | Ok substitutions -> Ok substitutions
+                | Error _ -> (
+                    match (expected, actual) with
+                    | expected, actual -> (
+                        match
+                          ( Types.seqable_constraint_info expected,
+                            concrete_seqable_element actual )
+                        with
+                        | Some (_, expected_element, _), Some actual_element ->
+                            (match
+                               Type_solver.unify substitutions expected_element
+                                 actual_element
+                             with
+                            | Ok substitutions -> Ok substitutions
+                            | Error _ ->
+                                Error.error "incompatible sequence elements")
+                        | _ -> (
+                            match (expected, actual) with
+                            | TFn (expected_params, expected_return),
+                              TFn (actual_params, actual_return)
+                              when List.length expected_params
+                                   = List.length actual_params ->
+                                Result.bind
+                                  (unify_function_parameters substitutions
+                                     expected_params actual_params)
+                                  (fun substitutions ->
+                                    unify_assignable substitutions
+                                      ~expected:expected_return
+                                      ~actual:actual_return)
+                            | TOverloaded_fn expected_arities,
+                              TOverloaded_fn actual_arities
+                              when List.length expected_arities
+                                   = List.length actual_arities ->
+                                List.fold_left2
+                                  (fun result expected_arity actual_arity ->
+                                    Result.bind result (fun substitutions ->
+                                        unify_assignable_arity substitutions
+                                          expected_arity actual_arity))
+                                  (Ok substitutions) expected_arities
+                                  actual_arities
+                            | _ -> Error.error "incompatible function types")))
+              and unify_function_parameters substitutions expected actual =
+                List.fold_left2
+                  (fun result expected_parameter actual_parameter ->
+                    Result.bind result (fun substitutions ->
+                        unify_assignable substitutions
+                          ~expected:actual_parameter
+                          ~actual:expected_parameter))
+                  (Ok substitutions) expected actual
+              and unify_assignable_arity substitutions expected actual =
+                if
+                  List.length expected.fixed_params
+                  <> List.length actual.fixed_params
+                then Error.error "incompatible function arities"
+                else
+                  Result.bind
+                    (unify_function_parameters substitutions
+                       expected.fixed_params actual.fixed_params)
+                    (fun substitutions ->
+                      let rest =
+                        match (expected.rest_param, actual.rest_param) with
+                        | None, None -> Ok substitutions
+                        | Some expected, Some actual ->
+                            unify_assignable substitutions ~expected:actual
+                              ~actual:expected
+                        | _ -> Error.error "incompatible function arities"
+                      in
+                      Result.bind rest (fun substitutions ->
+                          unify_assignable substitutions
+                            ~expected:expected.return_ty
+                            ~actual:actual.return_ty))
+              in
+              let unary_type fn =
+                match fn.ty with
+                | TFn ([ arg ], ret) -> Ok (arg, ret)
+                | TFn _ -> Error.error "comp expects unary functions"
+                | _ -> Error.error "comp expects functions"
+              in
+              let rec unify_chain substitutions = function
+                | [] | [ _ ] -> Ok substitutions
+                | left :: (right :: _ as rest) ->
+                    Result.bind (unary_type left) (fun (left_arg, _) ->
+                        Result.bind (unary_type right) (fun (_, right_ret) ->
+                            match
+                              unify_assignable substitutions
+                                ~expected:left_arg ~actual:right_ret
+                            with
+                            | Ok substitutions ->
+                                unify_chain substitutions rest
+                            | Error _ ->
+                                Error.error
+                                  ("comp function types do not line up: "
+                                 ^ Types.source_name left_arg ^ " and "
+                                 ^ Types.source_name right_ret)))
+              in
+              match unify_chain Type_solver.empty fns with
               | Error _ as err -> err
-              | Ok (arg_ty, ret_ty) ->
-                  let inner =
-                    List.rev fns
-                    |> List.fold_left
-                         (fun expression fn ->
-                           Semantic_ir.Apply (fn.semantic_expr, [ expression ]))
-                         (Semantic_ir.Ident "x")
-                  in
-                  Ok
-                    (typed_ir (TFn ([ arg_ty ], ret_ty))
-                       (Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], inner)))))
+              | Ok substitutions -> (
+                  match (unary_type (List.hd fns), unary_type (List.hd (List.rev fns))) with
+                  | Error _ as err, _ | _, (Error _ as err) -> err
+                  | Ok (_, ret_ty), Ok (arg_ty, _) ->
+                      let arg_ty = Type_solver.apply substitutions arg_ty in
+                      let ret_ty = Type_solver.apply substitutions ret_ty in
+                      let rec compose expression = function
+                        | [] -> Ok expression
+                        | fn :: rest ->
+                            Result.bind (unary_type fn) (fun (parameter, return_ty) ->
+                                let parameter =
+                                  Type_solver.apply substitutions parameter
+                                in
+                                let return_ty =
+                                  Type_solver.apply substitutions return_ty
+                                in
+                                Result.bind
+                                  (adapt_value_to_type env parameter expression)
+                                  (fun argument ->
+                                    compose
+                                      (typed_ir return_ty
+                                         (Semantic_ir.Apply
+                                            (fn.semantic_expr, [ argument ])))
+                                      rest))
+                      in
+                      Result.map
+                        (fun inner ->
+                          typed_ir (TFn ([ arg_ty ], ret_ty))
+                            (Semantic_ir.Fun
+                               ( [ Semantic_ir.PVar "x" ],
+                                 inner.semantic_expr )))
+                        (compose
+                           (typed_ir arg_ty (Semantic_ir.Ident "x"))
+                           (List.rev fns)))))
     
     and compile_partial scope env arg_forms =
       match arg_forms with

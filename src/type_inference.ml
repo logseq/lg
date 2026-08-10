@@ -423,8 +423,19 @@ let same_refinable_wrapper left right =
 let is_edn_value_type = Edn_value_elaborator.is_value_type
 
 let edn_function_argument_compatible expected actual =
-  is_edn_value_type actual
-  && Option.is_some (Types.seqable_constraint_info expected)
+  let directly_seqable = function
+    | TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TString -> true
+    | ty ->
+        is_edn_value_type ty
+        || Option.is_some (Types.seqable_constraint_info ty)
+  in
+  match (Types.seqable_constraint_info expected, actual) with
+  | Some ((`Optional | `Optional_sequential), _, _), TNil -> true
+  | ( Some ((`Optional | `Optional_sequential), _, _),
+      (TNullable inner | TOcaml_app ("option", [ inner ])) ) ->
+      directly_seqable inner
+  | Some _, actual -> directly_seqable actual
+  | None, _ -> false
 
 let edn_function_call_compatible callee call =
   match (callee, call) with

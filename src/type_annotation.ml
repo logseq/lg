@@ -180,6 +180,17 @@ let rec parse_ocaml_type source =
                       | _ ->
                           Error.error
                             "seqable expects one or two type arguments"
+                    else if name = "optional-seqable" then
+                      match args with
+                      | [ inner ] ->
+                          Ok
+                            (Types.optional_seqable_constraint inner TUnknown)
+                      | [ inner; storage ] ->
+                          Ok
+                            (Types.optional_seqable_constraint inner storage)
+                      | _ ->
+                          Error.error
+                            "optional-seqable expects one or two type arguments"
                     else if name = "truthy" then
                       match args with
                       | [ inner ] -> Ok (Types.truthy_constraint inner)

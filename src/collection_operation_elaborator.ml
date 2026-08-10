@@ -1408,6 +1408,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                         Some (Semantic_ir.PVar value_name) ),
                                     present );
                                 ] ))))
+              | TNamed_record { nominal = true; _ }, _
+                when (match index_form with FKeyword _ -> false | _ -> true) ->
+                  compile_expr scope env
+                    (FList
+                       [
+                         FSymbol "ILookup/-lookup";
+                         target_form;
+                         index_form;
+                       ])
               | TNamed_record record, _ -> (
                 let concrete_fields =
                   record.fields
@@ -1707,6 +1716,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | TVector _, TInt ->
                 Error.error "get default for vector must match element type"
               | TVector _, _ -> Error.error "get vector index must be int"
+              | TNamed_record { nominal = true; _ }, _
+                when (match index_form with FKeyword _ -> false | _ -> true) ->
+                  compile_expr scope env
+                    (FList
+                       [
+                         FSymbol "ILookup/-lookup";
+                         target_form;
+                         index_form;
+                         default_form;
+                       ])
               | TNamed_record record, _ -> (
                   match
                   match
@@ -1965,10 +1984,30 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           Error.error
                             "assoc on a deftype requires declared keyword fields"
                     in
-                    match validate_declared_fields pair_forms with
-                    | Error _ as err -> err
-                    | Ok () -> (
-                        match compile_vector_pairs [] pair_forms with
+                    let rec protocol_assoc_form current = function
+                      | key :: value :: rest ->
+                          protocol_assoc_form
+                            (FList
+                               [
+                                 FSymbol "IAssociative/-assoc";
+                                 current;
+                                 key;
+                                 value;
+                               ])
+                            rest
+                      | [] -> current
+                      | _ -> assert false
+                    in
+                    let has_non_keyword_key =
+                      pair_forms
+                      |> List.filteri (fun index _ -> index mod 2 = 0)
+                      |> List.exists (function FKeyword _ -> false | _ -> true)
+                    in
+                    if has_non_keyword_key then
+                      compile_expr scope env
+                        (protocol_assoc_form target_form pair_forms)
+                    else
+                      match compile_vector_pairs [] pair_forms with
                         | Error _ as err -> err
                         | Ok [] -> assert false
                         | Ok ((first_key, first_value) :: remaining_pairs) -> (
@@ -1999,13 +2038,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             { updated with ty = target.ty }
                               remaining_pairs
                         | None -> (
-                            match compile_record_pairs [] pair_forms with
+                            match validate_declared_fields pair_forms with
                             | Error _ as err -> err
-                            | Ok pairs ->
-                                Result.bind
-                                  (adapt_dynamic_fields record.fields pairs)
-                                  (assoc_record_pairs target))
-                      )))
+                            | Ok () -> (
+                                match compile_record_pairs [] pair_forms with
+                                | Error _ as err -> err
+                                | Ok pairs ->
+                                    Result.bind
+                                      (adapt_dynamic_fields record.fields pairs)
+                                      (assoc_record_pairs target)))
+                      ))
                 | TRecord fields | TNamed_record { fields; _ } -> (
                     match compile_record_pairs [] pair_forms with
                     | Error _ as err -> err
@@ -2284,6 +2326,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Error _ as err -> err
           | Ok target -> (
               match target.ty with
+              | TNamed_record { nominal = true; _ }
+                when List.exists (function FKeyword _ -> false | _ -> true) key_forms ->
+                  let form =
+                    List.fold_left
+                      (fun current key ->
+                        FList [ FSymbol "IMap/-dissoc"; current; key ])
+                      target_form key_forms
+                  in
+                  compile_expr scope env form
               | TRecord _ | TNamed_record _ ->
                   let rec parse_keywords acc = function
                     | [] -> Ok (List.rev acc)
@@ -3509,7 +3560,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok value -> (
               match compile_deftype_contains target value with
               | Some result -> Ok result
-              | None -> compile_collection_contains target value))
+              | None -> (
+                  match target.ty with
+                  | TNamed_record { nominal = true; _ } ->
+                      compile_expr scope env
+                        (FList
+                           [
+                             FSymbol "IAssociative/-contains-key?";
+                             target_form;
+                             value_form;
+                           ])
+                  | _ -> compile_collection_contains target value)))
       | _ -> Error.error "contains? expects collection and key"
     and compile_keys scope env arg_forms =
       match compile_args_for scope env arg_forms with
@@ -3555,7 +3616,32 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     (pack_dynamic_value env dynamic target)
               | None -> (
                   match target_ty with
-          | TRecord fields | TNamed_record { fields; _ } ->
+                  | TNamed_record { nominal = true; _ }
+                    when Protocol.type_satisfies env Core_protocols.map_id
+                           target_ty ->
+                      let target_form = List.hd arg_forms in
+                      Result.bind
+                        (compile_expr scope env
+                           (FList
+                              [ FSymbol "ISeqable/-seq"; target_form ]))
+                        (fun entries ->
+                          match Collection_capability.element_type env entries with
+                          | Some (TTuple [ key_ty; _ ]) ->
+                              Ok
+                                (typed_ir (TSeq key_ty)
+                                   (Semantic_ir.Apply
+                                      ( Semantic_ir.Ident "Seq.map",
+                                        [ Semantic_ir.Ident "fst";
+                                          entries.semantic_expr;
+                                        ] )))
+                          | Some entry_ty ->
+                              Error.error
+                                ("keys expects map entries, got "
+                               ^ source_name entry_ty)
+                          | None ->
+                              Error.error
+                                "keys requires a statically typed map entry sequence")
+                  | TRecord fields | TNamed_record { fields; _ } ->
               let visible_fields = Types.record_constructor_fields fields in
               let declared_keys =
                 Semantic_ir.List

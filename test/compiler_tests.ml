@@ -287,21 +287,21 @@ let stdlib_sources =
   let cached =
     lazy
       ([
-         "stdlib/clojure/core.mil";
+         "stdlib/clojure/core.mli";
          "stdlib/clojure/core.cljc";
-         "stdlib/clojure/string.mil";
+         "stdlib/clojure/string.mli";
          "stdlib/clojure/string.cljc";
-         "stdlib/clojure/edn.mil";
+         "stdlib/clojure/edn.mli";
          "stdlib/clojure/edn.cljc";
-         "stdlib/cljs/reader.mil";
+         "stdlib/cljs/reader.mli";
          "stdlib/cljs/reader.cljc";
-         "stdlib/clojure/set.mil";
+         "stdlib/clojure/set.mli";
          "stdlib/clojure/set.cljc";
-         "stdlib/clojure/data.mil";
+         "stdlib/clojure/data.mli";
          "stdlib/clojure/data.cljc";
-         "stdlib/clojure/walk.mil";
+         "stdlib/clojure/walk.mli";
          "stdlib/clojure/walk.cljc";
-         "stdlib/clojure/zip.mil";
+         "stdlib/clojure/zip.mli";
          "stdlib/clojure/zip.cljc";
          "stdlib/cljs/cache.cljc";
        ]
@@ -405,6 +405,30 @@ let test_compiler_tests_reuse_precompiled_stdlib_state () =
   let second = compiled_stdlib Lg.Target.Native in
   if first != second then
     failwith "compiler tests must reuse one precompiled stdlib state per target"
+
+let rec files_with_suffix suffix directory =
+  Sys.readdir directory |> Array.to_list
+  |> List.concat_map (fun name ->
+         let path = Filename.concat directory name in
+         if Sys.is_directory path then files_with_suffix suffix path
+         else if Filename.check_suffix path suffix then [ path ]
+         else [])
+
+let test_lg_signature_sidecars_use_mli_extension () =
+  let roots =
+    [ "stdlib"; "datascript"; "test/datascript" ]
+    |> List.map (Filename.concat (repo_root ()))
+  in
+  let legacy = List.concat_map (files_with_suffix ".mil") roots in
+  if legacy <> [] then
+    failwith
+      ("LG signature sidecars must use .mli, found: "
+      ^ String.concat ", " legacy);
+  if
+    not
+      (Sys.file_exists
+         (Filename.concat (repo_root ()) "stdlib/clojure/core.mli"))
+  then failwith "missing stdlib/clojure/core.mli LG signature sidecar"
 
 let rec source_files_under directory =
   Sys.readdir directory |> Array.to_list
@@ -604,6 +628,19 @@ let assert_ocaml_compiles name ocaml_source =
 let assert_ocaml_runs name expected_output ocaml_source =
   pending_run_jobs :=
     { name; expected_output; ocaml_source } :: !pending_run_jobs
+
+let test_record_field_names_do_not_expand_inline_core_macros () =
+  let source =
+    {|
+(type-record inline-shadow
+  (keys :array<int>))
+(defn make-inline-shadow [keys]
+  (record inline-shadow (keys keys)))
+(println (alength (:keys (make-inline-shadow (array 1 2 3)))))
+|}
+  in
+  assert_ocaml_runs "record_field_names_do_not_expand_inline_core_macros" "3\n"
+    (compile_string_with_stdlib source |> expect_ok)
 
 let flush_ocaml_jobs () =
   let compile_jobs = List.rev !pending_compile_jobs in
@@ -4019,6 +4056,8 @@ let test_compiler_phases_have_explicit_boundaries () =
                 Ok value.Lg.Types.semantic_expr)
               ~pack_constrained_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
+              ~adapt_value_to_type:(fun _env _expected value ->
+                Ok value.Lg.Types.semantic_expr)
           in
         let comp_env =
           Lg.Compiler_environment.add "positive"
@@ -5400,9 +5439,9 @@ let current_datascript_sources () =
   @ ([
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
-      "test/datascript/lg/annotations.mil";
+      "test/datascript/lg/annotations.mli";
       "test/datascript/upstream/inline.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/lru.cljc";
@@ -5410,7 +5449,7 @@ let current_datascript_sources () =
       "test/datascript/upstream/db.cljc";
       "test/datascript/upstream/parser.cljc";
       "test/datascript/upstream/entity.cljc";
-      "test/datascript/lg/built_ins.mil";
+      "test/datascript/lg/built_ins.mli";
       "test/datascript/upstream/built_ins.cljc";
      ]
     |> List.map (fun path ->
@@ -5865,7 +5904,7 @@ let test_current_datascript_filter_protocol_accepts_nominal_callback () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -6330,7 +6369,7 @@ let test_current_datascript_pull_accepts_source_and_closed_runtime_patterns () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -6621,9 +6660,9 @@ let test_current_datascript_pull_api_behaves_on_native () =
 
 let current_datascript_query_only_sources () =
   [
-    "test/datascript/lg/query_types.mil";
+    "test/datascript/lg/query_types.mli";
     "test/datascript/lg/query_types.cljc";
-    "test/datascript/lg/query.mil";
+    "test/datascript/lg/query.mli";
     "test/datascript/lg/query.cljc";
   ]
   |> List.map (fun path ->
@@ -6661,10 +6700,10 @@ let test_datascript_limit_context_specializes_empty_reduce_vector () =
   in
   let sources =
     [
-      ( "test/datascript/lg/query_types.mil",
+      ( "test/datascript/lg/query_types.mli",
         read_file
           (Filename.concat (repo_root ())
-             "test/datascript/lg/query_types.mil") );
+             "test/datascript/lg/query_types.mli") );
       ( "test/datascript/lg/query_types.cljc",
         read_file
           (Filename.concat (repo_root ())
@@ -9812,7 +9851,7 @@ let test_current_datascript_transaction_accepts_closed_raw_datoms () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -9937,7 +9976,7 @@ let test_current_datascript_transaction_supports_reverse_refs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10045,7 +10084,7 @@ let test_current_datascript_transaction_supports_operation_vectors () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10200,7 +10239,7 @@ let test_current_datascript_transaction_resolves_tempids_and_upserts () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10358,7 +10397,7 @@ let test_current_datascript_transaction_preserves_unique_identity_edges () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10534,7 +10573,7 @@ let test_current_datascript_transaction_resolves_current_tx_and_preserves_order 
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10689,7 +10728,7 @@ let test_current_datascript_transaction_cascades_components () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10838,7 +10877,7 @@ let test_current_datascript_transaction_maintains_tuples () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -10971,7 +11010,7 @@ let test_current_datascript_transaction_runs_transaction_functions () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -11031,7 +11070,7 @@ let test_current_datascript_transaction_rejects_invalid_inputs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mil";
+      "datascript/me/tonsky/persistent_sorted_set.mli";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
@@ -16326,7 +16365,7 @@ let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.mli";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -24966,7 +25005,7 @@ let test_doseq_preserves_generic_protocol_collection_elements () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.mli";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -25935,6 +25974,77 @@ let test_batched_identifier_and_constructor_core_functions_work () =
     "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
      4):true:true:true:true:false:true:false:true:false:true:true:true\n"
     ocaml_source
+
+let test_sorted_map_preserves_clojurescript_order_and_persistence () =
+  let source =
+    {|
+(ns app.sorted-map-order)
+
+(def original (sorted-map 3 "three" -1 "negative" 2 "two" 1 "one"))
+(def updated (assoc original 0 "zero"))
+(def removed (dissoc updated 2))
+(def dense
+  (sorted-map 8 80 4 40 12 120 2 20 6 60 10 100 14 140
+              1 10 3 30 5 50 7 70 9 90 11 110 13 130 15 150 0 0))
+(def pruned (dissoc dense 8 4 12 0 15 6 10))
+(def descending
+  (sorted-map-by (fn [left right] (stdlib/compare right left))
+                 2 "two" 1 "one" 3 "three"))
+(def descending-updated (dissoc (assoc descending 4 "four") 2))
+(def tagged (with-meta original {:source "sorted-map-test"}))
+(def ^:string tagged-source (:source (meta tagged)))
+(def ^:string tagged-associated-source (:source (meta (assoc tagged 4 "four"))))
+(def ^:string tagged-dissociated-source (:source (meta (dissoc tagged 2))))
+
+(println
+  (str (pr-str (keys original)) ":"
+       (pr-str (keys updated)) ":"
+       (pr-str (keys removed)) ":"
+       (= (map key (ISorted/-sorted-seq-from original 2 true))
+          (seq [2 3])) ":"
+       (= (map key (ISorted/-sorted-seq-from original 2 false))
+          (seq [2 1 -1])) ":"
+       (get original -1) ":" (get original 9 "missing") ":"
+       (contains? original 2) ":" (contains? removed 2) ":"
+       (count original) ":" (count removed) ":"
+       (pr-str (keys dense)) ":"
+       (pr-str (keys pruned)) ":"
+       (count pruned) ":"
+       (identical? dense (dissoc dense 99)) ":"
+       (pr-str (keys descending)) ":"
+       (pr-str (keys descending-updated)) ":"
+       (= (meta original) (meta updated)) ":"
+       (= (meta original) (meta removed)) ":"
+       (= tagged-source "sorted-map-test") ":"
+       (= tagged-associated-source "sorted-map-test") ":"
+       (= tagged-dissociated-source "sorted-map-test") ":"
+       (sorted? original)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/sorted_map_order.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "sorted-map must remain statically typed";
+  assert_ocaml_runs "sorted_map_order"
+    "(-1 1 2 3):(-1 0 1 2 3):(-1 0 1 3):true:true:negative:missing:true:false:4:4:(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15):(1 2 3 5 7 9 11 13 14):9:true:(3 2 1):(4 3 1):true:true:true:true:true:true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/sorted_map_order.cljc" source);
+  let call_source = read_file "src/call_elaborator.ml" in
+  if
+    string_contains_substring call_source
+      "| \"__lg_hash-map\" | \"__lg_array-map\" | \"sorted-map\""
+  then failwith "sorted-map must not lower to the hash-map constructor";
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if
+    not
+      (string_contains_substring core_source
+         "tree-map-balance-left-delete")
+  then
+    failwith
+      "sorted-map dissoc must port ClojureScript red-black deletion instead of rebuilding"
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     () =
@@ -28861,6 +28971,66 @@ let test_dependency_graph_orders_sidecar_signature_before_value () =
   | 1 :: 0 :: _ -> ()
   | _ -> failwith "sidecar signature must precede its value definition"
 
+let test_dependency_graph_uses_signature_to_break_record_function_cycle () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [ FSymbol "defrecord";
+          FSymbol "DB";
+          FVector [ FSymbol "value" ];
+          FSymbol "Equiv";
+          FList
+            [ FSymbol "-equiv";
+              FVector [ FSymbol "database"; FSymbol "other" ];
+              FList
+                [ FSymbol "db-equal?";
+                  FSymbol "database";
+                  FSymbol "other";
+                ];
+            ];
+        ];
+      FList
+        [ FSymbol "signature";
+          FSymbol "model/db-equal?";
+          FKeyword ":fn<model/DB;model/DB;bool>";
+        ];
+      FList
+        [ FSymbol "defn";
+          FSymbol "db-equal?";
+          FVector [ FSymbol "left"; FSymbol "right" ];
+          FList [ FSymbol ".-value"; FSymbol "left" ];
+        ];
+    ]
+  in
+  match Lg.Dependency_graph.stable_order forms with
+  | 1 :: 0 :: 2 :: _ -> ()
+  | order ->
+      failwith
+        ("record/function cycle must compile signature, record, implementation; got "
+       ^ String.concat "," (List.map string_of_int order))
+
+let test_typed_defrecord_registers_before_dependent_protocol_methods () =
+  let source =
+    {|
+(ns model.database)
+(defprotocol Equiv
+  (-equiv [left right]))
+(defrecord DB [^:int value]
+  Equiv
+  (-equiv [left right]
+    (db-equal? left right)))
+(signature model.database/db-equal?
+  :fn<model.database/DB;model.database/DB;bool>)
+(defn db-equal? [left right]
+  (= (.-value left) (.-value right)))
+(println (-equiv (DB. 1) (DB. 1)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "typed_defrecord_registers_before_dependent_protocol_methods"
+    "true\n" ocaml_source
+
 let test_dependency_graph_ignores_type_record_field_names () =
   let open Lg.Ast in
   let forms =
@@ -30611,7 +30781,7 @@ let test_generic_nominals_are_consumed_inside_static_scope () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.mli";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -30759,7 +30929,7 @@ let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mil";
+         "datascript/me/tonsky/persistent_sorted_set.mli";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -33755,11 +33925,16 @@ let test_mapcat_infers_unannotated_collection_parameters () =
 (println (count (flatten-values [1 2 3])))
 |}
   in
+  let user_ocaml =
+    compile_with_stdlib_result Lg.Target.Native "test/mapcat_unannotated.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring user_ocaml "Runtime_dynamic" then
+    failwith "mapcat collection parameters must remain statically typed";
   let ocaml_source =
     compile_with_stdlib Lg.Target.Native "test/mapcat_unannotated.cljc" source
   in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
-    failwith "mapcat collection parameters must remain statically typed";
   assert_ocaml_runs "mapcat_infers_unannotated_collection_parameters" "3\n"
     ocaml_source;
   ignore
@@ -33866,8 +34041,8 @@ let test_some_preserves_static_record_element_types () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_common_higher_order_helpers_reject_bad_mapcat_result () =
-  Lg.Compiler.compile_string {|(def x (mapcat (fn [x] (+ x 1)) [1 2]))|}
-  |> expect_error "mapcat function must return a collection, got int"
+  compile_string_with_stdlib {|(def x (mapcat (fn [x] (+ x 1)) [1 2]))|}
+  |> expect_error "mapcat argument 1: collection value is not seqable: int"
 
 let test_common_higher_order_helpers_reject_bad_predicates () =
   Lg.Compiler.compile_string
@@ -39647,6 +39822,10 @@ let tests =
       test_test_directory_avoids_existing_pid_directory );
     ( "compiler tests reuse precompiled stdlib state",
       test_compiler_tests_reuse_precompiled_stdlib_state );
+    ( "LG signature sidecars use mli extension",
+      test_lg_signature_sidecars_use_mli_extension );
+    ( "record field names do not expand inline core macros",
+      test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",
       test_records_assoc_and_dissoc );
     ( "assoc rejects changing an existing field type",
@@ -41514,6 +41693,8 @@ let tests =
       test_munge_and_demunge_are_source_owned_static_protocols );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
+    ( "sorted-map preserves ClojureScript order and persistence",
+      test_sorted_map_preserves_clojurescript_order_and_persistence );
     ( "batched identifier/constructor core functions reject bad symbol args",
       test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     );
@@ -41760,6 +41941,10 @@ let tests =
       test_dependency_graph_orders_declared_protocol_dependencies );
     ( "dependency graph orders sidecar signature before value",
       test_dependency_graph_orders_sidecar_signature_before_value );
+    ( "dependency graph uses signature to break record function cycle",
+      test_dependency_graph_uses_signature_to_break_record_function_cycle );
+    ( "typed defrecord registers before dependent protocol methods",
+      test_typed_defrecord_registers_before_dependent_protocol_methods );
     ( "dependency graph ignores type-record field names",
       test_dependency_graph_ignores_type_record_field_names );
     ( "dependency graph orders nested type annotation dependencies",

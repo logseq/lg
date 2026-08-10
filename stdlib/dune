@@ -1,25 +1,25 @@
 (rule
  (targets lg_stdlib_native.ml lg_stdlib_native.state)
  (deps
-  clojure/core.mil
+  clojure/core.mli
   clojure/core.cljc
-  clojure/string.mil
+  clojure/string.mli
   clojure/string.cljc
-  clojure/edn.mil
+  clojure/edn.mli
   clojure/edn.cljc
-  cljs/reader.mil
+  cljs/reader.mli
   cljs/reader.cljc
-  cljs/math.mil
+  cljs/math.mli
   cljs/math.cljc
   cljs/cache.cljc
   clojure/core/protocols.cljc
-  clojure/set.mil
+  clojure/set.mli
   clojure/set.cljc
-  clojure/data.mil
+  clojure/data.mli
   clojure/data.cljc
-  clojure/walk.mil
+  clojure/walk.mli
   clojure/walk.cljc
-  clojure/zip.mil
+  clojure/zip.mli
   clojure/zip.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
@@ -30,25 +30,25 @@
    native
    --compile-files-state
    lg_stdlib_native.state
-   %{dep:clojure/core.mil}
+   %{dep:clojure/core.mli}
    %{dep:clojure/core.cljc}
-   %{dep:clojure/string.mil}
+   %{dep:clojure/string.mli}
    %{dep:clojure/string.cljc}
-   %{dep:clojure/edn.mil}
+   %{dep:clojure/edn.mli}
    %{dep:clojure/edn.cljc}
-   %{dep:cljs/reader.mil}
+   %{dep:cljs/reader.mli}
    %{dep:cljs/reader.cljc}
-   %{dep:cljs/math.mil}
+   %{dep:cljs/math.mli}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
    %{dep:clojure/core/protocols.cljc}
-   %{dep:clojure/set.mil}
+   %{dep:clojure/set.mli}
    %{dep:clojure/set.cljc}
-   %{dep:clojure/data.mil}
+   %{dep:clojure/data.mli}
    %{dep:clojure/data.cljc}
-   %{dep:clojure/walk.mil}
+   %{dep:clojure/walk.mli}
    %{dep:clojure/walk.cljc}
-   %{dep:clojure/zip.mil}
+   %{dep:clojure/zip.mli}
    %{dep:clojure/zip.cljc}
    -o
    lg_stdlib_native.ml)))
@@ -60,25 +60,25 @@
 (rule
  (targets lg_stdlib_melange.ml lg_stdlib_melange.state)
  (deps
-  clojure/core.mil
+  clojure/core.mli
   clojure/core.cljc
-  clojure/string.mil
+  clojure/string.mli
   clojure/string.cljc
-  clojure/edn.mil
+  clojure/edn.mli
   clojure/edn.cljc
-  cljs/reader.mil
+  cljs/reader.mli
   cljs/reader.cljc
-  cljs/math.mil
+  cljs/math.mli
   cljs/math.cljc
   cljs/cache.cljc
   clojure/core/protocols.cljc
-  clojure/set.mil
+  clojure/set.mli
   clojure/set.cljc
-  clojure/data.mil
+  clojure/data.mli
   clojure/data.cljc
-  clojure/walk.mil
+  clojure/walk.mli
   clojure/walk.cljc
-  clojure/zip.mil
+  clojure/zip.mli
   clojure/zip.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
@@ -89,25 +89,25 @@
    melange
    --compile-files-state
    lg_stdlib_melange.state
-   %{dep:clojure/core.mil}
+   %{dep:clojure/core.mli}
    %{dep:clojure/core.cljc}
-   %{dep:clojure/string.mil}
+   %{dep:clojure/string.mli}
    %{dep:clojure/string.cljc}
-   %{dep:clojure/edn.mil}
+   %{dep:clojure/edn.mli}
    %{dep:clojure/edn.cljc}
-   %{dep:cljs/reader.mil}
+   %{dep:cljs/reader.mli}
    %{dep:cljs/reader.cljc}
-   %{dep:cljs/math.mil}
+   %{dep:cljs/math.mli}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
    %{dep:clojure/core/protocols.cljc}
-   %{dep:clojure/set.mil}
+   %{dep:clojure/set.mli}
    %{dep:clojure/set.cljc}
-   %{dep:clojure/data.mil}
+   %{dep:clojure/data.mli}
    %{dep:clojure/data.cljc}
-   %{dep:clojure/walk.mil}
+   %{dep:clojure/walk.mli}
    %{dep:clojure/walk.cljc}
-   %{dep:clojure/zip.mil}
+   %{dep:clojure/zip.mli}
    %{dep:clojure/zip.cljc}
    -o
    lg_stdlib_melange.ml)))

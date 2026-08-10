@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 source_file="$root/stdlib/clojure/walk.cljc"
-interface_file="$root/stdlib/clojure/walk.mil"
+interface_file="$root/stdlib/clojure/walk.mli"
 
 for file in "$source_file" "$interface_file"; do
   if ! test -f "$file"; then

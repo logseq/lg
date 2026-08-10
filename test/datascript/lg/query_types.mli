@@ -216,6 +216,18 @@
 (signature datascript.lg.query-types/lookup-db-patterns
   :fn<datascript.db/database-view;vector<vector<datascript.parser/pattern-element>>;relation>)
 
+(signature datascript.lg.query-types/relation-pattern-step
+  :fn<map<string;result>;vector<result>;datascript.parser/pattern-element;result;option<tuple<map<string;result>;vector<result>>>>)
+
+(signature datascript.lg.query-types/relation-pattern-row
+  :fn<vector<datascript.parser/pattern-element>;array<result>;option<array<result>>>)
+
+(signature datascript.lg.query-types/relation-pattern-variables
+  :fn<vector<datascript.parser/pattern-element>;vector<string>>)
+
+(signature datascript.lg.query-types/binding-relation
+  :fn<datascript.parser/binding;binding-value;relation>)
+
 (signature datascript.lg.query-types/execute-db-query
   :fn<datascript.db/database-view;datascript.parser/Query;output>)
 

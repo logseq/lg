@@ -609,6 +609,20 @@ module Lg_frontend : FRONTEND = struct
         else Ok (first :: rest)
 
   let split_deftype_methods located_ast =
+    let all_fields_have_type_hints = function
+      | Ast.FVector fields ->
+          let rec loop pending_hint = function
+            | [] -> not pending_hint
+            | Ast.FSymbol metadata :: rest
+              when String.starts_with ~prefix:"^" metadata ->
+                loop true rest
+            | Ast.FSymbol _field_name :: rest ->
+                pending_hint && loop false rest
+            | _ -> false
+          in
+          loop false fields
+      | _ -> false
+    in
     located_ast
     |> List.concat_map (fun located ->
            match located.Ast.form with
@@ -617,6 +631,7 @@ module Lg_frontend : FRONTEND = struct
                :: name :: fields :: (_ :: _ as methods))
              when
                definition = "deftype"
+               || all_fields_have_type_hints fields
                || List.exists
                     (function
                       | Ast.FSymbol "ILookup" -> true
@@ -1301,6 +1316,61 @@ let affected_stabilization_forms ast evidence_ast changed_names =
 let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     ~(initial_state : Compiler_state.t) ast =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
+  let module Signed_names = Set.Make (String) in
+  let scope =
+    ast
+    |> List.find_map (function
+         | Ast.FList
+             [ Ast.FSymbol "namespace-scope"; Ast.FSymbol namespace ] ->
+             Some namespace
+         | _ -> None)
+    |> Option.value ~default:""
+  in
+  let inline_signed_names =
+    List.fold_left
+      (fun names -> function
+        | Ast.FList (Ast.FSymbol "signature" :: Ast.FSymbol name :: _) ->
+            Signed_names.add
+              (if String.contains name '/' then name
+               else Names.scoped_key scope name)
+              names
+        | _ -> names)
+      Signed_names.empty ast
+  in
+  let qualify_name name =
+    if String.contains name '/' then name else Names.scoped_key scope name
+  in
+  let explicit_declarations =
+    ast
+    |> List.concat_map (function
+         | Ast.FList (Ast.FSymbol "declare" :: names) ->
+             List.filter_map
+               (function Ast.FSymbol name -> Some (qualify_name name) | _ -> None)
+               names
+         | _ -> [])
+  in
+  let recursive_declarations =
+    Dependency_graph.recursive_groups ast
+    |> List.concat_map (fun indices ->
+         indices
+         |> List.concat_map (fun index ->
+              List.nth ast index |> Dependency_graph.provided_names)
+         |> List.map qualify_name)
+  in
+  let inferred_declarations =
+    List.sort_uniq String.compare
+      (explicit_declarations @ recursive_declarations)
+  in
+  let declaration_is_signed name =
+    Signed_names.mem name inline_signed_names
+    || Option.is_some
+         (Signature_overlay.find_value name
+            (Compiler_environment.signatures initial_state.env))
+  in
+  let declarations_are_fully_signed =
+    inferred_declarations <> []
+    && List.for_all declaration_is_signed inferred_declarations
+  in
   let compile_pass compiler pass state =
     let started_at = if report_timings then Sys.time () else 0.0 in
     let result = compiler state in
@@ -1323,13 +1393,24 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     && left.overload_targets = right.overload_targets
     && left.return_param_index = right.return_param_index
   in
+  let binding_abi_equal_for name (left : Types.binding)
+      (right : Types.binding) =
+    if
+      Signed_names.mem name inline_signed_names
+      || Option.is_some
+           (Signature_overlay.find_value name
+              (Compiler_environment.signatures initial_state.env))
+    then
+        String.equal (Types.source_name left.ty) (Types.source_name right.ty)
+    else binding_abi_equal left right
+  in
   let declarations_abi_equal left right =
     List.length left = List.length right
     &&
     List.for_all2
       (fun (left_name, left_binding) (right_name, right_binding) ->
         left_name = right_name
-        && binding_abi_equal left_binding right_binding)
+        && binding_abi_equal_for left_name left_binding right_binding)
       left right
   in
   let changed_declaration_names previous next =
@@ -1337,7 +1418,7 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     |> List.filter_map (fun (name, binding) ->
            match List.assoc_opt name previous with
            | Some previous_binding
-             when binding_abi_equal previous_binding binding ->
+             when binding_abi_equal_for name previous_binding binding ->
                None
            | Some _ | None -> Some name)
   in
@@ -1351,7 +1432,7 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
       |> List.filter_map (fun (name, binding) ->
              match previous_by_name name with
              | Some previous_binding
-               when binding_abi_equal previous_binding binding ->
+               when binding_abi_equal_for name previous_binding binding ->
                  None
              | None -> Some name
              | Some previous_binding ->
@@ -1508,6 +1589,8 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
               next_protocols evidence_base changed_names
           )
   in
+  if declarations_are_fully_signed then compile_pass compile 1 initial_state
+  else
   match compile_pass initial_compile 1 initial_state with
   | Error _ as error -> error
   | Ok (((first_state : Compiler_state.t), _) as first_result) ->

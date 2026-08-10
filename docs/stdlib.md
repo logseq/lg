@@ -59,9 +59,16 @@ dune exec bin/lg_cli.exe -- \
   app.cljc -o app_chunk.ml
 ```
 
-Consumers must not enumerate individual stdlib `.mil` or `.cljc` files.
+Consumers must not enumerate individual stdlib `.mli` or `.cljc` files.
 `test/stdlib` exercises this contract, including negative type tests restored
 from the same aggregate state.
+
+LG signature sidecars use the `.mli` extension consistently. These files
+contain LG `signature` forms and are compiled by `lg_cli` before their matching
+`.cljc` source; they are not parsed as OCaml interface syntax. Runtime modules
+also use ordinary OCaml `.mli` files, with the consuming Dune rule determining
+which frontend owns each interface. The legacy `.mil` extension is rejected by
+the repository architecture test and is not part of the bootstrap contract.
 
 Multi-file compilation prepares each source once. The parsed forms provide
 both required OCaml packages and the subsequent incremental compilation input;
@@ -93,6 +100,18 @@ domain; direct calls bind the receiver once and contextually specialize
 `IMeta`/`IWithMeta` protocol calls, including variadic
 callbacks and custom metadata-capable receivers.
 
+`sorted-map` is a distinct source-defined collection, not an alias for the
+default hash map and not a vector-backed compatibility layer. Its closed
+`persistent-tree-map-node<key,value>` sum ports ClojureScript's red/black node
+states, insertion balancing, append, and deletion balancing. `assoc` and
+`dissoc` retain logarithmic path-copying behavior and preserve metadata;
+missing-key deletion returns the original value. `ISeqable` emits entries by
+tree traversal, and `ISorted` supplies ordered sequences, bounded traversal,
+entry keys, and the stored comparator. `sorted-map-by` shares the same tree and
+evaluates its comparator once. LG currently requires that comparator to have
+the static type `key -> key -> int`; ClojureScript's additional normalization
+of boolean predicate comparators remains a documented static adaptation.
+
 Sidecars describe a homogeneous variadic arity with
 `variadic-fn<fixed...;rest;result>`. The final two arguments are the rest
 element and result types; preceding arguments are fixed parameters. A
@@ -106,7 +125,7 @@ sequence.
    code being migrated.
 2. Pin the relevant ClojureScript source commit in `stdlib/upstream.edn`.
 3. Copy the public algorithm into `stdlib/<namespace>.cljc`, keeping upstream
-   control flow and observable arities. Add the narrowest `.mil` signatures
+   control flow and observable arities. Add the narrowest `.mli` signatures
    needed to state relationships that inference cannot yet recover.
 4. Classify every upstream definition in the manifest. Document every static
    adaptation or deferred definition instead of silently replacing behavior.
@@ -153,8 +172,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 570 source entries (57.87%), 27 typed
-primitives, 43 special forms, 97 host boundaries, 197 static-typing blockers,
+macro surfaces. The current baseline is 572 source entries (58.07%), 26 typed
+primitives, 43 special forms, 97 host boundaries, 196 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -590,7 +609,7 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
-routes, the raw compiler-call inventory contains 197 names.
+routes, the raw compiler-call inventory contains 196 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the
@@ -847,7 +866,8 @@ ordered `priority -> item-set` map and a persistent hash `item -> priority` map.
 Integer priorities use OCaml's ordered map and item buckets use LG's default
 persistent hash map. This keeps minimum-priority lookup and priority updates
 readable and logarithmic without dynamic values. New runtime boundaries use
-ordinary `.mli` interfaces; no `.mil` sidecar was added for `cljs.cache`.
+ordinary OCaml `.mli` interfaces; `cljs.cache` itself needs no LG signature
+sidecar.
 TTL expiry and cleanup follow the upstream timestamp-table algorithm. The
 cross-target source `system-time` function supplies the current timestamp to a
 typed runtime state, so cache keys and values remain statically homogeneous.

@@ -21,6 +21,56 @@
   :fn<variadic-fn<value;x;y;more;value>;value;x;y;seq<more>;value>)
 (signature clojure.core/swap-vals-with [value]
   :fn<ref<value>;fn<value;value>;vector<value>>)
+(signature clojure.core/tree-map-balance-black [key value]
+  :fn<key;value;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-redden [key value]
+  :fn<persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-balance-left-insert [key value]
+  :fn<key;value;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-balance-right-insert [key value]
+  :fn<key;value;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-balance-left-delete [key value]
+  :fn<key;value;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-balance-right-delete [key value]
+  :fn<key;value;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-append [key value]
+  :fn<persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-remove-node [key value]
+  :fn<fn<key;key;int>;persistent-tree-map-node<key;value>;key;tuple<persistent-tree-map-node<key;value>;bool>>)
+(signature clojure.core/tree-map-insert-node [key value]
+  :fn<fn<key;key;int>;persistent-tree-map-node<key;value>;key;value;tuple<persistent-tree-map-node<key;value>;bool>>)
+(signature clojure.core/tree-map-blacken [key value]
+  :fn<persistent-tree-map-node<key;value>;persistent-tree-map-node<key;value>>)
+(signature clojure.core/tree-map-empty [key value]
+  :fn<fn<key;key;int>;Lg_edn_backend.t;persistent-tree-map<key;value>>)
+(signature clojure.core/tree-map-assoc [key value]
+  :fn<persistent-tree-map<key;value>;key;value;persistent-tree-map<key;value>>)
+(signature clojure.core/tree-map-singleton [key value]
+  :fn<fn<key;key;int>;Lg_edn_backend.t;key;value;persistent-tree-map<key;value>>)
+(signature clojure.core/tree-map-get-node [key value]
+  :fn<fn<key;key;int>;persistent-tree-map-node<key;value>;key;option<value>>)
+(signature clojure.core/tree-map-get [key value]
+  :fn<persistent-tree-map<key;value>;key;option<value>>)
+(signature clojure.core/tree-map-pairs [key value]
+  :fn<persistent-tree-map-node<key;value>;seq<tuple<key;value>>;seq<tuple<key;value>>>)
+(signature clojure.core/tree-map-reverse-pairs [key value]
+  :fn<persistent-tree-map-node<key;value>;seq<tuple<key;value>>;seq<tuple<key;value>>>)
+(signature clojure.core/tree-map-seq [key value]
+  :fn<persistent-tree-map<key;value>;bool;seq<tuple<key;value>>>)
+(signature clojure.core/tree-map-seq-from-node [key value]
+  :fn<fn<key;key;int>;persistent-tree-map-node<key;value>;key;bool;seq<tuple<key;value>>;seq<tuple<key;value>>>)
+(signature clojure.core/tree-map-seq-from [key value]
+  :fn<persistent-tree-map<key;value>;key;bool;seq<tuple<key;value>>>)
+(signature clojure.core/tree-map-entry-key [key value]
+  :fn<persistent-tree-map<key;value>;tuple<key;value>;key>)
+(signature clojure.core/tree-map-comparator [key value]
+  :fn<persistent-tree-map<key;value>;fn<key;key;int>>)
+(signature clojure.core/tree-map-dissoc [key value]
+  :fn<persistent-tree-map<key;value>;key;persistent-tree-map<key;value>>)
+(signature clojure.core/sorted-map [key value]
+  :overload<fn<persistent-tree-map<key;value>>;fn<key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;key;value;key;value;persistent-tree-map<key;value>>>)
+(signature clojure.core/sorted-map-by [key value]
+  :overload<fn<fn<key;key;int>;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;key;value;key;value;persistent-tree-map<key;value>>>)
 (signature clojure.core/hash [value]
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]
@@ -111,7 +161,7 @@
 (signature clojure.core/transduce [input output storage accumulator]
   :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;seqable<input;storage>;accumulator>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;accumulator;seqable<input;storage>;accumulator>>)
 (signature clojure.core/sequence [input output storage accumulator]
-  :overload<fn<seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;seqable<input;storage>;seq<output>>>)
+  :overload<fn<optional-seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;optional-seqable<input;storage>;seq<output>>>)
 (signature clojure.core/repeatedly [value]
   :overload<fn<fn<value>;seq<value>>;fn<int;fn<value>;seq<value>>>)
 (signature clojure.core/repeat [value]

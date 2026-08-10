@@ -1144,13 +1144,37 @@ let lookup_function scope env name =
       | None -> (
       match name with
       | "+" ->
+          let arities =
+            [ { fixed_params = []; rest_param = None; return_ty = TInt };
+              { fixed_params = [ TInt ]; rest_param = None; return_ty = TInt };
+              { fixed_params = [ TInt; TInt ];
+                rest_param = None;
+                return_ty = TInt;
+              };
+            ]
+          in
           Ok
             (typed_ir
-               (TFn ([ TInt; TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("+", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
+               (TOverloaded_fn arities)
+               (Semantic_ir.Tuple
+                  [ Semantic_ir.Fun ([], Semantic_ir.Int 0);
+                    Semantic_ir.Tuple
+                      [ Semantic_ir.Fun
+                          ( [ Semantic_ir.PVar "value" ],
+                            Semantic_ir.Ident "value" );
+                        Semantic_ir.Tuple
+                          [ Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar "a";
+                                  Semantic_ir.PVar "b";
+                                ],
+                                Semantic_ir.Infix
+                                  ( "+",
+                                    Semantic_ir.Ident "a",
+                                    Semantic_ir.Ident "b" ) );
+                            Semantic_ir.Unit;
+                          ];
+                      ];
+                  ]))
       | "-" ->
           Ok
             (typed_ir

@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 source_file="$root/stdlib/clojure/data.cljc"
-interface_file="$root/stdlib/clojure/data.mil"
+interface_file="$root/stdlib/clojure/data.mli"
 
 for file in "$source_file" "$interface_file"; do
   if ! test -f "$file"; then

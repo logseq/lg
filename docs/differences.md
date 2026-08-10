@@ -532,9 +532,12 @@ same-typed comparable scalar values.
 Keywords and symbols are statically distinct from strings, although the current
 runtime representation is still an OCaml string.
 
-Maps currently compile to OCaml records when their keys are known statically.
-`array-map` and `sorted-map` currently share the same structural map
-representation as `hash-map`.
+Maps with statically known keyword fields can compile to OCaml records, while
+homogeneous maps use the persistent hash map. `sorted-map` and `sorted-map-by`
+use a separate, source-defined persistent red-black tree whose map sequence is
+ordered by its stored comparator. The custom comparator must return an integer;
+the ClojureScript compatibility form that accepts a boolean predicate as a
+comparator is not statically exposed yet.
 
 Structural map helpers include `merge`, `update`, `select-keys`, `keys`, and `vals`. Overlapping fields in `merge` and updated fields in `update` must keep their existing static type, and `vals` requires all selected map values to have the same type.
 

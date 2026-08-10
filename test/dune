@@ -9,20 +9,21 @@
  (modules compiler_tests)
  (deps
   compiler_test_runner.bc
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
-  ../stdlib/clojure/zip.mil
+  ../stdlib/clojure/zip.mli
   ../stdlib/clojure/zip.cljc
   ../stdlib/cljs/cache.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
+  datascript/upstream/built_ins.cljc
   ../src/lg.cma
   ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
@@ -588,15 +589,15 @@
 (rule
  (target persistent_sorted_set_arrays_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   datascript/persistent_sorted_set/arrays_test.cljc
@@ -607,15 +608,15 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
@@ -632,15 +633,15 @@
 (rule
  (target persistent_sorted_set_arrays_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   datascript/persistent_sorted_set/arrays_test.cljc
@@ -651,15 +652,15 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:datascript/persistent_sorted_set/arrays_test.cljc}
@@ -693,19 +694,19 @@
 (rule
  (target persistent_sorted_set_path_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
@@ -715,19 +716,19 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
@@ -743,19 +744,19 @@
 (rule
  (target persistent_sorted_set_path_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/path_test.cljc
   ../bin/lg_cli.exe)
@@ -765,19 +766,19 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/path_test.cljc}
    -o
@@ -810,19 +811,19 @@
 (rule
  (target persistent_sorted_set_helpers_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
@@ -832,19 +833,19 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
@@ -860,19 +861,19 @@
 (rule
  (target persistent_sorted_set_helpers_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/helpers_test.cljc
   ../bin/lg_cli.exe)
@@ -882,19 +883,19 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/helpers_test.cljc}
    -o
@@ -929,19 +930,19 @@
 (rule
  (target persistent_sorted_set_leaf_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
@@ -951,19 +952,19 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
@@ -979,19 +980,19 @@
 (rule
  (target persistent_sorted_set_leaf_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/leaf_test.cljc
   ../bin/lg_cli.exe)
@@ -1001,19 +1002,19 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/leaf_test.cljc}
    -o
@@ -1048,19 +1049,19 @@
 (rule
  (target persistent_sorted_set_storage_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -1070,19 +1071,19 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -1098,19 +1099,19 @@
 (rule
  (target persistent_sorted_set_storage_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -1120,19 +1121,19 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -1151,19 +1152,19 @@
 (rule
  (target persistent_sorted_set_storage_jsoo.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/storage_test.cljc
   ../bin/lg_cli.exe)
@@ -1173,19 +1174,19 @@
    --target
    js
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/storage_test.cljc}
    -o
@@ -1231,19 +1232,19 @@
 (rule
  (target persistent_sorted_set_benchmark_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -1253,19 +1254,19 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -1281,19 +1282,19 @@
 (rule
  (target persistent_sorted_set_benchmark_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -1303,19 +1304,19 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -1334,19 +1335,19 @@
 (rule
  (target persistent_sorted_set_benchmark_jsoo.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/persistent_sorted_set/benchmark.cljc
   ../bin/lg_cli.exe)
@@ -1356,19 +1357,19 @@
    --target
    js
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/persistent_sorted_set/benchmark.cljc}
    -o
@@ -1385,33 +1386,33 @@
 (rule
  (target datascript_storage_smoke_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
@@ -1424,33 +1425,33 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1474,33 +1475,33 @@
 (rule
  (target datascript_storage_smoke_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/conn.cljc
@@ -1513,33 +1514,33 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/conn.cljc}
@@ -1590,23 +1591,23 @@
 (rule
  (target datascript_file_storage_smoke_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1619,23 +1620,23 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1672,36 +1673,36 @@
 (rule
  (target datascript_api_smoke_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
-  datascript/lg/datafy.mil
+  datascript/lg/datafy.mli
   datascript/lg/datafy.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -1716,36 +1717,36 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
-   %{dep:datascript/lg/datafy.mil}
+   %{dep:datascript/lg/datafy.mli}
    %{dep:datascript/lg/datafy.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -1772,36 +1773,36 @@
 (rule
  (target datascript_api_smoke_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
   datascript/upstream/entity.cljc
-  datascript/lg/datafy.mil
+  datascript/lg/datafy.mli
   datascript/lg/datafy.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
@@ -1815,36 +1816,36 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
    %{dep:datascript/upstream/entity.cljc}
-   %{dep:datascript/lg/datafy.mil}
+   %{dep:datascript/lg/datafy.mli}
    %{dep:datascript/lg/datafy.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}
@@ -1897,33 +1898,33 @@
 (rule
  (target datascript_transact_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -1946,33 +1947,33 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -2009,33 +2010,33 @@
 (rule
  (target datascript_transact_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -2056,33 +2057,33 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -2136,33 +2137,33 @@
  (target datascript_conn_native.ml)
  (enabled_if false)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -2220,33 +2221,33 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4280,33 +4281,33 @@
  (target datascript_conn_melange.ml)
  (enabled_if false)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4363,33 +4364,33 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4571,33 +4572,33 @@
 (rule
  (target datascript_listen_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4620,33 +4621,33 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4683,33 +4684,33 @@
 (rule
  (target datascript_listen_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4730,33 +4731,33 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4807,33 +4808,33 @@
 (rule
  (target datascript_filter_native.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4856,33 +4857,33 @@
    --target
    native
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}
@@ -4919,33 +4920,33 @@
 (rule
  (target datascript_filter_melange.ml)
  (deps
-  ../stdlib/clojure/core.mil
+  ../stdlib/clojure/core.mli
   ../stdlib/clojure/core.cljc
-  ../stdlib/clojure/string.mil
+  ../stdlib/clojure/string.mli
   ../stdlib/clojure/string.cljc
-  ../stdlib/clojure/edn.mil
+  ../stdlib/clojure/edn.mli
   ../stdlib/clojure/edn.cljc
-  ../stdlib/cljs/reader.mil
+  ../stdlib/cljs/reader.mli
   ../stdlib/cljs/reader.cljc
-  ../stdlib/clojure/set.mil
+  ../stdlib/clojure/set.mli
   ../stdlib/clojure/set.cljc
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mil
+  ../datascript/me/tonsky/persistent_sorted_set.mli
   ../datascript/me/tonsky/persistent_sorted_set.cljc
   datascript/upstream/util.cljc
   datascript/upstream/schema.cljc
-  datascript/lg/annotations.mil
+  datascript/lg/annotations.mli
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
-  datascript/lg/built_ins.mil
+  datascript/lg/built_ins.mli
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
   datascript/upstream/lru.cljc
-  datascript/lg/query_types.mil
+  datascript/lg/query_types.mli
   datascript/lg/query_types.cljc
-  datascript/lg/query.mil
+  datascript/lg/query.mli
   datascript/lg/query.cljc
   datascript/upstream/entity.cljc
   datascript/upstream/storage.cljc
@@ -4966,33 +4967,33 @@
    --target
    melange
    --compile-files
-   %{dep:../stdlib/clojure/core.mil}
+   %{dep:../stdlib/clojure/core.mli}
    %{dep:../stdlib/clojure/core.cljc}
-   %{dep:../stdlib/clojure/string.mil}
+   %{dep:../stdlib/clojure/string.mli}
    %{dep:../stdlib/clojure/string.cljc}
-   %{dep:../stdlib/clojure/edn.mil}
+   %{dep:../stdlib/clojure/edn.mli}
    %{dep:../stdlib/clojure/edn.cljc}
-   %{dep:../stdlib/cljs/reader.mil}
+   %{dep:../stdlib/cljs/reader.mli}
    %{dep:../stdlib/cljs/reader.cljc}
-   %{dep:../stdlib/clojure/set.mil}
+   %{dep:../stdlib/clojure/set.mli}
    %{dep:../stdlib/clojure/set.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mil}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/schema.cljc}
-   %{dep:datascript/lg/annotations.mil}
+   %{dep:datascript/lg/annotations.mli}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
-   %{dep:datascript/lg/built_ins.mil}
+   %{dep:datascript/lg/built_ins.mli}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
    %{dep:datascript/upstream/lru.cljc}
-   %{dep:datascript/lg/query_types.mil}
+   %{dep:datascript/lg/query_types.mli}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mil}
+   %{dep:datascript/lg/query.mli}
    %{dep:datascript/lg/query.cljc}
    %{dep:datascript/upstream/entity.cljc}
    %{dep:datascript/upstream/storage.cljc}

@@ -159,22 +159,19 @@ let require_referred_symbols entries =
 
 let dependency_symbols = function
   | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
-  | FList [ FSymbol "signature"; _name; annotation ] ->
-      type_annotation_symbols annotation
+  | FList [ FSymbol "signature"; _name; _annotation ] ->
+      (* Signatures are forward declarations. Named record references remain
+         placeholders until the corresponding record definition is available. *)
+      []
   | FList
       [
         FSymbol "signature";
         _name;
         FVector parameters;
-        annotation;
+        _annotation;
       ] ->
-      let parameters =
-        parameters
-        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
-        |> String_set.of_list
-      in
-      type_annotation_symbols annotation
-      |> List.filter (fun name -> not (String_set.mem name parameters))
+      ignore parameters;
+      []
   | FList
       (FSymbol "type-record" :: _name :: FVector parameters :: field_forms) ->
       let parameters =
@@ -415,11 +412,60 @@ let declaration_provider_indices indexed =
                   String_map.add name (index :: existing) providers
               | _ -> providers)
             providers names
+      | FList (FSymbol "signature" :: FSymbol _ :: _) ->
+          List.fold_left
+            (fun providers name ->
+              let existing =
+                String_map.find_opt name providers |> Option.value ~default:[]
+              in
+              String_map.add name (index :: existing) providers)
+            providers (provided_names form)
       | _ -> providers)
     String_map.empty indexed
 
-let form_dependencies ?(ignore_declarations = false) providers
-    declaration_providers index form =
+let graph_scope forms =
+  forms
+  |> List.find_map (function
+       | FList [ FSymbol "namespace-scope"; FSymbol scope ] -> Some scope
+       | _ -> None)
+  |> Option.value ~default:""
+
+let signature_type_dependencies scope forms =
+  let dependencies = function
+    | FList [ FSymbol "signature"; FSymbol name; annotation ] ->
+        Some (name, type_annotation_symbols annotation)
+    | FList
+        [ FSymbol "signature";
+          FSymbol name;
+          FVector parameters;
+          annotation;
+        ] ->
+        let parameters =
+          parameters
+          |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+          |> String_set.of_list
+        in
+        Some
+          ( name,
+            type_annotation_symbols annotation
+            |> List.filter (fun name ->
+                   not (String_set.mem name parameters)) )
+    | _ -> None
+  in
+  List.fold_left
+    (fun signatures form ->
+      match dependencies form with
+      | None -> signatures
+      | Some (name, dependencies) ->
+          let name =
+            if String.contains name '/' then name
+            else Names.scoped_key scope name
+          in
+          String_map.add name dependencies signatures)
+    String_map.empty forms
+
+let form_dependencies ?(ignore_declarations = false) ~scope
+    ~signature_dependencies providers declaration_providers index form =
   let prefer_declarations =
     match form with
     | FList (FSymbol ("deftype" | "defrecord") :: _) -> true
@@ -433,7 +479,17 @@ let form_dependencies ?(ignore_declarations = false) providers
     ->
       []
   | form ->
-      dependency_symbols form
+      let signed_dependencies =
+        match form with
+        | FList
+            (FSymbol ("def" | "defonce" | "defn" | "defn-")
+            :: FSymbol name :: _) ->
+            String_map.find_opt (Names.scoped_key scope name)
+              signature_dependencies
+            |> Option.value ~default:[]
+        | _ -> []
+      in
+      dependency_symbols form @ signed_dependencies
       |> List.concat_map (fun name ->
              let candidates =
                let candidates = [ name ] in
@@ -485,14 +541,16 @@ let dependency_components ?(ignore_declarations = false) forms =
   let indexed = indexed_forms forms in
   let providers = provider_indices ~ignore_declarations indexed in
   let declaration_providers = declaration_provider_indices indexed in
+  let scope = graph_scope forms in
+  let signature_dependencies = signature_type_dependencies scope forms in
   let components =
     indexed
     |> List.map (fun (index, form) ->
            {
              name = string_of_int index;
              dependencies =
-               form_dependencies ~ignore_declarations providers
-                 declaration_providers index form
+           form_dependencies ~ignore_declarations ~scope ~signature_dependencies
+             providers declaration_providers index form
                |> List.map string_of_int;
            })
     |> strongly_connected_components
@@ -523,6 +581,8 @@ let stable_order forms =
   let declaration_providers =
     declaration_provider_indices (indexed_forms forms)
   in
+  let scope = graph_scope forms in
+  let signature_dependencies = signature_type_dependencies scope forms in
   let forms = Array.of_list forms in
   let components =
     component_lists
@@ -541,7 +601,8 @@ let stable_order forms =
       (fun component members ->
         List.fold_left
           (fun dependencies index ->
-            form_dependencies providers declaration_providers index forms.(index)
+            form_dependencies ~scope ~signature_dependencies providers
+              declaration_providers index forms.(index)
             |> List.fold_left
                  (fun dependencies dependency ->
                    let dependency_component = component_of.(dependency) in

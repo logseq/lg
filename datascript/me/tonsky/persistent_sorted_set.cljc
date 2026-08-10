@@ -1,7 +1,8 @@
 (ns me.tonsky.persistent-sorted-set
   (:refer-clojure :exclude [conj disj contains?])
   (:require
-    [me.tonsky.persistent-sorted-set.arrays :as arrays]))
+    [me.tonsky.persistent-sorted-set.arrays :as arrays]
+    [ocaml.Stdlib :as stdlib]))
 
 (def max-safe-path #?(:native 2147483648 :cljs 2147483648.0))
 (def bits-per-level 5)
@@ -1472,10 +1473,10 @@
 
 (defn sorted-set
   ([]
-   (sorted-set-by (fn [left right] (compare left right))))
+   (sorted-set-by (fn [left right] (stdlib/compare left right))))
   ([& keys]
    (from-sequential
-    (as-ordering (fn [left right] (compare left right)))
+    (as-ordering (fn [left right] (stdlib/compare left right)))
     keys)))
 
 (defn set-lookup [set key]
@@ -1689,14 +1690,14 @@
 (defn restore
   ([address storage]
    (restore-by
-    (as-ordering (fn [left right] (compare left right)))
+    (as-ordering (fn [left right] (stdlib/compare left right)))
     address
     storage
     -1
     -1))
   ([address storage opts]
    (restore-by
-    (as-ordering (fn [left right] (compare left right)))
+    (as-ordering (fn [left right] (stdlib/compare left right)))
     address
     storage
     -1
@@ -1786,7 +1787,7 @@
 
 (defn seek
   ([values target]
-   (seek values target (fn [left right] (compare left right))))
+   (seek values target (fn [left right] (stdlib/compare left right))))
   ([values target cmp]
    (let [cmp (as-ordering cmp)]
      (filter

@@ -73,7 +73,7 @@ manifest.
   `source_review.tsv`, enforces at least 95%, and requires zero unreviewed
   definitions.
 - `*_interface_audit.sh` verifies that migrated DataScript and PSS declarations
-  live in `.mil` files and that every compile manifest loads each interface
+  live in `.mli` files and that every compile manifest loads each interface
   before its implementation.
 - `differential/cases.tsv` names the initial observable-behavior fixtures.
   A `known-difference` row must differ from upstream and cite an existing
@@ -84,7 +84,7 @@ The vendored files are ports, not an alternative authority. Local changes in
 another DataScript checkout have no role in comparisons.
 
 The declarations for annotations, built-ins, datafy, query, query types, query
-v3, and PSS now live in dedicated `.mil` files. Entity declarations remain in
+v3, and PSS now live in dedicated `.mli` files. Entity declarations remain in
 `entity.cljc`: its public state is recursively tied to the implementation-only
 `Entity` and `EntityReferenceSet` types, so splitting that recursive group
 across the interface boundary would make the types unavailable rather than

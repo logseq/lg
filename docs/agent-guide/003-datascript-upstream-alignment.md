@@ -617,12 +617,12 @@ Files:
 - `src/special_form_elaborator.ml`
 - `src/expression_elaborator.ml`
 - `src/signature_overlay.ml`
-- `test/datascript/lg/annotations.mil`
-- `test/datascript/lg/{built_ins,datafy,query,query_types,query_v3}.mil`
+- `test/datascript/lg/annotations.mli`
+- `test/datascript/lg/{built_ins,datafy,query,query_types,query_v3}.mli`
 - `test/datascript/upstream/*.cljc`
 - `test/datascript/lg/*.cljc`
 - `datascript/me/tonsky/persistent_sorted_set.cljc`
-- `datascript/me/tonsky/persistent_sorted_set.mil`
+- `datascript/me/tonsky/persistent_sorted_set.mli`
 
 Tasks:
 

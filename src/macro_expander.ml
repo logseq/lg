@@ -1374,6 +1374,20 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->
       Ok (FList forms)
+  | FList (FSymbol "record" :: record_type :: field_forms) ->
+      let rec expand_fields expanded = function
+        | [] ->
+            Ok
+              (FList
+                 (FSymbol "record" :: record_type :: List.rev expanded))
+        | FList [ field_name; value ] :: rest ->
+            Result.bind (expand_all ~scope ~compiler_env value) (fun value ->
+                expand_fields
+                  (FList [ field_name; value ] :: expanded)
+                  rest)
+        | _ -> Error.error "record fields must be (field value) pairs"
+      in
+      expand_fields [] field_forms
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name compiler_env with
       | Some definition ->

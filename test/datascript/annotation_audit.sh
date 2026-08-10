@@ -3,8 +3,8 @@
 set -eu
 
 if [ -e test/datascript/lg/annotations.cljc ] || \
-   [ ! -f test/datascript/lg/annotations.mil ]; then
-  echo "DataScript boundary signatures must live in test/datascript/lg/annotations.mil" >&2
+   [ ! -f test/datascript/lg/annotations.mli ]; then
+  echo "DataScript boundary signatures must live in test/datascript/lg/annotations.mli" >&2
   exit 1
 fi
 

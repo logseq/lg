@@ -84,7 +84,7 @@
    :reason "Protocol declarations and implementations in algorithm source need concrete host and closed-value parameter contracts for static dispatch."}
   {:category :interface-protocol-method-contracts
    :count 5
-   :file "test/datascript/lg/annotations.mil"
+   :file "test/datascript/lg/annotations.mli"
    :reason "Data value protocol boundary contracts live in the dedicated interface file rather than an algorithm source file."}]
 
  :algorithm-local

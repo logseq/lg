@@ -296,6 +296,9 @@
    (if-some [value v] value value-wildcard)
    (if-some [value tx] value default-tx)))
 
+(signature datascript.db/equiv-datom
+  :fn<datascript.db/Datom;datascript.db/Datom;bool>)
+
 (defn ^:private equiv-datom [d o]
   (and (== (.-e d) (.-e o))
        (= (.-a d) (.-a o))
@@ -348,7 +351,8 @@
      (-case-tree qs vs)))
 
 (defn cmp
-   [ x  y]
+   [^:keyword x ^:keyword y]
+  :int
   (if (= x attr-wildcard)
     0
     (if (= y attr-wildcard) 0 (long (compare x y)))))
@@ -1113,6 +1117,9 @@
     (vec (set/set-seq (.-eavt left)))
     (vec (set/set-seq (.-eavt right))))))
 
+(signature datascript.db/datom-hash
+  :fn<datascript.db/Datom;int>)
+
 (defn  datom-hash [datom]
   (Hashtbl.hash
    (tuple
@@ -1792,6 +1799,9 @@
           (avet avet)
           (max-eid (Some max-eid))
           (max-tx (Some max-tx))))
+
+(signature datascript.db/restore-db
+  :fn<datascript.db/db-snapshot;datascript.db/DB>)
 
 (defn  restore-db
   [ snapshot]
@@ -2520,6 +2530,9 @@
    (or
     (some? (Datascript_runtime.Data_value.sequential_items value))
     (some? (Datascript_runtime.Data_value.set_items value)))))
+
+(signature datascript.db/ref?
+  :fn<datascript.db/DB;keyword;bool>)
 
 (defn ref? [db attr]
   (is-attr? db attr :db.type/ref))

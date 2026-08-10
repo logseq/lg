@@ -242,8 +242,10 @@ Map literal types are structural records keyed by Clojure keywords.
 
 `hash-map` creates structural records from keyword/value pairs.
 
-`array-map` and `sorted-map` share the same structural map representation as
-`hash-map` in the current static subset.
+`array-map` retains the ordinary static map representation. `sorted-map` and
+`sorted-map-by` use the source standard library's typed persistent red-black
+tree and preserve comparator order across `assoc`, `dissoc`, and sequence
+operations.
 
 Keyword lookup in a typed context can infer structural map field requirements
 for unannotated function parameters.

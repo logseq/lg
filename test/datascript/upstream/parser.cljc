@@ -2526,6 +2526,8 @@
       (f rebuilt)
       rebuilt)))
 
+(signature datascript.parser/collect-traversable
+  :fn<fn<traversable;bool>;traversable;vector<traversable>;vector<traversable>>)
 (defn-  collect-traversable
   [ pred
     node
@@ -2538,6 +2540,8 @@
      acc
      (traversable-children node))))
 
+(signature datascript.parser/collect-vars-traversable
+  :fn<vector<datascript.parser/Variable>;traversable;vector<datascript.parser/Variable>>)
 (defn-  collect-vars-traversable
   [ acc
     node]

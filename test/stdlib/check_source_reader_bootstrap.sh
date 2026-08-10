@@ -4,9 +4,9 @@ set -eu
 root=$1
 
 for file in \
-  stdlib/clojure/edn.mil \
+  stdlib/clojure/edn.mli \
   stdlib/clojure/edn.cljc \
-  stdlib/cljs/reader.mil \
+  stdlib/cljs/reader.mli \
   stdlib/cljs/reader.cljc; do
   if ! test -f "$root/$file"; then
     echo "$file is missing from the source standard library" >&2
