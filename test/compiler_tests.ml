@@ -2853,6 +2853,31 @@ let test_sidecar_function_signatures_type_upstream_function_bodies () =
   if string_contains_substring ocaml "Runtime_dynamic" then
     failwith "closed sidecar function signatures must not introduce dynamic"
 
+let test_sidecar_map_returns_do_not_reuse_closed_argument_shapes () =
+  let source =
+    {|
+(ns app.map-return)
+(signature app.map-return/add-b
+  :fn<map<keyword;int>;map<keyword;int>>)
+(defn add-b [m]
+  (assoc m :b 2))
+(def result (add-b {:a 1}))
+(println (= (Some 2) (get result :b)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/sidecar_map_return.cljc" source
+  in
+  assert_ocaml_runs "sidecar_map_returns_do_not_reuse_closed_argument_shapes"
+    "true\n" native_source;
+  if
+    not
+      (string_contains_substring native_source
+         "M.get_option app_map_return_result")
+  then failwith "sidecar map return must preserve runtime key lookup";
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/sidecar_map_return.cljc" source)
+
 let test_generic_function_signatures_preserve_type_parameters () =
   let source =
     {|
@@ -40475,6 +40500,8 @@ let tests =
       test_explicit_named_record_hints_survive_field_inference );
     ( "sidecar function signatures type upstream function bodies",
       test_sidecar_function_signatures_type_upstream_function_bodies );
+    ( "sidecar map returns do not reuse closed argument shapes",
+      test_sidecar_map_returns_do_not_reuse_closed_argument_shapes );
     ( "generic function signatures preserve type parameters",
       test_generic_function_signatures_preserve_type_parameters );
     ( "generic signatures keep collection fields static",
