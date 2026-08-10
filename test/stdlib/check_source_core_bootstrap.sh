@@ -72,6 +72,7 @@ for name in truth_ \
   'vector?' 'list?' 'seq?' 'set?' 'map?' 'fn?' 'coll?' 'associative?' \
   'rational?' 'float?' 'double?' 'sequential?' 'reversible?' 'sorted?' 'reduceable?' \
   'char?' 'identical?' 'array?' 'array-value?' 'reduced?' \
+  'uuid?' 'delay?' \
   'some?' 'boolean?' 'integer?' 'pos-int?' 'neg-int?' 'nat-int?' \
   'ident?' 'simple-ident?' 'qualified-ident?' \
   'simple-symbol?' 'qualified-symbol?' \

@@ -2377,6 +2377,16 @@
   [x]
   (__lg_reduced-predicate x))
 
+(defn uuid?
+  {:inline (fn [x] (list '__lg_uuid-predicate x))}
+  [x]
+  (__lg_uuid-predicate x))
+
+(defn delay?
+  {:inline (fn [x] (list '__lg_delay-predicate x))}
+  [x]
+  (__lg_delay-predicate x))
+
 (defn some?
   {:inline (fn [x] (list 'not (list '__lg_nil-predicate x)))}
   [x]

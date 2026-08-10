@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 579 source entries (58.78%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 190 static-typing blockers,
+macro surfaces. The current baseline is 581 source entries (58.98%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 188 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -430,8 +430,8 @@ build-time libraries with source namespaces that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 197 reviewed routes. A separate OCaml-AST
-extractor now audits 130 form-head pattern routes in expression elaboration and
+The call elaborator contributes 195 reviewed routes. A separate OCaml-AST
+extractor now audits 129 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `doseq`,
 `dotimes`, `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as
 unclassified deferred upstream vars. Both counts are pinned, so adding a new
@@ -441,7 +441,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 197-name compiler dispatch inventory has zero `source-shadowed`
+The current 195-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -450,7 +450,7 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
-`sequential?`, `reversible?`, and `sorted?` source functions, plus `some?`,
+`sequential?`, `reversible?`, `sorted?`, `uuid?`, and `delay?` source functions, plus `some?`,
 `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
@@ -636,7 +636,17 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and
 `disj` routes, plus the formerly compiler-owned `every-pred` and `some-fn`
-routes, the raw compiler-call inventory contains 193 names.
+routes, the raw compiler-call inventory contains 195 names. The two additional
+routes are private `__lg_uuid-predicate` and `__lg_delay-predicate` static
+specialization primitives; neither public predicate is compiler-dispatched.
+`uuid?` follows the pinned ClojureScript `IUUID` predicate through a nominal
+`Lg_runtime.Runtime_uuid.t` shared by Native and Melange, so an ordinary string
+does not become a UUID on the JavaScript target. `delay?` follows the upstream
+`Delay` instance predicate through `Lazy.t<a>`. Their public source functions
+remain first-class at those concrete static types, while direct inline calls
+accept any known static type, evaluate it once, and return false for a
+nonmatching type. The exact Logseq scan finds 190 `uuid?` calls in 70 source
+files and 2 `delay?` calls in one source file.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the

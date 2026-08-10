@@ -23,6 +23,7 @@ done <<'EOF'
 clone	blocked-static-typing	fresh-clone-identity-is-observable-and-cannot-be-preserved-for-every-immutable-static-collection-representation
 cloneable?	blocked-static-typing	first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 default-dispatch-val	blocked-static-typing	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values
 ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type
@@ -31,6 +32,7 @@ tagged-literal	blocked-static-typing	tagged-literal-forms-accept-arbitrary-cloju
 tagged-literal?	blocked-static-typing	first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
 unsafe-bit-and	blocked-static-typing	javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve
+uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings
 vec-lite	blocked-static-typing	one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation
 coercive-=	host-boundary	javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent
 coercive-boolean	host-boundary	javascript-falsiness-for-zero-nan-empty-string-null-and-undefined-differs-from-clojure-truthiness

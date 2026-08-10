@@ -435,6 +435,14 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
       in
       let rec form_mentions name = function
         | FSymbol candidate -> candidate = name
+        | FList
+            (FSymbol ("record" | "clojure.core/record" | "cljs.core/record")
+            :: _type_name :: field_forms) ->
+            List.exists
+              (function
+                | FList [ _field_name; value ] -> form_mentions name value
+                | form -> form_mentions name form)
+              field_forms
         | FList forms | FVector forms ->
             List.exists (form_mentions name) forms
         | FMap pairs ->

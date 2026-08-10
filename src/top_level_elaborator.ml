@@ -1505,7 +1505,7 @@ let rec compile scope env next_type form =
           in
           Result.bind
             (predeclare_methods env [] None interface_forms)
-            (fun (env, implementation_names) ->
+            (fun (env, _implementation_names) ->
           let rec compile_methods env items current_interface = function
             | [] ->
                 let ordinary, recursive =
@@ -1620,6 +1620,16 @@ let rec compile scope env next_type form =
                 in
                 let rec form_mentions name = function
                   | FSymbol candidate -> candidate = name
+                  | FList
+                      (FSymbol
+                         ("record" | "clojure.core/record" | "cljs.core/record")
+                      :: _type_name :: field_forms) ->
+                      List.exists
+                        (function
+                          | FList [ _field_name; value ] ->
+                              form_mentions name value
+                          | form -> form_mentions name form)
+                        field_forms
                   | FList forms | FVector forms ->
                       List.exists (form_mentions name) forms
                   | FMap pairs ->
@@ -1773,7 +1783,7 @@ let rec compile scope env next_type form =
                               }
                           else if
                             Semantic_ir.exists_identifier
-                              (fun name -> List.mem name implementation_names)
+                              (String.equal ocaml_name)
                               implementation.semantic_expr
                           then
                             Recursive_value_binding

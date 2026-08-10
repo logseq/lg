@@ -124,4 +124,12 @@ let compile name args =
         args
   | "__lg_fn-predicate" ->
       compile_type_predicate name (function TFn _ -> true | _ -> false) args
+  | "__lg_uuid-predicate" ->
+      compile_type_predicate name
+        (function TOcaml "Lg_runtime.Runtime_uuid.t" -> true | _ -> false)
+        args
+  | "__lg_delay-predicate" ->
+      compile_type_predicate name
+        (function TOcaml_app ("Lazy.t", [ _ ]) -> true | _ -> false)
+        args
   | _ -> Error.error ("unknown function " ^ name)

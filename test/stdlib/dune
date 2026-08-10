@@ -33,6 +33,108 @@
    %{target})))
 
 (rule
+ (target source_core_nominal_predicates_app_chunk.ml)
+ (deps
+  source_core_nominal_predicates_app.cljc
+  ../../stdlib/lg_stdlib_native.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   native
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_nominal_predicates_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_nominal_predicates_native.ml)
+ (deps
+  ../../stdlib/lg_stdlib_native.ml
+  source_core_nominal_predicates_app_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:source_core_nominal_predicates_app_chunk.ml})))))
+
+(executable
+ (name source_core_nominal_predicates_native)
+ (modules source_core_nominal_predicates_native)
+ (flags
+  (:standard -w -27-32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_nominal_predicates.actual)
+ (deps
+  source_core_nominal_predicates_native.exe
+  source_core_nominal_predicates.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:source_core_nominal_predicates_native.exe}))
+   (diff %{dep:source_core_nominal_predicates.expected} %{target}))))
+
+(rule
+ (target source_core_nominal_predicates_app_melange_chunk.ml)
+ (deps
+  source_core_nominal_predicates_app.cljc
+  ../../stdlib/lg_stdlib_melange.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_melange.state}
+   %{dep:source_core_nominal_predicates_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_nominal_predicates_melange.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.ml
+  source_core_nominal_predicates_app_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:source_core_nominal_predicates_app_melange_chunk.ml})))))
+
+(melange.emit
+ (target source-core-nominal-predicates-melange)
+ (alias source-core-nominal-predicates-melange)
+ (module_systems es6)
+ (modules source_core_nominal_predicates_melange)
+ (compile_flags -w -27-32)
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_nominal_predicates_melange.actual)
+ (deps
+  (alias source-core-nominal-predicates-melange)
+  source-core-nominal-predicates-melange/test/stdlib/source_core_nominal_predicates_melange.js
+  source_core_nominal_predicates.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run
+     node
+     %{dep:source-core-nominal-predicates-melange/test/stdlib/source_core_nominal_predicates_melange.js}))
+   (diff %{dep:source_core_nominal_predicates.expected} %{target}))))
+
+(rule
  (target source_core_lazy_transducer_app_chunk.ml)
  (deps
   source_core_lazy_transducer_app.cljc
@@ -996,6 +1098,70 @@
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:source_core_parse_uuid_bad_type.cljc}
    "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_uuid_predicate_zero_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_uuid_predicate_zero_arity.cljc}
+   "uuid? called with unsupported macro arity 0")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_uuid_predicate_two_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_uuid_predicate_two_arity.cljc}
+   "uuid? called with unsupported macro arity 2")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_delay_predicate_zero_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_delay_predicate_zero_arity.cljc}
+   "delay? called with unsupported macro arity 0")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_delay_predicate_two_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_delay_predicate_two_arity.cljc}
+   "delay? called with unsupported macro arity 2")))
 
 (rule
  (alias runtest)

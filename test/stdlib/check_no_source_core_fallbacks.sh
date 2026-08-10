@@ -73,7 +73,7 @@ for name in get get-in assoc-in update update-in select-keys merge vals; do
   done
 done
 
-public_predicates='nil? true? false? int? number? string? keyword? symbol? vector? list? seq? set? map? fn? coll? associative? rational? float? double? sequential? reversible? sorted? zero? pos? neg? abs char? identical? array? array-value? reduced?'
+public_predicates='nil? true? false? int? number? string? keyword? symbol? vector? list? seq? set? map? fn? coll? associative? rational? float? double? sequential? reversible? sorted? zero? pos? neg? abs char? identical? array? array-value? reduced? uuid? delay?'
 dispatch_names=$(ocaml -I +compiler-libs ocamlcommon.cma \
   "$root/script/extract_ocaml_string_dispatch.ml" \
   "$root/src/call_elaborator.ml")

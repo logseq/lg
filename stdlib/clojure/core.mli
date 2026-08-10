@@ -319,6 +319,8 @@
   :fn<array<value>;bool>)
 (signature clojure.core/reduced? [value]
   :fn<Lg_runtime.Runtime_reduced.t<value>;bool>)
+(signature clojure.core/uuid? :fn<Lg_runtime.Runtime_uuid.t;bool>)
+(signature clojure.core/delay? [value] :fn<Lazy.t<value>;bool>)
 (signature clojure.core/some? [value]
   :fn<option<value>;bool>)
 (signature clojure.core/boolean? :fn<bool;bool>)

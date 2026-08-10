@@ -5640,21 +5640,12 @@ let create ~compile_expr =
         | _ -> Error.error "satisfies? expects a protocol and value")
     | "uuid" -> (
         match compile_args () with
-                  | Ok [ value ] when Types.equal value.ty TString -> (
-                      match Env.target env with
-            | Target.Native ->
-                Ok
-                  (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")
-                     (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_uuid.of_string",
-                          [ value.semantic_expr ] )))
-            | Target.Melange | Target.Js_of_ocaml ->
-                Ok
-                  (typed_ir TString
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "String.lowercase_ascii",
-                          [ value.semantic_expr ] ))))
+        | Ok [ value ] when Types.equal value.ty TString ->
+            Ok
+              (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_uuid.of_string",
+                      [ value.semantic_expr ] )))
         | Ok _ -> Error.error "uuid expects a string"
         | Error _ as error -> error)
     | "__type-hint" -> (
@@ -8279,7 +8270,8 @@ let create ~compile_expr =
               | "__lg_number-predicate" | "__lg_string-predicate"
               | "__lg_keyword-predicate" | "__lg_list-predicate"
               | "__lg_seq-predicate"
-              | "__lg_fn-predicate" ->
+              | "__lg_fn-predicate" | "__lg_uuid-predicate"
+              | "__lg_delay-predicate" ->
                   compile_boolean_call scope env name arg_forms
     | "instance?" -> (
         match arg_forms with
