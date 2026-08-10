@@ -6494,7 +6494,7 @@ let create ~compile_expr =
                                     value.semantic_expr; Semantic_ir.Bool false;
                                   ])))
         | Ok _ -> Error.error "reduced? expects 1 argument")
-    | "unreduced" -> (
+    | "__lg_unreduced" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] -> (

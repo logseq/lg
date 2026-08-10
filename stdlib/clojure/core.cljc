@@ -1788,6 +1788,11 @@
 (defn reduced [x]
   (runtime-reduced/reduced x))
 
+(defn unreduced
+  {:inline (fn [value] (list '__lg_unreduced value))}
+  [value]
+  (__lg_unreduced value))
+
 (defn deref
   {:inline
    (fn [reference]

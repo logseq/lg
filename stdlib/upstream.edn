@@ -393,6 +393,16 @@
                      :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-upstream-type-guard-and-nil-namespace-branches}
     qualified-keyword? {:status :static-adaptation
                         :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
+    namespace {:status :blocked-static-typing
+               :reason :a-cross-state-source-wrapper-loses-user-inamed-witnesses-while-an-inline-wrapper-shadows-the-bootstrap-namespace-resolver-during-macro-compilation}
+    name {:status :blocked-static-typing
+          :reason :same-arity-source-function-must-accept-plain-strings-and-arbitrary-inamed-receivers-without-a-common-static-source-parameter-type}
+    keyword {:status :blocked-static-typing
+             :reason :same-arity-source-overloads-accept-string-keyword-and-symbol-inputs-but-lg-cannot-overload-a-first-class-function-by-static-parameter-type}
+    symbol {:status :blocked-static-typing
+            :reason :same-arity-source-overloads-accept-string-keyword-and-symbol-inputs-but-lg-cannot-overload-a-first-class-function-by-static-parameter-type}
+    list* {:status :blocked-static-typing
+           :reason :the-upstream-variadic-arity-requires-spread-over-a-heterogeneous-argument-list-whose-final-element-alone-is-expanded-as-a-sequence}
     counted? {:status :static-adaptation
               :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-maps-and-static-icounted-protocol-satisfaction}
     seqable? {:status :static-adaptation
@@ -419,6 +429,8 @@
               :reason :source-constructor-preserves-upstream-deduplication-and-metadata-free-result-semantics-using-lg-default-static-persistent-sets-because-lite-runtime-class-identity-is-not-source-observable}
     reduced {:status :static-adaptation
              :reason :source-wrapper-preserves-the-parameterized-reduction-sentinel-through-a-typed-runtime-boundary}
+    unreduced {:status :static-adaptation
+               :reason :source-function-and-inline-specialization-preserve-the-input-or-reduced-payload-dependent-result-through-a-minimal-parameterized-reduced-boundary}
     lazy-seq {:status :static-adaptation
               :reason :source-macro-preserves-delayed-single-realization-through-the-typed-memoized-sequence-boundary-without-clojurescript-chunk-storage}
     lazy-cat {:status :static-adaptation

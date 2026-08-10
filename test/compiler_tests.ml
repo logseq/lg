@@ -25663,6 +25663,54 @@ let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_
   Lg.Compiler.compile_string {|(def x (list* 1 2 3))|}
   |> expect_error "list* final argument must be a collection"
 
+let test_source_unreduced_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-unreduced
+  (:require [cljs.core :as core :refer [unreduced]]))
+
+(def unwrap unreduced)
+(def stopped (reduced 42))
+
+(println
+  (and (= 42 (unwrap stopped))
+       (= 7 (core/unreduced 7))))
+|}
+  in
+  let native_consumer =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_unreduced.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source unreduced must remain statically typed";
+  assert_ocaml_runs "source_unreduced" "true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_unreduced.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_unreduced.cljc" source)
+
+let test_unreduced_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name))
+      then failwith (name ^ " is not owned by the source standard library");
+      let compiler_source =
+        read_file (Filename.concat (repo_root ()) "src/call_elaborator.ml")
+      in
+      if
+        string_contains_substring compiler_source
+          ("| \"" ^ name ^ "\"")
+      then failwith (name ^ " still has public-name compiler dispatch"))
+    [ "unreduced" ]
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -40826,6 +40874,10 @@ let tests =
     ( "batched identifier/constructor core functions reject bad list* tail",
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     );
+    ( "source unreduced matches ClojureScript",
+      test_source_unreduced_matches_clojurescript );
+    ( "unreduced has no public-name dispatch",
+      test_unreduced_has_no_public_name_dispatch );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );

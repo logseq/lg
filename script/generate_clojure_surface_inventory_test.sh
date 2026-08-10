@@ -124,6 +124,8 @@ awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/get" || $2 == "clojure.c
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/seq" || $2 == "clojure.core/first" || $2 == "clojure.core/rest" || $2 == "clojure.core/next" || $2 == "clojure.core/cons") && $3 == "source" {found++} END {exit found != 5}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/some" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/conj" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/unreduced" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/name" || $2 == "clojure.core/namespace" || $2 == "clojure.core/keyword" || $2 == "clojure.core/symbol" || $2 == "clojure.core/list*") && $3 == "blocked-static-typing" {found++} END {exit found != 5}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/-seq" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "blocked-static-typing" && $4 == "nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"

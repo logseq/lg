@@ -103,6 +103,7 @@ awk '
     internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"
     internal_abi["__lg_reduce-kv"] = "typed-empty-accumulator-and-collection-inference-primitive"
     internal_abi["__lg_reduce"] = "typed-reduced-short-circuit-and-collection-specialization-primitive"
+    internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
     internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
