@@ -493,8 +493,8 @@
            :reason :first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value}
     keep-indexed {:status :static-adaptation
                   :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-optional-result-filter-while-omitting-the-javascript-chunked-sequence-fast-path}
-    doseq {:status :blocked-static-typing
-           :reason :current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers}
+    doseq {:status :static-adaptation
+           :reason :source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path}
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
     empty {:status :static-adaptation

@@ -24998,10 +24998,10 @@ let test_doseq_infers_seqable_parameters () =
 (println (consume-entries {:other 7} :answer))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "doseq_infers_seqable_parameters" "42\nnil\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_partition_by_keyword_infers_seqable_record_parameters () =
   let source =
@@ -25030,7 +25030,7 @@ let test_partition_by_emits_nonrecursive_finish_helper () =
   assert_ocaml_runs "partition_by_emits_nonrecursive_finish_helper" "2\n"
     ocaml_source
 
-let test_doseq_prefers_reducible_over_seqable () =
+let test_doseq_uses_upstream_seqable_iteration () =
   let source =
     {|
 (type-record direct-values (items :array<int>))
@@ -25051,7 +25051,7 @@ let test_doseq_prefers_reducible_over_seqable () =
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "doseq_prefers_reducible_over_seqable" "6:0\n"
+  assert_ocaml_runs "doseq_uses_upstream_seqable_iteration" "6:1\n"
     ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
@@ -41912,8 +41912,8 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_run_function
     );
     ("doseq infers seqable parameters", test_doseq_infers_seqable_parameters);
-    ( "doseq prefers reducible over seqable",
-      test_doseq_prefers_reducible_over_seqable );
+    ( "doseq uses upstream seqable iteration",
+      test_doseq_uses_upstream_seqable_iteration );
     ( "doseq preserves generic protocol collection elements",
       test_doseq_preserves_generic_protocol_collection_elements );
     ("for supports when clauses", test_for_supports_when_clauses);

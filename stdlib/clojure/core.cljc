@@ -1413,6 +1413,13 @@
          (recur))
        nil)))
 
+(defmacro doseq [seq-exprs & body]
+  (assert (vector? seq-exprs)
+          "doseq requires a vector for its binding")
+  (assert (even? (count seq-exprs))
+          "doseq requires an even number of forms in binding vector")
+  `(__lg_doseq ~seq-exprs ~@body))
+
 (defmacro -> [x & forms]
   (loop [x x
          forms forms]

@@ -24,6 +24,7 @@ clone	blocked-static-typing	fresh-clone-identity-is-observable-and-cannot-be-pre
 cloneable?	blocked-static-typing	first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 default-dispatch-val	blocked-static-typing	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
 delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values
+doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path
 ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type

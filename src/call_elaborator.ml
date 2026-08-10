@@ -5992,7 +5992,7 @@ let create ~compile_expr =
                          ];
                        FList
                          [
-                           FSymbol "doseq";
+                           FSymbol "__lg_doseq";
                            FVector
                              [ FSymbol value_name; FSymbol collection_name ];
                            FList

@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 581 source entries (58.98%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 188 static-typing blockers,
+macro surfaces. The current baseline is 582 source entries (59.09%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 187 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -350,19 +350,24 @@ family by protocol family.
 `ensure-reduced` is explicitly blocked because its same-arity return type is
 dependent on whether the input is already `Reduced<T>`; representing that
 contract as a normal generic function would incorrectly nest the wrapper.
-`delay?` and `force` remain blocked rather than using direct-call-only inline
-type tests. Their pinned ClojureScript functions are first-class: `delay?`
-accepts every value type, while `force` returns either a delay's payload or the
-unchanged non-delay input. LG cannot yet express those relationships through
-one static source function without a typed instance/forceable capability.
+`delay?` is source-owned through a first-class `Lazy.t<a> -> bool` signature
+and direct-call static specialization for arbitrary known input types. `force`
+remains blocked because its result is either a delay's payload or the unchanged
+non-delay input; LG cannot express that dependent result through one static
+source function without a typed forceable capability.
 `keep-indexed`, `take-nth`, `random-sample`, `partition-all`, and
 `partitionv-all` now share the source lazy-sequence and reducing-function
 foundation, so their collection and stateful transducer arities are both
 source-defined.
-The existing compiler-owned `doseq` expansion remains a visible blocker rather
-than counting as supported: it rejects the upstream `:while` binding modifier
-and cannot yet preserve termination of the current nested loop when `:while`
-follows a `:let` modifier.
+`doseq` is a precompiled source macro and resolves through automatic core
+refer, `cljs.core` alias/refer, and qualified `clojure.core` calls. It expands
+only to private `__lg_doseq` macro elaboration. The elaborator preserves the
+pinned modifier order and propagates recur ownership so `:while` terminates
+only its current binding loop, including after `:let`; the JavaScript chunked
+sequence fast path is omitted. Every binding starts from the receiver's static
+Seqable implementation as upstream does; a separate Reducible implementation
+does not bypass observable sequence construction. The Logseq scan finds 69
+exact `doseq` calls in 40 source files.
 `to-array-2d` is blocked as a whole rather than restricted to vectors. Its
 upstream input is a seqable whose elements are themselves seqable; LG currently
 loses each inner value's static sequence witness when that nested capability is
@@ -432,9 +437,10 @@ surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
 The call elaborator contributes 195 reviewed routes. A separate OCaml-AST
 extractor now audits 129 form-head pattern routes in expression elaboration and
-type inference; this closes the former gap where `case`, `condp`, `doseq`,
-`dotimes`, `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as
-unclassified deferred upstream vars. Both counts are pinned, so adding a new
+type inference; this closes the former gap where `case`, `condp`, `dotimes`,
+`fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
+deferred upstream vars. The private `__lg_doseq` route is classified separately
+as macro control-flow elaboration. Both counts are pinned, so adding a new
 name-based form path requires an explicit inventory review.
 Every `blocked-static-typing` entry must have a concrete, machine-checked
 reason; the inventory test rejects the former catch-all blocker description.
@@ -450,11 +456,13 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
-`sequential?`, `reversible?`, `sorted?`, `uuid?`, and `delay?` source functions, plus `some?`,
+`sequential?`, `reversible?`, `sorted?`, `uuid?`, and `delay?` source functions,
+plus `some?`,
 `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
-`qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`, `vary-meta`,
+`qualified-keyword?`, `counted?`, `seqable?`, and `doseq` source macros,
+`reduced`, `reset-vals!`, `vary-meta`,
 `inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
@@ -813,10 +821,9 @@ typed keyword equality, matching ClojureScript's fallback comparison of fully
 qualified names without an open runtime type test. The matching symbol
 function and the upstream float predicates, long hash combiner, and
 special-symbol membership function are source-backed in the same batch.
-`uuid?` remains a concrete static blocker: Native UUID values are nominal,
-while Melange currently represents UUID values as strings, so a source
-predicate cannot distinguish them from ordinary strings until both targets
-share a nominal representation. The aggregate `clojure.set` source
+`uuid?` is now source-owned over the shared nominal UUID representation, so
+Native and Melange both distinguish UUID values from ordinary strings. The
+aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
 `superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
 references and all 221 observed qualified-var references resolve through the

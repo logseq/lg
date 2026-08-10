@@ -196,9 +196,9 @@ awk -F '\t' '
     if (canonical == "case" || canonical == "condp") {
       status = "special-form"
       reason = "compiler-owned-source-control-flow-expansion"
-    } else if (canonical == "doseq") {
-      status = "blocked-static-typing"
-      reason = "current-effect-loop-expansion-cannot-preserve-upstream-while-early-termination-after-prior-let-modifiers"
+    } else if (canonical == "__lg_doseq") {
+      status = "special-form"
+      reason = "private-source-doseq-binding-modifier-and-loop-control-expansion"
     } else if (canonical == "for") {
       status = "special-form"
       reason = "compiler-owned-binding-modifier-and-lazy-sequence-expansion"

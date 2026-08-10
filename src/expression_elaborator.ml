@@ -27,6 +27,7 @@ let callable_set_counter = ref 0
 let dynamic_case_counter = ref 0
 let callable_expression_counter = ref 0
 let dotimes_counter = ref 0
+let doseq_counter = ref 0
 let multi_arity_fn_counter = ref 0
 
 let rec contains_source_macro scope env = function
@@ -237,7 +238,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "case" :: target :: clauses) ->
       compile_case scope env target clauses
   | FList [ FSymbol "case" ] -> Error.error "case expects a target"
-  | FList (FSymbol "doseq" :: bindings :: body_forms) ->
+  | FList (FSymbol "__lg_doseq" :: bindings :: body_forms) ->
       compile_doseq scope env bindings body_forms
   | FList [ FSymbol "for"; bindings; body ] ->
       compile_for scope env bindings body
@@ -446,42 +447,124 @@ and compile_case scope env target clauses =
   | Ok _ -> compile_match scope env target (pairs [] clauses)
 
 and compile_doseq scope env bindings body_forms =
-  let rec expand = function
-    | [] -> Ok (FList (FSymbol "do" :: body_forms))
+  let fresh_name label =
+    let name =
+      "__lg_doseq_" ^ label ^ "_" ^ string_of_int !doseq_counter
+    in
+    incr doseq_counter;
+    name
+  in
+  let append_recur body recur_form =
+    FList [ FSymbol "do"; body; recur_form ]
+  in
+  let rec form_mentions name = function
+    | FSymbol candidate -> String.equal name candidate
+    | FList (FSymbol ("quote" | "clojure.core/quote") :: _) -> false
+    | FList forms | FVector forms -> List.exists (form_mentions name) forms
+    | FMap entries ->
+        List.exists
+          (fun (key, value) ->
+            form_mentions name key || form_mentions name value)
+          entries
+    | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
+    | FChar _ | FBool _ ->
+        false
+  in
+  let rec expand recur_form = function
+    | [] -> Ok (true, FList (FSymbol "do" :: body_forms @ [ FSymbol "nil" ]))
     | FKeyword ":let" :: FVector bindings :: rest ->
         Result.map
-          (fun body -> FList [ FSymbol "let"; FVector bindings; body ])
-          (expand rest)
+          (fun (needs_recur, body) ->
+            ( needs_recur,
+              FList [ FSymbol "let"; FVector bindings; body ] ))
+          (expand recur_form rest)
     | FKeyword ":when" :: condition :: rest ->
-        Result.map
-          (fun body ->
-            FList
-              [ FSymbol "if"; condition; body; FSymbol "nil" ])
-          (expand rest)
-    | FKeyword ":while" :: _ -> Error.error "doseq :while is not supported yet"
+        Result.bind (expand recur_form rest) (fun (needs_recur, body) ->
+            match recur_form with
+            | None -> Error.error "doseq modifier requires a preceding binding"
+            | Some recur_form ->
+                let then_form =
+                  if needs_recur then append_recur body recur_form else body
+                in
+                Ok
+                  ( false,
+                    FList [ FSymbol "if"; condition; then_form; recur_form ] ))
+    | FKeyword ":while" :: condition :: rest ->
+        Result.bind (expand recur_form rest) (fun (needs_recur, body) ->
+            match recur_form with
+            | None -> Error.error "doseq modifier requires a preceding binding"
+            | Some recur_form ->
+                let then_form =
+                  if needs_recur then append_recur body recur_form else body
+                in
+                Ok
+                  ( false,
+                    FList
+                      [ FSymbol "if"; condition; then_form; FSymbol "nil" ] ))
+    | FKeyword keyword :: _ ->
+        Error.error ("Invalid 'doseq' keyword " ^ keyword)
     | ((FSymbol _ | FVector _ | FMap _) as pattern) :: collection :: rest ->
+        let remaining_name = fresh_name "remaining" in
+        let current_name = fresh_name "current" in
+        let element_name = fresh_name "element" in
+        let recur_form =
+          FList
+            [
+              FSymbol "recur";
+              FList [ FSymbol "next"; FSymbol current_name ];
+            ]
+        in
         Result.map
-          (fun body ->
-            FList
-              [
-                FSymbol "do";
-                FList
-                  [
-                    FSymbol "run!";
-                    FList [ FSymbol "fn"; FVector [ pattern ]; body ];
-                    collection;
-                  ];
-                FSymbol "nil";
-              ])
-          (expand rest)
+          (fun (needs_recur, body) ->
+            let body =
+              if needs_recur then append_recur body recur_form else body
+            in
+            let pattern =
+              match pattern with
+              | FSymbol name when not (form_mentions name body) -> FSymbol "_"
+              | pattern -> pattern
+            in
+            ( true,
+              FList
+                [
+                  FSymbol "loop";
+                  FVector
+                    [
+                      FSymbol remaining_name;
+                      FList [ FSymbol "seq"; collection ];
+                    ];
+                  FList
+                    [
+                      FSymbol "__lg_if-some";
+                      FVector
+                        [ FSymbol current_name; FSymbol remaining_name ];
+                      FList
+                        [
+                          FSymbol "__lg_if-some";
+                          FVector
+                            [
+                              FSymbol element_name;
+                              FList
+                                [ FSymbol "first"; FSymbol current_name ];
+                            ];
+                          FList
+                            [
+                              FSymbol "let";
+                              FVector [ pattern; FSymbol element_name ];
+                              body;
+                            ];
+                          FSymbol "nil";
+                        ];
+                      FSymbol "nil";
+                    ];
+                ] ))
+          (expand (Some recur_form) rest)
     | _ -> Error.error "doseq requires binding/collection pairs"
   in
-  match (bindings, body_forms) with
-  | FVector forms, _ :: _ -> (
-      match expand forms with
-      | Error _ as error -> error
-      | Ok expanded -> compile_expr scope env expanded)
-  | FVector _, [] -> Error.error "doseq requires a body"
+  match bindings with
+  | FVector forms ->
+      Result.bind (expand None forms) (fun (_needs_recur, expanded) ->
+          compile_expr scope env expanded)
   | _ -> Error.error "doseq bindings must be a vector"
 
 and compile_for scope env bindings body =

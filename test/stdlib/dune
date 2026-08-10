@@ -50,6 +50,104 @@
    %{target})))
 
 (rule
+ (target source_core_doseq_app_chunk.ml)
+ (deps
+  source_core_doseq_app.cljc
+  ../../stdlib/lg_stdlib_native.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   native
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_doseq_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_doseq_native.ml)
+ (deps ../../stdlib/lg_stdlib_native.ml source_core_doseq_app_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:source_core_doseq_app_chunk.ml})))))
+
+(executable
+ (name source_core_doseq_native)
+ (modules source_core_doseq_native)
+ (flags
+  (:standard -w -27-32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_doseq.actual)
+ (deps source_core_doseq_native.exe source_core_doseq.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:source_core_doseq_native.exe}))
+   (diff %{dep:source_core_doseq.expected} %{target}))))
+
+(rule
+ (target source_core_doseq_app_melange_chunk.ml)
+ (deps
+  source_core_doseq_app.cljc
+  ../../stdlib/lg_stdlib_melange.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_melange.state}
+   %{dep:source_core_doseq_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_doseq_melange.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.ml
+  source_core_doseq_app_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:source_core_doseq_app_melange_chunk.ml})))))
+
+(melange.emit
+ (target source-core-doseq-melange)
+ (alias source-core-doseq-melange)
+ (module_systems es6)
+ (modules source_core_doseq_melange)
+ (compile_flags -w -27-32)
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_doseq_melange.actual)
+ (deps
+  (alias source-core-doseq-melange)
+  source-core-doseq-melange/test/stdlib/source_core_doseq_melange.js
+  source_core_doseq.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run
+     node
+     %{dep:source-core-doseq-melange/test/stdlib/source_core_doseq_melange.js}))
+   (diff %{dep:source_core_doseq.expected} %{target}))))
+
+(rule
  (target source_core_nominal_predicates_native.ml)
  (deps
   ../../stdlib/lg_stdlib_native.ml
@@ -1114,6 +1212,70 @@
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:source_core_uuid_predicate_zero_arity.cljc}
    "uuid? called with unsupported macro arity 0")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_doseq_zero_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_doseq_zero_arity.cljc}
+   "doseq called with unsupported macro arity 0")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_doseq_non_vector.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_doseq_non_vector.cljc}
+   "doseq requires a vector for its binding")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_doseq_odd_bindings.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_doseq_odd_bindings.cljc}
+   "doseq requires an even number of forms in binding vector")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_doseq_invalid_keyword.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_doseq_invalid_keyword.cljc}
+   "Invalid 'doseq' keyword :unless")))
 
 (rule
  (alias runtest)

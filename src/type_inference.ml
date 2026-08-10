@@ -5090,7 +5090,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                                 | FSymbol name ->
                                     constrain_seqable TUnknown params name
                                 | _ -> infer_collection params collection))))))
-    | FList (FSymbol ("doseq" | "for") :: bindings :: body_forms) ->
+    | FList (FSymbol ("__lg_doseq" | "for") :: bindings :: body_forms) ->
         infer_generator_bindings params bindings body_forms
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms
     | FList (FSymbol "loop" :: FVector bindings :: body_forms) -> (

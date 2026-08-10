@@ -61,6 +61,13 @@ for name in namespace unreduced; do
   fi
 done
 
+for file in src/expression_elaborator.ml src/type_inference.ml; do
+  if grep -F '"doseq"' "$root/$file" >/dev/null; then
+    echo "clojure.core/doseq is still publicly dispatched in $file" >&2
+    exit 1
+  fi
+done
+
 for name in get get-in assoc-in update update-in select-keys merge vals; do
   for file in \
     src/collection_operation_elaborator.ml \
