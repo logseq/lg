@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 582 source entries (59.09%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 187 static-typing blockers,
+macro surfaces. The current baseline is 584 source entries (59.29%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 185 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -347,14 +347,16 @@ The typed primitives are the compiler-registered static protocol ABI used by
 built-in collection, reference, metadata, comparison, and transient receiver
 implementations. Future source migration can replace those entries protocol
 family by protocol family.
-`ensure-reduced` is explicitly blocked because its same-arity return type is
-dependent on whether the input is already `Reduced<T>`; representing that
-contract as a normal generic function would incorrectly nest the wrapper.
+`ensure-reduced` is source-owned with a first-class `a -> Reduced<a>` signature
+for ordinary values and a direct-call static specialization that preserves an
+existing `Reduced<a>` wrapper without nesting it. `Reduced<a>` implements the
+pinned `IDeref` contract through typed payload extraction.
 `delay?` is source-owned through a first-class `Lazy.t<a> -> bool` signature
 and direct-call static specialization for arbitrary known input types. `force`
-remains blocked because its result is either a delay's payload or the unchanged
-non-delay input; LG cannot express that dependent result through one static
-source function without a typed forceable capability.
+is source-owned with a first-class `Lazy.t<a> -> a` signature and direct-call
+static specialization that returns non-delay inputs unchanged. Both operations
+evaluate their argument exactly once and remain fully static. The exact Logseq
+scan finds one `force` call and no `ensure-reduced` calls.
 `keep-indexed`, `take-nth`, `random-sample`, `partition-all`, and
 `partitionv-all` now share the source lazy-sequence and reducing-function
 foundation, so their collection and stateful transducer arities are both
@@ -435,7 +437,7 @@ build-time libraries with source namespaces that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 195 reviewed routes. A separate OCaml-AST
+The call elaborator contributes 197 reviewed routes. A separate OCaml-AST
 extractor now audits 129 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `dotimes`,
 `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
@@ -447,7 +449,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 195-name compiler dispatch inventory has zero `source-shadowed`
+The current 197-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -456,7 +458,8 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `not`, the call-site-specialized `nil?`, `true?`, `false?`, `int?`, `number?`,
 `string?`, `keyword?`, `symbol?`, `vector?`, `list?`, `seq?`, `set?`, `map?`,
 `fn?`, `coll?`, `associative?`, `rational?`, `float?`, `double?`,
-`sequential?`, `reversible?`, `sorted?`, `uuid?`, and `delay?` source functions,
+`sequential?`, `reversible?`, `sorted?`, `uuid?`, `delay?`, `force`, and
+`ensure-reduced` source functions,
 plus `some?`,
 `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
@@ -644,9 +647,10 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and
 `disj` routes, plus the formerly compiler-owned `every-pred` and `some-fn`
-routes, the raw compiler-call inventory contains 195 names. The two additional
-routes are private `__lg_uuid-predicate` and `__lg_delay-predicate` static
-specialization primitives; neither public predicate is compiler-dispatched.
+routes, the raw compiler-call inventory contains 197 names. The four additional
+routes are private `__lg_uuid-predicate`, `__lg_delay-predicate`, `__lg_force`,
+and `__lg_ensure-reduced` static specialization primitives; none of their
+public source functions is compiler-dispatched.
 `uuid?` follows the pinned ClojureScript `IUUID` predicate through a nominal
 `Lg_runtime.Runtime_uuid.t` shared by Native and Melange, so an ordinary string
 does not become a UUID on the JavaScript target. `delay?` follows the upstream

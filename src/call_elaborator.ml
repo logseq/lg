@@ -6715,6 +6715,33 @@ let create ~compile_expr =
                           [ value.semantic_expr ] )))
             | None -> Ok value)
         | Ok _ -> Error.error "unreduced expects 1 arguments")
+    | "__lg_ensure-reduced" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] -> (
+            match Types.reduced_element value.ty with
+            | Some _ -> Ok value
+            | None ->
+                Ok
+                  (typed_ir (Types.reduced value.ty)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_reduced.reduced",
+                          [ value.semantic_expr ] ))))
+        | Ok _ -> Error.error "ensure-reduced expects 1 argument")
+    | "__lg_force" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ value ] -> (
+            match value.ty with
+            | TOcaml_app ("Lazy.t", [ inner ]) ->
+                Ok
+                  (typed_ir inner
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lazy.force",
+                          [ value.semantic_expr ] )))
+            | _ -> Ok value)
+        | Ok _ -> Error.error "force expects 1 argument")
     | "raise" -> (
         match compile_args () with
         | Error _ as err -> err

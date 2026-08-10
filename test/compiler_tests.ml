@@ -22519,6 +22519,75 @@ let test_source_scalar_predicates_are_statically_first_class () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange first-class scalar predicates must remain static"
 
+let test_source_conditional_wrappers_match_clojurescript () =
+  let source =
+    {|
+(ns source-conditional-wrapper-app
+  (:require [cljs.core :as core :refer [ensure-reduced force]]))
+
+(def delayed-evaluations (atom 0))
+(def delayed-value
+  (delay (do (swap! delayed-evaluations inc) 42)))
+(def force-function force)
+(def reduced-value (ensure-reduced 8))
+(def ensure-reduced-function ensure-reduced)
+(def force-argument-evaluations (atom 0))
+(def ensure-argument-evaluations (atom 0))
+
+(println (= 42 (force delayed-value)))
+(println (= 42 (core/force delayed-value)))
+(println (= 42 (clojure.core/force delayed-value)))
+(println (= 42 (force-function delayed-value)))
+(println (= 1 @delayed-evaluations))
+(println (= 7 (force 7)))
+(println
+ (= "ordinary"
+    (force (do (swap! force-argument-evaluations inc) "ordinary"))))
+(println (= 1 @force-argument-evaluations))
+(println (reduced? reduced-value))
+(println (= 8 (deref reduced-value)))
+(println (identical? reduced-value (ensure-reduced reduced-value)))
+(println (identical? reduced-value (core/ensure-reduced reduced-value)))
+(println
+ (identical? reduced-value
+             (clojure.core/ensure-reduced reduced-value)))
+(println (= 9 (deref (ensure-reduced-function 9))))
+(println
+ (= 10
+    (deref
+     (ensure-reduced
+      (do (swap! ensure-argument-evaluations inc) 10)))))
+(println (= 1 @ensure-argument-evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 16 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_conditional_wrappers.cljc" source
+  in
+  let native_app_source =
+    compile_string_from_stdlib ~target:Lg.Target.Native source |> expect_ok
+  in
+  if string_contains_substring native_app_source "Runtime_dynamic" then
+    failwith "source conditional wrappers must remain static";
+  assert_ocaml_runs "source_conditional_wrappers" expected native_source;
+  let melange_app_source =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_app_source "Runtime_dynamic" then
+    failwith "Melange source conditional wrappers must remain static";
+  List.iter
+    (fun name ->
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_zero_arity.cljc")
+        ("(def result (" ^ name ^ "))")
+      |> expect_error_contains "unsupported macro arity 0";
+      compile_with_stdlib_result Lg.Target.Native
+        ("test/" ^ name ^ "_source_two_arity.cljc")
+        ("(def result (" ^ name ^ " 1 2))")
+      |> expect_error_contains "unsupported macro arity 2")
+    [ "force"; "ensure-reduced" ]
+
 let test_source_identifier_predicates_are_statically_first_class () =
   let source =
     {|
@@ -41793,6 +41862,8 @@ let tests =
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "source scalar predicates are statically first-class",
       test_source_scalar_predicates_are_statically_first_class );
+    ( "source conditional wrappers match ClojureScript",
+      test_source_conditional_wrappers_match_clojurescript );
     ( "source identifier predicates are statically first-class",
       test_source_identifier_predicates_are_statically_first_class );
     ( "source collection predicates are statically first-class",

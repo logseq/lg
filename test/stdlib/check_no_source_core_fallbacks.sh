@@ -3,6 +3,21 @@ set -eu
 
 root=$1
 
+for name in force; do
+  for file in \
+    src/call_elaborator.ml \
+    src/core_collection.ml \
+    src/expression_support.ml \
+    src/core_boolean.ml \
+    src/core_predicate.ml \
+    src/type_inference.ml; do
+    if grep -F "\"$name\"" "$root/$file" >/dev/null; then
+      echo "clojure.core/$name is still compiler-dispatched in $file" >&2
+      exit 1
+    fi
+  done
+done
+
 for name in identity completing complement every-pred some-fn boolean some? boolean? empty? not-empty integer? ident? counted? seqable? nat-int? pos-int? neg-int? simple-symbol? qualified-symbol? simple-keyword? qualified-keyword? simple-ident? qualified-ident? reduced ensure-reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not int-rotate-left imul m3-mix-K1 m3-mix-H1 m3-fmix m3-hash-int m3-hash-unencoded-chars hash-string* add-to-string-hash-cache mix-collection-hash ratio? decimal? realized? alength aclone acopy aslice aconcat array-values array-to-seq array-to-rseq array-seq to-array into-array array-from array-index-of array-binary-search-left array-binary-search-right amap asort! quot rem mod unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int unchecked-int unchecked-long rand-int rand-nth bit-and bit-or bit-xor bit-shift-left bit-shift-right bit-shift-right-zero-fill bit-and-not unsigned-bit-shift-right bit-count second last even? odd? every? ffirst fnext nfirst nnext not-any? not-every? split-at split-with nthnext nthrest bounded-count butlast take-last drop-last reverse interpose dedupe distinct distinct? not= zipmap comparator frequencies update-vals update-keys hash-combine max-key min-key constantly vec iterate tree-seq partitionv doall flush random-uuid parse-uuid system-time parse-long parse-double merge-with NaN? infinite? keyword-identical? symbol-identical? hash-double hash-keyword hash-string hash-long hash hash-ordered-coll hash-unordered-coll compare make-array aget aset atom volatile! transient persistent! conj! assoc! dissoc! pop! disj! get get-in assoc-in update update-in select-keys merge vals special-symbol? meta with-meta ifind? map-entry? regexp? volatile? key-test equiv-map divide reduceable? vector-lite hash-map-lite set-lite; do
   for file in \
     src/call_elaborator.ml \

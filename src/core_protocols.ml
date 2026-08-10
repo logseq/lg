@@ -411,6 +411,7 @@ let add_reference_protocols registry =
   let value = TVar "reference_value" in
   let reference = TRef value in
   let lazy_value = TOcaml_app ("Lazy.t", [ value ]) in
+  let reduced_value = Types.reduced value in
   let future = TOcaml_app ("Lg_runtime.Runtime_future.t", [ value ]) in
   let slot = TOcaml_app ("Lg_runtime.Runtime_slot.t", [ value ]) in
   let add receiver protocol_id method_name ocaml_name method_ty registry =
@@ -426,6 +427,10 @@ let add_reference_protocols registry =
        (TFn ([ reference ], value))
   |> add (Receiver_id.Host_receiver "Lazy.t") deref_id "-deref" "Lazy.force"
        (TFn ([ lazy_value ], value))
+  |> add
+       (Receiver_id.Host_receiver Types.reduced_type_name)
+       deref_id "-deref" "Lg_runtime.Runtime_reduced.unreduced"
+       (TFn ([ reduced_value ], value))
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_future.t") deref_id
        "-deref" "Lg_runtime.Runtime_future.get" (TFn ([ future ], value))
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") deref_id

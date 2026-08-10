@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 195; then
-  echo "compiler call dispatch changed: expected 195 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 197; then
+  echo "compiler call dispatch changed: expected 197 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -104,6 +104,8 @@ awk '
     internal_abi["__lg_reduce-kv"] = "typed-empty-accumulator-and-collection-inference-primitive"
     internal_abi["__lg_reduce"] = "typed-reduced-short-circuit-and-collection-specialization-primitive"
     internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
+    internal_abi["__lg_ensure-reduced"] = "typed-conditional-parameterized-reduced-wrapper-primitive"
+    internal_abi["__lg_force"] = "typed-lazy-force-or-static-identity-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"

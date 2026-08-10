@@ -90,6 +90,19 @@ for name in truth_ \
   fi
 done
 
+for name in force ensure-reduced; do
+  if ! grep -F "(defn $name" \
+    "$root/stdlib/clojure/core.cljc" >/dev/null; then
+    echo "clojure.core/$name is not source-defined as a function" >&2
+    exit 1
+  fi
+  if ! sed -n "/^(defn $name$/,/^$/p" "$root/stdlib/clojure/core.cljc" \
+    | grep -F '{:inline' >/dev/null; then
+    echo "clojure.core/$name is missing its source inline specialization" >&2
+    exit 1
+  fi
+done
+
 if ! grep -F '(defmacro amap' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/amap is not source-defined as the upstream macro" >&2
   exit 1

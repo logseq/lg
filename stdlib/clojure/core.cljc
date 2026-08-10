@@ -2384,6 +2384,11 @@
   [x]
   (__lg_reduced-predicate x))
 
+(defn ensure-reduced
+  {:inline (fn [x] (list '__lg_ensure-reduced x))}
+  [x]
+  (__lg_ensure-reduced x))
+
 (defn uuid?
   {:inline (fn [x] (list '__lg_uuid-predicate x))}
   [x]
@@ -2393,6 +2398,11 @@
   {:inline (fn [x] (list '__lg_delay-predicate x))}
   [x]
   (__lg_delay-predicate x))
+
+(defn force
+  {:inline (fn [x] (list '__lg_force x))}
+  [x]
+  (__lg_force x))
 
 (defn some?
   {:inline (fn [x] (list 'not (list '__lg_nil-predicate x)))}

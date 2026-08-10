@@ -485,12 +485,12 @@
             :reason :source-macro-preserves-the-upstream-ivolatile-vreset-ideref-and-variadic-updater-expansion-without-dynamic-packing}
     compare-and-set! {:status :static-adaptation
                       :reason :source-port-preserves-upstream-deref-equality-reset-control-flow-and-its-inline-specialization-evaluates-all-three-arguments-once-through-static-ideref-and-ireset-calls}
-    ensure-reduced {:status :blocked-static-typing
-                    :reason :same-arity-return-type-depends-on-whether-the-input-is-already-a-parameterized-reduced-value}
+    ensure-reduced {:status :static-adaptation
+                    :reason :source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper}
     delay? {:status :static-adaptation
             :reason :source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values}
-    force {:status :blocked-static-typing
-           :reason :first-class-result-must-be-the-delay-payload-for-lazy-values-and-the-input-type-for-every-non-delay-value}
+    force {:status :static-adaptation
+           :reason :source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types}
     keep-indexed {:status :static-adaptation
                   :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-optional-result-filter-while-omitting-the-javascript-chunked-sequence-fast-path}
     doseq {:status :static-adaptation

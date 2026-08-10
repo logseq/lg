@@ -26,3 +26,50 @@
 (println
  (and (not (delay? (do (swap! source-delay-predicate-evaluations inc) 7)))
       (= 1 @source-delay-predicate-evaluations)))
+
+(def source-force-evaluations (atom 0))
+(def source-force-delayed-value
+  (delay
+    (do
+      (swap! source-force-evaluations inc)
+      42)))
+(println (= 42 (force source-force-delayed-value)))
+(println (= 42 (core/force source-force-delayed-value)))
+(println (= 42 (clojure.core/force source-force-delayed-value)))
+(println (= 1 @source-force-evaluations))
+(def source-force-function force)
+(println (= 42 (source-force-function source-force-delayed-value)))
+(println (= 1 @source-force-evaluations))
+(println (= 7 (force 7)))
+(def source-force-argument-evaluations (atom 0))
+(println
+ (= "ordinary"
+    (force
+     (do
+       (swap! source-force-argument-evaluations inc)
+       "ordinary"))))
+(println (= 1 @source-force-argument-evaluations))
+
+(def source-reduced-value (ensure-reduced 8))
+(println (reduced? source-reduced-value))
+(println (= 8 (deref source-reduced-value)))
+(println
+ (identical? source-reduced-value
+             (ensure-reduced source-reduced-value)))
+(println
+ (identical? source-reduced-value
+             (core/ensure-reduced source-reduced-value)))
+(println
+ (identical? source-reduced-value
+             (clojure.core/ensure-reduced source-reduced-value)))
+(def source-ensure-reduced-function ensure-reduced)
+(println (= 9 (deref (source-ensure-reduced-function 9))))
+(def source-ensure-argument-evaluations (atom 0))
+(println
+ (= 10
+    (deref
+     (ensure-reduced
+      (do
+        (swap! source-ensure-argument-evaluations inc)
+        10)))))
+(println (= 1 @source-ensure-argument-evaluations))
