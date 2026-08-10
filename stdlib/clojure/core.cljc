@@ -1529,22 +1529,68 @@
                      (rest third-coll)))
      nil)))
 
+(declare map)
+
+(defn- map-many-seq [f first-coll second-coll third-coll colls]
+  (lazy-seq
+   (if (and first-coll
+            second-coll
+            third-coll
+            (every? (fn [coll] (seq coll)) colls))
+     (cons
+      (apply f
+             (nth first-coll 0)
+             (nth second-coll 0)
+             (nth third-coll 0)
+             (map-seq (fn [coll] (nth coll 0)) colls))
+      (map-many-seq f
+                    (rest first-coll)
+                    (rest second-coll)
+                    (rest third-coll)
+                    (map-seq (fn [coll] (rest coll)) colls)))
+     nil)))
+
+(defn- map-transducer [f]
+  (fn [rf]
+    (fn
+      ([] (rf))
+      ([result] (rf result))
+      ([result input] (rf result (f input))))))
+
+(defn- map-one [f coll]
+  (map-seq f (seq coll)))
+
 (defn map
+  {:inline (fn
+             ([f] (list 'map-transducer f))
+             ([f coll] (list 'map-one f coll))
+             ([f first-coll second-coll]
+              (list '__lg_map f first-coll second-coll))
+             ([f first-coll second-coll third-coll]
+              (list '__lg_map f first-coll second-coll third-coll))
+             ([f first-coll second-coll third-coll & colls]
+              (cons '__lg_map
+                    (cons f
+                          (cons first-coll
+                                (cons second-coll
+                                      (cons third-coll colls)))))))}
   ([f]
-   (fn [rf]
-     (fn
-       ([] (rf))
-       ([result] (rf result))
-       ([result input] (rf result (f input))))))
+   (map-transducer f))
   ([f coll]
-   (map-seq f (seq coll)))
+   (map-one f coll))
   ([f left right]
    (map2-seq f (seq left) (seq right)))
   ([f first-coll second-coll third-coll]
    (map3-seq f
              (seq first-coll)
              (seq second-coll)
-             (seq third-coll))))
+             (seq third-coll)))
+  ([f first-coll second-coll third-coll & colls]
+   (map-many-seq f
+                 (seq first-coll)
+                 (seq second-coll)
+                 (seq third-coll)
+                 (map-seq (fn [coll] (seq coll)) (seq colls)))))
 
 (defn- filter-seq [pred coll]
   (lazy-seq

@@ -4142,7 +4142,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               params collection
         | _ -> infer_all params arguments)
     | FList
-        (FSymbol "apply" :: FSymbol "__lg_mapv" :: constructor_form
+        (FSymbol "apply" :: FSymbol ("__lg_map" | "__lg_mapv") :: constructor_form
         :: fixed_and_rest)
       when List.length fixed_and_rest >= 2
            && is_variadic_vector_constructor params constructor_form ->
@@ -4352,7 +4352,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       in
                       constrain_seqable element_ty params collection)
           | _ -> infer_all params arguments)
-    | FList [ FSymbol "__lg_mapv"; fn; collection ] ->
+    | FList [ FSymbol ("__lg_map" | "__lg_mapv"); fn; collection ] ->
         let inferred_element_ty = inferred_unary_function_param params fn in
         let inferred_element_ty =
           match inferred_element_ty with
@@ -4383,7 +4383,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        fresh_type_variable "unary_map_result" ))
                   params name
             | form -> infer_form params form)
-    | FList (FSymbol "__lg_mapv" :: fn :: collection_forms)
+    | FList (FSymbol ("__lg_map" | "__lg_mapv") :: fn :: collection_forms)
       when List.length collection_forms >= 2 -> (
         let collection_element_ty collection =
           let collection_ty = inferred_form_type params collection in

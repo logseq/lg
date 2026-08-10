@@ -480,6 +480,11 @@ The sequence migration is incremental. `map`, `filter`, `remove`, `take`,
 are source-defined and lazy. Their
 one-arity transducers use one explicit statically typed reducing-function ABI;
 `transduce`, `cat`, and `halt-when` are source-defined over the same ABI.
+`map` supports the complete upstream one-, two-, three-, and variadic-collection
+surface. Its variadic source loop advances every input lazily and stops at the
+shortest collection; direct multi-collection calls use a private static
+specialization to preserve mixed storage types and left-to-right single
+evaluation without dynamic values.
 `filterv` is a source reduction directly into a persistent vector, without an
 intermediate list. `mapv` remains an explicit eager persistent-vector
 materializer.

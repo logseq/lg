@@ -1498,7 +1498,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                       Error.error
                         ("map expects a function, got "
                         ^ Types.source_name fn.ty))))
-    | fn_form :: (_ :: _ :: _ as collection_forms) ->
+    | fn_form :: (_ :: _ as collection_forms) ->
         compile_multi_map scope env ~vector:false fn_form collection_forms
       | _ -> Error.error "map expects function and collection"
     and compile_filter scope env arg_forms =

@@ -35,6 +35,72 @@
 (println (if (= [1 2] (transducing-into [] (take 2) [1 2 3]))
            "into-first-class-transducer"
            "into-first-class-transducer-failed"))
+(println (if (= [2 3 4] (vec (map inc (list 1 2 3))))
+           "map-unary"
+           "map-unary-failed"))
+(println (if (= [11] (vec (core/map (fn [left right] (+ left right))
+                                    [1 2] [10])))
+           "map-binary-shortest"
+           "map-binary-shortest-failed"))
+(println (if (= [111 222]
+                (vec (clojure.core/map (fn [a b c] (+ a b c))
+                                       [1 2] [10 20] [100 200])))
+           "map-ternary"
+           "map-ternary-failed"))
+(println (if (= [1111]
+                (vec (map (fn [a b c d] (+ a b c d))
+                          [1 2] [10] [100 200] [1000 2000])))
+           "map-variadic"
+           "map-variadic-failed"))
+(println (if (= [] (vec (map (fn [a b c d] (+ a b c d))
+                             [1] [10] [] [1000])))
+           "map-empty-shortest"
+           "map-empty-shortest-failed"))
+(def collect-map map)
+(println (if (= [false true]
+                (vec (collect-map (fn [value] (if value false true))
+                                  [true false])))
+           "map-first-class"
+           "map-first-class-failed"))
+(println (if (= [1111]
+                (vec (collect-map (fn [a b c d] (+ a b c d))
+                                  [1] [10] [100] [1000])))
+           "map-first-class-variadic"
+           "map-first-class-variadic-failed"))
+(println (if (= [[1 10 100 1000]]
+                (vec (apply map vector [[1] [10] [100] [1000]])))
+           "map-apply"
+           "map-apply-failed"))
+(println (if (= [2 3]
+                (transducing-into [] (map inc) [1 2]))
+           "map-transducer"
+           "map-transducer-failed"))
+(def map-realizations (atom 0))
+(def map-lazy-source
+  (map (fn [value]
+         (swap! map-realizations inc)
+         (inc value))
+       [1 2 3]))
+(println (if (= 0 @map-realizations) "map-lazy-before" "map-lazy-before-failed"))
+(println (if (= 2 (first map-lazy-source)) "map-lazy-first" "map-lazy-first-failed"))
+(println (if (and (= 2 (first map-lazy-source)) (= 1 @map-realizations))
+           "map-lazy-once"
+           "map-lazy-once-failed"))
+(println (if (= [1 2 3 4 5] (vec (take 5 (map inc (range)))))
+           "map-infinite-prefix"
+           "map-infinite-prefix-failed"))
+(def map-argument-order (atom []))
+(def map-eager-source
+  (map (do (swap! map-argument-order conj 1)
+           (fn [left right] (+ left right)))
+       (do (swap! map-argument-order conj 2) [1])
+       (do (swap! map-argument-order conj 3) [10])))
+(println (if (= [1 2 3] @map-argument-order)
+           "map-arguments-eager-once"
+           "map-arguments-eager-once-failed"))
+(println (if (= [11] (vec map-eager-source))
+           "map-arguments-result"
+           "map-arguments-result-failed"))
 (println (if (= [2 3 4] (mapv inc (list 1 2 3)))
            "mapv-unary"
            "mapv-unary-failed"))

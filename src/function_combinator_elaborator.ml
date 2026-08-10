@@ -485,6 +485,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | fn_form :: rest -> (
           match split_last [] rest with
           | None -> Error.error "apply expects function and collection"
+          | Some (fixed_forms, FVector spread_forms) ->
+              compile_expr scope env
+                (FList (fn_form :: (fixed_forms @ spread_forms)))
           | Some (fixed_forms, collection_form) -> (
               match
                 ( compile_args_for scope env fixed_forms,

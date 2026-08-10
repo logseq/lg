@@ -11942,9 +11942,10 @@ let test_forward_declared_functions_work_as_collection_callbacks () =
 (println (str (count result) ":" (.-value ^Item (first result))))
 |}
   in
-  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let source_chunk = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring source_chunk "Runtime_dynamic" then
     failwith "forward-declared record callbacks must remain static";
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "forward_declared_functions_work_as_collection_callbacks"
     "2:1\n" ocaml_source;
   ignore
@@ -35084,13 +35085,13 @@ let test_set_map_and_filter_core_api () =
 (println (str (pr-str mapped) ":" (pr-str filtered)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "set_map_and_filter_core_api" "(2 3 4):(3 4)\n" ocaml_source
 
 let test_set_map_rejects_function_type_mismatch () =
-  Lg.Compiler.compile_string
+  compile_string_with_stdlib
     {|(def xs (map (fn [^:string x] x) (__lg_hash-set 1 2)))|}
-  |> expect_error "map function argument type does not match sequence"
+  |> expect_error_contains "map-seq called with incompatible arguments"
 
 let test_set_filter_accepts_truthy_predicates () =
   let ocaml_source =
@@ -36506,8 +36507,8 @@ let test_let_rejects_odd_binding_forms () =
   |> expect_error "let bindings require an even number of forms"
 
 let test_map_rejects_non_function_argument () =
-  Lg.Compiler.compile_string {|(def xs (map 1 [1 2]))|}
-  |> expect_error_contains "map expects a function"
+  compile_string_with_stdlib {|(def xs (map 1 [1 2]))|}
+  |> expect_error_contains "map-seq called with incompatible arguments"
 
 let test_match_expression_works () =
   let source =

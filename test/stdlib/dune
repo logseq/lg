@@ -1718,6 +1718,28 @@
   (run sh %{dep:check_no_source_core_mapv_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-map-dispatch)
+ (deps
+  check_no_source_core_map_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_map_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_map_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_map_dispatch.sh} ../..)))
+
+(rule
  (alias no-source-core-concat-dispatch)
  (deps
   check_no_source_core_concat_dispatch.sh

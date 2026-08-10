@@ -4468,6 +4468,7 @@ let create ~compile_expr =
   let compile_vals = collection.compile_vals in
   let compile_sort_by = sequence.compile_sort_by in
   let compile_reductions = sequence.compile_reductions in
+  let compile_map = sequence.compile_map_call in
   let compile_mapv = sequence.compile_mapv in
   let compile_reduce_kv = sequence.compile_reduce_kv in
   let compile_some = sequence.compile_some in
@@ -8856,7 +8857,8 @@ let create ~compile_expr =
     | "interleave" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_reductions" -> compile_reductions scope env arg_forms
-              | "__lg_mapv" -> compile_mapv scope env arg_forms
+    | "__lg_map" -> compile_map scope env arg_forms
+    | "__lg_mapv" -> compile_mapv scope env arg_forms
     | "__lg_reduce-kv" -> compile_reduce_kv scope env arg_forms
     | "__lg_transformer_sequence" -> (
         match arg_forms with
