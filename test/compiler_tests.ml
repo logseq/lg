@@ -34040,6 +34040,108 @@ let test_common_higher_order_helpers () =
      11]:15:10:true:false:-1:1:4:1:(:normal :a/a :a/z :db/id)\n"
     ocaml_source
 
+let test_source_predicate_combinators_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-predicate-combinators
+  (:require [cljs.core :as core :refer [every-pred some-fn]]))
+
+(def every-trace (atom []))
+(defn even-traced [^:int value]
+  (do
+    (swap! every-trace conj (+ 20 value))
+    (even? value)))
+(defn positive-traced [^:int value]
+  (do
+    (swap! every-trace conj (+ 30 value))
+    (pos? value)))
+(defn below-ten? [^:int value] (< value 10))
+(defn not-six? [^:int value] (not= value 6))
+
+(def all-one (every-pred even-traced))
+(def all-two (core/every-pred even-traced positive-traced))
+(def all-three (every-pred even-traced positive-traced below-ten?))
+(def all-four
+  (core/every-pred even-traced positive-traced below-ten? not-six?))
+
+(def some-trace (atom []))
+(defn choose-two [value]
+  (do
+    (swap! some-trace conj (+ 20 value))
+    (if (= value 2) (Some "two") None)))
+(defn choose-three [value]
+  (do
+    (swap! some-trace conj (+ 30 value))
+    (if (= value 3) (Some "three") None)))
+(defn choose-four [value]
+  (if (= value 4) (Some "four") None))
+(defn choose-five [value]
+  (if (= value 5) (Some "five") None))
+
+(defn hit-two? [^:int value] (= value 2))
+(defn hit-three? [^:int value] (= value 3))
+(defn hit-four? [^:int value] (= value 4))
+(defn hit-five? [^:int value] (= value 5))
+
+(def choose-one-fn (some-fn choose-two))
+(def choose-two-fn (core/some-fn choose-two choose-three))
+(def choose-three-fn (some-fn choose-two choose-three choose-four))
+(def choose-four-fn
+  (core/some-fn hit-two? hit-three? hit-four? hit-five?))
+
+(println
+  (str (all-one) ":" (all-one 2) ":" (all-two 2 4) ":"
+       (all-three 2 4 8) ":" (all-four 2 4 8 4)))
+(reset! every-trace [])
+(println (str (all-two 2 3) ":" (= @every-trace [22 23])))
+
+(println
+  (str (nil? (choose-one-fn)) ":"
+       (if-some [value (choose-one-fn 2)] (= value "two") false) ":"
+       (if-some [value (choose-two-fn 1 3)] (= value "three") false) ":"
+       (if-some [value (choose-three-fn 1 4 8)] (= value "four") false) ":"
+       (if-some [value (choose-four-fn 1 4 8 10)] value false)))
+(reset! some-trace [])
+(println
+  (str (if-some [value (choose-two-fn 1 2)] (= value "two") false)
+       ":" (= @some-trace [21 22])))
+|}
+  in
+  let native_consumer =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_predicate_combinators.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source predicate combinators must remain statically typed";
+  assert_ocaml_runs "source_predicate_combinators"
+    "true:true:true:true:true\nfalse:true\ntrue:true:true:true:true\ntrue:true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_predicate_combinators.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_predicate_combinators.cljc" source);
+  [ "src/call_elaborator.ml"; "src/function_combinator_elaborator.ml"; "src/type_inference.ml" ]
+  |> List.iter (fun path ->
+         let compiler_source = read_file path in
+         [ "every-pred"; "some-fn" ]
+         |> List.iter (fun name ->
+                if
+                  string_contains_substring compiler_source
+                    ("| \"" ^ name ^ "\" ->")
+                then failwith (name ^ " must be owned by the source stdlib")))
+
+let test_source_predicate_combinators_reject_mismatched_predicates () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_predicate_combinators_bad_types.cljc"
+    {|
+(def combined
+  (every-pred
+    (fn [value] (pos? value))
+    (fn [^:string value] (= value "ok"))))
+|}
+  |> expect_error_contains "expected of type string"
+
 let test_mapcat_infers_unannotated_collection_parameters () =
   let source =
     {|
@@ -34168,9 +34270,10 @@ let test_common_higher_order_helpers_reject_bad_mapcat_result () =
   |> expect_error "mapcat argument 1: collection value is not seqable: int"
 
 let test_common_higher_order_helpers_reject_bad_predicates () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native
+    "test/common_higher_order_helpers_bad_predicates.cljc"
     {|(def f (every-pred (fn [x] (+ x 1)) (fn [x] true)))|}
-  |> expect_error "every-pred expects predicates with the same argument type"
+  |> expect_error_contains "expected of type"
 
 let test_common_higher_order_helpers_reject_mixed_juxt_returns () =
   compile_with_stdlib_result Lg.Target.Native "test/mixed_juxt.cljc"
@@ -34748,7 +34851,7 @@ let test_set_map_rejects_function_type_mismatch () =
 
 let test_set_filter_accepts_truthy_predicates () =
   let ocaml_source =
-    Lg.Compiler.compile_string
+    compile_string_with_stdlib
       {|(println (pr-str (filter (fn [x] (+ x 1)) (__lg_hash-set 1 2))))|}
     |> expect_ok
   in
@@ -42456,6 +42559,10 @@ let tests =
     ( "source conj preserves ClojureScript collection categories",
       test_source_conj_preserves_clojurescript_collection_categories );
     ("common higher-order helpers work", test_common_higher_order_helpers);
+    ( "source predicate combinators match ClojureScript",
+      test_source_predicate_combinators_match_clojurescript );
+    ( "source predicate combinators reject mismatched predicates",
+      test_source_predicate_combinators_reject_mismatched_predicates );
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );
     ( "sort-by preserves static record element types",

@@ -993,7 +993,16 @@ let compile_static_compare_capability env left right =
               comparable_type inner
           | _ -> false
         in
-        if comparable_type value_ty then
+        if Types.equal value_ty TKeyword || Types.equal value_ty TSymbol then
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident
+                   "Lg_runtime.Runtime_dynamic.compare_identifier",
+                 [
+                   constrained_argument_value left;
+                   constrained_argument_value right;
+                 ] ))
+        else if comparable_type value_ty then
           Ok
             (Semantic_ir.Apply
                ( Semantic_ir.Ident "Stdlib.compare",
@@ -4434,7 +4443,6 @@ let create ~compile_expr =
   let compile_apply = functions.compile_apply in
   let compile_comp = functions.compile_comp in
   let compile_partial = functions.compile_partial in
-  let compile_predicate_combinator = functions.compile_predicate_combinator in
   let compile_juxt = functions.compile_juxt in
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
@@ -8905,9 +8913,6 @@ let create ~compile_expr =
         | _ -> compile_apply scope env arg_forms)
     | "comp" -> compile_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
-              | "every-pred" ->
-                  compile_predicate_combinator scope env "every-pred" arg_forms
-    | "some-fn" -> compile_some_fn scope env arg_forms
     | "juxt" -> compile_juxt scope env arg_forms
     | "__lg_compare" -> (
         match compile_args () with
@@ -9871,31 +9876,6 @@ let create ~compile_expr =
     | Ok (_ :: _ :: _) -> compile_static_conj scope env arg_forms
     | Ok _ -> Error.error "conj expects collection and values"
 
-  and compile_some_fn scope env function_forms =
-    match function_forms with
-    | [] -> Error.error "some-fn expects at least 1 function"
-    | _ ->
-        let argument_name = "__lg_some_fn_value" in
-        let bindings, calls =
-          function_forms
-          |> List.mapi (fun index function_form ->
-                 let name = "__lg_some_fn_" ^ string_of_int index in
-                 ( [ FSymbol name; function_form ],
-                   FList [ FSymbol name; FSymbol argument_name ] ))
-          |> List.split
-        in
-        compile_expr scope (Env.with_expected_type None env)
-          (FList
-             [
-               FSymbol "let";
-               FVector (List.concat bindings);
-               FList
-                 [
-                   FSymbol "fn";
-                   FVector [ FSymbol argument_name ];
-                   FList (FSymbol "or" :: calls);
-                 ];
-             ])
   and compile_get_in scope env arg_forms =
     let compile_dynamic_get_in target_form path_form default_form =
       let dynamic_ty = Types.dynamic_constraint TUnknown in

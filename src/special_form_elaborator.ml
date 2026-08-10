@@ -1441,7 +1441,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       else Semantic_ir.Ident value_name
                     in
                     let condition =
-                      truthiness_expression expression.ty raw_value
+                      truthiness_expression
+                        ~constrained_identifier:direct_constrained_identifier
+                        expression.ty raw_value
+                    in
+                    let value_ty, value_expression =
+                      let value_ty =
+                        Types.constraint_value_type expression.ty
+                      in
+                      if
+                        (not direct_constrained_identifier)
+                        && not (Types.equal value_ty expression.ty)
+                      then
+                        ( value_ty,
+                          coerce_expression_to_type ~stored:true value_ty
+                            expression.ty raw_value )
+                      else (expression.ty, raw_value)
                     in
                     let next = lower_expressions rest in
                     let value =
@@ -1472,8 +1487,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                              | _ -> false) ->
                           Semantic_ir.Constructor ("None", None)
                       | _ ->
-                          coerce_expression_to_type result_ty expression.ty
-                            raw_value
+                          coerce_expression_to_type result_ty value_ty
+                            value_expression
                     in
                     let result =
                       match operator with

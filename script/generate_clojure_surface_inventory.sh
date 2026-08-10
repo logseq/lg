@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 195; then
-  echo "compiler call dispatch changed: expected 195 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 193; then
+  echo "compiler call dispatch changed: expected 193 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -62,12 +62,12 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat doall drop drop-while every-pred filter fnil get-in interleave into juxt keep map map-indexed mapcat mapv max merge min next partial rand remove repeatedly rest select-keys some some-fn take take-while update-in vals", xs)
+    split("apply assoc-in comp concat doall drop drop-while filter fnil get-in interleave into juxt keep map map-indexed mapcat mapv max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
     for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
-    split("comp every-pred fnil juxt partial some-fn", xs)
+    split("comp fnil juxt partial", xs)
     for (i in xs) blocked_reason[xs[i]] = "returned-variadic-or-overloaded-function-types-are-not-source-expressible"
     split("concat interleave map mapv", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-multi-collection-arities-and-lazy-or-transducer-cases-are-not-source-expressible"

@@ -228,8 +228,11 @@ eager typed list, and stops when the shortest input is exhausted.
 including fixed leading integer arguments before the final collection.
 
 Function helpers such as `comp`, `partial`, `identity`, `constantly`,
-`complement`, `every-pred`, `some-fn`, and `juxt` are typed over the currently
-represented unary function subset. `some-fn` returns a static boolean.
+`complement`, `every-pred`, `some-fn`, and `juxt` remain statically typed.
+`every-pred` and `some-fn` are source-owned and expose the pinned ClojureScript
+constructor arities plus returned zero-, one-, two-, three-, and variadic
+arities. Their predicates share one static argument domain; `some-fn` preserves
+the first truthy result without a dynamic collection boundary.
 
 Comparison helpers `distinct?`, `compare`, `max-key`, and `min-key` are
 supported for same-typed comparable scalar values.

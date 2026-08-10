@@ -3291,6 +3291,197 @@
           (recur (next remaining))))
       nil)))
 
+(defn every-pred
+  ([p]
+   (fn
+     ([] true)
+     ([x] (every? p (list x)))
+     ([x y] (every? p (list x y)))
+     ([x y z] (every? p (list x y z)))
+     ([x y z & args]
+      (and (every? p (list x y z)) (every? p args)))))
+  ([p1 p2]
+   (fn
+     ([] true)
+     ([x] (and (every? p1 (list x)) (every? p2 (list x))))
+     ([x y]
+      (and (every? p1 (list x y)) (every? p2 (list x y))))
+     ([x y z]
+      (and (every? p1 (list x y z))
+           (every? p2 (list x y z))))
+     ([x y z & args]
+      (and (every? p1 (list x y z))
+           (every? p2 (list x y z))
+           (every? (fn [value] (and (p1 value) (p2 value))) args)))))
+  ([p1 p2 p3]
+   (fn
+     ([] true)
+     ([x]
+      (and (every? p1 (list x))
+           (every? p2 (list x))
+           (every? p3 (list x))))
+     ([x y]
+      (and (every? p1 (list x y))
+           (every? p2 (list x y))
+           (every? p3 (list x y))))
+     ([x y z]
+      (and (every? p1 (list x y z))
+           (every? p2 (list x y z))
+           (every? p3 (list x y z))))
+     ([x y z & args]
+      (and (every? p1 (list x y z))
+           (every? p2 (list x y z))
+           (every? p3 (list x y z))
+           (every? (fn [value]
+                     (and (p1 value) (p2 value) (p3 value)))
+                   args)))))
+  ([p1 p2 p3 & ps]
+   (let [predicates (list* p1 p2 p3 ps)]
+     (fn
+       ([] true)
+       ([x]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (if ((nth remaining 0) x)
+              (recur (next remaining))
+              false)
+            true)))
+       ([x y]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (let [predicate (nth remaining 0)]
+              (if (every? predicate (list x y))
+                (recur (next remaining))
+                false))
+            true)))
+       ([x y z]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (let [predicate (nth remaining 0)]
+              (if (every? predicate (list x y z))
+                (recur (next remaining))
+                false))
+            true)))
+       ([x y z & args]
+        (and
+          (loop [remaining (seq predicates)]
+            (if remaining
+              (let [predicate (nth remaining 0)]
+                (if (every? predicate (list x y z))
+                  (recur (next remaining))
+                  false))
+              true))
+          (loop [remaining (seq predicates)]
+            (if remaining
+              (if (every? (nth remaining 0) args)
+                (recur (next remaining))
+                false)
+              true))))))))
+
+(defn some-fn
+  ([p]
+   (fn
+     ([] nil)
+     ([x]
+      (let [result (p x)] result))
+     ([x y] (or (p x) (p y)))
+     ([x y z] (or (p x) (p y) (p z)))
+     ([x y z & args]
+      (or (p x) (p y) (p z) (some p args)))))
+  ([p1 p2]
+   (fn
+     ([] nil)
+     ([x] (or (p1 x) (p2 x)))
+     ([x y] (or (p1 x) (p1 y) (p2 x) (p2 y)))
+     ([x y z]
+      (or (p1 x) (p1 y) (p1 z)
+          (p2 x) (p2 y) (p2 z)))
+     ([x y z & args]
+      (or (p1 x) (p1 y) (p1 z)
+          (p2 x) (p2 y) (p2 z)
+          (some (fn [value] (or (p1 value) (p2 value))) args)))))
+  ([p1 p2 p3]
+   (fn
+     ([] nil)
+     ([x] (or (p1 x) (p2 x) (p3 x)))
+     ([x y]
+      (or (p1 x) (p1 y)
+          (p2 x) (p2 y)
+          (p3 x) (p3 y)))
+     ([x y z]
+      (or (p1 x) (p1 y) (p1 z)
+          (p2 x) (p2 y) (p2 z)
+          (p3 x) (p3 y) (p3 z)))
+     ([x y z & args]
+      (or (p1 x) (p1 y) (p1 z)
+          (p2 x) (p2 y) (p2 z)
+          (p3 x) (p3 y) (p3 z)
+          (some (fn [value]
+                  (or (p1 value) (p2 value) (p3 value)))
+                args)))))
+  ([p1 p2 p3 & ps]
+   (let [predicates (list* p1 p2 p3 ps)]
+     (fn
+       ([] nil)
+       ([x]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (let [result ((nth remaining 0) x)]
+              (if result
+                result
+                (recur (next remaining))))
+            nil)))
+       ([x y]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (let [predicate (nth remaining 0)]
+              (let [result (predicate x)]
+                (if result
+                  result
+                  (let [result (predicate y)]
+                    (if result
+                      result
+                      (recur (next remaining)))))))
+            nil)))
+       ([x y z]
+        (loop [remaining (seq predicates)]
+          (if remaining
+            (let [predicate (nth remaining 0)]
+              (let [result (predicate x)]
+                (if result
+                  result
+                  (let [result (predicate y)]
+                    (if result
+                      result
+                      (let [result (predicate z)]
+                        (if result
+                          result
+                          (recur (next remaining)))))))))
+            nil)))
+       ([x y z & args]
+        (or
+         (loop [remaining (seq predicates)]
+           (if remaining
+             (let [predicate (nth remaining 0)]
+               (let [result (predicate x)]
+                 (if result
+                   result
+                   (let [result (predicate y)]
+                     (if result
+                       result
+                       (let [result (predicate z)]
+                         (if result
+                           result
+                           (recur (next remaining)))))))))
+             nil))
+         (loop [remaining (seq predicates)]
+           (if remaining
+             (let [result (some (nth remaining 0) args)]
+               (if result
+                 result
+                 (recur (next remaining))))
+             nil))))))))
+
 (defn not-any? [pred coll]
   (loop [remaining (seq coll)]
     (if remaining
@@ -3578,6 +3769,7 @@
       (if (pred y x) 1 0))))
 
 (defn sort
+  {:inline (fn [& args] (cons '__lg_sort args))}
   ([coll]
    (__lg_sort coll))
   ([comp coll]

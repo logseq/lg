@@ -520,11 +520,12 @@ they have a generated comparator.
 `disj` accepts zero or more same-typed values after the set.
 
 Function helpers include `apply`, `comp`, `partial`, `identity`, `constantly`,
-`complement`, `every-pred`, `some-fn`, and `juxt` for the current unary or
-integer-reducer subset. `apply` currently supports integer binary reducers over
+`complement`, `every-pred`, `some-fn`, and `juxt`. `every-pred` and `some-fn`
+are source ports with the pinned ClojureScript constructor arities and returned
+zero-, one-, two-, three-, and variadic arities. They retain predicate order and
+short-circuiting over homogeneous static predicate inputs; `some-fn` preserves
+the first truthy static result. `apply` supports integer binary reducers over
 typed lists, vectors, and sets, with optional fixed leading integer arguments.
-`some-fn` returns a typed boolean in this subset rather than an arbitrary truthy
-value.
 
 Comparison helpers include `distinct?`, `compare`, `max-key`, and `min-key` for
 same-typed comparable scalar values.

@@ -1377,16 +1377,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                 in
                 Result.map
                   (fun item_argument ->
+                  let value_ty = Types.constraint_value_type return_ty in
+                  let result_value =
+                    coerce_expression_to_type
+                      ~stored:(not (Types.equal value_ty return_ty)) value_ty
+                      return_ty (Semantic_ir.Ident "result")
+                  in
                   let result_ty, present_result =
-                    match return_ty with
+                    match value_ty with
                     | TNullable _
                     | TOcaml_app ("option", [ _ ])
                     | TOcaml "option" ->
-                        (return_ty, Semantic_ir.Ident "result")
+                        (value_ty, result_value)
                     | _ ->
-                        ( TNullable return_ty,
+                        ( TNullable value_ty,
                           Semantic_ir.Constructor
-                            ("Some", Some (Semantic_ir.Ident "result")) )
+                            ("Some", Some result_value) )
                   in
                   let recurse =
                     apply "find_truthy" [ Semantic_ir.Ident "rest" ]
@@ -1407,7 +1413,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                         (fn.semantic_expr, [ item_argument ]) );
                                   ],
                                 Semantic_ir.If
-                                  ( truthiness_expression return_ty
+                                  ( truthiness_expression
+                                      ~constrained_identifier:false return_ty
                                       (Semantic_ir.Ident "result"),
                                     present_result,
                                     recurse ) ) );

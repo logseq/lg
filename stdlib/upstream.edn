@@ -193,6 +193,10 @@
                 :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}
     complement {:status :static-adaptation
                 :reason :current-static-function-types-support-unary-truthy-predicate-complement}
+    every-pred {:status :static-adaptation
+                :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-short-circuit-order-and-boolean-results-while-homogeneous-static-predicate-inputs-replace-open-ifn-dispatch}
+    some-fn {:status :static-adaptation
+             :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-first-truthy-short-circuit-order-and-values-while-the-four-or-more-predicate-case-uses-explicit-typed-loops-to-avoid-erasing-function-valued-sequence-elements}
     constantly {:status :static-adaptation
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}
@@ -450,7 +454,7 @@
     partition-by {:status :static-adaptation
                   :reason :source-port-preserves-lazy-partition-order-and-stateful-transducer-flushing-with-typed-vectors-instead-of-the-javascript-array-list-buffer}
     sort {:status :static-adaptation
-          :reason :source-public-arities-delegate-only-stable-host-sorting-and-seqable-adaptation-to-a-private-typed-primitive}
+          :reason :source-public-arities-delegate-only-stable-host-sorting-and-seqable-adaptation-to-a-private-typed-primitive-while-direct-calls-inline-so-keyword-and-symbol-default-order-retains-the-static-clojurescript-identifier-comparator}
     sort-by {:status :static-adaptation
              :reason :source-public-arities-including-the-upstream-three-arity-form-delegate-only-key-projection-and-stable-host-sorting-to-a-private-typed-primitive}
     doall {:status :static-adaptation

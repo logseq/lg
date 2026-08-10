@@ -33,14 +33,14 @@ let adapt_set_callable callable =
         (Types.set_module_name element_ty)
   | _ -> Ok callable
 
-let rec truthiness_expression ty expression =
+let rec truthiness_expression ?(constrained_identifier = true) ty expression =
   match ty with
   | ty when Types.is_dynamic ty ->
       Semantic_ir.Apply
         (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ expression ])
   | ty when Option.is_some (Types.truthy_constraint_info ty) ->
       (match Semantic_ir.unlocated expression with
-      | Semantic_ir.Ident name ->
+      | Semantic_ir.Ident name when constrained_identifier ->
           Semantic_ir.Apply
             (Semantic_ir.Ident (name ^ "__truthy"), [ expression ])
       | _ ->

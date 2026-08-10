@@ -248,6 +248,10 @@
 
 (signature clojure.core/complement [value result]
   :fn<fn<value;truthy<result>>;fn<value;bool>>)
+(signature clojure.core/every-pred [value predicate-result]
+  :overload<fn<fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>;variadic-fn<fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;fn<value;truthy<predicate-result>>;overload<fn<bool>;fn<value;bool>;fn<value;value;bool>;fn<value;value;value;bool>;variadic-fn<value;value;value;value;bool>>>>)
+(signature clojure.core/some-fn [value result]
+  :overload<fn<fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>>;variadic-fn<fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;fn<value;truthy<result>>;overload<fn<option<result>>;fn<value;option<result>>;fn<value;value;option<result>>;fn<value;value;value;option<result>>;variadic-fn<value;value;value;value;option<result>>>>>)
 
 (signature clojure.core/boolean [value]
   :fn<truthy<value>;bool>)

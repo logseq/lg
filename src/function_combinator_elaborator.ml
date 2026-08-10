@@ -6,14 +6,10 @@ module Env = Compiler_environment
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
 
-type named_call =
-  string -> Env.t -> string -> Ast.form list -> expression_result
-
 type t = {
   compile_apply : call;
   compile_comp : call;
   compile_partial : call;
-  compile_predicate_combinator : named_call;
   compile_juxt : call;
 }
 
@@ -406,6 +402,38 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             @ [ collection_text ]
                           in
                           Ok (typed_ir TString (Codegen.concat_expr parts))
+                    | FSymbol "+"
+                      when Types.equal inner TInt
+                           && List.for_all
+                                (fun argument -> Types.equal argument.ty TInt)
+                                fixed_args ->
+                        let values =
+                          match fixed_args with
+                          | [] -> list_expr
+                          | _ ->
+                              Semantic_ir.Infix
+                                ( "@",
+                                  Semantic_ir.List
+                                    (List.map
+                                       (fun argument -> argument.semantic_expr)
+                                       fixed_args),
+                                  list_expr )
+                        in
+                        Ok
+                          (typed_ir TInt
+                             (apply "List.fold_left"
+                                [
+                                  Semantic_ir.Fun
+                                    ( [ Semantic_ir.PVar "left";
+                                        Semantic_ir.PVar "right";
+                                      ],
+                                      Semantic_ir.Infix
+                                        ( "+",
+                                          Semantic_ir.Ident "left",
+                                          Semantic_ir.Ident "right" ) );
+                                  Semantic_ir.Int 0;
+                                  values;
+                                ]))
                     | FSymbol ("pr" | "clojure.core/pr") -> (
                         match lookup_binding scope env "*out*" with
                         | Error _ ->
@@ -788,59 +816,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | _ -> Error.error "partial expects a function"))
       | _ -> Error.error "partial expects a function"
     
-    and compile_predicate_combinator scope env name arg_forms =
-      let compile_fns =
-        arg_forms
-        |> List.fold_left
-             (fun acc form ->
-               match acc with
-               | Error _ as err -> err
-               | Ok fns -> (
-                   match compile_function_arg scope env form with
-                   | Error _ as err -> err
-                   | Ok fn -> Ok (fn :: fns)))
-             (Ok [])
-        |> Result.map List.rev
-      in
-      match compile_fns with
-      | Error _ as err -> err
-      | Ok [] -> Error.error (name ^ " expects at least 1 predicate")
-      | Ok fns -> (
-          let rec collect arg_ty exprs = function
-            | [] -> Ok (arg_ty, List.rev exprs)
-            | fn :: rest -> (
-                match fn.ty with
-                | TFn ([ current_arg ], TBool)
-                when option_for_all
-                       (fun arg_ty -> Types.equal arg_ty current_arg)
-                       arg_ty ->
-                    collect (Some current_arg)
-                    (Semantic_ir.Apply
-                       (fn.semantic_expr, [ Semantic_ir.Ident "x" ])
-                    :: exprs)
-                      rest
-                | TFn _ ->
-                  Error.error
-                    (name ^ " expects predicates with the same argument type")
-                | _ -> Error.error (name ^ " expects predicates"))
-          in
-          match collect None [] fns with
-          | Error _ as err -> err
-          | Ok (None, _) -> Error.error (name ^ " expects at least 1 predicate")
-          | Ok (Some arg_ty, exprs) ->
-              let op = if name = "every-pred" then "&&" else "||" in
-              let body =
-                match exprs with
-                | [] -> Semantic_ir.Bool (name = "every-pred")
-                | first :: rest ->
-                    List.fold_left
-                      (fun acc expr -> Semantic_ir.Infix (op, acc, expr))
-                      first rest
-              in
-              Ok
-              (typed_ir
-                 (TFn ([ arg_ty ], TBool))
-                   (Semantic_ir.Fun ([ Semantic_ir.PVar "x" ], body))))
     and compile_juxt scope env arg_forms =
       let compile_fns =
         arg_forms
@@ -906,6 +881,5 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     compile_apply;
     compile_comp;
     compile_partial;
-    compile_predicate_combinator;
     compile_juxt;
   }
