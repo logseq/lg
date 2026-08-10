@@ -16576,7 +16576,7 @@ let test_mapv_infers_callback_from_caller_collection_evidence () =
 (println (get (lengths ["Ada"]) 0))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_from_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "mapv callback inference must remain static";
   assert_ocaml_runs "mapv_infers_callback_from_caller_collection_evidence"

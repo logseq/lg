@@ -1812,6 +1812,45 @@
   ([to xform from]
    (into to (sequence xform from))))
 
+(defn- mapv-many-seq
+  [f first-coll second-coll third-coll colls result]
+  (if (and first-coll
+           second-coll
+           third-coll
+           (every? (fn [coll] (seq coll)) colls))
+    (mapv-many-seq
+     f
+     (rest first-coll)
+     (rest second-coll)
+     (rest third-coll)
+     (map (fn [coll] (rest coll)) colls)
+     (conj result
+           (apply f
+                  (nth first-coll 0)
+                  (nth second-coll 0)
+                  (nth third-coll 0)
+                  (map (fn [coll] (nth coll 0)) colls))))
+    result))
+
+(defn mapv
+  {:inline (fn [& args] (cons '__lg_mapv args))}
+  ([f coll]
+   (persistent!
+    (__lg_reduce (fn [result item] (conj! result (f item)))
+                 (transient [])
+                 coll)))
+  ([f first-coll second-coll]
+   (into [] (map f first-coll second-coll)))
+  ([f first-coll second-coll third-coll]
+   (into [] (map f first-coll second-coll third-coll)))
+  ([f first-coll second-coll third-coll & colls]
+   (mapv-many-seq f
+                  (seq first-coll)
+                  (seq second-coll)
+                  (seq third-coll)
+                  (map (fn [coll] (seq coll)) colls)
+                  [])))
+
 (defn sequence
   ([coll]
    (let [values (seq coll)]

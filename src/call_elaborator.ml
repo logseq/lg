@@ -8856,7 +8856,7 @@ let create ~compile_expr =
     | "interleave" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_reductions" -> compile_reductions scope env arg_forms
-              | "mapv" -> compile_mapv scope env arg_forms
+              | "__lg_mapv" -> compile_mapv scope env arg_forms
     | "__lg_reduce-kv" -> compile_reduce_kv scope env arg_forms
     | "__lg_transformer_sequence" -> (
         match arg_forms with
@@ -8955,7 +8955,7 @@ let create ~compile_expr =
     | "__lg_reduce" -> compile_reduce scope env arg_forms
     | "apply" -> (
         match arg_forms with
-        | FSymbol "mapv" :: constructor_form :: fixed_and_rest
+        | FSymbol "__lg_mapv" :: constructor_form :: fixed_and_rest
           when List.length fixed_and_rest >= 2 ->
             let reversed = List.rev fixed_and_rest in
             let rest_form = List.hd reversed in

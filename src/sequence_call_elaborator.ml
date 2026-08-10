@@ -1152,8 +1152,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                 in
                 Result.map
                   (fun arguments ->
+                    let function_name = "__lg_map_function" in
+                    let sequence_names =
+                      List.mapi
+                        (fun index _ ->
+                          "__lg_map_sequence_" ^ string_of_int index)
+                        sequences
+                    in
+                    let bound_sequences =
+                      List.map
+                        (fun name -> Semantic_ir.Ident name)
+                        sequence_names
+                    in
                     let zipped, pattern =
-                      match (sequences, argument_names) with
+                      match (bound_sequences, argument_names) with
                       | ( first_sequence :: rest_sequences,
                           first_name :: rest_names ) ->
                           List.fold_left2
@@ -1186,15 +1198,32 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                         [
                           Semantic_ir.Fun
                             ( [ pattern ],
-                              Semantic_ir.Apply (fn.semantic_expr, arguments) );
+                              Semantic_ir.Apply
+                                (Semantic_ir.Ident function_name, arguments) );
                           zipped;
                         ]
                     in
-                    if vector then
-                      typed_ir (TVector return_ty)
-                        (apply "Rrbvec.of_list"
-                           [ apply "List.of_seq" [ mapped ] ])
-                    else typed_ir (TSeq return_ty) mapped)
+                    let result_ty, result =
+                      if vector then
+                        ( TVector return_ty,
+                          apply "Rrbvec.of_list"
+                            [ apply "List.of_seq" [ mapped ] ] )
+                      else (TSeq return_ty, mapped)
+                    in
+                    let result =
+                      List.fold_right2
+                        (fun name sequence body ->
+                          Semantic_ir.Let
+                            ([ (Semantic_ir.PVar name, sequence) ], body))
+                        sequence_names sequences result
+                    in
+                    typed_ir result_ty
+                      (Semantic_ir.Let
+                         ( [
+                             ( Semantic_ir.PVar function_name,
+                               fn.semantic_expr );
+                           ],
+                           result )))
                   (prepare_arguments [] parameter_tys element_tys argument_names)
             | TFn _ ->
                 Error.error
@@ -1243,7 +1272,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                               Error.error
                                 "mapv function type does not match collection"
                           | _ -> Error.error "mapv expects a function"))))
-    | fn_form :: (_ :: _ :: _ as collection_forms) ->
+    | fn_form :: (_ :: _ as collection_forms) ->
         compile_multi_map scope env ~vector:true fn_form collection_forms
       | _ -> Error.error "mapv expects function and collection"
     and compile_reduce_kv scope env arg_forms =

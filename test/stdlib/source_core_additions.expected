@@ -7,6 +7,17 @@ true
 true
 42
 into-first-class-transducer
+mapv-unary
+mapv-binary-shortest
+mapv-ternary
+mapv-variadic
+mapv-empty-shortest
+mapv-first-class
+mapv-first-class-binary
+mapv-first-class-variadic
+mapv-apply
+mapv-single-evaluation-result
+mapv-single-evaluation-count
 true
 true
 true

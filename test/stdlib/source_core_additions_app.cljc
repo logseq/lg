@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
@@ -35,6 +35,57 @@
 (println (if (= [1 2] (transducing-into [] (take 2) [1 2 3]))
            "into-first-class-transducer"
            "into-first-class-transducer-failed"))
+(println (if (= [2 3 4] (mapv inc (list 1 2 3)))
+           "mapv-unary"
+           "mapv-unary-failed"))
+(println (if (= [11] (core/mapv (fn [left right] (+ left right)) [1 2] [10]))
+           "mapv-binary-shortest"
+           "mapv-binary-shortest-failed"))
+(println (if (= [111 222]
+                (clojure.core/mapv (fn [a b c] (+ a b c))
+                                   [1 2] [10 20] [100 200]))
+           "mapv-ternary"
+           "mapv-ternary-failed"))
+(println (if (= [1111]
+                (mapv (fn [a b c d] (+ a b c d))
+                      [1 2] [10] [100 200] [1000 2000]))
+           "mapv-variadic"
+           "mapv-variadic-failed"))
+(println (if (= [] (mapv (fn [left right] (+ left right)) [1] []))
+           "mapv-empty-shortest"
+           "mapv-empty-shortest-failed"))
+(def collect-mapv mapv)
+(println (if (= [false true]
+                (collect-mapv (fn [value] (if value false true))
+                              [true false]))
+           "mapv-first-class"
+           "mapv-first-class-failed"))
+(println (if (= [11]
+                (collect-mapv (fn [left right] (+ left right))
+                              [1 2] [10]))
+           "mapv-first-class-binary"
+           "mapv-first-class-binary-failed"))
+(println (if (= [1111]
+                (collect-mapv (fn [a b c d] (+ a b c d))
+                              [1] [10] [100] [1000]))
+           "mapv-first-class-variadic"
+           "mapv-first-class-variadic-failed"))
+(println (if (= [[1 10] [2 20]]
+                (apply mapv vector [[1 2] [10 20]]))
+           "mapv-apply"
+           "mapv-apply-failed"))
+(def mapv-evaluations (atom 0))
+(println
+ (if (= [11]
+        (mapv (do (swap! mapv-evaluations inc)
+                  (fn [left right] (+ left right)))
+              (do (swap! mapv-evaluations inc) [1])
+              (do (swap! mapv-evaluations inc) [10])))
+   "mapv-single-evaluation-result"
+   "mapv-single-evaluation-result-failed"))
+(println (if (= 3 @mapv-evaluations)
+           "mapv-single-evaluation-count"
+           "mapv-single-evaluation-count-failed"))
 (println (= 4 (unsigned-bit-shift-right 8 1)))
 (println (= 0 (bit-count 0)))
 (println (= 4 (bit-count 15)))

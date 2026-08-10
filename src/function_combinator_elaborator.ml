@@ -99,7 +99,113 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         in
         Semantic_ir.Match (list_expr, cases)
   in
+  let variadic_function_matches expected_params expected_return rest_param
+      actual_return =
+    let unified =
+      List.fold_left
+        (fun result expected_param ->
+          Result.bind result (fun substitutions ->
+              Type_solver.unify substitutions rest_param expected_param))
+        (Ok Type_solver.empty) expected_params
+    in
+    Result.is_ok
+      (Result.bind unified (fun substitutions ->
+           Type_solver.unify substitutions actual_return expected_return))
+  in
   let prepare_apply_argument env ~expected_ty argument =
+    match (expected_ty, argument.ty) with
+    | ( TFn (expected_params, expected_return),
+        TOverloaded_fn
+          [
+            {
+              fixed_params = [];
+              rest_param = Some rest_param;
+              return_ty = actual_return;
+            };
+          ] )
+      when variadic_function_matches expected_params expected_return rest_param
+             actual_return ->
+        let function_name = "__lg_apply_variadic_adapter_function" in
+        let parameter_names =
+          List.mapi
+            (fun index _ ->
+              "__lg_apply_variadic_adapter_argument_" ^ string_of_int index)
+            expected_params
+        in
+        Ok
+          (Semantic_ir.Let
+             ( [ (Semantic_ir.PVar function_name, argument.semantic_expr) ],
+               Semantic_ir.Fun
+                 ( List.map
+                     (fun name -> Semantic_ir.PVar name)
+                     parameter_names,
+                   Semantic_ir.Apply
+                     ( overloaded_projection
+                         (Semantic_ir.Ident function_name) 0,
+                       [
+                         apply "Lg_runtime.Runtime_seq.of_list"
+                           [
+                             Semantic_ir.List
+                               (List.map
+                                  (fun name -> Semantic_ir.Ident name)
+                                  parameter_names);
+                           ];
+                       ] ) ) ))
+    | ( TOverloaded_fn
+          [
+            {
+              fixed_params = expected_fixed;
+              rest_param = Some expected_rest;
+              return_ty = expected_return;
+            };
+          ],
+        TOverloaded_fn
+          [
+            {
+              fixed_params = [];
+              rest_param = Some actual_rest;
+              return_ty = actual_return;
+            };
+          ] )
+      when variadic_function_matches
+             (expected_fixed @ [ expected_rest ])
+             expected_return actual_rest actual_return ->
+        let function_name = "__lg_apply_variadic_adapter_function" in
+        let fixed_names =
+          List.mapi
+            (fun index _ ->
+              "__lg_apply_variadic_adapter_argument_" ^ string_of_int index)
+            expected_fixed
+        in
+        let rest_name = "__lg_apply_variadic_adapter_rest" in
+        let all_arguments =
+          Semantic_ir.Infix
+            ( "@",
+              Semantic_ir.List
+                (List.map (fun name -> Semantic_ir.Ident name) fixed_names),
+              apply "Lg_runtime.Runtime_seq.to_list"
+                [ Semantic_ir.Ident rest_name ] )
+        in
+        Ok
+          (Semantic_ir.Let
+             ( [ (Semantic_ir.PVar function_name, argument.semantic_expr) ],
+               Semantic_ir.Tuple
+                 [
+                   Semantic_ir.Fun
+                     ( List.map
+                         (fun name -> Semantic_ir.PVar name)
+                         fixed_names
+                       @ [ Semantic_ir.PVar rest_name ],
+                       Semantic_ir.Apply
+                         ( overloaded_projection
+                             (Semantic_ir.Ident function_name) 0,
+                           [
+                             apply "Lg_runtime.Runtime_seq.of_list"
+                               [ all_arguments ];
+                           ] ) );
+                   Semantic_ir.Unit;
+                 ] ))
+    | _ ->
     if
       Option.is_some (Types.protocol_constraint_info expected_ty)
       || Option.is_some (Types.seqable_constraint_info expected_ty)

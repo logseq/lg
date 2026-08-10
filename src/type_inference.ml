@@ -4142,7 +4142,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               params collection
         | _ -> infer_all params arguments)
     | FList
-        (FSymbol "apply" :: FSymbol "mapv" :: constructor_form
+        (FSymbol "apply" :: FSymbol "__lg_mapv" :: constructor_form
         :: fixed_and_rest)
       when List.length fixed_and_rest >= 2
            && is_variadic_vector_constructor params constructor_form ->
@@ -4277,17 +4277,38 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                          infer_expected expected params argument))
                    (Ok params) fixed_parameter_types fixed_arguments)
                 (fun params ->
-                  let element_ty =
-                    match remaining_parameters function_ty with
-                    | [] -> TUnknown
-                    | first :: rest
-                      when List.for_all (Types.equal first) rest ->
-                        first
-                    | _ -> Types.dynamic_constraint TUnknown
-                  in
-                  constrain_seqable element_ty params collection)
+                  match (function_ty, fixed_arguments) with
+                  | TOverloaded_fn arities, constructor :: collections
+                    when List.for_all
+                           (fun (arity : fn_arity) ->
+                             match arity.return_ty with
+                             | TVector _ -> true
+                             | _ -> false)
+                           arities
+                         && is_variadic_vector_constructor params constructor ->
+                      let element_ty = fresh_type_variable "zip_element" in
+                      Result.bind
+                        (List.fold_left
+                           (fun result collection ->
+                             Result.bind result (fun params ->
+                                 infer_expected (TVector element_ty) params
+                                   collection))
+                           (Ok params) collections)
+                        (fun params ->
+                          constrain_seqable (TVector element_ty) params
+                            collection)
+                  | _ ->
+                      let element_ty =
+                        match remaining_parameters function_ty with
+                        | [] -> TUnknown
+                        | first :: rest
+                          when List.for_all (Types.equal first) rest ->
+                            first
+                        | _ -> Types.dynamic_constraint TUnknown
+                      in
+                      constrain_seqable element_ty params collection)
           | _ -> infer_all params arguments)
-    | FList [ FSymbol "mapv"; fn; collection ] ->
+    | FList [ FSymbol "__lg_mapv"; fn; collection ] ->
         let inferred_element_ty = inferred_unary_function_param params fn in
         let inferred_element_ty =
           match inferred_element_ty with
@@ -4318,7 +4339,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        fresh_type_variable "unary_map_result" ))
                   params name
             | form -> infer_form params form)
-    | FList (FSymbol "mapv" :: fn :: collection_forms)
+    | FList (FSymbol "__lg_mapv" :: fn :: collection_forms)
       when List.length collection_forms >= 2 -> (
         let collection_element_ty collection =
           let collection_ty = inferred_form_type params collection in

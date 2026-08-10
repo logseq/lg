@@ -142,6 +142,10 @@
   :fn<fn<first;second;third;output>;seq<first>;seq<second>;seq<third>;seq<output>>)
 (signature clojure.core/map [input output storage accumulator left right left-storage right-storage first second third first-storage second-storage third-storage]
   :overload<fn<fn<input;output>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;output>;seqable<input;storage>;seq<output>>;fn<fn<left;right;output>;seqable<left;left-storage>;seqable<right;right-storage>;seq<output>>;fn<fn<first;second;third;output>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;seq<output>>>)
+(signature clojure.core/mapv-many-seq [first second third rest output]
+  :fn<variadic-fn<first;second;third;rest;output>;seq<first>;seq<second>;seq<third>;seq<seq<rest>>;vector<output>;vector<output>>)
+(signature clojure.core/mapv [input output storage left right left-storage right-storage first second third first-storage second-storage third-storage rest rest-storage]
+  :overload<fn<fn<input;output>;seqable<input;storage>;vector<output>>;fn<fn<left;right;output>;seqable<left;left-storage>;seqable<right;right-storage>;vector<output>>;fn<fn<first;second;third;output>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;vector<output>>;variadic-fn<variadic-fn<first;second;third;rest;output>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;seqable<rest;rest-storage>;vector<output>>>)
 (signature clojure.core/filter-seq [input predicate-result]
   :fn<fn<input;truthy<predicate-result>>;seq<input>;seq<input>>)
 (signature clojure.core/filter [input storage accumulator predicate-result]

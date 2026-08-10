@@ -1698,6 +1698,58 @@
   (run sh %{dep:check_no_source_core_into_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-mapv-dispatch)
+ (deps
+  check_no_source_core_mapv_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_mapv_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_mapv_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_mapv_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_mapv_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_mapv_bad_arity.cljc}
+   "mapv expects function and collection")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_mapv_bad_callback.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_mapv_bad_callback.cljc}
+   "mapv function type does not match collection")))
+
+(rule
  (alias runtest)
  (deps
   check_compile_error.sh
