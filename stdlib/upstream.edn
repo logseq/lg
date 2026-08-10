@@ -800,6 +800,8 @@
     doubles {:status :ported}
     longs {:status :ported}
     not-every? {:status :ported}
+    some {:status :static-adaptation
+          :reason :source-port-preserves-upstream-left-to-right-first-truthy-short-circuiting-while-inline-specialization-delegates-option-flattening-and-static-callback-result-elaboration-to-a-private-typed-primitive}
     not-any? {:status :static-adaptation
               :reason :inlines-the-upstream-some-short-circuit-loop-to-preserve-a-static-truthy-callback-witness}
     split-at {:status :ported}

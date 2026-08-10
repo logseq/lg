@@ -31100,6 +31100,48 @@ let test_some_returns_first_truthy_predicate_value () =
   assert_ocaml_runs "some_returns_first_truthy_predicate_value" "value-3:true\n"
     ocaml_source
 
+let test_source_some_supports_first_class_use () =
+  let source =
+    {|
+(ns test.source-some
+  (:require [cljs.core :refer [some]]))
+
+(def find-first some)
+(def found
+  (find-first
+    (fn [x] (if (> x 2) (Some x) None))
+    [1 2 3 4]))
+(def missing
+  (find-first
+    (fn [x] (if (> x 9) (Some x) None))
+    (list 1 2 3 4)))
+
+(println
+  (and (= 3 (match found (Some value) value None 0))
+       (nil? missing)))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_some_first_class.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source some must preserve static callback and result types";
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_some_first_class.cljc" source
+  in
+  assert_ocaml_runs "source_some_supports_first_class_use" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_some_first_class.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_some_rejects_scalar.cljc"
+    {|(some (fn [value] value) 42)|}
+  |> expect_error_contains "collection"
+
 let test_some_infers_generic_seqable_parameters () =
   let source =
     {|
@@ -41134,6 +41176,8 @@ let tests =
       test_additional_sequence_helpers_reject_bad_counts );
     ( "some returns first truthy predicate value",
       test_some_returns_first_truthy_predicate_value );
+    ( "source some supports first class use",
+      test_source_some_supports_first_class_use );
     ( "some infers generic Seqable parameters",
       test_some_infers_generic_seqable_parameters );
     ( "map key evidence preserves generic map values",

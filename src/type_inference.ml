@@ -4950,7 +4950,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             constrain_collections params element_tys collection_forms))
     | FList
         [
-          FSymbol "some";
+          FSymbol ("some" | "__lg_some");
           fn;
           collection;
         ] ->

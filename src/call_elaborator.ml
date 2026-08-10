@@ -8540,10 +8540,10 @@ let create ~compile_expr =
     | "__lg_contains" -> compile_contains scope env arg_forms
     | "__lg_keys" -> compile_keys scope env arg_forms
     | "__lg_vals" -> compile_vals scope env arg_forms
-              | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
-                  compile_hash_map scope env arg_forms
-              | "__lg_rest" | "__lg_seq" ->
-                  compile_collection_call scope env name arg_forms
+    | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
+        compile_hash_map scope env arg_forms
+    | "__lg_rest" | "__lg_seq" ->
+        compile_collection_call scope env name arg_forms
     | "into" -> (
         match arg_forms with
         | [ target_form; transducer_form; source_form ] ->
@@ -8551,13 +8551,12 @@ let create ~compile_expr =
               (FList [ FSymbol "sequence"; transducer_form; source_form ])
         | [ target_form; source_form ] ->
             compile_into scope env target_form source_form
-                  | _ ->
-                      compile_sequence_transform_call scope env name arg_forms)
-              | "__lg_next" -> (
+        | _ -> compile_sequence_transform_call scope env name arg_forms)
+    | "__lg_next" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
-    | "some" -> compile_some scope env arg_forms
+    | "__lg_some" -> compile_some scope env arg_forms
     | "doall" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort" ->

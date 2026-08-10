@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 518 source entries (52.59%), 73 typed
-primitives, 43 special forms, 97 host boundaries, 203 static-typing blockers,
+macro surfaces. The current baseline is 519 source entries (52.69%), 73 typed
+primitives, 43 special forms, 97 host boundaries, 202 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -203,6 +203,10 @@ has been removed. The type inference pass still recognizes the four upstream
 sequence names before source expansion; these are static constraints, not
 runtime implementations. `next` deliberately remains a non-inline source call
 so its optional-sequence result cannot destabilize generic loop inference.
+`some` now preserves the upstream source loop and first-truthy short circuit.
+Direct calls inline to a private typed primitive only for the callback-result
+option-flattening boundary, while first-class calls use the source binding and
+its inferred static truthiness contract.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;

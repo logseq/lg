@@ -166,8 +166,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 132; then
-  echo "compiler form dispatch changed: expected 132 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 133; then
+  echo "compiler form dispatch changed: expected 133 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -274,7 +274,7 @@ if test -n "$clojurescript_root"; then
 
   awk -F '\t' '
     BEGIN {
-      split("seq first rest next", names, " ")
+      split("seq first rest next some", names, " ")
       for (i in names) source_inference[names[i]] = 1
     }
     FILENAME == ARGV[1] && $1 == "compiler-call" {

@@ -2205,6 +2205,17 @@
 (defn not-every? [pred coll]
   (not (every? pred coll)))
 
+(defn some
+  {:inline (fn [pred coll] (list '__lg_some pred coll))}
+  [pred coll]
+  (loop [remaining (seq coll)]
+    (if remaining
+      (let [result (pred (first remaining))]
+        (if result
+          result
+          (recur (next remaining))))
+      nil)))
+
 (defn not-any? [pred coll]
   (loop [remaining (seq coll)]
     (if remaining
