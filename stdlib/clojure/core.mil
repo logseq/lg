@@ -122,6 +122,8 @@
   :fn<int;seq<value>;option<unit>>)
 (signature clojure.core/dorun [value storage]
   :overload<fn<seqable<value;storage>;option<unit>>;fn<int;seqable<value;storage>;option<unit>>>)
+(signature clojure.core/doall [doall-value doall-storage]
+  :overload<fn<seqable<doall-value;doall-storage>;doall-storage>;fn<int;seqable<doall-value;doall-storage>;doall-storage>>)
 (signature clojure.core/run! [input output storage]
   :fn<fn<input;output>;seqable<input;storage>;option<unit>>)
 (signature clojure.core/group-by [input key storage]

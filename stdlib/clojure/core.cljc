@@ -959,6 +959,14 @@
   ([n coll]
    (dorun-n-seq n (seq coll))))
 
+(defn doall
+  ([coll]
+   (dorun coll)
+   coll)
+  ([n coll]
+   (dorun n coll)
+   coll))
+
 (defn run! [proc coll]
   (dorun (map proc coll)))
 

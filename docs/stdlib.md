@@ -207,6 +207,11 @@ so its optional-sequence result cannot destabilize generic loop inference.
 Direct calls inline to a private typed primitive only for the callback-result
 option-flattening boundary, while first-class calls use the source binding and
 its inferred static truthiness contract.
+`doall` is source-owned with both upstream arities. It realizes through the
+source `dorun` implementation and returns the original collection rather than
+substituting a vector or another eager representation. Its explicit
+`seqable<value; storage> -> storage` relationship preserves vector, list, and
+other statically known collection storage without a dynamic value boundary.
 `conj` is source-owned with the complete zero, one, two, and variadic upstream
 arity family. Lists, vectors, sets, sequences, user `ICollection`
 implementations, and statically typed map-entry tuples preserve their result

@@ -759,6 +759,13 @@ let constrained_argument_value argument =
   | Semantic_ir.Ident name when is_generated_callback_argument name ->
       constrained_value_expression argument.ty argument.semantic_expr
   | Semantic_ir.Ident _ -> argument.semantic_expr
+  | Semantic_ir.Sequence expressions -> (
+      match List.rev expressions with
+      | final_expression :: _ -> (
+          match Semantic_ir.unlocated final_expression with
+          | Semantic_ir.Ident _ -> argument.semantic_expr
+          | _ -> constrained_value_expression argument.ty argument.semantic_expr)
+      | [] -> constrained_value_expression argument.ty argument.semantic_expr)
   | _ -> constrained_value_expression argument.ty argument.semantic_expr
 
 let is_sequential_type = function
@@ -8564,8 +8571,6 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
     | "__lg_some" -> compile_some scope env arg_forms
-    | "doall" ->
-        compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort-by" -> compile_sort_by scope env arg_forms
@@ -10152,8 +10157,23 @@ let create ~compile_expr =
                       Option.map (Type_solver.apply substitutions)
                         arity.rest_param
                     in
+                    let seqable_storage_return_ty =
+                      List.combine arity.fixed_params fixed_args
+                      |> List.find_map (fun (parameter_ty, argument) ->
+                             match
+                               Types.seqable_constraint_info parameter_ty
+                             with
+                             | Some (_, _, storage_ty)
+                               when Types.equal arity.return_ty storage_ty ->
+                                 Some
+                                   (Types.constraint_value_type argument.ty)
+                             | Some _ | None -> None)
+                    in
                     let return_ty =
-                      match element_ty with
+                      match seqable_storage_return_ty with
+                      | Some storage_ty -> storage_ty
+                      | None -> (
+                          match element_ty with
                       | Some element_ty ->
                           let rec specialize = function
                             | TOcaml_app (name, _) as constraint_ty
@@ -10175,7 +10195,7 @@ let create ~compile_expr =
                             | ty -> ty
                           in
                           specialize arity.return_ty
-                      | None -> arity.return_ty
+                      | None -> arity.return_ty)
                     in
                     let return_ty =
                       Type_solver.apply substitutions return_ty

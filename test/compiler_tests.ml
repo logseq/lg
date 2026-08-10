@@ -24560,11 +24560,37 @@ let test_batched_predicate_collection_core_functions_work () =
   in
   assert_ocaml_runs "batched_predicate_collection_core_functions_work"
     "true:true:false:false:false:false:false:true:false:true:false:true:true:true:true:false:true:false:false:3:5:(1 \
-     2 3 4):(4 5):(1 2 3):[1 3 5]:2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
+     2 3 4):(4 5):(1 2 3):(1 3 5):2:(1 2):(3 4 5):(1 2 3):(4 5):3:2:2:done:[1 \
      2 3 4 5]\n\
      item:1\n\
      item:2\n"
     ocaml_source
+
+let test_doall_is_source_owned_and_preserves_collection_storage () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn doall") then
+    failwith "doall must be implemented by the source standard library";
+  let source =
+    {|
+(ns app.source-doall
+  (:require [cljs.core :as core :refer [doall]]))
+
+(def source-doall doall)
+
+(println
+  (and (= [1 2 3] (source-doall [1 2 3]))
+       (= (list 1 2 3) (doall (list 1 2 3)))
+       (= [1 2 3] (core/doall 2 [1 2 3]))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_doall.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source doall must preserve its collection storage type";
+  assert_ocaml_runs "source_doall" "true\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/source_doall.cljc" source)
 
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
@@ -25925,7 +25951,7 @@ let test_batched_sequence_functions_work () =
     compile_with_stdlib Lg.Target.Native "test/batched_sequences.cljc" source
   in
   assert_ocaml_runs "batched_sequence_functions_work"
-    "[1 3]:[1 2 3]:[3 4]:(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 \
+    "(1 3):(1 2 3):(3 4):(1 2 3):(1 2 3):(1 2 3 4):(0 1 2):9:[1 2]:#{1 \
      2}:(\"x\" \"x\" \"x\"):(7 7 7):(1 0 2 0 3):(1 3 2 4):2:1:3:3:1:(0 1 3 \
      6):(1 2 1):(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
@@ -41035,6 +41061,8 @@ let tests =
       test_loop_initializers_propagate_seqable_constraints );
     ( "batched predicate/collection core functions accept truthy params",
       test_source_split_with_accepts_boolean_params );
+    ( "doall is source-owned and preserves collection storage",
+      test_doall_is_source_owned_and_preserves_collection_storage );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",

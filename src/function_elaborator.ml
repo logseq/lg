@@ -1421,7 +1421,14 @@ let fn_code ?(row_param_type_names = []) parts =
   in
   let return_ty =
     match return_param_index with
-    | Some index -> List.nth_opt param_tys index |> Option.value ~default:return_ty
+    | Some index -> (
+        match List.nth_opt param_tys index with
+        | Some parameter_ty -> (
+            match Types.seqable_constraint_info parameter_ty with
+            | Some (_, _, storage_ty) when Types.equal return_ty storage_ty ->
+                return_ty
+            | Some _ | None -> parameter_ty)
+        | None -> return_ty)
     | None -> return_ty
   in
   {

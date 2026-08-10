@@ -5652,7 +5652,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               pairs (result :: pattern constant :: acc) rest
         in
         infer_match params target (pairs [] clauses)
-    | FList [ FSymbol ("__lg_set" | "doall"); collection ] ->
+    | FList [ FSymbol "__lg_set"; collection ] ->
         infer_collection params collection
     | FList
         [
