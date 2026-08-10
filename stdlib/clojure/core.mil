@@ -233,6 +233,8 @@
   :fn<map<key;value>;Lg_edn_backend.t;map<key;value>>)
 (signature clojure.core/meta [key value]
   :fn<map<key;value>;Lg_edn_backend.t>)
+(signature clojure.core/vary-meta-apply [a b c d args]
+  :fn<variadic-fn<Lg_edn_backend.t;a;b;c;d;args;Lg_edn_backend.t>;Lg_edn_backend.t;a;b;c;d;seq<args>;Lg_edn_backend.t>)
 (signature clojure.core/array-value? [value]
   :fn<array<value>;bool>)
 (signature clojure.core/reduced? [value]

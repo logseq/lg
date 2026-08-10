@@ -87,6 +87,11 @@ primitive converts statically representable EDN metadata literals at the call
 boundary. Persistent `assoc`/`dissoc` operations and source ports such as
 `update-keys` and `update-vals` preserve metadata on Native and Melange without
 converting the map or metadata through `Runtime_dynamic.t`.
+`vary-meta` is likewise a public source var with all six pinned ClojureScript
+arities. Its first-class map signature consumes and returns the closed metadata
+domain; direct calls bind the receiver once and contextually specialize
+`IMeta`/`IWithMeta` protocol calls, including variadic
+callbacks and custom metadata-capable receivers.
 
 Sidecars describe a homogeneous variadic arity with
 `variadic-fn<fixed...;rest;result>`. The final two arguments are the rest
@@ -148,8 +153,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 569 source entries (57.77%), 27 typed
-primitives, 43 special forms, 97 host boundaries, 198 static-typing blockers,
+macro surfaces. The current baseline is 570 source entries (57.87%), 27 typed
+primitives, 43 special forms, 97 host boundaries, 197 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -404,7 +409,7 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `boolean?`, `empty?`, `not-empty`, `integer?`,
 `pos-int?`, `neg-int?`, `nat-int?`, `ident?`, `simple-ident?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
-`qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`,
+`qualified-keyword?`, `counted?`, and `seqable?` source macros, `reduced`, `reset-vals!`, `vary-meta`,
 `inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
@@ -858,7 +863,7 @@ replaced by identity because `identical?` observes the fresh collection objects
 created by ClojureScript, while `cloneable?`, `record?`, and `tagged-literal?`
 are first-class predicates over arbitrary values. `replace` still combines a
 transducer arity with representation-dependent lazy or vector results.
-`spread`, `trampoline`, `vary-meta`, and
+`spread`, `trampoline`, and
 `vec-lite` each require a heterogeneous or dependent function relationship
 that the current static source type system cannot express without narrowing an
 upstream arity.

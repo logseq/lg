@@ -2707,6 +2707,34 @@
 (defn meta [value]
   (IMeta/-meta value))
 
+(defn- vary-meta-apply [update-fn metadata a b c d args]
+  (apply update-fn metadata a b c d args))
+
+(defn vary-meta
+  {:inline
+   (fn [value update-fn & args]
+     (let [target (gensym)]
+       (list
+        'let [target value]
+        (list
+         'IWithMeta/-with-meta target
+         (cons update-fn
+               (cons (list 'IMeta/-meta target) args))))))}
+  ([value update-fn]
+   (with-meta value (update-fn (meta value))))
+  ([value update-fn a]
+   (with-meta value (update-fn (meta value) a)))
+  ([value update-fn a b]
+   (with-meta value (update-fn (meta value) a b)))
+  ([value update-fn a b c]
+   (with-meta value (update-fn (meta value) a b c)))
+  ([value update-fn a b c d]
+   (with-meta value (update-fn (meta value) a b c d)))
+  ([value update-fn a b c d & args]
+   (with-meta
+    value
+    (vary-meta-apply update-fn (meta value) a b c d args))))
+
 (defn keyword-identical? [left right]
   (= left right))
 

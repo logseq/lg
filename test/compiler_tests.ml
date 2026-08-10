@@ -26309,7 +26309,10 @@ let test_metadata_maps_preserve_closed_edn_values_statically () =
   let ocaml_source =
     compile_string_with_stdlib metadata_map_source |> expect_ok
   in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let consumer_source =
+    compile_string_from_stdlib metadata_map_source |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "typed map metadata must not cross Runtime_dynamic";
   assert_ocaml_runs "metadata_maps_preserve_closed_edn_values_statically"
     "true\n" ocaml_source;
@@ -26361,12 +26364,91 @@ let test_metadata_maps_decode_closed_edn_collections () =
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "closed metadata collections must not cross Runtime_dynamic";
   assert_ocaml_runs "metadata_maps_decode_closed_edn_collections" "true\n"
     ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_source_vary_meta_matches_clojurescript_arities () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn vary-meta") then
+    failwith "vary-meta must be implemented by the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "\"vary-meta\"" then
+        failwith ("vary-meta has public-name compiler dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ];
+  let source =
+    {|
+(ns metadata.source-vary
+  (:require [cljs.core :as core :refer [vary-meta]]))
+
+(def vary-through vary-meta)
+(def base (with-meta {:answer 42} {:value 1}))
+(def evaluations (atom 0))
+(defn evaluated-base []
+  (do
+    (swap! evaluations inc)
+    base))
+(defn metadata-with-value [^:int value]
+  (meta (with-meta base {:value value})))
+
+(def result-2 (vary-through base identity))
+(def result-3 (core/vary-meta base (fn [_ a] (metadata-with-value a)) 2))
+(def result-4
+  (vary-meta base (fn [_ a b] (metadata-with-value (+ a b))) 2 3))
+(def result-5
+  (vary-meta base
+    (fn [_ a b c] (metadata-with-value (+ (+ a b) c)))
+    2 3 4))
+(def result-6
+  (vary-meta base
+    (fn [_ a b c d] (metadata-with-value (+ (+ a b) (+ c d))))
+    2 3 4 5))
+(def result-many
+  (vary-meta (evaluated-base)
+    (fn [_ a b c d & more]
+      (metadata-with-value (reduce + (+ (+ a b) (+ c d)) more)))
+    1 2 3 4 5 6))
+
+(defn ^:int metadata-value [value]
+  (:value (meta value)))
+(deftype Tagged [^int value ^:Lg_edn_backend.t metadata]
+  IMeta
+  (-meta [_] metadata)
+  IWithMeta
+  (-with-meta [_ next-metadata] (Tagged. value next-metadata)))
+(def tagged (Tagged. 7 (meta base)))
+(def tagged-result
+  (vary-meta tagged (fn [_] (metadata-with-value 8))))
+(def ^:int tagged-metadata-value
+  (:value (IMeta/-meta tagged-result)))
+
+(println
+  (str (metadata-value result-2) ":" (metadata-value result-3) ":"
+       (metadata-value result-4) ":" (metadata-value result-5) ":"
+       (metadata-value result-6) ":" (metadata-value result-many) ":"
+       @evaluations ":" (:answer result-many) ":"
+       tagged-metadata-value ":" (.-value tagged-result)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "metadata/source_vary.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source vary-meta must keep metadata in the closed EDN domain";
+  assert_ocaml_runs "source_vary_meta" "1:2:5:9:14:21:1:42:8:7\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "metadata/source_vary.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "metadata/bad_source_vary.cljc"
+    {|(vary-meta 1 identity)|}
+  |> expect_error_contains "IMeta"
 
 let test_generated_ml_preserves_readable_names_and_layout () =
   let source =
@@ -41473,6 +41555,8 @@ let tests =
       test_metadata_compilation_isolated_from_package_include_dirs );
     ( "metadata maps decode closed EDN collections",
       test_metadata_maps_decode_closed_edn_collections );
+    ( "source vary-meta matches ClojureScript arities",
+      test_source_vary_meta_matches_clojurescript_arities );
     ( "generated ML preserves readable names and layout",
       test_generated_ml_preserves_readable_names_and_layout );
     ( "logical or preserves nullable closed sum results",

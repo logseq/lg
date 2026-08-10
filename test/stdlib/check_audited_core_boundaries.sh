@@ -31,7 +31,6 @@ tagged-literal	blocked-static-typing	tagged-literal-forms-accept-arbitrary-cloju
 tagged-literal?	blocked-static-typing	first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
 unsafe-bit-and	blocked-static-typing	javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve
-vary-meta	blocked-static-typing	metadata-transform-callbacks-span-five-fixed-arities-plus-variadic-apply-while-preserving-the-receiver-type
 vec-lite	blocked-static-typing	one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation
 coercive-=	host-boundary	javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent
 coercive-boolean	host-boundary	javascript-falsiness-for-zero-nan-empty-string-null-and-undefined-differs-from-clojure-truthiness

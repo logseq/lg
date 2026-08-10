@@ -876,8 +876,8 @@
                 :reason :step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply}
     unsafe-bit-and {:status :blocked-static-typing
                     :reason :javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve}
-    vary-meta {:status :blocked-static-typing
-               :reason :metadata-transform-callbacks-span-five-fixed-arities-plus-variadic-apply-while-preserving-the-receiver-type}
+    vary-meta {:status :static-adaptation
+               :reason :source-function-preserves-all-six-clojurescript-arities-first-class-map-use-and-closed-edn-metadata-results-while-direct-calls-bind-the-receiver-once-and-contextually-specialize-custom-metadata-capable-receivers}
     vec-lite {:status :blocked-static-typing
               :reason :one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation}
     coercive-= {:status :host-boundary
