@@ -303,6 +303,7 @@ let stdlib_sources =
          "stdlib/clojure/walk.cljc";
          "stdlib/clojure/zip.mil";
          "stdlib/clojure/zip.cljc";
+         "stdlib/cljs/cache.cljc";
        ]
       |> List.map (fun path ->
              (path, read_file (Filename.concat (repo_root ()) path))))
@@ -3958,10 +3959,12 @@ let test_compiler_phases_have_explicit_boundaries () =
         then failwith "expression semantic helpers should have one owner";
         let parts : Lg.Expression_support.compiled_fn_parts =
           {
-          param_bindings = [ ("x", Lg.Types.binding "x" Lg.Types.TInt) ];
+            param_bindings = [ ("x", Lg.Types.binding "x" Lg.Types.TInt) ];
             param_identities = [ None ];
             destructured_bindings = [];
-          body = Lg.Types.typed_ir Lg.Types.TInt (Lg.Semantic_ir.Ident "x");
+            return_param_index_hint = None;
+            body =
+              Lg.Types.typed_ir Lg.Types.TInt (Lg.Semantic_ir.Ident "x");
           }
         in
         let fn = Lg.Function_elaborator.fn_code parts in
@@ -25789,6 +25792,37 @@ let test_source_core_protocol_surface_uses_typed_builtin_implementations () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_core_protocols.cljc" source)
 
+let test_cljs_cache_lru_matches_logseq_usage () =
+  let source =
+    {|
+(ns app.cljs-cache
+  (:require [cljs.cache :as cache
+             :refer [has? hit lookup lru-cache-factory miss through]]))
+
+(def initial (lru-cache-factory {} :threshold 2))
+(def with-a (through (fn [_] 1) initial :a))
+(def with-b (through (fn [_] 2) with-a :b))
+(def a-recent (hit with-b :a))
+(def with-c (miss a-recent :c 3))
+
+(println
+  (and (= 1 (lookup with-c :a))
+       (= 3 (cache/lookup with-c :c))
+       (nil? (lookup with-c :b))
+       (has? with-c :a)
+       (not (has? with-c :b))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cljs_cache_lru.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.cache must preserve static cache, key, and value types";
+  assert_ocaml_runs "cljs_cache_lru" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/cljs_cache_lru.cljc" source)
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -40962,6 +40996,8 @@ let tests =
       test_namespace_has_no_public_name_dispatch );
     ( "source core protocol surface uses typed builtin implementations",
       test_source_core_protocol_surface_uses_typed_builtin_implementations );
+    ( "cljs.cache LRU matches Logseq usage",
+      test_cljs_cache_lru_matches_logseq_usage );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );

@@ -3,8 +3,19 @@
   :commit "5c6ef531604662afbb33dc1b553d7602634d9656"
  :license "EPL-1.0"}
 
+ :cljs-cache
+ {:artifact "org.clojars.mmb90/cljs-cache"
+  :version "0.1.4"
+  :source "cljs/cache.cljs"
+  :license "EPL-1.0"}
+
+ :cljs-priority-map
+ {:artifact "tailrecursion/cljs-priority-map"
+  :version "1.2.1"
+  :source "tailrecursion/priority_map.cljs"}
+
  :aggregate-namespaces
- [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math clojure.set clojure.data clojure.walk clojure.zip]
+ [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math cljs.cache clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -1420,6 +1431,35 @@
    :notes
    ["Navigation, sibling order, changed propagation, root rebuilding, depth-first traversal, and removal follow pinned ClojureScript control flow."
     "No callback, node, path, or location is boxed into Runtime_dynamic.t."]}
+
+  cljs.cache
+  {:source "cljs-cache-0.1.4.jar!/cljs/cache.cljs"
+   :implementation "cljs/cache.cljc"
+   :definitions
+   {CacheProtocol {:status :ported}
+    lookup {:status :ported}
+    has? {:status :ported}
+    hit {:status :ported}
+    miss {:status :ported}
+    evict {:status :ported}
+    seed {:status :ported}
+    through {:status :static-adaptation
+             :reason :source-overloads-preserve-upstream-hit-miss-control-flow-while-static-protocol-return-relations-keep-the-cache-receiver-type}
+    BasicCache {:status :static-adaptation
+                :reason :source-record-delegates-storage-to-the-default-persistent-hash-map}
+    LRUCache {:status :static-adaptation
+              :reason :source-record-uses-a-typed-two-index-priority-map-with-ordered-priority-buckets-and-item-to-priority-hash-indexes-following-cljs-priority-map}
+    basic-cache-factory {:status :ported}
+    lru-cache-factory {:status :static-adaptation
+                       :reason :fixed-source-arities-preserve-the-default-and-threshold-options-without-a-heterogeneous-keyword-rest-map}
+    TTLCache {:status :blocked-static-typing
+              :reason :requires-a-shared-native-and-melange-clock-boundary-before-the-upstream-expiry-algorithm-can-be-source-owned}
+    ttl-cache-factory {:status :blocked-static-typing
+                       :reason :depends-on-the-ttl-cache-clock-boundary}}
+   :notes
+   ["The LRU implementation does not substitute a vector for the upstream priority map."
+    "Runtime_priority_map preserves the upstream priority-to-item-set and item-to-priority indexes; OCaml's ordered integer map implements the sorted priority index and Runtime_map implements hash buckets."
+    "No cljs.cache sidecar .mil file is introduced; runtime boundaries expose ordinary OCaml .mli interfaces."]}
 
   clojure.test
   {:source :jvm-only

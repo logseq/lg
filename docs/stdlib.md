@@ -779,6 +779,22 @@ variadic arities. Ordered `let` bindings retain JavaScript's left-to-right
 operand evaluation when the expansion is emitted as OCaml, while division
 remains left-associated and delegates to LG's typed `/` primitive.
 
+`cljs.cache` is now part of the Native and Melange aggregate source library,
+using the `cljs-cache` 0.1.4 source used by Logseq as its behavioral reference.
+`CacheProtocol`, `through`, `BasicCache`, `LRUCache`, and their factories remain
+source-owned. Protocol methods are exported as ordinary namespace Vars, so
+`:refer` and qualified calls behave like ClojureScript while dispatch remains
+static. Functions such as `through` retain the relationship between their cache
+parameter and result across separately compiled namespaces.
+
+The LRU implementation follows `tailrecursion/cljs-priority-map` rather than
+substituting a vector. `Runtime_priority_map` keeps the same two indexes: an
+ordered `priority -> item-set` map and a persistent hash `item -> priority` map.
+Integer priorities use OCaml's ordered map and item buckets use LG's default
+persistent hash map. This keeps minimum-priority lookup and priority updates
+readable and logarithmic without dynamic values. New runtime boundaries use
+ordinary `.mli` interfaces; no `.mil` sidecar was added for `cljs.cache`.
+
 The inventory explicitly classifies the audited clone, dependent-result,
 transducer, tagged-literal, and metadata-transform surfaces. `clone` cannot be
 replaced by identity because `identical?` observes the fresh collection objects

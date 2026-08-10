@@ -9824,6 +9824,8 @@ let create ~compile_expr =
             match ocaml_call_target scope env name with
             | Some _ -> compile_inferred_ocaml_call scope env name arg_forms
             | None -> compile_protocol_call scope env name arg_forms))
+    | Ok { protocol_id = Some _; _ } ->
+        compile_protocol_call scope env name arg_forms
     | Ok { host_reference = Some (Ocaml_value _); _ } ->
         compile_inferred_ocaml_call scope env name arg_forms
     | Ok fn -> (
@@ -10096,6 +10098,13 @@ let create ~compile_expr =
                               in
                               if Types.is_dynamic actual then Ok substitutions
                               else
+                                match Types.protocol_constraint_info template with
+                                | Some (_, _, value_ty) ->
+                                    Ok
+                                      (Type_solver.unify substitutions value_ty
+                                         (Types.constraint_value_type actual)
+                                      |> Result.value ~default:substitutions)
+                                | None ->
                                 match
                                   ( Option.map
                                       (fun (_, element_ty, _) -> element_ty)
@@ -10147,6 +10156,10 @@ let create ~compile_expr =
                       match element_ty with
                       | Some element_ty ->
                           let rec specialize = function
+                            | TOcaml_app (name, _) as constraint_ty
+                              when Option.is_some
+                                     (Types.protocol_constraint_id name) ->
+                                constraint_ty
                             | TUnknown | TMeta _ | TVar _ -> element_ty
                             | TNullable ty -> TNullable (specialize ty)
                             | TArray ty -> TArray (specialize ty)
@@ -10455,9 +10468,32 @@ let create ~compile_expr =
                                 typed_ir arity.return_ty
                                   (Semantic_ir.Apply (target, arguments))
                               in
+                              let adapted_call =
+                                match
+                                  ( Types.protocol_constraint_info arity.return_ty,
+                                    Types.protocol_constraint_info return_ty )
+                                with
+                                | Some (left, _, _), Some (right, _, _)
+                                  when Protocol_id.equal left right ->
+                                    Ok call.semantic_expr
+                                | _ ->
+                                    adapt_value_to_type env return_ty call
+                              in
                               Result.map
-                                (fun expression -> typed_ir return_ty expression)
-                                (adapt_value_to_type env return_ty call))))
+                                (fun expression ->
+                                  let result = typed_ir return_ty expression in
+                                  match
+                                    Types.protocol_constraint_info return_ty
+                                  with
+                                  | Some (_, _, value_ty)
+                                    when (match value_ty with
+                                         | TUnknown | TMeta _ | TVar _ -> false
+                                         | _ -> true) ->
+                                      typed_ir value_ty
+                                        (constrained_value_expression return_ty
+                                           result.semantic_expr)
+                                  | Some _ | None -> result)
+                                adapted_call)))
             | TFn (param_tys, ret)
               when List.length param_tys = List.length args
                    && List.for_all2
@@ -11884,28 +11920,27 @@ let create ~compile_expr =
                                   let method_expr =
                                     witness_method methods position
                                   in
+                                  let return_param_index =
+                                    Protocol.common_method_return_param_index env
+                                      protocol_id method_name
+                                  in
                                   let return_ty =
-                                    match marker.ty with
-                                    | TFn (_, TUnknown) -> (
-                                        match
-                                          Protocol
-                                          .common_method_return_param_index env
-                                            protocol_id method_name
-                                         with
-                                        | Some index -> (
-                                            match List.nth_opt args index with
-                                            | Some argument -> argument.ty
-                                            | None ->
-                                                Types.dynamic_constraint
-                                                  TUnknown)
+                                    match (return_param_index, marker.ty) with
+                                    | Some index, TFn (_, declared_return_ty)
+                                      when contains_unresolved_type
+                                             declared_return_ty -> (
+                                        match List.nth_opt args index with
+                                        | Some argument -> argument.ty
                                         | None ->
-                                            Protocol.common_method_return env
-                                              protocol_id method_name
-                                            |> Option.value
-                                                 ~default:
-                                                   (Types.dynamic_constraint
-                                                      TUnknown))
-                                    | TFn (_, return_ty) -> return_ty
+                                            Types.dynamic_constraint TUnknown)
+                                    | _, TFn (_, TUnknown) ->
+                                        Protocol.common_method_return env
+                                          protocol_id method_name
+                                        |> Option.value
+                                             ~default:
+                                               (Types.dynamic_constraint
+                                                  TUnknown)
+                                    | _, TFn (_, return_ty) -> return_ty
                                     | _ -> TUnknown
                                   in
                                   let witness_method_ty =
@@ -11952,7 +11987,9 @@ let create ~compile_expr =
                                   let return_ty =
                                     match witness_method_ty with
                                     | Some (TFn (_, witness_return_ty))
-                                      when contains_unresolved_type return_ty ->
+                                      when Option.is_none return_param_index
+                                           && contains_unresolved_type return_ty
+                                      ->
                                         witness_return_ty
                                     | _ -> return_ty
                                   in

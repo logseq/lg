@@ -11,6 +11,7 @@
   cljs/reader.cljc
   cljs/math.mil
   cljs/math.cljc
+  cljs/cache.cljc
   clojure/core/protocols.cljc
   clojure/set.mil
   clojure/set.cljc
@@ -39,6 +40,7 @@
    %{dep:cljs/reader.cljc}
    %{dep:cljs/math.mil}
    %{dep:cljs/math.cljc}
+   %{dep:cljs/cache.cljc}
    %{dep:clojure/core/protocols.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}
@@ -68,6 +70,7 @@
   cljs/reader.cljc
   cljs/math.mil
   cljs/math.cljc
+  cljs/cache.cljc
   clojure/core/protocols.cljc
   clojure/set.mil
   clojure/set.cljc
@@ -96,6 +99,7 @@
    %{dep:cljs/reader.cljc}
    %{dep:cljs/math.mil}
    %{dep:cljs/math.cljc}
+   %{dep:cljs/cache.cljc}
    %{dep:clojure/core/protocols.cljc}
    %{dep:clojure/set.mil}
    %{dep:clojure/set.cljc}

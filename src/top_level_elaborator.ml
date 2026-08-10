@@ -283,6 +283,7 @@ let allocate_top_level_local_records env next_type body =
       param_bindings = [];
       param_identities = [];
       destructured_bindings = [];
+      return_param_index_hint = None;
       body;
     }
   in

@@ -1478,6 +1478,7 @@ type compiled_fn_parts = {
   param_bindings : (string * binding) list;
   param_identities : (Source_node_id.t * Location.t) option list;
   destructured_bindings : Destructure.local_binding list;
+  return_param_index_hint : int option;
   body : typed_expr;
 }
 

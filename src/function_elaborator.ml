@@ -644,6 +644,45 @@ let normalize_prepost_body = function
             ]
   | body_forms -> body_forms
 
+let returned_parameter_index scope env parameter_names body_forms =
+  let parameter_index name =
+    parameter_names
+    |> List.mapi (fun index parameter -> (index, parameter))
+    |> List.find_opt (fun (_, parameter) -> String.equal name parameter)
+    |> Option.map fst
+  in
+  let rec returned_parameter = function
+    | Ast.FSymbol name -> parameter_index name
+    | Ast.FList [ Ast.FSymbol "if"; _condition; then_form; else_form ] -> (
+        match (returned_parameter then_form, returned_parameter else_form) with
+        | Some left, Some right when left = right -> Some left
+        | _ -> None)
+    | Ast.FList (Ast.FSymbol "do" :: forms) -> (
+        match List.rev forms with
+        | form :: _ -> returned_parameter form
+        | [] -> None)
+    | Ast.FList (Ast.FSymbol method_name :: arguments) -> (
+        match Protocol.lookup_marker scope env method_name with
+        | Some { protocol_id = Some protocol_id; _ } -> (
+            match
+              Protocol.common_method_return_param_index env protocol_id
+                (Protocol.method_basename method_name)
+            with
+            | Some argument_index -> (
+                match List.nth_opt arguments argument_index with
+                | Some argument -> returned_parameter argument
+                | None -> None)
+            | None -> None)
+        | Some _ | None -> None)
+    | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
+    | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ | Ast.FVector _
+    | Ast.FMap _ | Ast.FList _ ->
+        None
+  in
+  match List.rev body_forms with
+  | form :: _ -> returned_parameter form
+  | [] -> None
+
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?compile_function_body ?compile_default
@@ -1090,11 +1129,20 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                   match compiled_body with
                   | Error _ as err -> err
                   | Ok body ->
+                      let return_param_index_hint =
+                        returned_parameter_index scope env
+                          (List.map
+                             (fun ((spec : Destructure.param_spec), _) ->
+                               spec.source_name)
+                             typed_specs)
+                          body_forms
+                      in
                       Ok
                         {
                           param_bindings;
                           param_identities;
                           destructured_bindings;
+                          return_param_index_hint;
                           body;
                         }))))
 
@@ -1332,6 +1380,12 @@ let fn_code ?(row_param_type_names = []) parts =
             body_semantic_expr )
   in
   let return_param_index =
+    let same_nominal_type left right =
+      match (left, right) with
+      | TNamed_record left, TNamed_record right ->
+          Type_id.equal left.type_id right.type_id
+      | _ -> Types.equal left right
+    in
     let returned_name =
       match Semantic_ir.unlocated parts.body.semantic_expr with
       | Semantic_ir.Ident name -> Some name
@@ -1350,7 +1404,25 @@ let fn_code ?(row_param_type_names = []) parts =
         |> List.mapi (fun index name -> (index, name))
         |> List.find_opt (fun (_index, name) -> name = returned_name)
         |> Option.map fst
-    | _ -> None
+    | _ -> (
+        match parts.return_param_index_hint with
+        | Some _ as index -> index
+        | None
+          when (match return_ty with
+               | TUnknown | TMeta _ | TVar _ -> false
+               | _ -> true) ->
+            param_tys
+            |> List.mapi (fun index ty -> (index, ty))
+            |> List.filter (fun (_, ty) -> same_nominal_type ty return_ty)
+            |> (function
+                 | [ index, _ ] -> Some index
+                 | [] | _ :: _ :: _ -> None)
+        | None -> None)
+  in
+  let return_ty =
+    match return_param_index with
+    | Some index -> List.nth_opt param_tys index |> Option.value ~default:return_ty
+    | None -> return_ty
   in
   {
     (typed_ir

@@ -21,6 +21,7 @@
   ../stdlib/clojure/set.cljc
   ../stdlib/clojure/zip.mil
   ../stdlib/clojure/zip.cljc
+  ../stdlib/cljs/cache.cljc
   datascript/lg/built_ins.mil
   ../src/lg.cma
   ../runtime/lg_runtime.cma
@@ -46,6 +47,11 @@
 (test
  (name runtime_transient_tests)
  (modules runtime_transient_tests)
+ (libraries lg.runtime lg.edn-backend.native rrbvec))
+
+(test
+ (name runtime_cache_tests)
+ (modules runtime_cache_tests)
  (libraries lg.runtime lg.edn-backend.native rrbvec))
 
 (test

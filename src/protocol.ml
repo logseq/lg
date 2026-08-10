@@ -194,10 +194,7 @@ let satisfied_protocols env receiver_ty =
          then Some protocol_id
          else None)
 
-let constraint_type scope env protocol_name =
-  match find_protocol_id scope env protocol_name with
-  | None -> None
-  | Some protocol_id ->
+let constraint_type_for_id env protocol_id =
       Protocol_registry.find_protocol protocol_id (Env.protocols env)
       |> Option.map (fun (declaration : Protocol_registry.declaration) ->
              let method_types =
@@ -526,8 +523,22 @@ let lookup_marker scope env method_name =
         (match protocols with
         | [ protocol_id ] ->
             marker_for protocol_id method_name
-        | [] | _ :: _ :: _ -> None)
+        | [] -> (
+            match Env.find_opt (Names.scoped_key scope method_name) env with
+            | Some { protocol_id = Some protocol_id; _ } ->
+                marker_for protocol_id method_name
+            | Some _ | None -> None)
+        | _ :: _ :: _ -> None)
     | [] -> None
+
+let constraint_type scope env protocol_or_method_name =
+  match find_protocol_id scope env protocol_or_method_name with
+  | Some protocol_id -> constraint_type_for_id env protocol_id
+  | None -> (
+      match lookup_marker scope env protocol_or_method_name with
+      | Some { protocol_id = Some protocol_id; _ } ->
+          constraint_type_for_id env protocol_id
+      | Some _ | None -> None)
 
 let lookup_protocol_marker ?(refine = true) scope env protocol_name method_name =
   let registry = Env.protocols env in

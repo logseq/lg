@@ -13,6 +13,30 @@ let fixed_arities = function
         |> List.sort_uniq Int.compare)
   | _ -> None
 
+let export_method_bindings scope env protocol_id signatures =
+  List.fold_left
+    (fun env (signature : Protocol_registry.method_signature) ->
+      let method_name = Method_id.name signature.method_id in
+      let name = Names.scoped_key scope method_name in
+      match Env.find_opt name env with
+      | Some _ -> env
+      | None ->
+          let marker =
+            Protocol.lookup_marker scope env method_name
+            |> Option.value
+                 ~default:
+                   (Protocol.marker_binding protocol_id
+                      {
+                        Protocol.method_id = signature.method_id;
+                        method_name;
+                        method_ty = signature.method_ty;
+                      })
+          in
+          Env.add name
+            marker
+            env)
+    env signatures
+
 let validate_core_protocol_surface protocol_id source_signatures declaration =
   let source_methods =
     List.map
@@ -94,6 +118,9 @@ let define ?location scope env protocol_name method_forms =
           with
           | Error _ as err -> err
           | Ok () ->
+              let env =
+                export_method_bindings scope env protocol_id signatures
+              in
               Ok
                 ( env,
                   Comment
@@ -106,7 +133,11 @@ let define ?location scope env protocol_name method_forms =
        with
       | Error _ as err -> err
       | Ok protocols ->
-          let env = Env.with_protocols protocols env in
+          let env =
+            Env.with_protocols protocols env
+            |> fun env ->
+            export_method_bindings scope env protocol_id signatures
+          in
           Ok (env, Comment ("protocol " ^ protocol_name))))
 
 let marker scope env protocol_name method_name =

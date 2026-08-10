@@ -1416,8 +1416,13 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                       in
                       (fixed, Some rest)
                 in
+                let return_ty =
+                  match (fn_code parts).ty with
+                  | TFn (_, return_ty) -> return_ty
+                  | _ -> parts.body.ty
+                in
                 let arity =
-                  { fixed_params; rest_param; return_ty = parts.body.ty }
+                  { fixed_params; rest_param; return_ty }
                 in
                 let current_index = List.length compiled in
                 let arities =
