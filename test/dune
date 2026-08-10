@@ -195,58 +195,82 @@
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
- (target datascript_value_native.ml)
+ (target datascript_value_native_chunk.ml)
  (deps
   (source_tree datascript)
   datascript/value.cljc
   datascript/schema.cljc
   datascript/value_test.cljc
+  ../stdlib/lg_stdlib_native.state
   ../bin/lg_cli.exe)
  (action
   (run
    %{exe:../bin/lg_cli.exe}
    --target
    native
-   --compile-files
+   --compile-files-from
+   %{dep:../stdlib/lg_stdlib_native.state}
    %{dep:datascript/value.cljc}
    %{dep:datascript/schema.cljc}
    %{dep:datascript/value_test.cljc}
    -o
    %{target})))
 
+(rule
+ (target datascript_value_native.ml)
+ (deps ../stdlib/lg_stdlib_native.ml datascript_value_native_chunk.ml)
+ (action
+   (with-stdout-to
+    %{target}
+    (progn
+     (cat %{dep:../stdlib/lg_stdlib_native.ml})
+     (cat %{dep:datascript_value_native_chunk.ml})))))
+
 (executable
  (name datascript_value_native)
  (modules datascript_value_native)
  (flags
-  (:standard -w -32-37))
+  (:standard -w -27-32-37))
  (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
- (target datascript_value_melange.ml)
+ (target datascript_value_melange_chunk.ml)
  (deps
   (source_tree datascript)
   datascript/value.cljc
   datascript/schema.cljc
   datascript/value_test.cljc
+  ../stdlib/lg_stdlib_melange.state
   ../bin/lg_cli.exe)
  (action
   (run
    %{exe:../bin/lg_cli.exe}
    --target
    melange
-   --compile-files
+   --compile-files-from
+   %{dep:../stdlib/lg_stdlib_melange.state}
    %{dep:datascript/value.cljc}
    %{dep:datascript/schema.cljc}
    %{dep:datascript/value_test.cljc}
    -o
    %{target})))
 
+(rule
+ (target datascript_value_melange.ml)
+ (deps ../stdlib/lg_stdlib_melange.ml datascript_value_melange_chunk.ml)
+ (action
+   (with-stdout-to
+    %{target}
+    (progn
+     (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+     (cat %{dep:datascript_value_melange_chunk.ml})))))
+
 (melange.emit
  (target datascript-value-melange)
  (alias datascript-value-melange)
  (module_systems es6)
  (modules datascript_value_melange)
- (compile_flags -w -32-37)
+ (compile_flags -w -27-32-37)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
