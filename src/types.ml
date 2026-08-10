@@ -251,6 +251,18 @@ let protocol_constraint protocol_id method_types value_ty =
     ( protocol_constraint_prefix ^ Protocol_id.to_string protocol_id,
       [ protocol_witness_type method_types; value_ty ] )
 
+let sorted_constraint entry_ty key_ty value_ty =
+  let protocol_id = Protocol_id.create ~owner:[] ~name:"ISorted" in
+  let comparator_ty = TFn ([ key_ty; key_ty ], TInt) in
+  protocol_constraint protocol_id
+    [
+      TFn ([ value_ty ], comparator_ty);
+      TFn ([ value_ty; entry_ty ], key_ty);
+      TFn ([ value_ty; TBool ], TSeq entry_ty);
+      TFn ([ value_ty; key_ty; TBool ], TSeq entry_ty);
+    ]
+    value_ty
+
 let guarded_protocol_constraint constraint_ty =
   match constraint_ty with
   | TOcaml_app (name, arguments) -> (
@@ -274,6 +286,21 @@ let protocol_constraint_info = function
         (fun protocol_id -> (protocol_id, witness_ty, value_ty))
         (protocol_constraint_id name)
   | _ -> None
+
+let sorted_constraint_info ty =
+  match protocol_constraint_info ty with
+  | Some (protocol_id, witness_ty, value_ty)
+    when String.equal (Protocol_id.name protocol_id) "ISorted" -> (
+      match protocol_witness_method_types witness_ty with
+      | Some
+          (TFn ([ _ ], TFn ([ key_ty; _ ], TInt))
+          :: TFn ([ _; entry_ty ], _)
+          :: TFn ([ _; TBool ], TSeq _)
+          :: TFn ([ _; _; TBool ], TSeq _)
+          :: []) ->
+          Some (entry_ty, key_ty, value_ty)
+      | Some _ | None -> None)
+  | Some _ | None -> None
 
 let protocol_constraint_with_value constraint_ty value_ty =
   match constraint_ty with
@@ -696,6 +723,10 @@ let rec source_name = function
   | TOcaml_app (name, [ value_ty ])
     when name = symbol_predicate_constraint_name ->
       "symbol-predicate<" ^ source_name value_ty ^ ">"
+  | (TOcaml_app _ as ty) when Option.is_some (sorted_constraint_info ty) ->
+      let entry_ty, key_ty, value_ty = Option.get (sorted_constraint_info ty) in
+      "sorted<" ^ source_name entry_ty ^ ";" ^ source_name key_ty ^ ";"
+      ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ _witness_ty; value_ty ])
     when Option.is_some (protocol_constraint_id name) ->
       let protocol_name =

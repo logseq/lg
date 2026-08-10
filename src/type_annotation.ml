@@ -180,6 +180,13 @@ let rec parse_ocaml_type source =
                       | _ ->
                           Error.error
                             "seqable expects one or two type arguments"
+                    else if name = "sorted" then
+                      match args with
+                      | [ entry; key; storage ] ->
+                          Ok (Types.sorted_constraint entry key storage)
+                      | _ ->
+                          Error.error
+                            "sorted expects entry, key, and storage type arguments"
                     else if name = "optional-seqable" then
                       match args with
                       | [ inner ] ->

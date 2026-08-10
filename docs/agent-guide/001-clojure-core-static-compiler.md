@@ -247,6 +247,11 @@ Map literal types are structural records keyed by Clojure keywords.
 tree and preserve comparator order across `assoc`, `dissoc`, and sequence
 operations.
 
+`mk-bound-fn`, `subseq`, and `rsubseq` use the source `ISorted` protocol through
+the closed `sorted<entry;key;storage>` capability. This keeps tree-map entries
+as `tuple<key,value>` and tree-set entries as values without dynamic packing or
+same-arity collection-specific overloads.
+
 Keyword lookup in a typed context can infer structural map field requirements
 for unannotated function parameters.
 

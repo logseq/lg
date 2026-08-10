@@ -91,6 +91,12 @@
   :overload<fn<persistent-tree-set<value>>;fn<value;persistent-tree-set<value>>;fn<value;value;persistent-tree-set<value>>;fn<value;value;value;persistent-tree-set<value>>;fn<value;value;value;value;persistent-tree-set<value>>>)
 (signature clojure.core/sorted-set-by [value]
   :overload<fn<fn<value;value;int>;persistent-tree-set<value>>;fn<fn<value;value;int>;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;value;persistent-tree-set<value>>>)
+(signature clojure.core/mk-bound-fn [entry key storage]
+  :fn<sorted<entry;key;storage>;fn<int;int;bool>;key;fn<entry;bool>>)
+(signature clojure.core/subseq [entry key storage]
+  :overload<fn<sorted<entry;key;storage>;fn<int;int;bool>;key;seq<entry>>;fn<sorted<entry;key;storage>;fn<int;int;bool>;key;fn<int;int;bool>;key;seq<entry>>>)
+(signature clojure.core/rsubseq [entry key storage]
+  :overload<fn<sorted<entry;key;storage>;fn<int;int;bool>;key;seq<entry>>;fn<sorted<entry;key;storage>;fn<int;int;bool>;key;fn<int;int;bool>;key;seq<entry>>>)
 (signature clojure.core/hash [value]
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]

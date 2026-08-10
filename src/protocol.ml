@@ -248,6 +248,41 @@ let witness_implementations env protocol_id receiver_ty =
       else None
   | None, _ | _, None -> None
 
+let infer_constraint_substitutions env substitutions constraint_ty receiver_ty =
+  match Types.protocol_constraint_info constraint_ty with
+  | None -> substitutions
+  | Some (protocol_id, witness_ty, value_ty) ->
+      let substitutions =
+        Type_solver.unify substitutions value_ty receiver_ty
+        |> Result.value ~default:substitutions
+      in
+      if Option.is_none (Types.sorted_constraint_info constraint_ty) then
+        substitutions
+      else
+        (match
+         ( Types.protocol_witness_method_types witness_ty,
+           witness_implementations env protocol_id receiver_ty )
+       with
+      | Some expected_methods, Some implementations
+        when List.length expected_methods = List.length implementations ->
+          List.fold_left2
+            (fun substitutions expected (implementation : binding) ->
+              match (expected, implementation.ty) with
+              | ( TFn (_ :: expected_parameters, expected_return),
+                  TFn (_ :: actual_parameters, actual_return) )
+                when List.length expected_parameters
+                     = List.length actual_parameters ->
+                  let substitutions =
+                    Type_solver.unify_lists substitutions expected_parameters
+                      actual_parameters
+                    |> Result.value ~default:substitutions
+                  in
+                  Type_solver.unify substitutions expected_return actual_return
+                  |> Result.value ~default:substitutions
+              | _ -> substitutions)
+            substitutions expected_methods implementations
+      | Some _, Some _ | None, _ | _, None -> substitutions)
+
 let witness_methods env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),

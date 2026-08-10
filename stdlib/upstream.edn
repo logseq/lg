@@ -1134,8 +1134,8 @@
              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     missing-protocol {:status :host-boundary
                       :reason :constructs-a-javascript-error-from-google-closure-runtime-type-dispatch}
-    mk-bound-fn {:status :blocked-static-typing
-                 :reason :sorted-collection-receiver-needs-associated-entry-key-and-comparator-types}
+    mk-bound-fn {:status :static-adaptation
+                 :reason :source-function-uses-the-isorted-associated-entry-key-comparator-and-storage-capability-with-an-int-ordering-result}
     munge {:status :static-adaptation
            :reason :source-function-preserves-upstream-string-or-symbol-result-identity-through-a-static-self-returning-protocol-and-the-complete-javascript-reserved-word-table}
     native-satisfies? {:status :host-boundary
@@ -1188,8 +1188,8 @@
                   :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
     reset-meta! {:status :blocked-static-typing
                  :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map}
-    rsubseq {:status :blocked-static-typing
-             :reason :sorted-collection-receiver-needs-associated-entry-key-comparator-and-sequence-types}
+    rsubseq {:status :static-adaptation
+             :reason :source-function-preserves-clojurescript-reverse-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     seq-iter {:status :host-boundary
               :reason :constructs-a-javascript-es6-iterator-over-a-clojurescript-sequence}
     seq-to-map-for-destructuring {:status :blocked-static-typing
@@ -1208,8 +1208,8 @@
                  :reason :constructs-a-javascript-es6-iterator-over-utf16-string-code-points}
     string-print {:status :host-boundary
                   :reason :writes-through-the-target-specific-global-print-callback}
-    subseq {:status :blocked-static-typing
-            :reason :sorted-collection-receiver-needs-associated-entry-key-comparator-and-sequence-types}
+    subseq {:status :static-adaptation
+            :reason :source-function-preserves-clojurescript-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     supers {:status :host-boundary
             :reason :reads-google-closure-javascript-constructor-inheritance-metadata}
     tap> {:status :blocked-static-typing

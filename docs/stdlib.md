@@ -117,6 +117,16 @@ of boolean predicate comparators remains a documented static adaptation.
 persistent `conj`/`disj`, `ISorted`, and metadata without substituting a hash
 set or vector representation.
 
+`mk-bound-fn`, `subseq`, and `rsubseq` are source-defined from the pinned
+ClojureScript algorithms. Their `sorted<entry;key;storage>` sidecar capability
+keeps map entries distinct from map keys while using the same `ISorted`
+protocol witness for tree sets. LG sequences represent empty ranges directly
+instead of using ClojureScript's nullable sequence sentinel. Because LG
+comparison operators are compiled as closures rather than stable JavaScript
+function objects, the direction branch probes the supplied ordering predicate;
+the bounded traversal, endpoint inclusion, cursor movement, and termination
+order remain the upstream ones.
+
 Sidecars describe a homogeneous variadic arity with
 `variadic-fn<fixed...;rest;result>`. The final two arguments are the rest
 element and result types; preceding arguments are fixed parameters. A
@@ -177,8 +187,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 574 source entries (58.27%), 26 typed
-primitives, 43 special forms, 97 host boundaries, 195 static-typing blockers,
+macro surfaces. The current baseline is 577 source entries (58.58%), 26 typed
+primitives, 43 special forms, 97 host boundaries, 192 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.

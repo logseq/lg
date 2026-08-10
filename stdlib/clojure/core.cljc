@@ -1198,6 +1198,66 @@
   ([comparator v1 v2 v3 v4]
    (tree-set-conj (sorted-set-by comparator v1 v2 v3) v4)))
 
+(defn mk-bound-fn
+  [sorted-collection ^:fn<int;int;bool> test key]
+  (fn [entry]
+    (let [comparator (ISorted/-comparator sorted-collection)]
+      (test
+       (comparator (ISorted/-entry-key sorted-collection entry) key)
+       0))))
+
+(defn subseq
+  ([sorted-collection ^:fn<int;int;bool> test key]
+   (let [include (mk-bound-fn sorted-collection test key)]
+     (if (test 1 0)
+       (let [entries
+             (ISorted/-sorted-seq-from sorted-collection key true)]
+         (if (empty? entries)
+           entries
+           (if (include (nth entries 0)) entries (next entries))))
+       (take-while include
+                   (ISorted/-sorted-seq sorted-collection true)))))
+  ([sorted-collection
+    ^:fn<int;int;bool> start-test start-key
+    ^:fn<int;int;bool> end-test end-key]
+   (let [entries
+         (ISorted/-sorted-seq-from sorted-collection start-key true)]
+     (if (empty? entries)
+       entries
+       (let [include-start
+             (mk-bound-fn sorted-collection start-test start-key)
+             bounded
+             (if (include-start (nth entries 0)) entries (next entries))]
+         (take-while
+          (mk-bound-fn sorted-collection end-test end-key)
+          bounded))))))
+
+(defn rsubseq
+  ([sorted-collection ^:fn<int;int;bool> test key]
+   (let [include (mk-bound-fn sorted-collection test key)]
+     (if (test -1 0)
+       (let [entries
+             (ISorted/-sorted-seq-from sorted-collection key false)]
+         (if (empty? entries)
+           entries
+           (if (include (nth entries 0)) entries (next entries))))
+       (take-while include
+                   (ISorted/-sorted-seq sorted-collection false)))))
+  ([sorted-collection
+    ^:fn<int;int;bool> start-test start-key
+    ^:fn<int;int;bool> end-test end-key]
+   (let [entries
+         (ISorted/-sorted-seq-from sorted-collection end-key false)]
+     (if (empty? entries)
+       entries
+       (let [include-end
+             (mk-bound-fn sorted-collection end-test end-key)
+             bounded
+             (if (include-end (nth entries 0)) entries (next entries))]
+         (take-while
+          (mk-bound-fn sorted-collection start-test start-key)
+          bounded))))))
+
 (defn- map-from-keyvals [keyvals]
   (loop [remaining (seq keyvals)
          result {}]

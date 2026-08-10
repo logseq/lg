@@ -26094,6 +26094,81 @@ let test_sorted_set_preserves_clojurescript_order_and_persistence () =
   if string_contains_substring call_source "| \"sorted-set\" ->" then
     failwith "sorted-set must be owned by the source stdlib"
 
+let test_sorted_range_queries_match_clojurescript () =
+  let source =
+    {|
+(ns app.sorted-range-query
+  (:require [cljs.core :as core
+             :refer [mk-bound-fn subseq rsubseq]]))
+
+(def mapping (sorted-map 1 "one" 2 "two" 3 "three" 4 "four" 5 "five"))
+(def values (sorted-set 1 2 3 4 5))
+(def descending
+  (sorted-set-by (fn [left right] (stdlib/compare right left)) 1 2 3 4 5))
+(def map-at-least-three? (mk-bound-fn mapping >= 3))
+(def set-at-least-three? (core/mk-bound-fn values >= 3))
+
+(println
+  (str (pr-str (map key (subseq mapping >= 3))) ":"
+       (pr-str (map key (core/subseq mapping > 3))) ":"
+       (pr-str (map key (subseq mapping < 3))) ":"
+       (pr-str (map key (subseq mapping <= 3))) ":"
+       (pr-str (map key (subseq mapping > 1 <= 4))) ":"
+       (pr-str (map key (rsubseq mapping <= 3))) ":"
+       (pr-str (map key (core/rsubseq mapping < 3))) ":"
+       (pr-str (map key (rsubseq mapping > 3))) ":"
+       (pr-str (map key (rsubseq mapping >= 3))) ":"
+       (pr-str (map key (rsubseq mapping >= 2 < 5))) ":"
+       (pr-str (subseq values >= 3)) ":"
+       (pr-str (subseq values > 1 <= 4)) ":"
+       (pr-str (rsubseq values <= 3)) ":"
+       (pr-str (rsubseq values >= 2 < 5)) ":"
+       (pr-str (subseq values > 9)) ":"
+       (pr-str (rsubseq values < 0)) ":"
+       (pr-str (subseq descending >= 3)) ":"
+       (map-at-least-three? (nth (subseq mapping >= 3) 0)) ":"
+       (set-at-least-three? (nth (subseq values >= 3) 0))))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "sorted range queries must remain statically typed";
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/sorted_range_query.cljc" source
+  in
+  assert_ocaml_runs "sorted_range_queries"
+    "(3 4 5):(4 5):(1 2):(1 2 3):(2 3 4):(3 2 1):(2 1):(5 4):(5 4 3):(4 3 2):(3 4 5):(2 3 4):(3 2 1):(4 3 2):():():(3 2 1):true:true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/sorted_range_query.cljc"
+       source);
+  let compiler_sources =
+    [
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+      "src/expression_elaborator.ml";
+    ]
+  in
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if
+            string_contains_substring compiler_source
+              ("| \"" ^ name ^ "\" ->")
+          then failwith (name ^ " must be owned by the source stdlib"))
+        [ "mk-bound-fn"; "subseq"; "rsubseq" ])
+    compiler_sources
+
+let test_sorted_range_queries_reject_mismatched_keys () =
+  compile_string_with_stdlib
+    {|
+(def values (sorted-set 1 2 3))
+(def invalid (subseq values >= "2"))
+|}
+  |> expect_error_contains "expected of type"
+
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     () =
   let source =
@@ -41745,6 +41820,10 @@ let tests =
       test_sorted_map_preserves_clojurescript_order_and_persistence );
     ( "sorted-set preserves ClojureScript order and persistence",
       test_sorted_set_preserves_clojurescript_order_and_persistence );
+    ( "sorted range queries match ClojureScript",
+      test_sorted_range_queries_match_clojurescript );
+    ( "sorted range queries reject mismatched keys",
+      test_sorted_range_queries_reject_mismatched_keys );
     ( "batched identifier/constructor core functions reject bad symbol args",
       test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     );

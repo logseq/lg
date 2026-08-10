@@ -10383,11 +10383,11 @@ let create ~compile_expr =
                                                ~default:substitutions))
                                 | _ ->
                                 match Types.protocol_constraint_info template with
-                                | Some (_, _, value_ty) ->
+                                | Some _ ->
                                     Ok
-                                      (Type_solver.unify substitutions value_ty
-                                         (Types.constraint_value_type actual)
-                                      |> Result.value ~default:substitutions)
+                                      (Protocol.infer_constraint_substitutions
+                                         env substitutions template
+                                         (Types.constraint_value_type actual))
                                 | None ->
                                 match
                                   ( Option.map
