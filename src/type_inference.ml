@@ -1200,7 +1200,7 @@ let rec inferred_form_type params = function
       ] ->
       inferred_form_type params value
   | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
-  | FList [ FSymbol "first"; FSymbol receiver ] -> (
+  | FList [ FSymbol ("first" | "__lg_first"); FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
@@ -1210,7 +1210,7 @@ let rec inferred_form_type params = function
               | Some element_ty -> element_ty
               | None -> if Types.is_dynamic ty then ty else TUnknown))
       | None -> TUnknown)
-  | FList [ FSymbol "next"; FSymbol receiver ] -> (
+  | FList [ FSymbol ("next" | "__lg_next"); FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some receiver_ty -> (
           match Types.seqable_constraint_element receiver_ty with
@@ -1301,6 +1301,18 @@ let rec inferred_form_type params = function
       | TSet element_ty -> TSet (refine_element element_ty)
       | TSeq element_ty -> TSeq (refine_element element_ty)
       | target_ty -> target_ty)
+  | FList [ FSymbol "__lg_cons"; value; collection ] ->
+      let value_ty = inferred_form_type params value in
+      let element_ty =
+        match inferred_form_type params collection with
+        | TList inner | TVector inner | TSet inner | TSeq inner ->
+            refine_type inner value_ty
+        | collection_ty ->
+            Types.seqable_constraint_element collection_ty
+            |> Option.map (fun inner -> refine_type inner value_ty)
+            |> Option.value ~default:value_ty
+      in
+      TSeq element_ty
   | FList
       [
         FSymbol ("__lg_if-some" | "__lg_if-let");
@@ -1767,6 +1779,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_expected expected_ty params target)
               (fun params -> infer_expected_all element_ty params values)
         | _ -> infer_all params (target :: values))
+    | FList [ FSymbol "__lg_cons"; value; collection ] ->
+        let element_ty =
+          match expected_ty with
+          | TSeq inner | TList inner | TVector inner | TSet inner -> inner
+          | _ -> inferred_form_type params value
+        in
+        Result.bind (infer_expected element_ty params value) (fun params ->
+            infer_expected (Types.seqable_constraint element_ty) params
+              collection)
     | FList
         (FSymbol "fn" :: FSymbol _name :: (FVector _ as fn_params)
         :: body_forms) ->
@@ -2042,17 +2063,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol "first"; collection ];
+            [ FSymbol ("first" | "__lg_first"); collection ];
         ] ->
         let target_ty = TRecord [ make_field keyword expected_ty ] in
         infer_sequence_form target_ty params collection
       | FList
           [
-            FSymbol "first";
+            FSymbol ("first" | "__lg_first");
             FSymbol collection;
           ] ->
         constrain_seqable expected_ty params collection
-    | FList [ FSymbol "first"; collection ] ->
+    | FList [ FSymbol ("first" | "__lg_first"); collection ] ->
         infer_sequence_form expected_ty params collection
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
@@ -3772,7 +3793,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     match option_form with
                     | FList
                         [
-                          FSymbol "first";
+                          FSymbol ("first" | "__lg_first");
                           _collection;
                         ] ->
                         payload_ty
@@ -3822,7 +3843,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   match option_form with
                   | FList
                       [
-                        FSymbol "first";
+                        FSymbol ("first" | "__lg_first");
                         _collection;
                       ] ->
                       payload_ty
@@ -4600,7 +4621,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params collection
     | FList
         [
-          FSymbol (("first" | "seq" | "rest" | "next") as operation);
+          FSymbol
+            (("first" | "seq" | "rest" | "next" | "__lg_first"
+             | "__lg_seq" | "__lg_rest" | "__lg_next")
+              as operation);
           FSymbol collection;
         ] ->
         constrain_seqable
@@ -4609,7 +4633,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params collection
     | FList
         [
-          FSymbol ("first" | "seq" | "rest" | "next");
+          FSymbol
+            ("first" | "seq" | "rest" | "next" | "__lg_first"
+            | "__lg_seq" | "__lg_rest" | "__lg_next");
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
@@ -4619,7 +4645,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           params
     | FList
         [
-          FSymbol (("first" | "seq" | "rest" | "next") as operation);
+          FSymbol
+            (("first" | "seq" | "rest" | "next" | "__lg_first"
+             | "__lg_seq" | "__lg_rest" | "__lg_next")
+              as operation);
           collection;
         ] ->
         infer_expected
@@ -5210,7 +5239,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol "first"; collection ];
+            [ FSymbol ("first" | "__lg_first"); collection ];
         ] ->
         infer_sequence_form
           (TRecord
@@ -5425,6 +5454,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               else element_ty
             in
             infer_expected_all value_ty params values)
+    | FList [ FSymbol "__lg_cons"; value; collection ] ->
+        let element_ty =
+          match inferred_form_type params value with
+          | TUnknown | TMeta _ | TVar _ -> Type_solver.fresh ()
+          | ty -> ty
+        in
+        Result.bind (infer_expected element_ty params value) (fun params ->
+            infer_expected
+              (Types.seqable_constraint element_ty)
+              params collection)
     | FList [ FSymbol "__lg_reduce-kv"; reducer; init; FSymbol name ] -> (
         let key_ty, value_ty = inferred_kv_reducer_types params init reducer in
         let unresolved = function
@@ -5663,7 +5702,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (fun locals -> function
                         | FList
                             [
-                              FSymbol "first";
+                              FSymbol ("first" | "__lg_first");
                               FSymbol local;
                             ] ->
                             if string_mem local locals then locals
@@ -5805,7 +5844,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        | ( Ok params,
                            FList
                              [
-                               FSymbol ("seq" | "rest" | "next");
+                               FSymbol
+                                 ("seq" | "rest" | "next" | "__lg_seq"
+                                 | "__lg_rest" | "__lg_next");
                                FSymbol source;
                              ] )
                          when string_mem_assoc source params ->

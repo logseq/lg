@@ -30,6 +30,14 @@ for name in identity completing complement boolean some? boolean? empty? not-emp
   done
 done
 
+for name in seq first rest next cons; do
+  if grep -E "^[[:space:]]*\| .*\"$name\".*->" \
+      "$root/src/call_elaborator.ml" "$root/src/core_collection.ml" >/dev/null; then
+    echo "clojure.core/$name is still publicly dispatched by the collection compiler" >&2
+    exit 1
+  fi
+done
+
 for name in get get-in assoc-in update update-in select-keys merge vals; do
   for file in \
     src/collection_operation_elaborator.ml \

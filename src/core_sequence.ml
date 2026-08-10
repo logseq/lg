@@ -19,7 +19,7 @@ let reverse_expr name collection =
 
 let compile env name args =
   match name with
-  | "next" -> (
+  | "__lg_next" -> (
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> next_expr env collection)

@@ -517,10 +517,34 @@
           :reason :source-overloads-preserve-upstream-one-two-and-variadic-left-to-right-disjoin-control-flow-and-inline-direct-calls-through-clojurescript-iset-while-lg-requires-a-non-nil-static-set}
     count {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-icounted-with-static-witnesses-for-nil-seqables-and-explicit-protocol-implementations}
+    seq {:status :static-adaptation
+         :reason :source-function-and-inline-specialization-preserve-static-seqable-adaptation-through-a-private-typed-primitive-while-lg-represents-an-empty-sequence-directly-instead-of-upstream-nil}
+    first {:status :static-adaptation
+           :reason :source-function-and-inline-specialization-preserve-the-upstream-optional-head-result-through-a-private-typed-seqable-primitive}
+    rest {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-preserve-the-upstream-empty-sequence-result-through-a-private-typed-seqable-primitive}
+    next {:status :static-adaptation
+          :reason :source-function-preserves-first-class-use-and-the-upstream-optional-successor-sequence-through-a-private-typed-primitive-without-inline-expansion-because-the-nullable-sequence-result-must-remain-stable-during-generic-source-inference}
+    cons {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-preserve-upstream-prepending-over-homogeneous-static-seqables-through-a-private-typed-primitive}
     nth {:status :static-adaptation
          :reason :source-overloads-and-inline-specialization-delegate-to-clojurescript-iindexed-while-preserving-static-list-vector-array-string-default-and-explicit-protocol-behavior}
     get {:status :static-adaptation
          :reason :source-overloads-delegate-to-clojurescript-ilookup-while-inline-specialization-preserves-dependent-record-map-vector-array-string-and-default-result-types-through-a-private-static-lookup-primitive}
+    get-in {:status :static-adaptation
+            :reason :source-overloads-preserve-upstream-nested-left-to-right-lookup-and-default-short-circuiting-through-the-private-static-lookup-primitive}
+    assoc-in {:status :static-adaptation
+              :reason :source-port-preserves-upstream-recursive-nested-association-through-homogeneous-static-map-paths-and-private-shape-preserving-association}
+    update {:status :static-adaptation
+            :reason :source-overloads-preserve-upstream-read-apply-associate-control-flow-and-extra-argument-arities-through-private-static-lookup-and-association-primitives}
+    update-in {:status :static-adaptation
+               :reason :source-port-preserves-upstream-recursive-nested-update-control-flow-through-homogeneous-static-map-paths-and-private-shape-preserving-primitives}
+    select-keys {:status :static-adaptation
+                 :reason :source-port-preserves-requested-key-order-and-present-key-filtering-while-static-map-key-and-value-types-remain-homogeneous}
+    merge {:status :static-adaptation
+           :reason :source-port-preserves-left-to-right-map-combination-and-last-value-wins-semantics-for-homogeneous-static-map-domains}
+    vals {:status :static-adaptation
+          :reason :source-function-derives-the-upstream-map-value-sequence-from-static-key-value-entries-without-runtime-dynamic-storage}
     contains? {:status :static-adaptation
                :reason :source-function-preserves-upstream-key-or-index-membership-through-a-private-static-associative-set-vector-array-and-record-elaboration-primitive}
     assoc {:status :static-adaptation
@@ -1052,8 +1076,20 @@
              :reason :same-arity-string-or-symbol-input-must-preserve-its-nominal-result-type}
     destructure {:status :special-form
                  :reason :compiler-owned-binding-form-rewrite-over-code-data}
-    disj! {:status :blocked-static-typing
-           :reason :transient-receiver-family-needs-associated-element-and-persistent-result-types}
+    transient {:status :static-adaptation
+               :reason :source-function-and-inline-specialization-preserve-upstream-persistent-to-transient-conversion-through-closed-vector-map-and-set-transient-representations}
+    persistent! {:status :static-adaptation
+                 :reason :source-function-and-inline-specialization-preserve-upstream-single-use-transient-to-persistent-conversion-with-category-specific-static-result-types}
+    conj! {:status :static-adaptation
+           :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-conjoin-with-homogeneous-static-element-types}
+    assoc! {:status :static-adaptation
+            :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-association-with-static-vector-or-map-key-and-value-domains}
+    dissoc! {:status :static-adaptation
+             :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-map-key-removal}
+    pop! {:status :static-adaptation
+          :reason :source-function-and-inline-specialization-preserve-upstream-transient-vector-tail-removal-through-a-private-typed-primitive}
+    disj! {:status :static-adaptation
+           :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-set-removal-with-a-homogeneous-static-element-domain}
     dispatch-fn {:status :blocked-static-typing
                  :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     double-array {:status :blocked-static-typing
@@ -1126,8 +1162,6 @@
                   :reason :same-arity-size-or-seqable-overload-requires-a-shared-object-array-element-domain}
     persistent-array-map-seq {:status :blocked-static-typing
                               :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
-    pop! {:status :blocked-static-typing
-          :reason :transient-receiver-family-needs-associated-element-and-persistent-result-types}
     pr-seq-writer {:status :blocked-static-typing
                    :reason :printer-callback-must-accept-arbitrary-heterogeneous-values-with-a-shared-writer-and-options-domain}
     pr-str* {:status :blocked-static-typing

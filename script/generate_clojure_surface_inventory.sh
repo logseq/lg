@@ -166,8 +166,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 127; then
-  echo "compiler form dispatch changed: expected 127 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 132; then
+  echo "compiler form dispatch changed: expected 132 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -273,20 +273,25 @@ if test -n "$clojurescript_root"; then
   LC_ALL=C sort -u "$tmp/source-vars" -o "$tmp/source-vars"
 
   awk -F '\t' '
+    BEGIN {
+      split("seq first rest next", names, " ")
+      for (i in names) source_inference[names[i]] = 1
+    }
     FILENAME == ARGV[1] && $1 == "compiler-call" {
-      compiler[$2] = 1
+      compiler_call[$2] = 1
       next
     }
     FILENAME == ARGV[2] && $1 == "compiler-form" {
       name = $2
       sub(/^(clojure|cljs)\.core\//, "", name)
-      compiler[name] = 1
+      compiler_form[name] = 1
       next
     }
     FILENAME == ARGV[3] && $1 ~ /^cljs\.core\// {
       name = $1
       sub(/^cljs\.core\//, "", name)
-      if (name in compiler) {
+      if ((name in compiler_call) ||
+          ((name in compiler_form) && !(name in source_inference))) {
         print "source core var still has name-based compiler dispatch: " name > "/dev/stderr"
         failed = 1
       }

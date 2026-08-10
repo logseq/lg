@@ -8514,7 +8514,7 @@ let create ~compile_expr =
     | "__lg_list" -> compile_list scope env arg_forms
     | "list*" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms
-    | "cons" -> compile_cons scope env arg_forms
+    | "__lg_cons" -> compile_cons scope env arg_forms
     | "__lg_vector" -> compile_vector scope env arg_forms
     | "vector-of" -> compile_vector_of arg_forms
     | "__lg_count" -> compile_collection_call scope env name arg_forms
@@ -8524,7 +8524,7 @@ let create ~compile_expr =
     | "__lg_transient" -> compile_transient scope env arg_forms
     | "__lg_persistent!" -> compile_persistent_bang scope env arg_forms
     | "conj" -> compile_conj scope env arg_forms
-    | "first" -> compile_collection_call scope env name arg_forms
+    | "__lg_first" -> compile_collection_call scope env name arg_forms
     | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms
     | "__lg_get" -> compile_get scope env arg_forms
@@ -8542,7 +8542,7 @@ let create ~compile_expr =
     | "__lg_vals" -> compile_vals scope env arg_forms
               | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
                   compile_hash_map scope env arg_forms
-              | "rest" | "seq" ->
+              | "__lg_rest" | "__lg_seq" ->
                   compile_collection_call scope env name arg_forms
     | "into" -> (
         match arg_forms with
@@ -8553,7 +8553,7 @@ let create ~compile_expr =
             compile_into scope env target_form source_form
                   | _ ->
                       compile_sequence_transform_call scope env name arg_forms)
-              | "next" -> (
+              | "__lg_next" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
@@ -8885,7 +8885,7 @@ let create ~compile_expr =
   and compile_collection_call scope env name arg_forms =
     let argument_env =
       match (name, Env.expected_type env) with
-      | "first", Some expected ->
+      | "__lg_first", Some expected ->
           let element_ty =
             match expected with
             | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner

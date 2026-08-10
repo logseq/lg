@@ -53,6 +53,30 @@
 (defn compare [left right]
   (__lg_compare left right))
 
+(defn seq
+  {:inline (fn [coll] (list '__lg_seq coll))}
+  [coll]
+  (__lg_seq coll))
+
+(defn first
+  {:inline (fn [coll] (list '__lg_first coll))}
+  [coll]
+  (__lg_first coll))
+
+(defn rest
+  {:inline (fn [coll] (list '__lg_rest coll))}
+  [coll]
+  (__lg_rest coll))
+
+(defn next
+  [coll]
+  (__lg_next coll))
+
+(defn cons
+  {:inline (fn [value coll] (list '__lg_cons value coll))}
+  [value coll]
+  (__lg_cons value coll))
+
 (defn make-array
   {:inline (fn [size initial]
              (list '__lg_make-array size initial))}

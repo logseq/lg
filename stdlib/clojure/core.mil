@@ -21,6 +21,16 @@
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]
   :fn<comparable<value>;value;int>)
+(signature clojure.core/seq [value storage]
+  :fn<seqable<value;storage>;seq<value>>)
+(signature clojure.core/first [value storage]
+  :fn<seqable<value;storage>;option<value>>)
+(signature clojure.core/rest [value storage]
+  :fn<seqable<value;storage>;seq<value>>)
+(signature clojure.core/next [value storage]
+  :fn<seqable<value;storage>;__lg_next_seq<value>>)
+(signature clojure.core/cons [value storage]
+  :fn<value;seqable<value;storage>;seq<value>>)
 (signature clojure.core/make-array [value]
   :fn<int;value;array<value>>)
 (signature clojure.core/aget [value index]

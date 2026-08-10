@@ -333,8 +333,14 @@ let compiled_stdlib target =
               with
               | Ok compiled -> compiled
               | Error (error : Lg.Compiler.compile_error) ->
+                  let location =
+                    match error.location with
+                    | Some location ->
+                        ":" ^ string_of_int location.loc_start.pos_lnum
+                    | None -> ""
+                  in
                   failwith
-                    ("failed to compile " ^ source_filename ^ ": "
+                    ("failed to compile " ^ source_filename ^ location ^ ": "
                    ^ error.message)
             in
             (state, output :: outputs))
@@ -24127,6 +24133,62 @@ let test_source_map_access_update_family_rejects_invalid_inputs () =
     {|(def merge-maps merge) (merge-maps {:answer 1} {:answer "bad"})|}
   |> expect_error_contains "cannot merge"
 
+let test_source_fundamental_sequence_family_matches_clojurescript () =
+  let source =
+    {|
+(ns test.source-fundamental-sequence
+  (:require [cljs.core :as core]))
+
+(def to-seq seq)
+(def head first)
+(def tail rest)
+(def following next)
+(def prepend cons)
+
+(def values [1 2 3])
+(def prepended (prepend 0 values))
+
+(println
+  (and (= [1 2 3] (vec (to-seq values)))
+       (= 1 (head values))
+       (= 1 (core/first values))
+       (= [2 3] (vec (tail values)))
+       (= [2 3] (vec (following values)))
+       (= [0 1 2 3] (vec prepended))
+       (empty? (to-seq []))
+       (nil? (following [1]))
+       (empty? (tail [1]))))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_fundamental_sequence_family.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "fundamental sequence functions must remain statically typed";
+  assert_ocaml_runs "source_fundamental_sequence_family_matches_clojurescript"
+    "true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_fundamental_sequence_family.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_fundamental_sequence_family.cljc" source)
+
+let test_source_fundamental_sequence_family_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_seq_rejects_scalar.cljc"
+    {|(def to-seq seq) (to-seq 42)|}
+  |> expect_error_contains "seqable";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_first_rejects_scalar.cljc"
+    {|(def head first) (head 42)|}
+  |> expect_error_contains "seqable";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cons_rejects_mixed_elements.cljc"
+    {|(def prepend cons) (prepend "bad" [1 2])|}
+  |> expect_error_contains "heterogeneous sequence"
+
 let test_hash_dispatches_to_record_ihash () =
   let source =
     {|
@@ -41248,6 +41310,10 @@ let tests =
       test_source_map_access_update_family_matches_clojurescript );
     ( "source map access update family rejects invalid inputs",
       test_source_map_access_update_family_rejects_invalid_inputs );
+    ( "source fundamental sequence family matches ClojureScript",
+      test_source_fundamental_sequence_family_matches_clojurescript );
+    ( "source fundamental sequence family rejects invalid inputs",
+      test_source_fundamental_sequence_family_rejects_invalid_inputs );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

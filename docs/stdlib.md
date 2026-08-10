@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 513 source entries (52.08%), 76 typed
-primitives, 43 special forms, 97 host boundaries, 205 static-typing blockers,
+macro surfaces. The current baseline is 518 source entries (52.59%), 73 typed
+primitives, 43 special forms, 97 host boundaries, 203 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -191,14 +191,18 @@ including both `prim-seq` arities, without introducing the JavaScript-only
 character table lives in a typed runtime helper because the current LG lexer
 cannot express delimiter characters such as braces and brackets as char
 literals; the boundary is `string -> string` and does not use dynamic values.
-`contains?`, `assoc`, `dissoc`, and `keys` are source-visible collection
-functions. Their direct-call inline definitions preserve ClojureScript arities,
-left-to-right key processing, and odd-association validation while delegating
-only receiver/key/value dependent elaboration to private `__lg_*` primitives.
-The public names no longer occur in call elaboration or type-inference form
-dispatch. `get` remains a typed primitive because its result depends jointly on
-receiver, key, and optional default; exposing the current inferred signature as
-a precompiled source binding loses nominal record-field function types.
+The collection access, update, and transient families are source-visible,
+including `contains?`, `get`, `get-in`, `assoc`, `assoc-in`, `dissoc`, `update`,
+`update-in`, `select-keys`, `merge`, `keys`, `vals`, and the seven public
+transient operations. Their source arities preserve ClojureScript control flow
+while receiver/key/value-dependent elaboration is restricted to private
+`__lg_*` primitives.
+`seq`, `first`, `rest`, `next`, and `cons` are also precompiled source
+functions over explicit polymorphic seqable signatures. Public call elaboration
+has been removed. The type inference pass still recognizes the four upstream
+sequence names before source expansion; these are static constraints, not
+runtime implementations. `next` deliberately remains a non-inline source call
+so its optional-sequence result cannot destabilize generic loop inference.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;
@@ -208,8 +212,8 @@ coverage.
 All remaining public `cljs.core` function surfaces are also explicitly
 classified. The non-source families are JavaScript iterators and prototype
 inspection, chunked-sequence internals, multimethods, reference watches and
-validators, heterogeneous printing, sorted collections, transient associated
-types, bootstrap namespace objects, and analyzer helpers. Each individual var
+validators, heterogeneous printing, sorted collections, bootstrap namespace
+objects, and analyzer helpers. Each individual var
 has its concrete reason in `stdlib/upstream.edn`; there is no unreviewed
 function queue hidden behind a generic deferred reason. Further source coverage
 therefore proceeds by implementing one of these missing static capabilities as
