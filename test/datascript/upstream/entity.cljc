@@ -74,6 +74,21 @@
   (EntityReference :entity)
   (EntityReferences :entityreferenceset))
 
+(signature datascript.impl.entity/entity-reference-set-equal?
+  :fn<datascript.impl.entity/EntityReferenceSet;datascript.impl.entity/EntityReferenceSet;bool>)
+(signature datascript.impl.entity/entity-value-print-string
+  :fn<datascript.impl.entity/EntityValue;string>)
+(signature datascript.impl.entity/entity-print-string
+  :fn<datascript.impl.entity/Entity;string>)
+(signature datascript.impl.entity/equiv-entity
+  :fn<datascript.impl.entity/Entity;datascript.impl.entity/Entity;bool>)
+(signature datascript.impl.entity/hash-entity
+  :fn<datascript.impl.entity/Entity;int>)
+(signature datascript.impl.entity/lookup-entity
+  :fn<datascript.impl.entity/Entity;keyword;option<datascript.impl.entity/EntityValue>>)
+(signature datascript.impl.entity/touch-components
+  :fn<datascript.db/database-view;map<keyword;datascript.impl.entity/EntityValue>;map<keyword;datascript.impl.entity/EntityValue>>)
+
 (signature datascript.impl.entity/entity
   :fn<datascript.db/database-view;Datascript_runtime.Data_value.entity_ref;option<datascript.impl.entity/Entity>>)
 

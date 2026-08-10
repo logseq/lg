@@ -422,6 +422,7 @@
  (deps
   cli_smoke.sh
   ../bin/lg_cli.exe
+  ../bin/lg_lsp.exe
   ../examples/person.cljc
   ../examples/checkout.cljc
   ../examples/protocols.cljc)

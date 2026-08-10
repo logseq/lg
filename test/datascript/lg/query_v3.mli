@@ -223,6 +223,18 @@
 (signature datascript.query-v3/resolve-or-branches
   :fn<datascript.query-v3/query-context-v3;vector<datascript.parser/clause>;vector<string>;datascript.query-v3/or-resolution-v3>)
 
+(signature datascript.query-v3/resolve-or
+  :fn<datascript.query-v3/query-context-v3;datascript.parser/clause;datascript.query-v3/query-context-v3>)
+
+(signature datascript.query-v3/resolve-clause-closed
+  :fn<datascript.query-v3/query-context-v3;datascript.parser/clause;datascript.query-v3/query-context-v3>)
+
+(signature datascript.query-v3/resolve-clauses-state-v3
+  :fn<datascript.query-v3/clause-resolution-request-v3;datascript.query-v3/query-context-v3>)
+
+(signature datascript.query-v3/resolve-rule-request-v3
+  :fn<datascript.query-v3/rule-resolution-request-v3;datascript.query-v3/query-context-v3>)
+
 (signature datascript.query-v3/remove-rule-argument-pairs
   :fn<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>;tuple<vector<datascript.parser/pattern-element>;vector<datascript.parser/pattern-element>>>)
 

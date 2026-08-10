@@ -228,6 +228,12 @@
 (signature datascript.lg.query-types/binding-relation
   :fn<datascript.parser/binding;binding-value;relation>)
 
+(signature datascript.lg.query-types/tuple-binding-relation
+  :fn<vector<datascript.parser/binding>;vector<binding-value>;relation>)
+
+(signature datascript.lg.query-types/collection-binding-relation
+  :fn<datascript.parser/binding;vector<binding-value>;relation>)
+
 (signature datascript.lg.query-types/execute-db-query
   :fn<datascript.db/database-view;datascript.parser/Query;output>)
 
@@ -324,6 +330,9 @@
 (signature datascript.lg.query-types/resolve-or
   :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<string>;vector<string>;vector<datascript.parser/clause>;bool;string;relation>)
 
+(signature datascript.lg.query-types/resolve-or-branch
+  :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;datascript.parser/clause;relation>)
+
 (signature datascript.lg.query-types/resolve-rule-branch
   :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<datascript.parser/pattern-element>;datascript.parser/RuleBranch;relation>)
 
@@ -332,6 +341,9 @@
 
 (signature datascript.lg.query-types/resolve-static-clauses
   :fn<datascript.db/database-view;map<string;source>;string;relation;relation;rules;rule-path;vector<datascript.parser/clause>;relation>)
+
+(signature datascript.lg.query-types/ensure-empty-relation-variables
+  :fn<relation;seqable<string>;relation>)
 
 (signature datascript.lg.query-types/rows-match-on-variables?
   :fn<relation;array<result>;relation;array<result>;vector<string>;bool>)

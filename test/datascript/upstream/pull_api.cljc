@@ -767,6 +767,11 @@
 
 (declare run-attrs-frame)
 
+(signature datascript.pull-api/run-wildcard-attr
+  :fn<datascript.pull-api/PullContext;datascript.pull-api/AttrsState;option<datascript.pull-parser/pull-attr>;datascript.pull-api/DatomCursor;vector<datascript.pull-api/frame>>)
+(signature datascript.pull-api/run-attrs-frame
+  :fn<datascript.pull-api/PullContext;datascript.pull-api/AttrsState;vector<datascript.pull-api/frame>>)
+
 (defn run-wildcard-attr
   [context state explicit-attr cursor]
   (match (cursor-datom cursor)

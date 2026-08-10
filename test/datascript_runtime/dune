@@ -2,4 +2,6 @@
  (name datascript_runtime)
  (public_name datascript.runtime)
  (modes native byte melange)
+ (ocamlc_flags :standard -no-g)
+ (ocamlopt_flags :standard -no-g)
  (libraries lg.runtime lg.edn-backend rrbvec))

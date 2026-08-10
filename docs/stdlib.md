@@ -79,6 +79,17 @@ the full aggregate-stdlib plus DataScript path and enforces a fixed 10-second
 limit. The limit cannot be relaxed through configuration, and the gate removes
 cache-related environment settings before building from a clean tree.
 
+The cold path builds the native compiler with classic inlining and disables
+cross-function expansion. Recursive DataScript and persistent-sorted-set SCCs
+carry rigid static signatures, so they compile once instead of repeatedly
+stabilizing inferred declaration ABIs. The gate measures both compiler
+construction and source generation; neither optimization depends on a warm
+Dune or LG compile cache.
+
+The lightweight type-refinement operations live in a separate compilation unit
+from full parameter inference. This lets OCaml compile the large call elaborator
+and the full inference engine in parallel without duplicating either algorithm.
+
 Generic `set<element>` source functions use LG's statically typed generic set
 representation internally. Calls from concrete persistent set modules convert
 through typed `elements` and `of_list` operations at that source-function

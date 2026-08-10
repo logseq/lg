@@ -297,6 +297,19 @@
   (BindTuple :vector<binding>)
   (BindColl :binding))
 
+(signature datascript.parser/parse-bind-coll
+  :fn<data-value;option<binding>>)
+(signature datascript.parser/parse-tuple-el
+  :fn<data-value;option<binding>>)
+(signature datascript.parser/parse-tuple-elements
+  :fn<vector<data-value>;option<vector<binding>>>)
+(signature datascript.parser/parse-bind-tuple
+  :fn<data-value;option<binding>>)
+(signature datascript.parser/parse-bind-rel
+  :fn<data-value;option<binding>>)
+(signature datascript.parser/parse-binding
+  :fn<data-value;binding>)
+
 (defn  parse-bind-ignore
   [ form]
   (match form
@@ -1170,6 +1183,13 @@
          substitute-rule-clause
          substitute-rule-clauses)
 
+(signature datascript.parser/substitute-rule-binding
+  :fn<map<string;datascript.parser/pattern-element>;int;datascript.parser/binding;datascript.parser/binding>)
+(signature datascript.parser/substitute-rule-clause
+  :fn<map<string;datascript.parser/pattern-element>;int;datascript.parser/clause;datascript.parser/clause>)
+(signature datascript.parser/substitute-rule-clauses
+  :fn<map<string;datascript.parser/pattern-element>;int;seqable<datascript.parser/clause>;vector<datascript.parser/clause>>)
+
 (defn-  substitute-rule-binding
   [ replacements
     seqid
@@ -1296,6 +1316,17 @@
           {:error :parser/where}))
       clause)
     _ clause))
+
+(signature datascript.parser/parse-not
+  :fn<data-value;option<datascript.parser/clause>>)
+(signature datascript.parser/parse-not-join
+  :fn<data-value;option<datascript.parser/clause>>)
+(signature datascript.parser/parse-or
+  :fn<data-value;option<datascript.parser/clause>>)
+(signature datascript.parser/parse-or-join
+  :fn<data-value;option<datascript.parser/clause>>)
+(signature datascript.parser/parse-variables
+  :fn<vector<data-value>;option<vector<datascript.parser/Variable>>>)
 
 (defn  parse-not
   [ form]
@@ -3842,6 +3873,8 @@
 
 (signature datascript.parser/clause-has-input?
   :fn<datascript.parser/clause;bool>)
+(signature datascript.parser/clauses-have-input?
+  :fn<seqable<datascript.parser/clause>;bool>)
 (declare clause-has-input?)
 
 (defn  clauses-have-input?
@@ -3965,6 +3998,8 @@
 
 (signature datascript.parser/clause-has-rule?
   :fn<datascript.parser/clause;bool>)
+(signature datascript.parser/clauses-have-rule?
+  :fn<seqable<datascript.parser/clause>;bool>)
 (declare clause-has-rule?)
 
 (defn  clauses-have-rule?

@@ -671,6 +671,18 @@ let report_error (err : Lg.Compiler.compile_error) =
   prerr_endline (location ^ "lg: " ^ err.Lg.Compiler.message);
   exit 1
 
+let run_lsp () =
+  let executable_directory = Filename.dirname Sys.executable_name in
+  let adjacent_executables =
+    [
+      Filename.concat executable_directory "lg_lsp.exe";
+      Filename.concat executable_directory "lg-lsp";
+    ]
+  in
+  match List.find_opt Sys.file_exists adjacent_executables with
+  | Some executable -> Unix.execv executable [| executable |]
+  | None -> Unix.execvp "lg-lsp" [| "lg-lsp" |]
+
 let () =
   let target, mode = parse_args Sys.argv in
   (match mode with Lsp -> () | _ -> tune_compiler_gc ());
@@ -756,4 +768,4 @@ let () =
       | Ok (_state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           run_ocaml_source packages ocaml_source)
-  | Lsp -> Lsp_server.run ()
+  | Lsp -> run_lsp ()

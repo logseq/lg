@@ -4394,6 +4394,8 @@ let compile_protocol_swap ~compile_expr scope env swap_name reference
                       (adapt_value_to_type env receiver_ty reference))))
     | Some _ -> Error.error "ISwap/-swap! has an invalid signature"
 
+
+
 let create ~compile_expr =
   let special_forms : Special_form_elaborator.t =
     Special_form_elaborator.create ~compile_expr ~dynamic_unpack
@@ -9187,7 +9189,7 @@ let create ~compile_expr =
                       | Error _ -> None
                       | Ok substitutions ->
                           Some
-                            (Type_inference.refine_type
+                            (Type_inference_core.refine_type
                                (Type_solver.apply substitutions left)
                                (Type_solver.apply substitutions right))))
             in
@@ -10594,7 +10596,7 @@ let create ~compile_expr =
                                   {
                                     field with
                                     ty =
-                                      Type_inference.materialize_dynamic_unknown
+                                      Type_inference_core.materialize_dynamic_unknown
                                         field.ty;
                                   })
                                 fields
@@ -11334,7 +11336,7 @@ let create ~compile_expr =
                 let storage_sequence_elements =
                   List.filter_map Types.seqable_constraint_element
                     storage_param_tys
-                  |> List.map Type_inference.materialize_dynamic_unknown
+                  |> List.map Type_inference_core.materialize_dynamic_unknown
                 in
                   let rec compile_arg_exprs index acc = function
                     | [] -> Ok (List.rev acc)
@@ -11382,13 +11384,13 @@ let create ~compile_expr =
                               match storage_ty with
                               | Some (TFn (storage_params, storage_return)) ->
                                   ( List.map
-                                      Type_inference.materialize_dynamic_unknown
+                                      Type_inference_core.materialize_dynamic_unknown
                                       storage_params,
-                                    Type_inference.materialize_dynamic_unknown
+                                    Type_inference_core.materialize_dynamic_unknown
                                       storage_return )
                               | Some _ | None ->
                                   ( List.map
-                                      Type_inference.materialize_dynamic_unknown
+                                      Type_inference_core.materialize_dynamic_unknown
                                       expected_params,
                                     expected_return )
                             in
@@ -11456,7 +11458,7 @@ let create ~compile_expr =
                                       {
                                         field with
                                         ty =
-                                          Type_inference
+                                          Type_inference_core
                                           .materialize_dynamic_unknown field.ty;
                                       })
                                     fields
@@ -11803,7 +11805,7 @@ let create ~compile_expr =
                           && runtime_dynamic_call
                           && Option.is_none fn.return_param_index
                         then
-                          Type_inference.materialize_dynamic_unknown
+                          Type_inference_core.materialize_dynamic_unknown
                             storage_ret_template
                         else ret
                 in

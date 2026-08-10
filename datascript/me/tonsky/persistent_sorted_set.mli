@@ -68,6 +68,26 @@
   [value owner write]
   :fn<storage<value;owner;write>;vector<write>>)
 
+(signature me.tonsky.persistent-sorted-set/storage-with-ref-type
+  [value owner write]
+  :fn<storage<value;owner;write>;Lg_runtime.Runtime_ref_type.t;storage<value;owner;write>>)
+
+(signature me.tonsky.persistent-sorted-set/node-store
+  [value owner write]
+  :fn<tree<value>;storage<value;owner;write>;int>)
+
+(signature me.tonsky.persistent-sorted-set/with-ref-type
+  [value owner write]
+  :fn<btset<value;owner;write>;Lg_runtime.Runtime_ref_type.t;btset<value;owner;write>>)
+
+(signature me.tonsky.persistent-sorted-set/restore-root
+  [value owner write]
+  :fn<btset<value;owner;write>;tree<value>>)
+
+(signature me.tonsky.persistent-sorted-set/set-root
+  [value owner write]
+  :fn<btset<value;owner;write>;tree<value>>)
+
 (signature me.tonsky.persistent-sorted-set/delete-address
   [value owner write]
   :fn<option<storage<value;owner;write>>;option<int>;unit>)
@@ -177,3 +197,11 @@
 (signature me.tonsky.persistent-sorted-set/restore
   [value owner write]
   :overload<fn<int;storage<value;owner;write>;btset<value;owner;write>>;fn<int;storage<value;owner;write>;set-settings;btset<value;owner;write>>>)
+
+(signature me.tonsky.persistent-sorted-set/restore-by
+  [value owner write]
+  :overload<fn<fn<value;value;ordering>;int;storage<value;owner;write>;int;int;btset<value;owner;write>>;fn<fn<value;value;ordering>;int;storage<value;owner;write>;int;int;Lg_runtime.Runtime_ref_type.t;btset<value;owner;write>>;fn<fn<value;value;ordering>;int;storage<value;owner;write>;int;int;Lg_runtime.Runtime_ref_type.t;int;btset<value;owner;write>>>)
+
+(signature me.tonsky.persistent-sorted-set/store
+  [value owner write]
+  :fn<btset<value;owner;write>;storage<value;owner;write>;int>)

@@ -2,6 +2,8 @@
  (name lg_runtime)
  (public_name lg.runtime)
  (modes native byte melange)
+ (ocamlc_flags :standard -no-g)
+ (ocamlopt_flags :standard -no-g)
  (preprocess
   (per_module
    ((pps melange.ppx)
