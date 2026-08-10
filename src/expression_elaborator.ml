@@ -253,7 +253,7 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList
       [
         FList
-          (FSymbol ("__lg_hash-set" | "sorted-set") :: element_forms);
+          (FSymbol "__lg_hash-set" :: element_forms);
         key_form;
       ]
     ->

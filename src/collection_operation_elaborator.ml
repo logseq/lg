@@ -3371,8 +3371,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               String.concat "/" (Type_id.owner record.type_id)
             in
             let receiver = typed_ir (TNamed_record record) semantic_expr in
-            compile_deftype_method method_scope env record "-contains-key?"
-              [ receiver; key ])
+            match
+              compile_deftype_method method_scope env record "-contains-key?"
+                [ receiver; key ]
+            with
+            | Some result -> Some result
+            | None ->
+                compile_deftype_method method_scope env record "-lookup"
+                  [ receiver; key ]
+                |> Option.map (fun found ->
+                       typed_ir TBool
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Option.is_some",
+                              [ found.semantic_expr ] ))))
       in
       let compile_dynamic_set_contains target element_ty candidate =
         let scalar_conversion =
@@ -3539,6 +3550,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | Some result -> Ok result
               | None -> (
                   match target.ty with
+                  | TNamed_record { nominal = true; _ }
+                    when Protocol.type_satisfies env Core_protocols.lookup_id
+                           target.ty ->
+                      compile_expr scope env
+                        (FList
+                           [
+                             FSymbol "some?";
+                             FList
+                               [
+                                 FSymbol "ILookup/-lookup";
+                                 target_form;
+                                 FKeyword keyword;
+                               ];
+                           ])
                   | TRecord fields | TNamed_record { fields; _ } ->
                       if Option.is_some (find_field keyword fields) then
                         Ok (typed_ir TBool (Semantic_ir.Bool true))
@@ -3562,6 +3587,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | Some result -> Ok result
               | None -> (
                   match target.ty with
+                  | TNamed_record { nominal = true; _ }
+                    when Protocol.type_satisfies env Core_protocols.lookup_id
+                           target.ty ->
+                      compile_expr scope env
+                        (FList
+                           [
+                             FSymbol "some?";
+                             FList
+                               [
+                                 FSymbol "ILookup/-lookup";
+                                 target_form;
+                                 value_form;
+                               ];
+                           ])
                   | TNamed_record { nominal = true; _ } ->
                       compile_expr scope env
                         (FList

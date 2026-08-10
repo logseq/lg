@@ -112,6 +112,11 @@ evaluates its comparator once. LG currently requires that comparator to have
 the static type `key -> key -> int`; ClojureScript's additional normalization
 of boolean predicate comparators remains a documented static adaptation.
 
+`sorted-set` and `sorted-set-by` wrap that same red-black tree in a typed
+`persistent-tree-set<value>` record. They preserve comparator order,
+persistent `conj`/`disj`, `ISorted`, and metadata without substituting a hash
+set or vector representation.
+
 Sidecars describe a homogeneous variadic arity with
 `variadic-fn<fixed...;rest;result>`. The final two arguments are the rest
 element and result types; preceding arguments are fixed parameters. A
@@ -172,8 +177,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 572 source entries (58.07%), 26 typed
-primitives, 43 special forms, 97 host boundaries, 196 static-typing blockers,
+macro surfaces. The current baseline is 574 source entries (58.27%), 26 typed
+primitives, 43 special forms, 97 host boundaries, 195 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -609,7 +614,7 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
-routes, the raw compiler-call inventory contains 196 names.
+routes, the raw compiler-call inventory contains 195 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the

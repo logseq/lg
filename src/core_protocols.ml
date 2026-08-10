@@ -578,7 +578,7 @@ let declare_map_protocols registry =
 
 let declare_set_protocol registry =
   let element = TVar "set_element" in
-  let set = TSet element in
+  let set = TVar "set_collection" in
   Protocol_registry.declare set_id
     [ signature (method_id set_id "-disjoin") [ set; element ] set ]
     registry
@@ -837,11 +837,19 @@ let find_seqable receiver_ty registry =
       Protocol_registry.find_implementation seqable_id seq_method_id receiver
         registry
       |> Option.map (fun (implementation : binding) ->
+             let ty =
+               instantiate_receiver_method_type receiver_ty implementation.ty
+             in
+             let ty =
+               match (receiver_ty, ty) with
+               | ( TNamed_record { type_arguments = [ element_ty ]; _ },
+                   TFn (parameters, (TUnknown | TMeta _ | TVar _)) ) ->
+                   TFn (parameters, TSeq element_ty)
+               | _ -> ty
+             in
              {
                implementation with
-               ty =
-                 instantiate_receiver_method_type receiver_ty
-                   implementation.ty;
+               ty;
              })
 
 let find_reducible receiver_ty registry =

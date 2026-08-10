@@ -63,14 +63,34 @@
   :fn<persistent-tree-map<key;value>;key;bool;seq<tuple<key;value>>>)
 (signature clojure.core/tree-map-entry-key [key value]
   :fn<persistent-tree-map<key;value>;tuple<key;value>;key>)
-(signature clojure.core/tree-map-comparator [key value]
-  :fn<persistent-tree-map<key;value>;fn<key;key;int>>)
+(signature clojure.core/tree-map-comparator [map-key map-value]
+  :fn<persistent-tree-map<map-key;map-value>;fn<map-key;map-key;int>>)
+(signature clojure.core/tree-map-size [map-key map-value]
+  :fn<persistent-tree-map<map-key;map-value>;int>)
 (signature clojure.core/tree-map-dissoc [key value]
   :fn<persistent-tree-map<key;value>;key;persistent-tree-map<key;value>>)
 (signature clojure.core/sorted-map [key value]
   :overload<fn<persistent-tree-map<key;value>>;fn<key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;key;value;persistent-tree-map<key;value>>;fn<key;value;key;value;key;value;key;value;persistent-tree-map<key;value>>>)
 (signature clojure.core/sorted-map-by [key value]
   :overload<fn<fn<key;key;int>;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;key;value;persistent-tree-map<key;value>>;fn<fn<key;key;int>;key;value;key;value;key;value;key;value;persistent-tree-map<key;value>>>)
+(signature clojure.core/tree-set-empty [value]
+  :fn<fn<value;value;int>;Lg_edn_backend.t;persistent-tree-set<value>>)
+(signature clojure.core/tree-set-singleton [value]
+  :fn<fn<value;value;int>;Lg_edn_backend.t;value;persistent-tree-set<value>>)
+(signature clojure.core/tree-set-conj [value]
+  :fn<persistent-tree-set<value>;value;persistent-tree-set<value>>)
+(signature clojure.core/tree-set-disjoin [value]
+  :fn<persistent-tree-set<value>;value;persistent-tree-set<value>>)
+(signature clojure.core/tree-set-values [value]
+  :fn<persistent-tree-set<value>;bool;seq<value>>)
+(signature clojure.core/tree-set-values-from [value]
+  :fn<persistent-tree-set<value>;value;bool;seq<value>>)
+(signature clojure.core/tree-set-get [value]
+  :fn<persistent-tree-set<value>;value;option<value>>)
+(signature clojure.core/sorted-set [value]
+  :overload<fn<persistent-tree-set<value>>;fn<value;persistent-tree-set<value>>;fn<value;value;persistent-tree-set<value>>;fn<value;value;value;persistent-tree-set<value>>;fn<value;value;value;value;persistent-tree-set<value>>>)
+(signature clojure.core/sorted-set-by [value]
+  :overload<fn<fn<value;value;int>;persistent-tree-set<value>>;fn<fn<value;value;int>;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;persistent-tree-set<value>>;fn<fn<value;value;int>;value;value;value;value;persistent-tree-set<value>>>)
 (signature clojure.core/hash [value]
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]

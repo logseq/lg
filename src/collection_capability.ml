@@ -288,11 +288,21 @@ let rec to_seq_expr env collection =
                       ("collection value is not seqable: "
                       ^ Types.source_name collection.ty)
   | Some implementation -> (
-                    match
-                      Core_sequence_transform.collection_to_seq_expr collection
-                    with
-      | Ok sequence -> Ok sequence
-      | Error _ -> (
+                    match implementation.ty with
+                    | TFn ([ receiver_ty ], TSeq element_ty)
+                      when Types.assignable ~policy:Host_boundary
+                             ~expected:receiver_ty ~actual:collection.ty ->
+                        Ok
+                          ( element_ty,
+                            apply implementation.ocaml_name
+                              [ collection.semantic_expr ] )
+                    | _ -> (
+                        match
+                          Core_sequence_transform.collection_to_seq_expr
+                            collection
+                        with
+                        | Ok sequence -> Ok sequence
+                        | Error _ -> (
           match implementation.ty with
           | TFn ([ receiver_ty ], return_ty)
                           when Types.assignable ~policy:Host_boundary
@@ -308,7 +318,7 @@ let rec to_seq_expr env collection =
           | _ ->
               Error.error
                               "Seqable/-seq implementation must return a \
-                               seqable value")))))
+                               seqable value"))))))
 
 let accepts_seqable env ty =
   if Types.is_dynamic ty then true

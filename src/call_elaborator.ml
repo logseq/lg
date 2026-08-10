@@ -8936,8 +8936,7 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok compared ->
             Ok (typed_ir (TOcaml "int") compared.semantic_expr))
-              | "__lg_hash-set" | "sorted-set" ->
-                  compile_hash_set scope env arg_forms
+              | "__lg_hash-set" -> compile_hash_set scope env arg_forms
     | "set-of" -> compile_set_of env arg_forms
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with

@@ -231,6 +231,10 @@
   (size :int)
   (metadata :Lg_edn_backend.t))
 
+(type-record persistent-tree-set [value]
+  (mapping :persistent-tree-map<value;bool>)
+  (metadata :Lg_edn_backend.t))
+
 (extend-type :keyword
   INamed
   (-name [value] (__lg_builtin-name value))
@@ -918,6 +922,9 @@
 (defn- tree-map-comparator [mapping]
   (:comparator mapping))
 
+(defn- tree-map-size [mapping]
+  (:size mapping))
+
 (defn- tree-map-dissoc [mapping removed-key]
   (let [removed
         (tree-map-remove-node
@@ -1053,6 +1060,143 @@
   ([comparator k1 v1 k2 v2 k3 v3 k4 v4]
    (tree-map-assoc
     (sorted-map-by comparator k1 v1 k2 v2 k3 v3) k4 v4)))
+
+(defn- tree-set-empty [comparator metadata]
+  (record persistent-tree-set
+          (mapping (tree-map-empty comparator metadata))
+          (metadata metadata)))
+
+(defn- tree-set-singleton [comparator metadata value]
+  (record persistent-tree-set
+          (mapping (tree-map-singleton comparator metadata value true))
+          (metadata metadata)))
+
+(defn- tree-set-conj [set value]
+  (match (tree-map-get (:mapping set) value)
+    (Some _) set
+    None
+    (record persistent-tree-set
+            (mapping (tree-map-assoc (:mapping set) value true))
+            (metadata (:metadata set)))))
+
+(defn- tree-set-disjoin [set value]
+  (let [mapping (tree-map-dissoc (:mapping set) value)]
+    (if (identical? mapping (:mapping set))
+      set
+      (record persistent-tree-set
+              (mapping mapping)
+              (metadata (:metadata set))))))
+
+(defn- tree-set-values [set ascending?]
+  (map key (tree-map-seq (:mapping set) ascending?)))
+
+(defn- tree-set-values-from [set value ascending?]
+  (map key (tree-map-seq-from (:mapping set) value ascending?)))
+
+(defn- tree-set-get [set value]
+  (match (tree-map-get (:mapping set) value)
+    (Some _) (Some value)
+    None None))
+
+(extend-type persistent-tree-set
+  ISeqable
+  (-seq [set]
+    (tree-set-values set true))
+  ICollection
+  (-conj [set value]
+    (tree-set-conj set value))
+  ILookup
+  (-lookup [set value]
+    (tree-set-get set value))
+  (-lookup [set value not-found]
+    (match (tree-set-get set value)
+      (Some found) found
+      None not-found))
+  ISet
+  (-disjoin [set value]
+    (tree-set-disjoin set value))
+  ICounted
+  (-count [set]
+    (tree-map-size (:mapping set)))
+  IEmptyableCollection
+  (-empty [set]
+    (tree-set-empty (tree-map-comparator (:mapping set)) (:metadata set)))
+  IMeta
+  (-meta [set]
+    (:metadata set))
+  IWithMeta
+  (-with-meta [set metadata]
+    (record persistent-tree-set
+            (mapping (:mapping set))
+            (metadata metadata)))
+  ISorted
+  (-sorted-seq [set ascending?]
+    (tree-set-values set ascending?))
+  (-sorted-seq-from [set value ascending?]
+    (tree-set-values-from set value ascending?))
+  (-entry-key [_set entry]
+    entry)
+  (-comparator [set]
+    (tree-map-comparator (:mapping set)))
+  IReversible
+  (-rseq [set]
+    (tree-set-values set false)))
+
+(defn sorted-set
+  {:inline
+   (fn [& values]
+     (let [left (gensym)
+           right (gensym)
+           comparator (list 'fn [left right]
+                            (list 'stdlib/compare left right))
+           metadata (list 'meta {})]
+       (if (nil? values)
+         (list 'tree-set-empty comparator metadata)
+         (loop [expression
+                (list 'tree-set-singleton comparator metadata (first values))
+                remaining (next values)]
+           (if (nil? remaining)
+             expression
+             (recur (list 'tree-set-conj expression (first remaining))
+                    (next remaining)))))))}
+  ([] (tree-set-empty (fn [left right] (stdlib/compare left right)) (meta {})))
+  ([v1]
+   (tree-set-singleton
+    (fn [left right] (stdlib/compare left right)) (meta {}) v1))
+  ([v1 v2]
+   (tree-set-conj (sorted-set v1) v2))
+  ([v1 v2 v3]
+   (tree-set-conj (sorted-set v1 v2) v3))
+  ([v1 v2 v3 v4]
+   (tree-set-conj (sorted-set v1 v2 v3) v4)))
+
+(defn sorted-set-by
+  {:inline
+   (fn [comparator & values]
+     (let [comparator-name (gensym)
+           metadata (list 'meta {})]
+       (list
+        'let [comparator-name comparator]
+        (if (nil? values)
+          (list 'tree-set-empty comparator-name metadata)
+          (loop [expression
+                 (list 'tree-set-singleton comparator-name metadata
+                       (first values))
+                 remaining (next values)]
+            (if (nil? remaining)
+              expression
+              (recur (list 'tree-set-conj expression (first remaining))
+                     (next remaining))))))))}
+  ([comparator]
+   (tree-set-empty comparator (meta {})))
+  ([comparator v1]
+   (tree-set-singleton comparator (meta {}) v1))
+  ([comparator v1 v2]
+   (tree-set-conj (sorted-set-by comparator v1) v2))
+  ([comparator v1 v2 v3]
+   (tree-set-conj (sorted-set-by comparator v1 v2) v3))
+  ([comparator v1 v2 v3 v4]
+   (tree-set-conj (sorted-set-by comparator v1 v2 v3) v4)))
 
 (defn- map-from-keyvals [keyvals]
   (loop [remaining (seq keyvals)

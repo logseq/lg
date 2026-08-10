@@ -26046,6 +26046,54 @@ let test_sorted_map_preserves_clojurescript_order_and_persistence () =
     failwith
       "sorted-map dissoc must port ClojureScript red-black deletion instead of rebuilding"
 
+let test_sorted_set_preserves_clojurescript_order_and_persistence () =
+  let source =
+    {|
+(ns app.sorted-set-order)
+
+(def original (sorted-set 3 -1 2 1 2))
+(def updated (conj original 0))
+(def removed (disj updated 2))
+(def descending
+  (sorted-set-by (fn [left right] (stdlib/compare right left)) 2 1 3))
+(def tagged (with-meta original {:source "sorted-set-test"}))
+(def ^:string tagged-source (:source (meta tagged)))
+(def ^:string tagged-added-source (:source (meta (conj tagged 4))))
+(def ^:string tagged-removed-source (:source (meta (disj tagged 2))))
+
+(println
+  (str (pr-str (seq original)) ":"
+       (pr-str (seq updated)) ":"
+       (pr-str (seq removed)) ":"
+       (pr-str (ISorted/-sorted-seq-from original 2 true)) ":"
+       (pr-str (ISorted/-sorted-seq-from original 2 false)) ":"
+       (contains? original 2) ":" (contains? removed 2) ":"
+       (get original 2 -1) ":" (get original 9 -1) ":"
+       (count original) ":" (count removed) ":"
+       (identical? original (conj original 2)) ":"
+       (identical? original (disj original 9)) ":"
+       (pr-str (seq descending)) ":"
+       (= tagged-source "sorted-set-test") ":"
+       (= tagged-added-source "sorted-set-test") ":"
+       (= tagged-removed-source "sorted-set-test") ":"
+       (sorted? original)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/sorted_set_order.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "sorted-set must remain statically typed";
+  assert_ocaml_runs "sorted_set_order"
+    "(-1 1 2 3):(-1 0 1 2 3):(-1 0 1 3):(2 3):(2 1 -1):true:false:2:-1:4:4:true:true:(3 2 1):true:true:true:true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/sorted_set_order.cljc" source);
+  let call_source = read_file "src/call_elaborator.ml" in
+  if string_contains_substring call_source "| \"sorted-set\" ->" then
+    failwith "sorted-set must be owned by the source stdlib"
+
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     () =
   let source =
@@ -41695,6 +41743,8 @@ let tests =
       test_batched_identifier_and_constructor_core_functions_work );
     ( "sorted-map preserves ClojureScript order and persistence",
       test_sorted_map_preserves_clojurescript_order_and_persistence );
+    ( "sorted-set preserves ClojureScript order and persistence",
+      test_sorted_set_preserves_clojurescript_order_and_persistence );
     ( "batched identifier/constructor core functions reject bad symbol args",
       test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     );

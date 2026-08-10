@@ -1202,8 +1202,8 @@
                     :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
     sorted-map-by {:status :static-adaptation
                    :reason :source-persistent-red-black-tree-carries-a-static-key-comparator-returning-int-while-clojurescript-also-normalizes-boolean-predicate-comparators}
-    sorted-set-by {:status :blocked-static-typing
-                   :reason :lg-has-no-persistent-sorted-set-source-representation-carrying-an-element-comparator}
+    sorted-set-by {:status :static-adaptation
+                   :reason :source-persistent-tree-set-reuses-the-red-black-tree-map-and-carries-a-static-element-comparator-returning-int}
     string-iter {:status :host-boundary
                  :reason :constructs-a-javascript-es6-iterator-over-utf16-string-code-points}
     string-print {:status :host-boundary
