@@ -1081,7 +1081,6 @@ let untyped_first_class_function_error = function
     | "count"
     | "dissoc"
     | "false?"
-    | "get"
     | "hash-map"
     | "identical?"
     | "keyword"
@@ -1109,15 +1108,11 @@ let untyped_first_class_function_error = function
     | "string?"
     | "symbol?"
     | "true?"
-    | "update"
     | "vec"
     | "vector"
     | "zero?" ) as name ->
       Some (untyped_first_class_collection_function_error name)
-  | ( "clojure.core/dissoc"
-    | "cljs.core/dissoc"
-    | "clojure.core/update"
-    | "cljs.core/update" ) as name ->
+  | ("clojure.core/dissoc" | "cljs.core/dissoc") as name ->
       let separator = String.rindex name '/' in
       let basename =
         String.sub name (separator + 1) (String.length name - separator - 1)

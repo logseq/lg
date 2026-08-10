@@ -143,6 +143,13 @@
   [collection]
   (__lg_keys collection))
 
+(defn get
+  {:inline (fn [& args] (cons '__lg_get args))}
+  ([object key]
+   (ILookup/-lookup object key))
+  ([object key not-found]
+   (ILookup/-lookup object key not-found)))
+
 (defn subvec
   {:inline (fn [vector start & end]
              (if (nil? end)
@@ -2587,3 +2594,109 @@
        (recur (ITransientSet/-disjoin! result (first remaining))
               (next remaining))
        result))))
+
+(defn get-in
+  {:inline (fn [& args] (cons '__lg_get-in args))}
+  ([map keys]
+   (loop [value map
+          remaining (seq keys)]
+     (if (nil? remaining)
+       value
+       (recur (get value (first remaining)) (next remaining)))))
+  ([map keys not-found]
+   (loop [value map
+          remaining (seq keys)]
+     (if (nil? remaining)
+       value
+       (let [next-value (get value (first remaining) not-found)]
+         (if (= next-value not-found)
+           not-found
+           (recur next-value (next remaining))))))))
+
+(defn assoc-in
+  {:inline (fn [map keys value] (list '__lg_assoc-in map keys value))}
+  [map [key & keys] value]
+  (if (seq keys)
+    (assoc map key (assoc-in (get map key) (vec keys) value))
+    (assoc map key value)))
+
+(defn update-in
+  {:inline (fn [& args] (cons '__lg_update-in args))}
+  ([map [key & keys] function]
+   (if (seq keys)
+     (assoc map key (update-in (get map key) (vec keys) function))
+     (assoc map key (function (get map key)))))
+  ([map [key & keys] function first-arg]
+   (if (seq keys)
+     (assoc map key (update-in (get map key) (vec keys) function first-arg))
+     (assoc map key (function (get map key) first-arg))))
+  ([map [key & keys] function first-arg second-arg]
+   (if (seq keys)
+     (assoc map key
+            (update-in (get map key) (vec keys) function first-arg second-arg))
+     (assoc map key (function (get map key) first-arg second-arg))))
+  ([map [key & keys] function first-arg second-arg third-arg]
+   (if (seq keys)
+     (assoc map key
+            (update-in (get map key) (vec keys) function
+                       first-arg second-arg third-arg))
+     (assoc map key
+            (function (get map key) first-arg second-arg third-arg)))))
+
+(defn update
+  {:inline
+   (fn [map key function & args]
+     (cons '__lg_update
+           (cons map
+                 (cons key
+                       (cons (if (or (= function 'update)
+                                     (= function 'clojure.core/update))
+                               '__lg_update
+                               function)
+                             args)))))}
+  ([map key function]
+   (assoc map key (function (get map key))))
+  ([map key function first-arg]
+   (assoc map key (function (get map key) first-arg)))
+  ([map key function first-arg second-arg]
+   (assoc map key (function (get map key) first-arg second-arg)))
+  ([map key function first-arg second-arg third-arg]
+   (assoc map key
+          (function (get map key) first-arg second-arg third-arg))))
+
+(defn select-keys
+  {:inline (fn [map keys] (list '__lg_select-keys map keys))}
+  [map keyseq]
+  (loop [result (empty map)
+         keys (seq keyseq)]
+    (if (seq keys)
+      (let [key (first keys)
+            entry (get map key ::not-found)]
+        (recur (if (not= entry ::not-found)
+                 (assoc result key entry)
+                 result)
+               (next keys)))
+      (with-meta result (meta map)))))
+
+(defn merge
+  {:inline (fn [& maps] (cons '__lg_merge maps))}
+  ([] nil)
+  ([map] map)
+  ([first-map second-map & maps]
+   (__lg_reduce
+    (fn [result map]
+      (if-some [current map]
+        (merge-two-with (fn [_old new] new) result current)
+        result))
+    (if-some [current second-map]
+      (merge-two-with
+       (fn [_old new] new)
+       (if-some [initial first-map] initial {})
+       current)
+      (if-some [initial first-map] initial {}))
+    maps)))
+
+(defn vals
+  {:inline (fn [m] (list '__lg_vals m))}
+  [m]
+  (map val m))

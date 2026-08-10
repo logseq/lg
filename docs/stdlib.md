@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 505 source entries (51.27%), 78 typed
-primitives, 43 special forms, 97 host boundaries, 211 static-typing blockers,
+macro surfaces. The current baseline is 513 source entries (52.08%), 76 typed
+primitives, 43 special forms, 97 host boundaries, 205 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -284,6 +284,15 @@ Static inline expansion preserves heterogeneous variadic map pairs without
 introducing dynamic storage; the runtime keeps precise mutable vector, map,
 and set representations, persists maps into the default HAMT, and rejects use
 after persistence.
+
+The map access and update family is also source-owned: `get`, `get-in`,
+`assoc-in`, `update`, `update-in`, `select-keys`, `merge`, and `vals`. Their
+public definitions follow the pinned ClojureScript lookup, recursive path,
+left-to-right merge, and projection algorithms. Inline expansion uses private
+static primitives where result types depend on a record field, collection
+element, callback, or path. Keyword access and nested update expansion use the
+same private forms, so precompiled namespaces retain precise record and map
+types without introducing `Runtime_dynamic` values.
 
 The Logseq/DataScript compatibility helpers `weak-deref` and `weak-clear!` are
 ordinary precompiled `clojure.core` source functions with explicit

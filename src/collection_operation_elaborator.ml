@@ -2389,7 +2389,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             List.map (fun map -> Types.dynamic_map_types map.ty) maps
           in
           if List.exists Option.is_none map_types then
-            Error.error "merge expects statically typed maps"
+            Error.error
+              ("merge expects statically typed maps, got "
+              ^ String.concat ", "
+                  (List.map
+                     (fun map -> Types.source_name map.ty)
+                     maps))
           else
             let map_types = List.map Option.get map_types in
             let key_types = List.map fst map_types in
@@ -2484,8 +2489,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     let arg_forms =
       match arg_forms with
       | target :: key
-        :: (FSymbol ("update" | "clojure.core/update")
-           | FCoreSymbol Core_update)
+        :: (FSymbol "__lg_update" | FCoreSymbol Core_update)
         :: nested_args ->
           let updater =
             FList
@@ -2493,7 +2497,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 FSymbol "fn";
                 FVector [ FSymbol nested_update_value ];
                 FList
-                  (FCoreSymbol Core_update :: FSymbol nested_update_value
+                  (FSymbol "__lg_update" :: FSymbol nested_update_value
                  :: nested_args);
               ]
           in

@@ -3037,30 +3037,37 @@ let test_heterogeneous_runtime_maps_require_a_declared_sum_type () =
 let test_merge_keeps_runtime_maps_static () =
   let source =
     {|
-(def key :left)
-(def other-key :right)
-(def left (hash-map key 1))
-(def right (hash-map key 3 other-key 2))
-(def merged (merge left right))
-(println (str (count merged) ":" (get merged key)))
+(ns test.merge-runtime
+  (:require [cljs.core]))
+(def left-key :left)
+(def right-key :right)
+(def left-map (hash-map left-key 1))
+(def right-map (hash-map left-key 3 right-key 2))
+(def merged (merge left-map right-map))
+(println (str (count merged) ":" (get merged left-key)))
 |}
   in
   let ocaml = compile_string_with_stdlib source |> expect_ok in
-  if string_contains_substring ocaml "Runtime_dynamic" then
-    failwith "merge must not erase homogeneous runtime maps into dynamic";
+  if
+    (not (string_contains_substring ocaml "M.merge"))
+    || string_contains_substring ocaml "Runtime_dynamic.merge"
+  then failwith "merge must keep homogeneous runtime maps static";
   assert_ocaml_runs "merge_keeps_runtime_maps_static" "2:3\n" ocaml
 
 let test_merge_rejects_heterogeneous_runtime_maps () =
   let source =
     {|
-(def key :left)
-(def other-key :right)
-(def left (__lg_hash-map key 1))
-(def right (__lg_hash-map other-key "two"))
-(def merged (merge left right))
+(ns test.merge-runtime-errors
+  (:require [cljs.core]))
+(def left-key :left)
+(def right-key :right)
+(def left-map (__lg_hash-map left-key 1))
+(def right-map (__lg_hash-map right-key "two"))
+(def merged (merge left-map right-map))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/merge_rejects_heterogeneous_runtime_maps.cljc" source
   |> expect_error_contains "define a sum type"
 
 let test_nil_collection_elements_use_options_not_dynamic () =
@@ -20067,7 +20074,7 @@ let test_vals_return_homogeneous_values () =
               (pr-str (vals (assoc {:x 10} :y 20)))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "vals_return_homogeneous_values" "[1 2]:[1 2 3]:[10 20]\n"
     ocaml_source
 
@@ -20093,7 +20100,9 @@ let test_vals_accept_statically_typed_record_maps () =
     (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_vals_rejects_heterogeneous_values () =
-  Lg.Compiler.compile_string {|(def xs (vals {:name "Ada", :age 36}))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/vals_rejects_heterogeneous_values.cljc"
+    {|(def xs (vals {:name "Ada", :age 36}))|}
   |> expect_error_contains "vals requires all map values to have the same type"
 
 let test_vectors_require_closed_sums_for_mixed_keyword_and_string_elements () =
@@ -20428,7 +20437,8 @@ let test_map_merge_update_and_select_keys () =
 
 let test_merge_rejects_incompatible_overlapping_fields () =
   let source = {|(def bad (merge {:age 36} {:age "old"}))|} in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/merge_rejects_incompatible_overlapping_fields.cljc" source
   |> expect_error "cannot merge :age as string because it is already int"
 
 let test_update_rejects_type_changes () =
@@ -21101,10 +21111,10 @@ let test_update_works_as_a_nested_map_updater () =
 (println (:count (:inner result)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "update_works_as_a_nested_map_updater" "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_update_works_as_a_nested_vector_updater () =
   let source =
@@ -21127,11 +21137,11 @@ let test_nested_update_passes_all_extra_arguments () =
 (println (:count (:inner result)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nested_update_passes_all_extra_arguments" "42\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_update_rejects_extra_argument_type_mismatch () =
   let source = {|(def bad (update {:age 36} :age + "one"))|} in
@@ -24053,6 +24063,70 @@ let test_source_transient_family_rejects_invalid_static_operations () =
     {|(assoc! (transient {}) :a 1 :b)|}
   |> expect_error_contains "key/value"
 
+let test_source_map_access_update_family_matches_clojurescript () =
+  let source =
+    {|
+(ns test.source-map-family
+  (:require [cljs.core :as core]))
+
+(def lookup-value get)
+(def lookup-path get-in)
+(def associate-path assoc-in)
+(def update-value update)
+(def update-path update-in)
+(def choose-keys select-keys)
+(def merge-maps merge)
+(def map-values vals)
+
+(defn add-score [value delta] (+ value delta))
+(def initial {:user {:name "Ada" :score 40 :city "Paris"} :active true})
+(def associated (associate-path initial [:user :city] "London"))
+(def incremented (update-path {:score 40} [:score] add-score 2))
+(def updated (update-value {:score 40} :score inc))
+(def merged (merge-maps {:extra 9 :other 8} {:extra 10 :other 11}))
+(def selected (choose-keys merged [:extra :other :missing]))
+
+(println
+  (and (= "Ada" (lookup-path associated [:user :name]))
+       (= "London" (lookup-path associated [:user :city] "missing"))
+       (= "fallback"
+          (lookup-path (hash-map :present "value") [:missing] "fallback"))
+       (= 42 (lookup-value incremented :score))
+       (= 41 (core/get updated :score))
+       (= 10 (lookup-value selected :extra))
+       (not (contains? selected :missing))
+       (= #{10 11} (set (map-values selected)))))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_map_access_update_family.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source map access/update functions must remain statically typed";
+  assert_ocaml_runs "source_map_access_update_family_matches_clojurescript"
+    "true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_map_access_update_family.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_map_access_update_family.cljc" source)
+
+let test_source_map_access_update_family_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_get_rejects_bad_array_index.cljc"
+    {|(def lookup-value get) (lookup-value (array 1 2) "bad")|}
+  |> expect_error_contains "key type";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_update_rejects_bad_callback.cljc"
+    {|(def update-value update) (update-value {:answer 1} :answer "bad")|}
+  |> expect_error_contains "function";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_merge_rejects_incompatible_maps.cljc"
+    {|(def merge-maps merge) (merge-maps {:answer 1} {:answer "bad"})|}
+  |> expect_error_contains "cannot merge"
+
 let test_hash_dispatches_to_record_ihash () =
   let source =
     {|
@@ -24847,7 +24921,8 @@ let test_merge_rejects_untyped_map_parameters () =
 (println (str (get combined :implicit) ":" (get combined :answer)))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/merge_rejects_untyped_map_parameters.cljc" source
   |> expect_error_contains "merge expects statically typed maps"
 
 let test_record_arguments_fill_missing_optional_fields () =
@@ -30742,7 +30817,8 @@ let test_update_in_rejects_computed_paths () =
 (update-in {:value 1} path inc)
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_with_stdlib_result Lg.Target.Native
+    "test/update_in_rejects_computed_paths.cljc" source
   |> expect_error_contains
        "update-in requires a statically known vector path"
 
@@ -41168,6 +41244,10 @@ let tests =
       test_source_transient_family_preserves_clojurescript_behavior );
     ( "source transient family rejects invalid static operations",
       test_source_transient_family_rejects_invalid_static_operations );
+    ( "source map access update family matches ClojureScript",
+      test_source_map_access_update_family_matches_clojurescript );
+    ( "source map access update family rejects invalid inputs",
+      test_source_map_access_update_family_rejects_invalid_inputs );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

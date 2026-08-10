@@ -223,9 +223,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol "do" :: body_forms) ->
       compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
-      compile_call scope env "clojure.core/get" [ target; FKeyword keyword ]
+      compile_call scope env "__lg_get" [ target; FKeyword keyword ]
   | FList [ FKeyword keyword; target; default ] ->
-      compile_call scope env "clojure.core/get"
+      compile_call scope env "__lg_get"
         [ target; FKeyword keyword; default ]
   | FList (FKeyword _ :: _) -> Error.error "keyword lookup expects one argument"
   | FList [ FSymbol "if"; condition; then_form; else_form ] ->

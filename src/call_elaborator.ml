@@ -8527,19 +8527,19 @@ let create ~compile_expr =
     | "first" -> compile_collection_call scope env name arg_forms
     | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms
-    | "get" -> compile_get scope env arg_forms
-    | "get-in" -> compile_get_in scope env arg_forms
+    | "__lg_get" -> compile_get scope env arg_forms
+    | "__lg_get-in" -> compile_get_in scope env arg_forms
     | "__lg_assoc" | "-assoc" ->
         compile_assoc scope env arg_forms
-    | "assoc-in" -> compile_assoc_in scope env arg_forms
+    | "__lg_assoc-in" -> compile_assoc_in scope env arg_forms
     | "__lg_dissoc" -> compile_dissoc scope env arg_forms
-    | "merge" -> compile_merge scope env arg_forms
-    | "update" -> compile_update scope env arg_forms
-    | "update-in" -> compile_update_in scope env arg_forms
-    | "select-keys" -> compile_select_keys scope env arg_forms
+    | "__lg_merge" -> compile_merge scope env arg_forms
+    | "__lg_update" -> compile_update scope env arg_forms
+    | "__lg_update-in" -> compile_update_in scope env arg_forms
+    | "__lg_select-keys" -> compile_select_keys scope env arg_forms
     | "__lg_contains" -> compile_contains scope env arg_forms
     | "__lg_keys" -> compile_keys scope env arg_forms
-    | "vals" -> compile_vals scope env arg_forms
+    | "__lg_vals" -> compile_vals scope env arg_forms
               | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
                   compile_hash_map scope env arg_forms
               | "rest" | "seq" ->

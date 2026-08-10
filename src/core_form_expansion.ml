@@ -7,8 +7,8 @@ let get_in target keys default =
         let get =
           match (rest, default) with
           | [], Some default ->
-              FList [ FSymbol "get"; target; key; default ]
-          | _ -> FList [ FSymbol "get"; target; key ]
+              FList [ FSymbol "__lg_get"; target; key; default ]
+          | _ -> FList [ FSymbol "__lg_get"; target; key ]
         in
         expand get rest
   in
@@ -28,7 +28,8 @@ let assoc_in target keys value =
       | [] -> value
       | _ ->
           expand (depth + 1)
-            (FList [ FSymbol "get"; FSymbol target_name; FSymbol key_name ])
+            (FList
+               [ FSymbol "__lg_get"; FSymbol target_name; FSymbol key_name ])
             rest
     in
     FList
@@ -52,7 +53,7 @@ let update_in target keys function_form argument_forms =
     | [] -> function_form :: argument_forms
     | [ key ] -> key :: function_form :: argument_forms
     | key :: rest ->
-        key :: FCoreSymbol Core_update :: update_arguments rest
+        key :: FSymbol "__lg_update" :: update_arguments rest
   in
   FList
-    (FCoreSymbol Core_update :: target :: update_arguments keys)
+    (FSymbol "__lg_update" :: target :: update_arguments keys)

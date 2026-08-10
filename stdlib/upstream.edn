@@ -519,8 +519,8 @@
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-icounted-with-static-witnesses-for-nil-seqables-and-explicit-protocol-implementations}
     nth {:status :static-adaptation
          :reason :source-overloads-and-inline-specialization-delegate-to-clojurescript-iindexed-while-preserving-static-list-vector-array-string-default-and-explicit-protocol-behavior}
-    get {:status :typed-primitive
-         :reason :return-type-depends-on-the-receiver-key-and-optional-default-and-a-public-source-binding-currently-erases-nominal-record-field-function-types-across-precompiled-namespaces}
+    get {:status :static-adaptation
+         :reason :source-overloads-delegate-to-clojurescript-ilookup-while-inline-specialization-preserves-dependent-record-map-vector-array-string-and-default-result-types-through-a-private-static-lookup-primitive}
     contains? {:status :static-adaptation
                :reason :source-function-preserves-upstream-key-or-index-membership-through-a-private-static-associative-set-vector-array-and-record-elaboration-primitive}
     assoc {:status :static-adaptation

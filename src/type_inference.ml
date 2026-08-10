@@ -1264,7 +1264,7 @@ let rec inferred_form_type params = function
       | None -> TUnknown)
   | FList
       [
-        FSymbol ("get" | "clojure.core/get");
+        FSymbol "__lg_get";
         FSymbol target;
         _key;
         default;
@@ -1279,7 +1279,7 @@ let rec inferred_form_type params = function
       | None -> default_ty)
   | FList
       [
-        FSymbol ("get" | "clojure.core/get");
+        FSymbol "__lg_get";
         FSymbol target;
         _key;
       ] -> (
@@ -1319,7 +1319,7 @@ let rec inferred_form_type params = function
       refine_type
         (inferred_form_type branch_params then_form)
         (inferred_form_type params else_form)
-  | FList (FSymbol ("get" | "clojure.core/get") :: _) -> TUnknown
+  | FList (FSymbol "__lg_get" :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
         match List.map (inferred_form_type params) forms with
@@ -1978,7 +1978,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
            && (has_source_name operation "__lg_keys"
-              || has_source_name operation "vals") ->
+              || has_source_name operation "__lg_vals") ->
         let element_ty =
           Types.seqable_constraint_element expected_ty
           |> Option.value ~default:(fresh_type_variable "map_projection")
@@ -2064,11 +2064,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           if Types.is_dynamic expected_ty then TUnknown else expected_ty
         in
         add_record_field_constraint name keyword field_ty params
-    | FList [ FSymbol "get"; FSymbol name; FKeyword keyword ] ->
+    | FList [ FSymbol "__lg_get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
     | FList
         [
-          FSymbol ("get" | "clojure.core/get");
+          FSymbol "__lg_get";
           target;
           key;
           default;
@@ -2076,7 +2076,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_form params target) (fun params ->
             Result.bind (infer_form params key) (fun params ->
                 infer_expected expected_ty params default))
-    | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ] -> (
+    | FList [ FSymbol "__lg_get"; FSymbol target; key ] -> (
         let record_ty = lookup_dynamic_key_record_type expected_ty in
         match record_ty with
         | Some record_ty ->
@@ -2125,7 +2125,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                      (Types.dynamic_map key_ty value_ty)
                      params target)
                   (fun params -> infer_expected key_ty params key)))
-    | FList [ FSymbol "get"; target; key ] ->
+    | FList [ FSymbol "__lg_get"; target; key ] ->
         let target_ty = inferred_form_type params target in
         if match target_ty with TVector _ -> true | _ -> false then
           Result.bind
@@ -3950,7 +3950,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
            && (has_source_name operation "__lg_keys"
-              || has_source_name operation "vals") ->
+              || has_source_name operation "__lg_vals") ->
         let key_ty = fresh_type_variable "map_key" in
         let value_ty = fresh_type_variable "map_value" in
         constrain_symbol (Types.dynamic_map key_ty value_ty) params name
@@ -4259,12 +4259,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | FSymbol name -> constrain_seqable TUnknown params name
         | form ->
             infer_expected (Types.seqable_constraint TUnknown) params form)
-    | FList (FSymbol "merge" :: maps) ->
-        infer_expected_all (Types.dynamic_constraint TUnknown) params maps
+    | FList (FSymbol "__lg_merge" :: maps) ->
+        infer_all params maps
     | FList
-        (FSymbol ("update" | "clojure.core/update")
+        (FSymbol "__lg_update"
         :: target :: key
-        :: (FSymbol ("update" | "clojure.core/update")
+        :: (FSymbol "__lg_update"
            | FCoreSymbol Core_update)
         :: nested_arguments) ->
         let nested_value = "__lg_nested_update_value" in
@@ -4305,12 +4305,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                        FSymbol "fn";
                        FVector [ FSymbol nested_value ];
                        FList
-                         (FCoreSymbol Core_update :: FSymbol nested_value
+                         (FSymbol "__lg_update" :: FSymbol nested_value
                         :: nested_arguments);
                      ];
                  ]))
     | FList
-        (FSymbol ("update" | "clojure.core/update")
+        (FSymbol "__lg_update"
         :: FSymbol target
         :: (FInt _ as index)
         :: FSymbol updater
@@ -4329,7 +4329,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (Ok params) extra_tys extra_arguments))
         | Ok _ | Error _ -> infer_all params extra_arguments)
     | FList
-        (FSymbol ("update" | "clojure.core/update")
+        (FSymbol "__lg_update"
         :: FSymbol target
         :: FKeyword keyword
         :: FSymbol updater
@@ -4381,7 +4381,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         infer_expected expected params argument))
                   (Ok params) extra_tys extra_arguments))
     | FList
-        (FSymbol ("update" | "clojure.core/update")
+        (FSymbol "__lg_update"
         :: FSymbol target
         :: key
         :: updater
@@ -4436,7 +4436,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_all params (updater :: extra_arguments)))
     | FList
         [
-          FSymbol ("get" | "clojure.core/get");
+          FSymbol "__lg_get";
           FSymbol target;
           FKeyword keyword;
           default;
@@ -4445,7 +4445,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind
           (add_record_field_constraint target keyword field_ty params)
           (fun params -> infer_expected field_ty params default)
-    | FList [ FSymbol ("get" | "clojure.core/get"); FSymbol target; key ]
+    | FList [ FSymbol "__lg_get"; FSymbol target; key ]
       when match key with FKeyword _ -> false | _ -> true -> (
         let infer_map () =
           let key_ty =
@@ -5182,7 +5182,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         else infer_expected_all expected_ty params args
     | FList
         [
-          FSymbol "select-keys";
+          FSymbol "__lg_select-keys";
           FList [ FKeyword keyword; FSymbol record ];
           FSymbol keys;
         ] ->
@@ -5192,7 +5192,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             add_record_field_constraint record keyword
               (Types.dynamic_map key_ty value_ty)
               params)
-    | FList [ FSymbol "select-keys"; FSymbol target; FSymbol keys ] ->
+    | FList [ FSymbol "__lg_select-keys"; FSymbol target; FSymbol keys ] ->
         let key_ty = fresh_type_variable "select_keys_key" in
         let value_ty = fresh_type_variable "select_keys_value" in
         Result.bind (constrain_seqable key_ty params keys) (fun params ->
@@ -5327,11 +5327,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         Result.bind infer_target (fun params -> infer_expected key_ty params key)
     | FList
-        [ FSymbol ("get-in" | "clojure.core/get-in"); target; FVector keys ] ->
+        [ FSymbol "__lg_get-in"; target; FVector keys ] ->
         infer_form params (Core_form_expansion.get_in target keys None)
     | FList
         [
-          FSymbol ("get-in" | "clojure.core/get-in");
+          FSymbol "__lg_get-in";
           target;
           FVector keys;
           default;
@@ -5340,14 +5340,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (Core_form_expansion.get_in target keys (Some default))
     | FList
         [
-          FSymbol ("assoc-in" | "clojure.core/assoc-in");
+          FSymbol "__lg_assoc-in";
           target;
           FVector keys;
           value;
         ] ->
         infer_assoc_in params target keys value
     | FList
-        (FSymbol ("update-in" | "clojure.core/update-in")
+        (FSymbol "__lg_update-in"
         :: target :: FVector (_ :: _ as keys) :: function_form
         :: argument_forms) ->
         infer_form params
