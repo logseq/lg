@@ -1923,6 +1923,43 @@
   ([x y & colls]
    (concat-many-seq (concat x y) colls)))
 
+(defn- interleave-one [coll]
+  (lazy-seq (seq coll)))
+
+(defn- interleave-two-seq [left right]
+  (lazy-seq
+   (if (and left right)
+     (cons (nth left 0)
+           (cons (nth right 0)
+                 (interleave-two-seq (rest left) (rest right))))
+     nil)))
+
+(defn- interleave-many-seq [colls]
+  (lazy-seq
+   (if (and colls (every? (fn [coll] (seq coll)) colls))
+     (concat (map-seq (fn [coll] (nth coll 0)) colls)
+             (interleave-many-seq
+              (map-seq (fn [coll] (rest coll)) colls)))
+     nil)))
+
+(defn interleave
+  {:inline (fn
+             ([] (list '__lg_list))
+             ([coll] (list 'interleave-one coll))
+             ([left right] (list '__lg_interleave left right))
+             ([first-coll second-coll & colls]
+              (cons '__lg_interleave
+                    (cons first-coll (cons second-coll colls)))))}
+  ([] (list))
+  ([coll] (interleave-one coll))
+  ([left right]
+   (interleave-two-seq (seq left) (seq right)))
+  ([first-coll second-coll & colls]
+   (interleave-many-seq
+    (cons (seq first-coll)
+          (cons (seq second-coll)
+                (map-seq (fn [coll] (seq coll)) (seq colls)))))))
+
 (defn sequence
   ([coll]
    (let [values (seq coll)]

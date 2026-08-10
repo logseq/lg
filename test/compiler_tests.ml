@@ -28142,7 +28142,7 @@ let test_interleave_accepts_multiple_collections () =
 (println (pr-str xs))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "interleave_accepts_multiple_collections"
     "(1 10 100 2 20 200)\n" ocaml_source
 
@@ -28167,12 +28167,17 @@ let test_interleave_accepts_inferred_seqable_parameters () =
     (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_interleave_rejects_later_type_mismatches () =
-  Lg.Compiler.compile_string {|(def x (interleave [1] (__lg_list 2) ["three"]))|}
+  compile_string_with_stdlib
+    {|(def x (interleave [1] (__lg_list 2) ["three"]))|}
   |> expect_error "interleave element types must match"
 
-let test_interleave_requires_two_collections () =
-  Lg.Compiler.compile_string {|(def x (interleave [1 2]))|}
-  |> expect_error "interleave expects at least two collections"
+let test_interleave_supports_zero_and_one_collection () =
+  let source =
+    {|(println (str (pr-str (interleave)) ":" (pr-str (interleave [1 2]))))|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "interleave_supports_zero_and_one_collection"
+    "():(1 2)\n" ocaml_source
 
 let test_additional_sequence_helpers_work () =
   let source =
@@ -40136,7 +40141,7 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (__lg_concat [1 2] (__lg_list 3 4)))|};
       {|(def result (__lg_set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
-      {|(def result (interleave [1 2] (__lg_list 3 4)))|};
+      {|(def result (__lg_interleave [1 2] (__lg_list 3 4)))|};
       {|(def result (partition 2 [1 2 3]))|};
     ]
 
@@ -42346,8 +42351,8 @@ let tests =
       test_interleave_accepts_inferred_seqable_parameters );
     ( "interleave rejects later type mismatches",
       test_interleave_rejects_later_type_mismatches );
-    ( "interleave requires two collections",
-      test_interleave_requires_two_collections );
+    ( "interleave supports zero and one collection",
+      test_interleave_supports_zero_and_one_collection );
     ("additional sequence helpers work", test_additional_sequence_helpers_work);
     ( "last returns nil for empty collections",
       test_last_returns_nil_for_empty_collections );

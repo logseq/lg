@@ -221,8 +221,9 @@ dedicated sequence abstraction.
 `bounded-count`, `dorun`, `doall`, and `run!` operate eagerly over concrete
 typed collections.
 
-`interleave` accepts two or more same-element-type collections, returns an
-eager typed list, and stops when the shortest input is exhausted.
+`interleave` is source-defined for zero, one, two, and variadic
+same-element-type collection arities. It returns a memoized lazy sequence and
+stops when the shortest input is exhausted.
 
 `apply` supports integer binary reducers over typed lists, vectors, and sets,
 including fixed leading integer arguments before the final collection.

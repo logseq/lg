@@ -1740,6 +1740,62 @@
   (run sh %{dep:check_no_source_core_map_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-interleave-dispatch)
+ (deps
+  check_no_source_core_interleave_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/core_sequence_transform.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_interleave_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_interleave_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/core_sequence_transform.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_interleave_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_interleave_type_mismatch.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_interleave_type_mismatch.cljc}
+   "interleave element types must match")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_interleave_noncollection.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_interleave_noncollection.cljc}
+   "interleave expects collections")))
+
+(rule
  (alias no-source-core-concat-dispatch)
  (deps
   check_no_source_core_concat_dispatch.sh

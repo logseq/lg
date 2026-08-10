@@ -211,6 +211,70 @@
 (println (if (= [1 2] (vec (apply concat [[1] [2]])))
            "concat-apply"
            "concat-apply-failed"))
+(println (if (= [] (vec (interleave)))
+           "interleave-zero"
+           "interleave-zero-failed"))
+(println (if (= [1 2] (vec (core/interleave (list 1 2))))
+           "interleave-one"
+           "interleave-one-failed"))
+(println (if (= [1 10]
+                (vec (clojure.core/interleave [1 2] (list 10))))
+           "interleave-two-shortest"
+           "interleave-two-shortest-failed"))
+(println (if (= [1 10 100 2 20 200]
+                (vec (interleave [1 2 3]
+                                 (list 10 20)
+                                 [100 200 300])))
+           "interleave-variadic"
+           "interleave-variadic-failed"))
+(println (if (= [] (vec (interleave [1] [] [100])))
+           "interleave-empty-shortest"
+           "interleave-empty-shortest-failed"))
+(def weave interleave)
+(println (if (= [] (vec (weave)))
+           "interleave-first-class-zero"
+           "interleave-first-class-zero-failed"))
+(println (if (= [1 2] (vec (weave [1 2])))
+           "interleave-first-class-one"
+           "interleave-first-class-one-failed"))
+(println (if (= [1 10 100]
+                (vec (weave [1] [10] [100])))
+           "interleave-first-class-variadic"
+           "interleave-first-class-variadic-failed"))
+(println (if (= [1 10 100 2 20 200]
+                (vec (apply interleave [[1 2] [10 20] [100 200]])))
+           "interleave-apply"
+           "interleave-apply-failed"))
+(def interleave-realizations (atom 0))
+(def interleave-lazy-result
+  (interleave
+   (map (fn [value] (swap! interleave-realizations inc) value) [1 2])
+   (map (fn [value] (swap! interleave-realizations inc) value) [10 20])))
+(println (if (= 0 @interleave-realizations)
+           "interleave-lazy-before"
+           "interleave-lazy-before-failed"))
+(println (if (= 1 (first interleave-lazy-result))
+           "interleave-lazy-first"
+           "interleave-lazy-first-failed"))
+(println (if (and (= 1 (first interleave-lazy-result))
+                  (= 2 @interleave-realizations))
+           "interleave-lazy-once"
+           "interleave-lazy-once-failed"))
+(println (if (= [0 9 1 9 2 9]
+                (vec (take 6 (interleave (range) (repeat 9)))))
+           "interleave-infinite-prefix"
+           "interleave-infinite-prefix-failed"))
+(def interleave-argument-order (atom []))
+(def interleave-eager-result
+  (interleave (do (swap! interleave-argument-order conj 1) [1])
+              (do (swap! interleave-argument-order conj 2) [10])
+              (do (swap! interleave-argument-order conj 3) [100])))
+(println (if (= [1 2 3] @interleave-argument-order)
+           "interleave-arguments-eager-once"
+           "interleave-arguments-eager-once-failed"))
+(println (if (= [1 10 100] (vec interleave-eager-result))
+           "interleave-arguments-result"
+           "interleave-arguments-result-failed"))
 (println (= 4 (unsigned-bit-shift-right 8 1)))
 (println (= 0 (bit-count 0)))
 (println (= 4 (bit-count 15)))

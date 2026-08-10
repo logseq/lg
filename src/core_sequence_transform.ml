@@ -207,58 +207,6 @@ let set collection =
              typed_ir (TSet inner)
                (apply (set_module ^ ".of_list") [ list_expr ]))
 
-let interleave collections =
-  if List.length collections < 2 then
-    Error.error "interleave expects at least two collections"
-  else
-    let rec loop element_ty exprs = function
-      | [] -> Ok (element_ty, List.rev exprs)
-      | collection :: rest -> (
-          match collection_to_list_expr collection with
-          | Error _ -> Error.error "interleave expects collections"
-          | Ok (inner, expr) -> (
-              match element_ty with
-              | None -> loop (Some inner) (expr :: exprs) rest
-              | Some element_ty ->
-                if Types.equal element_ty inner then
-                    loop (Some element_ty) (expr :: exprs) rest
-                  else Error.error "interleave element types must match"))
-    in
-    match loop None [] collections with
-    | Error _ as err -> err
-    | Ok (None, _) -> Error.error "interleave expects at least two collections"
-    | Ok (Some inner, exprs) ->
-        let collections = Semantic_ir.Ident "collections" in
-        let any_empty =
-          apply "List.exists"
-            [ Semantic_ir.Fun
-                ( [ Semantic_ir.PVar "collection" ],
-                  Semantic_ir.Match
-                    ( Semantic_ir.Ident "collection",
-                      [ (Semantic_ir.PList [], Semantic_ir.Bool true);
-                        (Semantic_ir.PAny, Semantic_ir.Bool false) ] ) );
-              collections ]
-        in
-        let body =
-          Semantic_ir.If
-            ( any_empty,
-              apply "List.rev" [ Semantic_ir.Ident "acc" ],
-              Semantic_ir.Let
-                ( [ (Semantic_ir.PVar "heads", apply "List.map" [ Semantic_ir.Ident "List.hd"; collections ]);
-                    (Semantic_ir.PVar "tails", apply "List.map" [ Semantic_ir.Ident "List.tl"; collections ]) ],
-                  apply "interleave"
-                    [ apply "List.rev_append"
-                        [ Semantic_ir.Ident "heads"; Semantic_ir.Ident "acc" ];
-                      Semantic_ir.Ident "tails" ] ) )
-        in
-        Ok
-          (typed_ir (TList inner)
-             (Semantic_ir.LetRec
-                ( "interleave",
-                  [ Semantic_ir.PVar "acc"; Semantic_ir.PVar "collections" ],
-                  body,
-                  [ Semantic_ir.List []; Semantic_ir.List exprs ] )))
-
 let into target source =
   match collection_to_list_expr source with
   | Error _ -> Error.error "into source must be a collection"
@@ -406,7 +354,6 @@ let compile name args =
   | "sort", [ collection ] -> sort collection
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
-  | "interleave", collections -> interleave collections
   | "__lg_into", [ target; source ] -> into target source
   | "into-cat", [ target; source ] -> into_cat target source
   | "remove", _ -> Error.error "remove expects function and collection"

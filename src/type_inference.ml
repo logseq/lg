@@ -5530,7 +5530,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_all params
           [ target; FList [ FSymbol "sequence"; transducer; source ] ]
     | FList
-        (FSymbol ("interleave" | "clojure.core/interleave") :: collections) ->
+        (FSymbol "__lg_interleave" :: collections) ->
         let element_ty =
           collections
           |> List.find_map (fun collection ->

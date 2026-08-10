@@ -488,9 +488,8 @@ evaluation without dynamic values.
 `filterv` is a source reduction directly into a persistent vector, without an
 intermediate list. `mapv` remains an explicit eager persistent-vector
 materializer.
-`concat`, `sort`,
-`interpose`, `interleave`, `reductions`, and
-return OCaml lists, `split-at` and `split-with` return persistent
+`concat` and `interleave` return memoized lazy sequences, while `sort`,
+`interpose`, and `reductions` return OCaml lists. `split-at` and `split-with` return persistent
 vectors of the input collection representation, and same-shape operations such
 as `distinct`, `dedupe`, `butlast`,
 `take-last`, `drop-last`, `nthnext`, `nthrest`, and `rseq` currently
@@ -502,8 +501,10 @@ preserve the original collection representation.
 `range` returns a typed memoized lazy integer seq. `(range)` is unbounded;
 bounded one-, two-, and three-argument forms remain lazy.
 
-`interleave` accepts two or more typed list, vector, or set inputs with the same
-element type. It eagerly returns an OCaml list and stops at the shortest input.
+`interleave` preserves the upstream zero-, one-, two-, and variadic-collection
+arities. It returns a memoized lazy sequence, stops at the shortest input, and
+requires one static element type across the inputs; direct calls may mix static
+collection storage representations without using dynamic values.
 
 Empty vector literals are polymorphic and acquire an element type from use.
 

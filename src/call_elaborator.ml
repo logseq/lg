@@ -8854,7 +8854,7 @@ let create ~compile_expr =
     | "__lg_sort-by" -> compile_sort_by scope env arg_forms
     | "__lg_concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
-    | "interleave" ->
+    | "__lg_interleave" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_reductions" -> compile_reductions scope env arg_forms
     | "__lg_map" -> compile_map scope env arg_forms
@@ -9644,11 +9644,11 @@ let create ~compile_expr =
                           [ target; source ])))
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with
-    | "interleave", collection_forms -> (
+    | "__lg_interleave", collection_forms -> (
         match compile_args_for scope env collection_forms with
         | Error _ as error -> error
         | Ok collections when List.length collections < 2 ->
-            Core_sequence_transform.compile name collections
+            Error.error "__lg_interleave expects at least two collections"
         | Ok collections ->
             let rec collect prepared = function
               | [] -> Ok (List.rev prepared)
@@ -9659,69 +9659,48 @@ let create ~compile_expr =
                       collect ((element_type, sequence) :: prepared) rest)
             in
             Result.bind (collect [] collections) (fun prepared ->
-                let needs_dynamic =
-                  List.exists
-                    (fun (element_type, _) ->
-                      Types.is_dynamic element_type
-                      || match element_type with
-                         | TUnknown | TMeta _ | TVar _ -> true
-                         | _ -> false)
-                    prepared
+                let unresolved = function
+                  | TUnknown | TMeta _ | TVar _ -> true
+                  | _ -> false
                 in
                 let common_type =
-                  if needs_dynamic then Types.dynamic_constraint TUnknown
-                  else fst (List.hd prepared)
+                  prepared
+                  |> List.find_map (fun (element_type, _) ->
+                         if unresolved element_type then None
+                         else Some element_type)
+                  |> Option.value ~default:(fst (List.hd prepared))
                 in
                 if
-                  (not needs_dynamic)
-                  && List.exists
-                       (fun (element_type, _) ->
-                         not (Types.equal common_type element_type))
-                       prepared
+                  List.exists
+                    (fun (element_type, _) ->
+                      (not (unresolved element_type))
+                      && not (Types.equal common_type element_type))
+                    prepared
                 then Error.error "interleave element types must match"
                 else
-                  let rec prepare_collections collections = function
-                    | [] -> Ok (List.rev collections)
-                    | (element_type, sequence) :: rest ->
-                        let sequence =
-                          if
-                            needs_dynamic
-                            && not (Types.is_dynamic element_type)
-                            &&
-                            match element_type with
-                            | TUnknown | TMeta _ | TVar _ -> false
-                            | _ -> true
-                          then
-                            let item_name = "__lg_interleave_item" in
-                            let item =
-                              typed_ir element_type
-                                (Semantic_ir.Ident item_name)
-                            in
-                            Result.map
-                              (fun packed ->
-                                Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_seq.map",
-                                    [
-                                      Semantic_ir.Fun
-                                        ([ Semantic_ir.PVar item_name ], packed);
-                                      sequence;
-                                    ] ))
-                              (pack_dynamic_value env common_type item)
-                          else Ok sequence
-                        in
-                        Result.bind sequence (fun sequence ->
-                            prepare_collections
-                              (sequence :: collections) rest)
+                  let sequences = List.map snd prepared in
+                  let sequence_names =
+                    List.mapi
+                      (fun index _ ->
+                        "__lg_interleave_sequence_" ^ string_of_int index)
+                      sequences
                   in
-                  Result.map
-                    (fun sequences ->
-                      typed_ir (TSeq common_type)
-                        (Semantic_ir.Apply
-                           ( Semantic_ir.Ident
-                               "Lg_runtime.Runtime_seq.interleave",
-                             [ Semantic_ir.List sequences ] )))
-                    (prepare_collections [] prepared)))
+                  let result =
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.interleave",
+                        [ Semantic_ir.List
+                            (List.map
+                               (fun name -> Semantic_ir.Ident name)
+                               sequence_names) ] )
+                  in
+                  let result =
+                    List.fold_right2
+                      (fun name sequence body ->
+                        Semantic_ir.Let
+                          ([ (Semantic_ir.PVar name, sequence) ], body))
+                      sequence_names sequences result
+                  in
+                  Ok (typed_ir (TSeq common_type) result)))
     | "__lg_sort", [ comparator_form; collection_form ] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error
