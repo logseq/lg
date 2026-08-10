@@ -44,6 +44,59 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     |> Result.map (fun (element_type, sequence) ->
         (element_type, apply "List.of_seq" [ sequence ]))
   in
+  let rec concrete_sequence_element = function
+    | TVector element | TList element | TSet element | TSeq element
+    | TArray element ->
+        Some element
+    | TString -> Some TChar
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        concrete_sequence_element inner
+    | ty -> Types.seqable_constraint_element ty
+  in
+  let sequence_concat_element = function
+    | TOverloaded_fn ({ return_ty = TSeq element_ty; _ } :: _ as arities)
+      when List.for_all
+             (fun (arity : fn_arity) ->
+               Types.equal arity.return_ty (TSeq element_ty)
+               && List.for_all
+                    (fun parameter_ty ->
+                      match Types.seqable_constraint_element parameter_ty with
+                      | Some actual -> Types.equal actual element_ty
+                      | None -> false)
+                    arity.fixed_params
+               &&
+               match arity.rest_param with
+               | None -> true
+               | Some rest_ty -> (
+                   match Types.seqable_constraint_element rest_ty with
+                   | Some actual -> Types.equal actual element_ty
+                   | None -> false))
+             arities ->
+        Some element_ty
+    | TOverloaded_fn _ | TFn _ | _ -> None
+  in
+  let refine_sequence_concat_function fn fixed_args rest_item_ty =
+    match sequence_concat_element fn.ty with
+    | None -> fn
+    | Some element_ty ->
+        let actual_elements =
+          List.filter_map
+            (fun argument -> concrete_sequence_element argument.ty)
+            fixed_args
+          @ Option.to_list (concrete_sequence_element rest_item_ty)
+        in
+        let substitutions =
+          List.fold_left
+            (fun result actual ->
+              Result.bind result (fun substitutions ->
+                  Type_solver.unify substitutions element_ty actual))
+            (Ok Type_solver.empty) actual_elements
+        in
+        (match substitutions with
+        | Ok substitutions ->
+            { fn with ty = Type_solver.apply substitutions fn.ty }
+        | Error _ -> fn)
+  in
   let compile_function_arg scope env = function
     | FSymbol name -> (
         match lookup_binding scope env name with
@@ -82,12 +135,44 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         irrefutable_pattern pattern
     | _ -> false
   in
+  let rec list_pattern_coverage consumed = function
+    | Semantic_ir.PLocated (_, _, pattern)
+    | Semantic_ir.PAlias (pattern, _)
+    | Semantic_ir.PConstraint (pattern, _)
+    | Semantic_ir.PTyped (pattern, _) ->
+        list_pattern_coverage consumed pattern
+    | Semantic_ir.PList items -> Some (`Exact (consumed + List.length items))
+    | Semantic_ir.PCons (_, tail) -> list_pattern_coverage (consumed + 1) tail
+    | Semantic_ir.PAny | Semantic_ir.PVar _ -> Some (`At_least consumed)
+    | _ -> None
+  in
+  let list_patterns_are_exhaustive cases =
+    let coverages =
+      List.filter_map
+        (fun (pattern, _) -> list_pattern_coverage 0 pattern)
+        cases
+    in
+    List.exists
+      (function
+        | `At_least minimum ->
+            List.init minimum Fun.id
+            |> List.for_all (fun length ->
+                   List.exists
+                     (function
+                       | `Exact actual -> actual = length
+                       | `At_least _ -> false)
+                     coverages)
+        | `Exact _ -> false)
+      coverages
+  in
   let apply_arity_match list_expr cases =
     match cases with
     | [ (pattern, expression) ] when irrefutable_pattern pattern -> expression
     | _ ->
         let cases =
-          if List.exists (fun (pattern, _) -> irrefutable_pattern pattern) cases
+          if
+            List.exists (fun (pattern, _) -> irrefutable_pattern pattern) cases
+            || list_patterns_are_exhaustive cases
           then cases
           else
             cases
@@ -415,76 +500,6 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         ^ Types.source_name collection.ty)
                   | Ok (inner, list_expr) -> (
                       match fn_form with
-                      | FSymbol ("concat" | "clojure.core/concat") ->
-                          let collection_name = "__lg_apply_concat_collection" in
-                          let collection =
-                            typed_ir inner (Semantic_ir.Ident collection_name)
-                          in
-                          let collect_fixed () =
-                            let rec collect sequences = function
-                              | [] -> Ok (List.rev sequences)
-                              | collection :: rest -> (
-                                  match
-                                    Collection_capability.to_seq_expr env
-                                      collection
-                                  with
-                                  | Error _ ->
-                                      Error.error
-                                        "apply concat expects collections"
-                                  | Ok (element_ty, sequence) ->
-                                      collect
-                                        ((element_ty, sequence) :: sequences)
-                                        rest)
-                            in
-                            collect [] fixed_args
-                          in
-                          (match
-                             ( collect_fixed (),
-                               Collection_capability.to_seq_expr env collection )
-                          with
-                          | (Error _ as error), _ -> error
-                          | _, Error _ ->
-                              Error.error
-                                ("apply concat expects collections, got "
-                               ^ Types.source_name inner)
-                          | Ok fixed_sequences, Ok (element_ty, sequence) ->
-                              if
-                                List.for_all
-                                  (fun (fixed_element_ty, _) ->
-                                    Types.assignable ~policy:Host_boundary
-                                      ~expected:element_ty
-                                      ~actual:fixed_element_ty)
-                                  fixed_sequences
-                              then
-                                let rest_sequences =
-                                  apply "List.map"
-                                    [
-                                      Semantic_ir.Fun
-                                        ( [
-                                            Semantic_ir.PVar collection_name;
-                                          ],
-                                          sequence );
-                                      list_expr;
-                                    ]
-                                in
-                                let sequences =
-                                  match fixed_sequences with
-                                  | [] -> rest_sequences
-                                  | _ ->
-                                      Semantic_ir.Infix
-                                        ( "@",
-                                          Semantic_ir.List
-                                            (List.map snd fixed_sequences),
-                                          rest_sequences )
-                                in
-                                Ok
-                                  (typed_ir (TSeq element_ty)
-                                     (apply
-                                        "Lg_runtime.Runtime_seq.concat"
-                                        [ sequences ]))
-                              else
-                                Error.error
-                                  "apply concat element types must match")
                       | FSymbol "str" ->
                           let value_name = "__lg_apply_str_value" in
                           let stringify_value =
@@ -581,6 +596,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         match compile_function_arg scope env fn_form with
                         | Error _ as err -> err
                         | Ok fn -> (
+                          let fn =
+                            refine_sequence_concat_function fn fixed_args inner
+                          in
                           match fn.ty with
                           | TFn ([ TInt; TInt ], TInt)
                             when Types.equal inner TInt

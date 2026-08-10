@@ -1851,6 +1851,32 @@
                   (map (fn [coll] (seq coll)) colls)
                   [])))
 
+(defn- concat-two-seq [current next-seq]
+  (lazy-seq
+   (if current
+     (cons (nth current 0)
+           (concat-two-seq (rest current) next-seq))
+     (next-seq))))
+
+(defn- concat-many-seq [current colls]
+  (lazy-seq
+   (if current
+     (cons (nth current 0)
+           (concat-many-seq (rest current) colls))
+     (if colls
+       (concat-many-seq (seq (nth colls 0)) (rest colls))
+       (seq [])))))
+
+(defn concat
+  {:inline (fn [& colls] (cons '__lg_concat colls))}
+  ([] (lazy-seq (seq [])))
+  ([x] (lazy-seq (seq x)))
+  ([x y]
+   (lazy-seq
+    (concat-two-seq (seq x) (fn [] (seq y)))))
+  ([x y & colls]
+   (concat-many-seq (concat x y) colls)))
+
 (defn sequence
   ([coll]
    (let [values (seq coll)]
@@ -3667,8 +3693,8 @@
 (defn- tree-seq-step [branch? children pending]
   (if pending
     (let [node (nth pending 0)
-          siblings (next pending)
-          child-seq (if (branch? node) (seq (children node)) (seq []))
+          siblings (rest pending)
+          child-seq (if (branch? node) (seq (children node)) (take 0 pending))
           pending (if child-seq (concat child-seq siblings) siblings)]
       (Some (tuple node pending)))
     None))

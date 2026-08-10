@@ -62,14 +62,14 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat doall drop drop-while filter fnil get-in interleave juxt keep map map-indexed mapcat max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
+    split("apply assoc-in comp doall drop drop-while filter fnil get-in interleave juxt keep map map-indexed mapcat max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
     for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
     split("comp fnil juxt partial", xs)
     for (i in xs) blocked_reason[xs[i]] = "returned-variadic-or-overloaded-function-types-are-not-source-expressible"
-    split("concat interleave map", xs)
+    split("interleave map", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-multi-collection-arities-and-lazy-or-transducer-cases-are-not-source-expressible"
     split("drop drop-while filter keep map-indexed mapcat remove repeatedly take take-while", xs)
     for (i in xs) blocked_reason[xs[i]] = "upstream-lazy-sequence-or-transducer-behavior-is-not-source-expressible"
@@ -110,6 +110,7 @@ awk '
     internal_abi["__lg_min"] = "typed-numeric-extrema-specialization-primitive"
     internal_abi["__lg_into"] = "typed-target-collection-representation-and-transducer-specialization-primitive"
     internal_abi["__lg_mapv"] = "typed-variadic-multi-collection-vector-map-specialization-primitive"
+    internal_abi["__lg_concat"] = "typed-mixed-storage-sequence-concatenation-specialization-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"

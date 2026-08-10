@@ -467,6 +467,8 @@
           :reason :source-port-preserves-upstream-zero-one-two-and-transducer-arities-while-direct-calls-inline-to-a-private-typed-primitive-that-retains-the-target-collection-representation-and-static-element-types}
     mapv {:status :static-adaptation
           :reason :source-port-preserves-upstream-one-two-three-and-variadic-collection-arities-left-to-right-single-evaluation-shortest-input-termination-and-eager-vector-results-while-direct-calls-inline-to-a-private-static-multi-collection-specialization-and-the-variadic-source-body-expands-apply-map-into-an-equivalent-typed-sequence-loop}
+    concat {:status :static-adaptation
+            :reason :source-port-preserves-upstream-zero-one-two-and-variadic-arities-lazy-right-side-realization-and-infinite-prefixes-without-the-javascript-chunked-sequence-fast-path-while-direct-calls-inline-to-a-private-typed-primitive-for-mixed-static-collection-storage-and-first-class-or-apply-use-retains-homogeneous-rest-storage}
     filterv {:status :static-adaptation
              :reason :source-port-preserves-eager-vector-accumulation-through-static-reduce-and-persistent-conj-because-the-javascript-transient-array-boundary-is-not-shared-by-native-and-melange}
     partition {:status :static-adaptation

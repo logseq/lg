@@ -4270,6 +4270,35 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                            (List.init fixed_count (fun _ -> TUnknown))
                 | _ -> List.init fixed_count (fun _ -> TUnknown)
               in
+              let sequence_concat_element =
+                match function_ty with
+                | TOverloaded_fn
+                    ({ return_ty = TSeq element_ty; _ } :: _ as arities)
+                  when List.for_all
+                         (fun (arity : fn_arity) ->
+                           Types.equal arity.return_ty (TSeq element_ty)
+                           && List.for_all
+                                (fun parameter_ty ->
+                                  match
+                                    Types.seqable_constraint_element
+                                      parameter_ty
+                                  with
+                                  | Some actual -> Types.equal actual element_ty
+                                  | None -> false)
+                                arity.fixed_params
+                           &&
+                           match arity.rest_param with
+                           | None -> true
+                           | Some rest_ty -> (
+                               match
+                                 Types.seqable_constraint_element rest_ty
+                               with
+                               | Some actual -> Types.equal actual element_ty
+                               | None -> false))
+                         arities ->
+                    Some element_ty
+                | TOverloaded_fn _ | TFn _ | _ -> None
+              in
               Result.bind
                 (List.fold_left2
                    (fun result expected argument ->
@@ -4277,8 +4306,23 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                          infer_expected expected params argument))
                    (Ok params) fixed_parameter_types fixed_arguments)
                 (fun params ->
-                  match (function_ty, fixed_arguments) with
-                  | TOverloaded_fn arities, constructor :: collections
+                  match (sequence_concat_element, function_ty, fixed_arguments) with
+                  | Some element_ty, _, _ ->
+                      let argument_constraint () =
+                        Types.optional_seqable_constraint element_ty
+                          (fresh_type_variable "concat_storage")
+                      in
+                      Result.bind
+                        (List.fold_left
+                           (fun result argument ->
+                             Result.bind result (fun params ->
+                                 infer_expected (argument_constraint ()) params
+                                   argument))
+                           (Ok params) fixed_arguments)
+                        (fun params ->
+                          constrain_seqable (argument_constraint ()) params
+                            collection)
+                  | None, TOverloaded_fn arities, constructor :: collections
                     when List.for_all
                            (fun (arity : fn_arity) ->
                              match arity.return_ty with
@@ -4297,7 +4341,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         (fun params ->
                           constrain_seqable (TVector element_ty) params
                             collection)
-                  | _ ->
+                  | None, _, _ ->
                       let element_ty =
                         match remaining_parameters function_ty with
                         | [] -> TUnknown

@@ -28076,11 +28076,11 @@ let test_generic_sequence_navigation_evaluates_arguments_once () =
     "(2 3)\n1\n" ocaml_source
 
 let test_batched_sequence_functions_reject_type_mismatch () =
-  Lg.Compiler.compile_string {|(def x (concat [1] ["two"]))|}
+  compile_string_from_stdlib {|(def x (concat [1] ["two"]))|}
   |> expect_error_contains "define a sum type"
 
 let test_concat_rejects_nested_heterogeneous_elements () =
-  Lg.Compiler.compile_string {|(def x (concat [[1]] [["two"]]))|}
+  compile_string_from_stdlib {|(def x (concat [[1]] [["two"]]))|}
   |> expect_error_contains "define a sum type"
 
 let test_concat_keeps_closed_sum_elements_static () =
@@ -28094,9 +28094,10 @@ let test_concat_keeps_closed_sum_elements_static () =
 (println (count values))
 |}
   in
-  let ocaml = compile_string_with_stdlib source |> expect_ok in
-  if string_contains_substring ocaml "Runtime_dynamic" then
+  let consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer "Runtime_dynamic" then
     failwith "concat must retain explicit closed sum elements";
+  let ocaml = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "concat_keeps_closed_sum_elements_static" "2\n" ocaml
 
 let test_concat_lifts_values_into_nullable_element_types () =
@@ -35992,13 +35993,13 @@ let test_apply_accepts_concat_as_a_core_function () =
 (println (pr-str (apply concat [0] [[1 2] [3 4]])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "apply_accepts_concat_as_a_core_function" "(0 1 2 3 4)\n"
     ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
 let test_reduce_preserves_refined_vector_element_types () =
   let source =
@@ -36140,7 +36141,7 @@ let test_concat_rejects_nested_heterogeneous_vectors () =
 (println (count combined))
 |}
   in
-  Lg.Compiler.compile_string source
+  compile_string_from_stdlib source
   |> expect_error_contains "define a sum type"
 
 let test_contains_infers_generic_membership_for_variable_keys () =
@@ -40131,7 +40132,7 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
   List.iter expect_structured_value_expression
     [
       {|(def result (__lg_sort [3 1 2]))|};
-      {|(def result (concat [1 2] (__lg_list 3 4)))|};
+      {|(def result (__lg_concat [1 2] (__lg_list 3 4)))|};
       {|(def result (__lg_set [1 1 2]))|};
       {|(def result (repeat 3 :name))|};
       {|(def result (interleave [1 2] (__lg_list 3 4)))|};

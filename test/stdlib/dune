@@ -1718,6 +1718,62 @@
   (run sh %{dep:check_no_source_core_mapv_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-concat-dispatch)
+ (deps
+  check_no_source_core_concat_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/core_sequence_transform.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_concat_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_concat_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/core_sequence_transform.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_concat_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_concat_bad_collection.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_concat_bad_collection.cljc}
+   "concat expects collections")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_concat_heterogeneous.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_concat_heterogeneous.cljc}
+   "heterogeneous sequence has element types int | string")))
+
+(rule
  (alias runtest)
  (deps
   check_compile_error.sh

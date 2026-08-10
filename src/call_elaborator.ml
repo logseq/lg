@@ -8851,7 +8851,7 @@ let create ~compile_expr =
     | "__lg_sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort-by" -> compile_sort_by scope env arg_forms
-    | "concat" -> compile_concat scope env arg_forms
+    | "__lg_concat" -> compile_concat scope env arg_forms
     | "__lg_set" -> compile_set scope env arg_forms
     | "interleave" ->
         compile_sequence_transform_call scope env name arg_forms
@@ -9195,7 +9195,13 @@ let create ~compile_expr =
   and compile_concat scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as error -> error
-    | Ok [] -> Error.error "concat expects at least 1 collection"
+    | Ok [] ->
+        let element_ty =
+          match Env.expected_type env with
+          | Some (TSeq element_ty) -> element_ty
+          | Some _ | None -> Type_solver.fresh ()
+        in
+        Ok (typed_ir (TSeq element_ty) (Semantic_ir.Ident "Seq.empty"))
     | Ok collections ->
         if List.exists (fun collection -> Types.is_dynamic collection.ty) collections
         then
@@ -9293,10 +9299,30 @@ let create ~compile_expr =
                 in
                 Result.map
                   (fun sequences ->
-                    typed_ir (TSeq common_type)
-                      (Semantic_ir.Apply
-                         ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.concat",
-                           [ Semantic_ir.List sequences ] )))
+                    let sequence_names =
+                      List.mapi
+                        (fun index _ ->
+                          "__lg_concat_sequence_" ^ string_of_int index)
+                        sequences
+                    in
+                    let concatenated =
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.concat",
+                          [
+                            Semantic_ir.List
+                              (List.map
+                                 (fun name -> Semantic_ir.Ident name)
+                                 sequence_names);
+                          ] )
+                    in
+                    let concatenated =
+                      List.fold_right2
+                        (fun name sequence body ->
+                          Semantic_ir.Let
+                            ([ (Semantic_ir.PVar name, sequence) ], body))
+                        sequence_names sequences concatenated
+                    in
+                    typed_ir (TSeq common_type) concatenated)
                   (adapt_sequences 0 [] sequences)
             | None ->
                 heterogeneous_collection_type_error "sequence"

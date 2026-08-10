@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
@@ -86,6 +86,65 @@
 (println (if (= 3 @mapv-evaluations)
            "mapv-single-evaluation-count"
            "mapv-single-evaluation-count-failed"))
+(println (if (= [] (vec (concat)))
+           "concat-zero"
+           "concat-zero-failed"))
+(println (if (= [1 2] (vec (core/concat [1 2])))
+           "concat-one"
+           "concat-one-failed"))
+(println (if (= [1 2 3 4]
+                (vec (clojure.core/concat [1 2] (list 3 4))))
+           "concat-two-storage-types"
+           "concat-two-storage-types-failed"))
+(println (if (= [1 2 3 4]
+                (vec (concat [1] [] (list 2 3) [4])))
+           "concat-variadic-empty-middle"
+           "concat-variadic-empty-middle-failed"))
+(println (if (= [1 2] (vec (concat nil [1 2])))
+           "concat-nil"
+           "concat-nil-failed"))
+(println (if (= [0 1 2 3 4] (vec (take 5 (concat (range) [99]))))
+           "concat-infinite-prefix"
+           "concat-infinite-prefix-failed"))
+(def concat-realizations (atom 0))
+(def concat-lazy-source
+  (lazy-seq
+   (do (swap! concat-realizations inc)
+       (seq [1 2]))))
+(def concat-lazy-result (concat concat-lazy-source [3]))
+(println (if (= 0 @concat-realizations)
+           "concat-lazy-before"
+           "concat-lazy-before-failed"))
+(println (if (= 1 (first concat-lazy-result))
+           "concat-lazy-first"
+           "concat-lazy-first-failed"))
+(println (if (= 1 @concat-realizations)
+           "concat-lazy-once"
+           "concat-lazy-once-failed"))
+(def concat-argument-evaluations (atom 0))
+(def concat-evaluated-arguments
+  (concat (do (swap! concat-argument-evaluations inc) [1])
+          (do (swap! concat-argument-evaluations inc) [2])))
+(println (if (= 2 @concat-argument-evaluations)
+           "concat-arguments-eager-once"
+           "concat-arguments-eager-once-failed"))
+(println (if (= [1 2] (vec concat-evaluated-arguments))
+           "concat-arguments-result"
+           "concat-arguments-result-failed"))
+(def join-concat concat)
+(println (if (= [] (vec (join-concat)))
+           "concat-first-class-zero"
+           "concat-first-class-zero-failed"))
+(println (if (= [1 2] (vec (join-concat [1] (list 2))))
+           "concat-first-class-two"
+           "concat-first-class-two-failed"))
+(println (if (= [1 2 3 4]
+                (vec (join-concat [1] [2] [3] [4])))
+           "concat-first-class-variadic"
+           "concat-first-class-variadic-failed"))
+(println (if (= [1 2] (vec (apply concat [[1] [2]])))
+           "concat-apply"
+           "concat-apply-failed"))
 (println (= 4 (unsigned-bit-shift-right 8 1)))
 (println (= 0 (bit-count 0)))
 (println (= 4 (bit-count 15)))

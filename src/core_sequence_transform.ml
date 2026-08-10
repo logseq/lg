@@ -192,26 +192,6 @@ let sort collection =
           (typed_ir (TList inner)
              (apply "List.sort" [ comparator; list_expr ]))
 
-let concat collections =
-  let rec loop element_ty exprs = function
-    | [] -> Ok (element_ty, List.rev exprs)
-    | collection :: rest -> (
-        match collection_to_list_expr collection with
-        | Error _ -> Error.error "concat expects collections"
-        | Ok (inner, expr) -> (
-            match element_ty with
-            | None -> loop (Some inner) (expr :: exprs) rest
-            | Some element_ty ->
-                if Types.equal element_ty inner then
-                  loop (Some element_ty) (expr :: exprs) rest
-                else Error.error "concat element types must match"))
-  in
-  match loop None [] collections with
-  | Error _ as err -> err
-  | Ok (None, _) -> Error.error "concat expects at least 1 collection"
-  | Ok (Some inner, exprs) ->
-      Ok (typed_ir (TList inner) (apply "List.concat" [ Semantic_ir.List exprs ]))
-
 let vec collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "vec expects a list, vector, or set"
@@ -424,8 +404,6 @@ let compile name args =
   | ("take-while" | "drop-while"), [ fn; collection ] ->
       take_drop_while name fn collection
   | "sort", [ collection ] -> sort collection
-  | "concat", [] -> Error.error "concat expects at least 1 collection"
-  | "concat", collections -> concat collections
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
   | "interleave", collections -> interleave collections
