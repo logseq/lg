@@ -463,6 +463,8 @@
              :reason :source-public-arities-including-the-upstream-three-arity-form-delegate-only-key-projection-and-stable-host-sorting-to-a-private-typed-primitive}
     doall {:status :static-adaptation
            :reason :source-port-preserves-both-upstream-arities-realization-order-and-the-original-static-collection-storage-through-an-explicit-seqable-storage-relation}
+    into {:status :static-adaptation
+          :reason :source-port-preserves-upstream-zero-one-two-and-transducer-arities-while-direct-calls-inline-to-a-private-typed-primitive-that-retains-the-target-collection-representation-and-static-element-types}
     filterv {:status :static-adaptation
              :reason :source-port-preserves-eager-vector-accumulation-through-static-reduce-and-persistent-conj-because-the-javascript-transient-array-boundary-is-not-shared-by-native-and-melange}
     partition {:status :static-adaptation

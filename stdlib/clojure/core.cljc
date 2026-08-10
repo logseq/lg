@@ -1799,6 +1799,19 @@
          result (__lg_reduce_transformed transformed init coll)]
      (__lg_complete_transformed transformed result))))
 
+(defn into
+  {:inline (fn [& args]
+             (cond
+               (= 0 (count args)) []
+               (= 1 (count args)) (first args)
+               :else (cons '__lg_into args)))}
+  ([] [])
+  ([to] to)
+  ([to from]
+   (__lg_reduce (fn [result item] (conj result item)) to from))
+  ([to xform from]
+   (into to (sequence xform from))))
+
 (defn sequence
   ([coll]
    (let [values (seq coll)]

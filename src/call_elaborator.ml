@@ -8835,7 +8835,7 @@ let create ~compile_expr =
         compile_hash_map scope env arg_forms
     | "__lg_rest" | "__lg_seq" ->
         compile_collection_call scope env name arg_forms
-    | "into" -> (
+    | "__lg_into" -> (
         match arg_forms with
         | [ target_form; transducer_form; source_form ] ->
             compile_into scope env target_form
@@ -9482,9 +9482,9 @@ let create ~compile_expr =
                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
                      [ sequence ] ))
             in
-            Core_sequence_transform.compile "into" [ target; source ])
+            Core_sequence_transform.compile "__lg_into" [ target; source ])
     | Ok target, Ok source -> (
-        match Core_sequence_transform.compile "into" [ target; source ] with
+        match Core_sequence_transform.compile "__lg_into" [ target; source ] with
         | Ok result -> adapt_result result
         | Error _ -> (
             match Collection_capability.to_seq_expr env source with
@@ -9594,7 +9594,7 @@ let create ~compile_expr =
                     else
                       (match adapt_source target_element with
                       | Ok source ->
-                          Core_sequence_transform.compile "into"
+                          Core_sequence_transform.compile "__lg_into"
                             [ target; source ]
                       | Error _ as error -> error)
                 | _ ->
@@ -9612,7 +9612,7 @@ let create ~compile_expr =
                                     [ sequence ] )))
                     in
                     Result.bind source (fun source ->
-                        Core_sequence_transform.compile "into"
+                        Core_sequence_transform.compile "__lg_into"
                           [ target; source ])))
   and compile_sequence_transform_call scope env name arg_forms =
     match (name, arg_forms) with

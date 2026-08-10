@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
@@ -31,6 +31,10 @@
 (def assoc-updated
   (update (AssocState. {}) :properties assoc :answer 42))
 (println (get (:properties assoc-updated) :answer))
+(def transducing-into into)
+(println (if (= [1 2] (transducing-into [] (take 2) [1 2 3]))
+           "into-first-class-transducer"
+           "into-first-class-transducer-failed"))
 (println (= 4 (unsigned-bit-shift-right 8 1)))
 (println (= 0 (bit-count 0)))
 (println (= 4 (bit-count 15)))
@@ -934,3 +938,10 @@
       (= 42 (source-aget-float source-array-values 1.0))
       (= 8 (deref source-atom-value))
       (= "after" (deref source-volatile-value))))
+
+(println (= [] (into)))
+(println (= [1] (into [1])))
+(println (= [1 2] (core/into [1] [2])))
+(println (= #{1 2} (clojure.core/into #{1} [2])))
+(def collect-into into)
+(println (= [1 2 3] (collect-into [1] [2 3])))

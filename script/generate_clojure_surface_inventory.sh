@@ -62,7 +62,7 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in comp concat doall drop drop-while filter fnil get-in interleave into juxt keep map map-indexed mapcat mapv max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
+    split("apply assoc-in comp concat doall drop drop-while filter fnil get-in interleave juxt keep map map-indexed mapcat mapv max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
@@ -75,7 +75,6 @@ awk '
     for (i in xs) blocked_reason[xs[i]] = "upstream-lazy-sequence-or-transducer-behavior-is-not-source-expressible"
     split("doall", xs)
     for (i in xs) blocked_reason[xs[i]] = "sequence-realization-and-effect-order-remain-a-compiler-runtime-boundary"
-    blocked_reason["into"] = "target-collection-representation-and-transducer-overload-require-dependent-types"
     split("max min", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-comparable-types-and-key-callback-overloads-are-not-source-expressible"
     blocked_reason["merge"] = "variadic-map-and-record-shape-unification-is-not-source-expressible"
@@ -109,6 +108,7 @@ awk '
     internal_abi["__lg_rand"] = "typed-int-or-float-random-bound-specialization-primitive"
     internal_abi["__lg_max"] = "typed-numeric-extrema-specialization-primitive"
     internal_abi["__lg_min"] = "typed-numeric-extrema-specialization-primitive"
+    internal_abi["__lg_into"] = "typed-target-collection-representation-and-transducer-specialization-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"
@@ -179,8 +179,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 130; then
-  echo "compiler form dispatch changed: expected 130 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 129; then
+  echo "compiler form dispatch changed: expected 129 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

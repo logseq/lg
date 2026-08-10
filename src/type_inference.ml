@@ -847,7 +847,7 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       inferred_form_type params init
   | FList
       [
-        FSymbol ("into" | "clojure.core/into");
+        FSymbol "__lg_into";
         target;
         source;
       ] ->
@@ -5457,7 +5457,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (infer_local 3 local_params))
     | FList
         [
-          FSymbol ("into" | "clojure.core/into");
+          FSymbol "__lg_into";
           target;
           transducer;
           source;

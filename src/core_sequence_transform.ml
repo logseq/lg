@@ -429,12 +429,12 @@ let compile name args =
   | "vec", [ collection ] -> vec collection
   | "set", [ collection ] -> set collection
   | "interleave", collections -> interleave collections
-  | "into", [ target; source ] -> into target source
+  | "__lg_into", [ target; source ] -> into target source
   | "into-cat", [ target; source ] -> into_cat target source
   | "remove", _ -> Error.error "remove expects function and collection"
   | ("take-while" | "drop-while"), _ ->
       Error.error (name ^ " expects function and collection")
   | ("sort" | "vec" | "set"),
     _ -> Error.error (name ^ " expects 1 arguments")
-  | "into", _ -> Error.error "into expects target and source collections"
+  | "__lg_into", _ -> Error.error "into expects target and source collections"
   | _ -> Error.error ("unknown function " ^ name)
