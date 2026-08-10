@@ -1085,7 +1085,6 @@ let untyped_first_class_function_error = function
     | "keyword"
     | "keyword?"
     | "list"
-    | "name"
     | "neg?"
     | "nil?"
     | "number?"

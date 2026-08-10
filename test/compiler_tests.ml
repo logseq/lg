@@ -24639,6 +24639,39 @@ let test_char_is_source_owned_and_uses_static_coercion_protocol () =
   assert_ocaml_runs "source_char" "true\n" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange "app/source_char.cljc" source)
 
+let test_name_is_source_owned_and_uses_static_coercion_protocol () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn name") then
+    failwith "name must be implemented by the source standard library";
+  let source =
+    {|
+(ns app.source-name
+  (:require [cljs.core :as core :refer [name]]))
+
+(def extract-name name)
+
+(def invalid-type?
+  (try
+    (name true)
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (and (= "plain" (extract-name "plain"))
+       (= "item" (name :db/item))
+       (= "value" (core/name 'app/value))
+       invalid-type?))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_name.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source name must use static protocol capabilities";
+  assert_ocaml_runs "source_name" "true\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/source_name.cljc" source)
+
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
@@ -41112,6 +41145,8 @@ let tests =
       test_doall_is_source_owned_and_preserves_collection_storage );
     ( "char is source-owned and uses static coercion protocol",
       test_char_is_source_owned_and_uses_static_coercion_protocol );
+    ( "name is source-owned and uses static coercion protocol",
+      test_name_is_source_owned_and_uses_static_coercion_protocol );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",

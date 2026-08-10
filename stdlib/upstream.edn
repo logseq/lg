@@ -367,8 +367,8 @@
                         :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
     namespace {:status :static-adaptation
                :reason :source-function-and-consumer-state-inline-expansion-delegate-to-clojurescript-inamed-while-built-in-keyword-and-symbol-methods-use-a-nonrecursive-static-scalar-primitive}
-    name {:status :blocked-static-typing
-          :reason :same-arity-source-function-must-accept-plain-strings-and-arbitrary-inamed-receivers-without-a-common-static-source-parameter-type}
+    name {:status :static-adaptation
+          :reason :source-function-preserves-clojurescript-string-identity-and-inamed-keyword-symbol-name-extraction-through-a-private-static-coercion-protocol}
     keyword {:status :blocked-static-typing
              :reason :same-arity-source-overloads-accept-string-keyword-and-symbol-inputs-but-lg-cannot-overload-a-first-class-function-by-static-parameter-type}
     symbol {:status :blocked-static-typing
@@ -1361,6 +1361,16 @@
    :status :out-of-scope
    :reason :excluded-by-project-scope}
 
+  cljs.core.async
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port}
+
+  cljs.core.async.impl.channels
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :core-async-implementation-namespaces-are-explicitly-excluded-with-the-parent-library}
+
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :implementation "clojure/data.cljc"
@@ -1473,6 +1483,16 @@
   {:source :jvm-only
    :status :out-of-scope
    :reason :excluded-by-project-scope}
+
+  clojure.core.async
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port}
+
+  clojure.core.async.interop
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :core-async-interop-is-explicitly-excluded-with-the-parent-library}
 
   clojure.pprint
   {:source :jvm-only

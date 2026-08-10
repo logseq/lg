@@ -48,6 +48,14 @@ for namespace in cljs.spec.alpha clojure.spec.alpha; do
   fi
 done
 
+for namespace in cljs.core.async cljs.core.async.impl.channels clojure.core.async clojure.core.async.interop; do
+  if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':status :out-of-scope' >/dev/null; then
+    echo "$namespace is missing its excluded independent-library status" >&2
+    exit 1
+  fi
+done
+
 if ! grep -F ':aggregate-namespaces' "$root/stdlib/upstream.edn" >/dev/null; then
   echo "the stdlib manifest does not declare its aggregate namespace order" >&2
   exit 1

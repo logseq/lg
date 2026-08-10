@@ -31,7 +31,10 @@
 ;; ClojureScript char accepts multiple runtime input domains. A private
 ;; protocol keeps that dispatch first-class and statically witnessed in LG.
 (defprotocol ^:private ICharCoercion
-  (-char [value]))
+  (-char [value] :char))
+
+(defprotocol ^:private INameCoercion
+  (-coerce-name [value] :string))
 
 (extend-type :int
   ICharCoercion
@@ -47,6 +50,13 @@
 
 (defn char [value]
   (-char value))
+
+(extend-type :string
+  INameCoercion
+  (-coerce-name [value] value))
+
+(defn name [value]
+  (INameCoercion/-coerce-name value))
 
 ;; These declarations mirror the statically supported portion of the
 ;; ClojureScript core protocol surface. The compiler registry supplies typed
@@ -159,13 +169,17 @@
 
 (extend-type :keyword
   INamed
-  (-name [value] (name value))
-  (-namespace [value] (__lg_builtin-namespace value)))
+  (-name [value] (__lg_builtin-name value))
+  (-namespace [value] (__lg_builtin-namespace value))
+  INameCoercion
+  (-coerce-name [value] (__lg_builtin-name value)))
 
 (extend-type :symbol
   INamed
-  (-name [value] (name value))
-  (-namespace [value] (__lg_builtin-namespace value)))
+  (-name [value] (__lg_builtin-name value))
+  (-namespace [value] (__lg_builtin-namespace value))
+  INameCoercion
+  (-coerce-name [value] (__lg_builtin-name value)))
 
 (defprotocol IWriter
   (-write [writer source])

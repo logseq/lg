@@ -105,6 +105,7 @@ awk '
     internal_abi["__lg_reduce"] = "typed-reduced-short-circuit-and-collection-specialization-primitive"
     internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
+    internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-namespace"] = "typed-built-in-keyword-and-symbol-namespace-extraction-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
@@ -169,8 +170,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 131; then
-  echo "compiler form dispatch changed: expected 131 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 130; then
+  echo "compiler form dispatch changed: expected 130 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

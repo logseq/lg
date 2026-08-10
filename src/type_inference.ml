@@ -3893,12 +3893,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_fn-predicate";
              ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
-    | FList
-        [
-          FSymbol "name";
-          FSymbol value;
-        ] ->
-        constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "__lg_hash"; FSymbol value ] ->
         constrain_hashable_symbol params value
     | FList

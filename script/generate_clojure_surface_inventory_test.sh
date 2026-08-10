@@ -14,6 +14,10 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
             [cljs.reader :as reader]
             [cljs.pprint :as pprint]
             [cljs.spec.alpha :as spec]
+            [cljs.core.async :as async]
+            [cljs.core.async.impl.channels :as async-channels]
+            [clojure.core.async :as jvm-async]
+            [clojure.core.async.interop :as async-interop]
             [clojure.zip :as zip]))
 
 (string/upper-case "logseq")
@@ -144,7 +148,8 @@ awk -F '\t' '
     exit failed
   }
 ' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/name" || $2 == "clojure.core/keyword" || $2 == "clojure.core/symbol" || $2 == "clojure.core/list*") && $3 == "blocked-static-typing" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/name" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/keyword" || $2 == "clojure.core/symbol" || $2 == "clojure.core/list*") && $3 == "blocked-static-typing" {found++} END {exit found != 3}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "blocked-static-typing" && $4 == "nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
@@ -186,6 +191,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.set/project" && $3 == "blocked
 awk -F '\t' '$1 == "definition" && $2 == "clojure.walk/postwalk" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.test" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "namespace" && ($2 == "cljs.core.async" || $2 == "cljs.core.async.impl.channels" || $2 == "clojure.core.async" || $2 == "clojure.core.async.interop") && $3 == "out-of-scope" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
 
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"

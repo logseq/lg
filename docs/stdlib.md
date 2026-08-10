@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 560 source entries (56.85%), 28 typed
-primitives, 43 special forms, 97 host boundaries, 206 static-typing blockers,
+macro surfaces. The current baseline is 563 source entries (57.16%), 28 typed
+primitives, 43 special forms, 97 host boundaries, 203 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -217,6 +217,11 @@ for integers, one-character strings, and LG chars. Invalid strings and
 unsupported static inputs retain the upstream runtime error behavior. Integer
 conversion is restricted to LG's OCaml-backed eight-bit char domain rather
 than silently pretending to support JavaScript UTF-16 code units.
+`name` is source-owned through a private static coercion protocol as well.
+Strings retain the upstream identity case, while keywords and symbols delegate
+to their `INamed` implementations. The macro-helper extractor tracks lexical
+bindings, so a local such as `when-first`'s destructured `name` can no longer
+steal the public runtime definition into the compile-time-only helper set.
 `conj` is source-owned with the complete zero, one, two, and variadic upstream
 arity family. Lists, vectors, sets, sequences, user `ICollection`
 implementations, and statically typed map-entry tuples preserve their result
@@ -228,7 +233,7 @@ heterogeneous two-element map-entry vector.
 extraction boundary. `namespace` is source-owned through consumer-state
 `INamed/-namespace` expansion; the `cljs.core` protocol alias resolves to the
 canonical `clojure.core` protocol so user implementations retain static
-witnesses. `name`, `keyword`, `symbol`, and `list*` remain explicitly blocked
+witnesses. `keyword`, `symbol`, and `list*` remain explicitly blocked
 where their complete first-class upstream types cannot be expressed without
 dynamic typing; direct compiler support is not counted as a source port.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
@@ -360,8 +365,8 @@ build-time libraries with source namespaces that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 233 reviewed routes. A separate OCaml-AST
-extractor now audits 157 form-head pattern routes in expression elaboration and
+The call elaborator contributes 197 reviewed routes. A separate OCaml-AST
+extractor now audits 130 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `doseq`,
 `dotimes`, `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as
 unclassified deferred upstream vars. Both counts are pinned, so adding a new
@@ -371,7 +376,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 220-name compiler dispatch inventory has zero `source-shadowed`
+The current 197-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -565,7 +570,7 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
-routes, the raw compiler-call inventory contains 220 names.
+routes, the raw compiler-call inventory contains 197 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the
@@ -746,8 +751,12 @@ callback arguments remain explicitly recorded as a dependent-`apply` blocker.
 All 36 observed Logseq qualified zipper calls now resolve through the aggregate
 source artifact. `cljs.spec.alpha` and `clojure.spec.alpha`
 are explicitly out of scope; their Logseq references remain visible in the
-inventory but do not count against migration completion. The aggregate now
-contains all seven public `clojure.walk` functions over the closed
+inventory but do not count against migration completion. The independent
+`core.async` library is excluded as well, including the observed
+`cljs.core.async`, `cljs.core.async.impl.channels`, `clojure.core.async`, and
+`clojure.core.async.interop` namespaces. They remain visible as out-of-scope
+Logseq dependencies and are not candidates for the LG source stdlib port. The
+aggregate now contains all seven public `clojure.walk` functions over the closed
 `Lg_edn_backend.t` tree domain. Its source definitions preserve upstream
 pre-order, post-order, map-entry, key-conversion, and replacement order while a
 small typed runtime primitive rebuilds one collection level. The former

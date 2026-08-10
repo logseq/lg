@@ -356,29 +356,83 @@ module Lg_frontend : FRONTEND = struct
       if source_core && Macro_expander.is_compile_time_primitive name then refs
       else String_set.add name refs
     in
-    let rec quoted_refs refs = function
+    let binding_names names pattern =
+      Destructure.pattern_names pattern
+      |> List.fold_left
+           (fun names name ->
+             if name = "&" then names else String_set.add name names)
+           names
+    in
+    let rec quoted_refs bound refs = function
       | Ast.FList [ Ast.FSymbol ("unquote" | "unquote-splicing"); expression ]
         ->
-          form_refs refs expression
+          form_refs bound refs expression
       | Ast.FList forms | Ast.FVector forms ->
-          List.fold_left quoted_refs refs forms
+          List.fold_left (quoted_refs bound) refs forms
       | Ast.FMap entries ->
           List.fold_left
-            (fun refs (key, value) -> quoted_refs (quoted_refs refs key) value)
+            (fun refs (key, value) ->
+              quoted_refs bound (quoted_refs bound refs key) value)
             refs entries
       | _ -> refs
-    and form_refs refs = function
+    and binding_refs bound refs bindings body =
+      let rec pairs bound refs = function
+        | pattern :: value :: rest ->
+            let refs = form_refs bound refs value in
+            pairs (binding_names bound pattern) refs rest
+        | _ ->
+            List.fold_left (form_refs bound) refs body
+      in
+      pairs bound refs bindings
+    and function_refs bound refs forms =
+      let arity_refs bound refs = function
+        | Ast.FVector parameters :: body ->
+            let bound = List.fold_left binding_names bound parameters in
+            List.fold_left (form_refs bound) refs body
+        | forms -> List.fold_left (form_refs bound) refs forms
+      in
+      match forms with
+      | Ast.FSymbol name :: rest ->
+          function_refs (String_set.add name bound) refs rest
+      | Ast.FVector _ :: _ -> arity_refs bound refs forms
+      | clauses ->
+          List.fold_left
+            (fun refs -> function
+              | Ast.FList clause -> arity_refs bound refs clause
+              | form -> form_refs bound refs form)
+            refs clauses
+    and form_refs bound refs = function
       | Ast.FList [ Ast.FSymbol "syntax-quote"; quoted ] ->
-          quoted_refs refs quoted
+          quoted_refs bound refs quoted
+      | Ast.FList [ Ast.FSymbol ("quote" | "var"); _ ] -> refs
+      | Ast.FList
+          (Ast.FSymbol ("let" | "loop" | "binding")
+          :: Ast.FVector bindings :: body) ->
+          binding_refs bound refs bindings body
+      | Ast.FList
+          (Ast.FSymbol ("if-let" | "when-let" | "if-some" | "when-some")
+          :: Ast.FVector bindings :: body) ->
+          binding_refs bound refs bindings body
+      | Ast.FList (Ast.FSymbol "fn" :: forms) ->
+          function_refs bound refs forms
+      | Ast.FList
+          (Ast.FSymbol "catch" :: _exception_type :: Ast.FSymbol name :: body)
+        ->
+          List.fold_left (form_refs (String_set.add name bound)) refs body
       | Ast.FList (Ast.FSymbol name :: forms) ->
-          List.fold_left form_refs (add_reference refs name) forms
+          let refs =
+            if String_set.mem name bound then refs else add_reference refs name
+          in
+          List.fold_left (form_refs bound) refs forms
       | Ast.FList forms | Ast.FVector forms ->
-          List.fold_left form_refs refs forms
+          List.fold_left (form_refs bound) refs forms
       | Ast.FMap entries ->
           List.fold_left
-            (fun refs (key, value) -> form_refs (form_refs refs key) value)
+            (fun refs (key, value) ->
+              form_refs bound (form_refs bound refs key) value)
             refs entries
-      | Ast.FSymbol name -> add_reference refs name
+      | Ast.FSymbol name ->
+          if String_set.mem name bound then refs else add_reference refs name
       | _ -> refs
     in
     let definition_arities forms =
@@ -412,8 +466,7 @@ module Lg_frontend : FRONTEND = struct
       |> List.fold_left
            (fun refs (parameters, body) ->
              let body_refs =
-               List.fold_left form_refs String_set.empty body
-               |> fun refs -> String_set.diff refs parameters
+               List.fold_left (form_refs parameters) String_set.empty body
              in
              String_set.union refs body_refs)
            refs
