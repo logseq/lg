@@ -414,6 +414,8 @@ clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
 cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
+clojure.set/project|source
+clojure.set/rename|source
 clojure.string/escape|source
 clojure.string/split|source
 clojure.walk/walk|source

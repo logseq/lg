@@ -553,6 +553,16 @@ let to_seq map =
   in
   next 0
 
+let hash_by key_hash value_hash map =
+  map |> to_seq
+  |> Seq.map (fun (key, value) ->
+         [ key_hash key; value_hash value ]
+         |> List.to_seq |> Runtime_hash.hash_ordered)
+  |> Runtime_hash.hash_unordered
+
+let hash map =
+  hash_by Runtime_static_value.hash Runtime_static_value.hash map
+
 let first_opt map =
   match to_seq map () with
   | Seq.Cons (entry, _) -> Some entry

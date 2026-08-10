@@ -23,6 +23,9 @@
 (signature clojure.set/select [value result]
   :fn<fn<value;truthy<result>>;set<value>;set<value>>)
 
+(signature clojure.set/project [key value keys-storage]
+  :fn<set<map<key;value>>;seqable<key;keys-storage>;set<map<key;value>>>)
+
 (signature clojure.set/map-invert [key value]
   :fn<map<key;value>;map<value;key>>)
 
@@ -31,3 +34,6 @@
 
 (signature clojure.set/rename-keys [key value]
   :fn<map<key;value>;map<key;key>;map<key;value>>)
+
+(signature clojure.set/rename [key value]
+  :fn<set<map<key;value>>;map<key;key>;set<map<key;value>>>)

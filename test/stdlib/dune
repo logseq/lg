@@ -446,7 +446,58 @@
   (progn
    (with-stdout-to
     %{target}
-    (run %{exe:clojure_set_native.exe}))
+   (run %{exe:clojure_set_native.exe}))
+   (diff %{dep:clojure_set.expected} %{target}))))
+
+(rule
+ (target clojure_set_app_melange_chunk.ml)
+ (deps
+  clojure_set_app.cljc
+  ../../stdlib/lg_stdlib_melange.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_melange.state}
+   %{dep:clojure_set_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target clojure_set_melange.ml)
+ (deps ../../stdlib/lg_stdlib_melange.ml clojure_set_app_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:clojure_set_app_melange_chunk.ml})))))
+
+(melange.emit
+ (target clojure-set-melange)
+ (alias clojure-set-melange)
+ (module_systems es6)
+ (modules clojure_set_melange)
+ (compile_flags -w -27-32)
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (target clojure_set_melange.actual)
+ (deps
+  (alias clojure-set-melange)
+  clojure-set-melange/test/stdlib/clojure_set_melange.js
+  clojure_set.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run
+     node
+     %{dep:clojure-set-melange/test/stdlib/clojure_set_melange.js}))
    (diff %{dep:clojure_set.expected} %{target}))))
 
 (rule
@@ -463,6 +514,70 @@
    %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_set_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_set_relational_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_set_relational_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_set_rename_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_set_rename_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_set_project_bad_type.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_set_project_bad_type.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_set_relational_bad_type.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_set_relational_bad_type.cljc}
    "called with incompatible arguments")))
 
 (rule

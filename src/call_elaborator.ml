@@ -11735,12 +11735,16 @@ let create ~compile_expr =
                 in
                 let ret =
                   match (fn.return_param_index, ret) with
-                  (* A declared generic map return may add or rename keys, so
-                     the input record's closed field shape is not evidence for
-                     the result shape. *)
+                  (* A declared generic map return, including a set of maps,
+                     may add or rename keys. The input record's closed field
+                     shape is therefore not evidence for the result shape. *)
                   | ( Some _,
                       TOcaml_app
                         ("Lg_runtime.Runtime_map.t", [ _key_ty; _value_ty ]) )
+                  | ( Some _,
+                      TSet
+                        (TOcaml_app
+                          ("Lg_runtime.Runtime_map.t", [ _key_ty; _value_ty ])) )
                     ->
                       ret
                   | Some index, _ -> (

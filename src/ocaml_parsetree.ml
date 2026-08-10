@@ -204,6 +204,26 @@ let rec core_type ?(type_variables = []) = function
       | Ok "Lg_runtime.Runtime_poly_set" ->
           type_constructor "Lg_runtime.Runtime_poly_set.t"
             [ core_type ~type_variables inner ]
+      | Ok "Lg_runtime.Runtime_map_set" -> (
+          match (inner, Types.record_fields inner) with
+          | Types.TOcaml_app
+              ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]),
+            _ ->
+              type_constructor "Lg_runtime.Runtime_map_set.t"
+                [
+                  core_type ~type_variables key_ty;
+                  core_type ~type_variables value_ty;
+                ]
+          | Types.TRecord _, Some fields -> (
+              match Types.homogeneous_record_value_type fields with
+              | Some value_ty ->
+                  type_constructor "Lg_runtime.Runtime_map_set.t"
+                    [
+                      core_type ~type_variables Types.TKeyword;
+                      core_type ~type_variables value_ty;
+                    ]
+              | None -> assert false)
+          | _ -> assert false)
       | Ok set_module ->
           Ast_helper.Typ.constr ~loc
             (lid (longident_of_string (set_module ^ ".t"))) []

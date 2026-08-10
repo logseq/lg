@@ -881,6 +881,18 @@ let rec ocaml_name = function
       match set_module_name inner with
       | Ok "Lg_runtime.Runtime_poly_set" ->
           ocaml_name inner ^ " Lg_runtime.Runtime_poly_set.t"
+      | Ok "Lg_runtime.Runtime_map_set" -> (
+          match inner with
+          | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) ->
+              "(" ^ ocaml_name key ^ ", " ^ ocaml_name value
+              ^ ") Lg_runtime.Runtime_map_set.t"
+          | TRecord fields -> (
+              match homogeneous_record_value_type fields with
+              | Some value ->
+                  "(" ^ ocaml_name TKeyword ^ ", " ^ ocaml_name value
+                  ^ ") Lg_runtime.Runtime_map_set.t"
+              | None -> assert false)
+          | _ -> assert false)
       | Ok set_module -> set_module ^ ".t"
       | Error _ -> "unsupported_set<" ^ ocaml_name inner ^ ">")
   | TSeq inner -> ocaml_name inner ^ " Seq.t"
@@ -950,13 +962,16 @@ and set_module_name = function
       Ok "Lg_runtime.Runtime_poly_set"
   | TVector (TVector (TRecord _)) -> Ok "Lg_runtime.Runtime_poly_set"
   | TList (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TRecord fields when is_homogeneous_record fields ->
+      Ok "Lg_runtime.Runtime_map_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _key; _value ]) ->
+      Ok "Lg_runtime.Runtime_map_set"
   | TOcaml "int" -> Ok "Lg_runtime.Core_set.Int_set"
   | TOcaml name when String.starts_with ~prefix:"__lg_record:" name ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TOcaml _ -> Ok "Lg_runtime.Runtime_poly_set"
-  | TNamed_record { nominal = false; _ } ->
-      Ok "Lg_runtime.Runtime_poly_set"
+  | TNamed_record { nominal = false; _ } -> Ok "Lg_runtime.Runtime_poly_set"
   | TNullable (TNamed_record record)
   | TOcaml_app ("option", [ TNamed_record record ]) ->
       Ok (record.set_module_name ^ "_nullable")

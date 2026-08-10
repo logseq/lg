@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 588 source entries (59.70%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 181 static-typing blockers,
+macro surfaces. The current baseline is 590 source entries (59.90%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 179 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -829,11 +829,18 @@ special-symbol membership function are source-backed in the same batch.
 Native and Melange both distinguish UUID values from ordinary strings. The
 aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
-`superset?`, `select`, `map-invert`, and `rename-keys`; its 74 namespace
-references and all 221 observed qualified-var references resolve through the
-source artifact. The inventory records `project`, `rename`, `index`, and
-`join` as var-level static-typing blockers, so an unimplemented var cannot
-inherit the supported status of its namespace. The same checkout also reports
+`superset?`, `select`, `project`, `map-invert`, `rename-keys`, and `rename`;
+its 74 namespace references and all 221 observed qualified-var references
+resolve through the source artifact. Projected and renamed relations use a
+typed map-set backend
+whose persistent hash buckets use order-independent Clojure map hashes and
+whose equality ignores map insertion order and metadata. This matches Clojure
+map equality without dynamic packing or quadratic whole-relation scans. The
+inventory now records only `index` and
+`join` as var-level blockers: both require projected maps to act as hash-map
+keys with Clojure map hash/equality rather than OCaml structural identity. An
+unimplemented var therefore cannot inherit the supported status of its
+namespace. The same checkout also reports
 `cljs.test` occurs 229 times and is explicitly blocked on analyzer-backed
 macros, dynamic test environments, and a closed report-event domain.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.

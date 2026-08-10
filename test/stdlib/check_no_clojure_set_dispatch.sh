@@ -33,9 +33,16 @@ if ! grep -F '5c6ef531604662afbb33dc1b553d7602634d9656' "$root/stdlib/upstream.e
   exit 1
 fi
 
-for definition in bubble-max-key union intersection difference select map-invert rename-keys 'subset?' 'superset?'; do
+for definition in bubble-max-key union intersection difference select project map-invert rename-keys rename 'subset?' 'superset?'; do
   if ! grep -F " $definition" "$root/stdlib/clojure/set.cljc" >/dev/null; then
     echo "clojure.set source is missing $definition" >&2
+    exit 1
+  fi
+done
+
+for definition in project rename; do
+  if ! grep -F "    $definition {:status :static-adaptation" "$root/stdlib/upstream.edn" >/dev/null; then
+    echo "clojure.set inventory does not mark $definition as a source static adaptation" >&2
     exit 1
   fi
 done

@@ -2,7 +2,7 @@
   (:require
    [clojure.core :as core :refer [odd?]]
    [clojure.edn :as edn]
-   [clojure.set :as set :refer [difference]]
+   [clojure.set :as set :refer [difference project]]
    [clojure.string :as string :refer [upper-case]]
    [cljs.reader :as reader]
    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
@@ -30,6 +30,41 @@
 (println (and (= 2 (count renamed-missing))
               (= (Some 2) (get renamed-missing :b))
               (= (Some 1) (get renamed-missing :c))))
+(def relation
+  #{{:a 1 :b 2}
+    {:a 1 :b 3}
+    {:a 2 :b 4}})
+(def forward-map (zipmap [:a :b] [1 2]))
+(def reverse-map (zipmap [:b :a] [2 1]))
+(println (= 1 (count (hash-set forward-map reverse-map))))
+(def projected (project relation [:a]))
+(println (= #{{:a 1} {:a 2}} projected))
+(println (= #{} (set/project (empty relation) [:a])))
+(def projected-empty-keys (set/project relation []))
+(println (and (= 1 (count projected-empty-keys))
+              (= 0 (count (first projected-empty-keys)))))
+(def project-relation project)
+(println (= #{{:b 2} {:b 3} {:b 4}}
+            (project-relation relation [:b])))
+(def renamed-relation (set/rename relation {:a :x}))
+(println (= #{{:x 1 :b 2} {:x 1 :b 3} {:x 2 :b 4}}
+            renamed-relation))
+(println (= #{{:b 1}}
+            (clojure.set/rename #{{:a 1 :b 2} {:a 1 :b 3}} {:a :b})))
+(println (= #{} (set/rename (empty relation) {:a :x})))
+(println (= relation (set/rename relation {})))
+(println (= relation (set/rename relation {:missing :x})))
+(def relation-evaluations (atom 0))
+(def key-evaluations (atom 0))
+(defn evaluated-relation []
+  (do (swap! relation-evaluations inc) relation))
+(defn evaluated-keys []
+  (do (swap! key-evaluations inc) [:a]))
+(def evaluated-project
+  (set/project (evaluated-relation) (evaluated-keys)))
+(println (and (= #{{:a 1} {:a 2}} evaluated-project)
+              (= 1 (deref relation-evaluations))
+              (= 1 (deref key-evaluations))))
 (println (pr-str (set/union #{"a"} #{"b"})))
 (println (string/join "," ["a" "b"]))
 (println (string/index-of "banana" "na" 3))

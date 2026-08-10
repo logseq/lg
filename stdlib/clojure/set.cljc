@@ -85,6 +85,15 @@
    xset
    xset))
 
+(defn project
+  "Returns the maps in `xrel` with only the keys in `keys`."
+  [xrel keys]
+  (__lg_reduce
+   (fn [result item]
+     (conj result (select-keys item keys)))
+   (empty xrel)
+   xrel))
+
 (defn map-invert
   "Returns a map whose values are the keys of `m` and whose keys are its values."
   [m]
@@ -111,3 +120,12 @@
        result))
    (remove-renamed-keys m key-map)
    key-map))
+
+(defn rename
+  "Returns the maps in `xrel` with keys renamed according to `key-map`."
+  [xrel key-map]
+  (__lg_reduce
+   (fn [result item]
+     (conj result (rename-keys item key-map)))
+   (empty xrel)
+   xrel))

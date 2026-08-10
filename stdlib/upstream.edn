@@ -1523,14 +1523,14 @@
                 :reason :persistent-reduce-kv-preserves-last-value-wins-semantics-without-a-transient-representation-boundary}
     rename-keys {:status :static-adaptation
                  :reason :two-typed-reduce-kv-passes-preserve-upstream-remove-before-rename-and-collision-semantics}
-    project {:status :blocked-static-typing
-             :reason :dependent-relation-map-projection-is-not-yet-source-expressible}
-    rename {:status :blocked-static-typing
-            :reason :dependent-relation-map-renaming-is-not-yet-source-expressible}
+    project {:status :static-adaptation
+             :reason :typed-set-reduction-fuses-upstream-map-then-set-realization-while-preserving-projection-order-and-duplicate-elimination}
+    rename {:status :static-adaptation
+            :reason :typed-set-reduction-fuses-upstream-map-then-set-realization-while-preserving-renaming-order-and-duplicate-elimination}
     index {:status :blocked-static-typing
-           :reason :projected-map-keys-and-set-of-map-values-need-dependent-relation-types}
+           :reason :map-valued-hash-keys-need-static-clojure-map-hash-and-equality-operations}
     join {:status :blocked-static-typing
-          :reason :dependent-relational-map-shapes-and-merge-are-not-yet-source-expressible}
+          :reason :map-valued-index-keys-need-static-clojure-map-hash-and-equality-before-join-control-flow-is-source-expressible}
     bubble-max-key {:status :static-adaptation
                     :reason :typed-source-helper-preserves-the-upstream-maximal-selection-and-identity-removal-algorithm-but-public-variadic-operations-retain-binary-typed-reduction-until-nested-set-callback-instantiation-is-source-expressible}}
    :notes
