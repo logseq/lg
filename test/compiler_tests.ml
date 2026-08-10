@@ -4144,6 +4144,66 @@ let test_compiler_environment_indexes_bindings_by_local_name () =
   if types <> [ Lg.Types.TInt; Lg.Types.TString ] then
     failwith "local-name binding index must include every matching namespace"
 
+let test_compiler_environment_indexes_namespace_prefixes () =
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "people/user"
+         (Lg.Types.binding "People.user" Lg.Types.TString)
+    |> Lg.Compiler_environment.add "__record/people/Person"
+         (Lg.Types.binding "People.person"
+            (Lg.Types.named_record ~type_name:"Person"
+               ~set_module_name:"Person_set" []))
+    |> Lg.Compiler_environment.add "people.address/city"
+         (Lg.Types.binding "People.Address.city" Lg.Types.TString)
+    |> Lg.Compiler_environment.add "unrelated/value"
+         (Lg.Types.binding "Unrelated.value" Lg.Types.TInt)
+  in
+  let keys env =
+    Lg.Compiler_environment.namespace_binding_entries "people" env
+    |> List.map fst |> List.sort String.compare
+  in
+  let expected =
+    [ "__record/people/Person"; "people.address/city"; "people/user" ]
+  in
+  if keys env <> expected then
+    failwith "namespace index must include values, records, and nested modules";
+  let removed =
+    Lg.Compiler_environment.remove "__record/people/Person" env
+  in
+  if keys removed <> [ "people.address/city"; "people/user" ] then
+    failwith "namespace index must discard removed bindings"
+
+let test_unresolved_declaration_index_tracks_aliases_and_overloads () =
+  let declared ?(overload_targets = []) ocaml_name =
+    { (Lg.Types.binding ocaml_name (Lg.Types.TOcaml "__declared_fn")) with
+      overload_targets;
+    }
+  in
+  let forward ?(overload_targets = []) ocaml_name =
+    { (Lg.Types.binding ocaml_name Lg.Types.TInt) with
+      forward_declared = true;
+      overload_targets;
+    }
+  in
+  let env =
+    Lg.Compiler_environment.empty
+    |> Lg.Compiler_environment.add "first/value" (declared "shared")
+    |> Lg.Compiler_environment.add "second/value"
+         (forward ~overload_targets:[ "shared$arity2" ] "shared")
+  in
+  if not (Lg.Compiler_environment.unresolved_declaration "shared$arity2" env)
+  then failwith "overload targets must remain unresolved declarations";
+  let env = Lg.Compiler_environment.remove "first/value" env in
+  if not (Lg.Compiler_environment.unresolved_declaration_binding "shared" env)
+  then failwith "removing one alias must preserve another declaration";
+  let env =
+    Lg.Compiler_environment.add "second/value"
+      (Lg.Types.binding "shared" Lg.Types.TInt)
+      env
+  in
+  if Lg.Compiler_environment.unresolved_declaration "shared" env then
+    failwith "replacing the final forward declaration must clear the index"
+
 let test_record_lookup_cost_is_independent_of_unrelated_bindings () =
   let record_ty =
     Lg.Types.named_record ~type_name:"Wanted" ~set_module_name:"Wanted_set" []
@@ -40355,6 +40415,10 @@ let tests =
       test_compiler_environment_finds_bindings_without_materializing_all );
     ( "compiler environment indexes bindings by local name",
       test_compiler_environment_indexes_bindings_by_local_name );
+    ( "compiler environment indexes namespace prefixes",
+      test_compiler_environment_indexes_namespace_prefixes );
+    ( "unresolved declaration index tracks aliases and overloads",
+      test_unresolved_declaration_index_tracks_aliases_and_overloads );
     ( "record lookup cost is independent of unrelated bindings",
       test_record_lookup_cost_is_independent_of_unrelated_bindings );
     ( "record lookup index tracks removal and ambiguity",

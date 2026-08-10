@@ -48,8 +48,9 @@ let core_namespace = function
 let namespace_bindings env module_name =
   let value_prefix = module_name ^ "/" in
   let record_prefix = "__record/" ^ module_name ^ "/" in
-  Env.filter_map
-    (fun key binding ->
+  Env.namespace_binding_entries module_name env
+  |> List.filter_map
+    (fun (key, binding) ->
       if String.starts_with ~prefix:value_prefix key then
         let name =
           String.sub key (String.length value_prefix)
@@ -63,7 +64,6 @@ let namespace_bindings env module_name =
         in
         Some (`Record name, binding)
       else None)
-    env
 
 let add_core_alias_bindings env module_name alias =
   let source_module_name =

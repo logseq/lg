@@ -1044,21 +1044,27 @@ let declaration_bindings ast env =
     | _ :: rest -> declared_names declared rest
   in
   let declared = declared_names [] ast |> Declared_names.of_list in
-  let rec is_declared_key key offset =
-    let candidate =
-      if offset = 0 then key
-      else String.sub key offset (String.length key - offset)
-    in
-    Declared_names.mem candidate declared
-    ||
-    match String.index_from_opt key offset '/' with
-    | None -> false
-    | Some separator -> is_declared_key key (separator + 1)
+  let final_name name =
+    match String.rindex_opt name '/' with
+    | None -> name
+    | Some separator ->
+        String.sub name (separator + 1) (String.length name - separator - 1)
   in
-  Compiler_environment.filter_map
-    (fun key binding ->
-      if is_declared_key key 0 then Some (key, binding) else None)
-    env
+  let key_has_suffix key suffix =
+    String.equal key suffix
+    ||
+    let key_length = String.length key in
+    let suffix_length = String.length suffix in
+    key_length > suffix_length
+    && Char.equal key.[key_length - suffix_length - 1] '/'
+    && String.ends_with ~suffix key
+  in
+  Declared_names.to_seq declared
+  |> Seq.flat_map (fun name ->
+         Compiler_environment.binding_entries_named (final_name name) env
+         |> List.to_seq
+         |> Seq.filter (fun (key, _) -> key_has_suffix key name))
+  |> List.of_seq
   |> List.map (fun (key, (binding : Types.binding)) ->
          if binding.forward_declared then (key, binding)
          else (key, { binding with forward_declared = true }))

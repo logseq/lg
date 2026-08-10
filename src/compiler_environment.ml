@@ -18,7 +18,10 @@ type t = {
   record_bindings_by_lookup : Symbol_id.t list String_map.t;
   bindings_by_name : Symbol_id.t list String_map.t;
   bindings_by_emitted_name : Symbol_id.t list String_map.t;
+  bindings_by_namespace : Symbol_id.t list String_map.t;
   opened_bindings_by_scope : Symbol_id.t list String_map.t;
+  unresolved_declaration_names : int String_map.t;
+  unresolved_declaration_binding_names : int String_map.t;
   protocols : Protocol_registry.t;
   protocol_evidence : Protocol_registry.t option;
   modules : Module_registry.t;
@@ -43,7 +46,10 @@ let empty =
     record_bindings_by_lookup = String_map.empty;
     bindings_by_name = String_map.empty;
     bindings_by_emitted_name = String_map.empty;
+    bindings_by_namespace = String_map.empty;
     opened_bindings_by_scope = String_map.empty;
+    unresolved_declaration_names = String_map.empty;
+    unresolved_declaration_binding_names = String_map.empty;
     protocols = Core_protocols.initial_registry;
     protocol_evidence = None;
     modules = Module_registry.empty;
@@ -97,6 +103,34 @@ let add_indexed_binding key id index =
       | Some bindings -> Some (id :: bindings))
     index
 
+let update_name_count delta name counts =
+  String_map.update name
+    (function
+      | None when delta > 0 -> Some delta
+      | None -> None
+      | Some count ->
+          let count = count + delta in
+          if count = 0 then None else Some count)
+    counts
+
+let update_name_counts delta names counts =
+  List.fold_left (fun counts name -> update_name_count delta name counts) counts
+    names
+
+let binding_unresolved_declaration_names (binding : Types.binding) =
+  match binding.ty with
+  | Types.TOcaml "__declared_fn" -> [ binding.ocaml_name ]
+  | _ when binding.forward_declared -> [ binding.ocaml_name ]
+  | _ -> []
+
+let binding_unresolved_declaration_reference_names (binding : Types.binding) =
+  match binding.ty with
+  | Types.TOcaml "__declared_fn" -> [ binding.ocaml_name ]
+  | _ when binding.forward_declared ->
+      List.sort_uniq String.compare
+        (binding.ocaml_name :: binding.overload_targets)
+  | _ -> []
+
 let internal_scope ~prefix name =
   let scope_start = String.length prefix in
   if not (String.starts_with ~prefix name) then None
@@ -114,6 +148,34 @@ let record_lookup_index_key name (binding : Types.binding) =
 
 let opened_scope name =
   internal_scope ~prefix:"__opened/" name
+
+let namespace_prefixes name =
+  let record_prefix = "__record/" in
+  let name =
+    if String.starts_with ~prefix:record_prefix name then
+      String.sub name (String.length record_prefix)
+        (String.length name - String.length record_prefix)
+    else name
+  in
+  let rec dotted_prefixes namespace prefixes =
+    match String.rindex_opt namespace '.' with
+    | None -> prefixes
+    | Some separator ->
+        let namespace = String.sub namespace 0 separator in
+        dotted_prefixes namespace (namespace :: prefixes)
+  in
+  let rec collect offset prefixes =
+    match String.index_from_opt name offset '/' with
+    | None -> List.sort_uniq String.compare prefixes
+    | Some separator ->
+        let prefix = String.sub name 0 separator in
+        collect (separator + 1) (dotted_prefixes prefix (prefix :: prefixes))
+  in
+  collect 0 []
+
+let update_namespace_index update id name index =
+  List.fold_left (fun index namespace -> update namespace id index) index
+    (namespace_prefixes name)
 
 let remove name env =
   let id = Symbol_id.of_string name in
@@ -137,6 +199,29 @@ let remove name env =
     | Some scope ->
         remove_indexed_binding scope id env.opened_bindings_by_scope
   in
+  let bindings_by_namespace =
+    match previous with
+    | None -> env.bindings_by_namespace
+    | Some _ ->
+        update_namespace_index remove_indexed_binding id name
+          env.bindings_by_namespace
+  in
+  let unresolved_declaration_names =
+    match previous with
+    | None -> env.unresolved_declaration_names
+    | Some binding ->
+        update_name_counts (-1)
+          (binding_unresolved_declaration_reference_names binding)
+          env.unresolved_declaration_names
+  in
+  let unresolved_declaration_binding_names =
+    match previous with
+    | None -> env.unresolved_declaration_binding_names
+    | Some binding ->
+        update_name_counts (-1)
+          (binding_unresolved_declaration_names binding)
+          env.unresolved_declaration_binding_names
+  in
   {
     env with
     symbols = Symbol_map.remove id env.symbols;
@@ -145,7 +230,10 @@ let remove name env =
     bindings_by_name =
       remove_indexed_binding (Symbol_id.name id) id env.bindings_by_name;
     bindings_by_emitted_name;
+    bindings_by_namespace;
     opened_bindings_by_scope;
+    unresolved_declaration_names;
+    unresolved_declaration_binding_names;
   }
 
 let add name binding env =
@@ -200,6 +288,38 @@ let add name binding env =
         add_indexed_binding scope id env.opened_bindings_by_scope
     | _, None -> env.opened_bindings_by_scope
   in
+  let bindings_by_namespace =
+    match previous with
+    | Some _ -> env.bindings_by_namespace
+    | None ->
+        update_namespace_index add_indexed_binding id name
+          env.bindings_by_namespace
+  in
+  let unresolved_declaration_names =
+    match previous with
+    | None -> env.unresolved_declaration_names
+    | Some previous ->
+        update_name_counts (-1)
+          (binding_unresolved_declaration_reference_names previous)
+          env.unresolved_declaration_names
+  in
+  let unresolved_declaration_names =
+    update_name_counts 1 (binding_unresolved_declaration_reference_names binding)
+      unresolved_declaration_names
+  in
+  let unresolved_declaration_binding_names =
+    match previous with
+    | None -> env.unresolved_declaration_binding_names
+    | Some previous ->
+        update_name_counts (-1)
+          (binding_unresolved_declaration_names previous)
+          env.unresolved_declaration_binding_names
+  in
+  let unresolved_declaration_binding_names =
+    update_name_counts 1
+      (binding_unresolved_declaration_names binding)
+      unresolved_declaration_binding_names
+  in
   {
     env with
     symbols = Symbol_map.add id binding env.symbols;
@@ -210,7 +330,10 @@ let add name binding env =
     record_bindings_by_lookup;
     bindings_by_name;
     bindings_by_emitted_name;
+    bindings_by_namespace;
     opened_bindings_by_scope;
+    unresolved_declaration_names;
+    unresolved_declaration_binding_names;
   }
 
 let add_bindings bindings env =
@@ -258,10 +381,22 @@ let find_record_binding f env =
     (fun id binding -> f (Symbol_id.to_string id) binding)
     env.record_symbols
 
-let bindings_named name env =
+let binding_entries_named name env =
   String_map.find_opt name env.bindings_by_name
   |> Option.value ~default:[]
-  |> List.filter_map (fun id -> Symbol_map.find_opt id env.symbols)
+  |> List.filter_map (fun id ->
+         Symbol_map.find_opt id env.symbols
+         |> Option.map (fun binding -> (Symbol_id.to_string id, binding)))
+
+let bindings_named name env =
+  binding_entries_named name env |> List.map snd
+
+let namespace_binding_entries namespace env =
+  String_map.find_opt namespace env.bindings_by_namespace
+  |> Option.value ~default:[]
+  |> List.filter_map (fun id ->
+         Symbol_map.find_opt id env.symbols
+         |> Option.map (fun binding -> (Symbol_id.to_string id, binding)))
 
 let bindings_emitted_as name env =
   String_map.find_opt name env.bindings_by_emitted_name
@@ -280,6 +415,12 @@ let opened_bindings scope env =
   String_map.find_opt scope env.opened_bindings_by_scope
   |> Option.value ~default:[]
   |> List.filter_map (fun id -> Symbol_map.find_opt id env.symbols)
+
+let unresolved_declaration name env =
+  String_map.mem name env.unresolved_declaration_names
+
+let unresolved_declaration_binding name env =
+  String_map.mem name env.unresolved_declaration_binding_names
 
 let protocols env = env.protocols
 let with_protocols protocols env = { env with protocols }

@@ -1481,8 +1481,9 @@ let inherit_scope_ocaml_value_refers scope module_path env =
   let prefix = scope ^ "/" in
   let prefix_len = String.length prefix in
   let inherited =
-    Env.filter_map
-      (fun key (binding : binding) ->
+    Env.namespace_binding_entries scope env
+    |> List.filter_map
+      (fun (key, (binding : binding)) ->
            match binding.host_reference with
         | Some (Ocaml_value _)
           when String.length key > prefix_len
@@ -1492,7 +1493,6 @@ let inherit_scope_ocaml_value_refers scope module_path env =
                in
                Some (Names.scoped_key module_path name, binding)
         | _ -> None)
-      env
   in
   Env.add_bindings inherited env
 

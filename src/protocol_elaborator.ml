@@ -614,22 +614,12 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                   (match register env with
                                   | Error _ as err -> err
                                   | Ok env ->
-                                      let declared_names =
-                                        Env.filter_map
-                                          (fun _ (binding : binding) ->
-                                            match binding.ty with
-                                            | TOcaml "__declared_fn" ->
-                                                Some binding.ocaml_name
-                                            | _ when binding.forward_declared ->
-                                                Some binding.ocaml_name
-                                            | _ -> None)
-                                          env
-                                      in
                                       let item =
                                         if
                                           Semantic_ir.exists_identifier
                                             (fun name ->
-                                              List.mem name declared_names)
+                                              Env.unresolved_declaration_binding
+                                                name env)
                                             expr.semantic_expr
                                         then
                                           Deferred_value_binding

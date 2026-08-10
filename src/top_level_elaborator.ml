@@ -423,19 +423,8 @@ let order_protocol_groups groups =
   order [] groups
 
 let expression_references_declaration env expression =
-  let declared_names =
-    Env.filter_map
-      (fun _ (binding : binding) ->
-        match binding.ty with
-        | TOcaml "__declared_fn" -> Some [ binding.ocaml_name ]
-        | _ when binding.forward_declared ->
-            Some (binding.ocaml_name :: binding.overload_targets)
-        | _ -> None)
-      env
-    |> List.concat
-  in
   Semantic_ir.exists_identifier
-    (fun name -> List.mem name declared_names)
+    (fun name -> Env.unresolved_declaration name env)
     expression
 
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
