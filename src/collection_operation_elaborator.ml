@@ -332,7 +332,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         match compile_function_arg scope env form with
         | Ok ({ ty = TFn _; _ } as fn) -> Ok fn
         | Ok _ | Error _ -> compile_contextual_call ())
-    | FList (FSymbol "fnil" :: _) -> compile_contextual_call ()
+    | FList _ -> compile_contextual_call ()
     | _ -> compile_function_arg scope env form
   in
     let compile_deftype_method scope env record method_name args =

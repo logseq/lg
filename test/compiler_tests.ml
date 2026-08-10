@@ -12092,7 +12092,7 @@ let test_fnil_wraps_core_conj_with_default_collection () =
   (str (= [1] (conjv nil 1)) ":" (= #{1} (conjs nil 1))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "fnil_wraps_core_conj_with_default_collection"
     "true:true\n" ocaml_source
 
@@ -33938,14 +33938,14 @@ let test_cross_module_fnil_conj_preserves_vector_element_type () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, util_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
-      |> expect_ok
+      Lg.Compiler.compile_chunk ~target stdlib.state util_source |> expect_ok
     in
     let _, app_ocaml =
       Lg.Compiler.compile_chunk ~target state app_source |> expect_ok
     in
-    util_ocaml ^ "\n" ^ app_ocaml
+    String.concat "\n" [ stdlib.ocaml_source; util_ocaml; app_ocaml ]
   in
   let native_source = compile Lg.Target.Native in
   assert_ocaml_runs "cross_module_fnil_conj_preserves_vector_element_type"
@@ -34428,6 +34428,115 @@ let test_source_comp_matches_clojurescript_arities () =
     native_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/source_comp.cljc" source)
+
+let test_source_fnil_and_partial_match_clojurescript_arities () =
+  let source =
+    {|
+(ns app.source-fnil-partial
+  (:require [cljs.core :as core :refer [fnil partial]]))
+
+(defn append-digit [state digit]
+  (+ (* state 10) digit))
+(defn digits
+  ([a] a)
+  ([a b] (append-digit a b))
+  ([a b c] (append-digit (append-digit a b) c))
+  ([a b c & more]
+   (reduce append-digit (append-digit (append-digit a b) c) more)))
+
+(def partial-identity ((identity partial) digits))
+(def partial-one ((identity partial) digits 1))
+(def partial-two ((identity partial) digits 1 2))
+(def partial-three ((identity partial) digits 1 2 3))
+(def partial-many ((identity partial) digits 1 2 3 4))
+
+(println (= 123 (partial-identity 1 2 3)))
+(println (= 1 (partial-one)))
+(println (= 12 (partial-one 2)))
+(println (= 123 (partial-one 2 3)))
+(println (= 1234 (partial-one 2 3 4)))
+(println (= 12345 (apply partial-one [2 3 4 5])))
+(println (= 12 (partial-two)))
+(println (= 123 (partial-two 3)))
+(println (= 1234 (partial-three 4)))
+(println (= 1234 (partial-many)))
+(println (= 123456 (partial-many 5 6)))
+
+(def fnil-one ((identity fnil) digits 9))
+(def fnil-two ((identity fnil) digits 8 7))
+(def fnil-three ((identity fnil) digits 8 7 6))
+
+(println (= 9 (fnil-one nil)))
+(println (= 92 (fnil-one nil 2)))
+(println (= 9234 (fnil-one nil 2 3 4)))
+(println (= 87 (fnil-two nil nil)))
+(println (= 173 (fnil-two 1 nil 3)))
+(println (= 87 (fnil-three nil nil)))
+(println (= 876 (fnil-three nil nil nil)))
+(println (= 1764 (fnil-three 1 nil nil 4)))
+
+(def partial-evaluations (atom 0))
+(defn add-fixed [left right] (+ left right))
+(def partial-once
+  (partial add-fixed (swap! partial-evaluations inc)))
+(println (and (= 3 (partial-once 2))
+              (= 3 (partial-once 2))
+              (= 1 @partial-evaluations)))
+(def fnil-evaluations (atom 0))
+(def fnil-once
+  (fnil (fn [value] value) (swap! fnil-evaluations inc)))
+(println (and (= 1 (fnil-once nil))
+              (= 1 (fnil-once nil))
+              (= 1 @fnil-evaluations)))
+
+(def referred-partial
+  (partial (fn [left right] (+ left right)) 10))
+(def aliased-partial
+  (core/partial (fn [left right] (* left right)) 3))
+(def qualified-partial
+  (clojure.core/partial (fn [left right] (- left right)) 9))
+(def referred-fnil
+  (fnil (fn [value] (+ value 1)) 4))
+(def aliased-fnil
+  (core/fnil (fn [value] (* value 2)) 5))
+(def qualified-fnil
+  (clojure.core/fnil (fn [value] (- value 1)) 7))
+(def overloaded-fnil (fnil + 10))
+
+(println (= 15 (referred-partial 5)))
+(println (= 12 (aliased-partial 4)))
+(println (= 7 (qualified-partial 2)))
+(println (= 5 (referred-fnil nil)))
+(println (= 10 (aliased-fnil nil)))
+(println (= 6 (qualified-fnil nil)))
+(println (= 15 (overloaded-fnil nil 5)))
+(println (= 3 (get (update (hash-map :count 1)
+                           :count
+                           (fnil + 0)
+                           2)
+                    :count)))
+|}
+  in
+  let expected = String.concat "" (List.init 29 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_fnil_partial.cljc" source
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source fnil and partial must preserve static function values";
+  assert_ocaml_runs "source_fnil_partial_matches_clojurescript_arities" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_fnil_partial.cljc"
+       source)
+
+let test_source_fnil_and_partial_reject_invalid_arities () =
+  [ "(fnil)"; "(fnil (fn [value] value))"; "(partial)" ]
+  |> List.iteri (fun index source ->
+         compile_with_stdlib_result Lg.Target.Native
+           (Printf.sprintf "test/source_fnil_partial_bad_arity_%d.cljc" index)
+           source
+         |> expect_error_contains "called with incompatible arguments")
 
 let test_source_predicate_combinators_match_clojurescript () =
   let source =
@@ -40249,10 +40358,10 @@ let test_parsetree_backend_builds_native_collection_match_expressions () =
 
 let test_parsetree_backend_builds_native_function_combinator_expressions () =
   expect_structured_value_expression
-    {|(def result (comp (fn [value] (+ value 1)) (fn [value] (+ value 1))))|}
+    {|(def result (__lg_comp (fn [value] (+ value 1)) (fn [value] (+ value 1))))|}
 
 let test_parsetree_backend_builds_native_partial_expressions () =
-  expect_structured_value_expression {|(def add-ten (partial + 10))|}
+  expect_structured_value_expression {|(def add-ten (__lg_partial + 10))|}
 
 let test_parsetree_backend_builds_native_empty_collection_expressions () =
   expect_structured_value_expression {|(def xs (vector-of :int))|}
@@ -42962,6 +43071,10 @@ let tests =
       test_source_juxt_matches_clojurescript_arities );
     ( "source comp matches ClojureScript arities",
       test_source_comp_matches_clojurescript_arities );
+    ( "source fnil and partial match ClojureScript arities",
+      test_source_fnil_and_partial_match_clojurescript_arities );
+    ( "source fnil and partial reject invalid arities",
+      test_source_fnil_and_partial_reject_invalid_arities );
     ( "source predicate combinators match ClojureScript",
       test_source_predicate_combinators_match_clojurescript );
     ( "source predicate combinators reject mismatched predicates",

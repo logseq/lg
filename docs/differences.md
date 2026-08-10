@@ -542,6 +542,12 @@ functions use a homogeneous unary static adaptation because an arbitrary
 heterogeneous function list would require dependent types; a private unary
 direct-call specialization covers the common Logseq call shape without a
 dynamic boundary.
+`partial` and `fnil` are source-defined with the pinned ClojureScript
+constructor and returned-function arities. Their first-class source forms use
+homogeneous static argument domains; private direct-call specializations retain
+precise heterogeneous parameter types, collection capabilities, and
+overloaded scalar functions. Function expressions and fixed/default arguments
+are evaluated once when the closure is created, in upstream order.
 `apply` supports integer binary reducers over
 typed lists, vectors, and sets, with optional fixed leading integer arguments.
 

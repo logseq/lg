@@ -3736,6 +3736,75 @@
       (recur ((nth remaining 0) result) (next remaining))
       result)))
 
+(defn- partial-apply-one [function arg1 x y z args]
+  (apply function arg1 x y z args))
+
+(defn- partial-apply-two [function arg1 arg2 x y z args]
+  (apply function arg1 arg2 x y z args))
+
+(defn- partial-apply-three [function arg1 arg2 arg3 x y z args]
+  (apply function arg1 arg2 arg3 x y z args))
+
+(defn partial
+  {:inline (fn [& arguments] (cons '__lg_partial arguments))}
+  ([f] f)
+  ([f arg1]
+   (fn
+     ([] (f arg1))
+     ([x] (f arg1 x))
+     ([x y] (f arg1 x y))
+     ([x y z] (f arg1 x y z))
+     ([x y z & args] (partial-apply-one f arg1 x y z args))))
+  ([f arg1 arg2]
+   (fn
+     ([] (f arg1 arg2))
+     ([x] (f arg1 arg2 x))
+     ([x y] (f arg1 arg2 x y))
+     ([x y z] (f arg1 arg2 x y z))
+     ([x y z & args] (partial-apply-two f arg1 arg2 x y z args))))
+  ([f arg1 arg2 arg3]
+   (fn
+     ([] (f arg1 arg2 arg3))
+     ([x] (f arg1 arg2 arg3 x))
+     ([x y] (f arg1 arg2 arg3 x y))
+     ([x y z] (f arg1 arg2 arg3 x y z))
+     ([x y z & args]
+      (partial-apply-three f arg1 arg2 arg3 x y z args))))
+  ([f arg1 arg2 arg3 & more]
+   (fn [& args]
+     (apply f arg1 arg2 arg3 (concat more args)))))
+
+(defn- fnil-value [fallback value]
+  (if (nil? value) fallback value))
+
+(defn fnil
+  {:inline (fn [& arguments] (cons '__lg_fnil arguments))}
+  ([f x]
+   (fn
+     ([a] (f (fnil-value x a)))
+     ([a b] (f (fnil-value x a) b))
+     ([a b c] (f (fnil-value x a) b c))
+     ([a b c & args] (apply f (fnil-value x a) b c args))))
+  ([f x y]
+   (fn
+     ([a b] (f (fnil-value x a) (fnil-value y b)))
+     ([a b c] (f (fnil-value x a) (fnil-value y b) c))
+     ([a b c & args]
+      (apply f (fnil-value x a) (fnil-value y b) c args))))
+  ([f x y z]
+   (fn
+     ([a b] (f (fnil-value x a) (fnil-value y b)))
+     ([a b c]
+      (f (fnil-value x a)
+         (fnil-value y b)
+         (fnil-value z c)))
+     ([a b c & args]
+      (apply f
+             (fnil-value x a)
+             (fnil-value y b)
+             (fnil-value z c)
+             args)))))
+
 (defn comp
   {:inline (fn [& functions] (cons '__lg_comp functions))}
   ([] identity)

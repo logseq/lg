@@ -4474,8 +4474,9 @@ let create ~compile_expr =
   let compile_some = sequence.compile_some in
   let compile_reduce = sequence.compile_reduce in
   let compile_apply = functions.compile_apply in
+  let compile_static_fnil = functions.compile_static_fnil in
   let compile_static_comp = functions.compile_static_comp in
-  let compile_partial = functions.compile_partial in
+  let compile_static_partial = functions.compile_static_partial in
   let compile_static_juxt = functions.compile_static_juxt in
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
@@ -7851,76 +7852,7 @@ let create ~compile_expr =
                   | Ok _ ->
                       Error.error
                         "assert expects condition and optional message")
-    | "fnil" -> (
-        match arg_forms with
-        | [ FSymbol "conj"; default_form ] -> (
-            match compile_expr scope env default_form with
-            | Error _ as error -> error
-                      | Ok default -> (
-                let collection = Semantic_ir.Ident "collection" in
-                let value = Semantic_ir.Ident "value" in
-                let selected_collection =
-                  Semantic_ir.Match
-                    ( collection,
-                                [
-                                  ( Semantic_ir.PConstructor ("None", None),
-                          default.semantic_expr );
-                        ( Semantic_ir.PConstructor
-                            ( "Some",
-                              Some
-                                          (Semantic_ir.PVar "present_collection")
-                                      ),
-                                    Semantic_ir.Ident "present_collection" );
-                                ] )
-                in
-                          match default.ty with
-                | TVector element_type ->
-                    let element_type =
-                      match element_type with
-                      | TUnknown -> TVar "fnil_vector_element"
-                      | element_type -> element_type
-                    in
-                    let result_type = TVector element_type in
-                    Ok
-                      (typed_ir
-                         (TFn
-                            ( [ TNullable result_type; element_type ],
-                              result_type ))
-                         (Semantic_ir.Fun
-                                      ( [
-                                          Semantic_ir.PVar "collection";
-                                          Semantic_ir.PVar "value";
-                                        ],
-                              Semantic_ir.Apply
-                                ( Semantic_ir.Ident "Rrbvec.push_back",
-                                  [ selected_collection; value ] ) )))
-                | TSet element_type ->
-                    Result.map
-                      (fun set_module ->
-                        let result_type = TSet element_type in
-                        typed_ir
-                          (TFn
-                             ( [ TNullable result_type; TUnknown ],
-                               result_type ))
-                          (Semantic_ir.Fun
-                                       ( [
-                                           Semantic_ir.PVar "collection";
-                                           Semantic_ir.PVar "value";
-                                         ],
-                               Semantic_ir.Apply
-                                           ( Semantic_ir.Ident
-                                               (set_module ^ ".add"),
-                                   [ value; selected_collection ] ) )))
-                      (Types.set_module_name element_type)
-                | _ ->
-                    Error.error
-                      "fnil conj default must be a vector or set"))
-        | [ FSymbol "conj"; _; _ ] | [ FSymbol "conj"; _; _; _ ] ->
-                      Error.error
-                        "fnil conj currently supports one default argument"
-                  | _ ->
-                      Error.error
-                        "fnil expects a function and default arguments")
+    | "__lg_fnil" -> compile_static_fnil scope env arg_forms
     | "delay" -> (
         match arg_forms with
         | [] -> Error.error "delay expects at least one body form"
@@ -8966,7 +8898,7 @@ let create ~compile_expr =
               rest_form
         | _ -> compile_apply scope env arg_forms)
     | "__lg_comp" -> compile_static_comp scope env arg_forms
-    | "partial" -> compile_partial scope env arg_forms
+    | "__lg_partial" -> compile_static_partial scope env arg_forms
     | "__lg_juxt" -> compile_static_juxt scope env arg_forms
     | "__lg_compare" -> (
         match compile_args () with

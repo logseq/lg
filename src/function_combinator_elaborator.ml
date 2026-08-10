@@ -8,8 +8,9 @@ type call = string -> Env.t -> Ast.form list -> expression_result
 
 type t = {
   compile_apply : call;
+  compile_static_fnil : call;
   compile_static_comp : call;
-  compile_partial : call;
+  compile_static_partial : call;
   compile_static_juxt : call;
 }
 
@@ -125,6 +126,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   let rec overloaded_projection expression index =
     if index = 0 then apply "fst" [ expression ]
     else overloaded_projection (apply "snd" [ expression ]) (index - 1)
+  in
+  let capture_bindings bindings body =
+    List.fold_right
+      (fun binding body -> Semantic_ir.Let ([ binding ], body))
+      bindings body
+  in
+  let overloaded_functions functions =
+    List.fold_right
+      (fun function_ rest -> Semantic_ir.Tuple [ function_; rest ])
+      functions Semantic_ir.Unit
   in
   let rec irrefutable_pattern = function
     | Semantic_ir.PAny | Semantic_ir.PVar _ -> true
@@ -944,8 +955,291 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         (compose
                            (typed_ir arg_ty (Semantic_ir.Ident "x"))
                            (List.rev fns))))))
+
+    and compile_static_fnil scope env arg_forms =
+      match arg_forms with
+      | [ FSymbol "conj"; default_form ] ->
+          Result.bind (compile_expr scope env default_form) (fun default ->
+              let default_name = "__lg_fnil_default_collection" in
+              let collection_name = "collection" in
+              let value_name = "value" in
+              let selected_collection =
+                Semantic_ir.Match
+                  ( Semantic_ir.Ident collection_name,
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Ident default_name );
+                      ( Semantic_ir.PConstructor
+                          ( "Some",
+                            Some (Semantic_ir.PVar "present_collection") ),
+                        Semantic_ir.Ident "present_collection" );
+                    ] )
+              in
+              let wrap result_type value_type add_expression =
+                typed_ir
+                  (TFn ([ TNullable result_type; value_type ], result_type))
+                  (capture_bindings
+                     [ (Semantic_ir.PVar default_name, default.semantic_expr) ]
+                     (Semantic_ir.Fun
+                        ( [
+                            Semantic_ir.PVar collection_name;
+                            Semantic_ir.PVar value_name;
+                          ],
+                          add_expression selected_collection
+                            (Semantic_ir.Ident value_name) )))
+              in
+              match default.ty with
+              | TVector element_type ->
+                  let element_type =
+                    match element_type with
+                    | TUnknown -> TVar "fnil_vector_element"
+                    | element_type -> element_type
+                  in
+                  let result_type = TVector element_type in
+                  Ok
+                    (wrap result_type element_type (fun collection value ->
+                         Semantic_ir.Apply
+                           ( Semantic_ir.Ident "Rrbvec.push_back",
+                             [ collection; value ] )))
+              | TSet element_type ->
+                  Result.map
+                    (fun set_module ->
+                      let result_type = TSet element_type in
+                      wrap result_type TUnknown (fun collection value ->
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident (set_module ^ ".add"),
+                              [ value; collection ] )))
+                    (Types.set_module_name element_type)
+              | _ ->
+                  Error.error "fnil conj default must be a vector or set")
+      | [ FSymbol "conj"; _; _ ] | [ FSymbol "conj"; _; _; _ ] ->
+          Error.error "fnil conj currently supports one default argument"
+      | function_form :: default_forms
+        when List.length default_forms >= 1
+             && List.length default_forms <= 3 -> (
+          match
+            ( compile_function_arg scope env function_form,
+              compile_args_for scope env default_forms )
+          with
+          | (Error _ as error), _ | _, (Error _ as error) -> error
+          | Ok fn, Ok defaults -> (
+              match fn.ty with
+              | TFn (parameter_tys, return_ty) ->
+                  let default_count = List.length defaults in
+                  let minimum_arity = if default_count = 3 then 2 else default_count in
+                  if List.length parameter_tys < minimum_arity then
+                    Error.error
+                      "fnil function has fewer parameters than required defaults"
+                  else
+                    let rec adapt_defaults adapted index = function
+                      | [] -> Ok (List.rev adapted)
+                      | default :: rest ->
+                          let adapted_default =
+                            match List.nth_opt parameter_tys index with
+                            | Some expected ->
+                                adapt_value_to_type env expected default
+                                |> Result.map (typed_ir expected)
+                            | None -> Ok default
+                          in
+                          Result.bind adapted_default (fun default ->
+                              adapt_defaults (default :: adapted) (index + 1)
+                                rest)
+                    in
+                    Result.map
+                      (fun defaults ->
+                        let function_name = "__lg_fnil_function" in
+                        let default_names =
+                          List.mapi
+                            (fun index _ ->
+                              "__lg_fnil_default_" ^ string_of_int index)
+                            defaults
+                        in
+                        let argument_names =
+                          List.mapi
+                            (fun index _ ->
+                              "__lg_fnil_argument_" ^ string_of_int index)
+                            parameter_tys
+                        in
+                        let selected_arguments =
+                          List.mapi
+                            (fun index name ->
+                              if
+                                index < default_count
+                                && index < List.length parameter_tys
+                              then
+                                let present_name = name ^ "_value" in
+                                Semantic_ir.Match
+                                  ( Semantic_ir.Ident name,
+                                    [
+                                      ( Semantic_ir.PConstructor
+                                          ("None", None),
+                                        Semantic_ir.Ident
+                                          (List.nth default_names index) );
+                                      ( Semantic_ir.PConstructor
+                                          ( "Some",
+                                            Some
+                                              (Semantic_ir.PVar present_name) ),
+                                        Semantic_ir.Ident present_name );
+                                    ] )
+                              else Semantic_ir.Ident name)
+                            argument_names
+                        in
+                        let returned_parameter_tys =
+                          List.mapi
+                            (fun index parameter_ty ->
+                              if index < default_count then
+                                TNullable parameter_ty
+                              else parameter_ty)
+                            parameter_tys
+                        in
+                        let bindings =
+                          ( Semantic_ir.PVar function_name,
+                            fn.semantic_expr )
+                          :: List.map2
+                               (fun name default ->
+                                 (Semantic_ir.PVar name, default.semantic_expr))
+                               default_names defaults
+                        in
+                        typed_ir
+                          (TFn (returned_parameter_tys, return_ty))
+                          (capture_bindings bindings
+                             (Semantic_ir.Fun
+                                ( List.map
+                                    (fun name -> Semantic_ir.PVar name)
+                                    argument_names,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident function_name,
+                                      selected_arguments ) ))))
+                      (adapt_defaults [] 0 defaults)
+              | TOverloaded_fn arities ->
+                  let default_count = List.length defaults in
+                  let minimum_arity = if default_count = 3 then 2 else default_count in
+                  let selected_arities =
+                    arities
+                    |> List.mapi (fun index arity -> (index, arity))
+                    |> List.filter (fun (_, arity) ->
+                           Option.is_none arity.rest_param
+                           && List.length arity.fixed_params >= minimum_arity)
+                  in
+                  (match selected_arities with
+                  | [] ->
+                      Error.error
+                        "fnil has no function arity accepting the default positions"
+                  | _ ->
+                      let expected_default_type index =
+                        selected_arities
+                        |> List.filter_map (fun (_, arity) ->
+                               List.nth_opt arity.fixed_params index)
+                        |> function
+                        | [] -> Ok None
+                        | expected :: rest
+                          when List.for_all (Types.equal expected) rest ->
+                            Ok (Some expected)
+                        | _ ->
+                            Error.error
+                              "fnil overloaded function arities disagree on default argument types"
+                      in
+                      let rec adapt_defaults adapted index = function
+                        | [] -> Ok (List.rev adapted)
+                        | default :: rest ->
+                            Result.bind (expected_default_type index)
+                              (fun expected ->
+                                let adapted_default =
+                                  match expected with
+                                  | None -> Ok default
+                                  | Some expected ->
+                                      adapt_value_to_type env expected default
+                                      |> Result.map (typed_ir expected)
+                                in
+                                Result.bind adapted_default (fun default ->
+                                    adapt_defaults (default :: adapted)
+                                      (index + 1) rest))
+                      in
+                      Result.map
+                        (fun defaults ->
+                          let function_name = "__lg_fnil_function" in
+                          let default_names =
+                            List.mapi
+                              (fun index _ ->
+                                "__lg_fnil_default_" ^ string_of_int index)
+                              defaults
+                          in
+                          let returned_arities, returned_functions =
+                            selected_arities
+                            |> List.mapi (fun returned_index
+                                              (source_index, arity) ->
+                                   let argument_names =
+                                     List.mapi
+                                       (fun index _ ->
+                                         "__lg_fnil_argument_"
+                                         ^ string_of_int returned_index ^ "_"
+                                         ^ string_of_int index)
+                                       arity.fixed_params
+                                   in
+                                   let returned_parameter_tys =
+                                     List.mapi
+                                       (fun index parameter_ty ->
+                                         if index < default_count then
+                                           TNullable parameter_ty
+                                         else parameter_ty)
+                                       arity.fixed_params
+                                   in
+                                   let selected_arguments =
+                                     List.mapi
+                                       (fun index name ->
+                                         if index < default_count then
+                                           let present_name = name ^ "_value" in
+                                           Semantic_ir.Match
+                                             ( Semantic_ir.Ident name,
+                                               [
+                                                 ( Semantic_ir.PConstructor
+                                                     ("None", None),
+                                                   Semantic_ir.Ident
+                                                     (List.nth default_names
+                                                        index) );
+                                                 ( Semantic_ir.PConstructor
+                                                     ( "Some",
+                                                       Some
+                                                         (Semantic_ir.PVar
+                                                            present_name) ),
+                                                   Semantic_ir.Ident
+                                                     present_name );
+                                               ] )
+                                         else Semantic_ir.Ident name)
+                                       argument_names
+                                   in
+                                   ( {
+                                       fixed_params = returned_parameter_tys;
+                                       rest_param = None;
+                                       return_ty = arity.return_ty;
+                                     },
+                                     Semantic_ir.Fun
+                                       ( List.map
+                                           (fun name -> Semantic_ir.PVar name)
+                                           argument_names,
+                                         Semantic_ir.Apply
+                                           ( overloaded_projection
+                                               (Semantic_ir.Ident function_name)
+                                               source_index,
+                                             selected_arguments ) ) ))
+                            |> List.split
+                          in
+                          let bindings =
+                            (Semantic_ir.PVar function_name, fn.semantic_expr)
+                            :: List.map2
+                                 (fun name default ->
+                                   ( Semantic_ir.PVar name,
+                                     default.semantic_expr ))
+                                 default_names defaults
+                          in
+                          typed_ir (TOverloaded_fn returned_arities)
+                            (capture_bindings bindings
+                               (overloaded_functions returned_functions)))
+                        (adapt_defaults [] 0 defaults))
+              | _ -> Error.error "fnil expects a statically typed function"))
+      | _ -> Error.error "fnil called with incompatible arguments"
     
-    and compile_partial scope env arg_forms =
+    and compile_static_partial scope env arg_forms =
       match arg_forms with
       | fn_form :: fixed_forms -> (
           match (compile_function_arg scope env fn_form, compile_args_for scope env fixed_forms) with
@@ -953,29 +1247,173 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | _, (Error _ as err) -> err
           | Ok fn, Ok fixed_args -> (
               match fn.ty with
-              | TFn (param_tys, ret) when List.length fixed_args < List.length param_tys ->
-                  let fixed_tys = List.map (fun arg -> arg.ty) fixed_args in
-                  let expected_fixed_tys = param_tys |> List.filteri (fun index _ -> index < List.length fixed_tys) in
-                  if List.for_all2 Types.equal fixed_tys expected_fixed_tys then
-                    let remaining_tys = drop (List.length fixed_args) param_tys in
-                    let remaining_names =
-                      remaining_tys |> List.mapi (fun index _ -> "arg" ^ string_of_int index)
-                    in
-                    let remaining_exprs =
-                      remaining_names |> List.map (fun name -> Semantic_ir.Ident name)
-                    in
-                    Ok
-                      (typed_ir (TFn (remaining_tys, ret))
-                         (Semantic_ir.Fun
-                            ( List.map (fun name -> Semantic_ir.PVar name) remaining_names,
-                              Semantic_ir.Apply
-                                ( fn.semantic_expr,
-                                  List.map (fun arg -> arg.semantic_expr) fixed_args
-                                  @ remaining_exprs ))))
-                  else Error.error "partial fixed arguments do not match function"
-              | TFn _ -> Error.error "partial requires fewer arguments than function arity"
-              | _ -> Error.error "partial expects a function"))
-      | _ -> Error.error "partial expects a function"
+              | TFn (parameter_tys, return_ty)
+                when List.length fixed_args <= List.length parameter_tys ->
+                  let expected_fixed_tys =
+                    parameter_tys
+                    |> List.filteri (fun index _ ->
+                           index < List.length fixed_args)
+                  in
+                  let rec adapt_fixed adapted expected actual =
+                    match (expected, actual) with
+                    | [], [] -> Ok (List.rev adapted)
+                    | expected :: expected_rest, actual :: actual_rest ->
+                        Result.bind
+                          (adapt_value_to_type env expected actual)
+                          (fun expression ->
+                            adapt_fixed
+                              (typed_ir expected expression :: adapted)
+                              expected_rest actual_rest)
+                    | _ -> Error.error "partial fixed arguments do not match function"
+                  in
+                  Result.map
+                    (fun fixed_args ->
+                      let function_name = "__lg_partial_function" in
+                      let fixed_names =
+                        List.mapi
+                          (fun index _ ->
+                            "__lg_partial_fixed_" ^ string_of_int index)
+                          fixed_args
+                      in
+                      let remaining_tys =
+                        drop (List.length fixed_args) parameter_tys
+                      in
+                      let remaining_names =
+                        remaining_tys
+                        |> List.mapi (fun index _ ->
+                               "__lg_partial_argument_" ^ string_of_int index)
+                      in
+                      let bindings =
+                        (Semantic_ir.PVar function_name, fn.semantic_expr)
+                        :: List.map2
+                             (fun name argument ->
+                               (Semantic_ir.PVar name, argument.semantic_expr))
+                             fixed_names fixed_args
+                      in
+                      typed_ir (TFn (remaining_tys, return_ty))
+                        (capture_bindings bindings
+                           (Semantic_ir.Fun
+                              ( List.map
+                                  (fun name -> Semantic_ir.PVar name)
+                                  remaining_names,
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident function_name,
+                                    List.map
+                                      (fun name -> Semantic_ir.Ident name)
+                                      (fixed_names @ remaining_names) ) ))))
+                    (adapt_fixed [] expected_fixed_tys fixed_args)
+              | TFn _ ->
+                  Error.error
+                    "partial has more fixed arguments than function parameters"
+              | TOverloaded_fn arities ->
+                  let fixed_count = List.length fixed_args in
+                  let selected_arities =
+                    arities
+                    |> List.mapi (fun index arity -> (index, arity))
+                    |> List.filter (fun (_, arity) ->
+                           Option.is_none arity.rest_param
+                           && List.length arity.fixed_params >= fixed_count)
+                  in
+                  (match selected_arities with
+                  | [] ->
+                      Error.error
+                        "partial has no function arity accepting the fixed arguments"
+                  | (_, first_arity) :: _ ->
+                      let expected_fixed_tys =
+                        first_arity.fixed_params
+                        |> List.filteri (fun index _ -> index < fixed_count)
+                      in
+                      let compatible_prefix =
+                        List.for_all
+                          (fun (_, arity) ->
+                            let prefix =
+                              arity.fixed_params
+                              |> List.filteri (fun index _ ->
+                                     index < fixed_count)
+                            in
+                            List.length prefix = List.length expected_fixed_tys
+                            && List.for_all2 Types.equal prefix expected_fixed_tys)
+                          selected_arities
+                      in
+                      if not compatible_prefix then
+                        Error.error
+                          "partial overloaded function arities disagree on fixed argument types"
+                      else
+                        let rec adapt_fixed adapted expected actual =
+                          match (expected, actual) with
+                          | [], [] -> Ok (List.rev adapted)
+                          | expected :: expected_rest, actual :: actual_rest ->
+                              Result.bind
+                                (adapt_value_to_type env expected actual)
+                                (fun expression ->
+                                  adapt_fixed
+                                    (typed_ir expected expression :: adapted)
+                                    expected_rest actual_rest)
+                          | _ ->
+                              Error.error
+                                "partial fixed arguments do not match function"
+                        in
+                        Result.map
+                          (fun fixed_args ->
+                            let function_name = "__lg_partial_function" in
+                            let fixed_names =
+                              List.mapi
+                                (fun index _ ->
+                                  "__lg_partial_fixed_" ^ string_of_int index)
+                                fixed_args
+                            in
+                            let returned_arities, returned_functions =
+                              selected_arities
+                              |> List.mapi (fun returned_index
+                                                (source_index, arity) ->
+                                     let remaining_tys =
+                                       drop fixed_count arity.fixed_params
+                                     in
+                                     let argument_names =
+                                       List.mapi
+                                         (fun index _ ->
+                                           "__lg_partial_argument_"
+                                           ^ string_of_int returned_index ^ "_"
+                                           ^ string_of_int index)
+                                         remaining_tys
+                                     in
+                                     ( {
+                                         fixed_params = remaining_tys;
+                                         rest_param = None;
+                                         return_ty = arity.return_ty;
+                                       },
+                                       Semantic_ir.Fun
+                                         ( List.map
+                                             (fun name -> Semantic_ir.PVar name)
+                                             argument_names,
+                                           Semantic_ir.Apply
+                                             ( overloaded_projection
+                                                 (Semantic_ir.Ident function_name)
+                                                 source_index,
+                                               List.map
+                                                 (fun name ->
+                                                   Semantic_ir.Ident name)
+                                                 (fixed_names @ argument_names) ) )
+                                     ))
+                              |> List.split
+                            in
+                            let bindings =
+                              (Semantic_ir.PVar function_name, fn.semantic_expr)
+                              :: List.map2
+                                   (fun name argument ->
+                                     ( Semantic_ir.PVar name,
+                                       argument.semantic_expr ))
+                                   fixed_names fixed_args
+                            in
+                            typed_ir (TOverloaded_fn returned_arities)
+                              (capture_bindings bindings
+                                 (overloaded_functions returned_functions)))
+                          (adapt_fixed [] expected_fixed_tys fixed_args))
+              | other ->
+                  Error.error
+                    ("partial expects a function, got "
+                   ^ Types.source_name other)))
+      | _ -> Error.error "partial called with incompatible arguments"
 
     and compile_static_juxt scope env arg_forms =
       let compile_fns =
@@ -1074,7 +1512,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   {
     compile_apply;
+    compile_static_fnil;
     compile_static_comp;
-    compile_partial;
+    compile_static_partial;
     compile_static_juxt;
   }

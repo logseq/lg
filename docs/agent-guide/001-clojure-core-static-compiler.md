@@ -234,6 +234,10 @@ Function helpers such as `comp`, `partial`, `identity`, `constantly`,
 three-function compositions return the pinned overloaded call shape, while
 longer homogeneous chains use the source unary adaptation and direct calls use
 the private typed unary specialization.
+`partial` and `fnil` are likewise source-owned for their pinned constructor and
+returned arities. First-class values use homogeneous static domains, while
+private direct-call specializations preserve precise fixed/default parameter
+types and one-time closure-capture evaluation.
 `every-pred` and `some-fn` are source-owned and expose the pinned ClojureScript
 constructor arities plus returned zero-, one-, two-, three-, and variadic
 arities. Their predicates share one static argument domain; `some-fn` preserves

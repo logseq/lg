@@ -62,13 +62,11 @@ awk '
   BEGIN {
     split("binding with-open with-out-str reify assert delay set! throw", xs)
     for (i in xs) special[xs[i]] = 1
-    split("apply assoc-in doall drop drop-while filter fnil get-in keep map map-indexed mapcat max merge min next partial rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
+    split("apply assoc-in doall drop drop-while filter get-in keep map map-indexed mapcat max merge min next rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
     for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
-    split("fnil partial", xs)
-    for (i in xs) blocked_reason[xs[i]] = "returned-variadic-or-overloaded-function-types-are-not-source-expressible"
     split("map", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-multi-collection-arities-and-lazy-or-transducer-cases-are-not-source-expressible"
     split("drop drop-while filter keep map-indexed mapcat remove repeatedly take take-while", xs)
@@ -114,6 +112,8 @@ awk '
     internal_abi["__lg_interleave"] = "typed-mixed-storage-lazy-sequence-interleave-specialization-primitive"
     internal_abi["__lg_juxt"] = "typed-unary-direct-call-juxtaposition-specialization-primitive"
     internal_abi["__lg_comp"] = "typed-unary-direct-call-composition-specialization-primitive"
+    internal_abi["__lg_fnil"] = "typed-default-substitution-function-specialization-primitive"
+    internal_abi["__lg_partial"] = "typed-fixed-argument-function-specialization-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"
@@ -292,7 +292,7 @@ if test -n "$clojurescript_root"; then
 
   awk -F '\t' '
     BEGIN {
-      split("seq first rest next some conj juxt comp", names, " ")
+      split("seq first rest next some conj juxt comp fnil partial", names, " ")
       for (i in names) source_inference[names[i]] = 1
     }
     FILENAME == ARGV[1] && $1 == "compiler-call" {
