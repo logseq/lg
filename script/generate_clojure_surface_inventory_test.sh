@@ -11,6 +11,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
   (:require [clojure.string :as string]
             [clojure.set :refer [union]]
             [clojure.walk :as walk]
+            [cljs.reader :as reader]
             [cljs.pprint :as pprint]
             [cljs.spec.alpha :as spec]
             [clojure.zip :as zip]))
@@ -19,6 +20,8 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (union #{1} #{2})
 (clojure.set/project #{} [])
 (walk/postwalk identity {})
+(reader/read-string "{:answer 42}")
+(reader/parse-timestamp "2020-01-01T00:00:00.000Z")
 (pprint/pprint "value")
 (spec/valid? string? "value")
 (zip/root nil)
@@ -249,6 +252,9 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 ==
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.walk/postwalk" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.reader" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.reader/read-string" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.reader/parse-timestamp" && $3 == "host-boundary" && $4 == 1 && $5 == "returns-a-javascript-date-which-has-no-shared-native-source-representation" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.set/project" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "dependent-relation-map-projection-is-not-yet-source-expressible" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "clojure.zip/root" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.core/identity" && $3 == "source-core-alias" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

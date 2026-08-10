@@ -455,30 +455,17 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
         }
       }' >"$tmp/namespace-support"
 
-  printf '%b\n' \
-    'clojure.set/project\tblocked-static-typing\tdependent-relation-map-projection-is-not-yet-source-expressible' \
-    'clojure.set/rename\tblocked-static-typing\tdependent-relation-map-renaming-is-not-yet-source-expressible' \
-    'clojure.set/index\tblocked-static-typing\tprojected-map-keys-and-set-of-map-values-need-dependent-relation-types' \
-    'clojure.set/join\tblocked-static-typing\tdependent-relational-map-shapes-and-merge-are-not-yet-source-expressible' \
-    >>"$tmp/namespace-support"
-
-  awk '
-    /^  (clojure|cljs)\.[A-Za-z0-9_.-]+$/ {
-      namespace = $1
-      status = ""
+  # Exact non-source definition classifications override their namespace. A
+  # blocked or host-only sibling must never downgrade an aggregate namespace or
+  # another source definition in that namespace.
+  awk -F '\t' '
+    $1 == "namespace" && $3 != "source-aggregate" {
+      print $2 "\t" $3 "\t" $4
     }
-    /:status :blocked([[:space:]}]|$)/ {status = "blocked-static-typing"}
-    /:status :host-boundary([[:space:]}]|$)/ {status = "host-boundary"}
-    /:status :out-of-scope([[:space:]}]|$)/ {status = "out-of-scope"}
-    /:status :deferred([[:space:]}]|$)/ {status = "deferred"}
-    status != "" && /:reason :[A-Za-z0-9_.-]+/ {
-      reason = $2
-      sub(/^:/, "", reason)
-      sub(/[^A-Za-z0-9_.-].*$/, "", reason)
-      print namespace "\t" status "\t" reason
-      status = ""
+    $1 == "definition" && $3 != "source" {
+      print $2 "\t" $3 "\t" $4
     }
-  ' "$lg_root/stdlib/upstream.edn" >>"$tmp/namespace-support"
+  ' "$tmp/manifest-status" >>"$tmp/namespace-support"
 
   (
     cd "$logseq_root"
