@@ -4551,15 +4551,26 @@
    %{dep:../script/check_datascript_ocaml_benchmark_result_test.sh})))
 
 (rule
- (alias runtest)
+ (alias clojure-surface-inventory)
  (deps
   ../script/generate_clojure_surface_inventory_test.sh
   ../script/generate_clojure_surface_inventory.sh
+  ../script/extract_clojurescript_public_vars.clj
+  ../script/extract_stdlib_manifest_status.clj
   ../script/extract_ocaml_string_dispatch.ml
   ../script/clojure_namespace_inventory.clj
-  (source_tree ../src))
+  ../stdlib/upstream.edn
+  (source_tree ../src)
+  (source_tree ../stdlib))
  (action
-  (run sh %{dep:../script/generate_clojure_surface_inventory_test.sh})))
+  (run
+   sh
+   %{dep:../script/generate_clojure_surface_inventory_test.sh}
+   %{workspace_root})))
+
+(alias
+ (name runtest)
+ (deps (alias clojure-surface-inventory)))
 
 (alias
  (name datascript-upstream)

@@ -1,7 +1,11 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+if test "$#" -ge 1; then
+  root=$(CDPATH= cd -- "$1" && pwd)
+else
+  root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
