@@ -928,7 +928,7 @@
    %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:source_core_meta_bad_arity.cljc}
-   "called with incompatible arguments")))
+   "meta called with unsupported macro arity 2")))
 
 (rule
  (alias runtest)

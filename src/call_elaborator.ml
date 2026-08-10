@@ -11779,9 +11779,23 @@ let create ~compile_expr =
                     ->
                       ret
                   | Some index, _ -> (
-                      match List.nth_opt args index with
-                      | Some arg -> Types.constraint_value_type arg.ty
-                      | None -> ret)
+                      match
+                        ( List.nth_opt param_tys index,
+                          List.nth_opt args index )
+                      with
+                      | ( Some parameter_ty,
+                          Some
+                            {
+                              ty =
+                                (TNullable actual_ty
+                                | TOcaml_app ("option", [ actual_ty ]));
+                              _;
+                            } )
+                        when Option.is_none (optional_payload parameter_ty)
+                             && argument_compatible parameter_ty actual_ty ->
+                          Types.constraint_value_type actual_ty
+                      | _, Some arg -> Types.constraint_value_type arg.ty
+                      | _, None -> ret)
                   | _ -> ret
                 in
                 let ret =
