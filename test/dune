@@ -141,38 +141,57 @@
 
 (rule
  (target lgc_native.ml)
- (deps cross_runtime.cljc ../bin/lg_cli.exe)
+ (deps
+  cross_runtime.cljc
+  ../stdlib/lg_stdlib_native.ml
+  ../stdlib/lg_stdlib_native.state
+  ../bin/lg_cli.exe)
  (action
-  (run
-   %{exe:../bin/lg_cli.exe}
-   --target
-   native
-   %{dep:cross_runtime.cljc}
-   -o
-   %{target})))
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{dep:../stdlib/lg_stdlib_native.state}
+     %{dep:cross_runtime.cljc})))))
 
 (executable
  (name lgc_native)
  (modules lgc_native)
- (libraries lg.runtime re rrbvec))
+ (flags
+  (:standard -w -27-32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
 
 (rule
  (target lgc_melange.ml)
- (deps cross_runtime.cljc ../bin/lg_cli.exe)
+ (deps
+  cross_runtime.cljc
+  ../stdlib/lg_stdlib_melange.ml
+  ../stdlib/lg_stdlib_melange.state
+  ../bin/lg_cli.exe)
  (action
-  (run
-   %{exe:../bin/lg_cli.exe}
-   --target
-   melange
-   %{dep:cross_runtime.cljc}
-   -o
-   %{target})))
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{dep:../stdlib/lg_stdlib_melange.state}
+     %{dep:cross_runtime.cljc})))))
 
 (melange.emit
  (target lgc-melange)
  (alias lgc-melange)
  (module_systems es6)
  (modules lgc_melange)
+ (compile_flags -w -27-32)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
@@ -232,42 +251,63 @@
 
 (rule
  (target datascript_schema_upstream_native.ml)
- (deps datascript/upstream/schema.cljc ../bin/lg_cli.exe)
+ (deps
+  datascript/upstream/schema.cljc
+  ../stdlib/lg_stdlib_native.ml
+  ../stdlib/lg_stdlib_native.state
+  ../bin/lg_cli.exe)
  (action
-  (run
-   %{exe:../bin/lg_cli.exe}
-   --target
-   native
-   %{dep:datascript/upstream/schema.cljc}
-   -o
-   %{target})))
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     native
+     --compile-chunk-from
+     %{dep:../stdlib/lg_stdlib_native.state}
+     %{dep:datascript/upstream/schema.cljc})))))
 
 (executable
  (name datascript_schema_upstream_native)
  (modules datascript_schema_upstream_native)
  (flags
-  (:standard -w -32-37))
- (libraries lg.edn-backend.native lg.runtime rrbvec))
+  (:standard -w -27-32-37))
+ (libraries datascript_runtime lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
  (target datascript_schema_upstream_melange.ml)
- (deps datascript/upstream/schema.cljc ../bin/lg_cli.exe)
+ (deps
+  datascript/upstream/schema.cljc
+  ../stdlib/lg_stdlib_melange.ml
+  ../stdlib/lg_stdlib_melange.state
+  ../bin/lg_cli.exe)
  (action
-  (run
-   %{exe:../bin/lg_cli.exe}
-   --target
-   melange
-   %{dep:datascript/upstream/schema.cljc}
-   -o
-   %{target})))
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     melange
+     --compile-chunk-from
+     %{dep:../stdlib/lg_stdlib_melange.state}
+     %{dep:datascript/upstream/schema.cljc})))))
 
 (melange.emit
  (target datascript-schema-upstream-melange)
  (alias datascript-schema-upstream-melange)
  (module_systems es6)
  (modules datascript_schema_upstream_melange)
- (compile_flags -w -32-37)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+ (compile_flags -w -27-32-37)
+ (libraries
+  datascript_runtime
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (alias
  (name runtest)
