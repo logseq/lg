@@ -28,12 +28,14 @@ doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per
 ensure-reduced	source	source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper
 force	source	source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types
 ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability
+rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type
 spread	blocked-static-typing	argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence
 tagged-literal	blocked-static-typing	tagged-literal-forms-accept-arbitrary-clojure-values-without-a-public-closed-source-value-domain
 tagged-literal?	blocked-static-typing	first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
+to-array-2d	source	source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses
 unsafe-bit-and	blocked-static-typing	javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve
 uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings
 vec-lite	blocked-static-typing	one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation

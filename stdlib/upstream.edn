@@ -661,8 +661,8 @@
                       :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
     unchecked-negate-int {:status :static-adaptation
                           :reason :static-integer-source-port-of-the-clojurescript-unchecked-helper}
-    rand {:status :blocked-static-typing
-          :reason :same-arity-int-and-float-bound-overloads-cannot-share-one-source-function-type-without-narrowing-the-existing-public-api}
+    rand {:status :static-adaptation
+          :reason :source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization}
     rand-int {:status :static-adaptation
               :reason :source-wrapper-over-the-typed-runtime-random-primitive}
     rand-nth {:status :ported}
@@ -757,8 +757,8 @@
               :reason :source-port-preserves-the-public-one-and-two-argument-primitive-array-sequence-api-with-static-empty-sequence-semantics-instead-of-a-nullable-indexed-sequence}
     to-array {:status :static-adaptation
               :reason :source-port-copies-a-statically-typed-seqable-through-the-polymorphic-runtime-array-boundary}
-    to-array-2d {:status :blocked-static-typing
-                 :reason :nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback}
+    to-array-2d {:status :static-adaptation
+                 :reason :source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses}
     into-array {:status :static-adaptation
                 :reason :source-port-supports-the-upstream-one-argument-seqable-copy-arity-while-the-two-argument-runtime-type-tag-arity-remains-outside-the-static-source-language}
     array-values {:status :static-adaptation

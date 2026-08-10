@@ -1093,7 +1093,6 @@ let untyped_first_class_function_error = function
     | "println-str"
     | "pos?"
     | "prn-str"
-    | "rand"
     | "re-find"
     | "re-matches"
     | "re-pattern"

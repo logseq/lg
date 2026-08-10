@@ -421,6 +421,8 @@
   :overload<fn<array<array-element>;seq<array-element>>;fn<array<array-element>;int;seq<array-element>>>)
 (signature clojure.core/to-array [value]
   :fn<seqable<value>;array<value>>)
+(signature clojure.core/to-array-2d [value inner-storage outer-storage]
+  :fn<seqable<seqable<value;inner-storage>;outer-storage>;array<array<value>>>)
 (signature clojure.core/into-array [value]
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/array-from [value]
@@ -463,6 +465,8 @@
 (signature clojure.core/unchecked-negate :fn<int;int>)
 (signature clojure.core/unchecked-negate-int :fn<int;int>)
 (signature clojure.core/rand-int :fn<int;int>)
+(signature clojure.core/rand
+  :overload<fn<float>;fn<float;float>>)
 (signature clojure.core/rand-nth [value]
   :fn<seqable<value>;value>)
 (signature clojure.core/system-time :fn<float>)

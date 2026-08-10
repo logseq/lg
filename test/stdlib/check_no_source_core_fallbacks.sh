@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 
-for name in force; do
+for name in force rand to-array-2d; do
   for file in \
     src/call_elaborator.ml \
     src/core_collection.ml \

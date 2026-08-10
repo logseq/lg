@@ -90,8 +90,8 @@ for name in truth_ \
   fi
 done
 
-for name in force ensure-reduced; do
-  if ! grep -F "(defn $name" \
+for name in force ensure-reduced rand; do
+  if ! grep -E "^\\(defn ${name}([[:space:]]|$)" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined as a function" >&2
     exit 1
@@ -102,6 +102,12 @@ for name in force ensure-reduced; do
     exit 1
   fi
 done
+
+if ! grep -E '^\(defn to-array-2d([[:space:]]|$)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/to-array-2d is not source-defined as a function" >&2
+  exit 1
+fi
 
 if ! grep -F '(defmacro amap' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/amap is not source-defined as the upstream macro" >&2

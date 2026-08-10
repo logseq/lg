@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 584 source entries (59.29%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 185 static-typing blockers,
+macro surfaces. The current baseline is 586 source entries (59.49%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 183 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -370,14 +370,14 @@ sequence fast path is omitted. Every binding starts from the receiver's static
 Seqable implementation as upstream does; a separate Reducible implementation
 does not bypass observable sequence construction. The Logseq scan finds 69
 exact `doseq` calls in 40 source files.
-`to-array-2d` is blocked as a whole rather than restricted to vectors. Its
-upstream input is a seqable whose elements are themselves seqable; LG currently
-loses each inner value's static sequence witness when that nested capability is
-passed through the array-conversion callback. A valid source port must retain
-that witness without dynamic packing.
-`rand` remains compiler-owned because its one-argument public API accepts both
-int and float bounds, while source signatures cannot yet express same-arity
-overloads without rejecting one of those existing cases.
+`to-array-2d` is source-owned over nested static Seqable witnesses. It eagerly
+maps each inner seqable to an array and realizes the outer array, preserving
+ragged lengths, order, and single evaluation without the upstream JavaScript
+preallocation loop or dynamic packing.
+`rand` is source-owned with the pinned zero- and one-argument floating result.
+Its first-class overload accepts a float bound, while direct calls inline to a
+private specialization that also preserves the existing integer-bound API.
+The exact Logseq scan finds one direct `rand` call and no `to-array-2d` calls.
 `char` is blocked for the same first-class overload limitation: the upstream
 one-argument function accepts either an integer code unit or a string. A
 single-domain port would silently narrow ClojureScript compatibility.
@@ -467,7 +467,7 @@ plus `some?`,
 `qualified-keyword?`, `counted?`, `seqable?`, and `doseq` source macros,
 `reduced`, `reset-vals!`, `vary-meta`,
 `inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
-`bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
+`bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand`, `rand-int`, `rand-nth`, `to-array-2d`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
 `rseq`, `find`, `deref`, `reset!`, `swap!`, `swap-vals!`, `vreset!`, `vswap!`, `compare-and-set!`,
@@ -647,10 +647,10 @@ source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
 `swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and
 `disj` routes, plus the formerly compiler-owned `every-pred` and `some-fn`
-routes, the raw compiler-call inventory contains 197 names. The four additional
+routes, the raw compiler-call inventory contains 197 names. The five additional
 routes are private `__lg_uuid-predicate`, `__lg_delay-predicate`, `__lg_force`,
-and `__lg_ensure-reduced` static specialization primitives; none of their
-public source functions is compiler-dispatched.
+`__lg_ensure-reduced`, and `__lg_rand` static specialization primitives; none
+of their public source functions is compiler-dispatched.
 `uuid?` follows the pinned ClojureScript `IUUID` predicate through a nominal
 `Lg_runtime.Runtime_uuid.t` shared by Native and Melange, so an ordinary string
 does not become a UUID on the JavaScript target. `delay?` follows the upstream

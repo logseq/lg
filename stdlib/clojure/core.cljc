@@ -3027,6 +3027,9 @@
 (defn to-array [coll]
   (runtime-array/of-seq (seq coll)))
 
+(defn to-array-2d [coll]
+  (to-array (map (fn [values] (to-array values)) coll)))
+
 (defn into-array [coll]
   (to-array coll))
 
@@ -3161,6 +3164,11 @@
 
 (defn rand-int [n]
   (runtime-random/rand-int n))
+
+(defn rand
+  {:inline (fn [& args] (cons '__lg_rand args))}
+  ([] (__lg_rand))
+  ([n] (__lg_rand n)))
 
 (defn rand-nth [coll]
   (nth coll (rand-int (count coll))))

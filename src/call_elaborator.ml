@@ -7604,7 +7604,7 @@ let create ~compile_expr =
               match Core_int.expect_int_args name args with
               | Error _ as err -> err
                         | Ok () -> assert false))
-    | "rand" -> (
+    | "__lg_rand" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [] ->

@@ -22588,6 +22588,94 @@ let test_source_conditional_wrappers_match_clojurescript () =
       |> expect_error_contains "unsupported macro arity 2")
     [ "force"; "ensure-reduced" ]
 
+let test_source_random_and_two_dimensional_arrays_match_clojurescript () =
+  let source =
+    {|
+(ns source-random-and-two-dimensional-array-app
+  (:require [cljs.core :as core :refer [rand to-array-2d]]))
+
+(def random-function rand)
+(def random-argument-evaluations (atom 0))
+(def random-default (rand))
+(def random-float (rand 2.5))
+(def random-negative (rand -3))
+(println (and (<= 0.0 random-default) (< random-default 1.0)))
+(println (= 0.0 (core/rand 0)))
+(println (= 0.0 (clojure.core/rand 0.0)))
+(println (let [value (random-function)]
+           (and (<= 0.0 value) (< value 1.0))))
+(println (let [value (random-function 2.0)]
+           (and (<= 0.0 value) (< value 2.0))))
+(println (and (<= 0.0 random-float) (< random-float 2.5)))
+(println (and (<= -3.0 random-negative) (<= random-negative 0.0)))
+(println
+ (= 0.0
+    (rand (do (swap! random-argument-evaluations inc) 0))))
+(println (= 1 @random-argument-evaluations))
+
+(def nested-arrays (to-array-2d [[1 2] [3]]))
+(println
+ (and (= 2 (alength nested-arrays))
+      (= 2 (alength (aget nested-arrays 0)))
+      (= 1 (aget (aget nested-arrays 0) 0))
+      (= 3 (aget (aget nested-arrays 1) 0))))
+(def ragged-arrays (core/to-array-2d [[] [4 5]]))
+(println
+ (and (= 0 (alength (aget ragged-arrays 0)))
+      (= 5 (aget (aget ragged-arrays 1) 1))))
+(def listed-arrays (clojure.core/to-array-2d (list (list 6 7) (list 8))))
+(println
+ (and (= 7 (aget (aget listed-arrays 0) 1))
+      (= 8 (aget (aget listed-arrays 1) 0))))
+(def character-arrays (to-array-2d ["ab" "c"]))
+(println (= \b (aget (aget character-arrays 0) 1)))
+(def two-dimensional-array-function to-array-2d)
+(def function-arrays (two-dimensional-array-function [[9] [10 11]]))
+(println (= 11 (aget (aget function-arrays 1) 1)))
+(def array-argument-evaluations (atom 0))
+(def evaluated-arrays
+  (to-array-2d
+   (do
+     (swap! array-argument-evaluations inc)
+     [[12]])))
+(println (= 12 (aget (aget evaluated-arrays 0) 0)))
+(println (= 1 @array-argument-evaluations))
+|}
+  in
+  let expected = String.concat "" (List.init 16 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_random_and_two_dimensional_arrays.cljc" source
+  in
+  let native_app_source =
+    compile_string_from_stdlib ~target:Lg.Target.Native source |> expect_ok
+  in
+  if string_contains_substring native_app_source "Runtime_dynamic" then
+    failwith "source random and two-dimensional arrays must remain static";
+  assert_ocaml_runs "source_random_and_two_dimensional_arrays" expected
+    native_source;
+  let melange_app_source =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_app_source "Runtime_dynamic" then
+    failwith
+      "Melange source random and two-dimensional arrays must remain static";
+  compile_with_stdlib_result Lg.Target.Native "test/rand_two_arity.cljc"
+    "(def result (rand 1 2))"
+  |> expect_error_contains "rand expects zero or one argument";
+  compile_with_stdlib_result Lg.Target.Native "test/rand_invalid_bound.cljc"
+    "(def result (rand \"invalid\"))"
+  |> expect_error_contains "rand expects a numeric bound";
+  compile_with_stdlib_result Lg.Target.Native "test/to_array_2d_zero_arity.cljc"
+    "(def result (to-array-2d))"
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/to_array_2d_two_arity.cljc"
+    "(def result (to-array-2d [[1]] [[2]]))"
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/to_array_2d_invalid_inner.cljc" "(def result (to-array-2d [1 2]))"
+  |> expect_error_contains "not seqable"
+
 let test_source_identifier_predicates_are_statically_first_class () =
   let source =
     {|
@@ -31534,8 +31622,8 @@ let test_function_maps_require_a_closed_sum_for_random_functions () =
        (and (<= 0 random-int) (< random-int 10))))
   |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains "define a statically typed wrapper"
+  compile_string_with_stdlib source
+  |> expect_error_contains "define a sum type"
 
 let test_function_maps_require_a_closed_sum_for_logical_functions () =
   let source =
@@ -41864,6 +41952,8 @@ let tests =
       test_source_scalar_predicates_are_statically_first_class );
     ( "source conditional wrappers match ClojureScript",
       test_source_conditional_wrappers_match_clojurescript );
+    ( "source random and two-dimensional arrays match ClojureScript",
+      test_source_random_and_two_dimensional_arrays_match_clojurescript );
     ( "source identifier predicates are statically first-class",
       test_source_identifier_predicates_are_statically_first_class );
     ( "source collection predicates are statically first-class",
