@@ -4000,7 +4000,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           FSymbol reference;
           FList
             [
-              FSymbol "assoc!";
+              FSymbol "__lg_assoc!";
               FList [ FSymbol "IDeref/-deref"; FSymbol deref_reference ];
               key;
               value;
@@ -4030,7 +4030,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           FSymbol reference;
           FList
             [
-              FSymbol "conj!";
+              FSymbol "__lg_conj!";
               FList [ FSymbol "IDeref/-deref"; FSymbol deref_reference ];
               value;
             ];
@@ -4109,7 +4109,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol "swap!";
           FSymbol reference;
-          FSymbol "assoc!";
+          FSymbol "__lg_assoc!";
           key;
           value;
         ] ->
@@ -4134,7 +4134,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol "swap!";
           FSymbol reference;
-          FSymbol "conj!";
+          FSymbol "__lg_conj!";
           value;
         ] ->
         let element_ty =
@@ -4169,22 +4169,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                           infer_form params argument
                         else infer_expected expected_argument params argument))
                   (Ok params) arguments))
-    | FList [ FSymbol "dissoc!"; FSymbol collection; key ] ->
-        let key_ty =
-          match inferred_form_type params key with
-          | TUnknown | TMeta _ | TVar _ -> Types.dynamic_constraint TUnknown
-          | ty -> ty
-        in
-        let value_ty = Types.dynamic_constraint TUnknown in
-        let transient_map =
-          TOcaml_app
-            ( "Lg_runtime.Runtime_transient.map",
-              [ key_ty; value_ty ] )
-        in
-        Result.bind
-          (constrain_symbol (Types.dynamic_constraint transient_map) params
-             collection)
-          (fun params -> infer_expected key_ty params key)
     | FList
         [
           FSymbol "__deftype-field-set!";
@@ -5389,8 +5373,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind
           (infer_expected (TVector element_ty) params collection)
           (fun params -> infer_expected_all TInt params indexes)
-    | FList [ FSymbol ("transient" | "persistent!"); collection ] ->
-        infer_expected (Types.dynamic_constraint TUnknown) params collection
     | FList (FSymbol "conj" :: target :: values) -> (
         let inferred_value_type value =
           match inferred_form_type params value with

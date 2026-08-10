@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 498 source entries (50.56%), 79 typed
-primitives, 43 special forms, 97 host boundaries, 217 static-typing blockers,
+macro surfaces. The current baseline is 505 source entries (51.27%), 78 typed
+primitives, 43 special forms, 97 host boundaries, 211 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -276,6 +276,14 @@ such as `volatile!` remain distinct from predicates such as `volatile?` and the
 generated bindings stay readable. The manifest records the upstream arities
 that still require dependent nested-array types or a closed validator-bearing
 Atom domain.
+
+The complete ClojureScript transient family is source-owned: `transient`,
+`persistent!`, `conj!`, `assoc!`, `dissoc!`, `pop!`, and `disj!`. The public
+algorithms dispatch through the upstream editable and transient protocols.
+Static inline expansion preserves heterogeneous variadic map pairs without
+introducing dynamic storage; the runtime keeps precise mutable vector, map,
+and set representations, persists maps into the default HAMT, and rejects use
+after persistence.
 
 The Logseq/DataScript compatibility helpers `weak-deref` and `weak-clear!` are
 ordinary precompiled `clojure.core` source functions with explicit

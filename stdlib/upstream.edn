@@ -171,14 +171,14 @@
                    :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
     -notify-watches {:status :blocked-static-typing
                      :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
-    -assoc! {:status :blocked-static-typing
-             :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
-    -assoc-n! {:status :blocked-static-typing
-               :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
-    -dissoc! {:status :blocked-static-typing
-              :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
-    -pop! {:status :blocked-static-typing
-           :reason :public-protocol-receiver-family-needs-associated-key-index-value-and-persistent-result-types}
+    -assoc! {:status :typed-primitive
+             :reason :compiler-registered-static-protocol-method-for-closed-transient-map-and-vector-receivers}
+    -assoc-n! {:status :typed-primitive
+               :reason :compiler-registered-static-protocol-method-for-closed-transient-vector-receivers}
+    -dissoc! {:status :typed-primitive
+              :reason :compiler-registered-static-protocol-method-for-closed-transient-map-receivers}
+    -pop! {:status :typed-primitive
+           :reason :compiler-registered-static-protocol-method-for-closed-transient-vector-receivers}
     -chunked-first {:status :blocked-static-typing
                     :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
     -chunked-next {:status :blocked-static-typing

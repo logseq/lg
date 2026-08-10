@@ -4413,30 +4413,55 @@ let create ~compile_expr =
                                 [ collection.semantic_expr ] );
                           ] )))
             | map_type -> (
-                match Types.dynamic_map_types map_type with
+                let map_types =
+                  match collection.record_values with
+                  | Some ((field, _) :: rest)
+                    when List.for_all
+                           (fun ((candidate : field), _) ->
+                             Types.equal candidate.ty field.ty)
+                           rest ->
+                      Some (TKeyword, field.ty)
+                  | Some [] -> Some (TUnknown, TUnknown)
+                  | None | Some _ -> Types.dynamic_map_types map_type
+                in
+                match map_types with
                 | Some (key_type, value_type) ->
                     let constructor =
                       if Types.is_dynamic key_type then
                         "Lg_runtime.Runtime_transient.map_of_list_dynamic"
                       else "Lg_runtime.Runtime_transient.map_of_list"
                     in
-                    Ok
-                      (typed_ir
-                         (TOcaml_app
-                            ( "Lg_runtime.Runtime_transient.map",
-                              [ key_type; value_type ] ))
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident constructor,
-                              [
-                                Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_map.to_list",
-                                    [ collection.semantic_expr ] );
-                              ] )))
-                | None -> Error.error "transient expects a set, vector, or map")
+                    let persistent_map =
+                      match collection.record_values with
+                      | Some values ->
+                          adapt_record_values_to_map env key_type value_type
+                            values
+                      | None -> Ok collection.semantic_expr
+                    in
+                    Result.map
+                      (fun persistent_map ->
+                        typed_ir
+                          (TOcaml_app
+                             ( "Lg_runtime.Runtime_transient.map",
+                               [ key_type; value_type ] ))
+                          (Semantic_ir.Apply
+                             ( Semantic_ir.Ident constructor,
+                               [
+                                 Semantic_ir.Apply
+                                   ( Semantic_ir.Ident
+                                       "Lg_runtime.Runtime_map.to_list",
+                                     [ persistent_map ] );
+                               ] )))
+                      persistent_map
+                | None ->
+                    Error.error
+                      ("transient expects a set, vector, or map, got "
+                     ^ source_name map_type))
             ))
     | _ -> Error.error "transient expects 1 argument"
   and compile_conj_bang scope env = function
+    | [] -> compile_transient scope env [ FVector [] ]
+    | [ collection_form ] -> compile_expr scope env collection_form
     | collection_form :: value_forms when value_forms <> [] -> (
         match compile_expr scope env collection_form with
         | Error _ as error -> error
@@ -8493,8 +8518,12 @@ let create ~compile_expr =
     | "__lg_vector" -> compile_vector scope env arg_forms
     | "vector-of" -> compile_vector_of arg_forms
     | "__lg_count" -> compile_collection_call scope env name arg_forms
+    | "__lg_conj!" -> compile_conj_bang scope env arg_forms
+    | "__lg_assoc!" -> compile_assoc_bang scope env arg_forms
+    | "__lg_dissoc!" -> compile_dissoc_bang scope env arg_forms
+    | "__lg_transient" -> compile_transient scope env arg_forms
+    | "__lg_persistent!" -> compile_persistent_bang scope env arg_forms
     | "conj" -> compile_conj scope env arg_forms
-    | "conj!" -> compile_conj_bang scope env arg_forms
     | "first" -> compile_collection_call scope env name arg_forms
     | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms
@@ -8503,8 +8532,6 @@ let create ~compile_expr =
     | "__lg_assoc" | "-assoc" ->
         compile_assoc scope env arg_forms
     | "assoc-in" -> compile_assoc_in scope env arg_forms
-    | "assoc!" -> compile_assoc_bang scope env arg_forms
-    | "dissoc!" -> compile_dissoc_bang scope env arg_forms
     | "__lg_dissoc" -> compile_dissoc scope env arg_forms
     | "merge" -> compile_merge scope env arg_forms
     | "update" -> compile_update scope env arg_forms
@@ -8513,8 +8540,6 @@ let create ~compile_expr =
     | "__lg_contains" -> compile_contains scope env arg_forms
     | "__lg_keys" -> compile_keys scope env arg_forms
     | "vals" -> compile_vals scope env arg_forms
-    | "transient" -> compile_transient scope env arg_forms
-    | "persistent!" -> compile_persistent_bang scope env arg_forms
               | "__lg_hash-map" | "__lg_array-map" | "sorted-map" ->
                   compile_hash_map scope env arg_forms
               | "rest" | "seq" ->
@@ -12220,6 +12245,19 @@ let create ~compile_expr =
                                                  Core_protocols.collection_id
                                                && method_name = "-conj" ->
                                             Some `Add
+                                        | Some protocol_id
+                                          when Protocol_id.equal protocol_id
+                                                 Core_protocols.editable_id
+                                               && method_name = "-as-transient"
+                                          ->
+                                            Some `To_transient
+                                        | Some protocol_id
+                                          when Protocol_id.equal protocol_id
+                                                 Core_protocols
+                                                 .transient_collection_id
+                                               && method_name = "-persistent!"
+                                          ->
+                                            Some `To_persistent
                                         | Some _ | None -> None
                                       in
                                       match
@@ -12253,6 +12291,41 @@ let create ~compile_expr =
                                                         | `Remove -> "remove"
                                                         | `Add -> "add")),
                                                      [ value; collection ] )))
+                                            (Types.set_module_name element_ty)
+                                      | ( TSet element_ty,
+                                          [ collection ],
+                                          Some `To_transient ) ->
+                                          Result.map
+                                            (fun set_module ->
+                                              typed_ir ret
+                                                (Semantic_ir.Apply
+                                                   ( Semantic_ir.Ident
+                                                       "Lg_runtime.Runtime_transient.set_of_list",
+                                                     [
+                                                       Semantic_ir.Apply
+                                                         ( Semantic_ir.Ident
+                                                             (set_module
+                                                            ^ ".elements"),
+                                                           [ collection ] );
+                                                     ] )))
+                                            (Types.set_module_name element_ty)
+                                      | ( TOcaml_app
+                                            ( "Lg_runtime.Runtime_transient.set",
+                                              [ element_ty ] ),
+                                          [ collection ],
+                                          Some `To_persistent ) ->
+                                          Result.map
+                                            (fun set_module ->
+                                              typed_ir ret
+                                                (Semantic_ir.Apply
+                                                   ( Semantic_ir.Ident
+                                                       (set_module ^ ".of_seq"),
+                                                     [
+                                                       Semantic_ir.Apply
+                                                         ( Semantic_ir.Ident
+                                                             "Lg_runtime.Runtime_transient.set_to_seq",
+                                                           [ collection ] );
+                                                     ] )))
                                             (Types.set_module_name element_ty)
                                       | _ ->
                                           Ok

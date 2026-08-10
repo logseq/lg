@@ -105,6 +105,27 @@ let set_add set value =
 let set_add_dynamic set value =
   set_add_by Dynamic dynamic_key_operations set value
 
+let set_disjoin_by kind operations set value =
+  ensure_active set.active;
+  let operations = activate_set_key_operations set kind operations in
+  let index = set_bucket_index operations set.buckets value in
+  let rec remove removed prefix = function
+    | [] ->
+        if removed then set.size <- set.size - 1;
+        List.rev prefix
+    | existing :: rest when operations.equal value existing ->
+        remove true prefix rest
+    | existing :: rest -> remove removed (existing :: prefix) rest
+  in
+  set.buckets.(index) <- remove false [] set.buckets.(index);
+  set
+
+let set_disjoin set value =
+  set_disjoin_by Generic (generic_key_operations ()) set value
+
+let set_disjoin_dynamic set value =
+  set_disjoin_by Dynamic dynamic_key_operations set value
+
 let set_to_seq set =
   ensure_active set.active;
   let values = Array.to_seq set.buckets |> Seq.flat_map List.to_seq in
@@ -119,6 +140,8 @@ type 'value vector = {
 let vector_empty () = { reversed = []; active = true }
 
 let vector_of_list values = { reversed = List.rev values; active = true }
+
+let vector_of_vector values = vector_of_list (Rrbvec.to_list values)
 
 let vector_count vector =
   ensure_active vector.active;
@@ -148,6 +171,16 @@ let vector_assoc vector index value =
           if current = reversed_index then value else existing)
         vector.reversed;
     vector)
+
+let vector_assoc_n = vector_assoc
+
+let vector_pop vector =
+  ensure_active vector.active;
+  match vector.reversed with
+  | [] -> invalid_arg "pop! on empty transient vector"
+  | _ :: rest ->
+      vector.reversed <- rest;
+      vector
 
 let vector_persistent vector =
   ensure_active vector.active;
@@ -232,6 +265,11 @@ let map_of_list_dynamic entries =
   List.fold_left
     (fun map (key, value) -> map_assoc_dynamic map key value)
     (map_empty ()) entries
+
+let map_of_persistent persistent =
+  Runtime_map.to_seq persistent |> List.of_seq |> map_of_list
+
+let map_conj_entry map (key, value) = map_assoc map key value
 
 let map_count map =
   ensure_active map.active;

@@ -2505,3 +2505,85 @@
 
 (defn hash-combine [seed hash-value]
   (runtime-int/hash-combine seed hash-value))
+
+;; Transients follow the public ClojureScript algorithms. Mutation is exposed
+;; only through the closed, statically typed transient protocols.
+(defn transient
+  {:inline (fn [coll] (list '__lg_transient coll))}
+  [coll]
+  (IEditableCollection/-as-transient coll))
+
+(defn persistent!
+  {:inline (fn [tcoll] (list '__lg_persistent! tcoll))}
+  [tcoll]
+  (ITransientCollection/-persistent! tcoll))
+
+(defn conj!
+  {:inline (fn [& args] (cons '__lg_conj! args))}
+  ([] (transient []))
+  ([tcoll] tcoll)
+  ([tcoll val] (ITransientCollection/-conj! tcoll val))
+  ([tcoll val & vals]
+   (loop [result (ITransientCollection/-conj! tcoll val)
+          remaining vals]
+     (if (seq remaining)
+       (recur (ITransientCollection/-conj! result (first remaining))
+              (next remaining))
+       result))))
+
+(defn assoc!
+  {:inline (fn [& args] (cons '__lg_assoc! args))}
+  ([tcoll key val] (ITransientAssociative/-assoc! tcoll key val))
+  ([tcoll key val & kvs]
+   (loop [result (ITransientAssociative/-assoc! tcoll key val)
+          remaining kvs]
+     (if (seq remaining)
+       (let [tail (next remaining)]
+         (if (seq tail)
+           (recur (ITransientAssociative/-assoc! result
+                                                  (first remaining)
+                                                  (first tail))
+                  (next tail))
+           (stdlib/invalid-arg "assoc! expects an even number of key/value forms")))
+       result))))
+
+(defn dissoc!
+  {:inline
+   (fn [tcoll key & keys]
+     (loop [expression (list '__lg_dissoc! tcoll key)
+            remaining keys]
+       (if (nil? remaining)
+         expression
+         (recur (list '__lg_dissoc! expression (first remaining))
+                (next remaining)))))}
+  ([tcoll key] (ITransientMap/-dissoc! tcoll key))
+  ([tcoll key & keys]
+   (loop [result (ITransientMap/-dissoc! tcoll key)
+          remaining keys]
+     (if (seq remaining)
+       (recur (ITransientMap/-dissoc! result (first remaining))
+              (next remaining))
+       result))))
+
+(defn pop!
+  {:inline (fn [tcoll] (list 'ITransientVector/-pop! tcoll))}
+  [tcoll]
+  (ITransientVector/-pop! tcoll))
+
+(defn disj!
+  {:inline
+   (fn [tcoll val & vals]
+     (loop [expression (list 'ITransientSet/-disjoin! tcoll val)
+            remaining vals]
+       (if (nil? remaining)
+         expression
+         (recur (list 'ITransientSet/-disjoin! expression (first remaining))
+                (next remaining)))))}
+  ([tcoll val] (ITransientSet/-disjoin! tcoll val))
+  ([tcoll val & vals]
+   (loop [result (ITransientSet/-disjoin! tcoll val)
+          remaining vals]
+     (if (seq remaining)
+       (recur (ITransientSet/-disjoin! result (first remaining))
+              (next remaining))
+       result))))

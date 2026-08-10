@@ -27,6 +27,11 @@ let editable_id = Protocol_id.create ~owner:[] ~name:"IEditableCollection"
 let transient_collection_id =
   Protocol_id.create ~owner:[] ~name:"ITransientCollection"
 
+let transient_associative_id =
+  Protocol_id.create ~owner:[] ~name:"ITransientAssociative"
+
+let transient_map_id = Protocol_id.create ~owner:[] ~name:"ITransientMap"
+let transient_vector_id = Protocol_id.create ~owner:[] ~name:"ITransientVector"
 let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
@@ -172,6 +177,11 @@ let add_stack receiver peek_name pop_name collection_ty element_ty registry =
 
 let declare_collection_lifecycle_protocols registry =
   let receiver = TVar "equiv_receiver" in
+  let persistent = TVar "persistent_collection" in
+  let transient = TVar "transient_collection" in
+  let element = TVar "transient_element" in
+  let key = TVar "transient_key" in
+  let value = TVar "transient_value" in
   registry
   |> Protocol_registry.declare equiv_id
        [ signature (method_id equiv_id "-equiv") [ receiver; receiver ] TBool ]
@@ -184,24 +194,124 @@ let declare_collection_lifecycle_protocols registry =
   |> add_or_fail
   |> Protocol_registry.declare editable_id
        [
-         signature (method_id editable_id "-as-transient") [ TUnknown ]
-           TUnknown;
+         signature (method_id editable_id "-as-transient") [ persistent ]
+           transient;
        ]
   |> add_or_fail
   |> Protocol_registry.declare transient_collection_id
        [
          signature (method_id transient_collection_id "-conj!")
-           [ TUnknown; TUnknown ] TUnknown;
+           [ transient; element ] transient;
          signature (method_id transient_collection_id "-persistent!")
-           [ TUnknown ] TUnknown;
+           [ transient ] persistent;
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare transient_associative_id
+       [
+         signature (method_id transient_associative_id "-assoc!")
+           [ transient; key; value ] transient;
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare transient_map_id
+       [
+         signature (method_id transient_map_id "-dissoc!")
+           [ transient; key ] transient;
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare transient_vector_id
+       [
+         signature (method_id transient_vector_id "-assoc-n!")
+           [ transient; TInt; element ] transient;
+         signature (method_id transient_vector_id "-pop!") [ transient ]
+           transient;
        ]
   |> add_or_fail
   |> Protocol_registry.declare transient_set_id
        [
          signature (method_id transient_set_id "-disjoin!")
-           [ TUnknown; TUnknown ] TUnknown;
+           [ transient; element ] transient;
        ]
   |> add_or_fail
+
+let add_transient_protocols registry =
+  let element = TVar "transient_element" in
+  let key = TVar "transient_key" in
+  let value = TVar "transient_value" in
+  let vector = TVector element in
+  let transient_vector =
+    TOcaml_app ("Lg_runtime.Runtime_transient.vector", [ element ])
+  in
+  let map = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
+  let transient_map =
+    TOcaml_app ("Lg_runtime.Runtime_transient.map", [ key; value ])
+  in
+  let set = TSet element in
+  let transient_set =
+    TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element ])
+  in
+  let add protocol_id method_name receiver ocaml_name ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
+      receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add editable_id "-as-transient" Receiver_id.Vector_receiver
+       "Lg_runtime.Runtime_transient.vector_of_vector"
+       (TFn ([ vector ], transient_vector))
+  |> add editable_id "-as-transient" runtime_map_receiver
+       "Lg_runtime.Runtime_transient.map_of_persistent"
+       (TFn ([ map ], transient_map))
+  |> add editable_id "-as-transient" Receiver_id.Set_receiver
+       "Lg.Core_protocols.transient_set" (TFn ([ set ], transient_set))
+  |> add transient_collection_id "-conj!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.vector")
+       "Lg_runtime.Runtime_transient.vector_add"
+       (TFn ([ transient_vector; element ], transient_vector))
+  |> add transient_collection_id "-persistent!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.vector")
+       "Lg_runtime.Runtime_transient.vector_persistent"
+       (TFn ([ transient_vector ], vector))
+  |> add transient_collection_id "-conj!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.map")
+       "Lg_runtime.Runtime_transient.map_conj_entry"
+       (TFn ([ transient_map; TTuple [ key; value ] ], transient_map))
+  |> add transient_collection_id "-persistent!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.map")
+       "Lg_runtime.Runtime_transient.map_persistent"
+       (TFn ([ transient_map ], map))
+  |> add transient_collection_id "-conj!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.set")
+       "Lg_runtime.Runtime_transient.set_add"
+       (TFn ([ transient_set; element ], transient_set))
+  |> add transient_collection_id "-persistent!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.set")
+       "Lg.Core_protocols.persistent_set" (TFn ([ transient_set ], set))
+  |> add transient_associative_id "-assoc!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.vector")
+       "Lg_runtime.Runtime_transient.vector_assoc"
+       (TFn ([ transient_vector; TInt; element ], transient_vector))
+  |> add transient_associative_id "-assoc!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.map")
+       "Lg_runtime.Runtime_transient.map_assoc"
+       (TFn ([ transient_map; key; value ], transient_map))
+  |> add transient_map_id "-dissoc!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.map")
+       "Lg_runtime.Runtime_transient.map_dissoc"
+       (TFn ([ transient_map; key ], transient_map))
+  |> add transient_vector_id "-assoc-n!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.vector")
+       "Lg_runtime.Runtime_transient.vector_assoc_n"
+       (TFn ([ transient_vector; TInt; element ], transient_vector))
+  |> add transient_vector_id "-pop!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.vector")
+       "Lg_runtime.Runtime_transient.vector_pop"
+       (TFn ([ transient_vector ], transient_vector))
+  |> add transient_set_id "-disjoin!"
+       (Receiver_id.Host_receiver "Lg_runtime.Runtime_transient.set")
+       "Lg_runtime.Runtime_transient.set_disjoin"
+       (TFn ([ transient_set; element ], transient_set))
 
 let declare_protocol_predicate_family registry =
   let indexed_element = TVar "indexed_element" in
@@ -698,7 +808,8 @@ let initial_registry =
        "Lg_runtime.Runtime_collection.peek_vector"
        "Lg_runtime.Runtime_collection.pop_vector"
        (TVector (TVar "stack_element")) (TVar "stack_element")
-  |> declare_collection_lifecycle_protocols |> add_vector_reversible_protocol
+  |> declare_collection_lifecycle_protocols |> add_transient_protocols
+  |> add_vector_reversible_protocol
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref
   |> declare_compare_and_set |> declare_reset |> declare_volatile |> declare_swap

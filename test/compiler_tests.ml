@@ -11687,15 +11687,13 @@ let test_defrecord_rejects_untyped_transient_map_fields () =
 |}
   |> expect_error_contains "transient-map requires concrete key and value types"
 
-let test_transient_operations_reject_untyped_first_class_use () =
+let test_transient_operations_support_source_first_class_aliases () =
   let source =
     {|
 (def to-transient transient)
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "transient cannot be used as an untyped first-class function"
+  ignore (compile_string_with_stdlib source |> expect_ok)
 
 let test_assert_accepts_optional_message () =
   let source =
@@ -20914,7 +20912,7 @@ let test_inline_update_refines_protocol_collection_elements () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
-let test_inline_update_infers_transient_collection_boundaries () =
+let test_inline_update_rejects_unconstrained_transient_boundaries () =
   let source =
     {|
 (defmacro update-inline [m k f & more]
@@ -20931,11 +20929,8 @@ let test_inline_update_infers_transient_collection_boundaries () =
       (update-inline :aevt persistent!)))
 |}
   in
-  ignore (compile_string_with_stdlib source |> expect_ok);
-  ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
-  ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+  compile_string_with_stdlib source
+  |> expect_error_contains "transient expects a set, vector, or map, got any"
 
 let test_nested_update_infers_optional_map_value_collections () =
   let util_source =
@@ -23969,6 +23964,94 @@ let test_source_array_functions_reject_invalid_static_arguments () =
     "test/source_make_array_rejects_bad_size.cljc"
     {|(def allocate make-array) (def invalid (allocate "1" 0))|}
   |> expect_error_contains "make-array size must be int"
+
+let test_source_transient_family_preserves_clojurescript_behavior () =
+  let source =
+    {|
+(def as-transient transient)
+(def as-persistent persistent!)
+(def add-values! conj!)
+(def associate-values! assoc!)
+(def remove-keys! dissoc!)
+(def remove-last! pop!)
+(def remove-values! disj!)
+
+(def transient-vector (as-transient [1 2]))
+(def transient-vector (add-values! transient-vector 3 4))
+(def transient-vector (associate-values! transient-vector 1 9))
+(def transient-vector (remove-last! transient-vector))
+(def persistent-vector (as-persistent transient-vector))
+
+(def transient-map (as-transient {:a 1 :b 2}))
+(def transient-map (associate-values! transient-map :c 3 :d 4))
+(def transient-map (remove-keys! transient-map :a :d))
+(def persistent-map (as-persistent transient-map))
+
+(def transient-set (as-transient #{1 2}))
+(def transient-set (add-values! transient-set 3 4))
+(def transient-set (remove-values! transient-set 1 4))
+(def persistent-set (as-persistent transient-set))
+
+(def empty-transient (conj!))
+(def same-empty-transient (conj! empty-transient))
+(def singleton-vector (persistent! (conj! same-empty-transient 7)))
+
+(def protocol-set (IEditableCollection/-as-transient #{5}))
+(def protocol-set (ITransientCollection/-conj! protocol-set 6))
+(def protocol-set (ITransientSet/-disjoin! protocol-set 5))
+(def protocol-set (ITransientCollection/-persistent! protocol-set))
+
+(def protocol-vector (IEditableCollection/-as-transient [8 9]))
+(def protocol-vector (ITransientAssociative/-assoc! protocol-vector 0 7))
+(def protocol-vector (ITransientVector/-pop! protocol-vector))
+(def protocol-vector (ITransientCollection/-persistent! protocol-vector))
+
+(def protocol-map (IEditableCollection/-as-transient (hash-map :x 1)))
+(def protocol-map (ITransientAssociative/-assoc! protocol-map :y 2))
+(def protocol-map (ITransientMap/-dissoc! protocol-map :x))
+(def protocol-map (ITransientCollection/-persistent! protocol-map))
+
+(println
+  (and (= persistent-vector [1 9 3])
+       (= 2 (get persistent-map :b))
+       (= 3 (get persistent-map :c))
+       (not (contains? persistent-map :a))
+       (= persistent-set #{2 3})
+       (= singleton-vector [7])
+       (= protocol-set #{6})
+       (= protocol-vector [7])
+       (= 2 (get protocol-map :y))
+       (not (contains? protocol-map :x))))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_transient_family.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source transient functions must remain statically typed";
+  assert_ocaml_runs "source_transient_family_preserves_clojurescript_behavior"
+    "true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_transient_family.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_transient_family.cljc" source)
+
+let test_source_transient_family_rejects_invalid_static_operations () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_transient_rejects_list.cljc"
+    {|(def make-transient transient) (make-transient (list 1 2))|}
+  |> expect_error_contains "transient expects a set, vector, or map";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_transient_assoc_rejects_value.cljc"
+    {|(def values (transient [1 2])) (assoc! values 0 "bad")|}
+  |> expect_error_contains "matching value";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_transient_assoc_rejects_odd_pairs.cljc"
+    {|(assoc! (transient {}) :a 1 :b)|}
+  |> expect_error_contains "key/value"
 
 let test_hash_dispatches_to_record_ihash () =
   let source =
@@ -39257,8 +39340,8 @@ let tests =
       test_defrecord_rejects_untyped_transient_vector_fields );
     ( "defrecord rejects untyped transient map fields",
       test_defrecord_rejects_untyped_transient_map_fields );
-    ( "transient operations reject untyped first-class use",
-      test_transient_operations_reject_untyped_first_class_use );
+    ( "transient operations support source first-class aliases",
+      test_transient_operations_support_source_first_class_aliases );
     ("assert accepts optional message", test_assert_accepts_optional_message);
     ( "into cat flattens one collection level",
       test_into_cat_flattens_one_collection_level );
@@ -40213,8 +40296,8 @@ let tests =
       test_update_conj_infers_field_and_element_types );
     ( "inline update refines protocol collection elements",
       test_inline_update_refines_protocol_collection_elements );
-    ( "inline update infers transient collection boundaries",
-      test_inline_update_infers_transient_collection_boundaries );
+    ( "inline update rejects unconstrained transient boundaries",
+      test_inline_update_rejects_unconstrained_transient_boundaries );
     ( "nested update infers optional map value collections",
       test_nested_update_infers_optional_map_value_collections );
     ( "if-some get keeps map storage non-nullable",
@@ -41081,6 +41164,10 @@ let tests =
       test_source_array_and_reference_constructors_are_first_class );
     ( "source array functions reject invalid static arguments",
       test_source_array_functions_reject_invalid_static_arguments );
+    ( "source transient family preserves ClojureScript behavior",
+      test_source_transient_family_preserves_clojurescript_behavior );
+    ( "source transient family rejects invalid static operations",
+      test_source_transient_family_rejects_invalid_static_operations );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );
