@@ -24,6 +24,18 @@ let test_lru_cache_evicts_the_least_recent_key () =
   assert (Lg_runtime.Runtime_cache.lru_lookup cache "b" = None);
   assert (Lg_runtime.Runtime_cache.lru_lookup cache "c" = Some 3)
 
+let test_ttl_cache_expires_and_cleans_old_entries () =
+  let cache =
+    Lg_runtime.Runtime_cache.ttl_of_map 10 100. Lg_runtime.Runtime_map.empty
+    |> fun cache -> Lg_runtime.Runtime_cache.ttl_miss cache "old" 1 100.
+  in
+  assert (Lg_runtime.Runtime_cache.ttl_lookup cache "old" 109. = Some 1);
+  assert (Lg_runtime.Runtime_cache.ttl_lookup cache "old" 110. = None);
+  let cache = Lg_runtime.Runtime_cache.ttl_miss cache "new" 2 110. in
+  assert (Lg_runtime.Runtime_cache.ttl_lookup cache "old" 110. = None);
+  assert (Lg_runtime.Runtime_cache.ttl_lookup cache "new" 110. = Some 2)
+
 let () =
   test_priority_map_uses_lowest_priority_bucket ();
-  test_lru_cache_evicts_the_least_recent_key ()
+  test_lru_cache_evicts_the_least_recent_key ();
+  test_ttl_cache_expires_and_cleans_old_entries ()

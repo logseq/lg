@@ -1446,19 +1446,22 @@
     through {:status :static-adaptation
              :reason :source-overloads-preserve-upstream-hit-miss-control-flow-while-static-protocol-return-relations-keep-the-cache-receiver-type}
     BasicCache {:status :static-adaptation
-                :reason :source-record-delegates-storage-to-the-default-persistent-hash-map}
+                :reason :source-deftype-delegates-storage-to-the-default-persistent-hash-map-and-implements-the-upstream-defcache-collection-protocols}
     LRUCache {:status :static-adaptation
-              :reason :source-record-uses-a-typed-two-index-priority-map-with-ordered-priority-buckets-and-item-to-priority-hash-indexes-following-cljs-priority-map}
+              :reason :source-deftype-uses-a-typed-two-index-priority-map-with-ordered-priority-buckets-and-item-to-priority-hash-indexes-following-cljs-priority-map-and-implements-the-upstream-defcache-collection-protocols}
     basic-cache-factory {:status :ported}
     lru-cache-factory {:status :static-adaptation
                        :reason :fixed-source-arities-preserve-the-default-and-threshold-options-without-a-heterogeneous-keyword-rest-map}
-    TTLCache {:status :blocked-static-typing
-              :reason :requires-a-shared-native-and-melange-clock-boundary-before-the-upstream-expiry-algorithm-can-be-source-owned}
-    ttl-cache-factory {:status :blocked-static-typing
-                       :reason :depends-on-the-ttl-cache-clock-boundary}}
+    TTLCache {:status :static-adaptation
+              :reason :source-deftype-preserves-upstream-expiry-hit-miss-evict-and-seed-control-flow-and-defcache-collection-protocols-while-a-typed-runtime-state-stores-homogeneous-cache-values-and-float-timestamps}
+    ttl-cache-factory {:status :static-adaptation
+                       :reason :fixed-source-arities-preserve-the-default-and-ttl-options-without-a-heterogeneous-keyword-rest-map}}
    :notes
    ["The LRU implementation does not substitute a vector for the upstream priority map."
     "Runtime_priority_map preserves the upstream priority-to-item-set and item-to-priority indexes; OCaml's ordered integer map implements the sorted priority index and Runtime_map implements hash buckets."
+    "TTL uses the cross-target source system-time function and an injected float timestamp at the typed runtime boundary, making expiry tests deterministic without sleeping."
+    "The source deftypes implement defcache's ILookup, IAssociative, IMap, ICounted, ICollection, IEquiv, IEmptyableCollection, and ISeqable behavior; map entries use LG's statically typed key/value tuple representation."
+    "ClojureScript's JavaScript-only IIterable iterator remains a host boundary because the shared Native and Melange source surface has no JavaScript iterator type."
     "No cljs.cache sidecar .mil file is introduced; runtime boundaries expose ordinary OCaml .mli interfaces."]}
 
   clojure.test

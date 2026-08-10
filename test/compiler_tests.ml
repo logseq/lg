@@ -25823,6 +25823,71 @@ let test_cljs_cache_lru_matches_logseq_usage () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/cljs_cache_lru.cljc" source)
 
+let test_cljs_cache_ttl_matches_upstream_expiry_and_seed () =
+  let source =
+    {|
+(ns app.cljs-cache-ttl
+  (:require [cljs.cache
+             :refer [has? lookup miss seed ttl-cache-factory]]))
+
+(def expired (miss (ttl-cache-factory {} :ttl 0) :a 1))
+(def fresh (seed (ttl-cache-factory {} :ttl 100000) {:a 1}))
+
+(println
+  (and (not (has? expired :a))
+       (nil? (lookup expired :a))
+       (has? fresh :a)
+       (= 1 (lookup fresh :a))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cljs_cache_ttl.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.cache TTL must preserve static cache, key, and value types";
+  assert_ocaml_runs "cljs_cache_ttl" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/cljs_cache_ttl.cljc" source)
+
+let test_cljs_cache_implements_upstream_collection_protocols () =
+  let source =
+    {|
+(ns app.cljs-cache-collection-protocols
+  (:require [cljs.cache :refer [basic-cache-factory]]
+            [cljs.core :as core]))
+
+(def initial (basic-cache-factory {:a 1}))
+(def associated (core/IAssociative/-assoc initial :b 2))
+(def removed (core/IMap/-dissoc associated :a))
+(def emptied (core/IEmptyableCollection/-empty removed))
+(def conjoined
+  (core/ICollection/-conj (basic-cache-factory {1 10}) (tuple 2 20)))
+
+(println
+  (and (= 1 (core/ILookup/-lookup initial :a))
+       (= 9 (core/ILookup/-lookup initial :missing 9))
+       (core/IAssociative/-contains-key? associated :b)
+       (= 2 (core/ICounted/-count associated))
+       (= 2 (core/ILookup/-lookup associated :b))
+       (not (core/IAssociative/-contains-key? removed :a))
+       (= 0 (core/ICounted/-count emptied))
+       (empty? (core/ISeqable/-seq emptied))
+       (= 20 (core/ILookup/-lookup conjoined 2))
+       (core/IEquiv/-equiv conjoined {1 10 2 20})))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cljs_cache_protocols.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.cache collection protocols must remain statically typed";
+  assert_ocaml_runs "cljs_cache_collection_protocols" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/cljs_cache_protocols.cljc"
+       source)
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -40998,6 +41063,10 @@ let tests =
       test_source_core_protocol_surface_uses_typed_builtin_implementations );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
+    ( "cljs.cache TTL matches upstream expiry and seed",
+      test_cljs_cache_ttl_matches_upstream_expiry_and_seed );
+    ( "cljs.cache implements upstream collection protocols",
+      test_cljs_cache_implements_upstream_collection_protocols );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
