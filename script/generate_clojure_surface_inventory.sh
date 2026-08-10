@@ -112,6 +112,11 @@ awk '
     internal_abi["__lg_array"] = "typed-homogeneous-array-construction-primitive"
     internal_abi["__lg_hash"] = "typed-hashable-capability-primitive"
     internal_abi["__lg_compare"] = "typed-single-domain-comparable-capability-primitive"
+    internal_abi["__lg_make-array"] = "typed-homogeneous-array-allocation-primitive"
+    internal_abi["__lg_aget"] = "typed-array-index-capability-read-primitive"
+    internal_abi["__lg_aset"] = "typed-array-index-capability-write-primitive"
+    internal_abi["__lg_atom"] = "typed-reference-allocation-primitive"
+    internal_abi["__lg_volatile!"] = "typed-volatile-reference-allocation-primitive"
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate", xs)

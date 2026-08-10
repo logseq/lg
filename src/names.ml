@@ -81,7 +81,8 @@ let sanitize_name name =
           | 'A' .. 'Z' as ch -> Buffer.add_char buffer (Char.lowercase_ascii ch)
           | '0' .. '9' as ch -> Buffer.add_char buffer ch
           | '_' -> Buffer.add_char buffer '_'
-          | '-' | '?' | '!' | '/' | '.' -> Buffer.add_char buffer '_'
+          | '!' -> Buffer.add_string buffer "_bang"
+          | '-' | '?' | '/' | '.' -> Buffer.add_char buffer '_'
           | _ -> Buffer.add_char buffer '_')
         name;
       let sanitized = Buffer.contents buffer |> legalize_ocaml_identifier in

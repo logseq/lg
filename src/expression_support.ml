@@ -451,6 +451,10 @@ let capability_storage_expression ty expression =
                             | Some value_ty ->
                                 layer (name ^ "__compare") value_ty
                             | None -> (
+                                match Types.array_index_constraint_info ty with
+                                | Some value_ty ->
+                                    layer (name ^ "__index") value_ty
+                                | None -> (
                         match Types.symbol_predicate_constraint_info ty with
                         | Some value_ty -> layer (name ^ "__symbol") value_ty
                         | None -> (
@@ -477,7 +481,7 @@ let capability_storage_expression ty expression =
                                       else name ^ "__seq_optional"
                                     in
                                     layer witness_name value_ty
-                                | _ -> Semantic_ir.Ident name))))))))
+                                | _ -> Semantic_ir.Ident name)))))))))
   in
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident name -> build name ty
@@ -528,9 +532,12 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                         match Types.comparable_constraint_info ty with
                         | Some value_ty -> unwrap_stored value_ty
                         | None -> (
+                            match Types.array_index_constraint_info ty with
+                            | Some value_ty -> unwrap_stored value_ty
+                            | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty -> unwrap_stored value_ty
-                    | None -> expression)))))
+                    | None -> expression))))))
       in
       unwrap source_ty expression
   | TSeq target_inner, (TList source_inner | TVector source_inner) ->

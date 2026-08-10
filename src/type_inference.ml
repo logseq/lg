@@ -125,6 +125,13 @@ let rec refine_type existing inferred =
         (refine_type
            (Types.comparable_constraint_info existing |> Option.get)
            (Types.comparable_constraint_info inferred |> Option.get))
+  | existing, inferred
+    when Option.is_some (Types.array_index_constraint_info existing)
+         && Option.is_some (Types.array_index_constraint_info inferred) ->
+      Types.array_index_constraint
+        (refine_type
+           (Types.array_index_constraint_info existing |> Option.get)
+           (Types.array_index_constraint_info inferred |> Option.get))
   | existing, inferred -> (
       match
         ( Types.protocol_constraint_info existing,
@@ -154,6 +161,12 @@ and refine_nonmatching_type existing inferred =
       Types.comparable_constraint
         (refine_type
            (Types.comparable_constraint_info existing |> Option.get)
+           inferred)
+  | existing, inferred
+    when Option.is_some (Types.array_index_constraint_info existing) ->
+      Types.array_index_constraint
+        (refine_type
+           (Types.array_index_constraint_info existing |> Option.get)
            inferred)
   | existing, inferred
     when Option.is_some (Types.contains_constraint_info existing)
@@ -518,6 +531,19 @@ let constrain_comparable_symbol params name =
       Ok (replace_param name (Types.comparable_constraint value_ty) params)
   | Some _ | None -> Ok params
 
+let constrain_array_index_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.array_index_constraint_info ty) ->
+      Ok params
+  | Some ty ->
+      let value_ty = Types.constraint_value_type ty in
+      if Types.equal value_ty TInt || Types.equal value_ty TFloat then
+        Ok (replace_param name (Types.array_index_constraint value_ty) params)
+      else
+        Error.error
+          ("array index requires int or float, got " ^ Types.source_name value_ty)
+  | None -> Ok params
+
 let constrain_symbol_predicate params name =
   match string_assoc_opt name params with
   | Some ty
@@ -657,6 +683,11 @@ let constrain_seqable element_ty params name =
         Types.comparable_constraint
           (add_constraint
              (Option.get (Types.comparable_constraint_info existing)))
+    | existing
+      when Option.is_some (Types.array_index_constraint_info existing) ->
+        Types.array_index_constraint
+          (add_constraint
+             (Option.get (Types.array_index_constraint_info existing)))
     | existing
       when Option.is_some (Types.symbol_predicate_constraint_info existing) ->
         Types.symbol_predicate_constraint
@@ -1107,9 +1138,9 @@ let rec inferred_form_type params = function
         FSymbol _;
       ] ->
       TSymbol
-  | FList [ FSymbol ("atom" | "volatile!"); FVector [] ] ->
+  | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FVector [] ] ->
       TRef (TVector TUnknown)
-  | FList [ FSymbol ("atom" | "volatile!"); FSymbol "nil" ] ->
+  | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FSymbol "nil" ] ->
       TRef (TNullable TUnknown)
   | FList (FSymbol "delay" :: body_forms) -> (
       match List.rev body_forms with
@@ -1213,7 +1244,7 @@ let rec inferred_form_type params = function
       | Some _ | None -> TArray TUnknown)
   | FList
       [ FSymbol operation; FSymbol array; _index ]
-    when has_source_name operation "aget"
+    when has_source_name operation "__lg_aget"
          || has_source_name operation "unsafe-aget" -> (
       match string_assoc_opt array params with
       | Some (TArray element_ty | TOcaml_app ("array", [ element_ty ])) ->
@@ -1843,7 +1874,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
             infer_expected value_ty params value
         | _ -> infer_form params value)
-    | FList [ FSymbol ("atom" | "volatile!"); value ] -> (
+    | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); value ] -> (
         match expected_ty with
         | TRef value_ty -> infer_expected value_ty params value
         | _ -> infer_form params value)
@@ -1931,15 +1962,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_expected TInt params from) (fun params ->
                 infer_expected TInt params length))
     | FList [ FSymbol operation; FSymbol array; index ]
-      when has_source_name operation "aget"
+      when has_source_name operation "__lg_aget"
            || has_source_name operation "unsafe-aget" -> (
         match constrain_symbol (TArray expected_ty) params array with
         | Error _ as error -> error
-        | Ok params ->
-            let index_ty = inferred_form_type params index in
-            infer_expected
-              (if Types.equal index_ty TFloat then TFloat else TInt)
-              params index)
+        | Ok params -> (
+            match (operation, index) with
+            | "__lg_aget", FSymbol index ->
+                constrain_array_index_symbol params index
+            | _ ->
+                let index_ty = inferred_form_type params index in
+                infer_expected
+                  (if Types.equal index_ty TFloat then TFloat else TInt)
+                  params index))
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
            && (has_source_name operation "__lg_keys"
@@ -2822,7 +2857,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     match bindings with
     | FVector forms -> (
         let rec macro_slots slots = function
-          | FSymbol name :: FList [ FSymbol "volatile!"; FSymbol "nil" ] :: rest
+          | FSymbol name :: FList [ FSymbol "__lg_volatile!"; FSymbol "nil" ] :: rest
             ->
               macro_slots (name :: slots) rest
           | _ :: _ :: rest -> macro_slots slots rest
@@ -4472,7 +4507,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_expected TInt params from) (fun params ->
                 infer_expected TInt params length))
     | FList [ FSymbol operation; FSymbol array; index ]
-      when has_source_name operation "aget"
+      when has_source_name operation "__lg_aget"
            || has_source_name operation "unsafe-aget" -> (
         let element_ty =
           match string_assoc_opt array params with
@@ -4482,11 +4517,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         match constrain_symbol (TArray element_ty) params array with
         | Error _ as error -> error
-        | Ok params ->
-            let index_ty = inferred_form_type params index in
-            infer_expected
-              (if Types.equal index_ty TFloat then TFloat else TInt)
-              params index)
+        | Ok params -> (
+            match (operation, index) with
+            | "__lg_aget", FSymbol index ->
+                constrain_array_index_symbol params index
+            | _ ->
+                let index_ty = inferred_form_type params index in
+                infer_expected
+                  (if Types.equal index_ty TFloat then TFloat else TInt)
+                  params index))
     | FList [ FSymbol "__lg_nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)

@@ -90,6 +90,9 @@ let rec capability_pattern name ty =
                       match Types.comparable_constraint_info ty with
                       | Some value_ty -> layer (name ^ "__compare") value_ty
                       | None -> (
+                          match Types.array_index_constraint_info ty with
+                          | Some value_ty -> layer (name ^ "__index") value_ty
+                          | None -> (
                   match Types.symbol_predicate_constraint_info ty with
                   | Some value_ty -> layer (name ^ "__symbol") value_ty
                   | None -> (
@@ -114,7 +117,7 @@ let rec capability_pattern name ty =
                                 else name ^ "__seq_optional"
                               in
                               layer witness_name value_ty
-                          | _ -> Semantic_ir.PVar name))))))))
+                          | _ -> Semantic_ir.PVar name)))))))))
 
 let has_capability ty =
   Option.is_some (Types.protocol_constraint_info ty)
@@ -124,6 +127,7 @@ let has_capability ty =
   || Option.is_some (Types.printable_constraint_info ty)
   || Option.is_some (Types.hashable_constraint_info ty)
   || Option.is_some (Types.comparable_constraint_info ty)
+  || Option.is_some (Types.array_index_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
 
@@ -467,7 +471,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
            || Option.is_some (Types.truthy_constraint_info target)
            || Option.is_some (Types.printable_constraint_info target)
            || Option.is_some (Types.hashable_constraint_info target)
-           || Option.is_some (Types.comparable_constraint_info target) ->
+           || Option.is_some (Types.comparable_constraint_info target)
+           || Option.is_some (Types.array_index_constraint_info target) ->
         pack_constrained_value env target branch
     | target, source
       when Types.is_dynamic target && not (Types.is_dynamic source) ->
@@ -2521,8 +2526,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       | TSeq inner -> TSeq (merge inner)
                       | ty -> ty)
                   | FList [ FSymbol name; array; _index ]
-                    when name = "aget" || name = "unsafe-aget"
-                         || String.ends_with ~suffix:"/aget" name
+                    when name = "__lg_aget" || name = "unsafe-aget"
+                         || String.ends_with ~suffix:"/__lg_aget" name
                          || String.ends_with ~suffix:"/unsafe-aget" name -> (
                       match form_type aliases array with
                       | TArray inner

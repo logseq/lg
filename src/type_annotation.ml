@@ -192,6 +192,10 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (Types.comparable_constraint inner)
                       | _ -> Error.error "comparable expects one type argument"
+                    else if name = "array-index" then
+                      match args with
+                      | [ inner ] -> Ok (Types.array_index_constraint inner)
+                      | _ -> Error.error "array-index expects one type argument"
                     else if name = "map" then
                       match args with
                       | [ key; value ] -> Ok (Types.dynamic_map key value)

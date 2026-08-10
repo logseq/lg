@@ -53,6 +53,36 @@
 (defn compare [left right]
   (__lg_compare left right))
 
+(defn make-array
+  {:inline (fn [size initial]
+             (list '__lg_make-array size initial))}
+  [size initial]
+  (__lg_make-array size initial))
+
+(defn aget
+  {:inline (fn [array index]
+             (list '__lg_aget array index))}
+  [array index]
+  (__lg_aget array index))
+
+(defn aset
+  {:inline (fn [array index value]
+             (list '__lg_aset array index value))}
+  [array index value]
+  (__lg_aset array index value))
+
+(defn atom
+  {:inline (fn [value]
+             (list '__lg_atom value))}
+  [value]
+  (__lg_atom value))
+
+(defn volatile!
+  {:inline (fn [value]
+             (list '__lg_volatile! value))}
+  [value]
+  (__lg_volatile! value))
+
 (defn contains?
   {:inline (fn [collection key]
              (list '__lg_contains collection key))}

@@ -305,6 +305,7 @@ let rec argument_compatible expected actual =
   else if Option.is_some (Types.printable_constraint_info expected) then true
   else if Option.is_some (Types.hashable_constraint_info expected) then true
   else if Option.is_some (Types.comparable_constraint_info expected) then true
+  else if Option.is_some (Types.array_index_constraint_info expected) then true
   else if Option.is_some (Types.symbol_predicate_constraint_info expected) then
     true
   else if Option.is_some (Types.contains_constraint_info expected) then
@@ -474,6 +475,7 @@ let has_capability_constraint ty =
   || Option.is_some (Types.printable_constraint_info ty)
   || Option.is_some (Types.hashable_constraint_info ty)
   || Option.is_some (Types.comparable_constraint_info ty)
+  || Option.is_some (Types.array_index_constraint_info ty)
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
   ||
@@ -549,6 +551,14 @@ let constrained_identifier_expression name ty =
                                 build value_ty;
                               ]
                         | None -> (
+                            match Types.array_index_constraint_info ty with
+                            | Some value_ty ->
+                                Semantic_ir.Tuple
+                                  [
+                                    Semantic_ir.Ident (name ^ "__index");
+                                    build value_ty;
+                                  ]
+                            | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.Tuple
@@ -579,7 +589,7 @@ let constrained_identifier_expression name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.Ident name)))))))))
+            | _ -> Semantic_ir.Ident name))))))))))
   in
   build ty
 
@@ -636,6 +646,14 @@ let constrained_identifier_pattern name ty =
                                 build value_ty;
                               ]
                         | None -> (
+                            match Types.array_index_constraint_info ty with
+                            | Some value_ty ->
+                                Semantic_ir.PTuple
+                                  [
+                                    Semantic_ir.PVar (name ^ "__index");
+                                    build value_ty;
+                                  ]
+                            | None -> (
                     match Types.symbol_predicate_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.PTuple
@@ -666,7 +684,7 @@ let constrained_identifier_pattern name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.PVar name)))))))))
+            | _ -> Semantic_ir.PVar name))))))))))
   in
   build ty
 
@@ -710,6 +728,12 @@ let rec constrained_value_expression ty expression =
                         (Semantic_ir.Apply
                            (Semantic_ir.Ident "snd", [ expression ]))
                   | None -> (
+                      match Types.array_index_constraint_info ty with
+                      | Some value_ty ->
+                          constrained_value_expression value_ty
+                            (Semantic_ir.Apply
+                               (Semantic_ir.Ident "snd", [ expression ]))
+                      | None -> (
               match Types.symbol_predicate_constraint_info ty with
               | Some value_ty ->
                   constrained_value_expression value_ty
@@ -728,7 +752,7 @@ let rec constrained_value_expression ty expression =
              || constraint_name = Types.optional_sequential_constraint_name ->
           constrained_value_expression value_ty
             (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
-      | _ -> expression))))))))
+      | _ -> expression)))))))))
 
 let constrained_argument_value argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -970,6 +994,35 @@ let compile_static_compare_capability env left right =
           Error.error
             "compare expects one concrete comparable type; define a closed sum \
              type and match its cases explicitly for a heterogeneous domain"
+
+let compile_static_array_index value =
+  match Types.array_index_constraint_info value.ty with
+  | Some _ -> (
+      match Semantic_ir.unlocated value.semantic_expr with
+      | Semantic_ir.Ident name ->
+          Ok
+            (Semantic_ir.Apply
+               (Semantic_ir.Ident (name ^ "__index"), [ value.semantic_expr ]))
+      | _ ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Apply
+                   (Semantic_ir.Ident "fst", [ value.semantic_expr ]),
+                 [
+                   Semantic_ir.Apply
+                     (Semantic_ir.Ident "snd", [ value.semantic_expr ]);
+                 ] )))
+  | None ->
+      let value_ty = Types.constraint_value_type value.ty in
+      let expression = constrained_argument_value value in
+      if Types.equal value_ty TInt then Ok expression
+      else if Types.equal value_ty TFloat then
+        Ok
+          (Semantic_ir.Apply
+             (Semantic_ir.Ident "int_of_float", [ expression ]))
+      else
+        Error.error
+          ("array index requires int or float, got " ^ Types.source_name value_ty)
 
 let dynamic_boundary_error_message direction ty =
   let cannot_cross subject guidance =
@@ -1573,6 +1626,38 @@ let rec pack_constrained_value ?row_type_name env expected argument =
             Semantic_ir.Fun
               ( [ Semantic_ir.PVar left_name; Semantic_ir.PVar right_name ],
                 compared )
+          in
+          Result.map
+            (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+            (pack_constrained_value env value_ty argument))
+  | expected, actual
+    when Option.is_some (Types.array_index_constraint_info expected)
+         && Option.is_some (Types.array_index_constraint_info actual) ->
+      Ok (constrained_argument_expression argument)
+  | expected, _
+    when Option.is_some (Types.array_index_constraint_info expected) ->
+      let value_ty = Types.array_index_constraint_info expected |> Option.get in
+      let witness_value_ty =
+        match value_ty with
+        | TUnknown | TMeta _ | TVar _ -> Types.constraint_value_type argument.ty
+        | ty -> ty
+      in
+      let value_name = "__lg_array_index_value" in
+      let value = typed_ir witness_value_ty (Semantic_ir.Ident value_name) in
+      let converted =
+        if Types.equal witness_value_ty TInt then Ok value.semantic_expr
+        else if Types.equal witness_value_ty TFloat then
+          Ok
+            (Semantic_ir.Apply
+               (Semantic_ir.Ident "int_of_float", [ value.semantic_expr ]))
+        else
+          Error.error
+            ("array index requires int or float, got "
+           ^ Types.source_name witness_value_ty)
+      in
+      Result.bind converted (fun converted ->
+          let witness =
+            Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], converted)
           in
           Result.map
             (fun packed -> Semantic_ir.Tuple [ witness; packed ])
@@ -5686,7 +5771,7 @@ let create ~compile_expr =
                        FSymbol collection_name;
                        collection;
                        FSymbol first_name;
-                       FList [ FSymbol "volatile!"; FBool true ];
+                       FList [ FSymbol "__lg_volatile!"; FBool true ];
                      ];
                    FList
                      [
@@ -6711,7 +6796,7 @@ let create ~compile_expr =
                            ^ " expects a sequence function and compatible array"
                             ))
         | Ok _ -> Error.error (name ^ " expects 2 arguments"))
-    | "make-array" -> (
+    | "__lg_make-array" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ size; initial ]
@@ -6815,12 +6900,13 @@ let create ~compile_expr =
                     Error.error
                       "tuple-get expects a statically typed tuple or array"))
         | _ -> Error.error "tuple-get expects 2 arguments")
-    | ("aget" | "unsafe-aget") as name -> (
+    | ("__lg_aget" | "unsafe-aget") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index ] -> (
             let compile_index index =
-              if Types.equal index.ty TInt then Ok index.semantic_expr
+              if name = "__lg_aget" then compile_static_array_index index
+              else if Types.equal index.ty TInt then Ok index.semantic_expr
               else if Types.equal index.ty TFloat then
                 Ok (apply "int_of_float" [ index.semantic_expr ])
               else if Types.is_dynamic index.ty then
@@ -6857,18 +6943,25 @@ let create ~compile_expr =
                   (fun index ->
                     typed_ir element_ty
                       (apply
-                         (if name = "aget" then "Array.get"
+                         (if name = "__lg_aget" then "Array.get"
                           else "Array.unsafe_get")
                          [ array.semantic_expr; index ]))
                   (compile_index index)
-              | None -> Error.error (name ^ " expects an OCaml array"))
-        | Ok _ -> Error.error (name ^ " expects 2 arguments"))
-    | ("aset" | "unsafe-aset") as name -> (
+              | None ->
+                  Error.error
+                    ((if name = "__lg_aget" then "array read" else name)
+                   ^ " expects an OCaml array"))
+        | Ok _ ->
+            Error.error
+              ((if name = "__lg_aget" then "array read" else name)
+             ^ " expects 2 arguments"))
+    | ("__lg_aset" | "unsafe-aset") as name -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ array; index; value ] -> (
             let index =
-              if Types.equal index.ty TInt then Ok index.semantic_expr
+              if name = "__lg_aset" then compile_static_array_index index
+              else if Types.equal index.ty TInt then Ok index.semantic_expr
               else if Types.equal index.ty TFloat then
                 Ok (apply "int_of_float" [ index.semantic_expr ])
               else if Types.is_dynamic index.ty then
@@ -6893,7 +6986,7 @@ let create ~compile_expr =
                   Ok
                     (typed_ir TUnit
                        (apply
-                          (if name = "aset" then
+                          (if name = "__lg_aset" then
                              "Lg_runtime.Runtime_dynamic.array_set"
                            else
                              "Lg_runtime.Runtime_dynamic.array_unsafe_set")
@@ -6916,7 +7009,7 @@ let create ~compile_expr =
                     (fun value ->
                       typed_ir TUnit
                         (apply
-                           (if name = "aset" then "Array.set"
+                           (if name = "__lg_aset" then "Array.set"
                             else "Array.unsafe_set")
                            [
                              array.semantic_expr;
@@ -6932,18 +7025,42 @@ let create ~compile_expr =
                             Error.error
                               "OCaml array value must match element type"
                 else
-                  Ok
-                    (typed_ir TUnit
-                       (apply
-                          (if name = "aset" then "Array.set"
-                           else "Array.unsafe_set")
+                  if name = "__lg_aset" then
+                    let value_name = "__lg_aset_value" in
+                    Ok
+                      (typed_ir value.ty
+                         (Semantic_ir.Let
+                            ( [
+                                ( Semantic_ir.PVar value_name,
+                                  value.semantic_expr );
+                              ],
+                              Semantic_ir.Sequence
+                                [
+                                  apply "Array.set"
                                     [
                                       array.semantic_expr;
                                       index;
-                                      value.semantic_expr;
-                                    ]))
-            | None -> Error.error (name ^ " expects an OCaml array")))
-        | Ok _ -> Error.error (name ^ " expects 3 arguments"))
+                                      Semantic_ir.Ident value_name;
+                                    ];
+                                  Semantic_ir.Ident value_name;
+                                ] )))
+                  else
+                    Ok
+                      (typed_ir TUnit
+                         (apply "Array.unsafe_set"
+                            [
+                              array.semantic_expr;
+                              index;
+                              value.semantic_expr;
+                            ]))
+            | None ->
+                Error.error
+                  ((if name = "__lg_aset" then "array write" else name)
+                 ^ " expects an OCaml array")))
+        | Ok _ ->
+            Error.error
+              ((if name = "__lg_aset" then "array write" else name)
+             ^ " expects 3 arguments"))
     | "__lg_array-predicate" | "__lg_array-value-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -6967,7 +7084,7 @@ let create ~compile_expr =
               else "array-value?"
             in
             Error.error (source_name ^ " expects 1 argument"))
-    | "atom" -> (
+    | "__lg_atom" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok [ value ] ->
@@ -7526,7 +7643,7 @@ let create ~compile_expr =
                        [ Semantic_ir.Fun ([], body.semantic_expr) ] )))
               (compile_body scope env
                  "delay expects at least one body form" body_forms))
-    | "volatile!" -> (
+    | "__lg_volatile!" -> (
         match arg_forms with
         | [ FSymbol "nil" ] -> (
             match Env.expected_type env with

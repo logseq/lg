@@ -80,6 +80,7 @@ let type_annotation_builtins =
       "bytes";
       "char";
       "comparable";
+      "array-index";
       "dynamic";
       "float";
       "fn";

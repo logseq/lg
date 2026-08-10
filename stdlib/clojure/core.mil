@@ -21,6 +21,16 @@
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]
   :fn<comparable<value>;value;int>)
+(signature clojure.core/make-array [value]
+  :fn<int;value;array<value>>)
+(signature clojure.core/aget [value index]
+  :fn<array<value>;array-index<index>;value>)
+(signature clojure.core/aset [value index]
+  :fn<array<value>;array-index<index>;value;value>)
+(signature clojure.core/atom [value]
+  :fn<value;ref<value>>)
+(signature clojure.core/volatile! [value]
+  :fn<value;ref<value>>)
 (signature clojure.core/subvec [value]
   :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
 (signature clojure.core/array [value]

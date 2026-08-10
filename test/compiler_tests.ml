@@ -3557,14 +3557,18 @@ let test_dynamic_var_type_hint_constrains_mutable_initializer () =
 (println 42)
 |}
   in
-  let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/dynamic_var_typed_initializer.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "typed dynamic Vars must remain static";
   assert_ocaml_runs
     "dynamic_var_type_hint_constrains_mutable_initializer"
-    "42\n" native_source;
+    "42\n" (compile_string_with_stdlib source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_type_namespace_rejects_emitted_name_collisions () =
   Lg.Compiler.compile_string
@@ -14241,7 +14245,8 @@ let test_concise_standard_type_annotations () =
   assert_ocaml_runs "concise_standard_type_annotations" "2\n" ocaml_source
 
 let test_volatile_nil_uses_contextual_option_reference_type () =
-  Lg.Compiler.compile_string {|(def value (volatile! nil))|}
+  compile_with_stdlib_result Lg.Target.Native "test/volatile_nil.cljc"
+    {|(def value (volatile! nil))|}
   |> expect_error_contains
        "volatile! nil requires an explicit option element type";
   let source =
@@ -14302,21 +14307,25 @@ let test_top_level_atom_nil_uses_explicit_option_storage () =
     None 0))
 |}
   in
-  let native_source = compile_string_with_stdlib source |> expect_ok in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/atom_nil_static_consumer.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "explicit option atom storage must not use Runtime_dynamic";
   assert_ocaml_runs "top_level_atom_nil_uses_explicit_option_storage" "42\n"
-    native_source;
+    (compile_string_with_stdlib source |> expect_ok);
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_ocaml_arrays_reject_invalid_operations () =
   compile_string_with_stdlib {|(def values (array 1 "two"))|}
   |> expect_error_contains "OCaml array elements must have the same type";
-  Lg.Compiler.compile_string {|(def value (aget 42 0))|}
-  |> expect_error_contains "aget expects an OCaml array";
+  compile_string_with_stdlib {|(def value (aget 42 0))|}
+  |> expect_error_contains "array read expects an OCaml array";
   compile_string_with_stdlib {|(def value (aget (array 1 2) "0"))|}
-  |> expect_error_contains "OCaml array index must be int";
+  |> expect_error_contains "array index requires int or float, got string";
   compile_string_with_stdlib {|(aset (array 1 2) 0 "bad")|}
   |> expect_error_contains "OCaml array value must match element type";
   compile_string_with_stdlib {|(def values (array))|}
@@ -23910,6 +23919,56 @@ let test_compile_time_helper_extraction_respects_macro_parameters () =
 (def answer (collision 41))
 |}
   |> expect_ok |> ignore
+
+let test_source_array_and_reference_constructors_are_first_class () =
+  let source =
+    {|
+(def make-ints make-array)
+(def read-int aget)
+(def read-int-float-index aget)
+(def write-int aset)
+(def make-int-atom atom)
+(def make-string-volatile volatile!)
+(def values (make-ints 3 0))
+(def written (write-int values 1 42))
+(def counter (make-int-atom 7))
+(def label (make-string-volatile "before"))
+(reset! counter 8)
+(vreset! label "after")
+(println
+  (str written ":" (read-int values 1) ":"
+       (read-int-float-index values 1.0) ":"
+       (deref counter) ":" (deref label)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_array_reference_constructors.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source array/reference constructors must remain statically typed";
+  assert_ocaml_runs "source_array_and_reference_constructors_are_first_class"
+    "42:42:42:8:after\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_array_reference_constructors.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_array_reference_constructors.cljc" source)
+
+let test_source_array_functions_reject_invalid_static_arguments () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_aget_rejects_non_array.cljc"
+    {|(def read-value aget) (def invalid (read-value "abc" 0))|}
+  |> expect_error_contains "array read expects an OCaml array";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_aset_rejects_wrong_value.cljc"
+    {|(def write-value aset) (def values (make-array 1 0)) (write-value values 0 "bad")|}
+  |> expect_error_contains "OCaml array value must match element type";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_make_array_rejects_bad_size.cljc"
+    {|(def allocate make-array) (def invalid (allocate "1" 0))|}
+  |> expect_error_contains "make-array size must be int"
 
 let test_hash_dispatches_to_record_ihash () =
   let source =
@@ -41018,6 +41077,10 @@ let tests =
       test_source_hash_and_compare_reject_invalid_static_domains );
     ( "compile-time helper extraction respects macro parameters",
       test_compile_time_helper_extraction_respects_macro_parameters );
+    ( "source array and reference constructors are first-class",
+      test_source_array_and_reference_constructors_are_first_class );
+    ( "source array functions reject invalid static arguments",
+      test_source_array_functions_reject_invalid_static_arguments );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

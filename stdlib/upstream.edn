@@ -533,6 +533,16 @@
           :reason :source-function-carries-a-closed-hashable-witness-and-delegates-static-scalars-collections-records-and-ihash-implementations-to-a-private-typed-primitive}
     compare {:status :static-adaptation
              :reason :source-function-carries-a-single-domain-comparable-witness-that-preserves-same-type-operands-and-static-icomparable-dispatch-through-a-private-typed-primitive}
+    make-array {:status :static-adaptation
+                :reason :source-function-preserves-the-current-two-argument-statically-typed-array-allocation-boundary-while-upstream-one-argument-and-multidimensional-arities-remain-unavailable-without-an-element-type-or-recursive-array-type}
+    aget {:status :static-adaptation
+          :reason :source-function-carries-a-closed-int-or-float-array-index-witness-and-preserves-the-current-single-index-static-array-read-while-upstream-recursive-index-arities-require-dependent-nested-array-types}
+    aset {:status :static-adaptation
+          :reason :source-function-carries-a-closed-int-or-float-array-index-witness-and-preserves-the-current-single-index-static-array-write-with-the-upstream-written-value-result-while-recursive-index-arities-require-dependent-nested-array-types}
+    atom {:status :static-adaptation
+          :reason :source-function-preserves-the-current-statically-typed-reference-constructor-while-upstream-metadata-validator-and-watch-bearing-atom-options-require-a-distinct-closed-atom-record-domain}
+    volatile! {:status :static-adaptation
+               :reason :source-function-preserves-the-upstream-single-value-constructor-through-the-current-statically-typed-reference-representation}
     subvec {:status :static-adaptation
             :reason :source-overloads-and-inline-specialization-preserve-two-and-three-argument-vector-slicing-through-a-private-typed-vector-boundary}
     array {:status :static-adaptation

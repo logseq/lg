@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 490 source entries (49.75%), 87 typed
+macro surfaces. The current baseline is 498 source entries (50.56%), 79 typed
 primitives, 43 special forms, 97 host boundaries, 217 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -267,6 +267,15 @@ concrete domain. The two collection functions preserve the pinned
 ClojureScript accumulation loops and final Murmur3 mix. Only the minimal
 private `__lg_hash` and `__lg_compare` elaboration ABI remains in the compiler,
 and neither capability uses dynamic packing.
+`make-array`, `aget`, `aset`, `atom`, and `volatile!` are also source-owned.
+`array-index<T>` carries only a closed `T -> int` witness, preserving integer
+and floating array indexes without an open numeric value. Array allocation,
+reads, writes, and reference allocation remain private typed primitives.
+Generated OCaml names encode a trailing bang as `_bang`, so source definitions
+such as `volatile!` remain distinct from predicates such as `volatile?` and the
+generated bindings stay readable. The manifest records the upstream arities
+that still require dependent nested-array types or a closed validator-bearing
+Atom domain.
 
 The Logseq/DataScript compatibility helpers `weak-deref` and `weak-clear!` are
 ordinary precompiled `clojure.core` source functions with explicit

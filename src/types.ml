@@ -145,6 +145,15 @@ let comparable_constraint_info = function
       Some value_ty
   | _ -> None
 
+let array_index_constraint_name = "__lg_array_index_constraint"
+let array_index_constraint value_ty =
+  TOcaml_app (array_index_constraint_name, [ value_ty ])
+
+let array_index_constraint_info = function
+  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
+      Some value_ty
+  | _ -> None
+
 let symbol_predicate_constraint_name = "__lg_symbol_predicate_constraint"
 let symbol_predicate_constraint value_ty =
   TOcaml_app (symbol_predicate_constraint_name, [ value_ty ])
@@ -292,10 +301,13 @@ let capability_constraint_value ty =
                       match comparable_constraint_info ty with
                       | Some value_ty -> Some value_ty
                       | None -> (
+                          match array_index_constraint_info ty with
+                          | Some value_ty -> Some value_ty
+                          | None -> (
                           match symbol_predicate_constraint_info ty with
                           | Some value_ty -> Some value_ty
                           | None ->
-                              Option.map snd (contains_constraint_info ty)))))))
+                              Option.map snd (contains_constraint_info ty))))))))
 
 let rec seqable_constraint_element = function
   | TOcaml_app (name, [ element_ty; _container_ty ])
@@ -679,6 +691,8 @@ let rec source_name = function
       "hashable<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
       "comparable<" ^ source_name value_ty ^ ">"
+  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
+      "array-index<" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ value_ty ])
     when name = symbol_predicate_constraint_name ->
       "symbol-predicate<" ^ source_name value_ty ^ ">"
@@ -795,6 +809,8 @@ let rec ocaml_name = function
   | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> " ^ ocaml_name value_ty
       ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
+  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
+      "((" ^ ocaml_name value_ty ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ])
     when name = symbol_predicate_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> string option) * "

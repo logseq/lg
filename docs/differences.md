@@ -397,6 +397,13 @@ static, and mixed comparison domains are rejected without dynamic packing.
 The pinned `hash-ordered-coll` and `hash-unordered-coll` loops are source-owned
 over nested seqable/hashable capabilities.
 
+`make-array`, `aget`, `aset`, `atom`, and `volatile!` are precompiled source
+functions. Array indexes use a closed `array-index<T>` conversion witness, so
+both current integer and floating index calls remain static. `aset` now returns
+the written value as ClojureScript specifies. Only private allocation and array
+access primitives remain compiler-owned; no public-name dispatch or dynamic
+packing is used.
+
 `weak-deref` and `weak-clear!` are source-defined over the shared typed weak
 reference runtime. `weak-ref` remains a compiler boundary so Native and
 Melange both reject non-heap values before code generation.

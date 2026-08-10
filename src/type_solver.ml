@@ -372,6 +372,12 @@ let rec unify substitutions left right =
     | TOcaml_app ("__lg_comparable_constraint", [ value_ty ]), ty
     | ty, TOcaml_app ("__lg_comparable_constraint", [ value_ty ]) ->
         unify substitutions value_ty ty
+    | ( TOcaml_app ("__lg_array_index_constraint", [ left ]),
+        TOcaml_app ("__lg_array_index_constraint", [ right ]) ) ->
+        unify substitutions left right
+    | TOcaml_app ("__lg_array_index_constraint", [ value_ty ]), ty
+    | ty, TOcaml_app ("__lg_array_index_constraint", [ value_ty ]) ->
+        unify substitutions value_ty ty
     | ( TOcaml_app ("__lg_symbol_predicate_constraint", [ left ]),
         TOcaml_app ("__lg_symbol_predicate_constraint", [ right ]) ) ->
         unify substitutions left right
