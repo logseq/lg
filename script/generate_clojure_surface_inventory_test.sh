@@ -125,8 +125,23 @@ awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/seq" || $2 == "clojure.c
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/some" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/conj" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/namespace" || $2 == "clojure.core/unreduced") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  BEGIN {
+    split("-as-transient -assoc -assoc! -assoc-n -assoc-n! -comparator -compare -compare-and-set! -conj -conj! -contains-key? -count -deref -disjoin -disjoin! -dissoc -dissoc! -empty -entry-key -equiv -find -hash -kv-reduce -lookup -meta -nth -peek -persistent! -pop -pop! -reduce -reset! -rseq -seq -sorted-seq -sorted-seq-from -swap! -vreset! -with-meta", names, " ")
+    for (i in names) required["clojure.core/" names[i]] = 1
+  }
+  $1 == "definition" && ($2 in required) && $3 == "source" {found[$2] = 1}
+  END {
+    for (name in required) {
+      if (!(name in found)) {
+        print "core protocol method is not source-owned: " name > "/dev/stderr"
+        failed = 1
+      }
+    }
+    exit failed
+  }
+' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/name" || $2 == "clojure.core/keyword" || $2 == "clojure.core/symbol" || $2 == "clojure.core/list*") && $3 == "blocked-static-typing" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && $2 == "clojure.core/-seq" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "blocked-static-typing" && $4 == "nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"

@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 522 source entries (52.99%), 66 typed
+macro surfaces. The current baseline is 560 source entries (56.85%), 28 typed
 primitives, 43 special forms, 97 host boundaries, 206 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -246,6 +246,19 @@ Keywords, symbols, user records, and typed OCaml buffers dispatch through
 ordinary static protocol extensions. The compiler's own buffer writes use the
 private `__lg_write` ABI, so the public `-write` name is not intercepted by the
 call elaborator.
+
+The statically supported ClojureScript collection, lookup, metadata,
+comparison, reference, sorted-collection, and transient protocol declarations
+also live in `clojure/core.cljc`. Their 38 public methods are source-owned; the
+compiler registry retains only the receiver-specific typed implementations for
+built-in lists, vectors, hash maps, sets, references, and host-backed
+collections. A source declaration is checked against that implementation
+surface and must preserve every supported method and fixed arity. Qualified
+`cljs.core` aliases resolve these declarations to the same root protocol IDs,
+so consumers do not get a parallel compatibility protocol. The statically
+adapted `IReduce` surface exposes the explicit-initial-value arity, and `ISwap`
+uses a unary typed updater after the public wrapper captures extra arguments;
+both differences are recorded in `stdlib/upstream.edn`.
 
 The complete pinned protocol-method surface now has no deferred entries: 6
 methods are source-defined, 34 are typed primitives, 32 have concrete static

@@ -44,7 +44,9 @@ let resolve_protocol_id ~scope env protocol_id =
     let target_id = Protocol_id.create ~owner:[ target ] ~name in
     if Option.is_some (Protocol_registry.find_protocol target_id registry) then
       target_id
-    else if String.equal target "cljs.core" then
+    else if
+      String.equal target "cljs.core" || String.equal target "clojure.core"
+    then
       let clojure_core_id =
         Protocol_id.create ~owner:[ "clojure.core" ] ~name
       in
@@ -52,7 +54,11 @@ let resolve_protocol_id ~scope env protocol_id =
         Option.is_some
           (Protocol_registry.find_protocol clojure_core_id registry)
       then clojure_core_id
-      else target_id
+      else
+        let root_id = Protocol_id.create ~owner:[] ~name in
+        if Option.is_some (Protocol_registry.find_protocol root_id registry) then
+          root_id
+        else target_id
     else target_id
   in
   if Option.is_some (Protocol_registry.find_protocol protocol_id registry) then

@@ -6473,7 +6473,6 @@ let create ~compile_expr =
     | ".valAt" -> java_interop_error ".valAt"
     | ".containsKey" -> java_interop_error ".containsKey"
     | ".entryAt" -> java_interop_error ".entryAt"
-    | "-contains-key?" -> compile_contains scope env arg_forms
     | "__lg_reduced-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8538,8 +8537,7 @@ let create ~compile_expr =
     | "__lg_nth" -> compile_nth scope env arg_forms
     | "__lg_get" -> compile_get scope env arg_forms
     | "__lg_get-in" -> compile_get_in scope env arg_forms
-    | "__lg_assoc" | "-assoc" ->
-        compile_assoc scope env arg_forms
+    | "__lg_assoc" -> compile_assoc scope env arg_forms
     | "__lg_assoc-in" -> compile_assoc_in scope env arg_forms
     | "__lg_dissoc" -> compile_dissoc scope env arg_forms
     | "__lg_merge" -> compile_merge scope env arg_forms

@@ -4,8 +4,67 @@ open Lowered
 
 module Env = Compiler_environment
 
+let fixed_arities = function
+  | TFn (parameters, _) -> Some [ List.length parameters ]
+  | TOverloaded_fn arities
+    when List.for_all (fun arity -> Option.is_none arity.rest_param) arities ->
+      Some
+        (List.map (fun arity -> List.length arity.fixed_params) arities
+        |> List.sort_uniq Int.compare)
+  | _ -> None
+
+let validate_core_protocol_surface protocol_id source_signatures declaration =
+  let source_methods =
+    List.map
+      (fun (signature : Protocol_registry.method_signature) ->
+        (Method_id.name signature.method_id, signature.method_ty))
+      source_signatures
+    |> List.sort compare
+  in
+  let builtin_methods =
+    Protocol_registry.Method_map.bindings declaration.Protocol_registry.methods
+    |> List.map (fun (method_id, signature) ->
+           (Method_id.name method_id, signature.Protocol_registry.method_ty))
+    |> List.sort compare
+  in
+  let source_names = List.map fst source_methods in
+  let builtin_names = List.map fst builtin_methods in
+  if source_names <> builtin_names then
+    Error.error
+      ("clojure.core protocol " ^ Protocol_id.name protocol_id
+     ^ " must declare the compiler-backed method surface exactly")
+  else
+    let rec validate = function
+      | [], [] -> Ok ()
+      | (name, source_ty) :: source_rest, (_, builtin_ty) :: builtin_rest -> (
+          match (fixed_arities source_ty, fixed_arities builtin_ty) with
+          | Some source_arities, Some builtin_arities
+            when source_arities = builtin_arities ->
+              validate (source_rest, builtin_rest)
+          | _ ->
+              Error.error
+                ("clojure.core protocol method " ^ name
+               ^ " must preserve the compiler-backed arities"))
+      | _ -> assert false
+    in
+    validate (source_methods, builtin_methods)
+
 let define ?location scope env protocol_name method_forms =
-  match Protocol.defprotocol scope protocol_name method_forms with
+  let canonical_name = Protocol.canonical_protocol_name protocol_name in
+  let builtin_id = Protocol_id.create ~owner:[] ~name:canonical_name in
+  let builtin_declaration =
+    if String.equal scope "clojure.core" then
+      Protocol_registry.find_protocol builtin_id (Env.protocols env)
+    else None
+  in
+  let declaration_scope, declaration_name =
+    match builtin_declaration with
+    | Some _ -> ("", canonical_name)
+    | None -> (scope, protocol_name)
+  in
+  match
+    Protocol.defprotocol declaration_scope declaration_name method_forms
+  with
   | Error _ as err -> err
   | Ok (protocol_id, signatures) ->
       let resolve_type = Function_elaborator.infer_named_record scope env in
@@ -28,6 +87,19 @@ let define ?location scope env protocol_name method_forms =
             | _ -> None)
           method_forms
       in
+      (match builtin_declaration with
+      | Some declaration -> (
+          match
+            validate_core_protocol_surface protocol_id signatures declaration
+          with
+          | Error _ as err -> err
+          | Ok () ->
+              Ok
+                ( env,
+                  Comment
+                    ("source declaration for compiler-backed protocol "
+                   ^ protocol_name) ))
+      | None ->
       (match
          Protocol_registry.declare ?location ~method_locations protocol_id signatures
            (Env.protocols env)
@@ -35,7 +107,7 @@ let define ?location scope env protocol_name method_forms =
       | Error _ as err -> err
       | Ok protocols ->
           let env = Env.with_protocols protocols env in
-          Ok (env, Comment ("protocol " ^ protocol_name)))
+          Ok (env, Comment ("protocol " ^ protocol_name))))
 
 let marker scope env protocol_name method_name =
   match

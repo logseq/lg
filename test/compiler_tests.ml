@@ -25760,6 +25760,35 @@ let test_namespace_has_no_public_name_dispatch () =
       then failwith ("namespace still has public-name dispatch in " ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_core_protocol_surface_uses_typed_builtin_implementations () =
+  let source =
+    {|
+(ns app.source-core-protocols
+  (:require [cljs.core :as core]))
+
+(println
+  (and (= 3 (core/ICounted/-count [1 2 3]))
+       (= 2 (core/ILookup/-lookup {:answer 2} :answer 0))
+       (= [1 2] (core/ICollection/-conj [1] 2))
+       (core/IAssociative/-contains-key? {:answer 2} :answer)
+       (= {:answer 3} (-assoc {:answer 2} :answer 3))
+       (= {:answer 3}
+          (core/IAssociative/-assoc {:answer 2} :answer 3))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_core_protocols.cljc" source
+  in
+  let native_consumer =
+    compile_string_from_stdlib source |> expect_ok
+  in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "core protocols must retain typed builtin implementations";
+  assert_ocaml_runs "source_core_protocol_surface" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_core_protocols.cljc" source)
+
 let test_batched_sequence_functions_work () =
   let source =
     {|
@@ -40931,6 +40960,8 @@ let tests =
       test_source_namespace_preserves_inamed_dispatch );
     ( "namespace has no public-name dispatch",
       test_namespace_has_no_public_name_dispatch );
+    ( "source core protocol surface uses typed builtin implementations",
+      test_source_core_protocol_surface_uses_typed_builtin_implementations );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );

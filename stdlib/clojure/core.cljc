@@ -28,6 +28,115 @@
   (-name [value])
   (-namespace [value]))
 
+;; These declarations mirror the statically supported portion of the
+;; ClojureScript core protocol surface. The compiler registry supplies typed
+;; implementations for built-in receivers; source records and types can extend
+;; the same protocols without routing public method names through call dispatch.
+(defprotocol ICounted
+  (-count [coll]))
+
+(defprotocol IEmptyableCollection
+  (-empty [coll]))
+
+(defprotocol ICollection
+  (-conj [coll value]))
+
+(defprotocol IIndexed
+  (-nth [coll index] [coll index not-found]))
+
+(defprotocol ILookup
+  (-lookup [object key] [object key not-found]))
+
+(defprotocol IAssociative
+  (-contains-key? [coll key])
+  (-assoc [coll key value]))
+
+(defprotocol IFind
+  (-find [coll key]))
+
+(defprotocol IMap
+  (-dissoc [coll key]))
+
+(defprotocol ISet
+  (-disjoin [coll value]))
+
+(defprotocol IStack
+  (-peek [coll])
+  (-pop [coll]))
+
+(defprotocol IVector
+  (-assoc-n [coll index value]))
+
+(defprotocol IDeref
+  (-deref [value]))
+
+(defprotocol IMeta
+  (-meta [value]))
+
+(defprotocol IWithMeta
+  (-with-meta [value metadata]))
+
+;; LG's typed reduction primitive always supplies the initial accumulator.
+(defprotocol IReduce
+  (-reduce [coll reducer initial]))
+
+(defprotocol IKVReduce
+  (-kv-reduce [coll reducer initial]))
+
+(defprotocol IEquiv
+  (-equiv [value other]))
+
+(defprotocol IHash
+  (-hash [value]))
+
+(defprotocol ISeqable
+  (-seq [value]))
+
+(defprotocol IReversible
+  (-rseq [coll]))
+
+(defprotocol ISorted
+  (-sorted-seq [coll ascending?])
+  (-sorted-seq-from [coll key ascending?])
+  (-entry-key [coll entry])
+  (-comparator [coll]))
+
+(defprotocol IEditableCollection
+  (-as-transient [coll]))
+
+(defprotocol ITransientCollection
+  (-conj! [coll value])
+  (-persistent! [coll]))
+
+(defprotocol ITransientAssociative
+  (-assoc! [coll key value]))
+
+(defprotocol ITransientMap
+  (-dissoc! [coll key]))
+
+(defprotocol ITransientVector
+  (-assoc-n! [coll index value])
+  (-pop! [coll]))
+
+(defprotocol ITransientSet
+  (-disjoin! [coll value]))
+
+(defprotocol IComparable
+  (-compare [left right]))
+
+(defprotocol IAtom
+  (-compare-and-set! [reference old-value new-value]))
+
+(defprotocol IReset
+  (-reset! [reference value]))
+
+;; Extra swap! arguments are captured by the source wrapper's typed updater.
+(defprotocol ISwap
+  (-swap! [reference updater]))
+
+(defprotocol IVolatile
+  (-vreset! [reference value]))
+
 (extend-type :keyword
   INamed
   (-name [value] (name value))
