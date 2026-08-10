@@ -29,6 +29,18 @@ let read_string source start =
   in
   loop (start + 1) false
 
+let read_regex source start =
+  let rec loop index escaped =
+    if index >= String.length source then Error.error "unterminated regex"
+    else if escaped then loop (index + 1) false
+    else
+      match source.[index] with
+      | '\\' -> loop (index + 1) true
+      | '"' -> Ok (String.sub source start (index - start + 1), index + 1)
+      | _ -> loop (index + 1) false
+  in
+  loop (start + 2) false
+
 let read_comment source start =
   let rec loop index =
     if index >= String.length source || source.[index] = '\n' then index
@@ -76,6 +88,11 @@ let parse source =
             match closing with
             | Some expected when ch = expected -> Ok (List.rev acc, index + 1)
             | _ -> Error.error ("mismatched closing delimiter " ^ String.make 1 ch))
+        | '#' when index + 1 < String.length source && source.[index + 1] = '"'
+          -> (
+            match read_regex source index with
+            | Error _ as err -> err
+            | Ok (value, next) -> nodes closing (Atom value :: acc) next)
         | '"' -> (
             match read_string source index with
             | Error _ as err -> err

@@ -38825,6 +38825,13 @@ let test_formatter_preserves_comments_strings_and_is_idempotent () =
   assert_equal_string expected formatted;
   Lg.Formatter.format formatted |> expect_ok |> assert_equal_string formatted
 
+let test_formatter_preserves_regex_delimiters () =
+  let source = {|(def pattern #"([0-9])")|} in
+  Lg.Formatter.format source
+  |> expect_ok
+  |> assert_equal_string {|(def pattern #"([0-9])")
+|}
+
 let test_formatter_rejects_unbalanced_delimiters () =
   Lg.Formatter.format "(def answer 42]"
   |> expect_error_value "mismatched closing delimiter ]"
@@ -43606,6 +43613,8 @@ let tests =
     ("formatter wraps long nested forms", test_formatter_wraps_long_nested_forms);
     ( "formatter preserves comments strings and is idempotent",
       test_formatter_preserves_comments_strings_and_is_idempotent );
+    ( "formatter preserves regex delimiters",
+      test_formatter_preserves_regex_delimiters );
     ( "formatter rejects unbalanced delimiters",
       test_formatter_rejects_unbalanced_delimiters );
     ( "match delegates opaque module constructor payload patterns to OCaml",
