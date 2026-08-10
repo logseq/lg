@@ -10,6 +10,19 @@ let int value = Semantic_ir.Int value
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
+let bind_arguments prefix args build =
+  let rec bind index bound = function
+    | [] -> build (List.rev bound)
+    | arg :: rest ->
+        let name = prefix ^ string_of_int index in
+        Semantic_ir.Let
+          ( [ (Semantic_ir.PVar name, arg.semantic_expr) ],
+            bind (index + 1)
+              ({ arg with semantic_expr = Semantic_ir.Ident name } :: bound)
+              rest )
+  in
+  bind 0 [] args
+
 let rec int_expression arg =
   match arg.ty with
   | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -92,20 +105,26 @@ let compile_binary name args =
   | _ -> Error.error (name ^ " expects 2 arguments")
 
 let compile_min_max name args =
+  let is_max = name = "max" || name = "__lg_max" in
+  let display_name = if is_max then "max" else "min" in
   match args with
-  | [] -> Error.error (name ^ " expects at least 1 arguments")
+  | [] -> Error.error (display_name ^ " expects at least 1 arguments")
   | _ ->
       if List.for_all (fun arg -> accepts_int arg.ty) args then
-        let fn = if name = "max" then "max" else "min" in
+        let fn =
+          if is_max then "Lg_runtime.Runtime_int.int_max"
+          else "Lg_runtime.Runtime_int.int_min"
+        in
         let expression =
-          match args with
-          | [] -> assert false
-          | first :: rest ->
-              List.fold_left
-                (fun expression arg ->
-                  Semantic_ir.Apply
-                    (Semantic_ir.Ident fn, [ expression; int_expression arg ]))
-                (int_expression first) rest
+          bind_arguments "__lg_int_extrema_argument_" args (function
+            | [] -> assert false
+            | first :: rest ->
+                List.fold_left
+                  (fun expression arg ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident fn,
+                        [ expression; int_expression arg ] ))
+                  (int_expression first) rest)
         in
         Ok (typed_ir TInt expression)
-      else Error.error ("expected int arguments for " ^ name)
+      else Error.error ("expected int arguments for " ^ display_name)

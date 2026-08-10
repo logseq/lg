@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 592 source entries (60.10%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 177 static-typing blockers,
+macro surfaces. The current baseline is 594 source entries (60.30%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 175 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -449,7 +449,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 197-name compiler dispatch inventory has zero `source-shadowed`
+The current 198-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,
@@ -466,7 +466,7 @@ plus `some?`,
 `qualified-ident?`, `simple-symbol?`, `qualified-symbol?`, `simple-keyword?`,
 `qualified-keyword?`, `counted?`, `seqable?`, and `doseq` source macros,
 `reduced`, `reset-vals!`, `vary-meta`,
-`inc`, `dec`, `bit-not`, `bit-and`, `bit-or`,
+`inc`, `dec`, `max`, `min`, `bit-not`, `bit-and`, `bit-or`,
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand`, `rand-int`, `rand-nth`, `to-array-2d`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
@@ -711,6 +711,15 @@ The public `unchecked-max` and `unchecked-min` macros are also pinned source:
 their two-argument clauses bind both inputs exactly once before comparing, and
 their variadic clauses preserve upstream nesting through the existing static
 `max` and `min` operations.
+Public `max` and `min` are now pinned source functions with one-, two-, and
+variadic arities. A private static `INumericExtrema` protocol keeps homogeneous
+int and float values first-class, including higher-order reduction. Direct
+calls inline to `__lg_max` or `__lg_min` only for mixed int/float widening; the
+primitive binds every argument in source order before comparison, and the
+shared float helper preserves ClojureScript NaN propagation and later-value
+tie selection. Generated Native and Melange ML therefore remains statically
+typed and does not depend on OCaml's evaluation order or `Stdlib.max`/`min`
+primitive lowering.
 The pinned internal-public `mask` and `bitpos` macros are source adaptations of
 the ClojureScript HAMT bit arithmetic. They preserve the unsigned right shift,
 five-bit index mask, and bit-position composition through LG's existing typed

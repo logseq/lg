@@ -204,6 +204,12 @@ awk -F '\t' '$1 == "compiler-call" && ($2 == "keyword" || $2 == "symbol") {found
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_builtin-keyword" || $2 == "__lg_builtin-symbol") && $3 == "typed-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "contains?" || $2 == "assoc" || $2 == "dissoc" || $2 == "find" || $2 == "keys") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_find" && $3 == "typed-primitive" && $4 == "typed-map-entry-lookup-capability-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/max" || $2 == "clojure.core/min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_max" || $2 == "__lg_min") && $3 == "typed-primitive" && $4 == "typed-numeric-extrema-specialization-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+if awk -F '\t' '$1 == "compiler-call" && ($2 == "max" || $2 == "min") {found=1} END {exit !found}' "$tmp/inventory.tsv"; then
+  echo "public max/min compiler dispatch must be removed" >&2
+  exit 1
+fi
 awk -F '\t' '$1 == "compiler-call" && ($2 == "subvec" || $2 == "array") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_subvec" || $2 == "__lg_array") && $3 == "typed-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "weak-deref" || $2 == "weak-clear!") {found=1} END {exit found}' "$tmp/inventory.tsv"

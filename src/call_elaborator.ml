@@ -375,14 +375,17 @@ let rec argument_compatible expected actual =
         argument_compatible expected_map (Types.constraint_value_type actual)
     | expected_map, actual_map
       when Option.is_some (Types.dynamic_map_types expected_map) -> (
-        match Types.dynamic_map_types actual_map with
-        | Some (actual_key, actual_value) ->
-            let expected_key, expected_value =
-              Option.get (Types.dynamic_map_types expected_map)
-            in
-            argument_compatible expected_key actual_key
-            && argument_compatible expected_value actual_value
-        | None -> false)
+        match actual_map with
+        | TUnknown | TMeta _ | TVar _ -> true
+        | actual_map -> (
+            match Types.dynamic_map_types actual_map with
+            | Some (actual_key, actual_value) ->
+                let expected_key, expected_value =
+                  Option.get (Types.dynamic_map_types expected_map)
+                in
+                argument_compatible expected_key actual_key
+                && argument_compatible expected_value actual_value
+            | None -> false))
     | _ when Types.assignable ~policy:Host_boundary ~expected ~actual -> true
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
       when callback_parameters_compatible expected_params actual_params -> (
@@ -8615,7 +8618,7 @@ let create ~compile_expr =
                a closed sum type for alternative value types"
         | Ok [ _ ] -> Ok (unreachable_narrowed_value TInt "int")
         | Ok _ -> Error.error "internal int narrowing expects 1 argument")
-    | "max" | "min" -> (
+    | "__lg_max" | "__lg_min" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args

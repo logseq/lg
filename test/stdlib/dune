@@ -33,6 +33,104 @@
    %{target})))
 
 (rule
+ (target source_core_extrema_app_chunk.ml)
+ (deps
+  source_core_extrema_app.cljc
+  ../../stdlib/lg_stdlib_native.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   native
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_extrema_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_extrema_native.ml)
+ (deps ../../stdlib/lg_stdlib_native.ml source_core_extrema_app_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:source_core_extrema_app_chunk.ml})))))
+
+(executable
+ (name source_core_extrema_native)
+ (modules source_core_extrema_native)
+ (flags
+  (:standard -w -27-32))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_extrema.actual)
+ (deps source_core_extrema_native.exe source_core_extrema.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run %{exe:source_core_extrema_native.exe}))
+   (diff %{dep:source_core_extrema.expected} %{target}))))
+
+(rule
+ (target source_core_extrema_app_melange_chunk.ml)
+ (deps
+  source_core_extrema_app.cljc
+  ../../stdlib/lg_stdlib_melange.state
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-chunk-from
+   %{dep:../../stdlib/lg_stdlib_melange.state}
+   %{dep:source_core_extrema_app.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target source_core_extrema_melange.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.ml
+  source_core_extrema_app_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:source_core_extrema_app_melange_chunk.ml})))))
+
+(melange.emit
+ (target source-core-extrema-melange)
+ (alias source-core-extrema-melange)
+ (module_systems es6)
+ (modules source_core_extrema_melange)
+ (compile_flags -w -27-32)
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+
+(rule
+ (alias runtest)
+ (target source_core_extrema_melange.actual)
+ (deps
+  (alias source-core-extrema-melange)
+  source-core-extrema-melange/test/stdlib/source_core_extrema_melange.js
+  source_core_extrema.expected)
+ (action
+  (progn
+   (with-stdout-to
+    %{target}
+    (run
+     node
+     %{dep:source-core-extrema-melange/test/stdlib/source_core_extrema_melange.js}))
+   (diff %{dep:source_core_extrema.expected} %{target}))))
+
+(rule
  (target source_core_nominal_predicates_app_chunk.ml)
  (deps
   source_core_nominal_predicates_app.cljc
@@ -1554,6 +1652,60 @@
   (source_tree ../../src))
  (action
   (run sh %{dep:check_source_namespace_migration.sh} ../..)))
+
+(rule
+ (alias no-source-core-extrema-dispatch)
+ (deps
+  check_no_source_core_extrema_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/expression_support.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_extrema_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_extrema_dispatch.sh
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/expression_support.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_extrema_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_extrema_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_extrema_bad_arity.cljc}
+   "expects at least 1 arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_extrema_bad_type.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:source_core_extrema_bad_type.cljc}
+   "expected int arguments for max")))
 
 (rule
  (alias source-core-bootstrap)

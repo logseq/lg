@@ -100,6 +100,7 @@ let rec of_compiler_type =
       | "float", [] -> TFloat
       | "char", [] -> TChar
       | "string", [] -> TString
+      | "Lg_runtime.Runtime_keyword.t", [] -> TKeyword
       | "bool", [] -> TBool
       | "unit", [] -> TUnit
       | "Lg_runtime.Runtime_dynamic.t", [] ->

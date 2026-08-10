@@ -2960,6 +2960,51 @@
 (defn NaN? [value]
   (js/isNaN value))
 
+;; ClojureScript numbers share one JavaScript representation. LG keeps int and
+;; float distinct, so first-class extrema use a private static protocol while
+;; direct calls inline to a typed primitive that can also widen mixed inputs.
+(defprotocol ^:private INumericExtrema
+  (-max-two [x y] :self)
+  (-min-two [x y] :self))
+
+(extend-type :int
+  INumericExtrema
+  (-max-two [x y] (if (> x y) x y))
+  (-min-two [x y] (if (< x y) x y)))
+
+(extend-type :float
+  INumericExtrema
+  (-max-two [x y]
+    (cond
+      (js/isNaN x) x
+      (js/isNaN y) y
+      (> x y) x
+      :else y))
+  (-min-two [x y]
+    (cond
+      (js/isNaN x) x
+      (js/isNaN y) y
+      (< x y) x
+      :else y)))
+
+(defn max
+  {:inline (fn [& args] (cons '__lg_max args))}
+  ([x] x)
+  ([x y] (INumericExtrema/-max-two x y))
+  ([x y & more]
+   (__lg_reduce (fn [best item] (INumericExtrema/-max-two best item))
+                (INumericExtrema/-max-two x y)
+                more)))
+
+(defn min
+  {:inline (fn [& args] (cons '__lg_min args))}
+  ([x] x)
+  ([x y] (INumericExtrema/-min-two x y))
+  ([x y & more]
+   (__lg_reduce (fn [best item] (INumericExtrema/-min-two best item))
+                (INumericExtrema/-min-two x y)
+                more)))
+
 (defn infinite? [value]
   (or (= value ##Inf)
       (= value ##-Inf)))

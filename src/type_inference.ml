@@ -518,7 +518,9 @@ let rec numeric_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
-  | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
+  | FList
+      (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
+    ->
       let types = List.map (numeric_form_type params) args in
       if List.exists (Types.equal TFloat) types then TFloat
       else if List.exists (Types.equal TInt) types then TInt
@@ -579,7 +581,9 @@ let rec inferred_form_type params = function
   | FList [ FKeyword keyword; FSymbol receiver ] ->
       record_field_type params receiver keyword
       |> Option.value ~default:TUnknown
-  | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: _) as form ->
+  | FList
+      (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: _)
+    as form ->
       numeric_form_type params form
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | FList [ FSymbol "__lg_ex-message"; _ ] -> TNullable TString
@@ -1463,7 +1467,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 Result.bind result (fun params ->
                     infer_expected expected params argument))
               (Ok params) parameter_types args)
-    | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args)
+    | FList
+        (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
       when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
         infer_expected_all expected_ty params args
     | FList
@@ -4524,7 +4529,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "__lg_sort"; _comparator; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
-    | FList (FSymbol ("+" | "-" | "*" | "/" | "max" | "min") :: args) ->
+    | FList
+        (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
+      ->
         let expected_ty =
           if
             List.exists

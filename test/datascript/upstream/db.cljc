@@ -1264,7 +1264,7 @@
 (defn  attr-tuples
   "e.g. :reg/semester => #{:reg/semester+course+student ...}"
   [ schema
-    rschema]
+    ^:map<keyword;set<keyword>> rschema]
   (reduce
    (fn [m tuple-attr] ;; e.g. :reg/semester+course+student
      (let [attrs
@@ -1286,7 +1286,7 @@
         m
         attrs)))
    {}
-   (:db.type/tuple rschema)))
+   (get rschema :db.type/tuple #{})))
 
 (signature datascript.db/rschema
   :fn<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>;datascript.db/ReverseSchema>)

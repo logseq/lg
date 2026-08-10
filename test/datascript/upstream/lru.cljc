@@ -2,7 +2,7 @@
 
 (type-record lru-state [key value]
   (key-value :map<key;value>)
-  (gen-key :map<int;key>)
+  (gen-key :clojure.core/persistent-tree-map<int;key>)
   (key-gen :map<key;int>)
   (gen :int)
   (limit :int))
@@ -34,13 +34,16 @@
           key-gen   (:key-gen lru)
           gen       (:gen lru)
           limit     (:limit lru)
-          [g k]     (first gen-key)]
-      (record lru-state
-        (key-value (dissoc key-value k))
-        (gen-key (dissoc gen-key g))
-        (key-gen (dissoc key-gen k))
-        (gen gen)
-        (limit limit)))
+          entry     (first gen-key)]
+      (if-some [present entry]
+        (let [[g k] present]
+          (record lru-state
+            (key-value (dissoc key-value k))
+            (gen-key (dissoc gen-key g))
+            (key-gen (dissoc key-gen k))
+            (gen gen)
+            (limit limit)))
+        lru))
     lru))
 
 (defn assoc-lru [lru k v]

@@ -1,5 +1,17 @@
 let min_subnormal = Int64.float_of_bits 1L
 
+let max_number left right =
+  if Float.is_nan left then left
+  else if Float.is_nan right then right
+  else if left > right then left
+  else right
+
+let min_number left right =
+  if Float.is_nan left then left
+  else if Float.is_nan right then right
+  else if left < right then left
+  else right
+
 let encoded_exponent value =
   let bits = Int64.bits_of_float value in
   Int64.(to_int (logand (shift_right_logical bits 52) 0x7ffL))

@@ -1121,11 +1121,6 @@ let untyped_first_class_function_error = function
   | _ -> None
 
 let lookup_function scope env name =
-  let static_int_function parameter_tys return_ty runtime_name =
-    typed_ir
-      (TFn (parameter_tys, return_ty))
-      (Semantic_ir.Ident ("Lg_runtime.Runtime_int." ^ runtime_name))
-  in
   let static_int_comparison operator =
     typed_ir
       (TFn ([ TInt; TInt ], TBool))
@@ -1200,8 +1195,6 @@ let lookup_function scope env name =
                       ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
       | ("<" | "<=" | ">" | ">=") as operator ->
           Ok (static_int_comparison operator)
-      | "max" -> Ok (static_int_function [ TInt; TInt ] TInt "int_max")
-      | "min" -> Ok (static_int_function [ TInt; TInt ] TInt "int_min")
       | _ -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =

@@ -22,8 +22,8 @@ let clojure_mod left right =
 
 let int_quot = ( / )
 let int_rem = ( mod )
-let int_max = Stdlib.max
-let int_min = Stdlib.min
+let int_max left right = if left > right then left else right
+let int_min left right = if left < right then left else right
 let int_zero value = value = 0
 let int_positive value = value > 0
 let int_negative value = value < 0

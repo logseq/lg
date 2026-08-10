@@ -275,6 +275,10 @@
           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-negative-number-predicate}
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
+    max {:status :static-adaptation
+         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-and-an-inline-typed-primitive-widens-mixed-direct-call-inputs}
+    min {:status :static-adaptation
+         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-and-an-inline-typed-primitive-widens-mixed-direct-call-inputs}
     unchecked-max {:status :ported
                    :reason :source-macro-preserves-upstream-one-two-and-variadic-arities-two-argument-single-evaluation-and-max-composition-order}
     unchecked-min {:status :ported

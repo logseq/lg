@@ -107,6 +107,8 @@ awk '
     internal_abi["__lg_ensure-reduced"] = "typed-conditional-parameterized-reduced-wrapper-primitive"
     internal_abi["__lg_force"] = "typed-lazy-force-or-static-identity-primitive"
     internal_abi["__lg_rand"] = "typed-int-or-float-random-bound-specialization-primitive"
+    internal_abi["__lg_max"] = "typed-numeric-extrema-specialization-primitive"
+    internal_abi["__lg_min"] = "typed-numeric-extrema-specialization-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"

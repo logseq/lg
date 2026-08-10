@@ -12,6 +12,19 @@ let rec accepts_mixed_numeric ty =
   | TInt | TFloat -> true
   | _ -> false
 
+let bind_arguments prefix args build =
+  let rec bind index bound = function
+    | [] -> build (List.rev bound)
+    | arg :: rest ->
+        let name = prefix ^ string_of_int index in
+        Semantic_ir.Let
+          ( [ (Semantic_ir.PVar name, arg.semantic_expr) ],
+            bind (index + 1)
+              ({ arg with semantic_expr = Semantic_ir.Ident name } :: bound)
+              rest )
+  in
+  bind 0 [] args
+
 let expect_float_args args =
   List.for_all (fun arg -> accepts_float arg.ty) args
 
@@ -63,17 +76,28 @@ let compile_operator name args =
       Ok (typed_ir TFloat (fold_infix operator first rest))
 
 let compile_min_max name args =
+  let is_max = name = "max" || name = "__lg_max" in
+  let display_name = if is_max then "max" else "min" in
   match args with
-  | [] -> Error.error (name ^ " expects at least 1 arguments")
+  | [] -> Error.error (display_name ^ " expects at least 1 arguments")
   | _ :: _ when not (List.for_all (fun arg -> accepts_float arg.ty) args) ->
-      Error.error (name ^ " numeric arguments must all have the same type")
+      Error.error
+        (display_name ^ " numeric arguments must all have the same type")
   | first :: rest ->
-      let fn = if name = "max" then "max" else "min" in
+      let fn =
+        if is_max then "Lg_runtime.Runtime_math_common.max_number"
+        else "Lg_runtime.Runtime_math_common.min_number"
+      in
       let expression =
-        List.fold_left
-          (fun expression arg ->
-            Semantic_ir.Apply
-              (Semantic_ir.Ident fn, [ expression; float_expression arg ]))
-          (float_expression first) rest
+        bind_arguments "__lg_float_extrema_argument_" (first :: rest)
+          (function
+            | [] -> assert false
+            | first :: rest ->
+                List.fold_left
+                  (fun expression arg ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident fn,
+                        [ expression; float_expression arg ] ))
+                  (float_expression first) rest)
       in
       Ok (typed_ir TFloat expression)

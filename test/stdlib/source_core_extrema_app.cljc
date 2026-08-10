@@ -1,0 +1,36 @@
+(ns source-core-extrema-app
+  (:require [cljs.core :as core :refer [max min]]))
+
+(println (= 7 (max 7)))
+(println (= 9 (max 3 9)))
+(println (= 9 (max 3 9 4 8)))
+(println (= -4 (min -4)))
+(println (= -4 (min 3 -4)))
+(println (= -4 (min 3 -4 8 2)))
+
+(println (= 2.5 (max 1.5 2.5)))
+(println (= -2.5 (min -2.5 1.5)))
+(println (= 2.5 (core/max 1 2.5)))
+(println (= -2.5 (clojure.core/min -2.5 1)))
+
+(def not-a-number (/ 0.0 0.0))
+(println (NaN? (max not-a-number 1.0)))
+(println (NaN? (max 1.0 not-a-number)))
+(println (NaN? (min not-a-number 1.0)))
+(println (NaN? (min 1.0 not-a-number)))
+(println (NaN? (max 1.0 2.0 not-a-number 3.0)))
+(println (NaN? (min 1.0 2.0 not-a-number 3.0)))
+
+(def choose-max max)
+(def choose-min min)
+(println (= 9 (choose-max 3 9)))
+(println (= -4 (choose-min 3 -4)))
+(println (NaN? (choose-max not-a-number 1.0)))
+(println (NaN? (choose-min 1.0 not-a-number)))
+(println (= 7 (reduce max 0 [1 7 3])))
+(println (= -2.0 (reduce min 4.0 [1.0 -2.0 3.0])))
+
+(def evaluations (atom 0))
+(println (= 7 (max (do (swap! evaluations inc) 7)
+                   (do (swap! evaluations inc) 3))))
+(println (= 2 @evaluations))

@@ -86,10 +86,16 @@ val runtime_type_value : t -> t
 val function_runtime_type_value : unit -> t
 val database_runtime_type_value : bool -> t
 val class_name : t -> string
-val map_of_keyword_map : (string, t) Lg_runtime.Runtime_map.t -> t
-val map_of_keyword_entries : (string * t) Rrbvec.t -> t
+val map_of_keyword_map :
+  (Lg_runtime.Runtime_keyword.t, t) Lg_runtime.Runtime_map.t -> t
+
+val map_of_keyword_entries :
+  (Lg_runtime.Runtime_keyword.t * t) Rrbvec.t -> t
+
 val map_of_keyword_map_with :
-  ('value -> t) -> (string, 'value) Lg_runtime.Runtime_map.t -> t
+  ('value -> t) ->
+  (Lg_runtime.Runtime_keyword.t, 'value) Lg_runtime.Runtime_map.t ->
+  t
 val map_of_data_map : (t, t) Lg_runtime.Runtime_map.t -> t
 val map_of_data_map_with :
   ('value -> t) -> (t, 'value) Lg_runtime.Runtime_map.t -> t
