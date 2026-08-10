@@ -191,15 +191,24 @@ let compact_runtime_path name =
   in
   compact compact_runtime_aliases
 
-let replace_all source pattern replacement =
+let replace_runtime_path source pattern replacement =
   let pattern_length = String.length pattern in
   let source_length = String.length source in
   let buffer = Buffer.create source_length in
+  let identifier_char = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '\'' -> true
+    | _ -> false
+  in
   let rec loop index =
     if index >= source_length then Buffer.contents buffer
     else if
       index + pattern_length <= source_length
       && String.sub source index pattern_length = pattern
+      &&
+      let following = index + pattern_length in
+      following = source_length
+      || source.[following] = '.'
+      || not (identifier_char source.[following])
     then (
       Buffer.add_string buffer replacement;
       loop (index + pattern_length))
@@ -211,7 +220,7 @@ let replace_all source pattern replacement =
 
 let compact_runtime_source source =
   List.fold_left
-    (fun source (prefix, alias) -> replace_all source prefix alias)
+    (fun source (prefix, alias) -> replace_runtime_path source prefix alias)
     source compact_runtime_aliases
 
 let compact_generated_name name =

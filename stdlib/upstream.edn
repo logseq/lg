@@ -248,7 +248,7 @@
     rseq {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
-          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ifind-for-static-runtime-maps-and-explicit-protocol-implementations}
+          :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-while-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
     equiv-map {:status :static-adaptation
                :reason :source-port-preserves-count-check-entry-order-and-first-mismatch-short-circuiting-while-typed-ifind-options-replace-the-upstream-private-never-equiv-sentinel-and-records-remain-a-distinct-static-domain}
     ifind? {:status :static-adaptation
@@ -1527,10 +1527,10 @@
              :reason :typed-set-reduction-fuses-upstream-map-then-set-realization-while-preserving-projection-order-and-duplicate-elimination}
     rename {:status :static-adaptation
             :reason :typed-set-reduction-fuses-upstream-map-then-set-realization-while-preserving-renaming-order-and-duplicate-elimination}
-    index {:status :blocked-static-typing
-           :reason :map-valued-hash-keys-need-static-clojure-map-hash-and-equality-operations}
-    join {:status :blocked-static-typing
-          :reason :map-valued-index-keys-need-static-clojure-map-hash-and-equality-before-join-control-flow-is-source-expressible}
+    index {:status :static-adaptation
+           :reason :typed-reduction-preserves-upstream-projection-grouping-order-and-set-deduplication-while-selecting-order-independent-clojure-map-hash-and-equality-for-the-index-map-key}
+    join {:status :static-adaptation
+          :reason :source-overloads-preserve-upstream-nonempty-guards-size-based-index-selection-natural-key-intersection-key-map-inversion-scan-order-and-nested-merge-reduction-while-explicit-option-narrowing-exposes-first-rows-and-emptying-an-input-relation-retains-the-static-map-set-result-representation}
     bubble-max-key {:status :static-adaptation
                     :reason :typed-source-helper-preserves-the-upstream-maximal-selection-and-identity-removal-algorithm-but-public-variadic-operations-retain-binary-typed-reduction-until-nested-set-callback-instantiation-is-source-expressible}}
    :notes

@@ -37,3 +37,15 @@
 
 (signature clojure.set/rename [key value]
   :fn<set<map<key;value>>;map<key;key>;set<map<key;value>>>)
+
+(signature clojure.set/index [key value keys-storage]
+  :fn<set<map<key;value>>;seqable<key;keys-storage>;map<map<key;value>;set<map<key;value>>>>)
+
+(signature clojure.set/join-key-mapped [key value]
+  :fn<set<map<key;value>>;set<map<key;value>>;map<key;key>;set<map<key;value>>>)
+
+(signature clojure.set/join-indexed [key value keys-storage]
+  :fn<set<map<key;value>>;set<map<key;value>>;seqable<key;keys-storage>;set<map<key;value>>>)
+
+(signature clojure.set/join [key value]
+  :overload<fn<set<map<key;value>>;set<map<key;value>>;set<map<key;value>>>;fn<set<map<key;value>>;set<map<key;value>>;map<key;key>;set<map<key;value>>>>)

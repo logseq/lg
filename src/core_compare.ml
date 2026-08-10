@@ -125,8 +125,13 @@ let rec equality_expr ?env left right =
             Types.same_shape left_key right_key
             && Types.same_shape left_value right_value
           then
+            let operation =
+              if Option.is_some (Types.dynamic_map_types left_key) then
+                "Lg_runtime.Runtime_map.equiv_map_key"
+              else "Lg_runtime.Runtime_map.equiv"
+            in
             Semantic_ir.Apply
-              ( Semantic_ir.Ident "Lg_runtime.Runtime_map.equiv",
+              ( Semantic_ir.Ident operation,
                 [ left.semantic_expr; right.semantic_expr ] )
           else
             Semantic_ir.Sequence

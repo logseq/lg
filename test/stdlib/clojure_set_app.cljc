@@ -2,7 +2,7 @@
   (:require
    [clojure.core :as core :refer [odd?]]
    [clojure.edn :as edn]
-   [clojure.set :as set :refer [difference project]]
+   [clojure.set :as set :refer [difference index join project]]
    [clojure.string :as string :refer [upper-case]]
    [cljs.reader :as reader]
    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
@@ -65,6 +65,84 @@
 (println (and (= #{{:a 1} {:a 2}} evaluated-project)
               (= 1 (deref relation-evaluations))
               (= 1 (deref key-evaluations))))
+(def empty-index (set/index (empty relation) [:a]))
+(def map-key-operations
+  (assoc empty-index forward-map relation))
+(println (= (Some relation) (get map-key-operations reverse-map)))
+(def replaced-map-key
+  (assoc map-key-operations reverse-map (empty relation)))
+(println (and (= 1 (count replaced-map-key))
+              (= (Some (empty relation))
+                 (get replaced-map-key forward-map))))
+(println (contains? map-key-operations reverse-map))
+(println (= 0 (count (dissoc map-key-operations reverse-map))))
+(println (if-some [entry (find map-key-operations reverse-map)]
+           (= relation (val entry))
+           false))
+(def indexed-relation (set/index relation [:a]))
+(println (= #{{:a 1 :b 2} {:a 1 :b 3}}
+            (get indexed-relation {:a 1} #{})))
+(println (= 2 (count indexed-relation)))
+(println (= 0 (count empty-index)))
+(println (= relation
+            (get (set/index relation [])
+                 (select-keys forward-map [])
+                 #{})))
+(def relation-index index)
+(println (= indexed-relation (relation-index relation [:a])))
+(println (= indexed-relation (clojure.set/index relation [:a])))
+(def employees
+  #{{:employee 1 :dept 10}
+    {:employee 2 :dept 20}})
+(def departments
+  #{{:dept 10 :floor 3}
+    {:dept 30 :floor 4}
+    {:dept 40 :floor 5}})
+(def natural-result
+  #{{:employee 1 :dept 10 :floor 3}})
+(println (= natural-result (set/join employees departments)))
+(println (= natural-result (set/join departments employees)))
+(println (= #{{:left 1 :right 2} {:left 1 :right 3}}
+            (set/join #{{:left 1}} #{{:right 2} {:right 3}})))
+(println (= #{} (set/join (empty employees) departments)))
+(println (= #{} (set/join employees (empty departments))))
+(def teams-by-external-key
+  #{{:team 10 :score 7}
+    {:team 30 :score 8}
+    {:team 40 :score 9}})
+(def keyed-result
+  #{{:user 1 :team-id 10 :team 10 :score 7}})
+(def users-by-internal-key
+  #{{:user 1 :team-id 10}
+    {:user 2 :team-id 20}})
+(println (= keyed-result
+            (set/join users-by-internal-key teams-by-external-key
+                      {:team-id :team})))
+(def users-by-internal-key-large
+  #{{:user 1 :team-id 10}
+    {:user 2 :team-id 20}
+    {:user 3 :team-id 30}})
+(println (= keyed-result
+            (set/join users-by-internal-key-large
+                      #{{:team 10 :score 7}}
+                      {:team-id :team})))
+(println (= #{}
+            (set/join users-by-internal-key
+                      #{{:team 99 :score 1}}
+                      {:team-id :team})))
+(def natural-join (fn [left right] (join left right)))
+(println (= natural-result (natural-join employees departments)))
+(def join-left-evaluations (atom 0))
+(def join-right-evaluations (atom 0))
+(defn evaluated-employees []
+  (do (swap! join-left-evaluations inc) employees))
+(defn evaluated-departments []
+  (do (swap! join-right-evaluations inc) departments))
+(def evaluated-join
+  (set/join (evaluated-employees) (evaluated-departments)))
+(println (and (= natural-result evaluated-join)
+              (= 1 (deref join-left-evaluations))
+              (= 1 (deref join-right-evaluations))))
 (println (pr-str (set/union #{"a"} #{"b"})))
 (println (string/join "," ["a" "b"]))
 (println (string/index-of "banana" "na" 3))

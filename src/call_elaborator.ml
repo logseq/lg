@@ -357,6 +357,32 @@ let rec argument_compatible expected actual =
                 Types.is_record_extension_field expected
                 || is_optional_type expected.ty)
           expected_fields
+    | expected_map,
+      (TRecord actual_fields | TNamed_record { fields = actual_fields; _ })
+      when Option.is_some (Types.dynamic_map_types expected_map)
+           && Types.is_homogeneous_record actual_fields ->
+        let expected_key, expected_value =
+          Option.get (Types.dynamic_map_types expected_map)
+        in
+        let actual_value =
+          Types.homogeneous_record_value_type actual_fields |> Option.get
+        in
+        argument_compatible expected_key TKeyword
+        && argument_compatible expected_value actual_value
+    | expected_map, actual
+      when Option.is_some (Types.dynamic_map_types expected_map)
+           && not (Types.equal actual (Types.constraint_value_type actual)) ->
+        argument_compatible expected_map (Types.constraint_value_type actual)
+    | expected_map, actual_map
+      when Option.is_some (Types.dynamic_map_types expected_map) -> (
+        match Types.dynamic_map_types actual_map with
+        | Some (actual_key, actual_value) ->
+            let expected_key, expected_value =
+              Option.get (Types.dynamic_map_types expected_map)
+            in
+            argument_compatible expected_key actual_key
+            && argument_compatible expected_value actual_value
+        | None -> false)
     | _ when Types.assignable ~policy:Host_boundary ~expected ~actual -> true
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
       when callback_parameters_compatible expected_params actual_params -> (
@@ -4427,6 +4453,7 @@ let create ~compile_expr =
   let compile_subvec = collection.compile_subvec in
   let compile_nth = collection.compile_nth in
   let compile_static_get = collection.compile_get in
+  let compile_find = collection.compile_find in
   let compile_static_assoc = collection.compile_assoc in
   let compile_dissoc = collection.compile_dissoc in
   let compile_merge = collection.compile_merge in
@@ -8789,6 +8816,7 @@ let create ~compile_expr =
     | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms
     | "__lg_get" -> compile_get scope env arg_forms
+    | "__lg_find" -> compile_find scope env arg_forms
     | "__lg_get-in" -> compile_get_in scope env arg_forms
     | "__lg_assoc" -> compile_assoc scope env arg_forms
     | "__lg_assoc-in" -> compile_assoc_in scope env arg_forms

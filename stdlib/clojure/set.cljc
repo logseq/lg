@@ -129,3 +129,67 @@
      (conj result (rename-keys item key-map)))
    (empty xrel)
    xrel))
+
+(defn index
+  "Returns a map from each distinct projection of `keys` to the matching maps."
+  [xrel keys]
+  (__lg_reduce
+   (fn [result item]
+     (let [index-key (select-keys item keys)]
+       (assoc result
+              index-key
+              (conj (get result index-key (empty xrel)) item))))
+   {}
+   xrel))
+
+(defn- join-key-mapped [indexed-relation scanned-relation scan-key-map]
+  (let [indexed (index indexed-relation (vals scan-key-map))]
+    (__lg_reduce
+     (fn [result item]
+       (let [index-key (rename-keys
+                        (select-keys item (keys scan-key-map))
+                        scan-key-map)]
+         (if-some [found (get indexed index-key)]
+           (__lg_reduce
+            (fn [joined indexed-item]
+              (conj joined (merge indexed-item item)))
+            result
+            found)
+           result)))
+     (empty indexed-relation)
+     scanned-relation)))
+
+(defn- join-indexed [indexed-relation scanned-relation join-keys]
+  (let [indexed (index indexed-relation join-keys)]
+    (__lg_reduce
+     (fn [result item]
+       (if-some [found (get indexed (select-keys item join-keys))]
+         (__lg_reduce
+          (fn [joined indexed-item]
+            (conj joined (merge indexed-item item)))
+          result
+          found)
+         result))
+     (empty indexed-relation)
+     scanned-relation)))
+
+(defn join
+  "Returns the natural or key-mapped relational join of two relations."
+  ([xrel yrel]
+   (if (= 0 (count xrel))
+     (empty xrel)
+     (if (= 0 (count yrel))
+       (empty xrel)
+       (if-some [xfirst (first xrel)]
+         (if-some [yfirst (first yrel)]
+           (let [join-keys (intersection (set (keys xfirst))
+                                         (set (keys yfirst)))]
+             (if (<= (count xrel) (count yrel))
+               (join-indexed xrel yrel join-keys)
+               (join-indexed yrel xrel join-keys)))
+           (empty xrel))
+         (empty xrel)))))
+  ([xrel yrel key-map]
+   (if (<= (count xrel) (count yrel))
+     (join-key-mapped xrel yrel (map-invert key-map))
+     (join-key-mapped yrel xrel key-map))))

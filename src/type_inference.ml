@@ -747,7 +747,7 @@ let rec inferred_form_type params = function
       refine_type
         (inferred_form_type branch_params then_form)
         (inferred_form_type params else_form)
-  | FList (FSymbol "__lg_get" :: _) -> TUnknown
+  | FList ((FSymbol "__lg_get" | FSymbol "__lg_find") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
         match List.map (inferred_form_type params) forms with
@@ -1511,6 +1511,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         add_record_field_constraint name keyword field_ty params
     | FList [ FSymbol "__lg_get"; FSymbol name; FKeyword keyword ] ->
         add_record_field_constraint name keyword expected_ty params
+    | FList [ FSymbol "__lg_find"; target; key ] ->
+        Result.bind (infer_form params target) (fun params ->
+            infer_form params key)
     | FList
         [
           FSymbol "__lg_get";

@@ -86,6 +86,7 @@ let runtime_map_operation key_ty operation =
   if
     Types.is_dynamic key_ty || Types.equal key_ty TUnknown
   then "_dynamic"
+  else if Option.is_some (Types.dynamic_map_types key_ty) then "_map_key"
   else ""
 
 let runtime_map_key_type declared actual =
@@ -1841,10 +1842,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  (TOcaml_app ("option", [ TTuple [ key.ty; TUnknown ] ]))
                    (apply "Lg_runtime.Runtime_map.find"
                       [ target.semantic_expr; key.semantic_expr ]))
-          | _ ->
+          | Some _ ->
               Error.error
                 ("find expects a map and key, got " ^ Types.source_name target.ty
-               ^ " and " ^ Types.source_name key.ty))
+               ^ " and " ^ Types.source_name key.ty)
+          | None ->
+              compile_expr scope env
+                (FList (FSymbol "IFind/-find" :: arg_forms)))
       | Ok _ -> Error.error "find expects 2 arguments"
     and compile_assoc scope env arg_forms =
       match arg_forms with

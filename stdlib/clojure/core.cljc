@@ -3695,9 +3695,9 @@
   (IReversible/-rseq rev))
 
 (defn find
-  {:inline (fn [coll key] (list 'IFind/-find coll key))}
+  {:inline (fn [coll key] (list '__lg_find coll key))}
   [coll key]
-  (IFind/-find coll key))
+  (__lg_find coll key))
 
 (defn equiv-map
   "Test map equivalence. Returns true if x equals y, otherwise returns false."

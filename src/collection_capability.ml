@@ -382,9 +382,16 @@ let contains_adapter argument =
           witness
             (apply "Lg_runtime.Core_set.String_set.mem" [ key; keys ])
       | map_ty when Option.is_some (Types.dynamic_map_types map_ty) ->
+          let key_ty, _ = Option.get (Types.dynamic_map_types map_ty) in
+          let operation =
+            if Types.is_dynamic key_ty then
+              "Lg_runtime.Runtime_map.mem_dynamic"
+            else if Option.is_some (Types.dynamic_map_types key_ty) then
+              "Lg_runtime.Runtime_map.mem_map_key"
+            else "Lg_runtime.Runtime_map.mem"
+          in
           witness
-            (apply "Lg_runtime.Runtime_map.mem"
-               [ argument.semantic_expr; key ])
+            (apply operation [ argument.semantic_expr; key ])
       | ty ->
           Error.error
             ("contains? expects a map, set, or vector, got "
@@ -593,11 +600,15 @@ let reduce_expr env ?(short_circuit = false) fn init collection sequence =
           match Types.set_module_name inner with
           | Error _ -> fallback ()
           | Ok set_module ->
-              let item = Semantic_ir.Ident "item" in
-              let accumulator = Semantic_ir.Ident "accumulator" in
+              let item_name = "__lg_set_fold_item" in
+              let accumulator_name = "__lg_set_fold_accumulator" in
+              let item = Semantic_ir.Ident item_name in
+              let accumulator = Semantic_ir.Ident accumulator_name in
               let reducer =
                 Semantic_ir.Fun
-                    ( [ Semantic_ir.PVar "item"; Semantic_ir.PVar "accumulator" ],
+                    ( [ Semantic_ir.PVar item_name;
+                        Semantic_ir.PVar accumulator_name;
+                      ],
                       Semantic_ir.Apply (fn.semantic_expr, [ accumulator; item ])
                     )
               in

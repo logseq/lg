@@ -563,6 +563,32 @@ let hash_by key_hash value_hash map =
 let hash map =
   hash_by Runtime_static_value.hash Runtime_static_value.hash map
 
+let map_key_operations () = { hash; equal = equiv }
+
+let equiv_map_key left right =
+  equiv_by (map_key_operations ()) Runtime_static_value.equal left right
+
+let assoc_map_key map key value =
+  assoc_by (map_key_operations ()) map key value
+
+let find_map_key map key = find_by (map_key_operations ()) map key
+
+let get_option_map_key map key =
+  get_option_by (map_key_operations ()) map key
+
+let get_default_map_key map key default =
+  Option.value (get_option_map_key map key) ~default
+
+let get_option_default_map_key map key default =
+  match get_option_map_key map key with
+  | Some value -> Some value
+  | None -> default
+
+let mem_map_key map key = Option.is_some (get_option_map_key map key)
+
+let dissoc_map_key map key =
+  dissoc_by (map_key_operations ()) map key
+
 let first_opt map =
   match to_seq map () with
   | Seq.Cons (entry, _) -> Some entry
