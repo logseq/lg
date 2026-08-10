@@ -1,5 +1,7 @@
 (ns source-core-nominal-predicates-app
-  (:require [cljs.core :as core :refer [delay? rand to-array-2d uuid?]]))
+  (:require [cljs.core :as core :refer [delay? rand to-array-2d uuid?]]
+            [cljs.reader :as reader]
+            [clojure.data :as data :refer [diff-similar equality-partition]]))
 
 (def source-uuid-value
   (uuid "550e8400-e29b-41d4-a716-446655440000"))
@@ -125,3 +127,63 @@
      [[12]])))
 (println (= 12 (aget (aget source-evaluated-arrays 0) 0)))
 (println (= 1 @source-array-argument-evaluations))
+
+(def source-data-atom (reader/read-string "1"))
+(def source-data-map (reader/read-string "{:answer 42}"))
+(def source-data-set (reader/read-string "#{1 2}"))
+(def source-data-list (reader/read-string "(1 2)"))
+(def source-data-map-right (reader/read-string "{:answer 43}"))
+(def source-data-custom-result
+  (reader/read-string "[\"left\" \"right\" \"custom\"]"))
+
+(println (= :atom (equality-partition source-data-atom)))
+(println (= :map (data/equality-partition source-data-map)))
+(println (= :set (clojure.data/equality-partition source-data-set)))
+(println (= :sequential (data/equality-partition source-data-list)))
+(println
+ (= (reader/read-string "[1 2 nil]")
+    (diff-similar source-data-atom (reader/read-string "2"))))
+(println
+ (= (reader/read-string "[{:answer 42} {:answer 43} nil]")
+    (data/diff-similar source-data-map source-data-map-right)))
+
+(defn source-equality-partition-function [^:Lg_edn_backend.t value]
+  (equality-partition value))
+(defn source-diff-similar-function
+  [^:Lg_edn_backend.t left ^:Lg_edn_backend.t right]
+  (diff-similar left right))
+(println (= :atom (source-equality-partition-function source-data-atom)))
+(println
+ (= (reader/read-string "[1 2 nil]")
+    (source-diff-similar-function source-data-atom
+                                  (reader/read-string "2"))))
+
+(defrecord SourceDataBox [^:int value])
+(extend-type SourceDataBox
+  data/EqualityPartition
+  (equality-partition [_box] :source-data-box)
+  data/Diff
+  (diff-similar [left right]
+    (if (= (.-value left) (.-value right))
+      source-data-custom-result
+      source-data-custom-result)))
+
+(def source-data-box-left (SourceDataBox. 1))
+(def source-data-box-right (SourceDataBox. 2))
+(println (= :source-data-box (data/equality-partition source-data-box-left)))
+(println
+ (= source-data-custom-result
+    (data/diff-similar source-data-box-left source-data-box-right)))
+(println (satisfies? data/EqualityPartition source-data-atom))
+(println (satisfies? data/Diff source-data-atom))
+(println (satisfies? data/EqualityPartition source-data-box-left))
+(println (satisfies? data/Diff source-data-box-left))
+
+(def source-data-evaluations (atom 0))
+(println
+ (= :atom
+    (data/equality-partition
+     (do
+       (swap! source-data-evaluations inc)
+       source-data-atom))))
+(println (= 1 @source-data-evaluations))

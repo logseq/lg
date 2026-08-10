@@ -53,21 +53,6 @@ let kv_reduce_id = Protocol_id.create ~owner:[] ~name:"IKVReduce"
 let meta_id = Protocol_id.create ~owner:[] ~name:"IMeta"
 let with_meta_id = Protocol_id.create ~owner:[] ~name:"IWithMeta"
 
-let data_owner = [ "clojure.data" ]
-
-let equality_partition_id =
-  Protocol_id.create ~owner:data_owner ~name:"EqualityPartition"
-
-let equality_partition_method_id =
-  Method_id.create
-    ~owner:(data_owner @ [ "EqualityPartition" ])
-    ~name:"equality-partition"
-
-let diff_id = Protocol_id.create ~owner:data_owner ~name:"Diff"
-
-let diff_method_id =
-  Method_id.create ~owner:(data_owner @ [ "Diff" ]) ~name:"diff-similar"
-
 let add_or_fail result =
   match result with
   | Ok registry -> registry
@@ -488,16 +473,6 @@ let declare_swap registry =
     registry
   |> add_or_fail
 
-let declare_data_protocols registry =
-  let dynamic = Types.dynamic_constraint TUnknown in
-  registry
-  |> Protocol_registry.declare equality_partition_id
-       [ signature equality_partition_method_id [ dynamic ] TKeyword ]
-  |> add_or_fail
-  |> Protocol_registry.declare diff_id
-       [ signature diff_method_id [ dynamic; dynamic ] dynamic ]
-  |> add_or_fail
-
 let declare_comparable_protocol registry =
   registry
   |> Protocol_registry.declare comparable_id
@@ -833,7 +808,6 @@ let initial_registry =
   |> add_static_collection_protocols
   |> declare_vector_protocol |> add_vector_associative_protocols
   |> add_vector_kv_reduce_protocol
-  |> declare_data_protocols
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with

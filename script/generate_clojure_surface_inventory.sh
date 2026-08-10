@@ -408,6 +408,8 @@ while IFS='|' read -r var classification; do
   printf 'namespace-var\t%s\t%s\n' "$var" "$classification"
 done <<'EOF'
 clojure.data/diff|source
+clojure.data/equality-partition|source
+clojure.data/diff-similar|source
 clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
 cljs.reader/read-string|source

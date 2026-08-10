@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 586 source entries (59.49%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 183 static-typing blockers,
+macro surfaces. The current baseline is 588 source entries (59.70%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 181 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -863,7 +863,14 @@ small typed runtime primitive rebuilds one collection level. The former
 `clojure.data/diff` now uses the same explicit closed domain: the source public
 function delegates to a typed runtime port that preserves atom, map, set, and
 sequential partitions, recursive nil placement, key membership, and upstream
-result order. `clojure.string/split` is also source-owned with both public
+result order. Its upstream `EqualityPartition/equality-partition` and
+`Diff/diff-similar` protocols are source-owned and statically extensible.
+Their default source implementations target `Lg_edn_backend.t`; a small typed
+integer tag crosses the OCaml boundary for partition classification, while the
+generated implementation returns real LG keyword literals and contains no
+dynamic conversion. The closed-domain `diff` entry point intentionally does
+not accept arbitrary source records. `clojure.string/split` is also
+source-owned with both public
 arities, regex captures, empty-regex handling, and positive, zero, and negative
 limits. Consequently, `Core_namespaces` no longer routes any non-core public
 namespace, and the old `Core_data`, `Core_string`, and dynamic data-diff

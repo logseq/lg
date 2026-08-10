@@ -24,6 +24,13 @@ let partition = function
       Sequential
   | _ -> Atom
 
+let equality_partition_tag value =
+  match partition value with
+  | Atom -> 0
+  | Map -> 1
+  | Set -> 2
+  | Sequential -> 3
+
 let contains_key entries key =
   Array.exists
     (fun (entry_key, _) -> Runtime_edn.equal entry_key key)
@@ -173,3 +180,10 @@ and diff_sets left right =
         (non_empty_set (difference right_values left_values))
         (non_empty_set intersection)
   | _ -> atom_diff left right
+
+let diff_similar left right =
+  match partition left with
+  | Map -> diff_maps left right
+  | Sequential -> diff_sequential left right
+  | Set -> diff_sets left right
+  | Atom -> atom_diff left right

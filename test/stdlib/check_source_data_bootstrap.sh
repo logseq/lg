@@ -12,8 +12,18 @@ for file in "$source_file" "$interface_file"; do
   fi
 done
 
-if ! grep -F '(defn diff' "$source_file" >/dev/null; then
-  echo "clojure.data/diff is not source-defined" >&2
+for definition in \
+  '(defprotocol EqualityPartition' \
+  '(defprotocol Diff' \
+  '(defn diff'; do
+  if ! grep -F "$definition" "$source_file" >/dev/null; then
+    echo "${definition#\(} is not source-defined in clojure.data" >&2
+    exit 1
+  fi
+done
+
+if ! grep -F '(extend-type :Lg_edn_backend.t' "$source_file" >/dev/null; then
+  echo "clojure.data protocols are not implemented for the closed EDN domain" >&2
   exit 1
 fi
 
@@ -28,14 +38,23 @@ if grep -F 'Runtime_dynamic' "$root/runtime/runtime_data.ml" >/dev/null; then
   exit 1
 fi
 
+if grep -F 'declare_data_protocols' "$root/src/core_protocols.ml" >/dev/null \
+  || grep -F 'EqualityPartition' "$root/src/core_protocols.ml" >/dev/null \
+  || grep -F 'diff-similar' "$root/src/core_protocols.ml" >/dev/null; then
+  echo "clojure.data protocols are still compiler-owned" >&2
+  exit 1
+fi
+
 status_file=$(mktemp)
 trap 'rm -f "$status_file"' EXIT HUP INT TERM
 bb "$root/script/extract_stdlib_manifest_status.clj" \
   "$root/stdlib/upstream.edn" >"$status_file"
 
-if ! awk -F '\t' \
-  '$1 == "definition" && $2 == "clojure.data/diff" && $3 == "source" {found = 1} END {exit !found}' \
-  "$status_file"; then
-  echo "clojure.data/diff is not classified as source" >&2
-  exit 1
-fi
+for definition in diff equality-partition diff-similar; do
+  if ! awk -F '\t' -v expected="clojure.data/$definition" \
+    '$1 == "definition" && $2 == expected && $3 == "source" {found = 1} END {exit !found}' \
+    "$status_file"; then
+    echo "clojure.data/$definition is not classified as source" >&2
+    exit 1
+  fi
+done

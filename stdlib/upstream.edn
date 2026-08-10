@@ -1384,10 +1384,10 @@
    :definitions
   {diff {:status :static-adaptation
           :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}
-    equality-partition {:status :blocked-static-typing
-                        :reason :upstream-open-equality-partitions-span-arbitrary-clojure-values-while-lg-clojure-data-uses-a-closed-edn-domain}
-    diff-similar {:status :blocked-static-typing
-                  :reason :upstream-open-equality-partitions-span-arbitrary-clojure-values-while-lg-clojure-data-uses-a-closed-edn-domain}}}
+    equality-partition {:status :static-adaptation
+                        :reason :source-protocol-is-statically-extensible-and-the-default-source-implementation-classifies-the-closed-lg-edn-backend-domain-without-runtime-dynamic}
+    diff-similar {:status :static-adaptation
+                  :reason :source-protocol-is-statically-extensible-and-the-default-source-implementation-preserves-upstream-atom-map-set-and-sequential-diff-control-flow-over-the-closed-lg-edn-backend-domain}}}
 
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"

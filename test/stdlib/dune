@@ -1504,10 +1504,43 @@
   ../../script/extract_stdlib_manifest_status.clj
   ../../stdlib/upstream.edn
   ../../runtime/runtime_data.ml
+  ../../src/core_protocols.ml
   ../../src/core_namespaces.ml
   (source_tree ../../stdlib/clojure))
  (action
   (run sh %{dep:check_source_data_bootstrap.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_data_equality_partition_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_data_equality_partition_bad_arity.cljc}
+   "called with incompatible arguments")))
+
+(rule
+ (alias runtest)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_data_diff_similar_bad_arity.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:clojure_data_diff_similar_bad_arity.cljc}
+   "called with incompatible arguments")))
 
 (rule
  (alias source-walk-bootstrap)
