@@ -2,17 +2,23 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as string]))
 
-(defn- read-ns-form [path]
+(def read-options
+  {:read-cond :allow
+   :features #{:cljs}
+   :readers {'js identity}
+   :auto-resolve (fn [alias] (symbol (name alias)))
+   :default tagged-literal})
+
+(defn- read-forms [path]
   (with-open [reader (java.io.PushbackReader. (io/reader path))]
-    (loop []
-      (let [form (read {:read-cond :allow
-                        :features #{:cljs}
-                        :eof nil}
-                       reader)]
-        (cond
-          (nil? form) nil
-          (and (seq? form) (= 'ns (first form))) form
-          :else (recur))))))
+    (loop [forms []]
+      (let [form (read (assoc read-options :eof ::eof) reader)]
+        (if (= ::eof form)
+          forms
+          (recur (conj forms form)))))))
+
+(defn- ns-form [forms]
+  (some #(when (and (seq? %) (= 'ns (first %))) %) forms))
 
 (defn- require-specs [ns-form]
   (->> (drop 2 ns-form)
@@ -32,26 +38,38 @@
   (or (string/starts-with? namespace "clojure.")
       (string/starts-with? namespace "cljs.")))
 
-(def qualified-symbol-pattern
-  #"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]*)/([A-Za-z0-9_?!*+<>=.-]+)")
+(def failures (atom 0))
+
+(defn- qualified-symbols [forms]
+  (->> forms
+       (mapcat #(tree-seq coll? seq %))
+       (filter symbol?)
+       (keep (fn [symbol]
+               (when-let [prefix (namespace symbol)]
+                 [prefix (name symbol)])))))
 
 (defn- inspect-file [path]
   (try
-    (let [infos (keep spec-info (require-specs (read-ns-form path)))
+    (let [forms (read-forms path)
+          infos (keep spec-info (require-specs (ns-form forms)))
           aliases (into {} (keep (fn [{:keys [namespace alias]}]
                                    (when alias [alias namespace])))
-                        infos)
-          source (slurp path)]
+                        infos)]
       (doseq [{:keys [namespace]} infos
               :when (standard-namespace? namespace)]
         (println "namespace" namespace))
-      (doseq [[_ prefix member] (re-seq qualified-symbol-pattern source)
+      (doseq [[prefix member] (qualified-symbols forms)
               :let [namespace (or (get aliases prefix)
                                   (when (standard-namespace? prefix) prefix))]
               :when (and namespace (standard-namespace? namespace))]
         (println "qualified-var" (str namespace "/" member))))
-    (catch Exception _
-      nil)))
+    (catch Exception error
+      (swap! failures inc)
+      (binding [*out* *err*]
+        (println (str path ": " (ex-message error)))))))
 
 (doseq [path *command-line-args*]
   (inspect-file path))
+
+(when (pos? @failures)
+  (System/exit 1))

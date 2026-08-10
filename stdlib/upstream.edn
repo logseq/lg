@@ -1397,6 +1397,61 @@
    :status :out-of-scope
    :reason :core-async-implementation-namespaces-are-explicitly-excluded-with-the-parent-library}
 
+  cljs.core.match
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :core-match-is-an-independent-analyzer-macro-library-that-requires-a-separate-pinned-upstream-and-port}
+
+  cljs.analyzer
+  {:source :clojurescript-compiler
+   :status :out-of-scope
+   :reason :clojurescript-analyzer-metadata-and-resolution-controls-are-compiler-implementation-apis-not-runtime-stdlib}
+
+  cljs.analyzer.api
+  {:source :clojurescript-compiler
+   :status :out-of-scope
+   :reason :clojurescript-analyzer-introspection-is-a-compiler-host-api-not-a-native-or-melange-runtime-stdlib-namespace}
+
+  clojure.java.io
+  {:source :jvm-only
+   :status :out-of-scope
+   :reason :jvm-file-url-resource-and-stream-interop-is-forbidden-by-the-lg-no-jvm-object-model-design}
+
+  clojure.java.shell
+  {:source :jvm-only
+   :status :out-of-scope
+   :reason :jvm-process-launching-has-no-shared-native-and-browser-melange-stdlib-boundary}
+
+  clojure.stacktrace
+  {:source :jvm-only
+   :status :out-of-scope
+   :reason :jvm-throwable-stacktrace-printing-depends-on-the-forbidden-jvm-object-model}
+
+  clojure.tools.build.api
+  {:source :independent-jvm-library
+   :status :out-of-scope
+   :reason :tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace}
+
+  clojure.tools.deps
+  {:source :independent-jvm-library
+   :status :out-of-scope
+   :reason :tools-deps-is-an-external-jvm-classpath-resolution-library-not-a-clojurescript-runtime-namespace}
+
+  clojure.tools.cli
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :tools-cli-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port}
+
+  clojure.test.check.generators
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port}
+
+  clojure.data.json
+  {:source :independent-library
+   :status :out-of-scope
+   :reason :data-json-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port}
+
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :implementation "clojure/data.cljc"

@@ -502,7 +502,7 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
         }
       ' \
     | LC_ALL=C sort -t '	' -k1,1 -k3,3nr -k2,2 \
-    >"$tmp/logseq-counts" || true
+    >"$tmp/logseq-counts"
 
   awk -F '\t' '
     FNR == NR {

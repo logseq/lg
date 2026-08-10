@@ -18,6 +18,16 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
             [cljs.core.async.impl.channels :as async-channels]
             [clojure.core.async :as jvm-async]
             [clojure.core.async.interop :as async-interop]
+            [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
+            [clojure.tools.build.api :as build]
+            [clojure.tools.deps :as deps]
+            [clojure.tools.cli :as cli]
+            [clojure.test.check.generators :as gen]
+            [clojure.stacktrace :as stacktrace]
+            [clojure.data.json :as json]
+            [cljs.core.match :as core-match]
+            [cljs.analyzer.api :as analyzer]
             [clojure.zip :as zip]))
 
 (string/upper-case "logseq")
@@ -30,7 +40,32 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
+(io/resource "fixture.edn")
+(shell/sh "true")
+(build/create-basis {})
+(deps/combine-aliases {} [])
+(cli/parse-opts [] [])
+(gen/generate gen/boolean)
+(stacktrace/print-cause-trace nil)
+(json/read-str "{}")
+(core-match/match 1 1 :one)
+(analyzer/all-ns)
+
+(def documentation
+  "See https://clojure.org/reference/reader for symbol syntax.")
+;; https://clojure.org/reference/reader is documentation, not a qualified var.
 EOF
+
+cat >"$tmp/malformed.cljs" <<'EOF'
+(ns malformed
+EOF
+if bb "$root/script/clojure_namespace_inventory.clj" \
+    "$tmp/malformed.cljs" \
+    >"$tmp/malformed.out" 2>"$tmp/malformed.err"; then
+  echo "namespace scanner silently accepted an unreadable source file" >&2
+  exit 1
+fi
+grep -F "$tmp/malformed.cljs" "$tmp/malformed.err" >/dev/null
 
 mkdir -p "$tmp/clojurescript"
 cat >"$tmp/clojurescript/core.cljs" <<'EOF'
@@ -198,6 +233,23 @@ awk -F '\t' '$1 == "namespace" && ($2 == "cljs.core.async" || $2 == "cljs.core.a
 
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
+
+awk -F '\t' '
+  ($1 == "logseq-namespace-status" ||
+   $1 == "logseq-qualified-var-status") && $3 == "unsupported" {
+    print "unclassified Logseq dependency: " $2 > "/dev/stderr"
+    failed = 1
+  }
+  END {exit failed}
+' "$tmp/inventory.tsv"
+awk -F '\t' '
+  ($1 == "logseq-namespace" || $1 == "logseq-qualified-var") &&
+  $2 ~ /^clojure\.org(\/|$)/ {
+    print "documentation URL was counted as Clojure code: " $2 > "/dev/stderr"
+    failed = 1
+  }
+  END {exit failed}
+' "$tmp/inventory.tsv"
 
 awk -F '\t' '$1 == "compiler-call" && ($2 == "identity" || $3 == "source-shadowed") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "keyword" || $2 == "symbol") {found=1} END {exit found}' "$tmp/inventory.tsv"

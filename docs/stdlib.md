@@ -431,13 +431,16 @@ commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
 commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify
 each observed dependency as `source-aggregate`, `source-core-alias`,
 `blocked-static-typing`, `out-of-scope`, or `unsupported`; the final field is a
-machine-readable reason. This makes unsupported namespaces visible without confusing test and
-build-time libraries with source namespaces that LG already provides.
+machine-readable reason. The scanner reads Clojure forms instead of matching
+raw text, so comments, docstrings, and URLs cannot become false qualified-var
+dependencies. The current Logseq checkout has no unexplained `unsupported`
+rows. This keeps test and build-time libraries distinct from source namespaces
+that LG already provides.
 
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 197 reviewed routes. A separate OCaml-AST
+The call elaborator contributes 199 reviewed routes. A separate OCaml-AST
 extractor now audits 129 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `dotimes`,
 `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
@@ -868,16 +871,22 @@ propagation, rebuilding, depth-first traversal, and removal retain the pinned
 ClojureScript control flow; sibling collections are normalized to typed vectors.
 The unary `edit` arity used by Logseq is supported, while additional variadic
 callback arguments remain explicitly recorded as a dependent-`apply` blocker.
-All 36 observed Logseq qualified zipper calls now resolve through the aggregate
+All 35 observed Logseq qualified zipper calls now resolve through the aggregate
 source artifact. `cljs.spec.alpha` and `clojure.spec.alpha`
 are explicitly out of scope; their Logseq references remain visible in the
 inventory but do not count against migration completion. The independent
 `core.async` library is excluded as well, including the observed
 `cljs.core.async`, `cljs.core.async.impl.channels`, `clojure.core.async`, and
 `clojure.core.async.interop` namespaces. They remain visible as out-of-scope
-Logseq dependencies and are not candidates for the LG source stdlib port. The
-aggregate now contains all seven public `clojure.walk` functions over the closed
-`Lg_edn_backend.t` tree domain. Its source definitions preserve upstream
+Logseq dependencies and are not candidates for the LG source stdlib port.
+Evidence-backed out-of-scope entries also cover JVM-only `clojure.java.io`,
+`clojure.java.shell`, and `clojure.stacktrace`; JVM build tooling under
+`clojure.tools.*`; compiler APIs under `cljs.analyzer*`; and the independent
+`cljs.core.match`, `clojure.data.json`, and
+`clojure.test.check.generators` libraries. These require separate pinned
+upstreams or host integrations rather than being silently treated as missing
+stdlib source. The aggregate now contains all seven public `clojure.walk`
+functions over the closed `Lg_edn_backend.t` tree domain. Its source definitions preserve upstream
 pre-order, post-order, map-entry, key-conversion, and replacement order while a
 small typed runtime primitive rebuilds one collection level. The former
 `Runtime_dynamic.t` implementation and compiler namespace route are gone.
