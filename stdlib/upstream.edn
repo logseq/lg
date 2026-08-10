@@ -369,10 +369,10 @@
                :reason :source-function-and-consumer-state-inline-expansion-delegate-to-clojurescript-inamed-while-built-in-keyword-and-symbol-methods-use-a-nonrecursive-static-scalar-primitive}
     name {:status :static-adaptation
           :reason :source-function-preserves-clojurescript-string-identity-and-inamed-keyword-symbol-name-extraction-through-a-private-static-coercion-protocol}
-    keyword {:status :blocked-static-typing
-             :reason :same-arity-source-overloads-accept-string-keyword-and-symbol-inputs-but-lg-cannot-overload-a-first-class-function-by-static-parameter-type}
-    symbol {:status :blocked-static-typing
-            :reason :same-arity-source-overloads-accept-string-keyword-and-symbol-inputs-but-lg-cannot-overload-a-first-class-function-by-static-parameter-type}
+    keyword {:status :static-adaptation
+             :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-with-a-minimal-typed-construction-primitive-while-lg-string-backed-keywords-do-not-retain-separate-cljs-component-fields-for-multiple-slash-constructor-inputs}
+    symbol {:status :static-adaptation
+            :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-while-upstream-var-input-and-separate-cljs-component-fields-remain-unavailable}
     list* {:status :blocked-static-typing
            :reason :the-upstream-variadic-arity-requires-spread-over-a-heterogeneous-argument-list-whose-final-element-alone-is-expanded-as-a-sequence}
     counted? {:status :static-adaptation

@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 563 source entries (57.16%), 28 typed
-primitives, 43 special forms, 97 host boundaries, 203 static-typing blockers,
+macro surfaces. The current baseline is 565 source entries (57.36%), 28 typed
+primitives, 43 special forms, 97 host boundaries, 201 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -233,9 +233,17 @@ heterogeneous two-element map-entry vector.
 extraction boundary. `namespace` is source-owned through consumer-state
 `INamed/-namespace` expansion; the `cljs.core` protocol alias resolves to the
 canonical `clojure.core` protocol so user implementations retain static
-witnesses. `keyword`, `symbol`, and `list*` remain explicitly blocked
-where their complete first-class upstream types cannot be expressed without
-dynamic typing; direct compiler support is not counted as a source port.
+witnesses. `keyword` and `symbol` are source-owned one/two-arity functions over
+private static coercion protocols. Their namespace arity accepts `nil`, strings,
+keywords, and symbols without a dynamic union; only the final typed string
+construction remains primitive. ClojureScript `Var` to symbol conversion is not
+available because LG exposes no source `Var` value. LG's current string-backed
+identifier representation also cannot retain ClojureScript's separate cached
+namespace/name fields for malformed multiple-slash constructor strings; this
+deviation is recorded in the manifest rather than hidden by the source port.
+`list*` remains explicitly blocked where its complete variadic first-class
+upstream type cannot be expressed without dynamic typing; direct compiler
+support is not counted as a source port.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;

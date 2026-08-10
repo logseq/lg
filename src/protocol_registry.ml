@@ -44,6 +44,7 @@ type receiver_id = Receiver_id.t =
   | Keyword_receiver
   | Bool_receiver
   | Unit_receiver
+  | Nil_receiver
   | List_receiver
   | Vector_receiver
   | Set_receiver

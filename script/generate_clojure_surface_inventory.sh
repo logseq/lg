@@ -106,6 +106,8 @@ awk '
     internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
+    internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"
+    internal_abi["__lg_builtin-symbol"] = "typed-string-keyword-symbol-and-optional-namespace-symbol-construction-primitive"
     internal_abi["__lg_builtin-namespace"] = "typed-built-in-keyword-and-symbol-namespace-extraction-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"

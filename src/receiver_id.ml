@@ -8,6 +8,7 @@ type t =
   | Keyword_receiver
   | Bool_receiver
   | Unit_receiver
+  | Nil_receiver
   | List_receiver
   | Vector_receiver
   | Set_receiver
@@ -32,6 +33,7 @@ let of_type = function
   | TKeyword -> Some Keyword_receiver
   | TBool -> Some Bool_receiver
   | TUnit -> Some Unit_receiver
+  | TNil -> Some Nil_receiver
   | TList _ -> Some List_receiver
   | TVector _ -> Some Vector_receiver
   | TSet _ -> Some Set_receiver
@@ -43,6 +45,6 @@ let of_type = function
       Some (Host_receiver "Lg_runtime.Runtime_map.t")
   | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
   | TNamed_record record -> Some (Record_receiver record.type_id)
-  | TNil | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TFn _
+  | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TFn _
   | TOverloaded_fn _ | TRecord _ ->
       None

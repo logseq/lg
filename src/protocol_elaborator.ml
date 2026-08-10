@@ -275,6 +275,7 @@ let compile_defprotocol ?location scope env next_type protocol_name method_forms
 
 let protocol_receiver_type scope env = function
   | FKeyword ":default" -> Ok (TVar Receiver_id.default_type_variable)
+  | FSymbol "nil" | FKeyword ":nil" -> Ok TNil
   | FKeyword receiver_keyword -> Type_annotation.of_keyword receiver_keyword
   | FSymbol type_name -> (
       match Resolver.lookup_record_type scope env type_name with

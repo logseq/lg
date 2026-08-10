@@ -1082,7 +1082,6 @@ let untyped_first_class_function_error = function
     | "false?"
     | "hash-map"
     | "identical?"
-    | "keyword"
     | "keyword?"
     | "list"
     | "neg?"

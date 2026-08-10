@@ -55,8 +55,6 @@ let drop_first_char expr =
     (Semantic_ir.Infix ("-", string_length expr, Semantic_ir.Int 1))
 
 let string_and left right = Semantic_ir.Infix ("&&", left, right)
-let string_eq left right = Semantic_ir.Infix ("=", left, right)
-
 let identifier_body_expr name arg =
   let normalize expression =
       let value = Semantic_ir.Ident "value" in
@@ -128,35 +126,28 @@ let keyword_one_arg_expr arg =
           value,
           string_concat (Semantic_ir.String ":") value ) )
 
-let scoped_keyword_expr namespace name =
+let optional_identifier_expr ~prefix namespace name =
+  let absent =
+    if prefix = "" then Semantic_ir.Ident "name"
+    else string_concat (Semantic_ir.String prefix) (Semantic_ir.Ident "name")
+  in
+  let present =
+    string_concat
+      (string_concat
+         (string_concat (Semantic_ir.String prefix) (Semantic_ir.Ident "namespace"))
+         (Semantic_ir.String "/"))
+      (Semantic_ir.Ident "name")
+  in
   Semantic_ir.Let
-    ( [
-        (Semantic_ir.PVar "namespace", namespace);
-        (Semantic_ir.PVar "name", name);
-      ],
-      Semantic_ir.If
-        ( string_eq (Semantic_ir.Ident "namespace") (Semantic_ir.String ""),
-          string_concat (Semantic_ir.String ":") (Semantic_ir.Ident "name"),
-          string_concat
-            (string_concat
-               (string_concat (Semantic_ir.String ":")
-                  (Semantic_ir.Ident "namespace"))
-               (Semantic_ir.String "/"))
-            (Semantic_ir.Ident "name") ) )
-
-let namespaced_symbol_expr namespace name =
-  Semantic_ir.Let
-    ( [
-        (Semantic_ir.PVar "namespace", namespace);
-        (Semantic_ir.PVar "name", name);
-      ],
-      Semantic_ir.If
-        ( string_eq (Semantic_ir.Ident "namespace") (Semantic_ir.String ""),
-          Semantic_ir.Ident "name",
-          string_concat
-            (string_concat (Semantic_ir.Ident "namespace")
-               (Semantic_ir.String "/"))
-            (Semantic_ir.Ident "name") ) )
+    ( [ (Semantic_ir.PVar "name", name) ],
+      Semantic_ir.Match
+        ( namespace,
+          [
+            (Semantic_ir.PConstructor ("None", None), absent);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar "namespace")),
+              present );
+          ] ) )
 
 let compile_name name args =
   match one_arg name args with
@@ -181,7 +172,7 @@ let compile_name name args =
           | Ok body -> Ok (typed_ir TString (identifier_name_expr body)))
       | _ -> Error.error "name expects keyword, string, or symbol")
 
-let compile_keyword name args =
+let compile_keyword _name args =
   match args with
   | [ arg ] -> (
       match arg.ty with
@@ -195,17 +186,7 @@ let compile_keyword name args =
       | TString | TSymbol | TUnknown ->
           Ok (typed_ir TKeyword (keyword_one_arg_expr arg.semantic_expr))
       | _ -> Error.error "keyword expects keyword, string, or symbol")
-  | [ namespace_arg; name_arg ] -> (
-      match
-        ( identifier_body_expr name namespace_arg,
-          identifier_body_expr name name_arg )
-      with
-      | Error _, _ | _, Error _ ->
-          Error.error
-            "keyword namespace and name must be string, keyword, or symbol"
-      | Ok namespace_expr, Ok name_expr ->
-          Ok (typed_ir TKeyword (scoped_keyword_expr namespace_expr name_expr)))
-  | _ -> Error.error "keyword expects 1 or 2 arguments"
+  | _ -> Error.error "keyword expects 1 argument"
 
 let compile_namespace name args =
   match one_arg name args with
@@ -239,24 +220,32 @@ let compile_symbol name args =
       match identifier_body_expr name arg with
       | Error _ -> Error.error "symbol expects string, keyword, or symbol"
       | Ok expr -> Ok (typed_ir TSymbol expr))
-  | [ namespace_arg; name_arg ] -> (
-      match
-        ( identifier_body_expr name namespace_arg,
-          identifier_body_expr name name_arg )
-      with
-      | Error _, _ | _, Error _ ->
-          Error.error
-            "symbol namespace and name must be string, keyword, or symbol"
-      | Ok namespace_expr, Ok name_expr ->
-          Ok
-            (typed_ir TSymbol (namespaced_symbol_expr namespace_expr name_expr))
-      )
-  | _ -> Error.error "symbol expects 1 or 2 arguments"
+  | _ -> Error.error "symbol expects 1 argument"
+
+let compile_identifier_parts name return_ty prefix args =
+  match args with
+  | [ namespace_arg; name_arg ]
+    when Types.equal namespace_arg.ty (TOcaml_app ("option", [ TString ]))
+         && Types.equal name_arg.ty TString ->
+      Ok
+        (typed_ir return_ty
+           (optional_identifier_expr ~prefix namespace_arg.semantic_expr
+              name_arg.semantic_expr))
+  | [ _; _ ] ->
+      Error.error
+        (name ^ " expects an optional string namespace and string name")
+  | _ -> Error.error (name ^ " expects 2 arguments")
 
 let compile name args =
   match name with
   | "name" -> compile_name name args
   | "namespace" -> compile_namespace name args
-  | "keyword" -> compile_keyword name args
-  | "symbol" -> compile_symbol name args
+  | "__lg_builtin-keyword" -> (
+      match args with
+      | [ _ ] -> compile_keyword "keyword" args
+      | _ -> compile_identifier_parts name TKeyword ":" args)
+  | "__lg_builtin-symbol" -> (
+      match args with
+      | [ _ ] -> compile_symbol "symbol" args
+      | _ -> compile_identifier_parts name TSymbol "" args)
   | _ -> Error.error ("unknown function " ^ name)

@@ -181,7 +181,9 @@ the same method name, `Protocol/method` selects one explicitly while the
 traditional unqualified method spelling remains available when unambiguous.
 An `extend-type :default` implementation supplies the statically selected
 fallback when no concrete receiver extension exists. Concrete extensions take
-precedence. `clojure.core/INamed` and `clojure.core/IWriter` use this same source
+precedence. `nil` is a distinct protocol receiver, so nil-specific source
+implementations do not turn every optional value into the same receiver type.
+`clojure.core/INamed` and `clojure.core/IWriter` use this same source
 protocol machinery: keywords, symbols, records, and OCaml buffers do not need
 public-name compiler dispatch. The private `__lg_write` primitive remains only
 for compiler-generated buffer effects.
@@ -287,9 +289,10 @@ float lists or vectors through generated OCaml comparators.
 
 `boolean`, `name`, `namespace`, `keyword`, and `symbol` are supported for the
 current scalar subset. `name` works on strings, keywords, and symbols.
-`namespace` works on keywords and symbols, but returns `""` for unqualified
-identifiers because lg does not yet have a typed optional string or nilable
-string. `keyword` and `symbol` work on strings, keywords, and symbols.
+`namespace` works on keywords and symbols and returns an optional string.
+`keyword` and `symbol` are first-class source functions over private static
+coercion protocols; their two-argument forms accept a nil, string, keyword, or
+symbol namespace and a string, keyword, or symbol name.
 
 ## Macros
 
@@ -642,10 +645,10 @@ survive incremental compilation. OCaml compiler-libs errors therefore report
 precise nested lines and columns through ordinary library APIs;
 `compile_string_with_filename`, the CLI, and the LSP retain actual input paths.
 
-The scalar and integer cores lower `boolean`, `name`, `namespace`, `keyword`,
-`symbol`, arithmetic, division/remainder, `min`/`max`, bitwise operators,
-shifts, `inc`/`dec`, and integer predicates directly through the shared
-expression IR.
+The source scalar functions `boolean`, `name`, `namespace`, `keyword`, and
+`symbol` delegate only their minimal statically typed operations through the
+shared expression IR. Arithmetic, division/remainder, `min`/`max`, bitwise
+operators, shifts, `inc`/`dec`, and integer predicates use the same IR.
 
 Equality and ordered integer comparisons also lower directly. Recursive record
 equality remains an explicit migration boundary.

@@ -149,7 +149,8 @@ awk -F '\t' '
   }
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/name" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/keyword" || $2 == "clojure.core/symbol" || $2 == "clojure.core/list*") && $3 == "blocked-static-typing" {found++} END {exit found != 3}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/keyword" || $2 == "clojure.core/symbol") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/list*" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "blocked-static-typing" && $4 == "nested-seqable-elements-lose-their-per-value-static-sequence-witness-inside-the-array-conversion-callback" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
@@ -197,6 +198,8 @@ awk -F '\t' '$1 == "namespace" && ($2 == "cljs.core.async" || $2 == "cljs.core.a
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
 
 awk -F '\t' '$1 == "compiler-call" && ($2 == "identity" || $3 == "source-shadowed") {found=1} END {exit found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "keyword" || $2 == "symbol") {found=1} END {exit found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_builtin-keyword" || $2 == "__lg_builtin-symbol") && $3 == "typed-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "contains?" || $2 == "assoc" || $2 == "dissoc" || $2 == "keys") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "subvec" || $2 == "array") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_subvec" || $2 == "__lg_array") && $3 == "typed-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"

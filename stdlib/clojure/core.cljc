@@ -36,6 +36,15 @@
 (defprotocol ^:private INameCoercion
   (-coerce-name [value] :string))
 
+(defprotocol ^:private IKeywordCoercion
+  (-coerce-keyword [value] :keyword))
+
+(defprotocol ^:private ISymbolCoercion
+  (-coerce-symbol [value] :symbol))
+
+(defprotocol ^:private IIdentifierNamespaceCoercion
+  (-coerce-identifier-namespace [value] :option<string>))
+
 (extend-type :int
   ICharCoercion
   (-char [value] (runtime-string/char-of-int value)))
@@ -53,10 +62,36 @@
 
 (extend-type :string
   INameCoercion
-  (-coerce-name [value] value))
+  (-coerce-name [value] value)
+  IKeywordCoercion
+  (-coerce-keyword [value] (__lg_builtin-keyword value))
+  ISymbolCoercion
+  (-coerce-symbol [value] (__lg_builtin-symbol value))
+  IIdentifierNamespaceCoercion
+  (-coerce-identifier-namespace [value] (Some value)))
+
+(extend-type nil
+  IIdentifierNamespaceCoercion
+  (-coerce-identifier-namespace [value] value))
 
 (defn name [value]
   (INameCoercion/-coerce-name value))
+
+(defn keyword
+  ([value]
+   (IKeywordCoercion/-coerce-keyword value))
+  ([namespace value]
+   (__lg_builtin-keyword
+    (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+    (INameCoercion/-coerce-name value))))
+
+(defn symbol
+  ([value]
+   (ISymbolCoercion/-coerce-symbol value))
+  ([namespace value]
+   (__lg_builtin-symbol
+    (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+    (INameCoercion/-coerce-name value))))
 
 ;; These declarations mirror the statically supported portion of the
 ;; ClojureScript core protocol surface. The compiler registry supplies typed
@@ -172,14 +207,26 @@
   (-name [value] (__lg_builtin-name value))
   (-namespace [value] (__lg_builtin-namespace value))
   INameCoercion
-  (-coerce-name [value] (__lg_builtin-name value)))
+  (-coerce-name [value] (__lg_builtin-name value))
+  IKeywordCoercion
+  (-coerce-keyword [value] value)
+  ISymbolCoercion
+  (-coerce-symbol [value] (__lg_builtin-symbol value))
+  IIdentifierNamespaceCoercion
+  (-coerce-identifier-namespace [value] (Some (__lg_builtin-name value))))
 
 (extend-type :symbol
   INamed
   (-name [value] (__lg_builtin-name value))
   (-namespace [value] (__lg_builtin-namespace value))
   INameCoercion
-  (-coerce-name [value] (__lg_builtin-name value)))
+  (-coerce-name [value] (__lg_builtin-name value))
+  IKeywordCoercion
+  (-coerce-keyword [value] (__lg_builtin-keyword value))
+  ISymbolCoercion
+  (-coerce-symbol [value] value)
+  IIdentifierNamespaceCoercion
+  (-coerce-identifier-namespace [value] (Some (__lg_builtin-name value))))
 
 (defprotocol IWriter
   (-write [writer source])

@@ -19611,9 +19611,25 @@ let test_protocols_support_float_and_symbol_receivers () =
 (println (str (label 2.5) ":" (label (symbol "ready"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "protocols_support_float_and_symbol_receivers"
     "float:2.5:symbol:ready\n" ocaml_source
+
+let test_protocols_support_nil_receivers () =
+  let source =
+    {|
+(defprotocol Labelled
+  (label [value] :string))
+(extend-type nil
+  Labelled
+  (label [_value] "nil"))
+(println (label nil))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocols_support_nil_receivers" "nil\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_protocols_support_generic_host_constructor_receivers () =
   let source =
@@ -24672,6 +24688,66 @@ let test_name_is_source_owned_and_uses_static_coercion_protocol () =
   assert_ocaml_runs "source_name" "true\n" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange "app/source_name.cljc" source)
 
+let test_keyword_and_symbol_are_source_owned_static_protocols () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name ^ "\n"))
+      then
+        failwith
+          (name ^ " must be implemented by the source standard library"))
+    [ "keyword"; "symbol" ];
+  let call_source = read_file "src/call_elaborator.ml" in
+  List.iter
+    (fun name ->
+      if string_contains_substring call_source ("| \"" ^ name ^ "\"") then
+        failwith (name ^ " still has public-name compiler dispatch"))
+    [ "keyword"; "symbol" ];
+  let source =
+    {|
+(ns app.source-identifiers
+  (:require [cljs.core :as core :refer [keyword symbol]]))
+
+(def make-keyword keyword)
+(def make-symbol core/symbol)
+
+(def invalid-keyword?
+  (try
+    (keyword true)
+    false
+    (catch (Invalid_argument _) true)))
+
+(def invalid-symbol?
+  (try
+    (symbol true)
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (and (= :plain (make-keyword "plain"))
+       (= :db/item (keyword 'db/item))
+       (= :ns/item (make-keyword :other/ns 'other/item))
+       (= :root (keyword nil "root"))
+       (= 'plain (make-symbol :plain))
+       (= 'ns/item (symbol :other/ns :other/item))
+       (= 'root (make-symbol nil "root"))
+       invalid-keyword?
+       invalid-symbol?))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_identifiers.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source keyword and symbol must use static protocol capabilities";
+  assert_ocaml_runs "source_identifiers" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/source_identifiers.cljc" source)
+
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
@@ -25733,14 +25809,27 @@ let test_batched_identifier_and_constructor_core_functions_work () =
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_symbol_args
     () =
-  Lg.Compiler.compile_string {|(def x (symbol 1))|}
-  |> expect_error "symbol expects string, keyword, or symbol"
+  let source =
+    {|(println (try (symbol 1) false (catch (Invalid_argument _) true)))|}
+  in
+  assert_ocaml_runs
+    "batched_identifier_and_constructor_core_functions_reject_bad_symbol_args"
+    "true\n" (compile_string_with_stdlib source |> expect_ok)
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_args
     () =
-  Lg.Compiler.compile_string {|(def x (keyword "user" 1))|}
-  |> expect_error
-       "keyword namespace and name must be string, keyword, or symbol"
+  let source =
+    {|
+(println
+  (try
+    (keyword "user" 1)
+    false
+    (catch (Invalid_argument _) true)))
+|}
+  in
+  assert_ocaml_runs
+    "batched_identifier_and_constructor_core_functions_reject_bad_keyword_args"
+    "true\n" (compile_string_with_stdlib source |> expect_ok)
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args
     () =
@@ -38992,10 +39081,10 @@ let test_parsetree_backend_builds_native_scalar_expressions () =
     [
       {|(def answer 42)|};
       {|(def result (__lg_int-predicate 1))|};
-      {|(def result (name :user/name))|};
-      {|(def result (namespace :user/name))|};
-      {|(def result (keyword "user" "name"))|};
-      {|(def result (symbol :user :name))|};
+      {|(def result (__lg_builtin-name :user/name))|};
+      {|(def result (__lg_builtin-namespace :user/name))|};
+      {|(def result (__lg_builtin-keyword (Some "user") "name"))|};
+      {|(def result (__lg_builtin-symbol (Some "user") "name"))|};
     ]
 
 let test_parsetree_backend_builds_native_collection_expressions () =
@@ -40705,6 +40794,8 @@ let tests =
       test_builtin_icomparable_supports_static_record_dispatch );
     ( "protocols support float and symbol receivers",
       test_protocols_support_float_and_symbol_receivers );
+    ( "protocols support nil receivers",
+      test_protocols_support_nil_receivers );
     ( "protocols support generic host constructor receivers",
       test_protocols_support_generic_host_constructor_receivers );
     ( "protocols support external OCaml receivers",
@@ -41147,6 +41238,8 @@ let tests =
       test_char_is_source_owned_and_uses_static_coercion_protocol );
     ( "name is source-owned and uses static coercion protocol",
       test_name_is_source_owned_and_uses_static_coercion_protocol );
+    ( "keyword and symbol are source-owned static protocols",
+      test_keyword_and_symbol_are_source_owned_static_protocols );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",

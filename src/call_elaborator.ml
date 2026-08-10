@@ -8108,14 +8108,14 @@ let create ~compile_expr =
                           "instance? requires a statically known record type; match a closed sum type")
                   ))
         | _ -> Error.error "instance? expects a record type and value")
-              | "keyword" | "symbol" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok args -> Core_scalar.compile name args)
     | "__lg_builtin-name" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_scalar.compile "name" args)
+    | ("__lg_builtin-keyword" | "__lg_builtin-symbol") as name -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok args -> Core_scalar.compile name args)
     | "__lg_builtin-namespace" -> (
         match compile_args () with
         | Error _ as err -> err
