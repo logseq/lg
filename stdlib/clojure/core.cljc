@@ -45,6 +45,12 @@
 (defprotocol ^:private IIdentifierNamespaceCoercion
   (-coerce-identifier-namespace [value] :option<string>))
 
+(defprotocol ^:private IMungeCoercion
+  (-munge [value] :self))
+
+(defprotocol ^:private IDemungeCoercion
+  (-demunge [value] :self))
+
 (extend-type :int
   ICharCoercion
   (-char [value] (runtime-string/char-of-int value)))
@@ -68,7 +74,11 @@
   ISymbolCoercion
   (-coerce-symbol [value] (__lg_builtin-symbol value))
   IIdentifierNamespaceCoercion
-  (-coerce-identifier-namespace [value] (Some value)))
+  (-coerce-identifier-namespace [value] (Some value))
+  IMungeCoercion
+  (-munge [value] (runtime-string/munge value))
+  IDemungeCoercion
+  (-demunge [value] (runtime-string/demunge value)))
 
 (extend-type nil
   IIdentifierNamespaceCoercion
@@ -226,7 +236,17 @@
   ISymbolCoercion
   (-coerce-symbol [value] value)
   IIdentifierNamespaceCoercion
-  (-coerce-identifier-namespace [value] (Some (__lg_builtin-name value))))
+  (-coerce-identifier-namespace [value] (Some (__lg_builtin-name value)))
+  IMungeCoercion
+  (-munge [value] (symbol (runtime-string/munge (str value))))
+  IDemungeCoercion
+  (-demunge [value] (symbol (runtime-string/demunge (str value)))))
+
+(defn munge [value]
+  (IMungeCoercion/-munge value))
+
+(defn demunge [value]
+  (IDemungeCoercion/-demunge value))
 
 (defprotocol IWriter
   (-write [writer source])

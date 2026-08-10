@@ -603,6 +603,12 @@ across incremental compilation. The runtime does not provide a generic named
 record payload or process-wide protocol, lookup, printer, or record-packer
 registry.
 
+A protocol method whose result preserves its receiver type declares `:self`
+as its return annotation. The compiler substitutes the statically witnessed
+receiver type at each call; it must not merge concrete implementations into a
+universal return value. This is the protocol form for representation-preserving
+operations such as string-or-symbol name transformations.
+
 Database and filtered-database equality, hashing, and counting compare the
 upstream-observable schema and EAVT datoms, not internal IDs, cache state, or
 index counts. Datom equality and hashes ignore transaction IDs as upstream

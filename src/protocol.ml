@@ -389,6 +389,23 @@ let common_method_return env protocol_id method_name =
               merge_method_return_types env merged return_ty))
         (Some first) rest
 
+let has_self_returning_method env protocol_id =
+  let returns_self = function
+    | TFn (_, TVar "__lg_protocol_self") -> true
+    | TOverloaded_fn arities ->
+        List.exists
+          (fun (arity : fn_arity) ->
+            Types.equal arity.return_ty (TVar "__lg_protocol_self"))
+          arities
+    | _ -> false
+  in
+  Protocol_registry.find_protocol protocol_id (Env.protocols env)
+  |> Option.fold ~none:false
+       ~some:(fun (declaration : Protocol_registry.declaration) ->
+         declaration.methods
+         |> Protocol_registry.Method_map.exists (fun _ signature ->
+                returns_self signature.Protocol_registry.method_ty))
+
 let refine_marker_signature env protocol_id target_method_id
     (signature : Protocol_registry.method_signature) =
   let registry = Env.protocols env in
@@ -400,6 +417,10 @@ let refine_marker_signature env protocol_id target_method_id
     in
     let return_ty =
       match arity.return_ty with
+      | TVar "__lg_protocol_self" -> (
+          match fixed_params with
+          | receiver :: _ -> receiver
+          | [] -> Type_solver.fresh ())
       | TUnknown | TMeta _ when use_common_return ->
           common_method_return env protocol_id
             (Method_id.name target_method_id)
@@ -778,6 +799,8 @@ let parse_method_signature = function
       in
       let parameter_forms, return_ty =
         match List.rev forms with
+        | FKeyword ":self" :: rest ->
+            (List.rev rest, Ok (TVar "__lg_protocol_self"))
         | FKeyword return_keyword :: rest ->
             (List.rev rest, Type_annotation.of_keyword return_keyword)
         | _ -> (forms, Ok TUnknown)

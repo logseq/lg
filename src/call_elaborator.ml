@@ -695,55 +695,56 @@ let constrained_argument_expression argument =
   | Semantic_ir.Ident name -> constrained_identifier_expression name argument.ty
   | _ -> argument.semantic_expr
 
+let constrained_value_projection expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Tuple [ _witness; value ] -> value
+  | _ -> Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+
 let rec constrained_value_expression ty expression =
   match Types.protocol_constraint_info ty with
   | Some (_, _, value_ty) ->
       constrained_value_expression value_ty
-        (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+        (constrained_value_projection expression)
   | None -> (
       match Types.truthy_constraint_info ty with
       | Some value_ty ->
           constrained_value_expression value_ty
-            (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+            (constrained_value_projection expression)
       | None -> (
           match Types.nil_predicate_constraint_info ty with
           | Some value_ty ->
               constrained_value_expression value_ty
-                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+                (constrained_value_projection expression)
           | None -> (
           match Types.printable_constraint_info ty with
           | Some value_ty ->
               constrained_value_expression value_ty
-                (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+                (constrained_value_projection expression)
           | None -> (
               match Types.hashable_constraint_info ty with
               | Some value_ty ->
                   constrained_value_expression value_ty
-                    (Semantic_ir.Apply
-                       (Semantic_ir.Ident "snd", [ expression ]))
+                    (constrained_value_projection expression)
               | None -> (
                   match Types.comparable_constraint_info ty with
                   | Some value_ty ->
                       constrained_value_expression value_ty
-                        (Semantic_ir.Apply
-                           (Semantic_ir.Ident "snd", [ expression ]))
+                        (constrained_value_projection expression)
                   | None -> (
                       match Types.array_index_constraint_info ty with
                       | Some value_ty ->
                           constrained_value_expression value_ty
-                            (Semantic_ir.Apply
-                               (Semantic_ir.Ident "snd", [ expression ]))
+                            (constrained_value_projection expression)
                       | None -> (
               match Types.symbol_predicate_constraint_info ty with
               | Some value_ty ->
                   constrained_value_expression value_ty
-                    (Semantic_ir.Apply
-                       (Semantic_ir.Ident "snd", [ expression ]))
+                    (constrained_value_projection expression)
               | None -> (
       match Types.contains_constraint_info ty with
       | Some (_, value_ty) ->
           constrained_value_expression value_ty
-            (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+            (constrained_value_projection expression)
       | None -> (
       match ty with
       | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
@@ -751,7 +752,7 @@ let rec constrained_value_expression ty expression =
              || constraint_name = Types.optional_seqable_constraint_name
              || constraint_name = Types.optional_sequential_constraint_name ->
           constrained_value_expression value_ty
-            (Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ]))
+            (constrained_value_projection expression)
       | _ -> expression)))))))))
 
 let constrained_argument_value argument =

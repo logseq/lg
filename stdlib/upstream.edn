@@ -1060,8 +1060,8 @@
                :reason :bootstrap-namespace-wrapper-is-backed-by-a-javascript-namespace-object}
     defmacro {:status :special-form
               :reason :analyzer-owned-macro-definition-and-metadata-rewrite}
-    demunge {:status :blocked-static-typing
-             :reason :same-arity-string-or-symbol-input-must-preserve-its-nominal-result-type}
+    demunge {:status :static-adaptation
+             :reason :source-function-preserves-upstream-string-or-symbol-result-identity-through-a-static-self-returning-protocol-and-a-complete-typed-demunge-table}
     destructure {:status :special-form
                  :reason :compiler-owned-binding-form-rewrite-over-code-data}
     transient {:status :static-adaptation
@@ -1134,8 +1134,8 @@
                       :reason :constructs-a-javascript-error-from-google-closure-runtime-type-dispatch}
     mk-bound-fn {:status :blocked-static-typing
                  :reason :sorted-collection-receiver-needs-associated-entry-key-and-comparator-types}
-    munge {:status :blocked-static-typing
-           :reason :same-arity-string-or-symbol-input-must-preserve-its-nominal-result-type}
+    munge {:status :static-adaptation
+           :reason :source-function-preserves-upstream-string-or-symbol-result-identity-through-a-static-self-returning-protocol-and-the-complete-javascript-reserved-word-table}
     native-satisfies? {:status :host-boundary
                        :reason :reads-clojurescript-javascript-protocol-dispatch-tables-by-google-closure-runtime-type}
     nil-iter {:status :host-boundary

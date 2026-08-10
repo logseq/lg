@@ -148,11 +148,18 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 565 source entries (57.36%), 28 typed
-primitives, 43 special forms, 97 host boundaries, 201 static-typing blockers,
+macro surfaces. The current baseline is 567 source entries (57.56%), 28 typed
+primitives, 43 special forms, 97 host boundaries, 199 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
+
+`munge` and `demunge` preserve ClojureScript's string-or-symbol result identity
+through private protocols with a static `:self` return. Their source functions
+remain first-class; the runtime boundary is limited to typed string
+transformation using the complete ClojureScript character, demunge, and
+JavaScript-reserved-word tables.
+
 The denominator now includes the complete pinned `cljs.math` public surface.
 Its first source batches provide trigonometric and hyperbolic functions,
 logarithms, square root, exponential functions, stable hypotenuse,

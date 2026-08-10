@@ -333,6 +333,138 @@ let munge_str source =
     source;
   Buffer.contents buffer
 
+let javascript_reserved_words =
+  [
+    "arguments";
+    "abstract";
+    "await";
+    "boolean";
+    "break";
+    "byte";
+    "case";
+    "catch";
+    "char";
+    "class";
+    "const";
+    "continue";
+    "debugger";
+    "default";
+    "delete";
+    "do";
+    "double";
+    "else";
+    "enum";
+    "export";
+    "extends";
+    "final";
+    "finally";
+    "float";
+    "for";
+    "function";
+    "goto";
+    "if";
+    "implements";
+    "import";
+    "in";
+    "instanceof";
+    "int";
+    "interface";
+    "let";
+    "long";
+    "native";
+    "new";
+    "package";
+    "private";
+    "protected";
+    "public";
+    "return";
+    "short";
+    "static";
+    "super";
+    "switch";
+    "synchronized";
+    "this";
+    "throw";
+    "throws";
+    "transient";
+    "try";
+    "typeof";
+    "var";
+    "void";
+    "volatile";
+    "while";
+    "with";
+    "yield";
+    "methods";
+    "null";
+    "constructor";
+  ]
+
+let munge source =
+  let munged = munge_str source in
+  if munged = ".." then "_DOT__DOT_"
+  else if List.mem munged javascript_reserved_words then munged ^ "$"
+  else munged
+
+let demunge_replacements =
+  [
+    ("_SINGLEQUOTE_", "'");
+    ("_DOUBLEQUOTE_", "\"");
+    ("_AMPERSAND_", "&");
+    ("_PERCENT_", "%");
+    ("_LBRACE_", "{");
+    ("_RBRACE_", "}");
+    ("_LBRACK_", "[");
+    ("_RBRACK_", "]");
+    ("_BSLASH_", "\\");
+    ("_COLON_", ":");
+    ("_TILDE_", "~");
+    ("_CIRCA_", "@");
+    ("_SHARP_", "#");
+    ("_CARET_", "^");
+    ("_QMARK_", "?");
+    ("_SLASH_", "/");
+    ("_PLUS_", "+");
+    ("_BANG_", "!");
+    ("_STAR_", "*");
+    ("_BAR_", "|");
+    ("_GT_", ">");
+    ("_LT_", "<");
+    ("_EQ_", "=");
+    ("_", "-");
+    ("$", "/");
+  ]
+
+let demunge source =
+  if source = "_DOT__DOT_" then ".."
+  else
+    let source =
+      if String.ends_with ~suffix:"$" source then
+        String.sub source 0 (String.length source - 1)
+      else source
+    in
+    let length = String.length source in
+    let buffer = Buffer.create length in
+    let rec copy index =
+      if index < length then
+        match
+          List.find_opt
+            (fun (encoded, _) ->
+              let encoded_length = String.length encoded in
+              index + encoded_length <= length
+              && String.sub source index encoded_length = encoded)
+            demunge_replacements
+        with
+        | Some (encoded, decoded) ->
+            Buffer.add_string buffer decoded;
+            copy (index + String.length encoded)
+        | None ->
+            Buffer.add_char buffer source.[index];
+            copy (index + 1)
+    in
+    copy 0;
+    Buffer.contents buffer
+
 let starts_with source prefix = String.starts_with ~prefix source
 let identity source = source
 

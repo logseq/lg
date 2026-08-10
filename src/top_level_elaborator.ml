@@ -568,7 +568,35 @@ let prepare_function scope env name params body_forms =
             (Call_elaborator.adapt_value_to_type env return_type parts.body))
   | Some _ -> Error.error ("function signature expected for " ^ name)
   | None ->
-      prepare_fn ~materialize_open_equality:true scope env params body_forms
+      Result.bind
+        (prepare_fn ~materialize_open_equality:true scope env params body_forms)
+        (fun (parts : Expression_support.compiled_fn_parts) ->
+          match parts.return_param_index_hint with
+          | None -> Ok parts
+          | Some index -> (
+              match List.nth_opt parts.param_bindings index with
+              | None -> Ok parts
+              | Some (_, parameter) ->
+                  let return_ty = Types.constraint_value_type parameter.ty in
+                  let self_returning_protocol =
+                    match Types.protocol_constraint_info parameter.ty with
+                    | Some (protocol_id, _, _) ->
+                        Protocol.has_self_returning_method env protocol_id
+                    | None -> false
+                  in
+                  if
+                    (not self_returning_protocol)
+                    || Types.equal parts.body.ty return_ty
+                  then Ok parts
+                  else
+                    prepare_fn
+                      ~param_type_overrides:
+                        (List.map
+                           (fun (_, (binding : binding)) -> Some binding.ty)
+                           parts.param_bindings)
+                      ~expected_return_ty:return_ty
+                      ~materialize_open_equality:true scope env params
+                      body_forms))
 
 let rec concrete_defrecord_field_type = function
   | TUnknown | TMeta _ | TVar _ | TRecord _ -> None

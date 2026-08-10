@@ -24748,6 +24748,76 @@ let test_keyword_and_symbol_are_source_owned_static_protocols () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "app/source_identifiers.cljc" source)
 
+let test_munge_and_demunge_are_source_owned_static_protocols () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring core_source
+             ("(defn " ^ name ^ " "))
+      then
+        failwith
+          (name ^ " must be implemented by the source standard library"))
+    [ "munge"; "demunge" ];
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let env = stdlib.state.typecheck_state.env in
+  (match
+     Lg.Protocol.find_protocol_id "clojure.core" env "IMungeCoercion"
+   with
+  | Some protocol_id -> (
+      match
+        Lg.Protocol.common_method_return_param_index env protocol_id "-munge"
+      with
+      | Some 0 -> ()
+      | Some index -> failwith ("unexpected munge return parameter " ^ string_of_int index)
+      | None -> failwith "munge protocol must preserve its receiver type")
+  | None -> failwith "missing IMungeCoercion protocol");
+  (match Lg.Compiler_environment.find_opt "clojure.core/munge" env with
+  | Some binding ->
+      if binding.return_param_index <> Some 0 then
+        failwith
+          ("munge binding does not preserve receiver: "
+          ^ Lg.Types.source_name binding.ty)
+  | None -> failwith "missing munge binding");
+  let source =
+    {|
+(ns app.source-munge
+  (:require [cljs.core :as core :refer [munge demunge]]))
+
+(def munge-name munge)
+(def demunge-name core/demunge)
+
+(def invalid-type?
+  (try
+    (munge true)
+    false
+    (catch (Invalid_argument _) true)))
+
+(println
+  (and (= "hello_world" (munge-name "hello-world"))
+       (= "_DOT__DOT_" (munge ".."))
+       (= "class$" (munge "class"))
+       (= 'app_SLASH_core_QMARK_ (munge 'app/core?))
+       (= "hello-world" (demunge-name "hello_world"))
+       (= ".." (demunge "_DOT__DOT_"))
+       (= "class" (demunge "class$"))
+       (= 'app/core? (core/demunge 'app_SLASH_core_QMARK_))
+       invalid-type?))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_munge.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source munge and demunge must use static protocol capabilities";
+  if string_contains_substring native_consumer "snd (None," then
+    failwith "static self-returning protocols must not emit tuple projections";
+  assert_ocaml_runs "source_munge" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/source_munge.cljc" source)
+
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
     {|(def x (split-with (fn [^:string s] true) [1 2]))|}
@@ -41240,6 +41310,8 @@ let tests =
       test_name_is_source_owned_and_uses_static_coercion_protocol );
     ( "keyword and symbol are source-owned static protocols",
       test_keyword_and_symbol_are_source_owned_static_protocols );
+    ( "munge and demunge are source-owned static protocols",
+      test_munge_and_demunge_are_source_owned_static_protocols );
     ( "batched identifier/constructor core functions work",
       test_batched_identifier_and_constructor_core_functions_work );
     ( "batched identifier/constructor core functions reject bad symbol args",
