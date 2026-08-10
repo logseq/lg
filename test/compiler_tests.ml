@@ -23750,6 +23750,64 @@ let test_source_reset_vals_preserves_static_errors () =
     {|(reset-vals! (atom 1) "wrong")|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_swap_vals_matches_clojurescript_arities () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn swap-vals!") then
+    failwith "swap-vals! must be implemented by the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "\"swap-vals!\"" then
+        failwith ("swap-vals! has public-name compiler dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ];
+  let source =
+    {|
+(ns app.source-swap-vals
+  (:require [cljs.core :as core :refer [swap-vals!]]))
+
+(def swap-values-through swap-vals!)
+(def value (atom 1))
+(def evaluations (atom 0))
+
+(defn evaluated-value []
+  (do
+    (swap! evaluations inc)
+    value))
+
+(def result-2 (swap-values-through value inc))
+(def result-3 (core/swap-vals! value + 3))
+(def result-4 (swap-vals! value + 4 5))
+(def result-many
+  (swap-vals! (evaluated-value)
+    (fn [value x y & more] (reduce + (+ value x y) more))
+    6 7 8 9))
+(deftype Box [^:mutable ^int cell]
+  IDeref
+  (-deref [_] cell)
+  ISwap
+  (-swap! [_ updater] (set! cell (updater cell))))
+(def box (Box. 10))
+(def box-result (swap-vals! box + 2 3))
+(println
+  (str (pr-str result-2) ":" (pr-str result-3) ":"
+       (pr-str result-4) ":" (pr-str result-many) ":"
+       @value ":" @evaluations ":" (pr-str box-result) ":" @box))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_swap_vals.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source swap-vals! must preserve its static reference value type";
+  assert_ocaml_runs "source_swap_vals"
+    "[1 2]:[2 5]:[5 14]:[14 44]:44:1:[10 15]:15\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/source_swap_vals.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "app/bad_source_swap_vals.cljc"
+    {|(swap-vals! (atom 1) (fn [_] "bad"))|}
+  |> expect_error_contains "int"
+
 let test_source_string_index_helpers_preserve_arities () =
   let source =
     {|
@@ -41250,6 +41308,8 @@ let tests =
       test_source_reset_vals_matches_cljs );
     ( "source reset-vals preserves static errors",
       test_source_reset_vals_preserves_static_errors );
+    ( "source swap-vals matches ClojureScript arities",
+      test_source_swap_vals_matches_clojurescript_arities );
     ( "source string index helpers preserve arities",
       test_source_string_index_helpers_preserve_arities );
     ( "source range shuffle and any preserve ClojureScript contracts",

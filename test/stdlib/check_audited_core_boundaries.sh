@@ -27,7 +27,6 @@ ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arb
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type
 spread	blocked-static-typing	argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence
-swap-vals!	blocked-static-typing	atomic-old-new-results-require-callback-arity-overloads-inside-the-reference-operation-rather-than-a-non-atomic-deref-and-swap-composition
 tagged-literal	blocked-static-typing	tagged-literal-forms-accept-arbitrary-clojure-values-without-a-public-closed-source-value-domain
 tagged-literal?	blocked-static-typing	first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply

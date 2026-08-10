@@ -148,8 +148,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 568 source entries (57.66%), 27 typed
-primitives, 43 special forms, 97 host boundaries, 199 static-typing blockers,
+macro surfaces. The current baseline is 569 source entries (57.77%), 27 typed
+primitives, 43 special forms, 97 host boundaries, 198 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -409,7 +409,7 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
-`rseq`, `find`, `deref`, `reset!`, `swap!`, `vreset!`, `vswap!`, `compare-and-set!`,
+`rseq`, `find`, `deref`, `reset!`, `swap!`, `swap-vals!`, `vreset!`, `vswap!`, `compare-and-set!`,
 `empty`, `peek`, `pop`, `disj`, `list`, `vector`, `hash-map`, `array-map`,
 `hash-set`, `set`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
@@ -596,6 +596,12 @@ so overloaded update functions retain their static arity information; the
 reference expression is still evaluated exactly once. Applying a known
 variadic callback now lowers directly instead of emitting a redundant wildcard
 match, keeping the generated ML readable.
+`swap-vals!` reuses the same source/protocol structure for all four upstream
+arities and returns a homogeneous old/new vector. Its direct-call inline form
+binds the reference once before dereferencing and invoking the private static
+swap specialization, including for custom `IDeref`/`ISwap` receivers. The
+first-class signature remains parameterized over ordinary LG references; custom
+receivers use direct protocol-specialized calls.
 The volatile reference family delegates through `IVolatile`: `vreset!` is an
 ordinary source function and `vswap!` retains the upstream variadic source
 macro expansion through `IVolatile/-vreset!` and `IDeref/-deref`.
@@ -852,7 +858,7 @@ replaced by identity because `identical?` observes the fresh collection objects
 created by ClojureScript, while `cloneable?`, `record?`, and `tagged-literal?`
 are first-class predicates over arbitrary values. `replace` still combines a
 transducer arity with representation-dependent lazy or vector results.
-`spread`, `trampoline`, `swap-vals!`, `vary-meta`, and
+`spread`, `trampoline`, `vary-meta`, and
 `vec-lite` each require a heterogeneous or dependent function relationship
 that the current static source type system cannot express without narrowing an
 upstream arity.

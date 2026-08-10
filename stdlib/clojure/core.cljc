@@ -2058,6 +2058,34 @@
     reference
     (fn [value] (swap-apply update-fn value x y more)))))
 
+(defn- swap-vals-with [reference update-fn]
+  (let [old-value (IDeref/-deref reference)]
+    [old-value (ISwap/-swap! reference update-fn)]))
+
+(defn swap-vals!
+  {:inline
+   (fn [reference update-fn & args]
+     (let [target (gensym)
+           old-value (gensym)
+           new-value (gensym)]
+       (list
+        'let [target reference
+              old-value (list 'IDeref/-deref target)
+              new-value
+              (cons '__lg_swap!
+                    (cons target (cons update-fn args)))]
+        [old-value new-value])))}
+  ([reference update-fn]
+   (swap-vals-with reference update-fn))
+  ([reference update-fn x]
+   (swap-vals-with reference (fn [value] (update-fn value x))))
+  ([reference update-fn x y]
+   (swap-vals-with reference (fn [value] (update-fn value x y))))
+  ([reference update-fn x y & more]
+   (swap-vals-with
+    reference
+    (fn [value] (swap-apply update-fn value x y more)))))
+
 (defn compare-and-set!
   {:inline
    (fn [reference old-value new-value]

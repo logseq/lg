@@ -866,8 +866,8 @@
              :reason :one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type}
     spread {:status :blocked-static-typing
             :reason :argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence}
-    swap-vals! {:status :blocked-static-typing
-                :reason :atomic-old-new-results-require-callback-arity-overloads-inside-the-reference-operation-rather-than-a-non-atomic-deref-and-swap-composition}
+    swap-vals! {:status :static-adaptation
+                :reason :source-function-preserves-all-clojurescript-arities-old-new-vector-results-and-non-atom-protocol-dispatch-while-direct-calls-inline-to-the-private-contextual-swap-specialization-and-the-supported-reference-runtime-retains-its-existing-sequential-atomicity-boundary}
     tagged-literal {:status :blocked-static-typing
                     :reason :tagged-literal-forms-accept-arbitrary-clojure-values-without-a-public-closed-source-value-domain}
     tagged-literal? {:status :blocked-static-typing
