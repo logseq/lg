@@ -393,8 +393,8 @@
                      :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-upstream-type-guard-and-nil-namespace-branches}
     qualified-keyword? {:status :static-adaptation
                         :reason :source-function-provides-a-first-class-keyword-predicate-while-its-inline-definition-preserves-type-guard-and-present-namespace-branches}
-    namespace {:status :blocked-static-typing
-               :reason :a-cross-state-source-wrapper-loses-user-inamed-witnesses-while-an-inline-wrapper-shadows-the-bootstrap-namespace-resolver-during-macro-compilation}
+    namespace {:status :static-adaptation
+               :reason :source-function-and-consumer-state-inline-expansion-delegate-to-clojurescript-inamed-while-built-in-keyword-and-symbol-methods-use-a-nonrecursive-static-scalar-primitive}
     name {:status :blocked-static-typing
           :reason :same-arity-source-function-must-accept-plain-strings-and-arbitrary-inamed-receivers-without-a-common-static-source-parameter-type}
     keyword {:status :blocked-static-typing

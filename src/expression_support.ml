@@ -1088,7 +1088,6 @@ let untyped_first_class_function_error = function
     | "name"
     | "neg?"
     | "nil?"
-    | "namespace"
     | "number?"
     | "pr-str"
     | "pr-writer"

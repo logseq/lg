@@ -46,7 +46,7 @@ if grep -F '| "conj" -> compile_conj' \
   exit 1
 fi
 
-for name in unreduced; do
+for name in namespace unreduced; do
   if grep -E "^[[:space:]]*\\| .*\"$name\".*->" \
       "$root/src/call_elaborator.ml" "$root/src/type_inference.ml" >/dev/null; then
     echo "clojure.core/$name is still publicly dispatched by the compiler" >&2

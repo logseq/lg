@@ -40,6 +40,21 @@ let marker_binding protocol_id signature =
 
 let resolve_protocol_id ~scope env protocol_id =
   let registry = Env.protocols env in
+  let resolve_core_alias target name =
+    let target_id = Protocol_id.create ~owner:[ target ] ~name in
+    if Option.is_some (Protocol_registry.find_protocol target_id registry) then
+      target_id
+    else if String.equal target "cljs.core" then
+      let clojure_core_id =
+        Protocol_id.create ~owner:[ "clojure.core" ] ~name
+      in
+      if
+        Option.is_some
+          (Protocol_registry.find_protocol clojure_core_id registry)
+      then clojure_core_id
+      else target_id
+    else target_id
+  in
   if Option.is_some (Protocol_registry.find_protocol protocol_id registry) then
     protocol_id
   else
@@ -47,8 +62,7 @@ let resolve_protocol_id ~scope env protocol_id =
     | [ module_path ] ->
         (match Env.resolve_namespace_alias ~scope module_path env with
         | Some target ->
-            Protocol_id.create ~owner:[ target ]
-              ~name:(Protocol_id.name protocol_id)
+            resolve_core_alias target (Protocol_id.name protocol_id)
         | None -> (
             match
               Module_registry.resolve_alias ~scope module_path (Env.modules env)
@@ -70,7 +84,13 @@ let find_protocol_id scope env protocol_name =
     Some scoped_id
   else if Option.is_some (Protocol_registry.find_protocol root_id registry) then
     Some root_id
-  else None
+  else
+    let core_id =
+      Protocol_id.create ~owner:[ "clojure.core" ] ~name:protocol_name
+    in
+    if Option.is_some (Protocol_registry.find_protocol core_id registry) then
+      Some core_id
+    else None
 
 let method_is_ambiguous scope env method_name =
   if String.contains method_name '/' then false

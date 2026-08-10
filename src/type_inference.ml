@@ -3881,7 +3881,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList
         [
-          FSymbol ("name" | "namespace");
+          FSymbol "name";
           FSymbol value;
         ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value

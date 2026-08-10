@@ -8102,11 +8102,20 @@ let create ~compile_expr =
                           "instance? requires a statically known record type; match a closed sum type")
                   ))
         | _ -> Error.error "instance? expects a record type and value")
-              | "name"
-              | "namespace" | "keyword" | "symbol" -> (
+              | "name" | "keyword" | "symbol" -> (
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_scalar.compile name args)
+    | "__lg_builtin-namespace" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok args -> Core_scalar.compile "namespace" args)
+    | "__lg_namespace" -> (
+        match arg_forms with
+        | [ _ ] ->
+            compile_protocol_call scope env
+              "clojure.core/INamed/-namespace" arg_forms
+        | _ -> Error.error "namespace expects 1 arguments")
     | ("resolve" | "requiring-resolve") as resolve_name ->
         Error.error
           (resolve_name

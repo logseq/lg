@@ -31,12 +31,12 @@
 (extend-type :keyword
   INamed
   (-name [value] (name value))
-  (-namespace [value] (namespace value)))
+  (-namespace [value] (__lg_builtin-namespace value)))
 
 (extend-type :symbol
   INamed
   (-name [value] (name value))
-  (-namespace [value] (namespace value)))
+  (-namespace [value] (__lg_builtin-namespace value)))
 
 (defprotocol IWriter
   (-write [writer source])
@@ -1463,7 +1463,7 @@
                    (list '__lg_nil-predicate (list 'namespace value))
                    false))))}
   [x]
-  (__lg_nil-predicate (namespace x)))
+  (__lg_nil-predicate (__lg_namespace x)))
 
 (defn qualified-symbol?
   {:inline
@@ -1475,7 +1475,7 @@
                          (list '__lg_nil-predicate (list 'namespace value)))
                    false))))}
   [x]
-  (not (__lg_nil-predicate (namespace x))))
+  (not (__lg_nil-predicate (__lg_namespace x))))
 
 (defn simple-keyword?
   {:inline
@@ -1486,7 +1486,7 @@
                    (list '__lg_nil-predicate (list 'namespace value))
                    false))))}
   [x]
-  (__lg_nil-predicate (namespace x)))
+  (__lg_nil-predicate (__lg_namespace x)))
 
 (defn qualified-keyword?
   {:inline
@@ -1498,7 +1498,7 @@
                          (list '__lg_nil-predicate (list 'namespace value)))
                    false))))}
   [x]
-  (not (__lg_nil-predicate (namespace x))))
+  (not (__lg_nil-predicate (__lg_namespace x))))
 
 (defn counted?
   {:inline
@@ -2758,3 +2758,8 @@
   {:inline (fn [m] (list '__lg_vals m))}
   [m]
   (map val m))
+
+(defn namespace
+  {:inline (fn [value] (list '__lg_namespace value))}
+  [value]
+  (INamed/-namespace value))

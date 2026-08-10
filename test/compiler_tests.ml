@@ -25635,8 +25635,9 @@ let test_batched_identifier_and_constructor_core_functions_reject_bad_keyword_ar
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_namespace_args
     () =
-  Lg.Compiler.compile_string {|(def x (namespace 1))|}
-  |> expect_error "namespace expects keyword or symbol"
+  compile_with_stdlib_result Lg.Target.Native
+    "test/bad_namespace_receiver.cljc" {|(def x (namespace 1))|}
+  |> expect_error_contains "INamed/-namespace"
 
 let test_namespace_accepts_closed_identifier_alternatives () =
   let source =
@@ -25710,6 +25711,54 @@ let test_unreduced_has_no_public_name_dispatch () =
           ("| \"" ^ name ^ "\"")
       then failwith (name ^ " still has public-name compiler dispatch"))
     [ "unreduced" ]
+
+let test_source_namespace_preserves_inamed_dispatch () =
+  let source =
+    {|
+(ns app.source-namespace
+  (:require [cljs.core :as core :refer [namespace]]))
+
+(deftype NamedBox [^:bool marker]
+  INamed
+  (-name [_] "box")
+  (-namespace [_] (Some "custom")))
+
+(def namespace-of namespace)
+
+(println
+  (and (= "user" (namespace-of :user/name))
+       (= "user" (core/namespace 'user/name))
+       (= nil (namespace :ready))
+       (= "custom" (namespace-of (NamedBox. true)))))
+|}
+  in
+  let native_consumer =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_namespace.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source namespace must preserve static INamed witnesses";
+  assert_ocaml_runs "source_namespace" "true\n"
+    (compile_with_stdlib Lg.Target.Native "test/source_namespace.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_namespace.cljc" source)
+
+let test_namespace_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  if not (string_contains_substring core_source "(defn namespace") then
+    failwith "namespace is not owned by the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file (Filename.concat (repo_root ()) path) in
+      if
+        string_contains_substring compiler_source "| \"namespace\""
+        || string_contains_substring compiler_source
+             "FSymbol (\"name\" | \"namespace\")"
+      then failwith ("namespace still has public-name dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
 let test_batched_sequence_functions_work () =
   let source =
@@ -40878,6 +40927,10 @@ let tests =
       test_source_unreduced_matches_clojurescript );
     ( "unreduced has no public-name dispatch",
       test_unreduced_has_no_public_name_dispatch );
+    ( "source namespace preserves INamed dispatch",
+      test_source_namespace_preserves_inamed_dispatch );
+    ( "namespace has no public-name dispatch",
+      test_namespace_has_no_public_name_dispatch );
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
