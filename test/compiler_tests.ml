@@ -13953,6 +13953,7 @@ let test_custom_compare_and_set_dispatches () =
   (do
     (swap! evaluations inc)
     value))
+
 (println
   (str
     (compare-and-set! value 1 2) ":"
@@ -27774,14 +27775,17 @@ let test_source_reference_protocol_family_matches_clojurescript () =
     compile_with_stdlib Lg.Target.Native
       "test/source_reference_protocols.cljc" source
   in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
     failwith "source reference protocols must remain statically typed";
   assert_ocaml_runs "source_reference_protocol_family" expected native_source;
-  let melange_source =
-    compile_with_stdlib Lg.Target.Melange
-      "test/source_reference_protocols.cljc" source
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_reference_protocols.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
-  if string_contains_substring melange_source "Runtime_dynamic" then
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
     failwith "Melange reference protocols must remain statically typed"
 
 let test_reference_protocol_family_has_no_public_name_dispatch () =
@@ -27806,6 +27810,57 @@ let test_reference_protocol_family_has_no_public_name_dispatch () =
               (name ^ " still has public-name compiler dispatch in " ^ path))
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "deref"; "reset!"; "compare-and-set!" ]
+
+let test_swap_is_source_owned_and_matches_clojurescript_arities () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn swap!") then
+    failwith "swap! must be implemented by the source standard library";
+  let call_source = read_file "src/call_elaborator.ml" in
+  if string_contains_substring call_source "| \"swap!\"" then
+    failwith "swap! still has public-name call dispatch";
+  let inference_source = read_file "src/type_inference.ml" in
+  if string_contains_substring inference_source "FSymbol \"swap!\"" then
+    failwith "swap! still has public-name type-inference dispatch";
+  let source =
+    {|
+(ns app.source-swap
+  (:require [cljs.core :as core :refer [swap!]]))
+
+(def swap-through swap!)
+(def value (atom 1))
+(def evaluations (atom 0))
+
+(defn evaluated-value []
+  (do
+    (swap! evaluations inc)
+    value))
+
+(def result-2 (swap-through value inc))
+(def result-3 (core/swap! value + 3))
+(def result-4 (swap! value + 4 5))
+(def result-many
+  (swap! (evaluated-value)
+    (fn [value x y & more] (reduce + (+ value x y) more))
+    6 7 8 9))
+(println
+  (str result-2 ":" result-3 ":" result-4 ":" result-many ":"
+       @value ":" @evaluations))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_swap.cljc" source
+  in
+  if string_contains_substring native_source "match List.of_seq more with" then
+    failwith
+      "apply to a known variadic function must not emit a redundant match";
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source swap! must preserve its static reference value type";
+  assert_ocaml_runs "source_swap" "2:5:14:44:44:1\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/source_swap.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "app/bad_source_swap.cljc"
+    {|(swap! (atom 1) (fn [_] "bad"))|}
+  |> expect_error_contains "int"
 
 let test_source_volatile_reference_family_matches_clojurescript () =
   let source =
@@ -27840,14 +27895,17 @@ let test_source_volatile_reference_family_matches_clojurescript () =
     compile_with_stdlib Lg.Target.Native
       "test/source_volatile_references.cljc" source
   in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
     failwith "source volatile references must remain statically typed";
   assert_ocaml_runs "source_volatile_reference_family" expected native_source;
-  let melange_source =
-    compile_with_stdlib Lg.Target.Melange
-      "test/source_volatile_references.cljc" source
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_volatile_references.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
-  if string_contains_substring melange_source "Runtime_dynamic" then
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
     failwith "Melange volatile references must remain statically typed"
 
 let test_source_volatile_reference_family_rejects_invalid_inputs () =
@@ -41498,6 +41556,8 @@ let tests =
       test_source_reference_protocol_family_matches_clojurescript );
     ( "reference protocol family has no public-name dispatch",
       test_reference_protocol_family_has_no_public_name_dispatch );
+    ( "swap! is source-owned and matches ClojureScript arities",
+      test_swap_is_source_owned_and_matches_clojurescript_arities );
     ( "source volatile reference family matches ClojureScript",
       test_source_volatile_reference_family_matches_clojurescript );
     ( "source volatile reference family rejects invalid inputs",

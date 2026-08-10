@@ -17,6 +17,8 @@
 
 (signature clojure.core/identity [value]
   :fn<value;value>)
+(signature clojure.core/swap-apply [value x y more]
+  :fn<variadic-fn<value;x;y;more;value>;value;x;y;seq<more>;value>)
 (signature clojure.core/hash [value]
   :fn<hashable<value>;int>)
 (signature clojure.core/compare [value]

@@ -122,6 +122,7 @@ awk '
     internal_abi["__lg_aget"] = "typed-array-index-capability-read-primitive"
     internal_abi["__lg_aset"] = "typed-array-index-capability-write-primitive"
     internal_abi["__lg_atom"] = "typed-reference-allocation-primitive"
+    internal_abi["__lg_swap!"] = "typed-contextual-reference-swap-primitive"
     internal_abi["__lg_volatile!"] = "typed-volatile-reference-allocation-primitive"
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"

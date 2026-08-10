@@ -13,3 +13,5 @@ let vreset slot value =
   value
 
 let get slot = !slot ()
+
+let swap slot update = set slot (update (get slot))

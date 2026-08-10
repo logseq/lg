@@ -4160,11 +4160,12 @@ let atom_state_type scope env receiver_ty =
 let compile_protocol_swap ~compile_expr scope env swap_name reference
     function_form extra_forms =
   let reference_ty = reference.ty in
+  let public_name = if swap_name = "__lg_swap!" then "swap!" else swap_name in
   let type_error () =
     Error.error
-      (swap_name ^ " expects a reference or ISwap as its first argument")
+      (public_name ^ " expects a reference or ISwap as its first argument")
   in
-  if swap_name <> "swap!" then type_error ()
+  if swap_name <> "__lg_swap!" then type_error ()
   else
     match
       protocol_implementation scope env "ISwap" "-swap!" reference_ty
@@ -7771,7 +7772,7 @@ let create ~compile_expr =
             | Some _ -> Error.error ("set! expects a mutable target, got " ^ name)
             | None -> Error.error ("unknown set! target " ^ name))
         | _ -> Error.error "set! expects a target and value")
-    | "swap!" as swap_name -> (
+    | "__lg_swap!" as swap_name -> (
         match arg_forms with
         | reference_form :: function_form :: extra_forms -> (
             match compile_expr scope env reference_form with
@@ -7779,7 +7780,7 @@ let create ~compile_expr =
             | Ok reference -> (
             match reference.ty with
                 | TOcaml_app ("Lg_runtime.Runtime_slot.t", [ value_ty ]) -> (
-                    let value_name = "__lg_vswap_value" in
+                    let value_name = "__lg_swap_value" in
                     let updater_env =
                       Env.add
                         (Names.scoped_key scope value_name)
@@ -7793,6 +7794,7 @@ let create ~compile_expr =
                     match compile_expr scope updater_env updater_body with
                     | Error _ as err -> err
                     | Ok updater_body ->
+                        let reference_name = "__lg_swap_reference" in
                         let updater =
                           typed_ir (TFn ([ value_ty ], updater_body.ty))
                             (Semantic_ir.Fun
@@ -7801,23 +7803,31 @@ let create ~compile_expr =
                         in
                         Ok
                           (typed_ir updater_body.ty
-                             (Semantic_ir.Apply
-                                ( Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_slot.set",
-                                  [
-                                    reference.semantic_expr;
-                                    Semantic_ir.Apply
-                                      ( updater.semantic_expr,
-                                        [
-                                          Semantic_ir.Apply
-                                            ( Semantic_ir.Ident
-                                                "Lg_runtime.Runtime_slot.get",
-                                              [ reference.semantic_expr ] );
-                                        ] );
-                                  ] ))))
+                             (Semantic_ir.Let
+                                ( [
+                                    ( Semantic_ir.PVar reference_name,
+                                      reference.semantic_expr );
+                                  ],
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_slot.set",
+                                      [
+                                        Semantic_ir.Ident reference_name;
+                                        Semantic_ir.Apply
+                                          ( updater.semantic_expr,
+                                            [
+                                              Semantic_ir.Apply
+                                                ( Semantic_ir.Ident
+                                                    "Lg_runtime.Runtime_slot.get",
+                                                  [
+                                                    Semantic_ir.Ident
+                                                      reference_name;
+                                                  ] );
+                                            ] );
+                                      ] ) ))))
                 | TRef value_ty ->
                     let compile_generic () =
-                      let value_name = "__lg_vswap_value" in
+                      let value_name = "__lg_swap_value" in
                       let updater_env =
                         Env.add (Names.scoped_key scope value_name)
                           (Types.binding value_name value_ty)
@@ -7830,25 +7840,29 @@ let create ~compile_expr =
                       match compile_expr scope updater_env updater_body with
                       | Error _ as err -> err
                       | Ok updater_body ->
+                          let reference_name = "__lg_swap_reference" in
                           let updater =
                             typed_ir (TFn ([ value_ty ], updater_body.ty))
                               (Semantic_ir.Fun
                                  ( [ Semantic_ir.PVar value_name ],
                                    updater_body.semantic_expr ))
                           in
-                          let updated_name = "__lg_vswap_updated" in
+                          let updated_name = "__lg_swap_updated" in
                           let updated_expr =
                             Semantic_ir.Apply
                               ( updater.semantic_expr,
                                 [
                                   Semantic_ir.Prefix
-                                    ("!", reference.semantic_expr);
+                                    ( "!",
+                                      Semantic_ir.Ident reference_name );
                                 ] )
                           in
                           Ok
                             (typed_ir value_ty
                                (Semantic_ir.Let
-                                  ( [
+                                 ( [
+                                      ( Semantic_ir.PVar reference_name,
+                                        reference.semantic_expr );
                                       ( Semantic_ir.PVar updated_name,
                                         updated_expr );
                                     ],
@@ -7856,7 +7870,7 @@ let create ~compile_expr =
                                       [
                                         Semantic_ir.Infix
                                           ( ":=",
-                                            reference.semantic_expr,
+                                            Semantic_ir.Ident reference_name,
                                             Semantic_ir.Ident updated_name );
                                         Semantic_ir.Ident updated_name;
                                       ] )))

@@ -442,6 +442,12 @@ let add_reference_protocols registry =
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") volatile_id
        "-vreset!" "Lg_runtime.Runtime_slot.vreset"
        (TFn ([ slot; value ], value))
+  |> add Receiver_id.Ref_receiver swap_id "-swap!"
+       "Lg_runtime.Runtime_reference.swap"
+       (TFn ([ reference; TFn ([ value ], value) ], value))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") swap_id
+       "-swap!" "Lg_runtime.Runtime_slot.swap"
+       (TFn ([ slot; TFn ([ value ], value) ], value))
 
 let declare_compare_and_set registry =
   let value = TVar "atom_value" in

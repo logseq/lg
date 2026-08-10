@@ -4110,7 +4110,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | value_ty -> infer_expected value_ty params value)
     | FList
         [
-          FSymbol "swap!";
+          FSymbol "__lg_swap!";
           FSymbol reference;
           FSymbol "conj";
           value;
@@ -4136,7 +4136,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (fun params -> infer_expected element_ty params value))
     | FList
         [
-          FSymbol "swap!";
+          FSymbol "__lg_swap!";
           FSymbol reference;
           FSymbol "__lg_assoc!";
           key;
@@ -4161,7 +4161,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 infer_expected value_ty params value))
     | FList
         [
-          FSymbol "swap!";
+          FSymbol "__lg_swap!";
           FSymbol reference;
           FSymbol "__lg_conj!";
           value;
@@ -4179,7 +4179,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (constrain_symbol reference_ty params reference)
           (fun params -> infer_expected element_ty params value)
     | FList
-        (FSymbol "swap!" :: reference :: update_fn
+        (FSymbol "__lg_swap!" :: reference :: update_fn
        :: arguments) ->
         Result.bind (infer_form params reference) (fun params ->
             Result.bind (infer_form params update_fn) (fun params ->

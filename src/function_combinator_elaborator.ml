@@ -77,6 +77,32 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     if index = 0 then apply "fst" [ expression ]
     else overloaded_projection (apply "snd" [ expression ]) (index - 1)
   in
+  let rec irrefutable_pattern = function
+    | Semantic_ir.PAny | Semantic_ir.PVar _ -> true
+    | Semantic_ir.PLocated (_, _, pattern)
+    | Semantic_ir.PAlias (pattern, _)
+    | Semantic_ir.PConstraint (pattern, _)
+    | Semantic_ir.PTyped (pattern, _) ->
+        irrefutable_pattern pattern
+    | _ -> false
+  in
+  let apply_arity_match list_expr cases =
+    match cases with
+    | [ (pattern, expression) ] when irrefutable_pattern pattern -> expression
+    | _ ->
+        let cases =
+          if List.exists (fun (pattern, _) -> irrefutable_pattern pattern) cases
+          then cases
+          else
+            cases
+            @ [
+                ( Semantic_ir.PAny,
+                  apply "invalid_arg"
+                    [ Semantic_ir.String "wrong apply argument count" ] );
+              ]
+        in
+        Semantic_ir.Match (list_expr, cases)
+  in
   let prepare_apply_argument env ~expected_ty argument =
     if
       Option.is_some (Types.protocol_constraint_info expected_ty)
@@ -550,25 +576,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                                       function_name,
                                                     fn.semantic_expr );
                                                 ],
-                                                Semantic_ir.Match
-                                                  ( list_expr,
-                                                    List.map
-                                                        (fun
-                                                          (pattern, expression)
-                                                           ->
-                                                          ( pattern,
-                                                            expression.semantic_expr
-                                                          ))
-                                                      cases
-                                                    @ [
-                                                        ( Semantic_ir.PAny,
-                                                          apply "invalid_arg"
-                                                            [
-                                                              Semantic_ir.String
-                                                                "wrong apply \
-                                                                 argument count";
-                                                            ] );
-                                                      ] ) ))))
+                                                apply_arity_match list_expr
+                                                  (List.map
+                                                     (fun (pattern, expression) ->
+                                                       ( pattern,
+                                                         expression.semantic_expr
+                                                       ))
+                                                     cases) ))))
                           | fn_type
                             when Types.is_dynamic fn_type
                                  || (match fn_type with

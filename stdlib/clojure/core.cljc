@@ -2039,6 +2039,25 @@
     ~reference
     (~update-fn (IDeref/-deref ~reference) ~@args)))
 
+(defn- swap-apply [update-fn value x y more]
+  (apply update-fn value x y more))
+
+(defn swap!
+  {:inline
+   (fn [reference update-fn & args]
+     (cons '__lg_swap!
+           (cons reference (cons update-fn args))))}
+  ([reference update-fn]
+   (ISwap/-swap! reference update-fn))
+  ([reference update-fn x]
+   (ISwap/-swap! reference (fn [value] (update-fn value x))))
+  ([reference update-fn x y]
+   (ISwap/-swap! reference (fn [value] (update-fn value x y))))
+  ([reference update-fn x y & more]
+   (ISwap/-swap!
+    reference
+    (fn [value] (swap-apply update-fn value x y more)))))
+
 (defn compare-and-set!
   {:inline
    (fn [reference old-value new-value]

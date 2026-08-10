@@ -7,3 +7,5 @@ let reset reference value =
 let vreset reference value =
   reference := value;
   value
+
+let swap reference update = reset reference (update !reference)

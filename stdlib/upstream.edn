@@ -473,6 +473,8 @@
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ideref-with-static-protocol-implementations-for-refs-lazy-values-futures-and-slots-while-var-quotes-remain-a-compile-time-reference}
     reset! {:status :static-adaptation
             :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireset-with-static-protocol-implementations-for-refs-and-slots}
+    swap! {:status :static-adaptation
+           :reason :source-function-preserves-all-clojurescript-arities-and-first-class-protocol-dispatch-while-direct-calls-inline-to-a-private-contextual-specialization-that-keeps-the-reference-value-type-static-and-evaluates-the-reference-once}
     vreset! {:status :static-adaptation
              :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ivolatile-with-static-protocol-implementations-for-refs-and-slots}
     vswap! {:status :static-adaptation

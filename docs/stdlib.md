@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 567 source entries (57.56%), 28 typed
+macro surfaces. The current baseline is 568 source entries (57.66%), 27 typed
 primitives, 43 special forms, 97 host boundaries, 199 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -409,7 +409,7 @@ entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`
 `bit-xor`, `bit-shift-left`, `bit-shift-right`, `not-any?`, `not-every?`, `split-at`, `split-with`, `nthnext`, `nthrest`, `bounded-count`, `butlast`, `take-last`, `drop-last`, `reverse`, `second`, `last`, `interpose`, `dedupe`, `distinct`, `zipmap`, `hash-combine`, `quot`, `rem`, `mod`, the `unchecked-*` integer arithmetic helpers, `rand-int`, `rand-nth`, `bit-shift-right-zero-fill`, `clojure.string/escape`,
 `subs`, `int-to-string-radix`, `any?`, `ratio?`, `decimal?`, `realized?`, `range`, `shuffle`, `alength`, `aclone`, `acopy`,
 `aslice`, `aconcat`, `array-to-seq`, `array-to-rseq`, `array-seq`, `to-array`,
-`rseq`, `find`, `deref`, `reset!`, `vreset!`, `vswap!`, `compare-and-set!`,
+`rseq`, `find`, `deref`, `reset!`, `swap!`, `vreset!`, `vswap!`, `compare-and-set!`,
 `empty`, `peek`, `pop`, `disj`, `list`, `vector`, `hash-map`, `array-map`,
 `hash-set`, `set`,
 `into-array`, the `array-values` source macro, `array-from`, `array-binary-search-left`, and
@@ -584,12 +584,18 @@ retains a validated static regex constructor while the public var remains
 source-defined. After removing the `map?`, `vector?`, `set?`, `coll?`,
 `associative?`, `reversible?`, `indexed?`, `sequential?`, and `sorted?` name
 routes, plus the public `rseq`, `find`, `deref`, `reset!`,
-`compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
+`swap!`, `compare-and-set!`, `vreset!`, `vswap!`, `empty`, `peek`, `pop`, and `disj`
 routes, the raw compiler-call inventory contains 197 names.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
 futures, and slots without dynamic packing. `compare-and-set!` preserves the
 upstream deref/equality/reset control flow and evaluates its arguments once.
+`swap!` preserves all pinned ClojureScript arities as a first-class source
+function through `ISwap`. Direct calls use a private contextual specialization
+so overloaded update functions retain their static arity information; the
+reference expression is still evaluated exactly once. Applying a known
+variadic callback now lowers directly instead of emitting a redundant wildcard
+match, keeping the generated ML readable.
 The volatile reference family delegates through `IVolatile`: `vreset!` is an
 ordinary source function and `vswap!` retains the upstream variadic source
 macro expansion through `IVolatile/-vreset!` and `IDeref/-deref`.
