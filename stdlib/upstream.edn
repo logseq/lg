@@ -527,6 +527,8 @@
           :reason :source-function-preserves-first-class-use-and-the-upstream-optional-successor-sequence-through-a-private-typed-primitive-without-inline-expansion-because-the-nullable-sequence-result-must-remain-stable-during-generic-source-inference}
     cons {:status :static-adaptation
           :reason :source-function-and-inline-specialization-preserve-upstream-prepending-over-homogeneous-static-seqables-through-a-private-typed-primitive}
+    conj {:status :static-adaptation
+          :reason :source-overloads-preserve-upstream-zero-one-two-and-variadic-left-to-right-category-preserving-conjoin-while-direct-calls-inline-to-a-private-static-collection-primitive-and-map-entries-use-a-static-key-value-tuple-because-upstream-two-element-vectors-can-be-heterogeneous}
     nth {:status :static-adaptation
          :reason :source-overloads-and-inline-specialization-delegate-to-clojurescript-iindexed-while-preserving-static-list-vector-array-string-default-and-explicit-protocol-behavior}
     get {:status :static-adaptation

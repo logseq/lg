@@ -8523,7 +8523,7 @@ let create ~compile_expr =
     | "__lg_dissoc!" -> compile_dissoc_bang scope env arg_forms
     | "__lg_transient" -> compile_transient scope env arg_forms
     | "__lg_persistent!" -> compile_persistent_bang scope env arg_forms
-    | "conj" -> compile_conj scope env arg_forms
+    | "__lg_conj" -> compile_conj scope env arg_forms
     | "__lg_first" -> compile_collection_call scope env name arg_forms
     | "__lg_subvec" -> compile_subvec scope env arg_forms
     | "__lg_nth" -> compile_nth scope env arg_forms

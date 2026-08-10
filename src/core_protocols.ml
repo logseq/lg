@@ -500,6 +500,8 @@ let declare_map_protocols registry =
   let key = TVar "map_key" in
   let value = TVar "map_value" in
   let accumulator = TVar "map_accumulator" in
+  let collection = TVar "conj_collection" in
+  let collection_element = TVar "conj_element" in
   let map_ty = TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) in
   let metadata_ty = TOcaml "Lg_edn_backend.t" in
   registry
@@ -527,7 +529,7 @@ let declare_map_protocols registry =
   |> Protocol_registry.declare collection_id
        [
          signature (method_id collection_id "-conj")
-           [ map_ty; TTuple [ key; value ] ] map_ty;
+           [ collection; collection_element ] collection;
        ]
   |> add_or_fail
   |> Protocol_registry.declare associative_id

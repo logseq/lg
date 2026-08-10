@@ -33,11 +33,18 @@ done
 for name in seq first rest next cons some; do
   if grep -E "^[[:space:]]*\| .*\"$name\".*->" \
       "$root/src/call_elaborator.ml" "$root/src/core_collection.ml" \
-      "$root/src/sequence_call_elaborator.ml" >/dev/null; then
+      "$root/src/sequence_call_elaborator.ml" \
+      "$root/src/collection_operation_elaborator.ml" >/dev/null; then
     echo "clojure.core/$name is still publicly dispatched by the collection compiler" >&2
     exit 1
   fi
 done
+
+if grep -F '| "conj" -> compile_conj' \
+    "$root/src/call_elaborator.ml" >/dev/null; then
+  echo "clojure.core/conj is still publicly dispatched by the collection compiler" >&2
+  exit 1
+fi
 
 for name in get get-in assoc-in update update-in select-keys merge vals; do
   for file in \

@@ -148,7 +148,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 519 source entries (52.69%), 73 typed
+macro surfaces. The current baseline is 520 source entries (52.79%), 72 typed
 primitives, 43 special forms, 97 host boundaries, 202 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -207,6 +207,13 @@ so its optional-sequence result cannot destabilize generic loop inference.
 Direct calls inline to a private typed primitive only for the callback-result
 option-flattening boundary, while first-class calls use the source binding and
 its inferred static truthiness contract.
+`conj` is source-owned with the complete zero, one, two, and variadic upstream
+arity family. Lists, vectors, sets, sequences, user `ICollection`
+implementations, and statically typed map-entry tuples preserve their result
+category. Direct calls inline to the private collection ABI, and map entries
+expand through private association so record shape changes remain visible to
+type checking. The tuple is a documented adaptation for ClojureScript's
+heterogeneous two-element map-entry vector.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;

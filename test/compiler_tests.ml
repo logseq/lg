@@ -3007,27 +3007,38 @@ let test_heterogeneous_computed_maps_require_declared_sum_types () =
        "heterogeneous map values have types float | int; define a sum type"
 
 let test_vector_updates_require_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (conj [1] "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/vector_conj_requires_sum.cljc"
+    {|(def value (conj [1] "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_list_updates_require_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (conj (__lg_list 1) "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/list_conj_requires_sum.cljc"
+    {|(def value (conj (__lg_list 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_set_updates_require_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (conj #{1} "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/set_conj_requires_sum.cljc"
+    {|(def value (conj #{1} "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_sequence_conj_requires_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (conj (seq [1]) "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/sequence_conj_requires_sum.cljc"
+    {|(def value (conj (seq [1]) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_sequence_cons_requires_sum_elements () =
-  Lg.Compiler.compile_string {|(def value (cons "two" (seq [1])))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/sequence_cons_requires_sum.cljc"
+    {|(def value (cons "two" (seq [1])))|}
   |> expect_error_contains "define a sum type"
 
 let test_map_updates_require_sum_values () =
-  Lg.Compiler.compile_string
+  compile_with_stdlib_result Lg.Target.Native
+    "test/map_assoc_requires_sum.cljc"
     {|(def key :left)
 (def value (assoc (__lg_hash-map key 1) :right "two"))|}
   |> expect_error_contains "define a sum type"
@@ -24189,6 +24200,51 @@ let test_source_fundamental_sequence_family_rejects_invalid_inputs () =
     {|(def prepend cons) (prepend "bad" [1 2])|}
   |> expect_error_contains "heterogeneous sequence"
 
+let test_source_conj_preserves_clojurescript_collection_categories () =
+  let source =
+    {|
+(ns test.source-conj
+  (:require [cljs.core :as core :refer [conj]]))
+
+(deftype IntBag [^:vector<int> values]
+  ICollection
+  (-conj [_ value]
+    (IntBag. (conj values value))))
+
+(def add conj)
+(def vector-values (add [1 2] 3 4))
+(def list-values (add (list 3) 2 1))
+(def set-values (add #{1 2} 2 3))
+(def seq-values (add (seq [2 3]) 1))
+(def map-values (conj {:a 1} (tuple :b 2)))
+(def bag-values (.-values ^IntBag (add (IntBag. [1]) 2)))
+
+(println
+  (and (= [] (conj))
+       (= [1 2] (conj [1 2]))
+       (= [1 2 3 4] vector-values)
+       (= [1 2 3] (vec list-values))
+       (= #{1 2 3} set-values)
+       (= [1 2 3] (vec seq-values))
+       (= 2 (:b map-values))
+       (= [1 2] bag-values)
+       (= [1 2 3] (core/conj [1 2] 3))))
+|}
+  in
+  let consumer_source =
+    compile_with_stdlib_result Lg.Target.Native "test/source_conj.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source conj must preserve static collection categories";
+  assert_ocaml_runs "source_conj_preserves_collection_categories" "true\n"
+    (compile_with_stdlib Lg.Target.Native "test/source_conj.cljc" source);
+  ignore (compile_with_stdlib Lg.Target.Melange "test/source_conj.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_conj_rejects_mixed_elements.cljc"
+    {|(conj [1 2] "bad")|}
+  |> expect_error_contains "heterogeneous"
+
 let test_hash_dispatches_to_record_ihash () =
   let source =
     {|
@@ -30277,7 +30333,7 @@ let test_reduce_rejects_heterogeneous_vector_accumulator_slots () =
   compile_string_with_stdlib source
   |> expect_error_contains "heterogeneous vector"
 
-let test_conj_rejects_an_untyped_first_class_reference () =
+let test_conj_requires_source_stdlib_state () =
   let source =
     {|
 (def append conj)
@@ -30285,8 +30341,7 @@ let test_conj_rejects_an_untyped_first_class_reference () =
 |}
   in
   Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "conj cannot be used as an untyped first-class function"
+  |> expect_error_contains "unknown symbol conj"
 
 let test_conj_uses_a_statically_typed_first_class_wrapper () =
   let source =
@@ -30297,13 +30352,13 @@ let test_conj_uses_a_statically_typed_first_class_wrapper () =
 (println (pr-str (append [1] 2)))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "typed first-class conj wrapper should remain static";
   assert_ocaml_runs "conj_uses_a_statically_typed_first_class_wrapper"
-    "[1 2]\n" ocaml_source;
+    "[1 2]\n" (compile_string_with_stdlib source |> expect_ok);
   let melange_source =
-    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "typed first-class conj wrapper should remain static"
@@ -33647,7 +33702,9 @@ let test_set_positional_sequence_helpers_reject_non_collections () =
   |> expect_error "first expects a seqable value"
 
 let test_conj_rejects_set_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (conj (__lg_hash-set 1) "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/conj_set_type_mismatch.cljc"
+    {|(def xs (conj (__lg_hash-set 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_disj_rejects_set_type_mismatch () =
@@ -34921,7 +34978,9 @@ let test_closed_lists_preserve_optional_values () =
     ocaml_source
 
 let test_conj_rejects_list_type_mismatch () =
-  Lg.Compiler.compile_string {|(def xs (conj (__lg_list 1) "two"))|}
+  compile_with_stdlib_result Lg.Target.Native
+    "test/conj_list_type_mismatch.cljc"
+    {|(def xs (conj (__lg_list 1) "two"))|}
   |> expect_error_contains "define a sum type"
 
 let test_collection_positional_helpers () =
@@ -41104,8 +41163,8 @@ let tests =
       test_nested_assoc_reads_static_records );
     ( "reduce rejects heterogeneous vector accumulator slots",
       test_reduce_rejects_heterogeneous_vector_accumulator_slots );
-    ( "conj rejects an untyped first-class reference",
-      test_conj_rejects_an_untyped_first_class_reference );
+    ( "conj requires source stdlib state",
+      test_conj_requires_source_stdlib_state );
     ( "conj uses a statically typed first-class wrapper",
       test_conj_uses_a_statically_typed_first_class_wrapper );
     ( "function maps require a closed sum for variadic equality",
@@ -41358,6 +41417,8 @@ let tests =
       test_source_fundamental_sequence_family_matches_clojurescript );
     ( "source fundamental sequence family rejects invalid inputs",
       test_source_fundamental_sequence_family_rejects_invalid_inputs );
+    ( "source conj preserves ClojureScript collection categories",
+      test_source_conj_preserves_clojurescript_collection_categories );
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );

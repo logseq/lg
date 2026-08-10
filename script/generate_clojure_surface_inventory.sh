@@ -274,7 +274,7 @@ if test -n "$clojurescript_root"; then
 
   awk -F '\t' '
     BEGIN {
-      split("seq first rest next some", names, " ")
+      split("seq first rest next some conj", names, " ")
       for (i in names) source_inference[names[i]] = 1
     }
     FILENAME == ARGV[1] && $1 == "compiler-call" {

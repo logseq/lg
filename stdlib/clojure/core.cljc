@@ -77,6 +77,24 @@
   [value coll]
   (__lg_cons value coll))
 
+(defn conj
+  {:inline
+   (fn
+     ([] [])
+     ([coll] coll)
+     ([coll value & values]
+      (cons '__lg_conj (cons coll (cons value values)))))}
+  ([] [])
+  ([coll] coll)
+  ([coll value] (ICollection/-conj coll value))
+  ([coll value & values]
+   (loop [result (ICollection/-conj coll value)
+          remaining values]
+     (if (seq remaining)
+       (recur (ICollection/-conj result (first remaining))
+              (next remaining))
+       result))))
+
 (defn make-array
   {:inline (fn [size initial]
              (list '__lg_make-array size initial))}

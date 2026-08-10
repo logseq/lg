@@ -1076,7 +1076,6 @@ let untyped_first_class_function_error = function
     | "array-map"
     | "assoc"
     | "char?"
-    | "conj"
     | "contains?"
     | "count"
     | "dissoc"

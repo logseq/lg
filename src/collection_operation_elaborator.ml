@@ -403,7 +403,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 (prepare [] parameter_tys args)
           | _ -> None)
     in
-    let compile_list scope env forms =
+    let rec compile_list scope env forms =
       match forms with
       | [] -> Ok (typed_ir (TList TUnknown) (Semantic_ir.List []))
       | first :: rest -> (
@@ -521,6 +521,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         )
       | _ -> Error.error "vector-of expects one type keyword"
     and compile_conj scope env arg_forms =
+      let map_entry = function
+        | FList [ FSymbol "tuple"; key; value ]
+        | FList [ FSymbol "__lg_vector"; key; value ]
+        | FVector [ key; value ] ->
+            Some (key, value)
+        | _ -> None
+      in
+      let expand_map_conj collection entries =
+        List.fold_left
+          (fun expanded entry ->
+            match map_entry entry with
+            | Some (key, value) ->
+                FList [ FSymbol "__lg_assoc"; expanded; key; value ]
+            | None -> expanded)
+          collection entries
+      in
+      let expand_protocol_conj collection values =
+        List.fold_left
+          (fun expanded value ->
+            FList [ FSymbol "ICollection/-conj"; expanded; value ])
+          collection values
+      in
+      let compile_builtin () =
+        match arg_forms with
+        | collection_form :: (_ :: _ as entry_forms)
+          when
+            List.for_all
+              (fun entry -> Option.is_some (map_entry entry))
+              entry_forms
+          -> (
+            match compile_expr scope env collection_form with
+            | Ok collection
+              when
+                (match Types.constraint_value_type collection.ty with
+                | TRecord _ | TNamed_record { nominal = false; _ } -> true
+                | ty -> Option.is_some (Types.dynamic_map_types ty)) ->
+                compile_expr scope env
+                  (expand_map_conj collection_form entry_forms)
+            | Ok _ | Error _ -> compile_conj_values scope env arg_forms)
+        | _ -> compile_conj_values scope env arg_forms
+      in
+      match arg_forms with
+      | collection_form :: (_ :: _ as values) -> (
+          match compile_expr scope env collection_form with
+          | Ok
+              {
+                ty = TNamed_record { nominal = true; _ };
+                _;
+              } ->
+              compile_expr scope env
+                (expand_protocol_conj collection_form values)
+          | Ok _ | Error _ -> compile_builtin ())
+      | _ -> compile_builtin ()
+    and compile_conj_values scope env arg_forms =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok (collection :: values) when values <> [] ->
