@@ -230,6 +230,10 @@ including fixed leading integer arguments before the final collection.
 
 Function helpers such as `comp`, `partial`, `identity`, `constantly`,
 `complement`, `every-pred`, `some-fn`, and `juxt` remain statically typed.
+`comp` is source-owned for its pinned constructor surface; two- and
+three-function compositions return the pinned overloaded call shape, while
+longer homogeneous chains use the source unary adaptation and direct calls use
+the private typed unary specialization.
 `every-pred` and `some-fn` are source-owned and expose the pinned ClojureScript
 constructor arities plus returned zero-, one-, two-, three-, and variadic
 arities. Their predicates share one static argument domain; `some-fn` preserves

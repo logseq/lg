@@ -8,7 +8,7 @@ type call = string -> Env.t -> Ast.form list -> expression_result
 
 type t = {
   compile_apply : call;
-  compile_comp : call;
+  compile_static_comp : call;
   compile_partial : call;
   compile_static_juxt : call;
 }
@@ -749,9 +749,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                  shapes"
                           | _ -> Error.error "apply expects a function"))))))
       | _ -> Error.error "apply expects function and collection"
-    and compile_comp scope env arg_forms =
+    and compile_static_comp scope env arg_forms =
       match arg_forms with
-      | [] -> Error.error "comp expects at least 1 function"
+      | [] ->
+          let value_ty = Type_solver.fresh () in
+          Ok
+            (typed_ir (TFn ([ value_ty ], value_ty))
+               (Semantic_ir.Fun
+                  ([ Semantic_ir.PVar "value" ], Semantic_ir.Ident "value")))
       | _ -> (
           let compiled =
             arg_forms
@@ -769,6 +774,35 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           match compiled with
           | Error _ as err -> err
           | Ok fns -> (
+              let select_unary fn =
+                match fn.ty with
+                | TFn ([ _ ], _) -> Ok fn
+                | TFn _ -> Error.error "comp expects unary functions"
+                | TOverloaded_fn arities -> (
+                    match
+                      arities
+                      |> List.mapi (fun index arity -> (index, arity))
+                      |> List.find_map (fun (index, arity) ->
+                             match (arity.fixed_params, arity.rest_param) with
+                             | [ parameter ], None ->
+                                 Some
+                                   (typed_ir
+                                      (TFn ([ parameter ], arity.return_ty))
+                                      (overloaded_projection fn.semantic_expr
+                                         index))
+                             | _ -> None)
+                    with
+                    | Some fn -> Ok fn
+                    | None -> Error.error "comp expects unary functions")
+                | _ -> Error.error "comp expects functions"
+              in
+              let rec select_unary_functions selected = function
+                | [] -> Ok (List.rev selected)
+                | fn :: rest ->
+                    Result.bind (select_unary fn) (fun unary_fn ->
+                        select_unary_functions (unary_fn :: selected) rest)
+              in
+              Result.bind (select_unary_functions [] fns) (fun fns ->
               let concrete_seqable_element = function
                 | TArray element | TList element | TVector element
                 | TSet element | TSeq element ->
@@ -909,7 +943,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                  inner.semantic_expr )))
                         (compose
                            (typed_ir arg_ty (Semantic_ir.Ident "x"))
-                           (List.rev fns)))))
+                           (List.rev fns))))))
     
     and compile_partial scope env arg_forms =
       match arg_forms with
@@ -1040,7 +1074,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   {
     compile_apply;
-    compile_comp;
+    compile_static_comp;
     compile_partial;
     compile_static_juxt;
   }

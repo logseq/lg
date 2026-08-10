@@ -4090,7 +4090,7 @@ let test_compiler_phases_have_explicit_boundaries () =
                (Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TBool)))
             Lg.Compiler_environment.empty
         in
-        operations.compile_comp "" comp_env [ Lg.Ast.FSymbol "positive" ]
+        operations.compile_static_comp "" comp_env [ Lg.Ast.FSymbol "positive" ]
           |> expect_ok
         in
       (match composed.ty with
@@ -34366,6 +34366,69 @@ let test_source_juxt_matches_clojurescript_arities () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/source_juxt.cljc" source)
 
+let test_source_comp_matches_clojurescript_arities () =
+  let source =
+    {|
+(ns app.source-comp
+  (:require [cljs.core :as core :refer [comp]]))
+
+(def calls (atom 0))
+(defn mark [value]
+  (swap! calls (fn [state] (+ (* state 10) value))))
+(defn total
+  ([] (do (mark 1) 1))
+  ([x] (do (mark 1) x))
+  ([x y] (do (mark 1) (+ x y)))
+  ([x y z] (do (mark 1) (+ x y z)))
+  ([x y z & more] (do (mark 1) (apply + (+ x y z) more))))
+(defn add-ten [value]
+  (do (mark 2) (+ value 10)))
+(defn double-value [value]
+  (do (mark 3) (* value 2)))
+
+(def identity-composition ((identity comp)))
+(def one ((identity comp) total))
+(def two ((identity comp) add-ten total))
+(def three ((identity comp) double-value add-ten total))
+
+(println (= 7 (identity-composition 7)))
+(println (= 1 (one)))
+(println (= 3 (one 1 2)))
+(println (= 16 (two 1 2 3)))
+(println (= 40 (apply three [1 2 3 4])))
+(println (= 1112123 @calls))
+
+(def referred
+  (comp (fn [value] (+ value 1))
+        (fn [value] (* value 2))
+        (fn [value] (+ value 3))
+        (fn [value] (- value 4))))
+(def aliased
+  (core/comp (fn [value] (+ value 1))
+             (fn [value] (* value 2))))
+(def qualified
+  (clojure.core/comp (fn [value] (+ value 1))
+                     (fn [value] (* value 3))))
+(def empty-qualified (clojure.core/comp))
+
+(println (= 7 (referred 4)))
+(println (= 9 (aliased 4)))
+(println (= 13 (qualified 4)))
+(println (= 9 (empty-qualified 9)))
+|}
+  in
+  let expected = String.concat "" (List.init 10 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_comp.cljc" source
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "source comp must preserve static overloaded function values";
+  assert_ocaml_runs "source_comp_matches_clojurescript_arities" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_comp.cljc" source)
+
 let test_source_predicate_combinators_match_clojurescript () =
   let source =
     {|
@@ -42897,6 +42960,8 @@ let tests =
     ("common higher-order helpers work", test_common_higher_order_helpers);
     ( "source juxt matches ClojureScript arities",
       test_source_juxt_matches_clojurescript_arities );
+    ( "source comp matches ClojureScript arities",
+      test_source_comp_matches_clojurescript_arities );
     ( "source predicate combinators match ClojureScript",
       test_source_predicate_combinators_match_clojurescript );
     ( "source predicate combinators reject mismatched predicates",

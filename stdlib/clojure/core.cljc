@@ -3726,6 +3726,38 @@
 (defn- juxt-apply [function x y z args]
   (apply function x y z args))
 
+(defn- comp-apply [function x y z args]
+  (apply function x y z args))
+
+(defn- comp-many [functions x]
+  (loop [result ((nth functions 0) x)
+         remaining (next functions)]
+    (if remaining
+      (recur ((nth remaining 0) result) (next remaining))
+      result)))
+
+(defn comp
+  {:inline (fn [& functions] (cons '__lg_comp functions))}
+  ([] identity)
+  ([f] f)
+  ([f g]
+   (fn
+     ([] (f (g)))
+     ([x] (f (g x)))
+     ([x y] (f (g x y)))
+     ([x y z] (f (g x y z)))
+     ([x y z & args] (f (comp-apply g x y z args)))))
+  ([f g h]
+   (fn
+     ([] (f (g (h))))
+     ([x] (f (g (h x))))
+     ([x y] (f (g (h x y))))
+     ([x y z] (f (g (h x y z))))
+     ([x y z & args] (f (g (comp-apply h x y z args))))))
+  ([f1 f2 f3 & fs]
+   (let [functions (reverse (list* f1 f2 f3 fs))]
+     (fn [x] (comp-many functions x)))))
+
 (defn juxt
   {:inline (fn [& functions] (cons '__lg_juxt functions))}
   ([f]

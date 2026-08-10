@@ -199,6 +199,8 @@
              :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-first-truthy-short-circuit-order-and-values-while-the-four-or-more-predicate-case-uses-explicit-typed-loops-to-avoid-erasing-function-valued-sequence-elements}
     juxt {:status :static-adaptation
           :reason :source-port-preserves-upstream-one-two-three-and-variadic-function-constructor-arities-returned-zero-one-two-three-and-variadic-arities-left-to-right-call-order-and-homogeneous-static-vector-results-while-a-private-unary-specialization-keeps-common-direct-calls-statically-typed}
+    comp {:status :static-adaptation
+          :reason :source-port-preserves-upstream-zero-one-two-three-and-variadic-function-constructor-arities-and-the-returned-zero-one-two-three-and-variadic-arities-for-two-and-three-functions-while-four-or-more-functions-use-a-homogeneous-unary-static-adaptation-and-a-private-direct-call-specialization-because-arbitrary-heterogeneous-function-lists-require-dependent-types}
     constantly {:status :static-adaptation
                 :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
     boolean {:status :ported}

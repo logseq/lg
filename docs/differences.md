@@ -535,6 +535,13 @@ one-, two-, three-, and variadic constructor arities and returned zero- through
 three-argument plus variadic arities. Explicit sequential bindings preserve
 ClojureScript's left-to-right callback order on OCaml; a private unary direct-call
 specialization keeps the common homogeneous static callback case concise.
+`comp` is source-defined with the pinned zero-, one-, two-, three-, and
+variadic constructor arities. Its two- and three-function results preserve the
+pinned zero- through three-argument and variadic call arities. Four or more
+functions use a homogeneous unary static adaptation because an arbitrary
+heterogeneous function list would require dependent types; a private unary
+direct-call specialization covers the common Logseq call shape without a
+dynamic boundary.
 `apply` supports integer binary reducers over
 typed lists, vectors, and sets, with optional fixed leading integer arguments.
 

@@ -4474,7 +4474,7 @@ let create ~compile_expr =
   let compile_some = sequence.compile_some in
   let compile_reduce = sequence.compile_reduce in
   let compile_apply = functions.compile_apply in
-  let compile_comp = functions.compile_comp in
+  let compile_static_comp = functions.compile_static_comp in
   let compile_partial = functions.compile_partial in
   let compile_static_juxt = functions.compile_static_juxt in
   let compile_compare = comparisons.compile_compare in
@@ -8965,7 +8965,7 @@ let create ~compile_expr =
             compile_apply_zip_vectors scope env constructor_form fixed_forms
               rest_form
         | _ -> compile_apply scope env arg_forms)
-    | "comp" -> compile_comp scope env arg_forms
+    | "__lg_comp" -> compile_static_comp scope env arg_forms
     | "partial" -> compile_partial scope env arg_forms
     | "__lg_juxt" -> compile_static_juxt scope env arg_forms
     | "__lg_compare" -> (
