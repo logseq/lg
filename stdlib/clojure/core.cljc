@@ -1689,8 +1689,8 @@
     `(let [~result ~expr
            ~@(mapcat (fn [step] [result step]) (butlast steps))]
        ~(if (empty? steps)
-          result)
-       (last steps))))
+          result
+          (last steps)))))
 
 (defmacro lazy-seq [& body]
   `(__lg_defer_seq (fn [] (do ~@body))))
