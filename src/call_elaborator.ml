@@ -2899,6 +2899,14 @@ let rec adapt_value_to_type env expected actual =
   else if Types.equal expected (TOcaml "int") && Types.equal actual.ty TInt then
     Ok actual.semantic_expr
   else if
+    Types.equal expected TUnit
+    &&
+    match actual.ty with
+    | TNil -> true
+    | TNullable TUnit | TOcaml_app ("option", [ TUnit ]) -> true
+    | _ -> false
+  then Ok (Semantic_ir.Sequence [ actual.semantic_expr; Semantic_ir.Unit ])
+  else if
     Types.equal expected (TOcaml "int")
     &&
     match actual.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false

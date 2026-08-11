@@ -13440,7 +13440,9 @@ let test_unit_annotations_compile_through_source_backend () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "unit_annotations_compile_through_source_backend"
-    "item:1\nunit-ok\n" ocaml_source
+    "item:1\nunit-ok\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_host_owned_ocaml_type_annotations_compile () =
   let source = {|
