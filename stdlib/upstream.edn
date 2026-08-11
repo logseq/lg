@@ -880,8 +880,8 @@
                 :reason :source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch}
     default-dispatch-val {:status :blocked-static-typing
                           :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    ifn? {:status :blocked-static-typing
-          :reason :first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability}
+    ifn? {:status :static-adaptation
+          :reason :source-function-uses-a-strict-function-fallback-signature-while-inline-specialization-delegates-to-a-private-static-callable-type-predicate-covering-functions-ifn-deftypes-keywords-symbols-vectors-maps-and-sets-without-runtime-dynamic-dispatch}
     partitionv-all {:status :static-adaptation
                     :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
     random-sample {:status :ported

@@ -3315,6 +3315,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_list-predicate";
                "__lg_seq-predicate";
                "__lg_fn-predicate";
+               "__lg_ifn-predicate";
              ] ->
         constrain_symbol (Types.dynamic_constraint TUnknown) params value
     | FList [ FSymbol "__lg_hash"; FSymbol value ] ->

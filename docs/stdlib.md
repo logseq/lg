@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 673 source entries (68.32%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 97 static-typing blockers,
+macro surfaces. The current baseline is 674 source entries (68.43%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 96 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -668,6 +668,12 @@ model: their source functions and inline specializations use `satisfies? IMap`,
 `satisfies? IAssociative`, and `satisfies? IReversible`, with no
 predicate-specific name dispatch. Predicate
 arguments are evaluated exactly once even when the result is statically known.
+`ifn?` uses the same source-wrapper boundary with a private static callable
+predicate. It recognizes functions, `IFn/-invoke` nominal deftypes, keywords,
+symbols, vectors, maps, and sets without inspecting a runtime type tag or
+packing the value dynamically. Its materialized fallback has the same strict
+function signature as `fn?`; direct calls and ordinary aliases retain the
+broader inline callable test.
 Persistent HAMTs and `defrecord` values participate in `map?` through `IMap`;
 RRB vectors and custom implementations participate in `vector?` through
 `IVector/-assoc-n`. Persistent HAMTs, RRB vectors, structural maps, source

@@ -333,6 +333,8 @@
   :fn<map<key;value>;bool>)
 (signature clojure.core/fn? [argument result]
   :fn<fn<argument;result>;bool>)
+(signature clojure.core/ifn? [argument result]
+  :fn<fn<argument;result>;bool>)
 (signature clojure.core/coll? [value]
   :fn<vector<value>;bool>)
 (signature clojure.core/associative? [key value]

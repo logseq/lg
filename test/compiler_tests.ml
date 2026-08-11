@@ -11728,6 +11728,56 @@ let test_replace_is_source_owned () =
         failwith ("replace still has public-name compiler dispatch in " ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_ifn_predicate_matches_static_callable_values () =
+  let source =
+    {|
+(ns app.source-ifn
+  (:require [clojure.core :as core :refer [ifn?]]))
+
+(deftype Prefixer [^string prefix]
+  IFn
+  (-invoke [_ ^string value]
+    (str prefix value)))
+
+(def ifn-predicate core/ifn?)
+(def prefixer (Prefixer. "lg:"))
+
+(println (ifn? identity))
+(println (ifn-predicate prefixer))
+(println (ifn-predicate (hash-map :answer 42)))
+(println (ifn-predicate (hash-set 1 2)))
+(println (ifn-predicate [1 2]))
+(println (ifn-predicate :answer))
+(println (not (ifn-predicate 42)))
+(println (not (ifn-predicate "plain")))
+(println (not (ifn-predicate nil)))
+(println (= "lg:value" (prefixer "value")))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "ifn? must be decided from static callable evidence";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_ifn_predicate"
+    (String.concat "" (List.init 10 (fun _ -> "true\n")))
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange ifn? must use static callable evidence"
+
+let test_ifn_predicate_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn ifn?") then
+    failwith "ifn? is missing from the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"ifn?\"" then
+        failwith ("ifn? still has public-name compiler dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43381,6 +43431,9 @@ let tests =
     ( "source replace matches ClojureScript collection shapes",
       test_source_replace_matches_clojurescript_collection_shapes );
     ( "replace is source-owned", test_replace_is_source_owned );
+    ( "source ifn predicate matches static callable values",
+      test_source_ifn_predicate_matches_static_callable_values );
+    ( "ifn predicate is source-owned", test_ifn_predicate_is_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

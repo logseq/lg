@@ -8282,6 +8282,26 @@ let create ~compile_expr =
               | "__lg_fn-predicate" | "__lg_uuid-predicate"
               | "__lg_delay-predicate" ->
                   compile_boolean_call scope env name arg_forms
+              | "__lg_ifn-predicate" -> (
+                  match compile_args_for scope env arg_forms with
+                  | Error _ as error -> error
+                  | Ok args ->
+                      let callable_type ty =
+                        let ty = Types.constraint_value_type ty in
+                        match ty with
+                        | TFn _ | TOverloaded_fn _ | TKeyword | TSymbol
+                        | TVector _ | TSet _ | TRecord _ | TMap_keys ->
+                            true
+                        | ty when Option.is_some (Types.dynamic_map_types ty) ->
+                            true
+                        | ty ->
+                            List.init 22 (fun index -> index + 1)
+                            |> List.exists (fun arity ->
+                                   Option.is_some
+                                     (static_deftype_callable env ty arity))
+                      in
+                      Core_boolean.compile_type_predicate name callable_type
+                        args)
     | "instance?" -> (
         match arg_forms with
         | [ FSymbol type_name; _ ] when is_java_type_name type_name ->

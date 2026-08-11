@@ -2559,6 +2559,11 @@
   [x]
   (__lg_fn-predicate x))
 
+(defn ifn?
+  {:inline (fn [value] (list '__lg_ifn-predicate value))}
+  [value]
+  (__lg_ifn-predicate value))
+
 (defn coll?
   {:inline (fn [x] (list 'satisfies? 'ICollection x))}
   [x]
