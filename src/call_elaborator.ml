@@ -2915,6 +2915,43 @@ let rec adapt_value_to_type env expected actual =
   else if Types.equal expected TInt && Types.equal actual.ty (TOcaml "int") then
     Ok actual.semantic_expr
   else if
+    match (expected, Types.dynamic_map_types actual.ty) with
+    | TFn ([ _ ], _), Some _ -> true
+    | _ -> false
+  then
+    let expected_key, expected_return, actual_key, actual_value =
+      match (expected, Types.dynamic_map_types actual.ty) with
+      | TFn ([ expected_key ], expected_return), Some (actual_key, actual_value)
+        ->
+          (expected_key, expected_return, actual_key, actual_value)
+      | _ -> assert false
+    in
+    let map_name = "__lg_callable_map" in
+    let key_name = "__lg_callable_map_key" in
+    let map, wrap =
+      match Semantic_ir.unlocated actual.semantic_expr with
+      | Semantic_ir.Ident _ -> (actual.semantic_expr, Fun.id)
+      | _ ->
+          ( Semantic_ir.Ident map_name,
+            fun function_ ->
+              Semantic_ir.Let
+                ([ (Semantic_ir.PVar map_name, actual.semantic_expr) ], function_)
+          )
+    in
+    let key = typed_ir expected_key (Semantic_ir.Ident key_name) in
+    Result.bind (adapt_value_to_type env actual_key key) (fun key ->
+        let lookup =
+          typed_ir (TNullable actual_value)
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_option",
+                 [ map; key ] ))
+        in
+        Result.map
+          (fun result ->
+            wrap
+              (Semantic_ir.Fun ([ Semantic_ir.PVar key_name ], result)))
+          (adapt_value_to_type env expected_return lookup))
+  else if
     match (expected, actual.ty) with
     | TFn (expected_params, _), TOverloaded_fn arities ->
         List.exists
@@ -11615,6 +11652,10 @@ let create ~compile_expr =
                                   | TFn _, TOverloaded_fn _ ->
                                       adapt_overloaded_callback env
                                         callback_expected_ty arg
+                                  | TFn ([ _ ], _), map_ty
+                                    when Option.is_some
+                                           (Types.dynamic_map_types map_ty) ->
+                                      adapt_value_to_type env expected_ty arg
                                   | ( TFn (expected_params, expected_return),
                                       TFn (actual_params, actual_return) )
                                       when (Types.is_dynamic expected_return
