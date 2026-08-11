@@ -44,6 +44,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (pprint/pprint "value")
 (test/successful? {:fail 0 :error 0})
 (test/empty-env)
+(def current-test-env test/*current-env*)
 (test/testing "inventory" true)
 (test/deftest inventory-test (test/is true))
 (test/are [value] (= value 1) 1)
@@ -349,6 +350,7 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "bl
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 == "cljs.test/join-fixtures" || $2 == "cljs.test/successful?") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/run-block" || $2 == "cljs.test/test-var-block" || $2 == "cljs.test/test-var" || $2 == "cljs.test/test-vars-block" || $2 == "cljs.test/test-vars" || $2 == "cljs.test/testing-vars-str") && $3 == "source" {found++} END {exit found != 6}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/async" || $2 == "cljs.test/async?" || $2 == "cljs.test/block") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/run-tests-block" || $2 == "cljs.test/test-all-vars-block" || $2 == "cljs.test/test-all-vars" || $2 == "cljs.test/test-ns-block" || $2 == "cljs.test/test-ns") && $3 == "source" {found++} END {exit found != 5}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/get-current-env" || $2 == "cljs.test/set-env!" || $2 == "cljs.test/clear-env!" || $2 == "cljs.test/get-and-clear-env!" || $2 == "cljs.test/inc-report-counter!" || $2 == "cljs.test/testing-contexts-str" || $2 == "cljs.test/testing") && $3 == "source" {found++} END {exit found != 8}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && $2 == "cljs.test/*current-env*" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/is" || $2 == "cljs.test/are" || $2 == "cljs.test/try-expr" || $2 == "cljs.test/deftest" || $2 == "cljs.test/run-test" || $2 == "cljs.test/run-tests" || $2 == "cljs.test/ns?") && $3 == "source" {found++} END {exit found != 7}' "$tmp/inventory.tsv"

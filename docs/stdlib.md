@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 648 source entries (65.79%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 121 static-typing blockers,
+macro surfaces. The current baseline is 653 source entries (66.29%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 116 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -934,7 +934,13 @@ use a deferred action so their context stack remains active until asynchronous
 completion, including exception cleanup. Async tests combined with fixtures,
 namespace hooks, analyzer-wide test discovery, special assertion methods, and
 open custom reporters remain explicit blockers rather than silently falling
-back to dynamic values.
+back to dynamic values. `test-all-vars-block`, `test-all-vars`, `test-ns-block`,
+`test-ns`, and `run-tests-block` now validate quoted namespace forms and compose
+the same closed runner actions in upstream order. The static definition-order
+namespace registry replaces analyzer Var metadata discovery; environment setup
+and cleanup remain explicit actions so asynchronous continuation order is not
+changed. Analyzer-discovered `test-ns-hook`, summary report events, and
+`run-all-tests` namespace enumeration remain recorded blockers.
 Inventory reporting keeps that namespace-level blocker
 while allowing each source-owned var to resolve as `source-aggregate`; a
 blocked sibling does not downgrade a ported qualified var.

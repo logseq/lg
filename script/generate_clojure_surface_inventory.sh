@@ -458,6 +458,11 @@ cljs.test/testing-vars-str|source
 cljs.test/async|source
 cljs.test/async?|source
 cljs.test/block|source
+cljs.test/run-tests-block|source
+cljs.test/test-all-vars-block|source
+cljs.test/test-all-vars|source
+cljs.test/test-ns-block|source
+cljs.test/test-ns|source
 clojure.core/chunk-buffer|source
 clojure.core/array-chunk|source
 clojure.core/chunk-append|source

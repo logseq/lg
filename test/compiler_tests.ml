@@ -29693,6 +29693,117 @@ let test_cljs_test_nested_async_testing_is_source_owned () =
          ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_cljs_test_namespace_block_macros_match_static_registry () =
+  let source =
+    {|
+(ns app.cljs-test-namespace-blocks
+  (:require [cljs.test :as test
+             :refer [clear-env! deftest empty-env get-current-env is run-block
+                     run-tests-block set-env! test-all-vars test-all-vars-block
+                     test-ns test-ns-block]]))
+
+(def ^:ref<list<int>> events (atom (list)))
+
+(deftest registered-example
+  (swap! events conj 1)
+  (is true))
+
+(defn prepare []
+  (clear-env!)
+  (set-env! (empty-env))
+  (reset! events (list)))
+
+(prepare)
+(run-block (test-all-vars-block 'app.cljs-test-namespace-blocks))
+(println (= (list 1) @events))
+
+(prepare)
+(test-all-vars 'app.cljs-test-namespace-blocks)
+(println (= (list 1) @events))
+
+(prepare)
+(run-block
+ (test-ns-block (empty-env) 'app.cljs-test-namespace-blocks))
+(println (= (list 1) @events))
+
+(prepare)
+(test/test-ns 'app.cljs-test-namespace-blocks)
+(println (= (list 1) @events))
+
+(prepare)
+(run-block (run-tests-block 'app.cljs-test-namespace-blocks))
+(println (= (list 1) @events))
+
+(clear-env!)
+(reset! events (list))
+(test-all-vars 'app.cljs-test-namespace-blocks)
+(println (= 0 (get (:report-counters (get-current-env)) :test)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_namespace_blocks.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.test namespace block macros must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_namespace_blocks"
+    (String.concat "" (List.init 6 (fun _ -> "true\n")))
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_namespace_blocks.cljc" source)
+
+let test_source_cljs_test_namespace_block_macros_reject_invalid_forms () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_all_vars_bad_namespace.cljc"
+    {|
+(ns app.cljs-test-all-vars-bad
+  (:require [cljs.test :refer [test-all-vars-block]]))
+(test-all-vars-block app.not-quoted)
+|}
+  |> expect_error_contains "quoted namespace";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_ns_block_bad_namespace.cljc"
+    {|
+(ns app.cljs-test-ns-block-bad
+  (:require [cljs.test :refer [empty-env test-ns-block]]))
+(test-ns-block (empty-env) app.not-quoted)
+|}
+  |> expect_error_contains "quoted namespace";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_run_tests_block_bad_namespace.cljc"
+    {|
+(ns app.cljs-test-run-tests-block-bad
+  (:require [cljs.test :refer [run-tests-block]]))
+(run-tests-block 'app.good app.not-quoted)
+|}
+  |> expect_error_contains "quoted namespace"
+
+let test_cljs_test_namespace_block_macros_are_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defmacro " ^ name)) then
+        failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [
+      "run-tests-block";
+      "test-all-vars-block";
+      "test-all-vars";
+      "test-ns-block";
+      "test-ns";
+    ]
+
 let test_cljs_test_async_blocks_are_source_owned () =
   let root = repo_root () in
   let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
@@ -44277,6 +44388,12 @@ let tests =
       test_source_cljs_test_nested_async_testing_preserves_context_lifetime );
     ( "cljs.test nested async testing is source-owned",
       test_cljs_test_nested_async_testing_is_source_owned );
+    ( "source cljs.test namespace block macros match static registry",
+      test_source_cljs_test_namespace_block_macros_match_static_registry );
+    ( "source cljs.test namespace block macros reject invalid forms",
+      test_source_cljs_test_namespace_block_macros_reject_invalid_forms );
+    ( "cljs.test namespace block macros are source-owned",
+      test_cljs_test_namespace_block_macros_are_source_owned );
     ( "cljs.test async blocks are source-owned",
       test_cljs_test_async_blocks_are_source_owned );
     ( "source chunk buffer and array chunk match ClojureScript",

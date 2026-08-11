@@ -1444,6 +1444,16 @@
               :reason :source-macro-runs-one-statically-resolved-synchronous-test-with-a-fresh-environment-while-async-tests-remain-explicitly-blocked}
     run-tests {:status :static-adaptation
                :reason :source-macro-validates-quoted-namespaces-and-runs-their-static-registry-in-definition-order-with-synchronous-fixtures-and-direct-async-continuations-while-async-fixtures-hooks-and-analyzer-wide-discovery-remain-explicitly-blocked}
+    run-tests-block {:status :static-adaptation
+                     :reason :source-macro-preserves-upstream-optional-environment-disambiguation-quoted-namespace-validation-left-to-right-namespace-action-composition-and-final-environment-clear-over-the-static-definition-order-registry-while-summary-report-events-remain-blocked}
+    test-all-vars-block {:status :static-adaptation
+                         :reason :source-macro-preserves-temporary-environment-setup-and-cleanup-while-replacing-analyzer-var-metadata-discovery-and-source-line-sorting-with-the-static-definition-order-namespace-registry-and-closed-actions-while-report-hooks-remain-blocked}
+    test-all-vars {:status :static-adaptation
+                   :reason :source-macro-runs-the-static-namespace-registry-block-through-the-closed-action-runner-while-the-open-end-test-all-vars-report-event-remains-blocked}
+    test-ns-block {:status :static-adaptation
+                   :reason :source-macro-preserves-quoted-namespace-validation-environment-setup-and-namespace-action-order-over-the-static-definition-order-registry-while-analyzer-namespace-hooks-and-open-begin-end-report-events-remain-blocked}
+    test-ns {:status :static-adaptation
+             :reason :source-macro-preserves-default-or-explicit-environment-arity-namespace-block-execution-and-final-environment-clear-over-the-closed-action-runner-while-analyzer-test-ns-hook-discovery-and-open-report-events-remain-blocked}
     use-fixtures {:status :static-adaptation
                   :reason :source-macro-registers-synchronous-once-and-each-function-or-map-fixtures-in-a-closed-static-variant-preserving-upstream-order-cleanup-and-cross-kind-type-validation-while-async-fixtures-remain-blocked}
     ns? {:status :static-adaptation

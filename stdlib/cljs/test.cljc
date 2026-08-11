@@ -674,6 +674,121 @@
       (~test-symbol)
       true)))
 
+(defmacro test-all-vars-block
+  "Returns the registered test action for quoted namespace `namespace`."
+  [namespace]
+  (assert
+   (and (seq? namespace)
+        (= 'quote (first namespace))
+        (symbol? (second namespace)))
+   "test-all-vars-block expects a quoted namespace symbol")
+  `(let [had-env#
+         (match cljs.test/*current-env*
+           None false
+           (Some _) true)]
+     (list
+      (cljs.test/synchronous-test-action
+       (fn []
+         (if had-env#
+           true
+           (do
+             (cljs.test/set-env! (cljs.test/empty-env))
+             true))))
+      (cljs.test/namespace-test-action ~(str (second namespace)))
+      (cljs.test/synchronous-test-action
+       (fn []
+         (if had-env#
+           true
+           (do
+             (cljs.test/clear-env!)
+             true)))))))
+
+(defmacro test-all-vars
+  "Runs all statically registered tests in quoted `namespace`."
+  [namespace]
+  (assert
+   (and (seq? namespace)
+        (= 'quote (first namespace))
+        (symbol? (second namespace)))
+   "test-all-vars expects a quoted namespace symbol")
+  `(cljs.test/run-block (cljs.test/test-all-vars-block ~namespace)))
+
+(defmacro test-ns-block
+  "Returns environment setup and registered test actions for `namespace`."
+  [env namespace]
+  (assert
+   (and (seq? namespace)
+        (= 'quote (first namespace))
+        (symbol? (second namespace)))
+   "test-ns-block expects a quoted namespace symbol")
+  `(list
+    (cljs.test/synchronous-test-action
+     (fn []
+       (cljs.test/set-env! ~env)
+       true))
+    (cljs.test/namespace-test-action ~(str (second namespace)))))
+
+(defmacro test-ns
+  "Runs all statically registered tests in quoted `namespace`."
+  ([namespace]
+   (assert
+    (and (seq? namespace)
+         (= 'quote (first namespace))
+         (symbol? (second namespace)))
+    "test-ns expects a quoted namespace symbol")
+   `(cljs.test/test-ns (cljs.test/empty-env) ~namespace))
+  ([env namespace]
+   (assert
+    (and (seq? namespace)
+         (= 'quote (first namespace))
+         (symbol? (second namespace)))
+    "test-ns expects a quoted namespace symbol")
+   `(cljs.test/run-block
+     (list
+      (cljs.test/synchronous-test-action
+       (fn []
+         (cljs.test/set-env! ~env)
+         true))
+      (cljs.test/namespace-test-action ~(str (second namespace)))
+      (cljs.test/synchronous-test-action
+       (fn []
+         (cljs.test/clear-env!)
+         true))))))
+
+(defmacro run-tests-block
+  "Returns a test block for quoted namespaces with optional initial `env`."
+  [env-or-namespace & namespaces]
+  (let [quoted-first (and (seq? env-or-namespace)
+                          (= 'quote (first env-or-namespace))
+                          (symbol? (second env-or-namespace)))
+        env (if quoted-first `(cljs.test/empty-env) env-or-namespace)
+        namespaces (if quoted-first
+                     (cons env-or-namespace namespaces)
+                     namespaces)]
+    (assert
+     (= (count namespaces)
+        (count
+         (filter
+          (fn [namespace]
+            (and (seq? namespace)
+                 (= 'quote (first namespace))
+                 (symbol? (second namespace))))
+          namespaces)))
+     "run-tests-block expects each namespace argument to be a quoted namespace symbol")
+    `(list
+      (cljs.test/synchronous-test-action
+       (fn []
+         (cljs.test/set-env! ~env)
+         true))
+      ~@(map
+         (fn [namespace]
+           `(cljs.test/namespace-test-action ~(str (second namespace))))
+         namespaces)
+      (cljs.test/synchronous-test-action
+       (fn []
+         (cljs.test/clear-env!)
+         true)))))
+
 (defmacro run-tests
   "Runs registered synchronous tests for quoted `namespaces`."
   [& namespaces]
