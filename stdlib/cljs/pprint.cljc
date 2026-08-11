@@ -6,6 +6,16 @@
   (:refer-clojure :exclude [float?])
   (:require [ocaml.Lg_runtime.Runtime_string :as runtime-string]))
 
+(defmacro getf
+  "Gets the field named by `sym`, which must be a keyword."
+  [sym]
+  `(~sym @@~'this))
+
+(defmacro setf
+  "Sets the field named by `sym` to `new-value`."
+  [sym new-value]
+  `(swap! @~'this assoc ~sym ~new-value))
+
 (defprotocol IPPrintFloatPredicate
   (-pprint-float? [value] :bool))
 

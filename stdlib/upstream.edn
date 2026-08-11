@@ -1381,7 +1381,13 @@
    {float? {:status :static-adaptation
             :reason :source-private-protocol-preserves-the-upstream-finite-nonintegral-number-predicate-across-lg-static-int-float-and-default-domains}
     char-code {:status :static-adaptation
-               :reason :source-private-protocol-preserves-integer-character-and-single-utf16-code-unit-string-inputs-while-excluding-the-upstream-nonintegral-javascript-number-result-from-the-static-int-api}}}
+               :reason :source-private-protocol-preserves-integer-character-and-single-utf16-code-unit-string-inputs-while-excluding-the-upstream-nonintegral-javascript-number-result-from-the-static-int-api}
+    getf {:status :static-adaptation
+          :reason :source-macro-preserves-the-upstream-double-deref-keyword-field-lookup-over-a-statically-typed-reference-map}
+    setf {:status :static-adaptation
+          :reason :source-macro-preserves-the-upstream-swap-assoc-field-update-over-a-statically-typed-reference-map}
+    deftype {:status :blocked
+             :reason :upstream-macro-generates-generic-unannotated-defrecord-fields-and-nominal-constructor-predicate-semantics-not-representable-without-dynamic-fields-or-changing-the-public-record-api}}}
 
   cljs.test
   {:source "src/main/cljs/cljs/test.cljc"

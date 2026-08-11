@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 612 source entries (62.13%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 157 static-typing blockers,
+macro surfaces. The current baseline is 614 source entries (62.34%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 155 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -888,9 +888,15 @@ macros, dynamic test environments, and a closed report-event domain.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.
 `cljs.pprint` occurs 15 times. Its independent `float?` and `char-code` helpers
 are now precompiled source definitions, using private static protocols and a
-typed UTF-16 code-unit boundary. The formatter, writer, and dispatch-table
+typed UTF-16 code-unit boundary. The upstream `getf` and `setf` state macros are
+also source-owned and preserve their double-dereference lookup and
+`swap!`/`assoc` update behavior. The formatter, writer, and dispatch-table
 surface remains explicitly blocked because readable and display printing need
-distinct static printer witnesses; no simplified `println` substitute is used.
+distinct static printer witnesses. The upstream `deftype` macro remains a
+specific static blocker: it generates generic unannotated record fields plus a
+public nominal constructor and predicate, which cannot be preserved by
+introducing dynamic fields or changing that record API. No simplified
+`println` substitute is used.
 `clojure.pprint` occurs 14 times and is a JVM-only host boundary. All 28 public
 `clojure.zip` vars are now precompiled source definitions. Its parameterized
 closed location, path, and callback-context records replace upstream's

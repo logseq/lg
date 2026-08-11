@@ -27067,6 +27067,54 @@ let test_source_cljs_pprint_numeric_and_character_helpers_match_clojurescript ()
 |}
   |> expect_error_contains "no protocol implementation for cljs.pprint/-char-code"
 
+let test_source_cljs_pprint_state_access_macros_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-pprint-macros
+  (:require [cljs.pprint :as pprint :refer [getf setf]]))
+
+(defn read-value [^:ref<ref<map<keyword;int>>> this]
+  (getf :value))
+
+(defn read-qualified-value [^:ref<ref<map<keyword;int>>> this]
+  (pprint/getf :value))
+
+(defn write-value! [^:ref<ref<map<keyword;int>>> this value]
+  (setf :value value))
+
+(defn write-qualified-value! [^:ref<ref<map<keyword;int>>> this value]
+  (pprint/setf :value value))
+
+(def holder (atom (atom {:value 1})))
+
+(write-value! holder 2)
+(write-qualified-value! holder 3)
+
+(println
+  (and (= 3 (read-value holder))
+       (= 3 (read-qualified-value holder))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_cljs_pprint_macros.cljc"
+      source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.pprint state macros must remain statically typed";
+  assert_ocaml_runs "source_cljs_pprint_state_macros" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_pprint_macros.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_pprint_getf_bad_arity.cljc"
+    {|
+(ns app.source-pprint-getf-bad-arity
+  (:require [cljs.pprint :refer [getf]]))
+(getf)
+|}
+  |> expect_error_contains "getf called with unsupported macro arity 0"
+
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
     {|
@@ -43013,6 +43061,8 @@ let tests =
     ( "source cljs.pprint numeric and character helpers match ClojureScript",
       test_source_cljs_pprint_numeric_and_character_helpers_match_clojurescript
     );
+    ( "source cljs.pprint state access macros match ClojureScript",
+      test_source_cljs_pprint_state_access_macros_match_clojurescript );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",
