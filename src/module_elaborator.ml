@@ -386,7 +386,18 @@ let rec compile_module ?location ?signature_name ?signature_location
             (match check_emitted_name_collision env ~source_key:key ~ocaml_name:local_name with
             | Error _ as err -> err
             | Ok () -> (match expr.ty with
-            | TRecord fields ->
+            | TRecord fields
+            | TNamed_record { nominal = false; fields; _ }
+              when (match Semantic_ir.unlocated expr.semantic_expr with
+                   | _ when (match expr.ty with TRecord _ -> true | _ -> false) ->
+                       true
+                   | Semantic_ir.Apply
+                       (Semantic_ir.Ident function_name, _)
+                     when not
+                            (String.starts_with ~prefix:"Lg_runtime."
+                               function_name) ->
+                       true
+                   | _ -> false) ->
                 let identity =
                   Source_context.find name_form
                   |> Option.map (fun location ->
@@ -433,7 +444,42 @@ let rec compile_module ?location ?signature_name ?signature_location
                           }
                   else
                     let local_expr =
-                      Structural_map.as_named_record allocation.record expr
+                      match Semantic_ir.unlocated expr.semantic_expr with
+                      | Semantic_ir.Apply
+                          (Semantic_ir.Ident function_name, _)
+                        when not
+                               (String.starts_with ~prefix:"Lg_runtime."
+                                  function_name) ->
+                          let source_name =
+                            "__lg_record_source_" ^ local_name
+                          in
+                          let projected =
+                            Semantic_ir.Record
+                              ( List.map
+                                  (fun (field : field) ->
+                                    ( field.ocaml_name,
+                                      Semantic_ir.Field
+                                        ( Semantic_ir.Ident source_name,
+                                          field.ocaml_name ) ))
+                                  allocation.record.fields,
+                                Some
+                                  (Structural_map.record_type_application
+                                     allocation.record) )
+                          in
+                          {
+                            expr with
+                            ty = TNamed_record allocation.record;
+                            semantic_expr =
+                              Semantic_ir.Let
+                                ( [
+                                    ( Semantic_ir.PVar source_name,
+                                      expr.semantic_expr );
+                                  ],
+                                  projected );
+                            record_values = None;
+                          }
+                      | _ ->
+                          Structural_map.as_named_record allocation.record expr
                     in
                     Value_binding
                       { pattern = Named local_name;

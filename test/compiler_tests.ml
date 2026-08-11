@@ -17622,7 +17622,8 @@ let test_module_defs_project_function_returned_structural_records () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "module_defs_project_function_returned_structural_records"
-    "1.5\n" ocaml_source
+    "1.5\n" ocaml_source;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_unannotated_function_parameters_reject_missing_structural_map_fields ()
     =

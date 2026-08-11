@@ -7467,6 +7467,34 @@ let create ~compile_expr =
                         | TNamed_record record -> record
                         | _ -> record
                       in
+                      let values =
+                        let rec specialize acc values forms =
+                          match (values, forms) with
+                          | [], [] -> Ok (List.rev acc)
+                          | ((field : field), value) :: values, form :: forms -> (
+                              match
+                                Types.find_field field.keyword
+                                  instantiated_record.fields
+                              with
+                              | Some expected_field
+                                when (match expected_field.ty with
+                                     | TFn _ ->
+                                         concrete_nominal_type_argument
+                                           expected_field.ty
+                                         && not
+                                              (concrete_nominal_type_argument
+                                                 field.ty)
+                                     | _ -> false) -> (
+                                  match field_value instantiated_record form with
+                                  | Error _ as error -> error
+                                  | Ok specialized ->
+                                      specialize (specialized :: acc) values forms)
+                              | Some _ | None ->
+                                  specialize ((field, value) :: acc) values forms)
+                          | _ -> assert false
+                        in
+                        specialize [] values field_forms
+                      in
                       let rec adapt_fields adapted = function
                         | [] -> Ok (List.rev adapted)
                         | ((field : field), value) :: rest -> (
@@ -7496,6 +7524,7 @@ let create ~compile_expr =
                                 else
                                   adapt_fields ((field, value) :: adapted) rest)
                       in
+                      Result.bind values (fun values ->
                       Result.map
                         (fun values ->
                           {
@@ -7517,7 +7546,7 @@ let create ~compile_expr =
                                      (field, value.semantic_expr))
                                    values);
                           })
-                        (adapt_fields [] values)))
+                        (adapt_fields [] values))))
         | _ -> Error.error "record expects a record type and fields")
     | "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide" -> (
         let operator =
