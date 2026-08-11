@@ -60,8 +60,10 @@ fi
 
 awk '
   BEGIN {
-    split("binding with-open with-out-str reify assert delay set! throw", xs)
+    split("binding with-open with-out-str reify assert delay set! throw instance? satisfies?", xs)
     for (i in xs) special[xs[i]] = 1
+    special_reason["instance?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
+    special_reason["satisfies?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
     split("apply assoc-in doall drop drop-while filter get-in keep map map-indexed mapcat max merge min next rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
@@ -82,13 +84,17 @@ awk '
     blocked_reason["select-keys"] = "map-or-record-key-projection-requires-a-dependent-result-shape"
     blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
+    blocked["class"] = 1
+    blocked["type"] = 1
+    blocked_reason["class"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
+    blocked_reason["type"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
     blocked["re-find"] = 1
     blocked["re-matches"] = 1
     blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     split("clj->js current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
-    split("= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
+    split("inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
     split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
     for (i in xs) narrowing[xs[i]] = 1
@@ -128,6 +134,7 @@ awk '
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_pr-writer"] = "typed-readable-printer-witness-and-buffer-output-primitive"
+    internal_abi["__lg_equal"] = "typed-static-generic-equality-primitive"
     internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"
     internal_abi["__lg_subtract"] = "typed-static-numeric-subtraction-primitive"
     internal_abi["__lg_multiply"] = "typed-static-numeric-multiplication-primitive"
@@ -162,7 +169,8 @@ awk '
     reason = "static-elaboration-or-minimal-runtime-abi"
     if (special[$0]) {
       classification = "special-form"
-      reason = "compiler-owned-syntax-or-control-flow"
+      reason = special_reason[$0]
+      if (reason == "") reason = "compiler-owned-syntax-or-control-flow"
     } else if (blocked[$0]) {
       classification = "blocked-static-typing"
       reason = blocked_reason[$0]

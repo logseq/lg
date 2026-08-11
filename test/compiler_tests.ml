@@ -27879,6 +27879,65 @@ let test_source_numeric_operator_cluster_is_source_owned () =
                   failwith
                     (operator ^ " still has public-name compiler dispatch")))
 
+let test_source_generic_equality_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-generic-equality
+  (:require [cljs.core :as core :refer [=]]))
+
+(def int-equal =)
+(def string-equal core/=)
+(type-record Box (value :option<int>))
+(def missing (record Box (value None)))
+
+(println
+ (str
+  (= 1) ":" (= 1 1) ":" (= 1 1.0) ":" (= 1 2) ":"
+  (= 1 1 1 1) ":" (= 1 1 2 1) ":"
+  (= [1 2] (list 1 2)) ":" (= nil nil) ":" (= nil (:value missing)) ":"
+  (int-equal 4 4) ":" (string-equal "lg" "lg")))
+|}
+  in
+  let consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer "Runtime_dynamic" then
+    failwith "static source equality must not use Runtime_dynamic";
+  if not (string_contains_substring consumer "clojure_core_equal") then
+    failwith "generated ML is missing the readable equality binding name";
+  assert_ocaml_runs "source_generic_equality"
+    "true:true:true:false:true:false:true:true:true:true:true\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  compile_string_from_stdlib ~target:Lg.Target.Melange source
+  |> expect_ok |> ignore;
+  compile_string_from_stdlib "(=)" |> expect_error_contains "expects at least 1";
+  compile_string_from_stdlib "(= nil 1)"
+  |> expect_error_contains "arguments must have the same type"
+
+let test_source_generic_equality_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring source "(defn =") then
+    failwith "= is missing from the source standard library";
+  [ "src/call_elaborator.ml"; "src/type_inference.ml";
+    "src/expression_support.ml";
+  ]
+  |> List.iter (fun path ->
+         let compiler_source = read_file path in
+         if string_contains_substring compiler_source "| \"=\"" then
+           failwith "= still has public-name compiler dispatch");
+  [ "src/type_inference.ml"; "src/expression_elaborator.ml" ]
+  |> List.iter (fun path ->
+         let compiler_source = read_file path in
+         if string_contains_substring compiler_source "FSymbol \"=\"" then
+           failwith "= still has public-name form/type inference dispatch");
+  let inventory = read_file "script/generate_clojure_surface_inventory.sh" in
+  if string_contains_substring inventory "split(\"= inc dec" then
+    failwith "= is still classified as a public typed primitive";
+  if
+    not
+      (string_contains_substring inventory
+         "internal_abi[\"__lg_equal\"]")
+  then
+    failwith "private generic equality ABI is missing from inventory"
+
 let test_source_writer_printing_cluster_matches_clojurescript () =
   let source =
     {|
@@ -34074,16 +34133,15 @@ let test_conj_uses_a_statically_typed_first_class_wrapper () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "typed first-class conj wrapper should remain static"
 
-let test_function_maps_require_a_closed_sum_for_variadic_equality () =
+let test_source_equality_supports_statically_typed_first_class_use () =
   let source =
     {|
 (def equals =)
 (println (equals 1 1))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "= cannot be used as an untyped first-class function"
+  assert_ocaml_runs "source_equality_first_class_use" "true\n"
+    (compile_string_with_stdlib source |> expect_ok)
 
 let test_function_maps_require_a_closed_sum_for_numeric_functions () =
   let source =
@@ -45093,6 +45151,10 @@ let tests =
       test_source_numeric_operator_cluster_matches_clojurescript );
     ( "source numeric operator cluster is source-owned",
       test_source_numeric_operator_cluster_is_source_owned );
+    ( "source generic equality matches ClojureScript",
+      test_source_generic_equality_matches_clojurescript );
+    ( "source generic equality is source-owned",
+      test_source_generic_equality_is_source_owned );
     ( "source writer printing cluster matches ClojureScript",
       test_source_writer_printing_cluster_matches_clojurescript );
     ( "source writer printing cluster is source-owned",
@@ -45508,8 +45570,8 @@ let tests =
       test_conj_requires_source_stdlib_state );
     ( "conj uses a statically typed first-class wrapper",
       test_conj_uses_a_statically_typed_first_class_wrapper );
-    ( "function maps require a closed sum for variadic equality",
-      test_function_maps_require_a_closed_sum_for_variadic_equality );
+    ( "source equality supports statically typed first-class use",
+      test_source_equality_supports_statically_typed_first_class_use );
     ( "function maps require a closed sum for numeric functions",
       test_function_maps_require_a_closed_sum_for_numeric_functions );
     ( "function maps require a closed sum for random functions",

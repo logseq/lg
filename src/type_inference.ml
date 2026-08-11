@@ -2169,7 +2169,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | Ok [ (spec : Destructure.param_spec) ] when spec.destructured ->
             let names = Destructure.pattern_names spec.pattern in
             let rec compares = function
-              | FList (FSymbol "=" :: operands) ->
+              | FList (FSymbol "__lg_equal" :: operands) ->
                   List.length operands >= 2
                   && List.for_all
                        (function
@@ -4680,7 +4680,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           else TInt
         in
         infer_expected_all expected_ty params args
-    | FList (FSymbol "=" :: args) ->
+    | FList (FSymbol "__lg_equal" :: args) ->
         let expected_ty =
           let concrete =
             args
@@ -5195,7 +5195,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             let equality_first_locals =
               let rec collect locals = function
-                | FList (FSymbol "=" :: operands) ->
+                | FList (FSymbol "__lg_equal" :: operands) ->
                     List.fold_left
                       (fun locals -> function
                         | FList

@@ -3116,6 +3116,19 @@
       (__lg_numeric-equal y (first more)))
     false))
 
+(defn- equal-chain [x y more]
+  (if (__lg_equal x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_equal y (first more)))
+    false))
+
+(defn =
+  {:inline (fn [& values] (cons '__lg_equal values))}
+  ([x] true)
+  ([x y] (__lg_equal x y))
+  ([x y & more] (equal-chain x y more)))
+
 (defn ==
   {:inline (fn [& values] (cons '__lg_numeric-equal values))}
   ([x] true)
@@ -4889,7 +4902,7 @@
      (if (nil? remaining)
        value
        (let [next-value (get value (first remaining) not-found)]
-         (if (= next-value not-found)
+         (if (__lg_equal next-value not-found)
            not-found
            (recur next-value (next remaining))))))))
 

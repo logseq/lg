@@ -1076,7 +1076,6 @@ let untyped_first_class_collection_function_error name =
 
 let untyped_first_class_function_error = function
   | ( "!="
-    | "="
     | "abs"
     | "array-value?"
     | "array?"

@@ -417,6 +417,8 @@
   :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
 (signature clojure.core/>=
   :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
+(signature clojure.core/= [value]
+  :overload<fn<value;bool>;fn<value;value;bool>;variadic-fn<value;value;value;bool>>)
 (signature clojure.core/==
   :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
 (signature clojure.core/inc :fn<int;int>)

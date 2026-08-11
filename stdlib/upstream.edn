@@ -96,6 +96,8 @@
        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
     >= {:status :static-adaptation
         :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+    = {:status :static-adaptation
+       :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-value-equality-while-inline-specialization-retains-static-protocol-collection-nil-symbol-and-numeric-comparison-capabilities}
     == {:status :static-adaptation
         :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-numeric-equivalence-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
     -seq {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
@@ -343,6 +345,12 @@
            :reason :source-function-provides-a-first-class-char-predicate-and-inline-static-type-test-because-lg-characters-are-distinct-from-clojurescript-one-character-javascript-strings}
     identical? {:status :static-adaptation
                 :reason :polymorphic-source-function-and-inline-definition-preserve-upstream-reference-identity-through-an-internal-same-static-type-physical-identity-primitive}
+    instance? {:status :special-form
+               :reason :compiler-owned-static-nominal-type-or-protocol-witness-elaboration-because-the-type-position-is-an-analyzer-symbol-not-a-first-class-source-value}
+    satisfies? {:status :special-form
+                :reason :compiler-owned-static-protocol-witness-elaboration-because-the-protocol-position-is-an-analyzer-symbol-not-a-first-class-source-value}
+    type {:status :blocked-static-typing
+          :reason :runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design}
     array? {:status :static-adaptation
             :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-javascript-array-test-to-lg-static-array-types}
     array-value? {:status :static-adaptation

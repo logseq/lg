@@ -278,7 +278,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
             FList
               [
                 FSymbol "if";
-                FList [ FSymbol "="; FSymbol key_name; FSymbol element_name ];
+                FList
+                  [ FSymbol "__lg_equal"; FSymbol key_name; FSymbol element_name ];
                 FSymbol element_name;
                 otherwise;
               ])
@@ -430,9 +431,10 @@ and compile_case scope env target clauses =
                   [
                     FSymbol "__lg_logical-or";
                     condition;
-                    FList [ FSymbol "="; FSymbol target_name; constant ];
+                    FList
+                      [ FSymbol "__lg_equal"; FSymbol target_name; constant ];
                   ])
-              (FList [ FSymbol "="; FSymbol target_name; first ])
+              (FList [ FSymbol "__lg_equal"; FSymbol target_name; first ])
               rest
       in
       let rec expand = function

@@ -7878,11 +7878,11 @@ let create ~compile_expr =
                         (swap_name
                        ^ " expects a reference, function, and optional \
                           arguments"))
-    | "=" | "__lg_numeric-equal" | "__lg_less" | "__lg_less-equal"
+    | "__lg_equal" | "__lg_numeric-equal" | "__lg_less" | "__lg_less-equal"
     | "__lg_greater" | "__lg_greater-equal" -> (
         let operator =
           match name with
-          | "=" -> "="
+          | "__lg_equal" -> "="
           | "__lg_numeric-equal" -> "=="
           | "__lg_less" -> "<"
           | "__lg_less-equal" -> "<="
@@ -7890,7 +7890,7 @@ let create ~compile_expr =
           | "__lg_greater-equal" -> ">="
           | _ -> assert false
         in
-        if operator <> "=" && arg_forms = [] then
+        if arg_forms = [] then
           Error.error (operator ^ " expects at least 1 arguments")
         else
           match

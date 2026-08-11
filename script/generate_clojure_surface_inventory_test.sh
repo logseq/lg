@@ -306,6 +306,8 @@ if awk -F '\t' '$1 == "compiler-call" && ($2 == "+" || $2 == "-" || $2 == "*" ||
   exit 1
 fi
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_add" || $2 == "__lg_subtract" || $2 == "__lg_multiply" || $2 == "__lg_divide" || $2 == "__lg_less" || $2 == "__lg_less-equal" || $2 == "__lg_greater" || $2 == "__lg_greater-equal" || $2 == "__lg_numeric-equal") && $3 == "typed-primitive" {found++} END {exit found != 9}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "instance?" || $2 == "satisfies?") && $3 == "special-form" && $4 == "compiler-owned-static-type-or-protocol-witness-elaboration" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "type" && $3 == "blocked-static-typing" && $4 == "runtime-class-inspection-conflicts-with-lg-closed-static-types" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-message" && $3 == "typed-primitive" && $4 == "static-exception-message-extraction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-primitive" && $4 == "static-optional-exception-cause-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
