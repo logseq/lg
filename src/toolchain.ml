@@ -151,7 +151,7 @@ module Lg_frontend : FRONTEND = struct
               String.sub type_name (separator + 1)
                 (String.length type_name - separator - 1)
             in
-            Char.uppercase_ascii local_name.[0] = local_name.[0]
+            not (String.contains local_name '.')
         | Some _ | None -> false
       in
       Option.is_some (Host_interop.type_annotation type_name)

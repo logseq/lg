@@ -26,6 +26,10 @@ type t = {
 
 let reduce_kv_counter = ref 0
 
+let has_source_name name expected =
+  String.equal name expected
+  || String.ends_with ~suffix:("/" ^ expected) name
+
 let compile_args_for compile_expr scope env arg_forms =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
@@ -1631,6 +1635,94 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       | _ -> Error.error "keep expects function and collection"
     and compile_reduce scope env arg_forms =
       match arg_forms with
+      | [
+       fn_form;
+       FList [ FSymbol first_name; FSymbol source_name ];
+       FList [ FSymbol next_name; FSymbol next_source ];
+      ]
+        when (has_source_name first_name "__lg_first"
+             || has_source_name first_name "first")
+             && (has_source_name next_name "__lg_next"
+                || has_source_name next_name "next")
+             && String.equal source_name next_source -> (
+          match compile_expr scope env (FSymbol source_name) with
+          | Error _ as error -> error
+          | Ok collection -> (
+              match Collection_capability.to_seq_expr env collection with
+              | Error _ ->
+                  Error.error
+                    ("reduce expects a seqable value, got "
+                   ^ Types.source_name collection.ty)
+              | Ok (inner, sequence) ->
+                  let accumulator_ty = Types.constraint_value_type inner in
+                  Result.bind
+                    (compile_reducer scope env accumulator_ty inner fn_form)
+                    (fun fn ->
+                      let reduction =
+                        match fn.ty with
+                        | TFn ([ acc_ty; item_ty ], return_ty)
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:acc_ty ~actual:accumulator_ty
+                               && Types.assignable ~policy:Host_boundary
+                                    ~expected:item_ty ~actual:inner -> (
+                            let first_value =
+                              Collection_capability.constraint_value_expression
+                                item_ty
+                                (Semantic_ir.Ident "__lg_reduce_first")
+                            in
+                            match Types.reduced_element return_ty with
+                            | None
+                              when Types.assignable ~policy:Host_boundary
+                                     ~expected:accumulator_ty
+                                     ~actual:return_ty ->
+                                Ok
+                                  (apply "Lg_runtime.Runtime_seq.fold_left"
+                                     [
+                                       fn.semantic_expr;
+                                       first_value;
+                                       Semantic_ir.Ident "__lg_reduce_rest";
+                                     ])
+                            | Some reduced_ty
+                              when Types.assignable ~policy:Host_boundary
+                                     ~expected:accumulator_ty
+                                     ~actual:reduced_ty ->
+                                Ok
+                                  (apply "Lg_runtime.Runtime_reduced.fold_seq"
+                                     [
+                                       fn.semantic_expr;
+                                       first_value;
+                                       Semantic_ir.Ident "__lg_reduce_rest";
+                                     ])
+                            | Some _ | None ->
+                                Error.error
+                                  "reduce function must preserve the first element type")
+                        | TFn _ ->
+                            Error.error
+                              "reduce function type does not match first and next"
+                        | _ -> Error.error "reduce expects a function"
+                      in
+                      Result.map
+                        (fun reduction ->
+                          typed_ir (TNullable accumulator_ty)
+                            (Semantic_ir.Match
+                               ( apply "Seq.uncons" [ sequence ],
+                                 [
+                                   ( Semantic_ir.PConstructor ("None", None),
+                                     Semantic_ir.Constructor ("None", None) );
+                                   ( Semantic_ir.PConstructor
+                                       ( "Some",
+                                         Some
+                                           (Semantic_ir.PTuple
+                                              [
+                                                Semantic_ir.PVar
+                                                  "__lg_reduce_first";
+                                                Semantic_ir.PVar
+                                                  "__lg_reduce_rest";
+                                              ]) ),
+                                     Semantic_ir.Constructor
+                                       ("Some", Some reduction) );
+                                 ] )))
+                        reduction)))
       | [ fn_form; collection_form ] -> (
           match compile_expr scope env collection_form with
           | Error _ as error -> error

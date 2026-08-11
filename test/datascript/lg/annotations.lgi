@@ -1,5 +1,8 @@
 (require [ocaml.package/datascript.runtime])
 
+(signature Datascript_runtime.Data_value.Lookup_ref
+  :fn<keyword;Datascript_runtime.Data_value.t;Datascript_runtime.Data_value.entity_ref>)
+
 (extend-type :Datascript_runtime.Data_value.t
   IEquiv
   (-equiv [^:Datascript_runtime.Data_value.t left

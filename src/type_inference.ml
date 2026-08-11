@@ -4661,6 +4661,32 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       params name
                 | Some _ | None -> infer_form params fn)
             | _ -> infer_expected (TFn ([ element_ty ], TUnknown)) params fn)
+    | FList
+        [
+          FSymbol "__lg_reduce";
+          reducer;
+          FList [ FSymbol first_name; FSymbol first_source ];
+          FList [ FSymbol next_name; FSymbol next_source ];
+        ]
+      when (has_source_name first_name "__lg_first"
+           || has_source_name first_name "first")
+           && (has_source_name next_name "__lg_next"
+              || has_source_name next_name "next")
+           && String.equal first_source next_source ->
+        let accumulator_ty, element_ty =
+          inferred_reducer_types params (Type_solver.fresh ()) reducer
+        in
+        let element_ty =
+          match element_ty with
+          | TUnknown | TMeta _ | TVar _ -> accumulator_ty
+          | element_ty -> element_ty
+        in
+        Result.bind
+          (infer_sequence_form element_ty params (FSymbol first_source))
+          (fun params ->
+            infer_expected
+              (TFn ([ accumulator_ty; element_ty ], accumulator_ty))
+              params reducer)
     | FList [ FSymbol "__lg_reduce"; reducer; init; collection ] -> (
         let declared_accumulator_ty, declared_element_ty =
           match reducer with

@@ -12399,7 +12399,9 @@ let test_named_record_protocol_metadata_rejects_dynamic_erasure () =
     {|
 (defprotocol Sourceable
   (source [this]))
-(defrecord Tagged [value])
+(defrecord Tagged [value]
+  IMeta
+  (-meta [_] {:source :placeholder}))
 (extend-protocol Sourceable
   Tagged
   (source [this]
@@ -17430,7 +17432,11 @@ let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
     String.concat "\n" (List.rev (output :: outputs))
   in
   let ocaml_source = compile Lg.Target.Native in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let consumer_source =
+    substring_from ocaml_source "type nonrec test_forward_sorted_set_database"
+    |> Option.value ~default:ocaml_source
+  in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "closed sorted-set calls must remain static";
   ignore (compile Lg.Target.Melange)
 

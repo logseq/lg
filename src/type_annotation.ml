@@ -451,6 +451,8 @@ let of_param_annotation annotation =
     | "boolean" -> Ok TBool
     | "double" | "float" -> Ok TFloat
     | "bytes" -> Ok TString
+    | type_name when String.contains type_name '<' ->
+        parse_ocaml_type type_name
     | _ -> (
         match Host_interop.type_annotation type_name with
         | Some host_type -> Ok (TOcaml host_type)

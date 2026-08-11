@@ -1717,13 +1717,33 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 payload_tys
           | None -> (
               match lookup_binding scope env name with
-              | Error _ ->
-                  let opaque_payload_tys =
-                    List.map (fun _ -> TUnknown) payload_patterns
-                  in
-                  compile_constructor_payloads
-                    (resolve_ocaml_constructor_target scope env name)
-                    opaque_payload_tys
+              | Error _ -> (
+                  match
+                    Signature_overlay.find_value name (Env.signatures env)
+                  with
+                  | Some (TFn (payload_tys, return_ty))
+                    when List.length payload_tys
+                         = List.length payload_patterns -> (
+                      let constructor_ty = TFn (payload_tys, return_ty) in
+                      match
+                        Types.instantiate_type ~templates:[ return_ty ]
+                          ~actuals:[ target_ty ] constructor_ty
+                      with
+                      | TFn (payload_tys, _) ->
+                          compile_constructor_payloads
+                            (resolve_ocaml_constructor_target scope env name)
+                            payload_tys
+                      | _ -> assert false)
+                  | Some (TFn _) ->
+                      Error.error "constructor pattern arity mismatch"
+                  | Some _ -> Error.error (name ^ " is not a constructor")
+                  | None ->
+                      let opaque_payload_tys =
+                        List.map (fun _ -> TUnknown) payload_patterns
+                      in
+                      compile_constructor_payloads
+                        (resolve_ocaml_constructor_target scope env name)
+                        opaque_payload_tys)
               | Ok constructor -> (
                   match constructor.ty with
                   | TFn (payload_tys, return_ty)

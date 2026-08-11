@@ -535,8 +535,14 @@ let compile_type_record_fields =
 let compile_type_variant = Type_definition_elaborator.compile_type_variant
 
 let sidecar_function_signature scope env name =
-  Signature_overlay.find_value (Names.scoped_key scope name)
-    (Env.signatures env)
+  let signatures = Env.signatures env in
+  match
+    Signature_overlay.find_value (Names.scoped_key scope name) signatures
+  with
+  | Some _ as signature -> signature
+  | None when scope = "" && not (Names.is_qualified name) ->
+      Signature_overlay.find_value ("user/" ^ name) signatures
+  | None -> None
 
 let recursive_type_annotation scope env name =
   match

@@ -3189,7 +3189,8 @@ let rec adapt_value_to_type env expected actual =
     match (expected, actual.ty) with
     | TNamed_record expected, TNamed_record actual
       when Type_id.equal expected.type_id actual.type_id ->
-        same_runtime_representation (TNamed_record expected)
+        Types.equal (TNamed_record expected) (TNamed_record actual)
+        && same_runtime_representation (TNamed_record expected)
           (TNamed_record actual)
         && not
           (named_record_has_capability_fields expected
@@ -3321,7 +3322,21 @@ let rec adapt_value_to_type env expected actual =
                     typed_ir actual_field.ty
                       (Structural_map.field_expr source actual_field)
               in
-              let adapted = adapt_value_to_type env expected_field.ty value in
+              let adapted =
+                if
+                  Option.is_none (optional_payload expected_field.ty)
+                  && Option.fold ~none:false
+                       ~some:(argument_compatible expected_field.ty)
+                       (optional_payload value.ty)
+                then
+                  let actual_inner = optional_payload value.ty |> Option.get in
+                  Ok
+                    (coerce_expression_to_type expected_field.ty actual_inner
+                       (Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Option.get",
+                            [ value.semantic_expr ] )))
+                else adapt_value_to_type env expected_field.ty value
+              in
               Result.bind
                 adapted
                 (fun value ->
@@ -7492,21 +7507,38 @@ let create ~compile_expr =
                                 Error.error "record value is missing fields"
                     else
                       let instantiated_record =
-                        match
-                          Types.instantiate_type_fields
-                            ~templates:
-                              (List.map
-                                           (fun ((field : field), _) ->
-                                             field.ty)
-                                 values)
-                            ~actuals:
-                                        (List.map
-                                           (fun (_, value) -> value.ty)
-                                           values)
-                            (TNamed_record record)
-                        with
-                        | TNamed_record record -> record
-                        | _ -> record
+                        let inferred_type_variable name =
+                          let length = String.length name in
+                          length > 1 && name.[0] = 'g'
+                          && String.for_all
+                               (function '0' .. '9' | '_' -> true | _ -> false)
+                               (String.sub name 1 (length - 1))
+                        in
+                        match Env.expected_type env with
+                        | Some (TNamed_record expected)
+                          when Type_id.equal expected.type_id record.type_id
+                               && not
+                                    (List.exists
+                                       (function
+                                         | Type_solver.Metavariable _ -> true
+                                         | Type_solver.Declared name ->
+                                             inferred_type_variable name)
+                                       (List.concat_map Type_solver.variables
+                                          expected.type_arguments)) ->
+                            expected
+                        | _ -> (
+                            match
+                              Types.instantiate_type_fields
+                                ~templates:
+                                  (List.map
+                                     (fun ((field : field), _) -> field.ty)
+                                     values)
+                                ~actuals:
+                                  (List.map (fun (_, value) -> value.ty) values)
+                                (TNamed_record record)
+                            with
+                            | TNamed_record record -> record
+                            | _ -> record)
                       in
                       let values =
                         let rec specialize acc values forms =
@@ -7568,6 +7600,34 @@ let create ~compile_expr =
                                             } )
                                         :: adapted )
                                         rest)
+                                else if
+                                  Option.is_none
+                                    (optional_payload expected_field.ty)
+                                  && Option.fold ~none:false
+                                       ~some:
+                                         (argument_compatible
+                                            expected_field.ty)
+                                       (optional_payload value.ty)
+                                then
+                                  let actual_inner =
+                                    optional_payload value.ty |> Option.get
+                                  in
+                                  let semantic_expr =
+                                    coerce_expression_to_type expected_field.ty
+                                      actual_inner
+                                      (Semantic_ir.Apply
+                                         ( Semantic_ir.Ident "Option.get",
+                                           [ value.semantic_expr ] ))
+                                  in
+                                  adapt_fields
+                                    ( ( expected_field,
+                                        {
+                                          value with
+                                          ty = expected_field.ty;
+                                          semantic_expr;
+                                        } )
+                                    :: adapted )
+                                    rest
                                 else if
                                   function_has_host_int_return_boundary
                                     expected_field.ty value.ty

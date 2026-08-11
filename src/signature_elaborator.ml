@@ -4,7 +4,14 @@ open Lowered
 module Env = Compiler_environment
 
 let qualified_name scope name =
-  if String.contains name '/' then name else Names.scoped_key scope name
+  let host_qualified =
+    match String.split_on_char '.' name with
+    | first :: _ :: _ when first <> "" ->
+        Char.uppercase_ascii first.[0] = first.[0]
+    | _ -> false
+  in
+  if String.contains name '/' || host_qualified then name
+  else Names.scoped_key scope name
 
 let compile ?(type_parameters = []) scope env next_type name fields_form =
   let rec parse fields = function
