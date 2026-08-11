@@ -8765,7 +8765,7 @@ let create ~compile_expr =
                  (Semantic_ir.Ident "print_endline", [ rendered ])))
           (compile_args ())
     | "__lg_list" -> compile_list scope env arg_forms
-    | "list*" -> compile_list_star scope env arg_forms
+    | "__lg_list-star" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms
     | "__lg_cons" -> compile_cons scope env arg_forms
     | "__lg_vector" -> compile_vector scope env arg_forms

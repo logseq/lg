@@ -28,6 +28,7 @@ doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per
 ensure-reduced	source	source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper
 force	source	source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types
 ifn?	blocked-static-typing	first-class-predicate-combines-function-types-and-arbitrary-ifn-implementations-without-a-static-union-capability
+list*	source	source-macro-preserves-all-direct-upstream-arities-final-sequence-expansion-left-to-right-single-evaluation-and-existing-eager-typed-list-results-for-one-static-element-type-while-the-complete-first-class-heterogeneous-variadic-function-shape-remains-unrepresentable
 rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 record?	blocked-static-typing	first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value
 replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type

@@ -389,8 +389,8 @@
              :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-with-a-minimal-typed-construction-primitive-while-lg-string-backed-keywords-do-not-retain-separate-cljs-component-fields-for-multiple-slash-constructor-inputs}
     symbol {:status :static-adaptation
             :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-while-upstream-var-input-and-separate-cljs-component-fields-remain-unavailable}
-    list* {:status :blocked-static-typing
-           :reason :the-upstream-variadic-arity-requires-spread-over-a-heterogeneous-argument-list-whose-final-element-alone-is-expanded-as-a-sequence}
+    list* {:status :static-adaptation
+           :reason :source-macro-preserves-all-direct-upstream-arities-final-sequence-expansion-left-to-right-single-evaluation-and-existing-eager-typed-list-results-for-one-static-element-type-while-the-complete-first-class-heterogeneous-variadic-function-shape-remains-unrepresentable}
     counted? {:status :static-adaptation
               :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-recognizes-maps-and-static-icounted-protocol-satisfaction}
     seqable? {:status :static-adaptation

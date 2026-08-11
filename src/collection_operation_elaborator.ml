@@ -431,78 +431,74 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               in
               loop [ first_expr ] rest)
     and compile_list_star scope env arg_forms =
-      match List.rev arg_forms with
-      | [] -> Error.error "list* expects values and final collection"
-      | final_form :: prefix_forms_rev -> (
-          match compile_expr scope env final_form with
-          | Error _ as err -> err
-          | Ok final -> (
-              match Core_sequence_transform.collection_to_list_expr final with
-              | Error _ -> Error.error "list* final argument must be a collection"
-              | Ok (inner, final_list_expr) -> (
-                  let prefix_forms = List.rev prefix_forms_rev in
-                  match compile_args_for scope env prefix_forms with
-                  | Error _ as err -> err
-                  | Ok prefix_args ->
-                    if
-                      List.for_all
-                        (fun arg -> Types.equal inner arg.ty)
-                        prefix_args
-                    then
-                      (match prefix_args with
-                      | [] ->
-                          let values = "__lg_list_star_values" in
-                          Ok
-                            (typed_ir (TNullable (TList inner))
-                               (Semantic_ir.Match
-                                  ( final_list_expr,
-                                    [ ( Semantic_ir.PList [],
-                                        Semantic_ir.Constructor ("None", None)
-                                      );
-                                      ( Semantic_ir.PVar values,
-                                        Semantic_ir.Constructor
-                                          ( "Some",
-                                            Some (Semantic_ir.Ident values) ) );
-                                    ] )))
-                      | _ ->
-                          Ok
-                            (typed_ir (TList inner)
-                               (Semantic_ir.Infix
-                                  ( "@",
-                                    Semantic_ir.List
-                                      (List.map
-                                         (fun arg -> arg.semantic_expr)
-                                         prefix_args),
-                                    final_list_expr ))))
-                    else
-                      let dynamic = Types.dynamic_constraint TUnknown in
-                      let rec pack_prefix packed = function
-                        | [] -> Ok (List.rev packed)
-                        | value :: rest ->
-                            Result.bind
-                              (pack_dynamic_value env dynamic value)
-                              (fun value ->
-                                pack_prefix (value :: packed) rest)
-                      in
-                      let item_name = "__lg_list_star_item" in
-                      let item =
-                        typed_ir inner (Semantic_ir.Ident item_name)
-                      in
-                      Result.bind (pack_prefix [] prefix_args) (fun prefix ->
-                          Result.map
-                            (fun item ->
-                              typed_ir (TList dynamic)
-                                (Semantic_ir.Infix
-                                   ( "@",
-                                     Semantic_ir.List prefix,
-                                     Semantic_ir.Apply
-                                       ( Semantic_ir.Ident "List.map",
-                                         [ Semantic_ir.Fun
-                                             ( [ Semantic_ir.PVar item_name ],
-                                               item );
-                                           final_list_expr;
-                                         ] ) )))
-                            (pack_dynamic_value env dynamic item)))))
+      match compile_args_for scope env arg_forms with
+      | Error _ as error -> error
+      | Ok [] -> Error.error "list* expects values and final collection"
+      | Ok args ->
+          let compiled_args =
+            List.mapi
+              (fun index arg ->
+                let name = "__lg_list_star_argument_" ^ string_of_int index in
+                ( Semantic_ir.PVar name,
+                  arg.semantic_expr,
+                  typed_ir arg.ty (Semantic_ir.Ident name) ))
+              args
+          in
+          let values = List.map (fun (_, _, value) -> value) compiled_args in
+          let final, prefix =
+            match List.rev values with
+            | final :: reversed_prefix -> (final, List.rev reversed_prefix)
+            | [] -> assert false
+          in
+          match Core_sequence_transform.collection_to_list_expr final with
+          | Error _ -> Error.error "list* final argument must be a collection"
+          | Ok (inner, final_list) ->
+              if
+                not
+                  (List.for_all
+                     (fun argument -> Types.equal inner argument.ty)
+                     prefix)
+              then
+                Error.error
+                  "list* prefix and final collection must have one static \
+                   element type"
+              else
+                let argument_bindings =
+                  List.map
+                    (fun (pattern, expression, _) -> (pattern, expression))
+                    compiled_args
+                in
+                match prefix with
+                | [] ->
+                    let values_name = "__lg_list_star_values" in
+                    let result =
+                      Semantic_ir.Match
+                        ( final_list,
+                          [
+                            ( Semantic_ir.PList [],
+                              Semantic_ir.Constructor ("None", None) );
+                            ( Semantic_ir.PVar values_name,
+                              Semantic_ir.Constructor
+                                ( "Some",
+                                  Some (Semantic_ir.Ident values_name) ) );
+                          ] )
+                    in
+                    Ok
+                      (typed_ir (TNullable (TList inner))
+                         (Semantic_ir.Let (argument_bindings, result)))
+                | _ ->
+                    let result =
+                      Semantic_ir.Infix
+                        ( "@",
+                          Semantic_ir.List
+                            (List.map
+                               (fun argument -> argument.semantic_expr)
+                               prefix),
+                          final_list )
+                    in
+                    Ok
+                      (typed_ir (TList inner)
+                         (Semantic_ir.Let (argument_bindings, result)))
     and compile_list_of arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (

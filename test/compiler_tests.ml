@@ -26676,8 +26676,88 @@ let test_namespace_accepts_closed_identifier_alternatives () =
 
 let test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     () =
-  Lg.Compiler.compile_string {|(def x (list* 1 2 3))|}
-  |> expect_error "list* final argument must be a collection"
+  compile_with_stdlib_result Lg.Target.Native "test/list_star_bad_tail.cljc"
+    {|(def x (list* 1 2 3))|}
+  |> expect_error_contains "list* final argument must be a collection"
+
+let test_source_list_star_matches_clojurescript_static_arities () =
+  let source =
+    {|
+(ns app.source-list-star
+  (:require [cljs.core :as core :refer [list*]]))
+
+(def evaluations (atom []))
+
+(defn mark-value [^int marker ^int value]
+  (swap! evaluations conj marker)
+  value)
+
+(defn mark-tail [^int marker ^:vector<int> values]
+  (swap! evaluations conj marker)
+  values)
+
+(defn optional-tail [^:bool present]
+  (if present [30 31] nil))
+
+(println
+  (and (if-some [values (list* [1 2])]
+         (= (list 1 2) values)
+         false)
+       (= (list 0 1 2) (list* 0 [1 2]))
+       (= (list 0 1 2) (core/list* 0 1 [2]))
+       (= (list 0 1 2 3) (clojure.core/list* 0 1 2 [3]))
+       (= (list 0 1 2 3 4 5) (list* 0 1 2 3 [4 5]))
+       (= (list 7 8 9) (list* 7 (list 8 9)))
+       (= (list 29) (list* 29 (optional-tail false)))
+       (= (list 29 30 31) (list* 29 (optional-tail true)))
+       (nil? (list* []))
+       (= (list 20 21 22 23 24 25)
+          (list* (mark-value 1 20)
+                 (mark-value 2 21)
+                 (mark-value 3 22)
+                 (mark-value 4 23)
+                 (mark-tail 5 [24 25])))
+       (= [1 2 3 4 5] @evaluations)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_list_star.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source list* must not pack homogeneous static arguments";
+  assert_ocaml_runs "source_list_star_matches_clojurescript_static_arities"
+    "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_list_star.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith "Melange source list* must not pack homogeneous static arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_list_star_zero_arity.cljc" {|(list*)|}
+  |> expect_error_contains "list* expects values and final collection";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_list_star_bad_tail.cljc" {|(list* 1 2 3)|}
+  |> expect_error_contains "list* final argument must be a collection";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_list_star_heterogeneous_prefix.cljc"
+    {|(list* 1 "two" [3])|}
+  |> expect_error_contains
+       "list* prefix and final collection must have one static element type"
+
+let test_list_star_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  if not (string_contains_substring core_source "(defmacro list*") then
+    failwith "list* is not owned by the source standard library";
+  let compiler_source =
+    read_file (Filename.concat (repo_root ()) "src/call_elaborator.ml")
+  in
+  if string_contains_substring compiler_source "| \"list*\"" then
+    failwith "list* still has public-name compiler dispatch"
 
 let test_source_unreduced_matches_clojurescript () =
   let source =
@@ -43042,6 +43122,10 @@ let tests =
     ( "batched identifier/constructor core functions reject bad list* tail",
       test_batched_identifier_and_constructor_core_functions_reject_bad_list_star_tail
     );
+    ( "source list* matches ClojureScript static arities",
+      test_source_list_star_matches_clojurescript_static_arities );
+    ( "list* has no public-name dispatch",
+      test_list_star_has_no_public_name_dispatch );
     ( "source unreduced matches ClojureScript",
       test_source_unreduced_matches_clojurescript );
     ( "unreduced has no public-name dispatch",

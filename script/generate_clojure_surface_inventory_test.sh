@@ -190,7 +190,7 @@ awk -F '\t' '
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/name" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/keyword" || $2 == "clojure.core/symbol") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && $2 == "clojure.core/list*" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/list*" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/mask" || $2 == "clojure.core/bitpos") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"

@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 614 source entries (62.34%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 155 static-typing blockers,
+macro surfaces. The current baseline is 615 source entries (62.44%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 154 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -298,9 +298,13 @@ available because LG exposes no source `Var` value. LG's current string-backed
 identifier representation also cannot retain ClojureScript's separate cached
 namespace/name fields for malformed multiple-slash constructor strings; this
 deviation is recorded in the manifest rather than hidden by the source port.
-`list*` remains explicitly blocked where its complete variadic first-class
-upstream type cannot be expressed without dynamic typing; direct compiler
-support is not counted as a source port.
+`list*` is source-owned as a macro over the private typed list-splice primitive.
+All direct upstream arities preserve final-sequence expansion, left-to-right
+single evaluation, alias/refer behavior, and LG's existing eager typed-list
+result for one static element type. The complete first-class heterogeneous
+variadic function shape remains unavailable without dynamic typing; this
+static adaptation is explicit in the manifest. The compiler no longer
+dispatches on the public `list*` name or packs heterogeneous prefixes.
 All pinned public `cljs.core` macros now have explicit ownership and zero remain
 deferred. Compiler/analyzer declarations and namespace-environment operations
 are special forms; JavaScript syntax and host-object macros are host boundaries;

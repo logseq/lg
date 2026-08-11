@@ -1940,6 +1940,11 @@
   ([x y & colls]
    (concat-many-seq (concat x y) colls)))
 
+(defmacro list*
+  "Creates a list by prepending values to the final argument, which is treated as a sequence."
+  [& values]
+  (cons '__lg_list-star values))
+
 (defn- interleave-one [coll]
   (lazy-seq (seq coll)))
 
