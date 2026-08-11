@@ -10551,13 +10551,19 @@ let create ~compile_expr =
                       List.nth_opt fn.overload_row_param_types arity_index
                       |> Option.value ~default:[]
                     in
+                    let compatible expected actual =
+                      named_argument_compatible expected actual
+                      ||
+                      (Option.is_some (Types.seqable_constraint_info expected)
+                      && Collection_capability.accepts_seqable env actual)
+                    in
                     let fixed_compatible =
                       List.for_all2
                         (fun expected arg ->
                           match expected with
                           | TNullable (TRecord fields) ->
                               row_argument_compatible fields arg.ty
-                          | _ -> named_argument_compatible expected arg.ty)
+                          | _ -> compatible expected arg.ty)
                         fixed_param_tys fixed_args
                     in
                     let open_set_elements_compatible =
@@ -10595,7 +10601,7 @@ let create ~compile_expr =
                                     (Type_solver.unify Type_solver.empty expected
                                        actual)
                               else
-                                named_argument_compatible expected arg.ty)
+                                compatible expected arg.ty)
                             extra_args
                     in
                     if not open_set_elements_compatible then
@@ -10627,7 +10633,7 @@ let create ~compile_expr =
                                    | TNullable (TRecord fields) ->
                                        row_argument_compatible fields arg.ty
                                    | _ ->
-                                       named_argument_compatible expected arg.ty)
+                                       compatible expected arg.ty)
                                  fixed_param_tys fixed_args)
                            |> List.filter_map Fun.id))
                     else

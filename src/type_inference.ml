@@ -460,9 +460,12 @@ let add_record_field_constraint name keyword field_ty params =
                         (Types.seqable_constraint_info inferred_ty) ->
                 Ok record_ty
             | _, inferred_ty -> (
-            match
-              Type_solver.unify Type_solver.empty field.ty inferred_ty
-            with
+            let expected_ty =
+              match Types.protocol_constraint_info field.ty with
+              | Some (_, _, value_ty) -> value_ty
+              | None -> field.ty
+            in
+            match Type_solver.unify Type_solver.empty expected_ty inferred_ty with
             | Ok substitutions ->
                 Ok (Type_solver.apply substitutions record_ty)
             | Error _

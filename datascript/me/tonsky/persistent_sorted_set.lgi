@@ -183,6 +183,18 @@
   [value]
   :fn<fn<value;value;ordering>;seqable<value>;btset<value;unit;unit>>)
 
+(signature me.tonsky.persistent-sorted-set/comparator
+  [value owner write]
+  :fn<btset<value;owner;write>;fn<value;value;ordering>>)
+
+(signature me.tonsky.persistent-sorted-set/slice
+  [value owner write]
+  :overload<fn<btset<value;owner;write>;value;value;option<seq<value>>>;fn<btset<value;owner;write>;value;value;fn<value;value;ordering>;option<seq<value>>>>)
+
+(signature me.tonsky.persistent-sorted-set/rslice
+  [value owner write]
+  :overload<fn<btset<value;owner;write>;value;value;option<seq<value>>>;fn<btset<value;owner;write>;value;value;fn<value;value;ordering>;option<seq<value>>>>)
+
 (signature me.tonsky.persistent-sorted-set/seek-first
   [value owner write]
   :fn<btset<value;owner;write>;value;fn<value;value;ordering>;option<value>>)

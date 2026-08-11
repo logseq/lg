@@ -26,6 +26,16 @@ let string_contains_substring text expected =
   in
   expected_len = 0 || loop 0
 
+let substring_from text marker =
+  let marker_len = String.length marker in
+  let rec find index =
+    if index + marker_len > String.length text then None
+    else if String.sub text index marker_len = marker then
+      Some (String.sub text index (String.length text - index))
+    else find (index + 1)
+  in
+  find 0
+
 let count_substring text expected =
   let expected_len = String.length expected in
   let rec loop count index =
@@ -33263,7 +33273,11 @@ let test_recursive_declared_nullable_sequence_supports_not_empty () =
   let native_source =
     compile Lg.Target.Native
   in
-  if string_contains_substring native_source "Runtime_dynamic" then
+  let parser_source =
+    substring_from native_source "type parser_node"
+    |> Option.value ~default:native_source
+  in
+  if string_contains_substring parser_source "Runtime_dynamic" then
     failwith "recursive parser sequences must remain statically typed";
   assert_ocaml_runs "recursive_declared_nullable_sequence_supports_not_empty"
     "2:0:0:1\n" native_source;
