@@ -547,13 +547,25 @@ runtime and preserves its zero-argument callback result type. The source
 printing is already selected by the Native or Melange runtime.
 
 When the optional ClojureScript checkout is supplied, its `HEAD` must match the
-commit in `stdlib/upstream.edn`. The inventory also records the Logseq checkout
-commit. `logseq-namespace-status` and `logseq-qualified-var-status` rows classify
+commit in `stdlib/upstream.edn`. The Logseq repository and commit are pinned in
+the same manifest. `stdlib/logseq-dependencies.tsv` is the checked machine
+report for that exact tree; regenerate it with:
+
+```sh
+script/generate_logseq_dependency_report.sh . /path/to/logseq \
+  > /tmp/logseq-dependencies.tsv
+diff -u stdlib/logseq-dependencies.tsv /tmp/logseq-dependencies.tsv
+```
+
+The generator rejects a checkout at any other commit. CI verifies that report
+metadata matches the manifest, that no observed dependency is unexplained, and
+that every blocked, host, or out-of-scope row has a concrete reason.
+`logseq-namespace-status` and `logseq-qualified-var-status` rows classify
 each observed dependency as `source-aggregate`, `source-core-alias`,
 `blocked-static-typing`, `out-of-scope`, or `unsupported`; the final field is a
 machine-readable reason. The scanner reads Clojure forms instead of matching
 raw text, so comments, docstrings, and URLs cannot become false qualified-var
-dependencies. The current Logseq checkout has no unexplained `unsupported`
+dependencies. The pinned Logseq checkout has no unexplained `unsupported`
 rows. This keeps test and build-time libraries distinct from source namespaces
 that LG already provides.
 
@@ -669,10 +681,15 @@ runtime matcher exposes only `option<list<option<string>>>` captures for the
 fixed upstream timestamp regex; no dynamic capture vector crosses the
 boundary. `parse-timestamp` remains a JavaScript `Date` boundary.
 
-At the current checkpoint, the Logseq tree requires
-`clojure.string` 391 times,
-`clojure.set` 74 times, `clojure.walk` 30 times, `clojure.edn` 27 times,
-`cljs.reader` 27 times, and `clojure.data` 6 times. This makes the remaining
+At the current checkpoint, the pinned Logseq tree requires
+`clojure.string` 416 times,
+`clojure.set` 75 times, `clojure.walk` 33 times, `clojure.edn` 27 times,
+`cljs.reader` 28 times, and `clojure.data` 6 times. It also requires
+`cljs.test` in 287 files and `cljs.pprint` in 15. All observed qualified vars
+in those namespaces are source-owned except five `cljs.test/report` uses in
+custom `defmethod` reporters; those remain explicitly blocked on the
+multimethod runtime domain rather than being hidden as generic namespace
+support. This makes the remaining
 reader boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same scan finds 677 `some?` and
 44 `boolean?` occurrences. It also finds 537 `empty?`, 77 `integer?`, one

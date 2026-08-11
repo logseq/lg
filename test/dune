@@ -4664,9 +4664,24 @@
    %{dep:../script/generate_clojure_surface_inventory_test.sh}
    %{workspace_root})))
 
+(rule
+ (alias logseq-dependency-report)
+ (deps
+  ../script/check_logseq_dependency_report_test.sh
+  ../script/generate_logseq_dependency_report.sh
+  ../stdlib/logseq-dependencies.tsv
+  ../stdlib/upstream.edn)
+ (action
+  (run
+   sh
+   %{dep:../script/check_logseq_dependency_report_test.sh}
+   %{workspace_root})))
+
 (alias
  (name runtest)
- (deps (alias clojure-surface-inventory)))
+ (deps
+  (alias clojure-surface-inventory)
+  (alias logseq-dependency-report)))
 
 (alias
  (name datascript-upstream)

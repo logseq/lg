@@ -3,6 +3,9 @@
   :commit "5c6ef531604662afbb33dc1b553d7602634d9656"
  :license "EPL-1.0"}
 
+ :logseq-repository "https://github.com/logseq/logseq"
+ :logseq-commit "eed97cac01f58073333ec5415d4307093e0ccd8b"
+
  :cljs-cache
  {:artifact "org.clojars.mmb90/cljs-cache"
   :version "0.1.4"

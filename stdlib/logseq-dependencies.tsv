@@ -1,0 +1,402 @@
+meta	logseq-repository	https://github.com/logseq/logseq
+meta	logseq-commit	eed97cac01f58073333ec5415d4307093e0ccd8b
+logseq-namespace	cljs.analyzer.api	1
+logseq-namespace	cljs.cache	4
+logseq-namespace	cljs.core	1
+logseq-namespace	cljs.core.async	5
+logseq-namespace	cljs.core.match	3
+logseq-namespace	cljs.pprint	15
+logseq-namespace	cljs.reader	28
+logseq-namespace	cljs.spec.alpha	4
+logseq-namespace	cljs.test	287
+logseq-namespace	clojure.core.async	1
+logseq-namespace	clojure.core.async.interop	1
+logseq-namespace	clojure.data	6
+logseq-namespace	clojure.data.json	1
+logseq-namespace	clojure.edn	27
+logseq-namespace	clojure.java.io	4
+logseq-namespace	clojure.java.shell	3
+logseq-namespace	clojure.pprint	14
+logseq-namespace	clojure.set	75
+logseq-namespace	clojure.spec.alpha	1
+logseq-namespace	clojure.stacktrace	1
+logseq-namespace	clojure.string	416
+logseq-namespace	clojure.test	53
+logseq-namespace	clojure.test.check.generators	1
+logseq-namespace	clojure.tools.build.api	2
+logseq-namespace	clojure.tools.cli	1
+logseq-namespace	clojure.tools.deps	1
+logseq-namespace	clojure.walk	33
+logseq-namespace	clojure.zip	3
+logseq-namespace-status	cljs.analyzer.api	out-of-scope	1	clojurescript-analyzer-introspection-is-a-compiler-host-api-not-a-native-or-melange-runtime-stdlib-namespace
+logseq-namespace-status	cljs.cache	source-aggregate	4	aggregate-stdlib
+logseq-namespace-status	cljs.core	source-core-alias	1	automatic-core-alias
+logseq-namespace-status	cljs.core.async	out-of-scope	5	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-namespace-status	cljs.core.match	out-of-scope	3	core-match-is-an-independent-analyzer-macro-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-namespace-status	cljs.pprint	blocked-static-typing	15	logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
+logseq-namespace-status	cljs.reader	source-aggregate	28	aggregate-stdlib
+logseq-namespace-status	cljs.spec.alpha	out-of-scope	4	excluded-by-project-scope
+logseq-namespace-status	cljs.test	blocked-static-typing	287	remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
+logseq-namespace-status	clojure.core.async	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-namespace-status	clojure.core.async.interop	out-of-scope	1	core-async-interop-is-explicitly-excluded-with-the-parent-library
+logseq-namespace-status	clojure.data	source-aggregate	6	aggregate-stdlib
+logseq-namespace-status	clojure.data.json	out-of-scope	1	data-json-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-namespace-status	clojure.edn	source-aggregate	27	aggregate-stdlib
+logseq-namespace-status	clojure.java.io	out-of-scope	4	jvm-file-url-resource-and-stream-interop-is-forbidden-by-the-lg-no-jvm-object-model-design
+logseq-namespace-status	clojure.java.shell	out-of-scope	3	jvm-process-launching-has-no-shared-native-and-browser-melange-stdlib-boundary
+logseq-namespace-status	clojure.pprint	host-boundary	14	jvm-only-pprint-namespace-is-outside-the-clojurescript-source-baseline
+logseq-namespace-status	clojure.set	source-aggregate	75	aggregate-stdlib
+logseq-namespace-status	clojure.spec.alpha	out-of-scope	1	excluded-by-project-scope
+logseq-namespace-status	clojure.stacktrace	out-of-scope	1	jvm-throwable-stacktrace-printing-depends-on-the-forbidden-jvm-object-model
+logseq-namespace-status	clojure.string	source-aggregate	416	aggregate-stdlib
+logseq-namespace-status	clojure.test	host-boundary	53	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-namespace-status	clojure.test.check.generators	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-namespace-status	clojure.tools.build.api	out-of-scope	2	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-namespace-status	clojure.tools.cli	out-of-scope	1	tools-cli-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-namespace-status	clojure.tools.deps	out-of-scope	1	tools-deps-is-an-external-jvm-classpath-resolution-library-not-a-clojurescript-runtime-namespace
+logseq-namespace-status	clojure.walk	source-aggregate	33	aggregate-stdlib
+logseq-namespace-status	clojure.zip	source-aggregate	3	aggregate-stdlib
+logseq-qualified-var	cljs.analyzer.api/all-ns	1
+logseq-qualified-var	cljs.cache/evict	3
+logseq-qualified-var	cljs.cache/lookup	3
+logseq-qualified-var	cljs.cache/lru-cache-factory	3
+logseq-qualified-var	cljs.cache/miss	3
+logseq-qualified-var	cljs.cache/through	1
+logseq-qualified-var	cljs.core.async/<!	1
+logseq-qualified-var	cljs.core.async/alts!	1
+logseq-qualified-var	cljs.core.async/chan	2
+logseq-qualified-var	cljs.core.async/close!	2
+logseq-qualified-var	cljs.core.async/go	5
+logseq-qualified-var	cljs.core.async/go-loop	1
+logseq-qualified-var	cljs.core.async/put!	1
+logseq-qualified-var	cljs.core.async/sliding-buffer	1
+logseq-qualified-var	cljs.core.async/timeout	1
+logseq-qualified-var	cljs.core/Atom	1
+logseq-qualified-var	cljs.core/IEncodeJS	1
+logseq-qualified-var	cljs.core/PersistentQueue.EMPTY	4
+logseq-qualified-var	cljs.core/range	1
+logseq-qualified-var	cljs.core/reset!	2
+logseq-qualified-var	cljs.core/system-time	8
+logseq-qualified-var	cljs.core/uuid	3
+logseq-qualified-var	cljs.core/vreset!	2
+logseq-qualified-var	cljs.pprint/pprint	29
+logseq-qualified-var	cljs.reader/read-string	43
+logseq-qualified-var	cljs.spec.alpha/*explain-out*	1
+logseq-qualified-var	cljs.spec.alpha/assert	1
+logseq-qualified-var	cljs.spec.alpha/check-asserts	1
+logseq-qualified-var	cljs.spec.alpha/coll-of	2
+logseq-qualified-var	cljs.spec.alpha/def	36
+logseq-qualified-var	cljs.spec.alpha/explain-data	1
+logseq-qualified-var	cljs.spec.alpha/keys	2
+logseq-qualified-var	cljs.spec.alpha/or	1
+logseq-qualified-var	cljs.test/*current-env*	1
+logseq-qualified-var	cljs.test/async	4
+logseq-qualified-var	cljs.test/deftest	3
+logseq-qualified-var	cljs.test/empty-env	3
+logseq-qualified-var	cljs.test/get-current-env	1
+logseq-qualified-var	cljs.test/inc-report-counter!	1
+logseq-qualified-var	cljs.test/is	7
+logseq-qualified-var	cljs.test/report	5
+logseq-qualified-var	cljs.test/run-tests	2
+logseq-qualified-var	cljs.test/successful?	3
+logseq-qualified-var	clojure.core.async/<!	2
+logseq-qualified-var	clojure.core.async/go	1
+logseq-qualified-var	clojure.core/+	1
+logseq-qualified-var	clojure.core/-	3
+logseq-qualified-var	clojure.core/->	3
+logseq-qualified-var	clojure.core/=	4
+logseq-qualified-var	clojure.core/>	1
+logseq-qualified-var	clojure.core/and	1
+logseq-qualified-var	clojure.core/apply	8
+logseq-qualified-var	clojure.core/array-map	6
+logseq-qualified-var	clojure.core/assoc	1
+logseq-qualified-var	clojure.core/binding	1
+logseq-qualified-var	clojure.core/case	1
+logseq-qualified-var	clojure.core/concat	235
+logseq-qualified-var	clojure.core/constantly	1
+logseq-qualified-var	clojure.core/dec	1
+logseq-qualified-var	clojure.core/deref	7008
+logseq-qualified-var	clojure.core/dissoc	1
+logseq-qualified-var	clojure.core/doseq	1
+logseq-qualified-var	clojure.core/ex-info	1
+logseq-qualified-var	clojure.core/fn	11
+logseq-qualified-var	clojure.core/format	1
+logseq-qualified-var	clojure.core/get	2
+logseq-qualified-var	clojure.core/if-some	1
+logseq-qualified-var	clojure.core/inc	1
+logseq-qualified-var	clojure.core/keys	1
+logseq-qualified-var	clojure.core/keyword	1
+logseq-qualified-var	clojure.core/let	16
+logseq-qualified-var	clojure.core/list	624
+logseq-qualified-var	clojure.core/loop	1
+logseq-qualified-var	clojure.core/map	1
+logseq-qualified-var	clojure.core/mapcat	1
+logseq-qualified-var	clojure.core/max	1
+logseq-qualified-var	clojure.core/name	1
+logseq-qualified-var	clojure.core/or	5
+logseq-qualified-var	clojure.core/persistent!	1
+logseq-qualified-var	clojure.core/println	2
+logseq-qualified-var	clojure.core/prn	3
+logseq-qualified-var	clojure.core/remove	1
+logseq-qualified-var	clojure.core/reset!	1
+logseq-qualified-var	clojure.core/seq	235
+logseq-qualified-var	clojure.core/sequence	234
+logseq-qualified-var	clojure.core/str	4
+logseq-qualified-var	clojure.core/transient	1
+logseq-qualified-var	clojure.core/update	2
+logseq-qualified-var	clojure.core/vec	38
+logseq-qualified-var	clojure.core/vector	1
+logseq-qualified-var	clojure.core/vswap!	3
+logseq-qualified-var	clojure.core/when	3
+logseq-qualified-var	clojure.core/zero?	1
+logseq-qualified-var	clojure.data.json/read-str	1
+logseq-qualified-var	clojure.data/diff	12
+logseq-qualified-var	clojure.edn/read-string	38
+logseq-qualified-var	clojure.java.io/make-parents	1
+logseq-qualified-var	clojure.java.io/resource	3
+logseq-qualified-var	clojure.java.shell/sh	8
+logseq-qualified-var	clojure.pprint/pprint	19
+logseq-qualified-var	clojure.set/difference	67
+logseq-qualified-var	clojure.set/intersection	53
+logseq-qualified-var	clojure.set/map-invert	3
+logseq-qualified-var	clojure.set/rename-keys	3
+logseq-qualified-var	clojure.set/subset?	22
+logseq-qualified-var	clojure.set/union	73
+logseq-qualified-var	clojure.spec.alpha/assert	1
+logseq-qualified-var	clojure.stacktrace/print-cause-trace	1
+logseq-qualified-var	clojure.string/blank?	578
+logseq-qualified-var	clojure.string/capitalize	23
+logseq-qualified-var	clojure.string/ends-with?	70
+logseq-qualified-var	clojure.string/includes?	1038
+logseq-qualified-var	clojure.string/index-of	37
+logseq-qualified-var	clojure.string/join	293
+logseq-qualified-var	clojure.string/last-index-of	23
+logseq-qualified-var	clojure.string/lower-case	290
+logseq-qualified-var	clojure.string/replace	351
+logseq-qualified-var	clojure.string/replace-first	62
+logseq-qualified-var	clojure.string/reverse	2
+logseq-qualified-var	clojure.string/split	120
+logseq-qualified-var	clojure.string/split-lines	60
+logseq-qualified-var	clojure.string/starts-with?	315
+logseq-qualified-var	clojure.string/trim	375
+logseq-qualified-var	clojure.string/trim-newline	1
+logseq-qualified-var	clojure.string/triml	17
+logseq-qualified-var	clojure.string/trimr	6
+logseq-qualified-var	clojure.string/upper-case	24
+logseq-qualified-var	clojure.test.check.generators/boolean	9
+logseq-qualified-var	clojure.test.check.generators/elements	1
+logseq-qualified-var	clojure.test.check.generators/fmap	1
+logseq-qualified-var	clojure.test.check.generators/generate	11
+logseq-qualified-var	clojure.test.check.generators/nat	1
+logseq-qualified-var	clojure.test.check.generators/recursive-gen	1
+logseq-qualified-var	clojure.test.check.generators/tuple	1
+logseq-qualified-var	clojure.test.check.generators/vector	2
+logseq-qualified-var	clojure.test/*stack-trace-depth*	1
+logseq-qualified-var	clojure.test/*testing-contexts*	2
+logseq-qualified-var	clojure.test/*testing-vars*	1
+logseq-qualified-var	clojure.test/inc-report-counter	2
+logseq-qualified-var	clojure.test/is	1
+logseq-qualified-var	clojure.test/report	2
+logseq-qualified-var	clojure.test/run-tests	1
+logseq-qualified-var	clojure.test/testing-contexts-str	2
+logseq-qualified-var	clojure.test/testing-vars-str	2
+logseq-qualified-var	clojure.test/with-test-out	2
+logseq-qualified-var	clojure.tools.build.api/copy-dir	1
+logseq-qualified-var	clojure.tools.build.api/create-basis	2
+logseq-qualified-var	clojure.tools.build.api/delete	1
+logseq-qualified-var	clojure.tools.build.api/jar	1
+logseq-qualified-var	clojure.tools.build.api/java-command	1
+logseq-qualified-var	clojure.tools.build.api/pom-path	1
+logseq-qualified-var	clojure.tools.build.api/process	1
+logseq-qualified-var	clojure.tools.build.api/write-pom	1
+logseq-qualified-var	clojure.tools.cli/parse-opts	1
+logseq-qualified-var	clojure.tools.deps/combine-aliases	1
+logseq-qualified-var	clojure.walk/keywordize-keys	2
+logseq-qualified-var	clojure.walk/postwalk	37
+logseq-qualified-var	clojure.walk/prewalk	10
+logseq-qualified-var	clojure.zip/append-child	1
+logseq-qualified-var	clojure.zip/down	6
+logseq-qualified-var	clojure.zip/edit	2
+logseq-qualified-var	clojure.zip/end?	1
+logseq-qualified-var	clojure.zip/insert-right	4
+logseq-qualified-var	clojure.zip/next	1
+logseq-qualified-var	clojure.zip/node	2
+logseq-qualified-var	clojure.zip/path	1
+logseq-qualified-var	clojure.zip/replace	1
+logseq-qualified-var	clojure.zip/right	4
+logseq-qualified-var	clojure.zip/rightmost	4
+logseq-qualified-var	clojure.zip/root	3
+logseq-qualified-var	clojure.zip/up	3
+logseq-qualified-var	clojure.zip/zipper	2
+logseq-qualified-var-status	cljs.analyzer.api/all-ns	out-of-scope	1	clojurescript-analyzer-introspection-is-a-compiler-host-api-not-a-native-or-melange-runtime-stdlib-namespace
+logseq-qualified-var-status	cljs.cache/evict	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.cache/lookup	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.cache/lru-cache-factory	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.cache/miss	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.cache/through	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	cljs.core.async/<!	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/alts!	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/chan	out-of-scope	2	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/close!	out-of-scope	2	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/go	out-of-scope	5	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/go-loop	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/put!	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/sliding-buffer	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core.async/timeout	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	cljs.core/Atom	source-core-alias	1	automatic-core-alias
+logseq-qualified-var-status	cljs.core/IEncodeJS	source-core-alias	1	automatic-core-alias
+logseq-qualified-var-status	cljs.core/PersistentQueue.EMPTY	source-core-alias	4	automatic-core-alias
+logseq-qualified-var-status	cljs.core/range	source-core-alias	1	automatic-core-alias
+logseq-qualified-var-status	cljs.core/reset!	source-core-alias	2	automatic-core-alias
+logseq-qualified-var-status	cljs.core/system-time	source-core-alias	8	automatic-core-alias
+logseq-qualified-var-status	cljs.core/uuid	source-core-alias	3	automatic-core-alias
+logseq-qualified-var-status	cljs.core/vreset!	source-core-alias	2	automatic-core-alias
+logseq-qualified-var-status	cljs.pprint/pprint	source-aggregate	29	precompiled-lg-source
+logseq-qualified-var-status	cljs.reader/read-string	source-aggregate	43	precompiled-lg-source
+logseq-qualified-var-status	cljs.spec.alpha/*explain-out*	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/assert	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/check-asserts	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/coll-of	out-of-scope	2	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/def	out-of-scope	36	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/explain-data	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/keys	out-of-scope	2	excluded-by-project-scope
+logseq-qualified-var-status	cljs.spec.alpha/or	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	cljs.test/*current-env*	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/async	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/deftest	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/empty-env	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/get-current-env	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/inc-report-counter!	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/is	source-aggregate	7	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/report	blocked-static-typing	5	remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
+logseq-qualified-var-status	cljs.test/run-tests	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	cljs.test/successful?	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core.async/<!	out-of-scope	2	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	clojure.core.async/go	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
+logseq-qualified-var-status	clojure.core/+	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/-	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/->	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/=	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/>	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/and	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/apply	source-aggregate	8	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/array-map	source-aggregate	6	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/assoc	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/binding	source-aggregate	1	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/case	source-aggregate	1	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/concat	source-aggregate	235	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/constantly	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/dec	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/deref	source-aggregate	7008	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/dissoc	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/doseq	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/ex-info	host-boundary	1	two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary
+logseq-qualified-var-status	clojure.core/fn	source-aggregate	11	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/format	source-aggregate	1	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/get	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/if-some	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/inc	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/keys	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/keyword	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/let	source-aggregate	16	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/list	source-aggregate	624	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/loop	source-aggregate	1	aggregate-stdlib
+logseq-qualified-var-status	clojure.core/map	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/mapcat	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/max	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/name	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/or	source-aggregate	5	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/persistent!	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/println	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/prn	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/remove	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/reset!	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/seq	source-aggregate	235	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/sequence	source-aggregate	234	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/str	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/transient	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/update	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/vec	source-aggregate	38	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/vector	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/vswap!	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/when	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.core/zero?	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.data.json/read-str	out-of-scope	1	data-json-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.data/diff	source-aggregate	12	precompiled-lg-source
+logseq-qualified-var-status	clojure.edn/read-string	source-aggregate	38	precompiled-lg-source
+logseq-qualified-var-status	clojure.java.io/make-parents	out-of-scope	1	jvm-file-url-resource-and-stream-interop-is-forbidden-by-the-lg-no-jvm-object-model-design
+logseq-qualified-var-status	clojure.java.io/resource	out-of-scope	3	jvm-file-url-resource-and-stream-interop-is-forbidden-by-the-lg-no-jvm-object-model-design
+logseq-qualified-var-status	clojure.java.shell/sh	out-of-scope	8	jvm-process-launching-has-no-shared-native-and-browser-melange-stdlib-boundary
+logseq-qualified-var-status	clojure.pprint/pprint	host-boundary	19	jvm-only-pprint-namespace-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.set/difference	source-aggregate	67	precompiled-lg-source
+logseq-qualified-var-status	clojure.set/intersection	source-aggregate	53	precompiled-lg-source
+logseq-qualified-var-status	clojure.set/map-invert	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.set/rename-keys	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.set/subset?	source-aggregate	22	precompiled-lg-source
+logseq-qualified-var-status	clojure.set/union	source-aggregate	73	precompiled-lg-source
+logseq-qualified-var-status	clojure.spec.alpha/assert	out-of-scope	1	excluded-by-project-scope
+logseq-qualified-var-status	clojure.stacktrace/print-cause-trace	out-of-scope	1	jvm-throwable-stacktrace-printing-depends-on-the-forbidden-jvm-object-model
+logseq-qualified-var-status	clojure.string/blank?	source-aggregate	578	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/capitalize	source-aggregate	23	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/ends-with?	source-aggregate	70	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/includes?	source-aggregate	1038	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/index-of	source-aggregate	37	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/join	source-aggregate	293	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/last-index-of	source-aggregate	23	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/lower-case	source-aggregate	290	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/replace	source-aggregate	351	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/replace-first	source-aggregate	62	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/reverse	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/split	source-aggregate	120	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/split-lines	source-aggregate	60	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/starts-with?	source-aggregate	315	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/trim	source-aggregate	375	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/trim-newline	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/triml	source-aggregate	17	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/trimr	source-aggregate	6	precompiled-lg-source
+logseq-qualified-var-status	clojure.string/upper-case	source-aggregate	24	precompiled-lg-source
+logseq-qualified-var-status	clojure.test.check.generators/boolean	out-of-scope	9	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/elements	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/fmap	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/generate	out-of-scope	11	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/nat	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/recursive-gen	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/tuple	out-of-scope	1	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test.check.generators/vector	out-of-scope	2	test-check-is-an-external-property-testing-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.test/*stack-trace-depth*	host-boundary	1	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/*testing-contexts*	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/*testing-vars*	host-boundary	1	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/inc-report-counter	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/is	host-boundary	1	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/report	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/run-tests	host-boundary	1	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/testing-contexts-str	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/testing-vars-str	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.test/with-test-out	host-boundary	2	jvm-only-test-runtime-is-outside-the-clojurescript-source-baseline
+logseq-qualified-var-status	clojure.tools.build.api/copy-dir	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/create-basis	out-of-scope	2	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/delete	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/jar	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/java-command	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/pom-path	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/process	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.build.api/write-pom	out-of-scope	1	tools-build-is-an-external-jvm-build-orchestration-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.tools.cli/parse-opts	out-of-scope	1	tools-cli-is-an-external-library-that-requires-a-separate-pinned-upstream-and-port
+logseq-qualified-var-status	clojure.tools.deps/combine-aliases	out-of-scope	1	tools-deps-is-an-external-jvm-classpath-resolution-library-not-a-clojurescript-runtime-namespace
+logseq-qualified-var-status	clojure.walk/keywordize-keys	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.walk/postwalk	source-aggregate	37	precompiled-lg-source
+logseq-qualified-var-status	clojure.walk/prewalk	source-aggregate	10	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/append-child	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/down	source-aggregate	6	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/edit	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/end?	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/insert-right	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/next	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/node	source-aggregate	2	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/path	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/replace	source-aggregate	1	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/right	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/rightmost	source-aggregate	4	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/root	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/up	source-aggregate	3	precompiled-lg-source
+logseq-qualified-var-status	clojure.zip/zipper	source-aggregate	2	precompiled-lg-source

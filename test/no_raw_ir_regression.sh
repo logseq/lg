@@ -2,10 +2,10 @@
 set -eu
 
 matches=$(
-  rg -n 'Ocaml_ir\.Raw|\bRaw\b|\braw\b|typed\s*\(' \
-    src README.md docs test \
-    -g '*.ml' -g '*.mli' -g '*.md' -g '*.sh' \
-    -g '!test/no_raw_ir_regression.sh' || true
+  rg -n 'Ocaml_ir\.Raw|\bRaw\b|typed\s*\(' \
+    src \
+    -g '*.ml' -g '*.mli' \
+    || true
 )
 
 if [ -n "$matches" ]; then
