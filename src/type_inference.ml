@@ -718,6 +718,16 @@ let rec inferred_form_type params = function
       with
       | Some (_, value_ty) -> TNullable value_ty
       | None -> TUnknown)
+  | FList (FSymbol "__lg_conj" :: (FList [ FSymbol "__lg_get"; _; _ ] as target) :: values)
+    ->
+      let value_tys = List.map (inferred_form_type params) values in
+      let element_ty = List.fold_left refine_type TUnknown value_tys in
+      (match inferred_form_type params target with
+      | TList inner -> TList (refine_type inner element_ty)
+      | TSeq inner -> TSeq (refine_type inner element_ty)
+      | TSet inner -> TSet (refine_type inner element_ty)
+      | TVector inner -> TVector (refine_type inner element_ty)
+      | _ -> TVector element_ty)
   | FList (FSymbol "conj" :: target :: values) ->
       let value_tys = List.map (inferred_form_type params) values in
       let refine_element element_ty =
@@ -1227,6 +1237,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_nth"; collection; index ] ->
         Result.bind (infer_sequence_form expected_ty params collection)
           (fun params -> infer_expected TInt params index)
+    | FList
+        (FSymbol "__lg_conj"
+        :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
+        :: values) -> infer_conj_get params target values
     | FList (FSymbol "conj" :: target :: values) -> (
         match expected_ty with
         | TList element_ty | TVector element_ty | TSet element_ty
@@ -3167,6 +3181,23 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 ~actual:return_ty ->
         refine_type inner return_ty
     | _ -> refine_type field_ty return_ty
+  and infer_conj_get params target values =
+    let element_ty =
+      values
+      |> List.map (inferred_form_type params)
+      |> List.fold_left refine_type TUnknown
+      |> stored_value_type
+    in
+    let collection_ty =
+      match inferred_form_type params target with
+      | TList _ -> TList element_ty
+      | TSeq _ -> TSeq element_ty
+      | TSet _ -> TSet element_ty
+      | TVector _ -> TVector element_ty
+      | _ -> TVector element_ty
+    in
+    Result.bind (infer_expected collection_ty params target) (fun params ->
+        infer_expected_all element_ty params values)
   and infer_form params = function
     | FList (FCoreSymbol core_symbol :: arguments) ->
         let name =
@@ -4975,6 +5006,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind
           (infer_expected (TVector element_ty) params collection)
           (fun params -> infer_expected_all TInt params indexes)
+    | FList
+        (FSymbol "__lg_conj"
+        :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
+        :: values) -> infer_conj_get params target values
     | FList (FSymbol "conj" :: target :: values) -> (
         let inferred_value_type value =
           match inferred_form_type params value with

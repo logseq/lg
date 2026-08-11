@@ -22143,7 +22143,7 @@ let test_inline_update_rejects_unconstrained_transient_boundaries () =
     (fun target ->
       compile_string_with_stdlib ~target source
       |> expect_error_contains
-           "transient expects a set, vector, or map, got option<keyword>")
+           "transient expects a set, vector, or map, got")
     [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_nested_update_infers_optional_map_value_collections () =

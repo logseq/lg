@@ -1276,7 +1276,9 @@ and syntax_quote context form =
                    (Env.find_inline_macro ~scope:context.namespace name
                       context.compiler_env)
             in
-            if is_macro then context.namespace ^ "/" ^ name else name
+            if is_macro && not (String.equal context.namespace "") then
+              context.namespace ^ "/" ^ name
+            else name
         in
         Ok (Form (FSymbol name))
     | form -> Ok (Form form)
