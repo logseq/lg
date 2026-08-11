@@ -818,6 +818,21 @@ let refine_deferred_type env = function
 
 let common_method_return_param_index env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
+  let declared_self_return =
+    match
+      Protocol_registry.find_method protocol_id method_id (Env.protocols env)
+    with
+    | Some { method_ty = TFn (_, TVar "__lg_protocol_self"); _ } -> true
+    | Some { method_ty = TOverloaded_fn arities; _ } ->
+        arities <> []
+        && List.for_all
+             (fun (arity : fn_arity) ->
+               Types.equal arity.return_ty (TVar "__lg_protocol_self"))
+             arities
+    | Some _ | None -> false
+  in
+  if declared_self_return then Some 0
+  else
   let registry =
     Compiler_environment.protocol_evidence env
     |> Option.value ~default:(Env.protocols env)
