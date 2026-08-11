@@ -683,17 +683,25 @@ let returned_parameter_index scope env parameter_names body_forms =
   | form :: _ -> returned_parameter form
   | [] -> None
 
+let lexical_parameter_names specs =
+  specs
+  |> List.concat_map (fun (spec : Destructure.param_spec) ->
+         spec.source_name :: Destructure.pattern_names spec.pattern)
+  |> List.sort_uniq String.compare
+
 let prepare ?(param_type_overrides = []) ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?compile_function_body ?compile_default
     ~lookup_function_ty ~compile_body scope env params body_forms =
-  match Macro_expander.expand_all_forms ~scope ~compiler_env:env body_forms with
-  | Error _ as error -> error
-  | Ok body_forms ->
-      let body_forms = normalize_prepost_body body_forms in
-      match Destructure.parse_param_specs params with
-      | Error _ as err -> err
-      | Ok specs -> (
+  match Destructure.parse_param_specs params with
+  | Error _ as err -> err
+  | Ok specs ->
+      let parameter_names = lexical_parameter_names specs in
+      let macro_env = Env.add_core_exclusions ~scope parameter_names env in
+      Result.bind
+        (Macro_expander.expand_all_forms ~scope ~compiler_env:macro_env body_forms)
+        (fun body_forms ->
+          let body_forms = normalize_prepost_body body_forms in
       let inference_params =
         specs
         |> List.mapi (fun index (spec : Destructure.param_spec) ->
@@ -1112,6 +1120,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                     env
                     |> Env.add_bindings param_bindings
                     |> Env.add_bindings local_bindings
+                    |> Env.add_core_exclusions ~scope parameter_names
                   in
                   let body_forms =
                     match body_forms with

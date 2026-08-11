@@ -6072,6 +6072,40 @@ let test_callbacks_keep_nominal_protocol_parameters_raw () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_source_inline_macros_respect_lexical_shadowing () =
+  let source =
+    {|
+(ns app.inline-shadow)
+
+(type-record updater-holder
+  (update :fn<int;int>))
+
+(defn call-parameter [^:fn<int;int> update ^:int value]
+  (update value))
+
+(defn call-destructured [{:keys [update]} ^:int value]
+  (update value))
+
+(defn call-let [^:int value]
+  (let [update (fn [^:int item] (+ item 3))]
+    (update value)))
+
+(def incrementer (fn [^:int value] (+ value 1)))
+(def holder (record updater-holder (update (fn [^:int value] (+ value 2)))))
+
+(println (call-parameter incrementer 1))
+(println (call-destructured holder 1))
+(println (call-let 1))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "test/inline_shadow.cljc" source
+  in
+  assert_ocaml_runs "source_inline_macros_respect_lexical_shadowing"
+    "2\n3\n4\n" native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/inline_shadow.cljc" source)
+
 let test_loop_keeps_protocol_evidence_with_nominal_state () =
   let source =
     {|
@@ -43980,6 +44014,8 @@ let tests =
       test_protocol_calls_reject_contextual_callback_return_mismatches );
     ( "callbacks keep nominal protocol parameters raw",
       test_callbacks_keep_nominal_protocol_parameters_raw );
+    ( "source inline macros respect lexical shadowing",
+      test_source_inline_macros_respect_lexical_shadowing );
     ( "loop keeps protocol evidence with nominal state",
       test_loop_keeps_protocol_evidence_with_nominal_state );
     ( "dynamic var uses concrete generic alias signature",
