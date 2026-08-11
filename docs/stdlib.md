@@ -94,6 +94,11 @@ Generic `set<element>` source functions use LG's statically typed generic set
 representation internally. Calls from concrete persistent set modules convert
 through typed `elements` and `of_list` operations at that source-function
 boundary, and results convert back to the statically selected concrete module.
+For overloaded functions, the compiler retains each declared arity's original
+return type as the implementation storage type before specializing the public
+result. This keeps one-, two-, and variadic `clojure.set` calls on the same
+generic boundary instead of mistaking a `Runtime_poly_set.t` result for a
+concrete `Int_set.t` or another element-specific module.
 Element types remain unified across all inputs and outputs. This boundary does
 not use `Runtime_dynamic.t`, `Obj.magic`, or a source-visible conversion API.
 

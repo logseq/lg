@@ -10501,7 +10501,7 @@ let create ~compile_expr =
                     let return_ty =
                       Type_solver.apply substitutions return_ty
                     in
-                    let storage_return_ty = return_ty in
+                    let storage_return_ty = arity.return_ty in
                     let return_ty =
                       match return_ty with
                       | TSeq element_ty ->

@@ -8,11 +8,23 @@
 (signature clojure.set/union-two [value]
   :fn<set<value>;set<value>;set<value>>)
 
+; zero, one, two, and variadic input-set arities
+(signature clojure.set/union [value]
+  :overload<fn<set<value>>;fn<set<value>;set<value>>;fn<set<value>;set<value>;set<value>>;variadic-fn<set<value>;set<value>;set<value>;set<value>>>)
+
 (signature clojure.set/intersection-two [value]
   :fn<set<value>;set<value>;set<value>>)
 
+; one, two, and variadic input-set arities
+(signature clojure.set/intersection [value]
+  :overload<fn<set<value>;set<value>>;fn<set<value>;set<value>;set<value>>;variadic-fn<set<value>;set<value>;set<value>;set<value>>>)
+
 (signature clojure.set/difference-two [value]
   :fn<set<value>;set<value>;set<value>>)
+
+; one, two, and variadic input-set arities
+(signature clojure.set/difference [value]
+  :overload<fn<set<value>;set<value>>;fn<set<value>;set<value>;set<value>>;variadic-fn<set<value>;set<value>;set<value>;set<value>>>)
 
 (signature clojure.set/subset? [value]
   :fn<set<value>;set<value>;bool>)
