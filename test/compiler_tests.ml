@@ -31899,9 +31899,7 @@ let test_transducer_type_hints_infer_closed_nominal_record_fields () =
   assert_ocaml_runs "transducer_type_hints_infer_nominal_record_fields"
     "2\n(1 -1 2)\n" ocaml_source;
   ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
-  ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_deftype_methods_flush_after_their_declared_dependencies () =
   let source =

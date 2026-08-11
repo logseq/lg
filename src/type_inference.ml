@@ -1036,6 +1036,22 @@ let rec rewrite_simple_aliases aliases = function
            pairs)
   | form -> form
 
+let restore_explicit_parameter_types ~resolve_named_record specs inferred =
+  let rigid_bindings =
+    specs
+    |> List.filter_map (fun (spec : Destructure.param_spec) ->
+           match spec.explicit_ty with
+           | Some ty when not (Types.equal ty TUnknown) ->
+               Some (spec.source_name, resolve_named_record ty)
+           | Some _ | None -> None)
+  in
+  List.map
+    (fun (name, ty) ->
+      match string_assoc_opt name rigid_bindings with
+      | Some rigid_ty -> (name, rigid_ty)
+      | None -> (name, ty))
+    inferred
+
 let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     ?observe_call ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
@@ -1070,9 +1086,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     let value_ty =
       string_assoc_opt receiver params |> Option.value ~default:TUnknown
     in
-    constrain_symbol
-      (Types.protocol_constraint_with_value constraint_ty value_ty)
-      params receiver
+    match value_ty with
+    | TNamed_record _ -> Ok params
+    | _ ->
+        constrain_symbol
+          (Types.protocol_constraint_with_value constraint_ty value_ty)
+          params receiver
   in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
@@ -1280,6 +1299,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             Result.map
               (fun inferred ->
+                let inferred =
+                  restore_explicit_parameter_types ~resolve_named_record specs
+                    inferred
+                in
                 shadowed
                 @ List.filter
                     (fun (name, _) -> not (string_mem name local_names))
@@ -5505,6 +5528,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             let rec infer_local remaining local_params =
               Result.bind (infer_all local_params body_forms) (fun inferred ->
+                  let inferred =
+                    restore_explicit_parameter_types ~resolve_named_record specs
+                      inferred
+                  in
                   if remaining = 0 then Ok inferred
                   else
                     let stable =
