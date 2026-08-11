@@ -1394,7 +1394,7 @@
    :implementation "cljs/test.cljc"
    :interface "cljs/test.mli"
    :status :blocked
-   :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-async-block-fixture-registry-and-closed-report-event-capabilities
+   :reason :remaining-async-test-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-async-block-and-closed-report-event-capabilities
    :definitions
    {empty-env {:status :static-adaptation
                :reason :source-function-preserves-upstream-default-and-custom-reporter-counters-and-empty-context-state-in-a-closed-static-test-environment-record-while-the-open-polymorphic-formatter-field-and-pprint-reporter-remain-blocked-on-static-printer-witnesses}
@@ -1421,9 +1421,11 @@
     deftest {:status :static-adaptation
              :reason :source-macro-defines-the-public-zero-argument-test-function-and-registers-a-homogeneous-static-synchronous-thunk-in-definition-order-instead-of-javascript-var-test-metadata}
     run-test {:status :static-adaptation
-              :reason :source-macro-runs-one-statically-resolved-synchronous-test-with-a-fresh-environment-while-async-and-fixtures-remain-explicitly-blocked}
+              :reason :source-macro-runs-one-statically-resolved-synchronous-test-with-a-fresh-environment-while-async-tests-remain-explicitly-blocked}
     run-tests {:status :static-adaptation
-               :reason :source-macro-validates-quoted-namespaces-and-runs-their-static-synchronous-registry-in-definition-order-while-async-fixtures-hooks-and-analyzer-wide-discovery-remain-explicitly-blocked}
+               :reason :source-macro-validates-quoted-namespaces-and-runs-their-static-synchronous-registry-in-definition-order-with-once-and-each-fixtures-while-async-tests-hooks-and-analyzer-wide-discovery-remain-explicitly-blocked}
+    use-fixtures {:status :static-adaptation
+                  :reason :source-macro-registers-synchronous-once-and-each-function-or-map-fixtures-in-a-closed-static-variant-preserving-upstream-order-cleanup-and-cross-kind-type-validation-while-async-fixtures-remain-blocked}
     ns? {:status :static-adaptation
          :reason :source-function-distinguishes-the-static-symbol-and-string-domains-through-a-closed-protocol-instead-of-inspecting-arbitrary-code-data}
     compose-fixtures {:status :ported}

@@ -5,6 +5,18 @@
 
 (ns cljs.test)
 
+(type-record map-fixture
+  (fixture-before :fn<bool>)
+  (fixture-after :fn<bool>))
+
+(type-variant test-fixture
+  (FunctionFixture :fn<fn<bool>;bool>)
+  (MapFixture :map-fixture))
+
+(type-record namespace-fixtures
+  (once-fixtures :list<test-fixture>)
+  (each-fixtures :list<test-fixture>))
+
 (defn- test-env-value [report-counters testing-vars testing-contexts reporter]
   (record test-env
     (report-counters report-counters)
@@ -115,9 +127,11 @@
 (def ^:private registered-tests
   (atom (hash-map)))
 
-(defn- registered-test-value [name run]
+(def ^:private ^:ref<map<string;namespace-fixtures>> registered-fixtures
+  (atom (hash-map)))
+
+(defn- registered-test-value [_name run]
   (record registered-test
-    (registered-test-name name)
     (registered-test-run run)))
 
 (defn- register-test!
@@ -128,26 +142,149 @@
     (swap! registered-tests assoc namespace (conj namespace-tests registered))
     registered))
 
-(defn- run-registered-test!
-  "Runs `registered-test` and returns the updated test environment."
-  [registered-test]
+(defn- ^:namespace-fixtures namespace-fixtures-value
+  [^:list<test-fixture> once-fixtures ^:list<test-fixture> each-fixtures]
+  (record namespace-fixtures
+    (once-fixtures once-fixtures)
+    (each-fixtures each-fixtures)))
+
+(defn- ^:test-fixture function-fixture-value
+  [^:fn<fn<bool>;bool> fixture]
+  (FunctionFixture fixture))
+
+(defn- ^:test-fixture map-fixture-value
+  [^:fn<bool> before ^:fn<bool> after]
+  (MapFixture
+   (record map-fixture
+     (fixture-before before)
+     (fixture-after after))))
+
+(defn- ^:namespace-fixtures register-fixtures!
+  "Registers synchronous `fixtures` of `kind` for `namespace`."
+  [^string namespace ^:keyword kind ^:list<test-fixture> fixtures]
+  (let [current (get @registered-fixtures namespace
+                     (namespace-fixtures-value (list) (list)))
+        updated
+        (if (= kind :once)
+          (namespace-fixtures-value
+           (reduce (fn [result fixture] (conj result fixture))
+                   (:once-fixtures current)
+                   fixtures)
+           (:each-fixtures current))
+          (namespace-fixtures-value
+           (:once-fixtures current)
+           (reduce (fn [result fixture] (conj result fixture))
+                   (:each-fixtures current)
+                   fixtures)))]
+    (swap! registered-fixtures assoc namespace updated)
+    updated))
+
+(declare run-map-fixtures run-function-fixtures)
+
+(defn- ^boolean run-map-fixture
+  [^test-fixture current
+   ^:list<test-fixture> remaining
+   ^:fn<bool> body]
+  (match current
+    (MapFixture fixture)
+    (do
+      ((:fixture-before fixture))
+      (try
+        (run-map-fixtures remaining body)
+        (finally ((:fixture-after fixture)))))
+
+    (FunctionFixture _)
+    (raise (Failure "use-fixtures cannot mix function and map fixtures"))))
+
+(defn- ^boolean run-map-fixtures
+  [^:list<test-fixture> fixtures ^:fn<bool> body]
+  (if (empty? fixtures)
+    (body)
+    (run-map-fixture (nth fixtures 0) (pop fixtures) body)))
+
+(defn- ^boolean run-function-fixture
+  [^test-fixture current
+   ^:list<test-fixture> remaining
+   ^:fn<bool> body]
+  (match current
+    (FunctionFixture fixture)
+    (fixture (fn [] (run-function-fixtures remaining body)))
+
+    (MapFixture _)
+    (raise (Failure "use-fixtures cannot mix function and map fixtures"))))
+
+(defn- ^boolean run-function-fixtures
+  [^:list<test-fixture> fixtures ^:fn<bool> body]
+  (if (empty? fixtures)
+    (body)
+    (run-function-fixture (nth fixtures 0) (pop fixtures) body)))
+
+(defn- ^boolean run-fixture
+  [^test-fixture current
+   ^:list<test-fixture> fixtures
+   ^:fn<bool> body]
+  (match current
+    (MapFixture _) (run-map-fixtures fixtures body)
+    (FunctionFixture _) (run-function-fixtures fixtures body)))
+
+(defn- ^boolean run-fixtures
+  [^:list<test-fixture> fixtures ^:fn<bool> body]
+  (if (empty? fixtures)
+    (body)
+    (run-fixture (nth fixtures 0) fixtures body)))
+
+(defn- ^boolean map-fixture? [^test-fixture fixture]
+  (match fixture
+    (MapFixture _) true
+    (FunctionFixture _) false))
+
+(defn- validate-fixture-types!
+  [^:list<test-fixture> once-fixtures ^:list<test-fixture> each-fixtures]
+  (if (or (empty? once-fixtures)
+          (empty? each-fixtures)
+          (= (map-fixture? (nth once-fixtures 0))
+             (map-fixture? (nth each-fixtures 0))))
+    true
+    (raise
+     (Failure
+      "use-fixtures :once and :each fixtures must have the same type"))))
+
+(defn- ^boolean execute-registered-test!
+  [^registered-test registered-test ^:list<test-fixture> fixtures]
   (inc-report-counter! :test)
   (try
-    ((:registered-test-run registered-test))
+    (run-fixtures fixtures (:registered-test-run registered-test))
     (catch _
       (do
         (inc-report-counter! :error)
-        false)))
+        false))))
+
+(defn- run-registered-test!
+  "Runs `registered-test` and returns the updated test environment."
+  [registered-test]
+  (execute-registered-test! registered-test (list))
   (get-current-env))
+
+(defn- ^boolean run-namespace-tests! [^string namespace]
+  (let [fixtures (get @registered-fixtures namespace
+                      (namespace-fixtures-value (list) (list)))
+        once-fixtures (reverse (:once-fixtures fixtures))
+        each-fixtures (reverse (:each-fixtures fixtures))]
+    (validate-fixture-types! once-fixtures each-fixtures)
+    (run-fixtures
+     once-fixtures
+     (fn []
+       (doseq [registered (reverse (get @registered-tests namespace (list)))]
+         (execute-registered-test! registered each-fixtures))
+       true))))
 
 (defn- run-registered-tests!
   "Runs synchronous tests registered for `namespaces` in definition order."
   [namespaces]
   (clear-env!)
   (set-env! (empty-env))
-  (doseq [namespace namespaces
-          registered (reverse (get @registered-tests namespace (list)))]
-    (run-registered-test! registered))
+  (doseq [namespace namespaces]
+    (run-namespace-tests! namespace))
   (get-and-clear-env!))
 
 (defn- run-single-test!
@@ -199,6 +336,36 @@
         (fn []
           (~name)
           true)))))
+
+(defmacro use-fixtures
+  "Registers synchronous `fixtures` of `kind` for the current namespace.
+
+  `kind` must be `:once` or `:each`. Fixtures in one call must all be
+  functions or all be maps with optional `:before` and `:after` functions."
+  [kind & fixtures]
+  (assert (or (= kind :once) (= kind :each))
+          "use-fixtures expects :once or :each")
+  (let [map-fixtures (filter (fn [fixture] (map? fixture)) fixtures)]
+    (assert (or (empty? map-fixtures)
+                (= (count map-fixtures) (count fixtures)))
+            "use-fixtures cannot use mixed function and map fixtures")
+    `(cljs.test/register-fixtures!
+      ~(:ns &env)
+      ~kind
+      (list
+       ~@(map
+          (fn [fixture]
+            (if (map? fixture)
+              (let [before (:before fixture)
+                    after (:after fixture)]
+                `(cljs.test/map-fixture-value
+                  ~(if before `(fn [] (~before) true) `(fn [] true))
+                  ~(if after `(fn [] (~after) true) `(fn [] true))))
+              `(cljs.test/function-fixture-value
+                (fn [body]
+                  (~fixture (fn [] (body) true))
+                  true))))
+          fixtures)))))
 
 (defmacro run-test
   "Runs the synchronous test named by `test-symbol` and returns its environment."

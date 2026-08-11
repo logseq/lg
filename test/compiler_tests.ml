@@ -29248,6 +29248,130 @@ let test_cljs_test_sync_registry_is_source_owned () =
   if string_contains_substring core_namespaces "cljs.test" then
     failwith "the cljs.test registry must remain an aggregate source namespace"
 
+let test_source_cljs_test_synchronous_fixtures_match_clojurescript_order () =
+  let map_source =
+    {|
+(ns app.cljs-test-map-fixtures
+  (:require [cljs.test :refer [deftest is run-tests use-fixtures]]))
+(def events (atom []))
+(use-fixtures :once
+  {:before (fn [] (swap! events conj :once-before) true)
+   :after (fn [] (swap! events conj :once-after) true)})
+(use-fixtures :each
+  {:before (fn [] (swap! events conj :outer-before) true)
+   :after (fn [] (swap! events conj :outer-after) true)}
+  {:before (fn [] (swap! events conj :inner-before) true)
+   :after (fn [] (swap! events conj :inner-after) true)})
+(deftest passing
+  (swap! events conj :passing)
+  (is true))
+(deftest throwing
+  (swap! events conj :throwing)
+  (raise (Failure "boom")))
+(def summary (run-tests 'app.cljs-test-map-fixtures))
+(println
+  (and (= [:once-before
+           :outer-before :inner-before :passing :inner-after :outer-after
+           :outer-before :inner-before :throwing :inner-after :outer-after
+           :once-after]
+          @events)
+       (= 2 (get (:report-counters summary) :test 0))
+       (= 1 (get (:report-counters summary) :pass 0))
+       (= 1 (get (:report-counters summary) :error 0))))
+|}
+  in
+  let function_source =
+    {|
+(ns app.cljs-test-function-fixtures
+  (:require [cljs.test :refer [deftest is run-tests use-fixtures]]))
+(def events (atom []))
+(defn around-once [body]
+  (swap! events conj :once-before)
+  (let [result (body)]
+    (swap! events conj :once-after)
+    result))
+(defn around-each [body]
+  (swap! events conj :each-before)
+  (let [result (body)]
+    (swap! events conj :each-after)
+    result))
+(use-fixtures :once around-once)
+(use-fixtures :each around-each)
+(deftest only-test (swap! events conj :test) (is true))
+(run-tests 'app.cljs-test-function-fixtures)
+(println (= [:once-before :each-before :test :each-after :once-after] @events))
+|}
+  in
+  List.iter
+    (fun (name, source) ->
+      let native =
+        compile_with_stdlib Lg.Target.Native ("test/" ^ name ^ ".cljc") source
+      in
+      let consumer = compile_string_from_stdlib source |> expect_ok in
+      if string_contains_substring consumer "Runtime_dynamic" then
+        failwith "cljs.test fixtures must remain statically typed";
+      if
+        name = "source_cljs_test_map_fixtures"
+        && not (string_contains_substring native "Fun.protect")
+      then
+        failwith "map fixture cleanup must generate readable finally code";
+      assert_ocaml_runs name "true\n" native;
+      ignore
+        (compile_with_stdlib Lg.Target.Melange ("test/" ^ name ^ ".cljc")
+           source))
+    [
+      ("source_cljs_test_map_fixtures", map_source);
+      ("source_cljs_test_function_fixtures", function_source);
+    ]
+
+let test_source_cljs_test_synchronous_fixtures_reject_invalid_forms () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_fixture_kind_error.cljc"
+    {|
+(ns app.fixture-kind-error (:require [cljs.test :refer [use-fixtures]]))
+(use-fixtures :sometimes (fn [body] (body)))
+|}
+  |> expect_error_contains "use-fixtures";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_mixed_fixture_error.cljc"
+    {|
+(ns app.mixed-fixture-error (:require [cljs.test :refer [use-fixtures]]))
+(use-fixtures :each (fn [body] (body)) {:before (fn [] true)})
+|}
+  |> expect_error_contains "mixed";
+  let cross_kind_source =
+    {|
+(ns app.cross-kind-fixture-error
+  (:require [cljs.test :refer [deftest run-tests use-fixtures]]))
+(use-fixtures :once {:before (fn [] true)})
+(use-fixtures :each (fn [body] (body)))
+(deftest example true)
+(println
+  (try
+    (do (run-tests 'app.cross-kind-fixture-error) false)
+    (catch _ true)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_cross_kind_fixture_error.cljc" cross_kind_source
+  in
+  assert_ocaml_runs "source_cljs_test_cross_kind_fixture_error" "true\n" native
+
+let test_cljs_test_synchronous_fixtures_are_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  if not (string_contains_substring source "(defmacro use-fixtures") then
+    failwith "cljs.test/use-fixtures is not source-owned";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file (Filename.concat root path) in
+      if string_contains_substring compiler_source "\"use-fixtures\"" then
+        failwith
+          ("cljs.test/use-fixtures still has public-name compiler dispatch in "
+         ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -43684,6 +43808,12 @@ let tests =
       test_source_cljs_test_sync_registry_rejects_invalid_forms );
     ( "cljs.test synchronous registry is source-owned",
       test_cljs_test_sync_registry_is_source_owned );
+    ( "source cljs.test synchronous fixtures match ClojureScript order",
+      test_source_cljs_test_synchronous_fixtures_match_clojurescript_order );
+    ( "source cljs.test synchronous fixtures reject invalid forms",
+      test_source_cljs_test_synchronous_fixtures_reject_invalid_forms );
+    ( "cljs.test synchronous fixtures are source-owned",
+      test_cljs_test_synchronous_fixtures_are_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",

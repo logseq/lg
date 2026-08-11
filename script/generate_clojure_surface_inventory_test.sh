@@ -51,6 +51,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (test/ns? 'example)
 (test/run-test inventory-test)
 (test/run-tests 'example)
+(test/use-fixtures :each (fn [body] (body)))
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
@@ -345,6 +346,7 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "bl
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 == "cljs.test/join-fixtures" || $2 == "cljs.test/successful?") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/get-current-env" || $2 == "cljs.test/set-env!" || $2 == "cljs.test/clear-env!" || $2 == "cljs.test/get-and-clear-env!" || $2 == "cljs.test/inc-report-counter!" || $2 == "cljs.test/testing-contexts-str" || $2 == "cljs.test/testing") && $3 == "source" {found++} END {exit found != 8}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/is" || $2 == "cljs.test/are" || $2 == "cljs.test/try-expr" || $2 == "cljs.test/deftest" || $2 == "cljs.test/run-test" || $2 == "cljs.test/run-tests" || $2 == "cljs.test/ns?") && $3 == "source" {found++} END {exit found != 7}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && $2 == "cljs.test/use-fixtures" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/testing") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"

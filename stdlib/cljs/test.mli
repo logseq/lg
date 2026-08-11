@@ -7,7 +7,6 @@
   (reporter :keyword))
 
 (type-record registered-test
-  (registered-test-name :string)
   (registered-test-run :fn<bool>))
 
 (signature cljs.test/*current-env*

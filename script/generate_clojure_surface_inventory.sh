@@ -443,6 +443,7 @@ cljs.test/try-expr|source
 cljs.test/deftest|source
 cljs.test/run-test|source
 cljs.test/run-tests|source
+cljs.test/use-fixtures|source
 cljs.test/ns?|source
 cljs.test/compose-fixtures|source
 cljs.test/join-fixtures|source

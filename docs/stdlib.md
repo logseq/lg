@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 633 source entries (64.26%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 136 static-typing blockers,
+macro surfaces. The current baseline is 634 source entries (64.37%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 135 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -891,9 +891,10 @@ The same checkout also reports
 library. Its source implementation includes `empty-env`, the current
 environment lifecycle, report-counter updates, context rendering, `testing`,
 `is`, `are`, `try-expr`, `deftest`, `run-test`, `run-tests`, `ns?`,
-`compose-fixtures`, `join-fixtures`, and `successful?`. The environment is a
-closed record backed by a statically typed dynamic binding; counters use LG's
-default hashmap, and `testing` preserves upstream push/body/finally/pop order.
+`use-fixtures`, `compose-fixtures`, `join-fixtures`, and `successful?`. The
+environment is a closed record backed by a statically typed dynamic binding;
+counters use LG's default hashmap, and `testing` preserves upstream
+push/body/finally/pop order.
 This required general `try`/`finally` support, including finally-only forms and
 exception propagation, and generates readable `Fun.protect` code without
 `Runtime_dynamic`. The open polymorphic formatter field and the `::pprint`
@@ -903,7 +904,11 @@ assertion batch uses a homogeneous static synchronous-test registry in
 definition order. Boolean assertions retain single evaluation and pass, fail,
 and unexpected-error counting; `are` retains template order and validates its
 argument cardinality. The current static batch intentionally rejects
-non-boolean `is` forms. Async tests, fixtures, namespace hooks, analyzer-wide
+non-boolean `is` forms. Synchronous `:once` and `:each` fixtures preserve
+definition order for both wrapping functions and `:before`/`:after` maps.
+They use a closed fixture variant and namespace registry, reject mixed fixture
+representations, and run map cleanup through readable `finally` control flow.
+Async tests and fixtures, namespace hooks, analyzer-wide
 test discovery, special assertion methods, and open custom reporters remain
 explicit blockers rather than silently falling back to dynamic values.
 Inventory reporting keeps that namespace-level blocker
