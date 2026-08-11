@@ -3301,8 +3301,12 @@ let rec compile scope env next_type form =
                 | Ok env -> apply_specs env rest)
             | Require.Alias { module_name; alias } :: rest -> (
                 if String.starts_with ~prefix:"ocaml." module_name then
+                  let env =
+                    Require.add_ocaml_alias_bindings env module_name alias
+                  in
                   apply_specs
-                    (Require.add_ocaml_alias_bindings env module_name alias)
+                    (Env.add_namespace_alias ~scope ~alias ~target:module_name
+                       env)
                     rest
                 else if Require.core_namespace module_name then
                   let env =

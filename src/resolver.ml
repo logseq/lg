@@ -165,13 +165,26 @@ let opened_ocaml_call_target scope env function_name =
              | Error _ -> None)
          | _ -> None)
 
+let ocaml_alias_module_path scope env alias =
+  match Env.resolve_namespace_alias ~scope alias env with
+  | Some module_name when String.starts_with ~prefix:"ocaml." module_name ->
+      let prefix_length = String.length "ocaml." in
+      Some
+        (String.sub module_name prefix_length
+           (String.length module_name - prefix_length))
+  | Some _ | None -> None
+
 let ocaml_call_target scope env function_name =
   match lookup_host_reference scope env function_name with
   | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
   | _ -> (
       match String.split_on_char '/' function_name with
       | [ alias; member_name ] -> (
-          match lookup_host_reference scope env alias with
+          match ocaml_alias_module_path scope env alias with
+          | Some module_path ->
+              Some (module_path ^ "." ^ Names.sanitize_name member_name)
+          | None -> (
+              match lookup_host_reference scope env alias with
           | Some { host_reference = Some (Ocaml_module module_path); _ } ->
               Some (module_path ^ "." ^ Names.sanitize_name member_name)
           | None -> (
@@ -183,7 +196,7 @@ let ocaml_call_target scope env function_name =
               | None -> None)
           | _ when String.length alias > 0 && starts_with_uppercase alias ->
               Some (alias ^ "." ^ Names.sanitize_name member_name)
-          | _ -> None)
+          | _ -> None))
       | _ ->
           let first_segment =
             match String.split_on_char '.' function_name with
@@ -203,9 +216,12 @@ let resolve_ocaml_call_target scope env function_name =
 let resolve_ocaml_constructor_target scope env constructor_name =
   match String.split_on_char '/' constructor_name with
   | [ alias; member_name ] -> (
-      match lookup_host_reference scope env alias with
+      match ocaml_alias_module_path scope env alias with
+      | Some module_path -> module_path ^ "." ^ member_name
+      | None -> (
+          match lookup_host_reference scope env alias with
       | Some { host_reference = Some (Ocaml_module module_path); _ } ->
           module_path ^ "." ^ member_name
       | _ when starts_with_uppercase alias -> alias ^ "." ^ member_name
-      | _ -> constructor_name)
+      | _ -> constructor_name))
   | _ -> constructor_name

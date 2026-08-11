@@ -42275,24 +42275,27 @@ let test_incremental_compilation_preserves_modules () =
     (String.concat "\n" [ stdlib.ocaml_source; module_ocaml; app_ocaml ])
 
 let test_incremental_compilation_preserves_modules_with_ocaml_packages () =
-  let state, _provider =
-    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-      ~filename:"math.cljc" Lg.Compiler.empty_state
-      {|
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, _provider =
+      Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+        ~filename:"math.cljc" stdlib.state
+        {|
 (require [ocaml.package/core]
          [ocaml.Core.Int :as int])
 (module Math
   (defn magnitude-plus-two [x] (+ (int/abs x) 2)))
 |}
-    |> expect_ok
+      |> expect_ok
+    in
+    ignore
+      (Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+         ~filename:"main.cljc" state
+         {|(println (Math/magnitude-plus-two -40))|}
+      |> expect_ok)
   in
-  let _state, _consumer =
-    Lg.Compiler.compile_chunk_with_filename_and_diagnostics
-      ~filename:"main.cljc" state
-      {|(println (Math/magnitude-plus-two -40))|}
-    |> expect_ok
-  in
-  ()
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
 
 let test_incremental_compilation_preserves_opened_modules () =
   let stdlib = compiled_stdlib Lg.Target.Native in

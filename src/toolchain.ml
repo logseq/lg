@@ -1963,7 +1963,10 @@ let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
     prepared =
   let previous_set_modules = state.requested_set_modules in
   let parsed = prepared.parsed in
-  match typecheck_incremental state parsed with
+  match prepare_packages parsed.target parsed.ast with
+  | Error _ as err -> err
+  | Ok _ -> (
+      match typecheck_incremental state parsed with
       | Error _ as err -> err
       | Ok (state, typed) ->
           (match
@@ -2003,7 +2006,7 @@ let compile_prepared_chunk_with_diagnostics ?(check_ocaml = true) state
                         {
                           ocaml_source;
                           diagnostics = analysis.diagnostics;
-                        } ))
+                        } )))
 
 let compile_chunk_with_diagnostics ?(target = Target.default)
     ?(filename = "<string>") ?(check_ocaml = true) state source =
