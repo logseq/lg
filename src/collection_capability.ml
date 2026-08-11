@@ -8,6 +8,7 @@ let identifier_holds_packed_constraint name =
   || String.starts_with ~prefix:"__lg_erased_optional_value" name
   || String.starts_with ~prefix:"__lg_optional_seqable_value" name
   || String.starts_with ~prefix:"__lg_erased_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_callback_argument_" name
   || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
   || String.starts_with ~prefix:"__lg_static_argument_" name
   || String.starts_with ~prefix:"__lg_erased_protocol_arg_" name

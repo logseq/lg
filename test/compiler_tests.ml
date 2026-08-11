@@ -17121,9 +17121,9 @@ let test_mapv_vector_shares_one_inferred_element_type () =
   compile_string_with_stdlib
     {|
 (defn zip-values [left right] (mapv vector left right))
-(def invalid (zip-values [1] ["two"]))
+  (def invalid (zip-values [1] ["two"]))
 |}
-  |> expect_error_contains "expected of type int Rrbvec.t"
+  |> expect_error_contains "zip-values called with incompatible arguments"
 
 let test_identity_function_is_polymorphic_at_call_sites () =
   let source =
@@ -26196,15 +26196,21 @@ let test_munge_and_demunge_are_source_owned_static_protocols () =
     (compile_with_stdlib Lg.Target.Melange "app/source_munge.cljc" source)
 
 let test_batched_predicate_collection_core_functions_reject_bad_predicates () =
-  compile_with_stdlib_result Lg.Target.Native "test/bad_split_predicate.cljc"
-    {|(def x (split-with (fn [^:string s] true) [1 2]))|}
-  |> expect_error_contains "Type int is not compatible with type string"
+  List.iter
+    (fun target ->
+      compile_with_stdlib_result target "test/bad_split_predicate.cljc"
+        {|(def x (split-with (fn [^:string s] true) [1 2]))|}
+      |> expect_error_contains "split-with called with incompatible arguments")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_batched_predicate_collection_core_functions_reject_bad_run_function ()
     =
-  compile_with_stdlib_result Lg.Target.Native "test/bad_run_function.cljc"
-    {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
-  |> expect_error_contains "Type int is not compatible with type string"
+  List.iter
+    (fun target ->
+      compile_with_stdlib_result target "test/bad_run_function.cljc"
+        {|(def x (run! (fn [^:string s] (println s)) [1 2]))|}
+      |> expect_error_contains "run! called with incompatible arguments")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_doseq_infers_seqable_parameters () =
   let source =
@@ -29859,9 +29865,17 @@ let test_concat_lifts_values_into_nullable_element_types () =
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_sequence_functions_reject_bad_functions () =
-  compile_with_stdlib_result Lg.Target.Native "test/bad_filterv.cljc"
-    {|(def x (filterv (fn [^:string s] true) [1 2]))|}
-  |> expect_error_contains "incompatible arguments"
+  let reject target filename source =
+    compile_with_stdlib_result target filename source
+    |> expect_error_contains "incompatible arguments"
+  in
+  List.iter
+    (fun target ->
+      reject target "test/bad_filterv_type.cljc"
+        {|(def x (filterv (fn [^:string s] true) [1 2]))|};
+      reject target "test/bad_filterv_arity.cljc"
+        {|(def x (filterv (fn [left right] true) [1 2]))|})
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_batched_sequence_functions_reject_bad_counts () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_repeat.cljc"
@@ -31120,22 +31134,24 @@ let test_source_chunked_cons_protocol_cluster_matches_clojurescript () =
        source)
 
 let test_source_chunked_cons_protocol_cluster_rejects_invalid_inputs () =
-  compile_with_stdlib_result Lg.Target.Native
-    "test/source_chunk_first_bad_receiver.cljc"
-    {|
+  List.iter
+    (fun target ->
+      compile_with_stdlib_result target
+        "test/source_chunk_first_bad_receiver.cljc"
+        {|
 (ns app.chunk-first-bad
   (:require [cljs.core :refer [chunk-first]]))
 (chunk-first [1 2 3])
 |}
-  |> expect_error_contains "incompatible arguments";
-  compile_with_stdlib_result Lg.Target.Native
-    "test/source_chunk_cons_mixed_values.cljc"
-    {|
+      |> expect_error_contains "incompatible arguments";
+      compile_with_stdlib_result target "test/source_chunk_cons_mixed_values.cljc"
+        {|
 (ns app.chunk-cons-mixed
   (:require [cljs.core :refer [array-chunk array-values chunk-cons]]))
 (chunk-cons (array-chunk (array-values 1 2)) (list "three"))
 |}
-  |> expect_error_contains "expected of type"
+      |> expect_error_contains "chunk-cons called with incompatible arguments")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_chunked_cons_protocol_cluster_is_source_owned () =
   let root = repo_root () in

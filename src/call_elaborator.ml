@@ -464,6 +464,7 @@ let rec witness_method expression position =
 
 let is_generated_callback_argument name =
   String.starts_with ~prefix:"__lg_erased_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_callback_argument_" name
   || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
   || String.starts_with ~prefix:"__lg_static_argument_" name
   || String.starts_with ~prefix:"__lg_erased_protocol_arg_" name
@@ -3080,7 +3081,7 @@ let rec adapt_value_to_type env expected actual =
         in
         let argument_names =
           List.mapi
-            (fun index _ -> "__lg_host_int_callback_" ^ string_of_int index)
+            (fun index _ -> "__lg_callback_argument_" ^ string_of_int index)
             expected_params
         in
         let rec adapt_arguments adapted expected actual names =
@@ -10750,6 +10751,25 @@ let create ~compile_expr =
                          | _ -> false)
                     param_tys actual_tys
                 in
+                let inferred_argument_compatible expected actual =
+                  let known_scalar = function
+                    | TInt | TFloat | TChar | TString | TRegex | TSymbol
+                    | TKeyword | TBool | TUnit ->
+                        true
+                    | _ -> false
+                  in
+                  match
+                    ( Types.seqable_constraint_info expected,
+                      Collection_capability.element_type_of_ty env actual )
+                  with
+                  | Some (_, expected_element, _), Some actual_element
+                    when known_scalar expected_element
+                         && known_scalar actual_element ->
+                      argument_compatible expected actual
+                      && argument_compatible expected_element actual_element
+                  | Some _, _ | None, _ ->
+                      argument_compatible expected actual
+                in
                 let rec unify_argument ?(preserve_optional = false)
                     substitutions template actual =
                   let template, actual =
@@ -10802,7 +10822,7 @@ let create ~compile_expr =
                             let expected =
                               Type_solver.apply substitutions template
                             in
-                            if argument_compatible expected actual then
+                            if inferred_argument_compatible expected actual then
                               infer_arguments substitutions templates actuals
                             else Error conflict)
                   | _ -> assert false
