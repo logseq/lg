@@ -5699,16 +5699,6 @@ let create ~compile_expr =
                 in
                 Ok (typed_ir TBool expression))
         | _ -> Error.error "satisfies? expects a protocol and value")
-    | "uuid" -> (
-        match compile_args () with
-        | Ok [ value ] when Types.equal value.ty TString ->
-            Ok
-              (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")
-                 (Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_uuid.of_string",
-                      [ value.semantic_expr ] )))
-        | Ok _ -> Error.error "uuid expects a string"
-        | Error _ as error -> error)
     | "__type-hint" -> (
         match arg_forms with
         | [ FSymbol annotation; value_form ] -> (

@@ -3570,6 +3570,11 @@
 (defn rand-nth [coll]
   (nth coll (rand-int (count coll))))
 
+(defn uuid
+  "Returns a UUID consistent with string `source`."
+  [source]
+  (runtime-uuid/of-string source))
+
 (defn- random-uuid-quad-hex []
   (let [unpadded-hex (int-to-string-radix (rand-int 65536) 16)]
     (case (count unpadded-hex)

@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 660 source entries (67.01%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 109 static-typing blockers,
+macro surfaces. The current baseline is 661 source entries (67.11%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 109 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -877,7 +877,15 @@ function and the upstream float predicates, long hash combiner, and
 special-symbol membership function are source-backed in the same batch.
 `uuid?` is now source-owned over the shared nominal UUID representation, so
 Native and Melange both distinguish UUID values from ordinary strings. The
-aggregate `clojure.set` source
+public `uuid` constructor is likewise a first-class source function over the
+closed UUID type. Its public name no longer remains in compiler call dispatch
+and resolves through automatic core refer, aliases, and explicit refers.
+`current-time-millis` remains a documented target host boundary: moving its
+Unix-epoch implementation into the aggregate would force every Native
+consumer to link Unix even when unused, while Melange cannot share that
+dependency. `system-time` is not a substitute because it has monotonic/process
+time semantics rather than Unix-epoch semantics.
+The aggregate `clojure.set` source
 namespace now provides `union`, `intersection`, `difference`, `subset?`,
 `superset?`, `select`, `project`, `map-invert`, `rename-keys`, `rename`,
 `index`, and both arities of `join`;

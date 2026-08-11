@@ -545,6 +545,8 @@
   :overload<fn<float>;fn<float;float>>)
 (signature clojure.core/rand-nth [value]
   :fn<seqable<value>;value>)
+(signature clojure.core/uuid
+  :fn<string;Lg_runtime.Runtime_uuid.t>)
 (signature clojure.core/system-time :fn<float>)
 (signature clojure.core/bit-shift-right-zero-fill :fn<int;int;int>)
 (signature clojure.core/bit-and-not-two :fn<int;int;int>)

@@ -11332,6 +11332,65 @@ let test_system_current_time_millis_compiles_for_native () =
   assert_ocaml_compiles "system_current_time_millis_compiles_for_native"
     ocaml_source
 
+let test_source_uuid_wrapper_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-uuid
+  (:require [clojure.core :as core
+             :refer [uuid]]))
+
+(def uuid-fn core/uuid)
+(def parsed (uuid-fn "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"))
+
+(println (uuid? parsed))
+(println (= "a0b1c2d3-e4f5-4678-9abc-def012345678" (str parsed)))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source UUID wrapper must remain statically typed";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_uuid_wrapper" "true\ntrue\n" native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange UUID wrapper must remain statically typed"
+
+let test_source_uuid_wrapper_rejects_invalid_calls () =
+  compile_string_with_stdlib
+    {|
+(ns app.source-uuid-invalid
+  (:require [clojure.core :refer [uuid]]))
+(uuid 42)
+|}
+  |> expect_error_contains "incompatible arguments"
+
+let test_uuid_wrapper_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  let core_interface = read_file "stdlib/clojure/core.mli" in
+  List.iter
+    (fun definition ->
+      if not (string_contains_substring core_source definition) then
+        failwith (definition ^ " is missing from the source standard library"))
+    [ "(defn uuid" ];
+  List.iter
+    (fun signature ->
+      if not (string_contains_substring core_interface signature) then
+        failwith (signature ^ " is missing from the source interface"))
+    [ "(signature clojure.core/uuid" ];
+  List.iter
+    (fun path ->
+      let source = read_file path in
+      List.iter
+        (fun public_dispatch ->
+          if string_contains_substring source public_dispatch then
+            failwith
+              (public_dispatch ^ " still has public-name compiler dispatch in "
+             ^ path))
+        [ "| \"uuid\"" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -42960,6 +43019,11 @@ let tests =
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
       test_system_current_time_millis_compiles_for_native );
+    ( "source UUID wrapper matches ClojureScript",
+      test_source_uuid_wrapper_matches_clojurescript );
+    ( "source UUID wrapper rejects invalid calls",
+      test_source_uuid_wrapper_rejects_invalid_calls );
+    ( "UUID wrapper is source-owned", test_uuid_wrapper_is_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

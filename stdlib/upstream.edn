@@ -686,6 +686,8 @@
     rand-int {:status :static-adaptation
               :reason :source-wrapper-over-the-typed-runtime-random-primitive}
     rand-nth {:status :ported}
+    uuid {:status :static-adaptation
+          :reason :source-wrapper-preserves-the-upstream-string-to-uuid-constructor-over-the-closed-runtime-uuid-type}
     random-uuid {:status :static-adaptation
                  :reason :source-port-preserves-upstream-version-four-and-variant-bit-layout-through-the-target-specific-typed-uuid-primitive}
     parse-uuid {:status :static-adaptation
