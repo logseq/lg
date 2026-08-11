@@ -389,6 +389,19 @@ let compile_string_from_stdlib ?(target = Lg.Target.default) source =
     ~filename:"test/source_core_program.cljc" stdlib.state source
   |> Result.map snd
 
+module Raw_lg = Lg
+
+module Lg = struct
+  include Raw_lg
+
+  module Compiler = struct
+    include Raw_lg.Compiler
+
+    let compile_string ?(target = Target.default) source =
+      compile_string_from_stdlib ~target source
+  end
+end
+
 let compile_chunks_with_stdlib target sources =
   let stdlib = compiled_stdlib target in
   let _, reversed_outputs =
@@ -408,7 +421,10 @@ let test_compiler_tests_reuse_precompiled_stdlib_state () =
   let first = compiled_stdlib Lg.Target.Native in
   let second = compiled_stdlib Lg.Target.Native in
   if first != second then
-    failwith "compiler tests must reuse one precompiled stdlib state per target"
+    failwith "compiler tests must reuse one precompiled stdlib state per target";
+  Lg.Compiler.compile_string {|(str "source-core")|} |> expect_ok |> ignore;
+  Raw_lg.Compiler.compile_string {|(str "raw-core")|}
+  |> expect_error "unknown function str"
 
 let rec files_with_suffix suffix directory =
   Sys.readdir directory |> Array.to_list

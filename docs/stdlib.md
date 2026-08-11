@@ -63,6 +63,13 @@ Consumers must not enumerate individual stdlib `.mli` or `.cljc` files.
 `test/stdlib` exercises this contract, including negative type tests restored
 from the same aggregate state.
 
+The compiler regression runner follows the same contract. Its ordinary
+`Lg.Compiler.compile_string` test facade compiles application chunks from one
+cached aggregate state per target, while `Raw_lg.Compiler` is reserved for
+tests that intentionally exercise an empty compiler state. This prevents
+source-owned core names from being reintroduced as public compiler dispatch
+merely to keep legacy compiler-only test fixtures working.
+
 LG signature sidecars use the `.mli` extension consistently. These files
 contain LG `signature` forms and are compiled by `lg_cli` before their matching
 `.cljc` source; they are not parsed as OCaml interface syntax. Runtime modules
