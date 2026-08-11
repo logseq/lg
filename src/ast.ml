@@ -69,6 +69,13 @@ type form =
   | FVector of form list
   | FMap of (form * form) list
 
+let match_guard_pattern = function
+  | FList [ FSymbol "when"; pattern; guard ] -> Some (pattern, guard)
+  | _ -> None
+
+let make_match_guard_pattern pattern guard =
+  FList [ FSymbol "when"; pattern; guard ]
+
 type located_form = {
   form : form;
   span : source_span;

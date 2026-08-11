@@ -1397,6 +1397,32 @@ let rec expand_all ~scope ~compiler_env = function
         | _ -> Error.error "record fields must be (field value) pairs"
       in
       expand_fields [] field_forms
+  | FList (FSymbol "match" :: target :: clauses) ->
+      let expand_pattern pattern_form =
+        match Ast.match_guard_pattern pattern_form with
+        | Some (pattern, guard) ->
+            Result.map
+              (Ast.make_match_guard_pattern pattern)
+              (expand_all ~scope ~compiler_env guard)
+        | None -> Ok pattern_form
+      in
+      let rec expand_clauses expanded = function
+        | [] -> Ok (List.rev expanded)
+        | pattern :: result :: rest ->
+            Result.bind (expand_pattern pattern) (fun pattern ->
+                Result.bind
+                  (expand_all ~scope ~compiler_env result)
+                  (fun result ->
+                    expand_clauses (result :: pattern :: expanded) rest))
+        | [ clause ] ->
+            Result.map
+              (fun clause -> List.rev (clause :: expanded))
+              (expand_all ~scope ~compiler_env clause)
+      in
+      Result.bind (expand_all ~scope ~compiler_env target) (fun target ->
+          Result.map
+            (fun clauses -> FList (FSymbol "match" :: target :: clauses))
+            (expand_clauses [] clauses))
   | FList (FSymbol "let" :: FVector bindings :: body_forms) ->
       let shadow_pattern env pattern =
         Destructure.pattern_names pattern

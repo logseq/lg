@@ -1753,10 +1753,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | FInt _ | FString _ | FKeyword _ | FBool _ ->
                 literal_pattern target_ty pattern
                 |> Result.map (fun code -> (code, []))
-            | FVector _ ->
+          | FVector _ ->
                 Error.error
                   "match collection pattern must match target collection"
-          | _ -> Error.error "unsupported match pattern")
+          | _ ->
+              Error.error
+                ("unsupported match pattern "
+               ^ Macro_expander.string_of_form pattern))
       in
       Result.map
         (fun (compiled, bindings) ->

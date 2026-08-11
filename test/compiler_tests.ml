@@ -41723,7 +41723,9 @@ let test_match_supports_record_alias_or_and_guard_patterns () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "match_supports_record_alias_or_and_guard_patterns"
-    "Ada:42:positive:3:empty:empty:other:-2\n" ocaml_source
+    "Ada:42:positive:3:empty:empty:other:-2\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_record_patterns_reject_unknown_and_duplicate_fields () =
   Lg.Compiler.compile_string
