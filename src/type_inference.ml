@@ -1103,6 +1103,40 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           (Types.protocol_constraint_with_value constraint_ty value_ty)
           params receiver
   in
+  let refine_protocol_call_constraint params constraint_ty actual_arguments =
+    match Types.protocol_constraint_info constraint_ty with
+    | None -> constraint_ty
+    | Some (protocol_id, witness_ty, value_ty) -> (
+        match Types.protocol_witness_method_types witness_ty with
+        | None -> constraint_ty
+        | Some methods ->
+            let actual_tys =
+              List.map (inferred_form_type params) actual_arguments
+            in
+            let refine_method = function
+              | TFn (receiver :: parameters, return_ty)
+                when List.length parameters = List.length actual_tys ->
+                  let parameters =
+                    List.map2
+                      (fun expected actual ->
+                        match (expected, actual) with
+                        | (TUnknown | TMeta _ | TVar _),
+                          actual
+                          when not
+                                 (match actual with
+                                 | TUnknown | TMeta _ | TVar _ -> true
+                                 | _ -> false) ->
+                            actual
+                        | expected, _ -> expected)
+                      parameters actual_tys
+                  in
+                  TFn (receiver :: parameters, return_ty)
+              | method_ty -> method_ty
+            in
+            Types.protocol_constraint protocol_id
+              (List.map refine_method methods)
+              value_ty)
+  in
   let branch_depth = ref 0 in
   let branch_hint_symbols = ref [] in
   let with_branch inference =
@@ -1924,6 +1958,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     else
       match (lookup_protocol_constraint name, args) with
       | Some constraint_ty, FSymbol receiver :: rest ->
+          let constraint_ty =
+            refine_protocol_call_constraint params constraint_ty rest
+          in
           Result.bind
             (constrain_protocol_symbol constraint_ty params receiver)
             (fun params ->
