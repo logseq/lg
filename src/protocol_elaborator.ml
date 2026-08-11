@@ -732,6 +732,63 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
             | Ok (env, item) ->
                 loop implementation_names env (item :: items) rest)
       in
+      let rec predeclare_declared env names = function
+        | [] -> Ok (env, List.sort_uniq String.compare names)
+        | FList (FSymbol method_name :: params :: _) :: rest -> (
+            match marker scope env protocol_name method_name with
+            | Error _ as error -> error
+            | Ok protocol_marker -> (
+                match Type_annotation.parse_params params with
+                | Error _ as error -> error
+                | Ok parsed_params ->
+                    let argument_count = List.length parsed_params in
+                    (match
+                       select_method_arity protocol_marker argument_count
+                     with
+                    | None ->
+                        Error.error
+                          (method_name
+                         ^ " called with unsupported protocol method arity "
+                         ^ string_of_int argument_count)
+                    | Some marker ->
+                        let overloaded =
+                          match protocol_marker.ty with
+                          | TOverloaded_fn _ -> true
+                          | _ -> false
+                        in
+                        let binding =
+                          match
+                            overloaded_implementation protocol_marker
+                              method_name
+                          with
+                          | Some binding ->
+                              { binding with forward_declared = true }
+                          | None ->
+                              Types.binding ~forward_declared:true
+                                (implementation_name method_name argument_count
+                                   overloaded)
+                                (Types.instantiate_receiver_method_type
+                                   receiver_ty marker.ty)
+                        in
+                        let names =
+                          binding.ocaml_name
+                          :: binding.overload_targets @ names
+                        in
+                        (match
+                           Protocol.lookup_marker_impl env protocol_marker
+                             method_name receiver_ty
+                         with
+                        | Some _ -> predeclare_declared env names rest
+                        | None ->
+                            Result.bind
+                              (add_implementation env method_name receiver_ty
+                                 protocol_marker binding)
+                              (fun env ->
+                                predeclare_declared env names rest)))))
+        | _ :: _ ->
+            Error.error
+              "extend-type methods must be (method-name [params] body)"
+      in
       let rec predeclare_exact env evidence_env names = function
         | [] -> Ok (env, List.sort_uniq String.compare names)
         | FList (FSymbol method_name :: _params :: _) :: rest -> (
@@ -775,9 +832,12 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
         | _ :: _ ->
             Error.error "extend-type methods must be (method-name [params] body)"
       in
-      Result.bind (loop [] env [] method_forms)
-        (fun (_, evidence_env, _, _) ->
+      Result.bind (predeclare_declared env [] method_forms)
+        (fun (initial_env, initial_implementation_names) ->
           Result.bind
-            (predeclare_exact env evidence_env [] method_forms)
-            (fun (env, implementation_names) ->
-              loop implementation_names env [] method_forms))
+            (loop initial_implementation_names initial_env [] method_forms)
+            (fun (_, evidence_env, _, _) ->
+              Result.bind
+                (predeclare_exact env evidence_env [] method_forms)
+                (fun (env, implementation_names) ->
+                  loop implementation_names env [] method_forms)))

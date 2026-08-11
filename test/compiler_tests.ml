@@ -17824,6 +17824,40 @@ let test_extend_type_methods_use_their_static_receiver_witnesses () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_extend_type_predeclares_all_static_receiver_methods () =
+  let source =
+    {|
+(type-record item-value (value :string))
+(defprotocol Labelled
+  (label [value] :string)
+  (label-size [value] :int))
+(defn labelled? [value]
+  (satisfies? Labelled value))
+(extend-type item-value
+  Labelled
+  (label [item]
+    (if (labelled? item)
+      (str "item:" (:value item))
+      "missing"))
+  (label-size [item]
+    (if (labelled? item)
+      (count (label item))
+      0)))
+(def item (record item-value (value "ready")))
+(println (str (label item) ":" (label-size item)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if
+    string_contains_substring ocaml_source "register_protocol_extension"
+    || string_contains_substring ocaml_source "register_record_packer"
+  then failwith "extend-type receiver methods must stay statically registered";
+  assert_ocaml_runs
+    "extend_type_predeclares_all_static_receiver_methods"
+    "item:ready:10\n" ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_satisfies_question_guards_generic_protocol_dispatch () =
   let source =
     {|
@@ -44695,6 +44729,8 @@ let tests =
       test_protocol_methods_use_static_witnesses_for_concrete_parameters );
     ( "extend-type methods use their static receiver witnesses",
       test_extend_type_methods_use_their_static_receiver_witnesses );
+    ( "extend-type predeclares all static receiver methods",
+      test_extend_type_predeclares_all_static_receiver_methods );
     ( "satisfies? guards generic protocol dispatch",
       test_satisfies_question_guards_generic_protocol_dispatch );
     ( "generic protocol witness supports multiple methods",
