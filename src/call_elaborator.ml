@@ -8806,21 +8806,25 @@ let create ~compile_expr =
                         ] )))
         | Ok [ _; _ ] -> Error.error "pprint writer must be Buffer.t"
         | Ok _ -> Error.error "pprint expects 1 or 2 arguments")
-    | "pr" -> (
+    | "__lg_pr" -> (
         match compile_args () with
         | Error _ as error -> error
-        | Ok [ arg ] -> (
-            match lookup_binding scope env "*out*" with
-            | Error _ -> Error.error "pr requires a bound *out* writer"
-            | Ok writer ->
-                Ok
-                  (typed_ir TUnit
-                     (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
-                          [ Semantic_ir.Ident writer.ocaml_name;
-                            stringify_value scope env ~pr:true arg;
-                          ] ))))
-        | Ok _ -> Error.error "pr expects 1 argument")
+        | Ok args ->
+            let text =
+              apply "String.concat"
+                [ Semantic_ir.String " ";
+                  Semantic_ir.List
+                    (List.map (stringify_value scope env ~pr:true) args);
+                ]
+            in
+            let output =
+              match lookup_binding scope env "*out*" with
+              | Ok writer ->
+                  apply "Lg_runtime.Runtime_print.write"
+                    [ Semantic_ir.Ident writer.ocaml_name; text ]
+              | Error _ -> apply "print_string" [ text ]
+            in
+            Ok (typed_ir TUnit output))
     | "__lg_print_output" -> (
         match compile_args () with
         | Error _ as err -> err

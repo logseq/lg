@@ -91,7 +91,7 @@ awk '
     blocked["re-matches"] = 1
     blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
-    split("clj->js current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
+    split("clj->js current-time-millis enable-console-print! ex-info future-call pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
     split("inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
@@ -131,6 +131,7 @@ awk '
     internal_abi["__lg_print_str"] = "typed-space-separated-per-argument-display-rendering-primitive"
     internal_abi["__lg_pr_str"] = "typed-space-separated-per-argument-readable-rendering-primitive"
     internal_abi["__lg_print_output"] = "typed-static-string-output-primitive"
+    internal_abi["__lg_pr"] = "typed-readable-values-to-bound-writer-or-standard-output-primitive"
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_pr-writer"] = "typed-readable-printer-witness-and-buffer-output-primitive"
@@ -209,8 +210,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 128; then
-  echo "compiler form dispatch changed: expected 128 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 129; then
+  echo "compiler form dispatch changed: expected 129 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

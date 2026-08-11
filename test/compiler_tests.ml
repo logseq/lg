@@ -28127,10 +28127,11 @@ let test_source_printing_function_cluster_matches_clojurescript () =
     {|
 (ns app.source-printing-cluster
   (:require [clojure.core :as core
-             :refer [print-str println-str pr-str prn-str]]))
+             :refer [print-str println-str pr pr-str prn-str]]))
 
 (def render-display print-str)
 (def render-readable pr-str)
+(def render-pr pr)
 
 (print (str "zero=" (= ["" "" "\n" "" "\n"]
                          [(str) (print-str) (println-str)
@@ -28142,6 +28143,15 @@ let test_source_printing_function_cluster_matches_clojurescript () =
 (print (str "prn-str=" (prn-str "Ada" :ready 42)))
 (print (str "first-class-display=" (render-display "Ada" "Lovelace") "\n"))
 (print (str "first-class-readable=" (render-readable "Ada" "Lovelace") "\n"))
+(pr)
+(pr "direct" :ready 42)
+(println)
+(core/pr "qualified" :ready 42)
+(println)
+(apply pr ["applied" :ready 42])
+(println)
+(render-pr "first-class" "readable")
+(println)
 (core/println "qualified" :ready 42)
 (prn "readable" :ready 42)
 |}
@@ -28153,7 +28163,10 @@ let test_source_printing_function_cluster_matches_clojurescript () =
     "zero=true\nstr=Ada:ready42\nprint-str=Ada :ready 42\nprintln-str=Ada :ready 42\n\
      pr-str=\"Ada\" :ready 42\nprn-str=\"Ada\" :ready 42\n\
      first-class-display=Ada Lovelace\n\
-     first-class-readable=\"Ada\" \"Lovelace\"\nqualified :ready 42\n\
+     first-class-readable=\"Ada\" \"Lovelace\"\n\
+     \"direct\" :ready 42\n\"qualified\" :ready 42\n\
+     \"applied\" :ready 42\n\"first-class\" \"readable\"\n\
+     qualified :ready 42\n\
      \"readable\" :ready 42\n"
   in
   assert_ocaml_runs "source_printing_function_cluster" expected
@@ -28171,7 +28184,7 @@ let test_source_printing_function_cluster_is_source_owned () =
       if not (string_contains_substring source ("(defn " ^ name)) then
         failwith (name ^ " is missing from the source standard library"))
     [ "str"; "pr-str"; "pr-str*"; "print-str"; "println-str"; "prn-str";
-      "print"; "println"; "prn";
+      "pr"; "print"; "println"; "prn";
     ];
   List.iter
     (fun path ->
@@ -28180,7 +28193,7 @@ let test_source_printing_function_cluster_is_source_owned () =
         (fun name ->
           if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
           then failwith (name ^ " still has public-name compiler dispatch"))
-        [ "str"; "pr-str"; "print"; "println"; "prn" ])
+        [ "str"; "pr-str"; "pr"; "print"; "println"; "prn" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml";
       "src/expression_support.ml"; "src/top_level_elaborator.ml";
     ]

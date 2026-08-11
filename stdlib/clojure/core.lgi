@@ -757,6 +757,8 @@
   :variadic-fn<printable<value>;string>)
 (signature clojure.core/prn-str [value]
   :variadic-fn<printable<value>;string>)
+(signature clojure.core/pr [value]
+  :variadic-fn<printable<value>;unit>)
 (signature clojure.core/print [value]
   :variadic-fn<printable<value>;unit>)
 (signature clojure.core/println [value]

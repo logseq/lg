@@ -1236,6 +1236,8 @@
                  :reason :source-function-and-inline-macro-preserve-space-separated-display-rendering-and-the-trailing-newline-with-per-argument-static-printer-witnesses}
     prn-str {:status :static-adaptation
              :reason :source-function-and-inline-macro-preserve-space-separated-readable-rendering-and-the-trailing-newline-with-per-argument-static-printer-witnesses}
+    pr {:status :static-adaptation
+        :reason :source-variadic-function-and-inline-macro-preserve-zero-one-and-variadic-space-separated-readable-output-while-the-private-static-output-primitive-selects-a-lexically-bound-buffer-or-standard-output}
     print {:status :static-adaptation
            :reason :source-function-and-inline-macro-preserve-space-separated-display-output-through-a-private-static-string-output-boundary}
     println {:status :static-adaptation

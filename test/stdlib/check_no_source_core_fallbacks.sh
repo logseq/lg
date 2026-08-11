@@ -81,6 +81,14 @@ for file in expression_elaborator.ml function_combinator_elaborator.ml special_f
   fi
 done
 
+if grep -F '| "pr" ->' "$root/src/call_elaborator.ml" >/dev/null \
+    || grep -E 'FSymbol \("pr" \| "clojure\.core/pr"\)' \
+      "$root/src/type_inference.ml" "$root/src/function_combinator_elaborator.ml" \
+      >/dev/null; then
+  echo "clojure.core/pr is still publicly dispatched by the compiler" >&2
+  exit 1
+fi
+
 for name in namespace unreduced; do
   if grep -E "^[[:space:]]*\\| .*\"$name\".*->" \
       "$root/src/call_elaborator.ml" "$root/src/type_inference.ml" >/dev/null; then

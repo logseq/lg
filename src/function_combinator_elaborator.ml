@@ -569,11 +569,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   Semantic_ir.Int 0;
                                   values;
                                 ]))
-                    | FSymbol ("pr" | "clojure.core/pr") -> (
+                    | FSymbol "__lg_pr" -> (
                         match lookup_binding scope env "*out*" with
-                        | Error _ ->
-                            Error.error "pr requires a bound *out* writer"
-                        | Ok writer ->
+                        | writer ->
                             let value_name = "__lg_apply_pr_value" in
                             let render_value =
                               Semantic_ir.Fun
@@ -598,14 +596,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   Semantic_ir.Infix
                                     ("@", fixed_texts, collection_texts)
                             in
-                            Ok
-                              (typed_ir TUnit
-                                 (apply "Lg_runtime.Runtime_print.write"
-                                    [
-                                      Semantic_ir.Ident writer.ocaml_name;
-                                      apply "String.concat"
-                                        [ Semantic_ir.String " "; texts ];
-                                    ])))
+                            let text =
+                              apply "String.concat"
+                                [ Semantic_ir.String " "; texts ]
+                            in
+                            let output =
+                              match writer with
+                              | Ok writer ->
+                                  apply "Lg_runtime.Runtime_print.write"
+                                    [ Semantic_ir.Ident writer.ocaml_name; text ]
+                              | Error _ -> apply "print_string" [ text ]
+                            in
+                            Ok (typed_ir TUnit output))
                       | _ -> (
                         match compile_function_arg scope env fn_form with
                         | Error _ as err -> err

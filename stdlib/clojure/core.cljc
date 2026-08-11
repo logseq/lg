@@ -1699,7 +1699,40 @@
   `(concat ~@(map (fn [coll] `(lazy-seq ~coll)) colls)))
 
 (defn apply
-  {:inline (fn [& args] (cons '__lg_apply args))}
+  {:inline
+   (fn
+     ([function args]
+      (list '__lg_apply
+            (if (or (= function 'pr)
+                    (= function 'clojure.core/pr)
+                    (= function 'cljs.core/pr))
+              '__lg_pr
+              function)
+            args))
+     ([function x args]
+      (list '__lg_apply
+            (if (or (= function 'pr)
+                    (= function 'clojure.core/pr)
+                    (= function 'cljs.core/pr))
+              '__lg_pr
+              function)
+            x args))
+     ([function x y args]
+      (list '__lg_apply
+            (if (or (= function 'pr)
+                    (= function 'clojure.core/pr)
+                    (= function 'cljs.core/pr))
+              '__lg_pr
+              function)
+            x y args))
+     ([function x y z args]
+      (list '__lg_apply
+            (if (or (= function 'pr)
+                    (= function 'clojure.core/pr)
+                    (= function 'cljs.core/pr))
+              '__lg_pr
+              function)
+            x y z args)))}
   ([f args]
    (__lg_apply f args))
   ([f x args]
@@ -5055,6 +5088,11 @@
              (list '__lg_str (cons '__lg_pr_str values) "\n"))}
   [& values]
   (__lg_str (__lg_render_readable_values " " values) "\n"))
+
+(defn pr
+  {:inline (fn [& values] (cons '__lg_pr values))}
+  [& values]
+  (__lg_print_output (__lg_render_readable_values " " values)))
 
 (defn print
   {:inline (fn [& values]
