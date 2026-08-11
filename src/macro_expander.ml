@@ -1439,7 +1439,7 @@ let rec expand_all ~scope ~compiler_env = function
       match Env.find_macro ~scope name compiler_env with
       | Some definition
         when not
-               (Env.source_callable_shadowed ~scope name compiler_env)
+               (Env.source_callable_shadowed ~scope name definition compiler_env)
         ->
           Result.bind (expand ~scope ~compiler_env definition args) (fun expanded ->
               expand_all ~scope ~compiler_env expanded)
@@ -1447,7 +1447,8 @@ let rec expand_all ~scope ~compiler_env = function
           match Env.find_inline_macro ~scope name compiler_env with
           | Some definition
             when not
-                   (Env.source_callable_shadowed ~scope name compiler_env) ->
+                   (Env.source_callable_shadowed ~scope name definition
+                      compiler_env) ->
               Result.bind (expand ~scope ~compiler_env definition args)
                 (fun expanded -> expand_all ~scope ~compiler_env expanded)
           | Some _ | None ->

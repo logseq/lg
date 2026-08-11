@@ -3740,11 +3740,18 @@ let test_dynamic_var_metadata_does_not_erase_the_value_type () =
     {|
 (def ^:dynamic *offset* 1)
 (println (+ *offset* 41))
-|}
+  |}
   in
-  let state = typecheck_state source in
+  let compiler_state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+      ~filename:"test/dynamic_var_metadata.cljc"
+      (stdlib_state Lg.Target.Native) source
+    |> expect_ok
+  in
   let binding =
-    Lg.Compiler_environment.find_opt "*offset*" state.env |> Option.get
+    Lg.Compiler_environment.find_opt "*offset*"
+      compiler_state.typecheck_state.env
+    |> Option.get
   in
   if
     binding.ty <> Lg.Types.TRef Lg.Types.TInt
@@ -12370,7 +12377,7 @@ let test_removed_dynamic_pack_escape_is_rejected () =
 
 let test_dynamic_named_record_packing_is_rejected_incrementally () =
   let state, _ =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
     {|
 (ns records)
 (defrecord Pair [^:int left ^:int right])
@@ -17087,11 +17094,18 @@ let test_identity_function_is_polymorphic_at_call_sites () =
     {|
 (defn identity-value [x] x)
 (println (str (identity-value 42) ":" (identity-value "Ada") ":" (identity-value true)))
-|}
+  |}
   in
-  let state = typecheck_state source in
+  let compiler_state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+      ~filename:"test/polymorphic_identity.cljc"
+      (stdlib_state Lg.Target.Native) source
+    |> expect_ok
+  in
   let binding =
-    Lg.Compiler_environment.find_opt "identity-value" state.env |> Option.get
+    Lg.Compiler_environment.find_opt "identity-value"
+      compiler_state.typecheck_state.env
+    |> Option.get
   in
   if Option.is_none binding.scheme then
     failwith "unannotated identity must have a generalized type scheme";
@@ -18458,7 +18472,8 @@ let test_incremental_declarations_refresh_protocol_method_returns () =
 |}
   in
   let state, _ =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state source |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) source
+    |> expect_ok
   in
   let env = state.typecheck_state.env in
   match Lg.Protocol.find_protocol_id "" env "Items" with

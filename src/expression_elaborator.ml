@@ -293,14 +293,14 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name env with
       | Some definition
-        when not (Env.source_callable_shadowed ~scope name env) -> (
+        when not (Env.source_callable_shadowed ~scope name definition env) -> (
           match Macro_expander.expand ~scope ~compiler_env:env definition args with
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded)
       | Some _ | None -> (
           match Env.find_inline_macro ~scope name env with
           | Some definition
-            when not (Env.source_callable_shadowed ~scope name env)
+            when not (Env.source_callable_shadowed ~scope name definition env)
             -> (
               match
                 Macro_expander.expand ~scope ~compiler_env:env definition args

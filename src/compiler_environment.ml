@@ -554,8 +554,10 @@ let without_source_callable ~scope name env =
           env.inline_macros keys;
     }
 
-let source_callable_shadowed ~scope name env =
+let source_callable_shadowed ~scope name (definition : Macro_definition.t) env =
   core_excluded ~scope name env
+  && (definition.namespace = "clojure.core"
+     || definition.namespace = "cljs.core")
 
 let add_macro_function ~scope ~name definition env =
   let key = Names.scoped_key scope name in
