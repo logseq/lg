@@ -27214,7 +27214,9 @@ let test_batched_identifier_and_constructor_core_functions_work () =
   assert_ocaml_runs "batched_identifier_and_constructor_core_functions_work"
     "name:user:name:user:id:user:[ready user/name]:Ada:true:#{1 2 3}:(1 2 3 \
      4):true:true:true:true:false:true:false:true:false:true:true:true\n"
-    ocaml_source
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_sorted_map_preserves_clojurescript_order_and_persistence () =
   let source =

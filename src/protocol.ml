@@ -745,6 +745,25 @@ let lookup_impl env protocol_id method_name receiver_ty =
                  apply_method_signature signature implementation)
   | None -> None
 
+let lookup_unique_method_impl env method_name receiver_ty =
+  let registry = Env.protocols env in
+  let candidates =
+    Protocol_registry.declarations registry
+    |> List.filter_map (fun (protocol_id, declaration) ->
+         declaration.Protocol_registry.methods
+         |> Protocol_registry.Method_map.bindings
+         |> List.find_map (fun (method_id, _) ->
+                let registered_name = Method_id.name method_id in
+                if
+                  String.equal (method_basename registered_name)
+                    (method_basename method_name)
+                then lookup_impl env protocol_id registered_name receiver_ty
+                else None))
+  in
+  match candidates with
+  | [ implementation ] -> Some implementation
+  | [] | _ :: _ :: _ -> None
+
 let lookup_marker_impl env (marker : binding) method_name receiver_ty =
   match marker.protocol_id with
   | None -> None

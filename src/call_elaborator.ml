@@ -4564,20 +4564,70 @@ let create ~compile_expr =
                   (typed_ir inner (Semantic_ir.Ident value_name)) );
             ] )
     | TNamed_record record -> (
-        match lookup_print_method scope env record with
-        | Error _ -> Codegen.stringify_expr_ir ~pr value
-        | Ok printer ->
+        let set_rendering =
+          if Protocol.type_satisfies env Core_protocols.set_id value.ty then
+            match Collection_capability.seq_expr env value with
+            | Ok { ty = TSeq element_ty; semantic_expr; _ } ->
+                let item_name = "__lg_print_set_item" in
+                let mapper =
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar item_name ],
+                      stringify_value scope env ~pr
+                        (typed_ir element_ty (Semantic_ir.Ident item_name)) )
+                in
+                Some
+                  (Codegen.concat_expr
+                     [
+                       Semantic_ir.String "#{";
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident "String.concat",
+                           [
+                             Semantic_ir.String " ";
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident "List.map",
+                                 [
+                                   mapper;
+                                   Semantic_ir.Apply
+                                     ( Semantic_ir.Ident
+                                         "Lg_runtime.Runtime_seq.to_list",
+                                       [ semantic_expr ] );
+                                 ] );
+                           ] );
+                       Semantic_ir.String "}";
+                     ])
+            | Ok _ | Error _ -> None
+          else None
+        in
+        match set_rendering with
+        | Some rendering -> rendering
+        | None -> (
+        let printer =
+          match lookup_print_method scope env record with
+          | Ok printer -> Some printer
+          | Error _ ->
+              Protocol.lookup_unique_method_impl env "-pr-writer" value.ty
+        in
+        match printer with
+        | None -> Codegen.stringify_expr_ir ~pr value
+        | Some printer ->
             let writer_name = "__lg_print_method_writer" in
+            let receiver =
+              match printer.ty with
+              | TFn (expected :: _, _) ->
+                  adapt_value_to_type env expected value
+                  |> Result.value ~default:value.semantic_expr
+              | _ -> value.semantic_expr
+            in
             let arguments =
               match printer.ty with
               | TFn ([ _; _; _ ], _) ->
                   [
-                    value.semantic_expr;
+                    receiver;
                     Semantic_ir.Ident writer_name;
                     Semantic_ir.Apply
                       (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.unit", []);
                   ]
-              | _ -> [ value.semantic_expr; Semantic_ir.Ident writer_name ]
+              | _ -> [ receiver; Semantic_ir.Ident writer_name ]
             in
             Semantic_ir.Apply
               ( Semantic_ir.Ident "Lg_runtime.Runtime_print.render",
@@ -4586,7 +4636,7 @@ let create ~compile_expr =
                     ( [ Semantic_ir.PVar writer_name ],
                       Semantic_ir.Apply
                         (Semantic_ir.Ident printer.ocaml_name, arguments) );
-                ] ))
+                ] )))
     | _ -> Codegen.stringify_expr_ir ~pr value
   in
   let rec compile_ocaml_arguments scope env forms =

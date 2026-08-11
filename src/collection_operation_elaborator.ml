@@ -339,7 +339,42 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     match
       lookup_deftype_method scope env record method_name (List.length args)
     with
-      | Error _ -> None
+    | Error _ -> (
+        match
+          Protocol.lookup_unique_method_impl env method_name
+            (TNamed_record record)
+        with
+        | None -> None
+        | Some binding ->
+            let binding = Types.instantiate_binding binding in
+            let binding =
+              match binding.ty with
+              | TOverloaded_fn arities ->
+                  arities
+                  |> List.mapi (fun index arity -> (index, arity))
+                  |> List.find_opt (fun (_, arity) ->
+                         Option.is_none arity.rest_param
+                         && List.length arity.fixed_params = List.length args)
+                  |> Option.map (fun (index, arity) ->
+                         {
+                           binding with
+                           ocaml_name =
+                             List.nth_opt binding.overload_targets index
+                             |> Option.value ~default:binding.ocaml_name;
+                           ty = TFn (arity.fixed_params, arity.return_ty);
+                         })
+                  |> Option.value ~default:binding
+              | _ -> binding
+            in
+            (match binding.ty with
+            | TFn (parameter_tys, return_ty)
+              when List.length parameter_tys = List.length args ->
+                Some
+                  (typed_ir return_ty
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident binding.ocaml_name,
+                          List.map (fun arg -> arg.semantic_expr) args )))
+            | _ -> None))
     | Ok binding -> (
         match binding.ty with
           | TFn (parameter_tys, return_ty)
