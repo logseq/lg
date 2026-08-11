@@ -41433,7 +41433,7 @@ let test_workspace_index_separates_module_and_protocol_providers () =
         (module_uri, "(module Shared (def value 1))\n");
         ( protocol_uri,
           "(defprotocol Shared (label [value] :string))\n\
-           (extend-type :int Shared (label [value] (str value)))\n" );
+           (extend-type :int Shared (label [value] \"value\"))\n" );
         ( consumer_uri,
           "(def module-value Shared/value)\n\
            (def protocol-value (Shared/label 1))\n" );
@@ -41441,7 +41441,15 @@ let test_workspace_index_separates_module_and_protocol_providers () =
     |> expect_ok
   in
   if Lg.Language_service.workspace_analysis index consumer_uri = None then
-    failwith "module and protocol providers with the same name must coexist"
+    let detail =
+      [ module_uri; protocol_uri; consumer_uri ]
+      |> List.filter_map (fun uri ->
+             Lg.Language_service.workspace_error index uri
+             |> Option.map (fun error -> uri ^ ": " ^ error.Lg.Error.message))
+      |> function [] -> "" | errors -> ": " ^ String.concat "; " errors
+    in
+    failwith
+      ("module and protocol providers with the same name must coexist" ^ detail)
 
 let test_workspace_index_handles_file_removal_readd_and_rename () =
   let provider_uri = "file:///tmp/lifecycle-math.cljc" in
