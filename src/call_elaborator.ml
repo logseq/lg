@@ -10005,6 +10005,15 @@ let create ~compile_expr =
           parameter :: annotate_parameters expected_rest rest
     in
     match (expected, form) with
+    | TFn ([ parameter_ty ], _), FKeyword keyword ->
+        let parameter = "__lg_keyword_callback_argument" in
+        FList
+          [
+            FSymbol "fn";
+            FVector
+              (annotate_parameters [ parameter_ty ] [ FSymbol parameter ]);
+            FList [ FKeyword keyword; FSymbol parameter ];
+          ]
     | TFn (parameter_tys, _),
       FList (FSymbol "fn" :: FVector parameters :: body_forms) ->
         FList
@@ -10061,7 +10070,7 @@ let create ~compile_expr =
               let arguments = Array.make (Array.length forms) None in
               let deferred_callback index =
                 match (parameters.(index), forms.(index)) with
-                | TFn _, FList (FSymbol "fn" :: _) -> true
+                | TFn _, (FList (FSymbol "fn" :: _) | FKeyword _) -> true
                 | _ -> false
               in
               let compile_argument expected form =
