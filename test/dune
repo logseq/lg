@@ -714,7 +714,7 @@
  (name persistent_sorted_set_arrays_native)
  (modules persistent_sorted_set_arrays_native)
  (flags
-  (:standard -w -32-37))
+  (:standard -w -27-32-37))
  (libraries lg.edn-backend.native lg.runtime rrbvec))
 
 (rule
@@ -759,7 +759,7 @@
  (alias persistent-sorted-set-arrays-melange)
  (module_systems es6)
  (modules persistent_sorted_set_arrays_melange)
- (compile_flags -w -32-37)
+ (compile_flags -w -27-32-37)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule

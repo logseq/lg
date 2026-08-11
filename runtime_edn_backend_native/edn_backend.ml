@@ -607,6 +607,10 @@ let add_json_int buffer value =
     Buffer.add_string buffer (Int64.to_string value)
   else add_json_string buffer (Int64.to_string value)
 
+let rec add_json_positive_int_digits buffer value =
+  if value >= 10 then add_json_positive_int_digits buffer (value / 10);
+  Buffer.add_char buffer (Char.chr (48 + (value mod 10)))
+
 let add_json_small_int buffer value =
   if value = min_int then Buffer.add_string buffer (string_of_int value)
   else (
@@ -616,11 +620,7 @@ let add_json_small_int buffer value =
         -value)
       else value
     in
-    let rec add_digits value =
-      if value >= 10 then add_digits (value / 10);
-      Buffer.add_char buffer (Char.chr (48 + (value mod 10)))
-    in
-    add_digits value)
+    add_json_positive_int_digits buffer value)
 
 let int4_array_length entities attributes values txs =
   let length = Array.length values in
