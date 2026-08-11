@@ -1095,7 +1095,6 @@ let untyped_first_class_function_error = function
     | "neg?"
     | "nil?"
     | "number?"
-    | "pr-writer"
     | "pos?"
     | "re-find"
     | "re-matches"

@@ -1717,7 +1717,7 @@ let rec compile scope env next_type form =
                       [
                         Some receiver_ty;
                         Some (TOcaml "Buffer.t");
-                        Some (Types.dynamic_constraint TUnknown);
+                        Some TNil;
                       ]
                   | Some "ILookup", "-lookup", _receiver :: arguments ->
                       Some receiver_ty

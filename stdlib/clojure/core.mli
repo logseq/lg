@@ -737,3 +737,14 @@
   :variadic-fn<printable<value>;unit>)
 (signature clojure.core/prn [value]
   :variadic-fn<printable<value>;unit>)
+
+(signature clojure.core/pr-writer [value]
+  :fn<printable<value>;Buffer.t;nil;unit>)
+(signature clojure.core/pr-sequential-writer [value storage]
+  :fn<Buffer.t;fn<value;Buffer.t;nil;unit>;string;string;string;nil;seqable<value;storage>;unit>)
+(signature clojure.core/write-all
+  :variadic-fn<Buffer.t;string;unit>)
+(signature clojure.core/string-print
+  :fn<string;unit>)
+(signature clojure.core/newline
+  :overload<fn<unit>;fn<nil;unit>>)

@@ -90,6 +90,7 @@ let rec parse_ocaml_type source =
         else if source = "bytes" then Ok TString
         else if source = "bool" then Ok TBool
         else if source = "unit" then Ok TUnit
+        else if source = "nil" then Ok TNil
         else if source = "symbol" then Ok TSymbol
         else if source = "keyword" then Ok TKeyword
         else if source = "dynamic" || is_dynamic_runtime_type source then

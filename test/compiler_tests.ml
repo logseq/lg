@@ -264,10 +264,10 @@ let run_compiled_module_command dir cmo_paths output_path =
           cmo_paths))
     (Filename.quote output_path)
 
-let compile_job_immediately (job : compile_job) =
+let compile_job_immediately ?(prelude = "") (job : compile_job) =
   let dir = test_dir () in
   let ml_path = Filename.concat dir (job.name ^ ".ml") in
-  write_file ml_path job.ocaml_source;
+  write_file ml_path (String.concat "\n" [ prelude; job.ocaml_source ]);
   match Sys.command (compile_only_command dir ml_path) with
   | 0 -> ()
   | code ->
@@ -461,6 +461,19 @@ let rec source_files_under directory =
 let wrapped_module index source =
   Printf.sprintf "module Case_%04d = struct\n%s\nend\n" index source
 
+let native_stdlib_prelude () = (compiled_stdlib Lg.Target.Native).ocaml_source
+
+let strip_native_stdlib_prelude source =
+  let prelude = native_stdlib_prelude () in
+  if String.starts_with ~prefix:prelude source then
+    let offset = String.length prelude in
+    let offset =
+      if offset < String.length source && source.[offset] = '\n' then offset + 1
+      else offset
+    in
+    String.sub source offset (String.length source - offset)
+  else source
+
 let flush_compile_jobs (jobs : compile_job list) =
   match jobs with
   | [] -> ()
@@ -468,16 +481,22 @@ let flush_compile_jobs (jobs : compile_job list) =
       let dir = test_dir () in
       let ml_path = Filename.concat dir "compile_batch.ml" in
       let source =
-        jobs
-        |> List.mapi (fun index (job : compile_job) ->
-               wrapped_module index job.ocaml_source)
-        |> String.concat "\n"
+        String.concat "\n"
+          [
+            native_stdlib_prelude ();
+            (jobs
+            |> List.mapi (fun index (job : compile_job) ->
+                   wrapped_module index job.ocaml_source)
+            |> String.concat "\n");
+          ]
       in
       write_file ml_path source;
       match Sys.command (compile_only_command dir ml_path) with
       | 0 -> ()
       | code ->
-          List.iter compile_job_immediately jobs;
+          List.iter
+            (compile_job_immediately ~prelude:(native_stdlib_prelude ()))
+            jobs;
           failwith
             (Printf.sprintf
                "batched generated OCaml failed with exit code %d, but isolated \
@@ -540,8 +559,14 @@ let flush_run_jobs (jobs : run_job list) =
                let basename = Printf.sprintf "run_batch_%03d" batch_index in
                let ml_path = Filename.concat dir (basename ^ ".ml") in
                let cmo_path = Filename.concat dir (basename ^ ".cmo") in
-               let source =
-                 jobs |> List.mapi wrapped_run_module |> String.concat "\n"
+              let source =
+                 String.concat "\n"
+                   [
+                     native_stdlib_prelude ();
+                     (jobs
+                     |> List.mapi wrapped_run_module
+                     |> String.concat "\n");
+                   ]
                in
                write_file ml_path source;
                (cmo_path, compile_only_command dir ml_path))
@@ -567,7 +592,9 @@ let flush_run_jobs (jobs : run_job list) =
         |> List.iteri (fun index job ->
                let basename = Printf.sprintf "run_isolated_%04d" index in
                let ml_path = Filename.concat dir (basename ^ ".ml") in
-               write_file ml_path (wrapped_run_module 0 job);
+               write_file ml_path
+                 (String.concat "\n"
+                    [ native_stdlib_prelude (); wrapped_run_module 0 job ]);
                if Sys.command (compile_only_command dir ml_path) <> 0 then
                  Printf.eprintf "FAILED GENERATED COMPILE: %s\n%!" job.name);
         failwith "batched generated OCaml failed")
@@ -643,11 +670,18 @@ let flush_run_jobs (jobs : run_job list) =
             compare_jobs 0 [] indexed_jobs))
 
 let assert_ocaml_compiles name ocaml_source =
-  pending_compile_jobs := { name; ocaml_source } :: !pending_compile_jobs
+  pending_compile_jobs :=
+    { name; ocaml_source = strip_native_stdlib_prelude ocaml_source }
+    :: !pending_compile_jobs
 
 let assert_ocaml_runs name expected_output ocaml_source =
   pending_run_jobs :=
-    { name; expected_output; ocaml_source } :: !pending_run_jobs
+    {
+      name;
+      expected_output;
+      ocaml_source = strip_native_stdlib_prelude ocaml_source;
+    }
+    :: !pending_run_jobs
 
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
@@ -18038,8 +18072,9 @@ let test_cross_namespace_deftype_uses_custom_printer () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let state, model_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state model_source
+      Lg.Compiler.compile_chunk ~target stdlib.state model_source
       |> expect_ok
     in
     let _, consumer_ocaml =
@@ -27771,6 +27806,72 @@ let test_source_printing_function_cluster_is_source_owned () =
         [ "str"; "pr-str"; "print"; "println"; "prn" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml";
       "src/expression_support.ml"; "src/top_level_elaborator.ml";
+    ]
+
+let test_source_writer_printing_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-writer-printing
+  (:require [cljs.core :as core
+             :refer [newline pr-sequential-writer string-print write-all]]
+            [ocaml.Buffer :as buffer]))
+
+(def writer (buffer/create 64))
+(def render-sequence pr-sequential-writer)
+
+(write-all writer "<" "raw" ">")
+(core/pr-writer "Ada" writer nil)
+(core/-pr-writer "Byron" writer nil)
+(render-sequence
+ writer
+ (fn [value output options] (core/pr-writer value output options))
+ "[" "," "]" nil [1 2 3])
+(string-print "stdout")
+(newline)
+(newline nil)
+(print (buffer/contents writer))
+|}
+  in
+  let consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer "Runtime_dynamic" then
+    failwith "source writer printing functions must remain statically typed";
+  assert_ocaml_runs "source_writer_printing_cluster"
+    "stdout\n\n<raw>\"Ada\"\"Byron\"[1,2,3]"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange writer printing functions must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.writer-options-error
+  (:require [cljs.core :as core]
+            [ocaml.Buffer :as buffer]))
+(core/pr-writer 1 (buffer/create 8) true)
+|}
+  |> expect_error_contains "nil"
+
+let test_source_writer_printing_cluster_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defprotocol IPrintWithWriter"; "(defn pr-writer";
+      "(defn pr-sequential-writer"; "(defn write-all";
+      "(defn string-print"; "(defn newline";
+    ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "pr-writer"; "pr-sequential-writer" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml";
     ]
 
 let test_cljs_cache_lru_matches_logseq_usage () =
@@ -44917,6 +45018,10 @@ let tests =
       test_source_printing_function_cluster_matches_clojurescript );
     ( "source printing function cluster is source-owned",
       test_source_printing_function_cluster_is_source_owned );
+    ( "source writer printing cluster matches ClojureScript",
+      test_source_writer_printing_cluster_matches_clojurescript );
+    ( "source writer printing cluster is source-owned",
+      test_source_writer_printing_cluster_is_source_owned );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

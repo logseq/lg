@@ -123,6 +123,8 @@
             :reason :source-iwriter-protocol-method-with-a-static-buffer-receiver-adaptation}
     -flush {:status :static-adaptation
             :reason :source-iwriter-protocol-method-with-the-upstream-noop-flush-result}
+    -pr-writer {:status :static-adaptation
+                :reason :source-iprintwithwriter-protocol-method-dispatches-built-in-static-values-and-user-implementations-to-a-buffer-writer-with-nil-options}
     -add-method {:status :blocked-static-typing
                  :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     -remove-method {:status :blocked-static-typing
@@ -920,8 +922,8 @@
            :reason :clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation}
     js-symbol? {:status :host-boundary
                 :reason :javascript-symbol-is-a-target-specific-nominal-host-type}
-    newline {:status :host-boundary
-             :reason :uses-dynamic-print-function-and-flush-options-from-the-clojurescript-host-printing-runtime}
+    newline {:status :static-adaptation
+             :reason :source-zero-and-nil-options-arities-write-the-upstream-newline-through-the-cross-target-static-output-boundary-while-open-print-function-and-flush-options-remain-a-host-boundary}
     object? {:status :host-boundary
              :reason :tests-the-javascript-object-constructor-and-has-no-equivalent-native-object-category}
     unsafe-cast {:status :host-boundary
@@ -930,8 +932,8 @@
           :reason :tests-the-google-closure-uri-class-which-has-no-native-source-representation}
     var? {:status :host-boundary
           :reason :tests-the-clojurescript-javascript-var-wrapper-which-lg-does-not-expose-as-a-source-value}
-    write-all {:status :host-boundary
-               :reason :writes-through-clojurescript-iwriter-and-target-printing-effects-rather-than-a-portable-pure-value}
+    write-all {:status :static-adaptation
+               :reason :source-variadic-function-preserves-left-to-right-string-writes-through-the-static-iwriter-buffer-protocol}
     declare {:status :special-form
              :reason :compiler-owned-forward-binding-declaration}
     defn- {:status :special-form
@@ -1180,6 +1182,8 @@
                               :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
     pr-seq-writer {:status :blocked-static-typing
                    :reason :printer-callback-must-accept-arbitrary-heterogeneous-values-with-a-shared-writer-and-options-domain}
+    pr-sequential-writer {:status :static-adaptation
+                          :reason :source-function-preserves-prefix-separator-callback-order-and-suffix-over-a-homogeneous-static-seqable-and-buffer-writer-while-print-level-print-length-and-custom-more-marker-options-remain-explicitly-restricted-to-nil}
     str {:status :static-adaptation
          :reason :source-function-and-inline-macro-preserve-zero-one-and-variadic-display-rendering-with-per-argument-static-printer-witnesses}
     pr-str {:status :static-adaptation
@@ -1242,8 +1246,8 @@
                    :reason :source-persistent-tree-set-reuses-the-red-black-tree-map-and-carries-a-static-element-comparator-returning-int}
     string-iter {:status :host-boundary
                  :reason :constructs-a-javascript-es6-iterator-over-utf16-string-code-points}
-    string-print {:status :host-boundary
-                  :reason :writes-through-the-target-specific-global-print-callback}
+    string-print {:status :static-adaptation
+                  :reason :source-wrapper-writes-a-static-string-through-the-cross-target-output-boundary-instead-of-an-open-mutable-javascript-print-function}
     subseq {:status :static-adaptation
             :reason :source-function-preserves-clojurescript-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     supers {:status :host-boundary

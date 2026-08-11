@@ -4948,3 +4948,69 @@
   [& values]
   (__lg_print_output
    (__lg_str (__lg_render_readable_values " " values) "\n")))
+
+(defprotocol IPrintWithWriter
+  (-pr-writer [value writer options]))
+
+(defn pr-writer
+  {:inline (fn [value writer options]
+             (list '__lg_pr-writer value writer options))}
+  [value writer options]
+  (__lg_pr-writer value writer options))
+
+(extend-protocol IPrintWithWriter
+  :nil
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :bool
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :int
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :float
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :char
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :string
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :keyword
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :symbol
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :list
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :vector
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :seq
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :map
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :set
+  (-pr-writer [value writer options] (pr-writer value writer options))
+  :array
+  (-pr-writer [value writer options] (pr-writer value writer options)))
+
+(defn pr-sequential-writer
+  [writer print-one begin separator end options collection]
+  (IWriter/-write writer begin)
+  (reduce
+   (fn [first-value value]
+     (if first-value
+       nil
+       (IWriter/-write writer separator))
+     (print-one value writer options)
+     false)
+   true
+   collection)
+  (IWriter/-write writer end))
+
+(defn write-all [writer & strings]
+  (doseq [source strings]
+    (IWriter/-write writer source)))
+
+(defn string-print
+  {:inline (fn [source] (list '__lg_print_output source))}
+  [source]
+  (__lg_print_output source))
+
+(defn newline
+  ([] (string-print "\n"))
+  ([_options] (string-print "\n")))

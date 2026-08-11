@@ -5142,32 +5142,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_match params target (pairs [] clauses)
     | FList [ FSymbol "__lg_set"; collection ] ->
         infer_collection params collection
-    | FList
-        [
-          FSymbol "pr-sequential-writer";
-          writer;
-          printer;
-          prefix;
-          separator;
-          suffix;
-          opts;
-          collection;
-        ] ->
-        Result.bind (infer_expected (TOcaml "Buffer.t") params writer)
-          (fun params ->
-            Result.bind (infer_form params printer) (fun params ->
-                Result.bind (infer_expected TString params prefix) (fun params ->
-                    Result.bind
-                      (infer_expected TString params separator)
-                      (fun params ->
-                        Result.bind
-                          (infer_expected TString params suffix)
-                          (fun params ->
-                            Result.bind (infer_form params opts) (fun params ->
-                                match collection with
-                                | FSymbol name ->
-                                    constrain_seqable TUnknown params name
-                                | _ -> infer_collection params collection))))))
     | FList (FSymbol ("__lg_doseq" | "for") :: bindings :: body_forms) ->
         infer_generator_bindings params bindings body_forms
     | FList (FSymbol "do" :: body_forms) -> infer_all params body_forms

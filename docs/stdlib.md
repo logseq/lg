@@ -210,8 +210,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 684 source entries (69.44%), 23 typed
-primitives, 43 special forms, 93 host boundaries, 91 static-typing blockers,
+macro surfaces. The current baseline is 689 source entries (69.95%), 23 typed
+primitives, 43 special forms, 88 host boundaries, 91 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -225,6 +225,16 @@ variadic signature. Only display rendering, readable rendering, and static
 string output remain private typed ABI operations. Automatic core references
 and qualified/referred calls use the same inline definitions; the compiler no
 longer dispatches on those public names.
+
+The writer printing cluster is source-owned as well. `IPrintWithWriter`,
+`-pr-writer`, `pr-writer`, `pr-sequential-writer`, `write-all`, `string-print`,
+and both `newline` arities follow the pinned ClojureScript control flow. Built-in
+values and consumer extensions dispatch through static protocol witnesses, and
+writer callbacks remain first-class. The only compiler boundary is the private
+typed rendering operation used by built-in implementations. LG currently
+accepts only the default `nil` print options; print-level, print-length, and the
+more marker remain explicit static adaptations instead of silently widening the
+options value to a dynamic map.
 
 `munge` and `demunge` preserve ClojureScript's string-or-symbol result identity
 through private protocols with a static `:self` return. Their source functions

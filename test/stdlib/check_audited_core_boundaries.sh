@@ -49,12 +49,12 @@ coercive-not=	host-boundary	javascript-loose-inequality-crosses-static-type-doma
 inst-ms	host-boundary	clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation
 inst?	host-boundary	clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation
 js-symbol?	host-boundary	javascript-symbol-is-a-target-specific-nominal-host-type
-newline	host-boundary	uses-dynamic-print-function-and-flush-options-from-the-clojurescript-host-printing-runtime
+newline	source	source-zero-and-nil-options-arities-write-the-upstream-newline-through-the-cross-target-static-output-boundary-while-open-print-function-and-flush-options-remain-a-host-boundary
 object?	host-boundary	tests-the-javascript-object-constructor-and-has-no-equivalent-native-object-category
 unsafe-cast	host-boundary	emits-a-javascript-closure-type-cast-and-assignment-for-the-analyzer
 uri?	host-boundary	tests-the-google-closure-uri-class-which-has-no-native-source-representation
 var?	host-boundary	tests-the-clojurescript-javascript-var-wrapper-which-lg-does-not-expose-as-a-source-value
-write-all	host-boundary	writes-through-clojurescript-iwriter-and-target-printing-effects-rather-than-a-portable-pure-value
+write-all	source	source-variadic-function-preserves-left-to-right-string-writes-through-the-static-iwriter-buffer-protocol
 EOF
 
 exit "$failed"

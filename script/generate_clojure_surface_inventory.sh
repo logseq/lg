@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 200; then
-  echo "compiler call dispatch changed: expected 200 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 198; then
+  echo "compiler call dispatch changed: expected 198 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -127,6 +127,7 @@ awk '
     internal_abi["__lg_print_output"] = "typed-static-string-output-primitive"
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
+    internal_abi["__lg_pr-writer"] = "typed-readable-printer-witness-and-buffer-output-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
     internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
     internal_abi["__lg_contains"] = "typed-key-index-and-membership-capability-primitive"
@@ -191,8 +192,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 129; then
-  echo "compiler form dispatch changed: expected 129 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 128; then
+  echo "compiler form dispatch changed: expected 128 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

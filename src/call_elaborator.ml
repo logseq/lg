@@ -5858,255 +5858,32 @@ let create ~compile_expr =
                       [ writer.semantic_expr; text.semantic_expr ] )))
         | Ok _ -> Error.error (name ^ " expects a writer and string")
         | Error _ as error -> error)
-    | "pr-writer" | "-pr-writer" -> (
+    | "__lg_pr-writer" -> (
         match compile_args () with
-        | Ok [ value; writer; opts ]
-          when Types.equal writer.ty (TOcaml "Buffer.t")
-               || match writer.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false ->
-            Ok
-              (typed_ir TUnit
-                 (Semantic_ir.Let
-                    ( [ (Semantic_ir.PAny, opts.semantic_expr) ],
-                      Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
-                          [
-                            writer.semantic_expr;
-                            stringify_value scope env ~pr:true value;
-                          ] ) )))
-        | Ok _ -> Error.error "pr-writer expects a value, writer, and options"
+        | Ok [ value; writer; options ] ->
+            let unresolved = function
+              | TUnknown | TMeta _ | TVar _ -> true
+              | _ -> false
+            in
+            if
+              not
+                (Types.equal writer.ty (TOcaml "Buffer.t")
+                || unresolved writer.ty)
+            then Error.error "pr-writer expects a Buffer.t writer"
+            else if not (Types.equal options.ty TNil || unresolved options.ty)
+            then Error.error "pr-writer options must be nil"
+            else
+              Ok
+                (typed_ir TUnit
+                   (Semantic_ir.Let
+                      ( [ (Semantic_ir.PAny, options.semantic_expr) ],
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+                            [ writer.semantic_expr;
+                              stringify_value scope env ~pr:true value;
+                            ] ) )))
+        | Ok _ -> Error.error "pr-writer expects 3 arguments"
         | Error _ as error -> error)
-    | "pr-sequential-writer" -> (
-        match arg_forms with
-        | [ writer; printer; prefix; separator; suffix; opts; collection ] ->
-            (match printer with
-            | FList (FSymbol "fn" :: _) -> (
-                match
-                  ( compile_args_for scope env
-                      [ writer; prefix; separator; suffix; opts; collection ],
-                    compile_expr scope (Env.with_expected_type None env) printer )
-                with
-                | (Error _ as error), _ -> error
-                | _, (Error _ as error) -> error
-                | ( Ok
-                      [
-                        writer;
-                        prefix;
-                        separator;
-                        suffix;
-                        opts;
-                        collection;
-                      ],
-                    Ok printer ) -> (
-                    match printer.ty with
-                    | TFn
-                        ([ value_ty; writer_ty; opts_ty ], _printer_return) -> (
-                        match
-                          Collection_capability.to_seq_expr env collection
-                        with
-                        | Error _ ->
-                            Error.error
-                              "pr-sequential-writer expects a collection"
-                        | Ok (element_ty, sequence) ->
-                            let writer_name = "__lg_sequence_writer" in
-                            let printer_name = "__lg_sequence_printer" in
-                            let prefix_name = "__lg_sequence_prefix" in
-                            let separator_name = "__lg_sequence_separator" in
-                            let suffix_name = "__lg_sequence_suffix" in
-                            let opts_name = "__lg_sequence_opts" in
-                            let first_name = "__lg_sequence_first" in
-                            let value_name = "__lg_sequence_value" in
-                            let adapt expected argument =
-                              if has_capability_constraint expected then
-                                pack_constrained_value env expected argument
-                              else adapt_value_to_type env expected argument
-                            in
-                            let value =
-                              typed_ir element_ty
-                                (Semantic_ir.Ident value_name)
-                            in
-                            let writer_value =
-                              typed_ir writer.ty
-                                (Semantic_ir.Ident writer_name)
-                            in
-                            let opts_value =
-                              typed_ir opts.ty (Semantic_ir.Ident opts_name)
-                            in
-                            Result.bind (adapt value_ty value) (fun value ->
-                                Result.bind
-                                  (adapt writer_ty writer_value)
-                                  (fun writer_argument ->
-                                    Result.map
-                                      (fun opts_argument ->
-                                        let write value =
-                                          Semantic_ir.Apply
-                                            ( Semantic_ir.Ident
-                                                "Lg_runtime.Runtime_print.write",
-                                              [
-                                                Semantic_ir.Ident writer_name;
-                                                value;
-                                              ] )
-                                        in
-                                        let print_value =
-                                          Semantic_ir.Apply
-                                            ( Semantic_ir.Ident printer_name,
-                                              [
-                                                value;
-                                                writer_argument;
-                                                opts_argument;
-                                              ] )
-                                        in
-                                        let fold_body =
-                                          Semantic_ir.Sequence
-                                            [
-                                              Semantic_ir.If
-                                                ( Semantic_ir.Ident first_name,
-                                                  Semantic_ir.Unit,
-                                                  write
-                                                    (Semantic_ir.Ident
-                                                       separator_name) );
-                                              print_value;
-                                              Semantic_ir.Bool false;
-                                            ]
-                                        in
-                                        typed_ir TUnit
-                                          (Semantic_ir.Let
-                                             ( [
-                                                 ( Semantic_ir.PVar writer_name,
-                                                   writer.semantic_expr );
-                                                 ( Semantic_ir.PVar
-                                                     printer_name,
-                                                   printer.semantic_expr );
-                                                 ( Semantic_ir.PVar prefix_name,
-                                                   prefix.semantic_expr );
-                                                 ( Semantic_ir.PVar
-                                                     separator_name,
-                                                   separator.semantic_expr );
-                                                 ( Semantic_ir.PVar suffix_name,
-                                                   suffix.semantic_expr );
-                                                 ( Semantic_ir.PVar opts_name,
-                                                   opts.semantic_expr );
-                                               ],
-                                               Semantic_ir.Sequence
-                                                 [
-                                                   write
-                                                     (Semantic_ir.Ident
-                                                        prefix_name);
-                                                   Semantic_ir.Apply
-                                                     ( Semantic_ir.Ident
-                                                         "Seq.fold_left",
-                                                       [
-                                                         Semantic_ir.Fun
-                                                           ( [
-                                                               Semantic_ir.PVar
-                                                                 first_name;
-                                                               Semantic_ir.PVar
-                                                                 value_name;
-                                                             ],
-                                                             fold_body );
-                                                         Semantic_ir.Bool true;
-                                                         sequence;
-                                                       ] );
-                                                   write
-                                                     (Semantic_ir.Ident
-                                                        suffix_name);
-                                                 ] )))
-                                      (adapt opts_ty opts_value))))
-                    | TFn _ | TOverloaded_fn _ ->
-                        Error.error
-                          "pr-sequential-writer printer expects three arguments"
-                    | _ ->
-                        Error.error
-                          "pr-sequential-writer expects a printer function")
-                | Ok _, Ok _ -> assert false)
-            | _ ->
-            let writer_name = "__lg_sequence_writer" in
-            let printer_name = "__lg_sequence_printer" in
-            let prefix_name = "__lg_sequence_prefix" in
-            let separator_name = "__lg_sequence_separator" in
-            let suffix_name = "__lg_sequence_suffix" in
-            let opts_name = "__lg_sequence_opts" in
-            let collection_name = "__lg_sequence_collection" in
-            let first_name = "__lg_sequence_first" in
-            let value_name = "__lg_sequence_value" in
-            compile_expr scope env
-              (FList
-                 [
-                   FSymbol "let";
-                   FVector
-                     [
-                       FSymbol writer_name;
-                       writer;
-                       FSymbol printer_name;
-                       printer;
-                       FSymbol prefix_name;
-                       prefix;
-                       FSymbol separator_name;
-                       separator;
-                       FSymbol suffix_name;
-                       suffix;
-                       FSymbol opts_name;
-                       opts;
-                       FSymbol collection_name;
-                       collection;
-                       FSymbol first_name;
-                       FList [ FSymbol "__lg_volatile!"; FBool true ];
-                     ];
-                   FList
-                     [
-                       FSymbol "do";
-                       FList
-                         [
-                           FSymbol "__lg_write";
-                           FSymbol writer_name;
-                           FSymbol prefix_name;
-                         ];
-                       FList
-                         [
-                           FSymbol "__lg_doseq";
-                           FVector
-                             [ FSymbol value_name; FSymbol collection_name ];
-                           FList
-                             [
-                               FSymbol "if";
-                               FList
-                                 [ FSymbol "IDeref/-deref"; FSymbol first_name ];
-                               FList
-                                 [
-                                   FSymbol "IVolatile/-vreset!";
-                                   FSymbol first_name;
-                                   FBool false;
-                                 ];
-                               FList
-                                 [
-                                   FSymbol "do";
-                                   FList
-                                     [
-                                       FSymbol "__lg_write";
-                                       FSymbol writer_name;
-                                       FSymbol separator_name;
-                                     ];
-                                   FBool false;
-                                 ];
-                             ];
-                           FList
-                             [
-                               FSymbol printer_name;
-                               FSymbol value_name;
-                               FSymbol writer_name;
-                               FSymbol opts_name;
-                             ];
-                         ];
-                       FList
-                         [
-                           FSymbol "__lg_write";
-                           FSymbol writer_name;
-                           FSymbol suffix_name;
-                         ];
-                     ];
-                 ]))
-        | _ ->
-            Error.error
-              "pr-sequential-writer expects writer, printer, delimiters, options, and collection")
     | ".getClass" | ".getName" | ".compareTo" ->
         Error.error
           "Java reflection interop is not supported; use static LG types"
