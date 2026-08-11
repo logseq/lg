@@ -137,14 +137,30 @@ let compact_source_binding name =
 
 let ocaml_binding_names = Hashtbl.create 4096
 
+let operator_binding_name = function
+  | "+" -> Some "add"
+  | "-" -> Some "subtract"
+  | "*" -> Some "multiply"
+  | "/" -> Some "divide"
+  | "<" -> Some "less"
+  | "<=" -> Some "less_equal"
+  | ">" -> Some "greater"
+  | ">=" -> Some "greater_equal"
+  | "=" -> Some "equal"
+  | "==" -> Some "numeric_equal"
+  | _ -> None
+
 let ocaml_binding_name scope name =
   let key = (scope, name) in
   match Hashtbl.find_opt ocaml_binding_names key with
   | Some binding -> binding
   | None ->
       let candidate =
-        if scope = "" then sanitize_name name
-        else sanitize_name (scope ^ "_" ^ name)
+        let readable_name =
+          operator_binding_name name |> Option.value ~default:name
+        in
+        if scope = "" then sanitize_name readable_name
+        else sanitize_name (scope ^ "_" ^ readable_name)
       in
       let binding =
         if

@@ -88,7 +88,7 @@ awk '
     blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     split("clj->js current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
-    split("+ - * / < <= = == > >= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
+    split("= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
     split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
     for (i in xs) narrowing[xs[i]] = 1
@@ -128,6 +128,15 @@ awk '
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_pr-writer"] = "typed-readable-printer-witness-and-buffer-output-primitive"
+    internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"
+    internal_abi["__lg_subtract"] = "typed-static-numeric-subtraction-primitive"
+    internal_abi["__lg_multiply"] = "typed-static-numeric-multiplication-primitive"
+    internal_abi["__lg_divide"] = "typed-static-numeric-division-primitive"
+    internal_abi["__lg_numeric-equal"] = "typed-static-numeric-equality-primitive"
+    internal_abi["__lg_less"] = "typed-static-numeric-less-than-primitive"
+    internal_abi["__lg_less-equal"] = "typed-static-numeric-less-than-or-equal-primitive"
+    internal_abi["__lg_greater"] = "typed-static-numeric-greater-than-primitive"
+    internal_abi["__lg_greater-equal"] = "typed-static-numeric-greater-than-or-equal-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
     internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
     internal_abi["__lg_contains"] = "typed-key-index-and-membership-capability-primitive"

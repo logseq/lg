@@ -7408,47 +7408,32 @@ let create ~compile_expr =
                           })
                         (adapt_fields [] values)))
         | _ -> Error.error "record expects a record type and fields")
-    | "+" | "-" | "*" | "/" -> (
+    | "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide" -> (
+        let operator =
+          match name with
+          | "__lg_add" -> "+"
+          | "__lg_subtract" -> "-"
+          | "__lg_multiply" -> "*"
+          | "__lg_divide" -> "/"
+          | _ -> assert false
+        in
         match compile_args () with
         | Error _ as err -> err
-                  | Ok args -> (
-            if List.exists (fun arg -> Types.is_dynamic arg.ty) args then
-              let runtime_function =
-                match name with
-                | "+" -> "numeric_add_arguments"
-                | "-" -> "numeric_subtract_arguments"
-                | "*" -> "numeric_multiply_arguments"
-                | "/" -> "numeric_divide_arguments"
-                | _ -> assert false
-              in
-              let dynamic = Types.dynamic_constraint TUnknown in
-              let rec pack packed = function
-                | [] -> Ok (List.rev packed)
-                | argument :: rest ->
-                    Result.bind (pack_dynamic_value env dynamic argument)
-                      (fun argument -> pack (argument :: packed) rest)
-              in
-              Result.map
-                (fun arguments ->
-                  typed_ir dynamic
-                    (apply
-                       ("Lg_runtime.Runtime_dynamic." ^ runtime_function)
-                       [ Semantic_ir.List arguments ]))
-                (pack [] args)
-            else if Result.is_ok (Core_int.expect_int_args name args) then
-              Core_int.compile_operator name args
+        | Ok args -> (
+            if Result.is_ok (Core_int.expect_int_args operator args) then
+              Core_int.compile_operator operator args
             else if Core_float.expect_float_args args then
-              Core_float.compile_operator name args
+              Core_float.compile_operator operator args
             else if
               List.for_all
                 (fun arg ->
                    Core_float.accepts_mixed_numeric arg.ty)
                 args
             then
-              Core_float.compile_operator name
+              Core_float.compile_operator operator
                 (List.map Core_float.widen_to_float args)
             else
-              match Core_int.expect_int_args name args with
+              match Core_int.expect_int_args operator args with
               | Error _ as err -> err
                         | Ok () -> assert false))
     | "__lg_rand" -> (
@@ -7893,14 +7878,33 @@ let create ~compile_expr =
                         (swap_name
                        ^ " expects a reference, function, and optional \
                           arguments"))
-    | "=" | "==" | "<" | "<=" | ">" | ">=" -> (
-        match
-          compile_args_for scope (Env.with_expected_type None env) arg_forms
-        with
-        | Error _ as err -> err
-        | Ok args ->
+    | "=" | "__lg_numeric-equal" | "__lg_less" | "__lg_less-equal"
+    | "__lg_greater" | "__lg_greater-equal" -> (
+        let operator =
+          match name with
+          | "=" -> "="
+          | "__lg_numeric-equal" -> "=="
+          | "__lg_less" -> "<"
+          | "__lg_less-equal" -> "<="
+          | "__lg_greater" -> ">"
+          | "__lg_greater-equal" -> ">="
+          | _ -> assert false
+        in
+        if operator <> "=" && arg_forms = [] then
+          Error.error (operator ^ " expects at least 1 arguments")
+        else
+          match
+            compile_args_for scope (Env.with_expected_type None env) arg_forms
+          with
+          | Error _ as err -> err
+          | Ok args
+            when operator <> "="
+                 && List.exists (fun arg -> Types.is_dynamic arg.ty) args ->
+              Error.error
+                (operator ^ " expects statically typed numeric arguments")
+          | Ok args ->
             let symbol_equality =
-              name = "="
+              operator = "="
               && List.exists
                    (fun arg ->
                      Option.is_some
@@ -7954,25 +7958,6 @@ let create ~compile_expr =
                 (typed_ir TBool
                    equal)
             else
-            if
-              name = "=="
-              && List.exists (fun arg -> Types.is_dynamic arg.ty) args
-            then
-              let dynamic = Types.dynamic_constraint TUnknown in
-              let rec pack packed = function
-                | [] -> Ok (List.rev packed)
-                | argument :: rest ->
-                    Result.bind (pack_dynamic_value env dynamic argument)
-                      (fun argument -> pack (argument :: packed) rest)
-              in
-              Result.map
-                (fun arguments ->
-                  typed_ir TBool
-                    (apply
-                       "Lg_runtime.Runtime_dynamic.numeric_equal_arguments"
-                       [ Semantic_ir.List arguments ]))
-                (pack [] args)
-            else
             let concrete_args =
               List.filter
                 (fun arg ->
@@ -7986,10 +7971,10 @@ let create ~compile_expr =
                 concrete_args <> []
                 && List.for_all (fun arg -> Types.is_numeric arg.ty) concrete_args
                 &&
-                (name <> "="
+                (operator <> "="
                 || List.length concrete_args = List.length args )
               then if
-                name = "=="
+                operator = "=="
                 && List.exists
                      (fun arg -> Types.equal arg.ty TFloat)
                      concrete_args
@@ -8006,7 +7991,7 @@ let create ~compile_expr =
               else None
             in
             let dynamic_equality =
-              name = "="
+              operator = "="
               && List.exists
                    (fun arg ->
                      Types.is_dynamic arg.ty
@@ -8048,7 +8033,7 @@ let create ~compile_expr =
                   else
                   match numeric_ty with
                               | Some TFloat
-                                when name = "==" && Types.equal arg.ty TInt ->
+                                when operator = "==" && Types.equal arg.ty TInt ->
                                   adapt
                                     ({
                                        arg with
@@ -8064,11 +8049,11 @@ let create ~compile_expr =
             in
             Result.bind (adapt [] args)
               (fun args ->
-                if name = "=" then
+                if operator = "=" then
                   compile_equality scope env args
                 else
                   Core_compare.compile ~env
-                    (if name = "==" then "=" else name)
+                    (if operator = "==" then "=" else operator)
                     args))
               | "__lg_nil-predicate" | "__lg_true-predicate"
               | "__lg_false-predicate" | "__lg_int-predicate"

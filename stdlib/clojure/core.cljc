@@ -3031,6 +3031,97 @@
   [expression]
   (__lg_re-pattern expression))
 
+(defn +
+  {:inline (fn [& values] (cons '__lg_add values))}
+  ([] (__lg_add))
+  ([x] x)
+  ([x y] (__lg_add x y))
+  ([x y & more] (__lg_reduce + (__lg_add x y) more)))
+
+(defn -
+  {:inline (fn [& values] (cons '__lg_subtract values))}
+  ([x] (__lg_subtract x))
+  ([x y] (__lg_subtract x y))
+  ([x y & more] (__lg_reduce - (__lg_subtract x y) more)))
+
+(defn *
+  {:inline (fn [& values] (cons '__lg_multiply values))}
+  ([] (__lg_multiply))
+  ([x] x)
+  ([x y] (__lg_multiply x y))
+  ([x y & more] (__lg_reduce * (__lg_multiply x y) more)))
+
+(defn /
+  {:inline (fn [& values] (cons '__lg_divide values))}
+  ([x] (__lg_divide 1 x))
+  ([x y] (__lg_divide x y))
+  ([x y & more] (__lg_reduce / (__lg_divide x y) more)))
+
+(defn- less-chain [x y more]
+  (if (__lg_less x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_less y (first more)))
+    false))
+
+(defn <
+  {:inline (fn [& values] (cons '__lg_less values))}
+  ([x] true)
+  ([x y] (__lg_less x y))
+  ([x y & more] (less-chain x y more)))
+
+(defn- less-equal-chain [x y more]
+  (if (__lg_less-equal x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_less-equal y (first more)))
+    false))
+
+(defn <=
+  {:inline (fn [& values] (cons '__lg_less-equal values))}
+  ([x] true)
+  ([x y] (__lg_less-equal x y))
+  ([x y & more] (less-equal-chain x y more)))
+
+(defn- greater-chain [x y more]
+  (if (__lg_greater x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_greater y (first more)))
+    false))
+
+(defn >
+  {:inline (fn [& values] (cons '__lg_greater values))}
+  ([x] true)
+  ([x y] (__lg_greater x y))
+  ([x y & more] (greater-chain x y more)))
+
+(defn- greater-equal-chain [x y more]
+  (if (__lg_greater-equal x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_greater-equal y (first more)))
+    false))
+
+(defn >=
+  {:inline (fn [& values] (cons '__lg_greater-equal values))}
+  ([x] true)
+  ([x y] (__lg_greater-equal x y))
+  ([x y & more] (greater-equal-chain x y more)))
+
+(defn- numeric-equal-chain [x y more]
+  (if (__lg_numeric-equal x y)
+    (if (next more)
+      (recur y (first more) (next more))
+      (__lg_numeric-equal y (first more)))
+    false))
+
+(defn ==
+  {:inline (fn [& values] (cons '__lg_numeric-equal values))}
+  ([x] true)
+  ([x y] (__lg_numeric-equal x y))
+  ([x y & more] (numeric-equal-chain x y more)))
+
 (defn inc [x]
   (+ x 1))
 

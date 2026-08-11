@@ -1077,7 +1077,6 @@ let untyped_first_class_collection_function_error name =
 let untyped_first_class_function_error = function
   | ( "!="
     | "="
-    | "=="
     | "abs"
     | "array-value?"
     | "array?"
@@ -1123,14 +1122,6 @@ let untyped_first_class_function_error = function
   | _ -> None
 
 let lookup_function scope env name =
-  let static_int_comparison operator =
-    typed_ir
-      (TFn ([ TInt; TInt ], TBool))
-      (Semantic_ir.Fun
-         ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-           Semantic_ir.Infix
-             (operator, Semantic_ir.Ident "a", Semantic_ir.Ident "b") ))
-  in
   match lookup_binding scope env name with
   | Ok binding ->
       Ok (typed_ir binding.ty (binding_value_expression binding))
@@ -1139,64 +1130,6 @@ let lookup_function scope env name =
       | Some message -> Error.error message
       | None -> (
       match name with
-      | "+" ->
-          let arities =
-            [ { fixed_params = []; rest_param = None; return_ty = TInt };
-              { fixed_params = [ TInt ]; rest_param = None; return_ty = TInt };
-              { fixed_params = [ TInt; TInt ];
-                rest_param = None;
-                return_ty = TInt;
-              };
-            ]
-          in
-          Ok
-            (typed_ir
-               (TOverloaded_fn arities)
-               (Semantic_ir.Tuple
-                  [ Semantic_ir.Fun ([], Semantic_ir.Int 0);
-                    Semantic_ir.Tuple
-                      [ Semantic_ir.Fun
-                          ( [ Semantic_ir.PVar "value" ],
-                            Semantic_ir.Ident "value" );
-                        Semantic_ir.Tuple
-                          [ Semantic_ir.Fun
-                              ( [ Semantic_ir.PVar "a";
-                                  Semantic_ir.PVar "b";
-                                ],
-                                Semantic_ir.Infix
-                                  ( "+",
-                                    Semantic_ir.Ident "a",
-                                    Semantic_ir.Ident "b" ) );
-                            Semantic_ir.Unit;
-                          ];
-                      ];
-                  ]))
-      | "-" ->
-          Ok
-            (typed_ir
-               (TFn ([ TInt; TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("-", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
-      | "*" ->
-          Ok
-            (typed_ir
-               (TFn ([ TInt; TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("*", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
-      | "/" ->
-          Ok
-            (typed_ir
-               (TFn ([ TInt; TInt ], TInt))
-               (Semantic_ir.Fun
-                  ( [ Semantic_ir.PVar "a"; Semantic_ir.PVar "b" ],
-                    Semantic_ir.Infix
-                      ("/", Semantic_ir.Ident "a", Semantic_ir.Ident "b") )))
-      | ("<" | "<=" | ">" | ">=") as operator ->
-          Ok (static_int_comparison operator)
       | _ -> Error.error ("unknown function " ^ name)))
 
 let record_constructor_type scope env name =

@@ -301,8 +301,11 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_coll-predicate" {found=1} END 
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_set-predicate" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_reversible-predicate" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "indexed?" || $2 == "__lg_sequential-predicate" || $2 == "__lg_sorted-predicate") {found=1} END {exit found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "compiler-call" && $2 == "+" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "compiler-call" && $2 == "-" && $3 == "typed-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+if awk -F '\t' '$1 == "compiler-call" && ($2 == "+" || $2 == "-" || $2 == "*" || $2 == "/" || $2 == "<" || $2 == "<=" || $2 == ">" || $2 == ">=" || $2 == "==") {found=1} END {exit !found}' "$tmp/inventory.tsv"; then
+  echo "public numeric operator compiler dispatch must be removed" >&2
+  exit 1
+fi
+awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_add" || $2 == "__lg_subtract" || $2 == "__lg_multiply" || $2 == "__lg_divide" || $2 == "__lg_less" || $2 == "__lg_less-equal" || $2 == "__lg_greater" || $2 == "__lg_greater-equal" || $2 == "__lg_numeric-equal") && $3 == "typed-primitive" {found++} END {exit found != 9}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-message" && $3 == "typed-primitive" && $4 == "static-exception-message-extraction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-primitive" && $4 == "static-optional-exception-cause-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
@@ -347,7 +350,7 @@ awk -F '\t' '$1 == "logseq-qualified-var" && $2 == "clojure.string/upper-case" &
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.string" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.set" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.walk" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "readable-and-display-printing-require-distinct-static-printer-witnesses" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 == "cljs.test/join-fixtures" || $2 == "cljs.test/successful?") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/run-block" || $2 == "cljs.test/test-var-block" || $2 == "cljs.test/test-var" || $2 == "cljs.test/test-vars-block" || $2 == "cljs.test/test-vars" || $2 == "cljs.test/testing-vars-str") && $3 == "source" {found++} END {exit found != 6}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/async" || $2 == "cljs.test/async?" || $2 == "cljs.test/block") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"

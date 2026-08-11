@@ -54,10 +54,14 @@ let compile_operator name args =
   match (name, args) with
   | "+", [] -> Ok (typed_ir TInt (int 0))
   | "*", [] -> Ok (typed_ir TInt (int 1))
-  | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
+  | "/", [] -> Error.error "/ expects at least 1 arguments"
   | _, [] -> Error.error (name ^ " expects at least 1 arguments")
   | _, [ arg ] when name = "-" ->
       Ok (typed_ir TInt (Semantic_ir.Prefix ("~-", int_expression arg)))
+  | _, [ arg ] when name = "/" ->
+      Ok
+        (typed_ir TInt
+           (Semantic_ir.Infix ("/", Semantic_ir.Int 1, int_expression arg)))
   | _, [ arg ] -> Ok (typed_ir TInt (int_expression arg))
   | _, first :: rest ->
       let operator =

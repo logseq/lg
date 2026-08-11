@@ -210,7 +210,7 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 689 source entries (69.95%), 23 typed
+macro surfaces. The current baseline is 707 source entries (71.78%), 5 typed
 primitives, 43 special forms, 88 host boundaries, 91 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
@@ -235,6 +235,17 @@ typed rendering operation used by built-in implementations. LG currently
 accepts only the default `nil` print options; print-level, print-length, and the
 more marker remain explicit static adaptations instead of silently widening the
 options value to a dynamic map.
+
+The numeric operator cluster is source-owned. `+`, `-`, `*`, `/`, `<`, `<=`,
+`>`, `>=`, and `==` preserve the pinned zero, unary, binary, and variadic
+shapes that apply to each operator, including unary reciprocal division and
+pairwise monotonic comparison. Their source inline definitions route direct
+integer, floating, and mixed numeric calls to private typed primitives; the
+ordinary source functions remain statically first-class for homogeneous integer
+calls. Generated OCaml uses readable names such as `clojure_core_add` and
+`clojure_core_less_equal`. Metadata normalization recognizes a generic type
+hint only when its `<...>` form is complete, so ordinary `<` and `<=` symbols
+remain valid source definition names.
 
 `munge` and `demunge` preserve ClojureScript's string-or-symbol result identity
 through private protocols with a static `:self` return. Their source functions

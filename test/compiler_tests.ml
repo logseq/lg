@@ -27808,6 +27808,77 @@ let test_source_printing_function_cluster_is_source_owned () =
       "src/expression_support.ml"; "src/top_level_elaborator.ml";
     ]
 
+let test_source_numeric_operator_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-numeric-operators
+  (:require [cljs.core :as core
+             :refer [+ - * / < <= > >= ==]]))
+
+(def add +)
+(def subtract -)
+(def multiply *)
+(def divide /)
+(def less-than <)
+
+(println
+ (str
+  (+) ":" (+ 7) ":" (+ 1 2 3 4) ":" (add 2 3 4) ":"
+  (- 7) ":" (- 20 3 2) ":" (subtract 20 5 3) ":"
+  (*) ":" (* 5) ":" (* 2 3 4) ":" (multiply 2 3 5) ":"
+  (/ 4.0) ":" (/ 20 2 2) ":" (divide 24 3 2) ":"
+  (< 1) ":" (< 1 2 3 4) ":" (< 1 3 2) ":" (less-than 1 2 3) ":"
+  (<= 1 1 2) ":" (> 4 3 2) ":" (>= 4 4 2) ":"
+  (== 1 1.0 1) ":" (core/+ 1.5 2)))
+|}
+  in
+  let consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer "Runtime_dynamic.numeric_" then
+    failwith "source numeric operators must remain statically typed";
+  [ "clojure_core_add"; "clojure_core_subtract";
+    "clojure_core_multiply"; "clojure_core_divide";
+    "clojure_core_less";
+  ]
+  |> List.iter (fun generated_name ->
+         if not (string_contains_substring consumer generated_name) then
+           failwith
+             ("generated ML is missing readable operator name "
+            ^ generated_name));
+  assert_ocaml_runs "source_numeric_operator_cluster"
+    "0:7:10:9:-7:15:12:1:5:24:30:0.25:5:4:true:true:false:true:true:true:true:true:3.5\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic.numeric_" then
+    failwith "Melange numeric operators must remain statically typed";
+  [ "-"; "/"; "<"; "<="; ">"; ">="; "==" ]
+  |> List.iter (fun operator ->
+         compile_string_from_stdlib ("(" ^ operator ^ ")")
+         |> expect_error_contains "expects at least 1")
+
+let test_source_numeric_operator_cluster_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  [ "+"; "-"; "*"; "/"; "<"; "<="; ">"; ">="; "==" ]
+  |> List.iter (fun operator ->
+         let declaration = "(defn " ^ operator in
+         if not (string_contains_substring source declaration) then
+           failwith
+             (operator ^ " is missing from the source standard library"));
+  [ "src/call_elaborator.ml"; "src/type_inference.ml";
+    "src/expression_support.ml";
+  ]
+  |> List.iter (fun path ->
+         let compiler_source = read_file path in
+         [ "+"; "-"; "*"; "/"; "<"; "<="; ">"; ">="; "==" ]
+         |> List.iter (fun operator ->
+                if
+                  string_contains_substring compiler_source
+                    ("| \"" ^ operator ^ "\"")
+                then
+                  failwith
+                    (operator ^ " still has public-name compiler dispatch")))
+
 let test_source_writer_printing_cluster_matches_clojurescript () =
   let source =
     {|
@@ -45018,6 +45089,10 @@ let tests =
       test_source_printing_function_cluster_matches_clojurescript );
     ( "source printing function cluster is source-owned",
       test_source_printing_function_cluster_is_source_owned );
+    ( "source numeric operator cluster matches ClojureScript",
+      test_source_numeric_operator_cluster_matches_clojurescript );
+    ( "source numeric operator cluster is source-owned",
+      test_source_numeric_operator_cluster_is_source_owned );
     ( "source writer printing cluster matches ClojureScript",
       test_source_writer_printing_cluster_matches_clojurescript );
     ( "source writer printing cluster is source-owned",

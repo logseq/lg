@@ -59,10 +59,15 @@ let fold_infix operator first rest =
 
 let compile_operator name args =
   match (name, args) with
-  | "/", ([] | [ _ ]) -> Error.error "/ expects at least 2 arguments"
+  | "/", [] -> Error.error "/ expects at least 1 arguments"
   | _, [] -> Error.error (name ^ " expects at least 1 arguments")
   | _, [ arg ] when name = "-" ->
       Ok (typed_ir TFloat (Semantic_ir.Prefix ("~-.", float_expression arg)))
+  | _, [ arg ] when name = "/" ->
+      Ok
+        (typed_ir TFloat
+           (Semantic_ir.Infix
+              ("/.", Semantic_ir.Float "1.", float_expression arg)))
   | _, [ arg ] -> Ok (typed_ir TFloat (float_expression arg))
   | _, first :: rest ->
       let operator =

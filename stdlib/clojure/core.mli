@@ -401,6 +401,24 @@
   :fn<vector<value>;bool>)
 (signature clojure.core/not-empty [value]
   :fn<vector<value>;option<vector<value>>>)
+(signature clojure.core/+
+  :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/-
+  :overload<fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/*
+  :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core//
+  :overload<fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/<
+  :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
+(signature clojure.core/<=
+  :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
+(signature clojure.core/>
+  :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
+(signature clojure.core/>=
+  :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
+(signature clojure.core/==
+  :overload<fn<int;bool>;fn<int;int;bool>;variadic-fn<int;int;int;bool>>)
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
 (signature clojure.core/bit-and-two :fn<int;int;int>)

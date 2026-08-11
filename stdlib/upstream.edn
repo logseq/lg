@@ -80,6 +80,24 @@
     underive {:status :static-adaptation
               :reason :source-two-and-three-arity-function-preserves-global-mutation-explicit-persistence-missing-edge-identity-and-upstream-full-closure-rebuild-through-a-closed-edn-runtime-algorithm}
     identity {:status :ported}
+    + {:status :static-adaptation
+       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-addition-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+    - {:status :static-adaptation
+       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-negation-and-left-to-right-subtraction-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+    * {:status :static-adaptation
+       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-multiplication-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+    / {:status :static-adaptation
+       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+    < {:status :static-adaptation
+       :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+    <= {:status :static-adaptation
+        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+    > {:status :static-adaptation
+       :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+    >= {:status :static-adaptation
+        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+    == {:status :static-adaptation
+        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-numeric-equivalence-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
     -seq {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -reduce {:status :static-adaptation :reason :source-protocol-declaration-uses-the-explicit-initial-accumulator-arity-supported-by-the-typed-reduction-boundary}
     -count {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}

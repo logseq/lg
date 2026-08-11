@@ -519,7 +519,10 @@ let rec numeric_form_type params = function
   | FFloat _ -> TFloat
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList
-      (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
+      (FSymbol
+         ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
+         | "__lg_max" | "__lg_min" )
+      :: args)
     ->
       let types = List.map (numeric_form_type params) args in
       if List.exists (Types.equal TFloat) types then TFloat
@@ -582,7 +585,10 @@ let rec inferred_form_type params = function
       record_field_type params receiver keyword
       |> Option.value ~default:TUnknown
   | FList
-      (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: _)
+      (FSymbol
+         ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
+         | "__lg_max" | "__lg_min" )
+      :: _)
     as form ->
       numeric_form_type params form
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
@@ -1470,7 +1476,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     infer_expected expected params argument))
               (Ok params) parameter_types args)
     | FList
-        (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
+      (FSymbol
+         ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
+         | "__lg_max" | "__lg_min" )
+      :: args)
       when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
         infer_expected_all expected_ty params args
     | FList
@@ -4598,7 +4607,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_sort"; _comparator; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList
-        (FSymbol ("+" | "-" | "*" | "/" | "__lg_max" | "__lg_min") :: args)
+        (FSymbol
+           ( "__lg_add" | "__lg_subtract" | "__lg_multiply"
+           | "__lg_divide" | "__lg_max" | "__lg_min" )
+        :: args)
       ->
         let expected_ty =
           if
@@ -4654,7 +4666,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [ FSymbol ("__lg_int" | "__lg_long" | "__lg_double"); arg ] ->
         infer_form params arg
-    | FList (FSymbol ("==" | "<" | "<=" | ">" | ">=") :: args) ->
+    | FList
+        (FSymbol
+           ( "__lg_numeric-equal" | "__lg_less" | "__lg_less-equal"
+           | "__lg_greater" | "__lg_greater-equal" )
+        :: args) ->
         let expected_ty =
           if
             List.exists

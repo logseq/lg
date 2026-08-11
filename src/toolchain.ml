@@ -125,7 +125,7 @@ module Lg_frontend : FRONTEND = struct
 
   let definition_type_hint name =
     host_type_hint name
-    || String.contains name '<'
+    || (String.contains name '<' && String.ends_with ~suffix:">" name)
     || List.mem name
          [
            "^:int";
