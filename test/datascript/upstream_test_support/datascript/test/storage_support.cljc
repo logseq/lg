@@ -11,6 +11,11 @@
   (writes :ref<vector<int>>)
   (deletes :ref<vector<int>>))
 
+(extend-type memory-storage
+  storage/ClosedStorage
+  (closed-storage [storage]
+    (.-backend storage)))
+
 #?(:clj
    (extend-type memory-storage
      storage/IStorage

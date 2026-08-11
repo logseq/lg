@@ -27,6 +27,18 @@
   [key value]
   :fn<lru-state<key;value>;key;value;value>)
 
+(signature datascript.lru/make-lru-state
+  [key value]
+  :fn<map<key;value>;clojure.core/persistent-tree-map<int;key>;map<key;int>;int;int;lru-state<key;value>>)
+
+(defn make-lru-state [key-value gen-key key-gen gen limit]
+  (record lru-state
+    (key-value key-value)
+    (gen-key gen-key)
+    (key-gen key-gen)
+    (gen gen)
+    (limit limit)))
+
 (defn cleanup-lru [lru]
   (if (> (count (:key-value lru)) (:limit lru))
     (let [key-value (:key-value lru)
@@ -37,12 +49,12 @@
           entry     (first gen-key)]
       (if-some [present entry]
         (let [[g k] present]
-          (record lru-state
-            (key-value (dissoc key-value k))
-            (gen-key (dissoc gen-key g))
-            (key-gen (dissoc key-gen k))
-            (gen gen)
-            (limit limit)))
+          (make-lru-state
+           (dissoc key-value k)
+           (dissoc gen-key g)
+           (dissoc key-gen k)
+           gen
+           limit))
         lru))
     lru))
 
@@ -54,20 +66,20 @@
         limit     (:limit lru)]
     (match (get key-gen k)
       (Some g)
-      (record lru-state
-        (key-value key-value)
-        (gen-key (assoc (dissoc gen-key g) gen k))
-        (key-gen (assoc key-gen k gen))
-        (gen (inc gen))
-        (limit limit))
+      (make-lru-state
+       key-value
+       (assoc (dissoc gen-key g) gen k)
+       (assoc key-gen k gen)
+       (inc gen)
+       limit)
       None
       (cleanup-lru
-        (record lru-state
-          (key-value (assoc key-value k v))
-          (gen-key (assoc gen-key gen k))
-          (key-gen (assoc key-gen k gen))
-          (gen (inc gen))
-          (limit limit))))))
+        (make-lru-state
+         (assoc key-value k v)
+         (assoc gen-key gen k)
+         (assoc key-gen k gen)
+         (inc gen)
+         limit)))))
 
 (defn lru [limit]
   (record lru-state
@@ -83,11 +95,15 @@
 (defn get-lru-default [lru key not-found]
   (get (:key-value lru) key not-found))
 
-(defprotocol ICache
-  (-get [this key compute-fn]))
-
 (type-record cache-state [key value]
   (impl :ref<lru-state<key;value>>))
+
+(signature datascript.lru/-get
+  [key value]
+  :fn<cache-state<key;value>;key;fn<unit;value>;value>)
+
+(defprotocol ICache
+  (-get [this key compute-fn]))
 
 (signature datascript.lru/cache
   [key value]

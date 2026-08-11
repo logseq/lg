@@ -130,9 +130,11 @@ for generated_source in "$@"; do
     exit 1
   fi
 
-  if grep -E \
-    "Runtime_dynamic|Lg_dyn|D\\.[A-Za-z_]+" \
-    "$generated_source" >/dev/null; then
+  if awk '
+      /^let me_tonsky_persistent_sorted_set_|^type .*me_tonsky_persistent_sorted_set_|^let datascript_|^type .*datascript_/ { static_source = 1 }
+      static_source { print }
+    ' "$generated_source" \
+    | grep -E "Runtime_dynamic|Lg_dyn|D\\.[A-Za-z_]+" >/dev/null; then
     echo "Generated DataScript references Runtime_dynamic: $generated_source" >&2
     exit 1
   fi

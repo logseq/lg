@@ -1065,8 +1065,8 @@ let compile_static_compare_capability env left right =
         if Types.equal value_ty TKeyword || Types.equal value_ty TSymbol then
           Ok
             (Semantic_ir.Apply
-               ( Semantic_ir.Ident
-                   "Lg_runtime.Runtime_dynamic.compare_identifier",
+                ( Semantic_ir.Ident
+                   "Lg_runtime.Runtime_keyword.compare_identifier",
                  [
                    constrained_argument_value left;
                    constrained_argument_value right;

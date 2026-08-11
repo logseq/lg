@@ -98,7 +98,7 @@
                        (fn [entries entry]
                          (assoc
                           entries
-                          (str (first entry))
+                          (first entry)
                           (value-form (second entry))))
                        {}
                        value))
@@ -174,7 +174,7 @@
                        (fn [entries entry]
                          (assoc
                           entries
-                          (str (first entry))
+                          (first entry)
                           (value-form (second entry))))
                        {}
                        value))

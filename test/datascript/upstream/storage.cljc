@@ -13,12 +13,12 @@
 (type-alias stored-value :Datascript_runtime.Storage_value.t)
 (type-alias storage-backend :Datascript_runtime.Storage_backend.t)
 
-(module StorageBoundary
-  (defprotocol ClosedStorage
-    (closed-storage [storage] :Datascript_runtime.Storage_backend.t))
-  (extend-type :Datascript_runtime.Storage_backend.t
-    ClosedStorage
-    (closed-storage [backend] backend)))
+(defprotocol ClosedStorage
+  (closed-storage [storage] :Datascript_runtime.Storage_backend.t))
+
+(extend-type :Datascript_runtime.Storage_backend.t
+  ClosedStorage
+  (closed-storage [backend] backend))
 
 #?(:clj
    (defprotocol IStorage
@@ -92,8 +92,8 @@
    store-fn restore-fn list-addresses-fn delete-fn))
 
 (defn- adapt-storage [storage]
-  (if (satisfies? StorageBoundary/ClosedStorage storage)
-    (StorageBoundary/ClosedStorage/closed-storage storage)
+  (if (satisfies? ClosedStorage storage)
+    (closed-storage storage)
     (Datascript_runtime.Storage_backend.create
      (fn [address-data delete-addresses]
        #?(:clj

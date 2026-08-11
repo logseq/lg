@@ -16,7 +16,7 @@
 (defn ^:Datascript_runtime.Data_value.t pull-name
   [^:string name]
   (Datascript_runtime.Data_value.map_of_keyword_map
-   {":name" (Datascript_runtime.Data_value.String name)}))
+   {:name (Datascript_runtime.Data_value.String name)}))
 
 (defn ^boolean query-scalar-value?
   [^datascript.lg.query-types/output output

@@ -185,7 +185,7 @@ let sort collection =
           if Types.is_dynamic inner then
             Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.compare"
           else if Types.equal inner TKeyword || Types.equal inner TSymbol then
-            Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.compare_identifier"
+            Semantic_ir.Ident "Lg_runtime.Runtime_keyword.compare_identifier"
           else Semantic_ir.Ident "compare"
         in
         Ok

@@ -92,7 +92,9 @@
                 (vec (map value-form value)))
 
                (if (seq? value)
-                 (= (str (first value)) "hash-set")
+                 (or
+                  (= (str (first value)) "hash-set")
+                  (= (str (first value)) "__lg_hash-set"))
                  false)
                (list
                 'Datascript_runtime.Data_value.set_of_vector
