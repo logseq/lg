@@ -280,6 +280,7 @@ if test -n "$clojurescript_root"; then
     'clojure.edn|stdlib/clojure/edn.cljc' \
     'cljs.reader|stdlib/cljs/reader.cljc' \
     'cljs.math|stdlib/cljs/math.cljc' \
+    'cljs.pprint|stdlib/cljs/pprint.cljc' \
     'clojure.data|stdlib/clojure/data.cljc' \
     'clojure.walk|stdlib/clojure/walk.cljc' \
     'clojure.zip|stdlib/clojure/zip.cljc'; do
@@ -400,6 +401,7 @@ for namespace in \
   elif test "$namespace" = clojure.string \
     || test "$namespace" = clojure.edn \
     || test "$namespace" = cljs.reader \
+    || test "$namespace" = cljs.pprint \
     || test "$namespace" = clojure.data \
     || test "$namespace" = clojure.walk \
     || test "$namespace" = clojure.zip; then
@@ -422,6 +424,8 @@ clojure.edn/read-string|source
 clojure.edn/register-tag-parser!|host-boundary
 cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
+cljs.pprint/float?|source
+cljs.pprint/char-code|source
 clojure.set/project|source
 clojure.set/rename|source
 clojure.string/escape|source

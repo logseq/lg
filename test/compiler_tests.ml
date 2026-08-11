@@ -304,6 +304,7 @@ let stdlib_sources =
          "stdlib/clojure/zip.mli";
          "stdlib/clojure/zip.cljc";
          "stdlib/cljs/cache.cljc";
+         "stdlib/cljs/pprint.cljc";
        ]
       |> List.map (fun path ->
              (path, read_file (Filename.concat (repo_root ()) path))))
@@ -27018,6 +27019,54 @@ let test_source_drop_map_entry_and_pending_protocols_match_clojurescript () =
 |}
   |> expect_error_contains "IPending"
 
+let test_source_cljs_pprint_numeric_and_character_helpers_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-pprint
+  (:require [cljs.pprint :as pprint :refer [char-code float?]]))
+
+(def source-float? float?)
+(def source-char-code char-code)
+
+(println
+  (and (source-float? 1.5)
+       (not (source-float? 1.0))
+       (not (source-float? 1))
+       (not (source-float? ##NaN))
+       (not (source-float? ##Inf))
+       (not (source-float? ##-Inf))
+       (not (source-float? :not-a-number))
+       (pprint/float? -2.5)
+       (= 65 (source-char-code \A))
+       (= 65 (source-char-code "A"))
+       (= 65 (source-char-code 65))
+       (= 955 (pprint/char-code "λ"))
+       (try
+         (do (source-char-code "AB") false)
+         (catch _ true))
+       (try
+         (do (source-char-code "😀") false)
+         (catch _ true))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_cljs_pprint.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.pprint helpers must remain statically typed";
+  assert_ocaml_runs "source_cljs_pprint_helpers" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_cljs_pprint.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_pprint_bad_char.cljc"
+    {|
+(ns app.source-pprint-bad-char
+  (:require [cljs.pprint :as pprint]))
+(pprint/char-code :A)
+|}
+  |> expect_error_contains "no protocol implementation for cljs.pprint/-char-code"
+
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
     {|
@@ -42961,6 +43010,9 @@ let tests =
       test_source_iseq_and_inext_protocols_match_clojurescript );
     ( "source drop, map entry, and pending protocols match ClojureScript",
       test_source_drop_map_entry_and_pending_protocols_match_clojurescript );
+    ( "source cljs.pprint numeric and character helpers match ClojureScript",
+      test_source_cljs_pprint_numeric_and_character_helpers_match_clojurescript
+    );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 610 source entries (61.93%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 159 static-typing blockers,
+macro surfaces. The current baseline is 612 source entries (62.13%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 157 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -886,8 +886,11 @@ The same checkout also reports
 `cljs.test` occurs 229 times and is explicitly blocked on analyzer-backed
 macros, dynamic test environments, and a closed report-event domain.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.
-`cljs.pprint` occurs 15 times and is explicitly blocked because
-readable and display printing need distinct static printer witnesses;
+`cljs.pprint` occurs 15 times. Its independent `float?` and `char-code` helpers
+are now precompiled source definitions, using private static protocols and a
+typed UTF-16 code-unit boundary. The formatter, writer, and dispatch-table
+surface remains explicitly blocked because readable and display printing need
+distinct static printer witnesses; no simplified `println` substitute is used.
 `clojure.pprint` occurs 14 times and is a JVM-only host boundary. All 28 public
 `clojure.zip` vars are now precompiled source definitions. Its parameterized
 closed location, path, and callback-context records replace upstream's

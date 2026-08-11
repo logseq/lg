@@ -115,6 +115,13 @@ let utf16_code_units source =
   in
   loop 0 0
 
+let char_code_of_char value = Char.code value
+
+let char_code_of_string source =
+  let units = utf16_code_units source in
+  if Array.length units = 1 then units.(0)
+  else invalid_arg "Argument to char-code must be a single UTF-16 code unit"
+
 let substring_from source start =
   String.sub source start (String.length source - start)
 

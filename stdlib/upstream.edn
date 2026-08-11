@@ -15,7 +15,7 @@
   :source "tailrecursion/priority_map.cljs"}
 
  :aggregate-namespaces
- [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math cljs.cache clojure.set clojure.data clojure.walk clojure.zip]
+ [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math cljs.cache cljs.pprint clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -1374,8 +1374,14 @@
 
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"
+   :implementation "cljs/pprint.cljc"
    :status :blocked
-   :reason :readable-and-display-printing-require-distinct-static-printer-witnesses}
+   :reason :readable-and-display-printing-require-distinct-static-printer-witnesses
+   :definitions
+   {float? {:status :static-adaptation
+            :reason :source-private-protocol-preserves-the-upstream-finite-nonintegral-number-predicate-across-lg-static-int-float-and-default-domains}
+    char-code {:status :static-adaptation
+               :reason :source-private-protocol-preserves-integer-character-and-single-utf16-code-unit-string-inputs-while-excluding-the-upstream-nonintegral-javascript-number-result-from-the-static-int-api}}}
 
   cljs.test
   {:source "src/main/cljs/cljs/test.cljc"
