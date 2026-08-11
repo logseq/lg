@@ -1652,6 +1652,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                     match fn_form with
                     | FSymbol name -> (
                         match Resolver.lookup_binding scope env name with
+                        | Ok { ty = TFn ([ acc_ty; _ ], _); _ }
+                          when element_type_is_open
+                               && not
+                                    (Types.equal acc_ty
+                                       (Types.constraint_value_type acc_ty)) ->
+                            inner
                         | Ok { ty = TFn ([ acc_ty; _item_ty ], return_ty); _ }
                           when element_type_is_open
                                && not (Types.is_dynamic acc_ty)
@@ -1665,6 +1671,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                   List.length arity.fixed_params = 2)
                                 arities
                             with
+                            | Some { fixed_params = acc_ty :: _; _ }
+                              when not
+                                     (Types.equal acc_ty
+                                        (Types.constraint_value_type acc_ty)) ->
+                                inner
                             | Some
                                 {
                                   fixed_params = acc_ty :: _;

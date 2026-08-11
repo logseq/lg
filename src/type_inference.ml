@@ -602,6 +602,26 @@ let rec inferred_form_type params = function
           TFn (parameter_tys, TOcaml "int")
       | _ -> TUnknown)
   | FList [ FSymbol "__lg_count"; _ ] -> TInt
+  | FList [ FSymbol operation; FSymbol receiver ]
+    when has_source_name operation "__lg_vals" -> (
+      match string_assoc_opt receiver params with
+      | Some receiver_ty -> (
+          match Types.dynamic_map_types (Types.constraint_value_type receiver_ty) with
+          | Some (_, value_ty) -> TVector value_ty
+          | None -> TUnknown)
+      | None -> TUnknown)
+  | FList [ FSymbol "__lg_reduce"; _reducer; collection ] -> (
+      let collection_ty = inferred_form_type params collection in
+      let element_ty =
+        match collection_ty with
+        | TList element_ty | TVector element_ty | TSet element_ty
+        | TSeq element_ty | TArray element_ty ->
+            element_ty
+        | ty ->
+            Types.seqable_constraint_element ty
+            |> Option.value ~default:TUnknown
+      in
+      TNullable element_ty)
   | FList
       [
         FSymbol "__lg_with-meta";
@@ -859,6 +879,19 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList [ FSymbol reduce_name; _reducer; collection ]
+    when has_source_name reduce_name "__lg_reduce" ->
+      let collection_ty = inferred_form_type params collection in
+      let element_ty =
+        match collection_ty with
+        | TList element_ty | TVector element_ty | TSet element_ty
+        | TSeq element_ty | TArray element_ty ->
+            element_ty
+        | ty ->
+            Types.seqable_constraint_element ty
+            |> Option.value ~default:TUnknown
+      in
+      TNullable element_ty
   | FList [ FSymbol "__lg_reduce"; _reducer; FMap []; _collection ] ->
       Types.dynamic_map (Type_solver.fresh ()) (Type_solver.fresh ())
   | FList [ FSymbol "__lg_reduce"; _reducer; init; _collection ] ->
@@ -1509,9 +1542,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               || has_source_name operation "__lg_vals") ->
         let element_ty =
           Types.seqable_constraint_element expected_ty
-          |> Option.value ~default:(fresh_type_variable "map_projection")
+          |> Option.value
+               ~default:(fresh_type_variable "map_projection_element")
         in
-        let other_ty = fresh_type_variable "map_projection" in
+        let other_ty = fresh_type_variable "map_projection_other" in
         let map_ty =
           if has_source_name operation "__lg_keys" then
             Types.dynamic_map element_ty other_ty
@@ -4718,7 +4752,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | Ok _ | Error _ -> TUnknown)
           | _ -> TUnknown
         in
-        infer_sequence_form declared_element_ty params collection
+        Result.bind
+          (infer_sequence_form declared_element_ty params collection)
+          (fun params ->
+            infer_expected
+              (TFn
+                 ( [ declared_element_ty; declared_element_ty ],
+                   declared_element_ty ))
+              params reducer)
     | FList [ FSymbol "__lg_sort"; FSymbol collection ] ->
         constrain_seqable (Types.dynamic_constraint TUnknown) params collection
     | FList [ FSymbol "__lg_sort"; _comparator; FSymbol collection ] ->
