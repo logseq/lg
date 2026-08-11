@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 639 source entries (64.87%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 130 static-typing blockers,
+macro surfaces. The current baseline is 645 source entries (65.48%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 124 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -917,6 +917,13 @@ non-boolean `is` forms. Synchronous `:once` and `:each` fixtures preserve
 definition order for both wrapping functions and `:before`/`:after` maps.
 They use a closed fixture variant and namespace registry, reject mixed fixture
 representations, and run map cleanup through readable `finally` control flow.
+The synchronous block batch also ports `run-block`, `test-var-block`,
+`test-var`, `test-vars-block`, `test-vars`, and `testing-vars-str`. Static test
+thunks remain homogeneous, execute left to right, and reuse the registered-test
+counter path. A closed test-location record replaces the heterogeneous report
+event map for file, line, and optional-column rendering. These overloads do not
+claim support for ClojureScript async markers, injected continuation blocks, or
+analyzer Var metadata.
 Async tests and fixtures, namespace hooks, analyzer-wide
 test discovery, special assertion methods, and open custom reporters remain
 explicit blockers rather than silently falling back to dynamic values.

@@ -448,6 +448,12 @@ cljs.test/ns?|source
 cljs.test/compose-fixtures|source
 cljs.test/join-fixtures|source
 cljs.test/successful?|source
+cljs.test/run-block|source
+cljs.test/test-var-block|source
+cljs.test/test-var|source
+cljs.test/test-vars-block|source
+cljs.test/test-vars|source
+cljs.test/testing-vars-str|source
 clojure.core/chunk-buffer|source
 clojure.core/array-chunk|source
 clojure.core/chunk-append|source

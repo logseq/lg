@@ -1410,6 +1410,18 @@
                          :reason :source-function-preserves-upstream-missing-counter-default-and-persistent-environment-replacement-over-the-default-lg-hashmap}
     testing-contexts-str {:status :ported
                           :reason :source-function-preserves-upstream-outermost-to-innermost-space-joined-context-order}
+    testing-vars-str {:status :static-adaptation
+                      :reason :source-function-preserves-upstream-active-test-name-order-and-file-line-column-rendering-over-a-closed-static-test-location-record-instead-of-an-open-report-event-map}
+    run-block {:status :static-adaptation
+               :reason :source-function-preserves-left-to-right-synchronous-thunk-execution-while-async-marker-and-injected-continuation-results-remain-explicitly-blocked}
+    test-var-block {:status :static-adaptation
+                    :reason :source-function-builds-a-synchronous-one-thunk-block-over-the-static-registered-test-executor-instead-of-javascript-var-test-metadata}
+    test-var {:status :static-adaptation
+              :reason :source-function-runs-one-statically-typed-synchronous-test-thunk-through-run-block-instead-of-javascript-var-test-metadata}
+    test-vars-block {:status :static-adaptation
+                     :reason :source-function-preserves-input-order-while-building-a-homogeneous-synchronous-thunk-sequence-instead-of-analyzer-var-grouping-and-async-block-injection}
+    test-vars {:status :static-adaptation
+               :reason :source-function-runs-the-static-synchronous-test-vars-block-in-input-order-while-async-report-finalization-remains-blocked}
     testing {:status :ported
              :reason :source-macro-preserves-upstream-push-body-finally-pop-control-flow-with-general-lg-try-finally-support}
     is {:status :static-adaptation

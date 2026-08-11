@@ -7,7 +7,13 @@
   (reporter :keyword))
 
 (type-record registered-test
+  (registered-test-name :string)
   (registered-test-run :fn<bool>))
+
+(type-record test-location
+  (file :string)
+  (line :int)
+  (column :option<int>))
 
 (signature cljs.test/*current-env*
   :option<test-env>)
@@ -25,6 +31,8 @@
   :fn<keyword;test-env>)
 (signature cljs.test/testing-contexts-str
   :fn<string>)
+(signature cljs.test/testing-vars-str
+  :fn<test-location;string>)
 (signature cljs.test/test-env-value
   :fn<map<keyword;int>;list<string>;list<string>;keyword;test-env>)
 (signature cljs.test/replace-current-env!
@@ -43,6 +51,18 @@
   :fn<list<string>;test-env>)
 (signature cljs.test/run-single-test!
   :fn<string;fn<bool>;test-env>)
+(signature cljs.test/run-block [storage]
+  :fn<seqable<fn<bool>;storage>;bool>)
+(signature cljs.test/registered-test-step
+  :fn<string;fn<bool>;fn<bool>>)
+(signature cljs.test/test-var-block
+  :fn<fn<bool>;list<fn<bool>>>)
+(signature cljs.test/test-var
+  :fn<fn<bool>;bool>)
+(signature cljs.test/test-vars-block [storage]
+  :fn<seqable<fn<bool>;storage>;seq<fn<bool>>>)
+(signature cljs.test/test-vars [storage]
+  :fn<seqable<fn<bool>;storage>;bool>)
 (signature cljs.test/is-result
   :fn<bool;bool>)
 

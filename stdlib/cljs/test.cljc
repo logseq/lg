@@ -85,6 +85,21 @@
   []
   (apply str (interpose " " (reverse (:testing-contexts (get-current-env))))))
 
+(defn testing-vars-str
+  "Returns the active static test names followed by `location`."
+  [location]
+  (str
+   "("
+   (apply str
+          (interpose " " (reverse (:testing-vars (get-current-env)))))
+   ")"
+   " ("
+   (:file location)
+   ":"
+   (:line location)
+   (if-some [column (:column location)] (str ":" column) "")
+   ")"))
+
 (defn- push-testing-context! [context]
   (let [current (get-current-env)]
     (replace-current-env!
@@ -130,8 +145,9 @@
 (def ^:private ^:ref<map<string;namespace-fixtures>> registered-fixtures
   (atom (hash-map)))
 
-(defn- registered-test-value [_name run]
+(defn- registered-test-value [name run]
   (record registered-test
+    (registered-test-name name)
     (registered-test-run run)))
 
 (defn- register-test!
@@ -251,13 +267,30 @@
 
 (defn- ^boolean execute-registered-test!
   [^registered-test registered-test ^:list<test-fixture> fixtures]
-  (inc-report-counter! :test)
-  (try
-    (run-fixtures fixtures (:registered-test-run registered-test))
-    (catch _
+  (let [current (get-current-env)]
+    (set-env!
+     (test-env-value
+      (:report-counters current)
+      (conj (:testing-vars current) (:registered-test-name registered-test))
+      (:testing-contexts current)
+      (:reporter current)))
+    (try
       (do
-        (inc-report-counter! :error)
-        false))))
+        (inc-report-counter! :test)
+        (try
+          (run-fixtures fixtures (:registered-test-run registered-test))
+          (catch _
+            (do
+              (inc-report-counter! :error)
+              false))))
+      (finally
+       (let [updated (get-current-env)]
+         (set-env!
+          (test-env-value
+           (:report-counters updated)
+           (:testing-vars current)
+           (:testing-contexts updated)
+           (:reporter updated))))))))
 
 (defn- run-registered-test!
   "Runs `registered-test` and returns the updated test environment."
@@ -294,6 +327,44 @@
   (set-env! (empty-env))
   (run-registered-test! (registered-test-value _name run))
   (get-and-clear-env!))
+
+(defn run-block
+  "Runs synchronous test thunks in order.
+
+  Asynchronous and injected continuation results remain outside this static
+  overload."
+  [steps]
+  (doseq [step steps]
+    (step))
+  true)
+
+(defn- registered-test-step [name run]
+  (fn []
+    (execute-registered-test!
+     (registered-test-value name run)
+     (list))))
+
+(defn test-var-block
+  "Returns a synchronous block for test thunk `run`."
+  [run]
+  (list (registered-test-step "<anonymous>" run)))
+
+(defn test-var
+  "Runs one statically resolved synchronous test thunk."
+  [run]
+  (run-block (test-var-block run)))
+
+(defn test-vars-block
+  "Returns a synchronous block for `runs` in input order."
+  [runs]
+  (map
+   (fn [run] (registered-test-step "<anonymous>" run))
+   runs))
+
+(defn test-vars
+  "Runs statically resolved synchronous test thunks in input order."
+  [runs]
+  (run-block (test-vars-block runs)))
 
 (defn- is-result [result]
   (if result

@@ -29372,6 +29372,122 @@ let test_cljs_test_synchronous_fixtures_are_source_owned () =
          ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_cljs_test_synchronous_blocks_match_clojurescript () =
+  let source =
+    {|
+(ns app.cljs-test-sync-blocks
+  (:require [cljs.test :as test
+             :refer [clear-env! empty-env get-current-env is run-block set-env!
+                     test-var test-var-block test-vars test-vars-block
+                     testing-vars-str]]))
+
+(def events (atom (list)))
+
+(defn step [value]
+  (fn []
+    (swap! events conj value)
+    true))
+
+(run-block (list (step 1) (step 2)))
+(println (= (list 2 1) @events))
+
+(reset! events (list))
+(run-block (test-var-block (step 3)))
+(println (= (list 3) @events))
+
+(clear-env!)
+(set-env! (empty-env))
+(test-var (fn [] (is true)))
+(println (= 1 (get (:report-counters (get-current-env)) :test)))
+(println (= 1 (get (:report-counters (get-current-env)) :pass)))
+
+(clear-env!)
+(set-env! (empty-env))
+(run-block (test-vars-block (list (fn [] (is true)) (fn [] (is false)))))
+(println (= 2 (get (:report-counters (get-current-env)) :test)))
+(println (= 1 (get (:report-counters (get-current-env)) :pass)))
+(println (= 1 (get (:report-counters (get-current-env)) :fail)))
+
+(clear-env!)
+(set-env! (empty-env))
+(test-vars (list (fn [] (is true)) (fn [] (is true))))
+(println (= 2 (get (:report-counters (get-current-env)) :test)))
+(println (= 2 (get (:report-counters (get-current-env)) :pass)))
+
+(def location
+  (record cljs.test/test-location
+          (file "sample.cljs")
+          (line 17)
+          (column (Some 4))))
+(println (= "() (sample.cljs:17:4)" (testing-vars-str location)))
+
+(def rendered-test-name (atom ""))
+(clear-env!)
+(set-env! (empty-env))
+(test-var
+ (fn []
+   (reset! rendered-test-name (testing-vars-str location))
+   true))
+(println (= "(<anonymous>) (sample.cljs:17:4)" @rendered-test-name))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "test/source_cljs_test_sync_blocks.cljc"
+      source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "synchronous cljs.test blocks must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_sync_blocks"
+    (String.concat "" (List.init 11 (fun _ -> "true\n")))
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_sync_blocks.cljc" source)
+
+let test_source_cljs_test_synchronous_blocks_reject_invalid_arguments () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_sync_blocks_bad_step.cljc"
+    {|
+(ns app.cljs-test-sync-blocks-bad-step
+  (:require [cljs.test :refer [run-block]]))
+(run-block "not a block")
+|}
+  |> expect_error_contains "expected of type";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_sync_blocks_bad_location.cljc"
+    {|
+(ns app.cljs-test-sync-blocks-bad-location
+  (:require [cljs.test :refer [testing-vars-str]]))
+(testing-vars-str "sample.cljs")
+|}
+  |> expect_error_contains "incompatible arguments"
+
+let test_cljs_test_synchronous_blocks_are_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [
+      "run-block";
+      "test-var-block";
+      "test-var";
+      "test-vars-block";
+      "test-vars";
+      "testing-vars-str";
+    ]
+
 let test_source_chunk_buffer_and_array_chunk_match_clojurescript () =
   let source =
     {|
@@ -43920,6 +44036,12 @@ let tests =
       test_source_cljs_test_synchronous_fixtures_reject_invalid_forms );
     ( "cljs.test synchronous fixtures are source-owned",
       test_cljs_test_synchronous_fixtures_are_source_owned );
+    ( "source cljs.test synchronous blocks match ClojureScript",
+      test_source_cljs_test_synchronous_blocks_match_clojurescript );
+    ( "source cljs.test synchronous blocks reject invalid arguments",
+      test_source_cljs_test_synchronous_blocks_reject_invalid_arguments );
+    ( "cljs.test synchronous blocks are source-owned",
+      test_cljs_test_synchronous_blocks_are_source_owned );
     ( "source chunk buffer and array chunk match ClojureScript",
       test_source_chunk_buffer_and_array_chunk_match_clojurescript );
     ( "source chunk buffer and array chunk reject invalid arguments",
