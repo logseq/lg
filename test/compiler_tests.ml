@@ -20071,8 +20071,8 @@ let test_vec_requires_a_statically_typed_wrapper () =
     ignore util_ocaml;
     Lg.Compiler.compile_chunk ~target state app_source
     |> expect_error_contains
-         "vec cannot be used as an untyped first-class function; define a \
-          statically typed wrapper"
+         "dynamic is not a source type; define a closed sum type containing \
+          the supported values"
   in
   compile Lg.Target.Native;
   compile Lg.Target.Melange
