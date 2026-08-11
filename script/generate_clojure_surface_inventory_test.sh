@@ -397,6 +397,44 @@ awk -F '\t' '
   }
   END {exit failed}
 ' "$tmp/inventory.tsv"
+awk -F '\t' '
+  ($1 == "compiler-call" || $1 == "compiler-form") &&
+  ($4 == "static-elaboration-or-minimal-runtime-abi" ||
+   $4 == "static-form-elaboration-or-compiler-internal-form" ||
+   $4 == "host-interop-or-runtime-effect-boundary") {
+    print "compiler route lacks an item-specific boundary reason: " $2 > "/dev/stderr"
+    failed=1
+  }
+  END {exit failed}
+' "$tmp/inventory.tsv"
+awk -F '\t' '
+  FNR == NR {
+    if ($1 == "definition" && $3 == "source" &&
+        $2 ~ /^(clojure|cljs)\.core\//) {
+      name = $2
+      sub(/^(clojure|cljs)\.core\//, "", name)
+      source_core[name] = 1
+    }
+    next
+  }
+  $1 == "compiler-form" {
+    name = $2
+    sub(/^(clojure|cljs)\.core\//, "", name)
+    if (name in source_core) {
+      print "source-owned core var remains in compiler form dispatch: " $2 > "/dev/stderr"
+      failed=1
+    }
+  }
+  END {exit failed}
+' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
+awk -F '\t' '
+  ($1 == "compiler-call" || $1 == "compiler-form") &&
+  $2 ~ /^__lg_/ && $3 == "host-boundary" {
+    print "private static LG primitive misclassified as host boundary: " $2 > "/dev/stderr"
+    failed=1
+  }
+  END {exit failed}
+' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "Buffer.t" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.data" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.string" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"

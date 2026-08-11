@@ -651,7 +651,7 @@ let rec inferred_form_type params = function
   | FList
       (FSymbol ("__lg_str" | "__lg_print_str" | "__lg_pr_str") :: _) ->
       TString
-  | FList [ FSymbol ("first" | "__lg_first"); FSymbol receiver ] -> (
+  | FList [ FSymbol "__lg_first"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
@@ -661,7 +661,7 @@ let rec inferred_form_type params = function
               | Some element_ty -> element_ty
               | None -> if Types.is_dynamic ty then ty else TUnknown))
       | None -> TUnknown)
-  | FList [ FSymbol ("next" | "__lg_next"); FSymbol receiver ] -> (
+  | FList [ FSymbol "__lg_next"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some receiver_ty -> (
           match Types.seqable_constraint_element receiver_ty with
@@ -1611,17 +1611,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol ("first" | "__lg_first"); collection ];
+            [ FSymbol "__lg_first"; collection ];
         ] ->
         let target_ty = TRecord [ make_field keyword expected_ty ] in
         infer_sequence_form target_ty params collection
       | FList
           [
-            FSymbol ("first" | "__lg_first");
+            FSymbol "__lg_first";
             FSymbol collection;
           ] ->
         constrain_seqable expected_ty params collection
-    | FList [ FSymbol ("first" | "__lg_first"); collection ] ->
+    | FList [ FSymbol "__lg_first"; collection ] ->
         infer_sequence_form expected_ty params collection
     | FList [ FSymbol field_access; FSymbol name ]
       when String.starts_with ~prefix:".-" field_access ->
@@ -3392,7 +3392,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     match option_form with
                     | FList
                         [
-                          FSymbol ("first" | "__lg_first");
+                          FSymbol "__lg_first";
                           _collection;
                         ] ->
                         payload_ty
@@ -3442,7 +3442,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   match option_form with
                   | FList
                       [
-                        FSymbol ("first" | "__lg_first");
+                        FSymbol "__lg_first";
                         _collection;
                       ] ->
                       payload_ty
@@ -4188,8 +4188,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("first" | "seq" | "rest" | "next" | "__lg_first"
-             | "__lg_seq" | "__lg_rest" | "__lg_next")
+            (("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next")
               as operation);
           FSymbol collection;
         ] ->
@@ -4200,8 +4199,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ("first" | "seq" | "rest" | "next" | "__lg_first"
-            | "__lg_seq" | "__lg_rest" | "__lg_next");
+            ("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next");
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
@@ -4212,8 +4210,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("first" | "seq" | "rest" | "next" | "__lg_first"
-             | "__lg_seq" | "__lg_rest" | "__lg_next")
+            (("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next")
               as operation);
           collection;
         ] ->
@@ -4593,7 +4590,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             constrain_collections params element_tys collection_forms))
     | FList
         [
-          FSymbol ("some" | "__lg_some");
+          FSymbol "__lg_some";
           fn;
           collection;
         ] ->
@@ -4642,10 +4639,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           FList [ FSymbol first_name; FSymbol first_source ];
           FList [ FSymbol next_name; FSymbol next_source ];
         ]
-      when (has_source_name first_name "__lg_first"
-           || has_source_name first_name "first")
-           && (has_source_name next_name "__lg_next"
-              || has_source_name next_name "next")
+      when has_source_name first_name "__lg_first"
+           && has_source_name next_name "__lg_next"
            && String.equal first_source next_source ->
         let accumulator_ty, element_ty =
           inferred_reducer_types params (Type_solver.fresh ()) reducer
@@ -4924,7 +4919,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FKeyword keyword;
           FList
-            [ FSymbol ("first" | "__lg_first"); collection ];
+            [ FSymbol "__lg_first"; collection ];
         ] ->
         infer_sequence_form
           (TRecord
@@ -5365,7 +5360,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (fun locals -> function
                         | FList
                             [
-                              FSymbol ("first" | "__lg_first");
+                              FSymbol "__lg_first";
                               FSymbol local;
                             ] ->
                             if string_mem local locals then locals
@@ -5508,8 +5503,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                            FList
                              [
                                FSymbol
-                                 ("seq" | "rest" | "next" | "__lg_seq"
-                                 | "__lg_rest" | "__lg_next");
+                                 ("__lg_seq" | "__lg_rest" | "__lg_next");
                                FSymbol source;
                              ] )
                          when string_mem_assoc source params ->

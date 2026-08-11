@@ -565,7 +565,7 @@
     rest {:status :static-adaptation
           :reason :source-function-and-inline-specialization-preserve-the-upstream-empty-sequence-result-through-a-private-typed-seqable-primitive}
     next {:status :static-adaptation
-          :reason :source-function-preserves-first-class-use-and-the-upstream-optional-successor-sequence-through-a-private-typed-primitive-without-inline-expansion-because-the-nullable-sequence-result-must-remain-stable-during-generic-source-inference}
+          :reason :source-function-and-inline-specialization-preserve-first-class-use-and-the-upstream-optional-successor-sequence-through-a-private-typed-primitive-after-removing-public-next-name-inference-dispatch}
     cons {:status :static-adaptation
           :reason :source-function-and-inline-specialization-preserve-upstream-prepending-over-homogeneous-static-seqables-through-a-private-typed-primitive}
     conj {:status :static-adaptation

@@ -162,6 +162,71 @@ awk '
     internal_abi["__lg_volatile!"] = "typed-volatile-reference-allocation-primitive"
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
+    internal_abi["__lg_abs"] = "typed-static-numeric-absolute-value-primitive"
+    internal_abi["__lg_array-map"] = "typed-alternating-key-value-array-map-construction-primitive"
+    internal_abi["__lg_hash-map"] = "typed-alternating-key-value-hash-map-construction-primitive"
+    internal_abi["__lg_hash-set"] = "typed-homogeneous-hash-set-construction-primitive"
+    internal_abi["__lg_list"] = "typed-homogeneous-list-construction-primitive"
+    internal_abi["__lg_list-star"] = "typed-fixed-prefix-and-final-seqable-list-construction-primitive"
+    internal_abi["__lg_vector"] = "typed-homogeneous-vector-construction-primitive"
+    internal_abi["__lg_assoc-in"] = "typed-dependent-nested-association-primitive"
+    internal_abi["__lg_get-in"] = "typed-dependent-nested-lookup-primitive"
+    internal_abi["__lg_update-in"] = "typed-dependent-nested-update-primitive"
+    internal_abi["__lg_select-keys"] = "typed-dependent-map-key-projection-primitive"
+    internal_abi["__lg_vals"] = "typed-map-value-projection-primitive"
+    internal_abi["__lg_conj"] = "typed-collection-preserving-conjoin-primitive"
+    internal_abi["__lg_cons"] = "typed-seqable-prepend-primitive"
+    internal_abi["__lg_count"] = "typed-counted-or-seqable-count-primitive"
+    internal_abi["__lg_first"] = "typed-seqable-first-element-primitive"
+    internal_abi["__lg_next"] = "typed-seqable-optional-successor-primitive"
+    internal_abi["__lg_rest"] = "typed-seqable-rest-primitive"
+    internal_abi["__lg_seq"] = "typed-seqable-sequence-adaptation-primitive"
+    internal_abi["__lg_get"] = "typed-map-vector-set-or-record-lookup-primitive"
+    internal_abi["__lg_nth"] = "typed-indexed-or-seqable-access-primitive"
+    internal_abi["__lg_map"] = "typed-lazy-map-and-transducer-specialization-primitive"
+    internal_abi["__lg_merge"] = "typed-variadic-map-shape-unification-primitive"
+    internal_abi["__lg_set"] = "typed-seqable-to-set-conversion-primitive"
+    internal_abi["__lg_some"] = "typed-nullable-first-truthy-sequence-search-primitive"
+    internal_abi["__lg_update"] = "typed-map-vector-or-record-update-primitive"
+    internal_abi["__lg_with-meta"] = "typed-closed-edn-metadata-conversion-primitive"
+    internal_abi["__lg_transient"] = "typed-persistent-to-transient-collection-primitive"
+    internal_abi["__lg_persistent!"] = "typed-transient-to-persistent-collection-primitive"
+    internal_abi["__lg_assoc!"] = "typed-transient-association-primitive"
+    internal_abi["__lg_conj!"] = "typed-transient-conjoin-primitive"
+    internal_abi["__lg_dissoc!"] = "typed-transient-map-removal-primitive"
+    internal_abi["__lg_complete_transformed"] = "typed-transducer-completion-primitive"
+    internal_abi["__lg_reduce_transformed"] = "typed-transducer-reduction-primitive"
+    internal_abi["__lg_transformer_sequence"] = "typed-transducer-lazy-sequence-primitive"
+    internal_abi["__lg_regex-predicate"] = "typed-regex-boolean-match-primitive"
+    internal_abi["__type-hint"] = "compiler-internal-static-type-constraint-marker"
+    split("None Some Ok Error", xs)
+    for (i in xs) typed_reason[xs[i]] = "closed-option-or-result-constructor-elaboration"
+    split("array-of list-of set-of vector-of", xs)
+    for (i in xs) typed_reason[xs[i]] = "explicit-homogeneous-collection-type-constructor"
+    split("as-ordering ordering-compare uncurried-compare", xs)
+    for (i in xs) typed_reason[xs[i]] = "typed-static-comparator-capability-elaboration"
+    split("record tuple tuple-get", xs)
+    for (i in xs) typed_reason[xs[i]] = "typed-record-or-tuple-construction-and-projection-elaboration"
+    split("seq-flat-map seq-flat-map-rev seq-uncons seq-unfold seq-unfold-chunks seq-unfold-unmemoized", xs)
+    for (i in xs) typed_reason[xs[i]] = "typed-lazy-sequence-construction-primitive"
+    typed_reason["uncurried-call"] = "typed-static-uncurried-callback-application-primitive"
+    split("unsafe-aget unsafe-aset", xs)
+    for (i in xs) typed_reason[xs[i]] = "typed-host-array-index-access-primitive"
+    host_reason["."] = "host-member-invocation-syntax-boundary"
+    split(".compareTo .containsKey .entryAt .equals .getBytes .getClass .getName .getTime .map .toByteArray .toString .valAt .write", xs)
+    for (i in xs) host_reason[xs[i]] = "explicit-host-method-interop-boundary"
+    host_reason["__deftype-field-set!"] = "mutable-host-field-assignment-boundary"
+    host_reason["clj->js"] = "recursive-static-value-to-javascript-host-conversion-boundary"
+    host_reason["current-time-millis"] = "target-specific-system-clock-boundary"
+    host_reason["ex-info"] = "open-exception-data-and-host-stack-boundary"
+    split("js/Date. js/Error.", xs)
+    for (i in xs) host_reason[xs[i]] = "javascript-host-constructor-boundary"
+    split("js/isNaN js/parseInt js/performance.now", xs)
+    for (i in xs) host_reason[xs[i]] = "javascript-global-function-boundary"
+    host_reason["raise"] = "host-exception-raising-boundary"
+    split("requiring-resolve resolve", xs)
+    for (i in xs) host_reason[xs[i]] = "compiler-namespace-resolution-boundary"
+    host_reason["weak-ref"] = "target-specific-weak-reference-allocation-boundary"
     split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_ifn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate __lg_uuid-predicate __lg_delay-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }
@@ -188,9 +253,15 @@ awk '
     } else if ($0 in internal_abi) {
       classification = "typed-primitive"
       reason = internal_abi[$0]
+    } else if ($0 in typed_reason) {
+      classification = "typed-primitive"
+      reason = typed_reason[$0]
     } else if (primitive[$0]) {
       classification = "typed-primitive"
       reason = "static-scalar-primitive"
+    } else if ($0 in host_reason) {
+      classification = "host-boundary"
+      reason = host_reason[$0]
     } else if (host[$0] || $0 ~ /^\./ || $0 ~ /^js\// || $0 ~ /^__/ || $0 ~ /^-/) {
       classification = "host-boundary"
       reason = "host-interop-or-runtime-effect-boundary"
@@ -210,13 +281,26 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 129; then
-  echo "compiler form dispatch changed: expected 129 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 123; then
+  echo "compiler form dispatch changed: expected 123 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
 
 awk -F '\t' '
+  BEGIN {
+    form_reason["->Eduction"] = "typed-eduction-record-constructor-elaboration"
+    form_reason["IDeref/-deref"] = "typed-reference-dereference-protocol-elaboration"
+    form_reason["IReset/-reset!"] = "typed-reference-reset-protocol-elaboration"
+    form_reason["IVolatile/-vreset!"] = "typed-volatile-reset-protocol-elaboration"
+    form_reason["__lg_if-let"] = "private-source-static-truthy-binding-expansion"
+    form_reason["__lg_when-let"] = "private-source-static-truthy-binding-expansion"
+    form_reason["__lg_if-some"] = "private-source-static-non-nil-binding-expansion"
+    form_reason["__lg_when-some"] = "private-source-static-non-nil-binding-expansion"
+    form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
+    form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
+    form_reason["new"] = "typed-host-constructor-application-elaboration"
+  }
   FNR == NR {
     if ($1 == "compiler-call") {
       call_status[$2] = $3
@@ -230,7 +314,9 @@ awk -F '\t' '
     sub(/^(clojure|cljs)\.core\//, "", canonical)
     status = "typed-primitive"
     reason = "static-form-elaboration-or-compiler-internal-form"
-    if (canonical == "case" || canonical == "condp") {
+    if (canonical in form_reason) {
+      reason = form_reason[canonical]
+    } else if (canonical == "case" || canonical == "condp") {
       status = "special-form"
       reason = "compiler-owned-source-control-flow-expansion"
     } else if (canonical == "__lg_doseq") {

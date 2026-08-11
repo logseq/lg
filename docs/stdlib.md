@@ -560,13 +560,20 @@ that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 199 reviewed routes. A separate OCaml-AST
-extractor now audits 129 form-head pattern routes in expression elaboration and
+The call elaborator contributes 198 reviewed routes. A separate OCaml-AST
+extractor now audits 123 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `dotimes`,
 `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
 deferred upstream vars. The private `__lg_doseq` route is classified separately
 as macro control-flow elaboration. Both counts are pinned, so adding a new
 name-based form path requires an explicit inventory review.
+The form inventory also joins against the manifest's source-owned core vars.
+It rejects any migrated public var that reappears in expression elaboration or
+type inference. The legacy `first`, `next`, `rest`, `seq`, `some`, and `juxt`
+routes have been removed; source inline expansion and aggregate `.lgi`
+signatures now reach only their private typed primitives. Every retained call
+and form route has an item-specific boundary reason, and private `__lg_*`
+operations cannot be classified as generic host interop.
 Every `blocked-static-typing` entry must have a concrete, machine-checked
 reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy

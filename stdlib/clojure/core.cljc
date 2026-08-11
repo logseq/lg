@@ -371,6 +371,7 @@
   (__lg_rest coll))
 
 (defn next
+  {:inline (fn [coll] (list '__lg_next coll))}
   [coll]
   (__lg_next coll))
 

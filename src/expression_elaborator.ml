@@ -317,25 +317,6 @@ and compile_expr_unlocated scope (env : Env.t) = function
           | Ok expanded -> compile_expr scope env expanded)
       | None -> compile_call scope env name args)
   | FList [] -> compile_call scope env "__lg_list" []
-  | FList
-      [ FList (FSymbol "juxt" :: keyword_forms); argument ]
-    when keyword_forms <> []
-         && List.for_all
-              (function FKeyword _ -> true | _ -> false)
-              keyword_forms ->
-      incr callable_expression_counter;
-      let argument_name =
-        "__lg_juxt_argument_" ^ string_of_int !callable_expression_counter
-      in
-      compile_expr scope env
-        (FList
-           [ FSymbol "let";
-             FVector [ FSymbol argument_name; argument ];
-             FVector
-               (List.map
-                  (fun keyword -> FList [ keyword; FSymbol argument_name ])
-                  keyword_forms);
-           ])
   | FList (function_form :: arguments) ->
       incr callable_expression_counter;
       let function_name =
@@ -528,7 +509,7 @@ and compile_doseq scope env bindings body_forms =
           FList
             [
               FSymbol "recur";
-              FList [ FSymbol "next"; FSymbol current_name ];
+              FList [ FSymbol "__lg_next"; FSymbol current_name ];
             ]
         in
         Result.map
@@ -548,7 +529,7 @@ and compile_doseq scope env bindings body_forms =
                   FVector
                     [
                       FSymbol remaining_name;
-                      FList [ FSymbol "seq"; collection ];
+                      FList [ FSymbol "__lg_seq"; collection ];
                     ];
                   FList
                     [
@@ -562,7 +543,7 @@ and compile_doseq scope env bindings body_forms =
                             [
                               FSymbol element_name;
                               FList
-                                [ FSymbol "first"; FSymbol current_name ];
+                                [ FSymbol "__lg_first"; FSymbol current_name ];
                             ];
                           FList
                             [
@@ -861,7 +842,7 @@ and vector_rest_bindings rest_name = function
                        FList
                          [ FSymbol "drop"; FInt index; rest_form ]
                    in
-                   [ item_pattern; FList [ FSymbol "first"; sequence ] ])
+                   [ item_pattern; FList [ FSymbol "__lg_first"; sequence ] ])
             |> List.concat
           in
           let rest_bindings =
