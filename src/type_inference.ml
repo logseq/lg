@@ -2824,6 +2824,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               constrain_symbol (Types.dynamic_constraint TUnknown) params name)
       | FSymbol name, _ ->
           constrain_symbol (Types.dynamic_constraint TUnknown) params name
+      | target, key_form :: value_form :: _ ->
+          let key_ty =
+            inferred_form_or_call_type ~lookup_function_ty params key_form
+          in
+          let value_ty =
+            inferred_form_or_call_type ~lookup_function_ty params value_form
+          in
+          (match (key_ty, value_ty) with
+          | (TUnknown | TMeta _ | TVar _), _
+          | _, (TUnknown | TMeta _ | TVar _)
+          | TInt, _ -> infer_form params target
+          | key_ty, value_ty ->
+              infer_expected (Types.dynamic_map key_ty value_ty) params target)
       | _ -> infer_form params target
     in
     match infer_target with

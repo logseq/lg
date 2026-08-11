@@ -21485,7 +21485,7 @@ let test_get_dispatches_nullable_deftype_lookup_with_default () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_core_assoc_rejects_open_deftype_fields () =
+let test_core_assoc_uses_static_deftype_protocol () =
   let source =
     {|
 (deftype LookupBox [value]
@@ -21503,7 +21503,13 @@ let test_core_assoc_rejects_open_deftype_fields () =
 (println (get (assoc box :computed 9) :computed))
 |}
   in
-  compile_string_with_stdlib source |> expect_error_contains "unknown record field"
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "deftype assoc protocol dispatch must remain statically typed";
+  assert_ocaml_runs "core_assoc_uses_static_deftype_protocol" "42:7\n9\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_forward_dynamic_deftype_lookup_registration () =
   let source =
@@ -45203,8 +45209,8 @@ let tests =
       test_keyword_lookup_dispatches_nullable_static_maps );
     ( "get dispatches nullable deftype lookup with default",
       test_get_dispatches_nullable_deftype_lookup_with_default );
-    ( "core assoc rejects open deftype fields",
-      test_core_assoc_rejects_open_deftype_fields );
+    ( "core assoc uses static deftype protocol",
+      test_core_assoc_uses_static_deftype_protocol );
     ( "forward dynamic deftype lookup registration",
       test_forward_dynamic_deftype_lookup_registration );
     ( "deftype method parameters shadow fields",
