@@ -4275,7 +4275,17 @@
   (if (nil? value) fallback value))
 
 (defn fnil
-  {:inline (fn [& arguments] (cons '__lg_fnil arguments))}
+  {:inline
+   (fn
+     ([] (list '__lg_fnil))
+     ([function & defaults]
+      (cons '__lg_fnil
+            (cons (if (or (= function 'conj)
+                          (= function 'clojure.core/conj)
+                          (= function 'cljs.core/conj))
+                    '__lg_conj
+                    function)
+                  defaults))))}
   ([f x]
    (fn
      ([a] (f (fnil-value x a)))

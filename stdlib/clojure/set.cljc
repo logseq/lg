@@ -19,8 +19,8 @@
 
 (defn- union-two [s1 s2]
   (if (< (count s1) (count s2))
-    (__lg_reduce conj s2 s1)
-    (__lg_reduce conj s1 s2)))
+    (__lg_reduce __lg_conj s2 s1)
+    (__lg_reduce __lg_conj s1 s2)))
 
 (defn union
   "Return a set that is the union of the input sets."

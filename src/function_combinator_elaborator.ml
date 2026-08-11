@@ -958,7 +958,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
 
     and compile_static_fnil scope env arg_forms =
       match arg_forms with
-      | [ FSymbol "conj"; default_form ] ->
+      | [ FSymbol "__lg_conj"; default_form ] ->
           Result.bind (compile_expr scope env default_form) (fun default ->
               let default_name = "__lg_fnil_default_collection" in
               let collection_name = "collection" in
@@ -1012,7 +1012,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     (Types.set_module_name element_type)
               | _ ->
                   Error.error "fnil conj default must be a vector or set")
-      | [ FSymbol "conj"; _; _ ] | [ FSymbol "conj"; _; _; _ ] ->
+      | [ FSymbol "__lg_conj"; _; _ ]
+      | [ FSymbol "__lg_conj"; _; _; _ ] ->
           Error.error "fnil conj currently supports one default argument"
       | function_form :: default_forms
         when List.length default_forms >= 1

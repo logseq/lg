@@ -541,7 +541,7 @@
 (defn block
   "Wraps `actions` as a block injected before the remaining actions."
   [actions]
-  (TestBlock (reverse (reduce conj (list) actions))))
+  (TestBlock (reverse (reduce __lg_conj (list) actions))))
 
 (defmacro async
   "Wraps `body` as a CPS test action that binds completion callback `done`."

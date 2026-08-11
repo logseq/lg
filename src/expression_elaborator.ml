@@ -1110,7 +1110,8 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
         |> List.fold_left min max_int
       in
       let rec form_conjoins name = function
-        | FList (FSymbol "conj" :: FSymbol target :: _) when target = name ->
+        | FList (FSymbol "__lg_conj" :: FSymbol target :: _)
+          when target = name ->
             true
         | FList forms | FVector forms -> List.exists (form_conjoins name) forms
         | FMap pairs ->

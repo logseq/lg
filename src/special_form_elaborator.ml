@@ -2542,8 +2542,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       let conj_reducer =
                         match reducer with
                         | FSymbol reducer_name ->
-                            reducer_name = "conj"
-                            || String.ends_with ~suffix:"/conj" reducer_name
+                            reducer_name = "__lg_conj"
                             || reducer_name = "conj-seq"
                             || String.ends_with ~suffix:"/conj-seq"
                                  reducer_name
@@ -2619,9 +2618,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               | Some inner -> Types.next_seq inner
                                   | None -> TUnknown)))
                   | FList [ FSymbol name; collection; item ]
-                    when name = "__lg_conj"
-                         || name = "conj"
-                         || String.ends_with ~suffix:"/conj" name ->
+                    when name = "__lg_conj" ->
                       let collection_ty = form_type aliases collection in
                       let item_ty = form_type aliases item in
                       let merge inner =
