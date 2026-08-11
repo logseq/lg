@@ -421,6 +421,9 @@ fi
 awk -F '\t' '$1 == "namespace-ownership" {
   print "namespace\t" $2 "\t" $3
 }' "$tmp/manifest-status"
+awk -F '\t' '$1 == "namespace" {
+  print "namespace-status\t" $2 "\t" $3 "\t" $4
+}' "$tmp/manifest-status"
 
 core_ownership=$(awk -F '\t' '
   $1 == "namespace-ownership" && $2 == "clojure.core" {print $3}
@@ -430,6 +433,7 @@ if test -z "$core_ownership"; then
   exit 1
 fi
 printf 'namespace\tcljs.core\t%s\n' "$core_ownership"
+printf 'namespace-status\tcljs.core\tsource-aggregate\tautomatic-core-source-alias\n'
 printf 'namespace-bootstrap\tclojure.core\tautomatic-core-refer\n'
 printf 'namespace-bootstrap\tcljs.core\tautomatic-core-refer\n'
 

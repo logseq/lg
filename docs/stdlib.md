@@ -1238,3 +1238,11 @@ from source namespaces that call a typed or host primitive. CI compares the
 manifest and inventory namespace counts, so adding `cljs.math`, `cljs.cache`,
 `clojure.core.protocols`, or a future aggregate namespace cannot silently omit
 it from the audit.
+
+Ownership and support completeness are separate inventory dimensions.
+`namespace` rows say whether an implementation is precompiled source or only
+represented in the manifest. `namespace-status` rows carry the manifest's
+support classification and concrete reason. Thus partially implemented
+`cljs.test` and `cljs.pprint` retain source ownership while exposing their
+remaining static blockers, and every `manifest-only` namespace must have a CI
+checked `blocked-static-typing`, `host-boundary`, or `out-of-scope` reason.

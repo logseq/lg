@@ -301,6 +301,27 @@ awk -F '\t' '
     exit failed
   }
 ' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
+awk -F '\t' '
+  $1 == "namespace" && $3 == "manifest-only" {required[$2] = 1; next}
+  $1 == "namespace-status" {
+    if ($3 == "blocked-static-typing" || $3 == "host-boundary" ||
+        $3 == "out-of-scope") {
+      if ($4 == "") {
+        print "namespace status lacks a concrete reason: " $2 > "/dev/stderr"
+        failed = 1
+      } else {
+        delete required[$2]
+      }
+    }
+  }
+  END {
+    for (namespace in required) {
+      print "manifest-only namespace lacks an auditable status: " namespace > "/dev/stderr"
+      failed = 1
+    }
+    exit failed
+  }
+' "$tmp/inventory.tsv"
 
 awk -F '\t' '
   ($1 == "logseq-namespace-status" ||
