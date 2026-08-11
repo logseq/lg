@@ -3308,10 +3308,18 @@ let test_nil_collection_elements_use_options_not_dynamic () =
     failwith "a list containing nil must use option elements";
   if Lg.Types.contains_dynamic (binding "unique").ty then
     failwith "a set containing nil must use option elements";
-  if string_contains_substring ocaml "Runtime_dynamic" then
+  if string_contains_substring output "Runtime_dynamic" then
     failwith "nil collection elements must use option, not Runtime_dynamic";
   assert_ocaml_runs "nil_collection_elements_use_options_not_dynamic"
-    "true:42:true:true\n" ocaml
+    "true:42:true:true\n" ocaml;
+  let melange = compiled_stdlib Lg.Target.Melange in
+  let _, melange_output =
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange melange.state source
+    |> expect_ok
+  in
+  if string_contains_substring melange_output "Runtime_dynamic" then
+    failwith
+      "Melange nil collection elements must use option, not Runtime_dynamic"
 
 let test_nil_and_empty_maps_remain_static () =
   let source =
