@@ -22121,8 +22121,12 @@ let test_inline_update_rejects_unconstrained_transient_boundaries () =
       (update-inline :aevt persistent!)))
 |}
   in
-  compile_string_with_stdlib source
-  |> expect_error_contains "transient expects a set, vector, or map, got any"
+  List.iter
+    (fun target ->
+      compile_string_with_stdlib ~target source
+      |> expect_error_contains
+           "transient expects a set, vector, or map, got option<keyword>")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_nested_update_infers_optional_map_value_collections () =
   let util_source =
@@ -22327,9 +22331,11 @@ let test_nested_update_passes_all_extra_arguments () =
 
 let test_update_rejects_extra_argument_type_mismatch () =
   let source = {|(def bad (update {:age 36} :age + "one"))|} in
-  Lg.Compiler.compile_string source
-  |> expect_error
-       "update function arguments do not match field and extra arguments"
+  List.iter
+    (fun target ->
+      Lg.Compiler.compile_string ~target source
+      |> expect_error "expected int arguments for + while compiling updater for :age")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_update_supports_vector_indexes () =
   let source =
@@ -38271,9 +38277,12 @@ let test_set_map_and_filter_core_api () =
   assert_ocaml_runs "set_map_and_filter_core_api" "(2 3 4):(3 4)\n" ocaml_source
 
 let test_set_map_rejects_function_type_mismatch () =
-  compile_string_with_stdlib
-    {|(def xs (map (fn [^:string x] x) (__lg_hash-set 1 2)))|}
-  |> expect_error_contains "map-seq called with incompatible arguments"
+  List.iter
+    (fun target ->
+      compile_with_stdlib_result target "test/set_map_bad_callback.cljc"
+        {|(def xs (map (fn [^:string x] x) (__lg_hash-set 1 2)))|}
+      |> expect_error_contains "map-one called with incompatible arguments")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_set_filter_accepts_truthy_predicates () =
   let ocaml_source =
