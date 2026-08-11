@@ -369,7 +369,7 @@ let compile_with_stdlib target filename source =
       source
     |> expect_ok
   in
-  String.concat "\n" [ stdlib.ocaml_source; output ]
+  output
 
 let compile_with_stdlib_result target filename source =
   let stdlib = compiled_stdlib target in
@@ -380,8 +380,7 @@ let compile_string_with_stdlib ?(target = Lg.Target.default) source =
   let stdlib = compiled_stdlib target in
   Lg.Compiler.compile_chunk_with_filename ~target
     ~filename:"test/source_core_program.cljc" stdlib.state source
-  |> Result.map (fun (_, output) ->
-         String.concat "\n" [ stdlib.ocaml_source; output ])
+  |> Result.map snd
 
 let compile_string_from_stdlib ?(target = Lg.Target.default) source =
   let stdlib = compiled_stdlib target in
@@ -4183,7 +4182,7 @@ let test_compiler_phases_have_explicit_boundaries () =
             Lg.Call_elaborator.create
               ~compile_expr:Lg.Expression_elaborator.compile_expr
           in
-        operations.compile_call "" Lg.Compiler_environment.empty "+"
+        operations.compile_call "" Lg.Compiler_environment.empty "__lg_add"
           [ Lg.Ast.FInt 1; Lg.Ast.FInt 1 ]
           |> expect_ok
         in
@@ -4247,7 +4246,7 @@ let test_compiler_phases_have_explicit_boundaries () =
         if calls != context.calls then
           failwith "call elaboration should be initialized once";
         let result =
-          calls.compile_call "" Lg.Compiler_environment.empty "+"
+          calls.compile_call "" Lg.Compiler_environment.empty "__lg_add"
             [ Lg.Ast.FInt 1; Lg.Ast.FInt 1 ]
           |> expect_ok
         in
@@ -34206,7 +34205,7 @@ let test_conj_requires_source_stdlib_state () =
 (println (pr-str (append [1] 2)))
 |}
   in
-  Lg.Compiler.compile_string source
+  Raw_lg.Compiler.compile_string source
   |> expect_error_contains "unknown symbol conj"
 
 let test_conj_uses_a_statically_typed_first_class_wrapper () =
@@ -34333,16 +34332,15 @@ let test_printing_functions_reject_untyped_first_class_use () =
   |> expect_error_contains
        "pr-writer cannot be used as an untyped first-class function"
 
-let test_str_rejects_untyped_first_class_use () =
+let test_str_requires_source_stdlib_state () =
   let source =
     {|
 (def stringify str)
 (println (stringify 42))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "str cannot be used as an untyped first-class function"
+  Raw_lg.Compiler.compile_string source
+  |> expect_error_contains "unknown symbol str"
 
 let test_clojure_string_escape_is_typed_first_class_source () =
   let source =
@@ -42211,7 +42209,8 @@ let test_module_definitions_support_module_alias () =
     ocaml_source
 
 let test_incremental_compilation_preserves_modules () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, module_ocaml =
     Lg.Compiler.compile_chunk state
       {|
@@ -42226,7 +42225,7 @@ let test_incremental_compilation_preserves_modules () =
 |} |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_modules" "42\n"
-    (module_ocaml ^ "\n\n" ^ app_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; module_ocaml; app_ocaml ])
 
 let test_incremental_compilation_preserves_modules_with_ocaml_packages () =
   let state, _provider =
@@ -42249,7 +42248,8 @@ let test_incremental_compilation_preserves_modules_with_ocaml_packages () =
   ()
 
 let test_incremental_compilation_preserves_opened_modules () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, module_ocaml =
     Lg.Compiler.compile_chunk state
       {|
@@ -42267,10 +42267,11 @@ let test_incremental_compilation_preserves_opened_modules () =
     |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_opened_modules" "42\n"
-    (module_ocaml ^ "\n\n" ^ app_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; module_ocaml; app_ocaml ])
 
 let test_incremental_compilation_preserves_module_aliases () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, module_ocaml =
     Lg.Compiler.compile_chunk state
       {|
@@ -42289,10 +42290,11 @@ let test_incremental_compilation_preserves_module_aliases () =
     |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_module_aliases" "42\n"
-    (module_ocaml ^ "\n\n" ^ app_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; module_ocaml; app_ocaml ])
 
 let test_incremental_compilation_preserves_state () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, people_ocaml =
     Lg.Compiler.compile_chunk state
       {|(module People (def user {:name "Ada", :age 36}))|}
@@ -42307,11 +42309,12 @@ let test_incremental_compilation_preserves_state () =
     |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_state" "Ada:true:36\n"
-    (people_ocaml ^ "\n\n" ^ app_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; people_ocaml; app_ocaml ])
 
 let test_cacheable_incremental_state_compiles_without_ocaml_environment () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
   let state, provider_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk stdlib.state
       {|
 (def answer 40)
 (defn add2 [value] (+ value 2))
@@ -42330,7 +42333,8 @@ let test_cacheable_incremental_state_compiles_without_ocaml_environment () =
   in
   assert_ocaml_runs
     "cacheable_incremental_state_compiles_without_ocaml_environment" "42\n"
-    (provider_ocaml ^ "\n\n" ^ consumer_ocaml.ocaml_source)
+    (String.concat "\n"
+       [ stdlib.ocaml_source; provider_ocaml; consumer_ocaml.ocaml_source ])
 
 let test_incremental_compilation_preserves_record_sets () =
   let stdlib = compiled_stdlib Lg.Target.Native in
@@ -42430,12 +42434,14 @@ let test_module_definitions_support_composite_sets () =
     ocaml_source
 
 let test_incremental_compilation_requires_prior_state () =
-  Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  Lg.Compiler.compile_chunk stdlib.state
     {|(println (:name People/user))|}
   |> expect_error_value "unknown symbol People/user"
 
 let test_incremental_compilation_preserves_protocols () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, protocol_ocaml =
     Lg.Compiler.compile_chunk state
       {|
@@ -42453,7 +42459,7 @@ let test_incremental_compilation_preserves_protocols () =
 |} |> expect_ok
   in
   assert_ocaml_runs "incremental_compilation_preserves_protocols" "int:42\n"
-    (protocol_ocaml ^ "\n\n" ^ call_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; protocol_ocaml; call_ocaml ])
 
 let test_incremental_compile_chunk_runs_ocaml_typecheck_gate () =
   Lg.Compiler.compile_chunk Lg.Compiler.empty_state
@@ -43033,18 +43039,18 @@ let test_parsetree_backend_builds_native_sequence_expressions () =
 let test_parsetree_backend_builds_native_sequence_navigation_expressions () =
   List.iter expect_structured_value_expression
     [
-      {|(def result (next (__lg_list 1 2)))|};
-      {|(def result (next [1 2]))|};
+      {|(def result (__lg_next (__lg_list 1 2)))|};
+      {|(def result (__lg_next [1 2]))|};
       {|(def result (IReversible/-rseq [1 2]))|};
     ]
 
 let test_parsetree_backend_builds_native_let_expressions () =
   expect_structured_value_expression
-    {|(def result (let [x 1 y (+ x 1)] (+ y 1)))|}
+    {|(def result (let [x 1 y (__lg_add x 1)] (__lg_add y 1)))|}
 
 let test_parsetree_backend_builds_native_match_expressions () =
   expect_structured_value_expression
-    {|(def result (match [1 2] [x y] (+ x y)))|}
+    {|(def result (match [1 2] [x y] (__lg_add x y)))|}
 
 let test_parsetree_backend_builds_native_cond_expressions () =
   expect_structured_value_expression
@@ -43052,51 +43058,54 @@ let test_parsetree_backend_builds_native_cond_expressions () =
 
 let test_parsetree_backend_builds_native_integer_expressions () =
   expect_structured_value_expression
-    {|(def result (+ (* 1 2) 3))|}
+    {|(def result (__lg_add (__lg_multiply 1 2) 3))|}
 
 let test_parsetree_backend_builds_native_comparison_expressions () =
-  expect_structured_value_expression {|(def result (< 1 2 3))|}
+  expect_structured_value_expression {|(def result (__lg_less 1 2 3))|}
 
 let test_parsetree_backend_builds_native_record_field_expressions () =
   expect_structured_value_expression
-    {|(def user {:name "Ada", :age 36})(def age (get user :age))|}
+    {|(def user {:name "Ada", :age 36})(def age (__lg_get user :age))|}
 
 let test_parsetree_backend_builds_native_boolean_expressions () =
   expect_structured_value_expression
     {|(def result (__lg_true-predicate true))|}
 
 let test_parsetree_backend_builds_native_string_expressions () =
-  expect_structured_value_expression {|(def result (str "l" "g"))|}
+  expect_structured_value_expression {|(def result (__lg_str "l" "g"))|}
 
 let test_parsetree_backend_builds_native_collection_core_expressions () =
   expect_structured_value_expression {|(def result (__lg_count [1 2 3]))|}
 
 let test_parsetree_backend_builds_native_collection_match_expressions () =
-  expect_structured_value_expression {|(def result (rest (__lg_list 1 2 3)))|}
+  expect_structured_value_expression
+    {|(def result (__lg_rest (__lg_list 1 2 3)))|}
 
 let test_parsetree_backend_builds_native_function_combinator_expressions () =
   expect_structured_value_expression
-    {|(def result (__lg_comp (fn [value] (+ value 1)) (fn [value] (+ value 1))))|}
+    {|(def result (__lg_comp (fn [value] (__lg_add value 1)) (fn [value] (__lg_add value 1))))|}
 
 let test_parsetree_backend_builds_native_partial_expressions () =
-  expect_structured_value_expression {|(def add-ten (__lg_partial + 10))|}
+  expect_structured_value_expression
+    {|(defn add [left right] (__lg_add left right))
+(def add-ten (__lg_partial add 10))|}
 
 let test_parsetree_backend_builds_native_empty_collection_expressions () =
   expect_structured_value_expression {|(def xs (vector-of :int))|}
 
 let test_parsetree_backend_builds_native_collection_update_expressions () =
-  expect_structured_value_expression {|(def xs (conj [1 2] 3))|}
+  expect_structured_value_expression {|(def xs (__lg_conj [1 2] 3))|}
 
 let test_parsetree_backend_builds_native_collection_index_expressions () =
   expect_structured_value_expression {|(def x (__lg_nth [1 2 3] 1))|}
 
 let test_parsetree_backend_builds_native_map_vector_expressions () =
   expect_structured_value_expression
-    {|(def names (keys {:name "Ada", :age 36}))|}
+    {|(def names (__lg_keys {:name "Ada", :age 36}))|}
 
 let test_parsetree_backend_builds_native_contains_expressions () =
   expect_structured_value_expression
-    {|(def present? (contains? {:name "Ada"} :name))|}
+    {|(def present? (__lg_contains {:name "Ada"} :name))|}
 
 let test_parsetree_backend_builds_native_set_constructor_expressions () =
   expect_structured_value_expression {|(def ids (__lg_hash-set 3 1 2))|}
@@ -43107,13 +43116,12 @@ let test_parsetree_backend_builds_native_sequence_transform_expressions () =
       {|(def result (__lg_sort [3 1 2]))|};
       {|(def result (__lg_concat [1 2] (__lg_list 3 4)))|};
       {|(def result (__lg_set [1 1 2]))|};
-      {|(def result (repeat 3 :name))|};
       {|(def result (__lg_interleave [1 2] (__lg_list 3 4)))|};
-      {|(def result (partition 2 [1 2 3]))|};
     ]
 
 let test_incremental_parsetree_backend_preserves_state () =
-  let state = Lg.Compiler.empty_state in
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let state = stdlib.state in
   let state, people_structure =
     Lg.Compiler.compile_chunk_parsetree state
       {|(module People (def user {:name "Ada", :age 36}))|}
@@ -43129,7 +43137,7 @@ let test_incremental_parsetree_backend_preserves_state () =
   let people_ocaml = Lg.Compiler.print_parsetree people_structure in
   let app_ocaml = Lg.Compiler.print_parsetree app_structure in
   assert_ocaml_runs "incremental_parsetree_backend_preserves_state" "Ada:36\n"
-    (people_ocaml ^ "\n\n" ^ app_ocaml)
+    (String.concat "\n" [ stdlib.ocaml_source; people_ocaml; app_ocaml ])
 
 let test_incremental_parsetree_backend_runs_ocaml_typecheck_gate () =
   Lg.Compiler.compile_chunk_parsetree Lg.Compiler.empty_state
@@ -45679,8 +45687,7 @@ let tests =
       test_collection_core_functions_reject_untyped_first_class_use );
     ( "printing functions reject untyped first-class use",
       test_printing_functions_reject_untyped_first_class_use );
-    ( "str rejects untyped first-class use",
-      test_str_rejects_untyped_first_class_use );
+    ( "str requires source stdlib state", test_str_requires_source_stdlib_state );
     ( "clojure.string escape is typed first-class source",
       test_clojure_string_escape_is_typed_first_class_source );
     ( "function maps require a closed sum for type predicates",
