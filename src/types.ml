@@ -263,6 +263,12 @@ let sorted_constraint entry_ty key_ty value_ty =
     ]
     value_ty
 
+let map_entry_constraint key_ty value_ty storage_ty =
+  let protocol_id = Protocol_id.create ~owner:[] ~name:"IMapEntry" in
+  protocol_constraint protocol_id
+    [ TFn ([ storage_ty ], key_ty); TFn ([ storage_ty ], value_ty) ]
+    storage_ty
+
 let guarded_protocol_constraint constraint_ty =
   match constraint_ty with
   | TOcaml_app (name, arguments) -> (

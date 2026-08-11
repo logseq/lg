@@ -10764,6 +10764,51 @@ let create ~compile_expr =
                          (List.map Types.source_name actual_tys)
                      ^ ")")
                 | Ok substitutions ->
+                let collection_element =
+                  args
+                  |> List.filter_map
+                       (Collection_capability.element_type env)
+                  |> List.filter (fun ty ->
+                         not
+                           (Types.equal ty TUnknown || Types.is_dynamic ty
+                           || match ty with
+                              | TMeta _ | TVar _ -> true
+                              | _ -> false))
+                  |> function
+                  | [ element ] -> Some element
+                  | [] | _ :: _ :: _ -> None
+                in
+                let substitutions =
+                  match collection_element with
+                  | None -> substitutions
+                  | Some receiver_ty ->
+                      List.fold_left2
+                        (fun substitutions expected argument ->
+                          match
+                            ( Type_solver.apply substitutions expected,
+                              Type_solver.apply substitutions argument.ty )
+                          with
+                          | ( TFn (_, expected_return),
+                              TFn (actual_params, actual_return) ) ->
+                              let substitutions =
+                                List.fold_left
+                                  (fun substitutions actual_param ->
+                                    match
+                                      Types.protocol_constraint_info actual_param
+                                    with
+                                    | Some _ ->
+                                        Protocol.infer_constraint_substitutions
+                                          env substitutions actual_param
+                                          receiver_ty
+                                    | None -> substitutions)
+                                  substitutions actual_params
+                              in
+                              Type_solver.unify substitutions expected_return
+                                actual_return
+                              |> Result.value ~default:substitutions
+                          | _ -> substitutions)
+                        substitutions param_tys args
+                in
                 let substitutions =
                   List.fold_left2
                     (fun substitutions expected argument ->

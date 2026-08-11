@@ -188,6 +188,13 @@ let rec parse_ocaml_type source =
                       | _ ->
                           Error.error
                             "sorted expects entry, key, and storage type arguments"
+                    else if name = "map-entry" then
+                      match args with
+                      | [ key; value; storage ] ->
+                          Ok (Types.map_entry_constraint key value storage)
+                      | _ ->
+                          Error.error
+                            "map-entry expects key, value, and storage type arguments"
                     else if name = "optional-seqable" then
                       match args with
                       | [ inner ] ->

@@ -343,6 +343,10 @@
   :fn<map<key;value>;bool>)
 (signature clojure.core/map-entry? [key value]
   :fn<tuple<key;value>;bool>)
+(signature clojure.core/key [key value storage]
+  :fn<map-entry<key;value;storage>;key>)
+(signature clojure.core/val [key value storage]
+  :fn<map-entry<key;value;storage>;value>)
 (signature clojure.core/equiv-map [key value]
   :fn<map<key;value>;map<key;value>;bool>)
 (signature clojure.core/regexp? :fn<regex;bool>)

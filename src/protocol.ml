@@ -307,10 +307,7 @@ let infer_constraint_substitutions env substitutions constraint_ty receiver_ty =
         Type_solver.unify substitutions value_ty receiver_ty
         |> Result.value ~default:substitutions
       in
-      if Option.is_none (Types.sorted_constraint_info constraint_ty) then
-        substitutions
-      else
-        (match
+      (match
          ( Types.protocol_witness_method_types witness_ty,
            witness_implementations env protocol_id receiver_ty )
        with
