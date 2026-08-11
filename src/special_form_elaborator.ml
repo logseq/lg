@@ -386,6 +386,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Semantic_ir.Constructor ("Some", Some adapted) );
                 ] ))
           (adapt_branch_expression env target_inner payload)
+    | ( (TNullable _target_inner
+        | TOcaml_app ("option", [ _target_inner ])),
+        source_ty )
+      when (match source_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+           && (match Semantic_ir.unlocated branch.semantic_expr with
+              | Semantic_ir.Apply _ | Semantic_ir.Uncurried_apply _ -> true
+              | _ -> false) ->
+        Ok branch.semantic_expr
     | ( (TNullable target_inner
         | TOcaml_app ("option", [ target_inner ])),
         source_ty )

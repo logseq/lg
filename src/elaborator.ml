@@ -86,6 +86,10 @@ let freshen_deferred_type ?return_param_index ty =
       when name = Types.seqable_constraint_name
            || name = Types.optional_seqable_constraint_name
            || name = Types.optional_sequential_constraint_name ->
+        let erased =
+          Types.equal element_ty Types.TUnknown
+          && Types.equal value_ty Types.TUnknown
+        in
         let element_ty =
           if Types.equal element_ty Types.TUnknown then
             Types.dynamic_constraint Types.TUnknown
@@ -93,7 +97,8 @@ let freshen_deferred_type ?return_param_index ty =
         in
         let value_ty =
           if Types.equal value_ty Types.TUnknown then
-            fresh_variable ()
+            if erased then Types.dynamic_constraint Types.TUnknown
+            else fresh_variable ()
           else freshen value_ty
         in
         Types.TOcaml_app (name, [ element_ty; value_ty ])

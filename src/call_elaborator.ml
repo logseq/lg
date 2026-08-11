@@ -2523,14 +2523,27 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                               (pack_dynamic_value env dynamic item)))
                 else
                   match Types.seqable_constraint_info argument.ty with
-                  | Some _ when Type_solver.is_open stored_value_ty ->
+                  | Some _
+                    when Type_solver.is_open stored_value_ty
+                         && Option.is_some (optional_payload stored_value_ty)
+                            = Option.is_some
+                                (optional_payload
+                                   (Types.constraint_value_type argument.ty)) ->
                       Ok (constrained_argument_value argument)
                   | Some _
                     when Types.equal stored_value_ty
                            (Types.constraint_value_type argument.ty) ->
                       Ok (constrained_argument_value argument)
                   | _ ->
-                      pack_constrained_value env stored_value_ty argument
+                      let stored_argument =
+                        match Types.seqable_constraint_info argument.ty with
+                        | Some _ ->
+                            typed_ir
+                              (Types.constraint_value_type argument.ty)
+                              (constrained_argument_value argument)
+                        | None -> argument
+                      in
+                      pack_constrained_value env stored_value_ty stored_argument
               in
                         match
                           (adapter, packed_value)
