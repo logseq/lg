@@ -148,12 +148,25 @@
 (defn- registered-test-value [name run]
   (record registered-test
     (registered-test-name name)
-    (registered-test-run run)))
+    (registered-test-action (SynchronousTest run))))
+
+(defn- registered-action-value [name action]
+  (record registered-test
+    (registered-test-name name)
+    (registered-test-action action)))
 
 (defn- register-test!
   "Registers synchronous test thunk `run` under `namespace` and `name`."
   [namespace name run]
   (let [registered (registered-test-value name run)
+        namespace-tests (get @registered-tests namespace (list))]
+    (swap! registered-tests assoc namespace (conj namespace-tests registered))
+    registered))
+
+(defn- register-test-action!
+  "Registers closed test `action` under `namespace` and `name`."
+  [namespace name action]
+  (let [registered (registered-action-value name action)
         namespace-tests (get @registered-tests namespace (list))]
     (swap! registered-tests assoc namespace (conj namespace-tests registered))
     registered))
@@ -277,12 +290,18 @@
     (try
       (do
         (inc-report-counter! :test)
-        (try
-          (run-fixtures fixtures (:registered-test-run registered-test))
-          (catch _
-            (do
-              (inc-report-counter! :error)
-              false))))
+        (match (:registered-test-action registered-test)
+          (SynchronousTest run)
+          (try
+            (run-fixtures fixtures run)
+            (catch _
+              (do
+                (inc-report-counter! :error)
+                false)))
+          _
+          (raise
+           (Failure
+            "execute-registered-test! expects a synchronous test action"))))
       (finally
        (let [updated (get-current-env)]
          (set-env!
@@ -298,27 +317,106 @@
   (execute-registered-test! registered-test (list))
   (get-current-env))
 
-(defn- ^boolean run-namespace-tests! [^string namespace]
+(defn- begin-registered-test! [registered-test]
+  (let [current (get-current-env)]
+    (set-env!
+     (test-env-value
+      (:report-counters current)
+      (conj (:testing-vars current) (:registered-test-name registered-test))
+      (:testing-contexts current)
+      (:reporter current)))
+    (inc-report-counter! :test)
+    current))
+
+(defn- finish-registered-test! [previous]
+  (let [updated (get-current-env)]
+    (set-env!
+     (test-env-value
+      (:report-counters updated)
+      (:testing-vars previous)
+      (:testing-contexts updated)
+      (:reporter updated)))
+    true))
+
+(defn- registered-test-execution [registered-test fixtures]
+  (match (:registered-test-action registered-test)
+    (SynchronousTest _)
+    (SynchronousTest
+     (fn [] (execute-registered-test! registered-test fixtures)))
+
+    (AsyncTest start)
+    (AsyncTest
+     (fn [continue]
+       (let [previous (begin-registered-test! registered-test)
+             finished (atom false)
+             finish
+             (fn []
+               (if @finished
+                 (continue)
+                 (do
+                   (reset! finished true)
+                   (finish-registered-test! previous)
+                   (continue))))]
+         (try
+           (start finish)
+           (catch _
+             (do
+               (inc-report-counter! :error)
+               (finish))))
+         true)))
+
+    (TestBlock actions)
+    (TestBlock actions)))
+
+(defn- namespace-test-action [namespace]
   (let [fixtures (get @registered-fixtures namespace
                       (namespace-fixtures-value (list) (list)))
         once-fixtures (reverse (:once-fixtures fixtures))
-        each-fixtures (reverse (:each-fixtures fixtures))]
+        each-fixtures (reverse (:each-fixtures fixtures))
+        registered (reverse (get @registered-tests namespace (list)))
+        contains-async
+        (reduce
+         (fn [found test]
+           (or found (async? (:registered-test-action test))))
+         false
+         registered)]
     (validate-fixture-types! once-fixtures each-fixtures)
-    (run-fixtures
-     once-fixtures
-     (fn []
-       (doseq [registered (reverse (get @registered-tests namespace (list)))]
-         (execute-registered-test! registered each-fixtures))
-       true))))
+    (if contains-async
+      (if (and (empty? once-fixtures) (empty? each-fixtures))
+        (TestBlock
+         (reverse
+          (reduce
+           (fn [actions test]
+             (conj actions (registered-test-execution test (list))))
+           (list)
+           registered)))
+        (raise
+         (Failure
+          "async tests currently require namespaces without fixtures")))
+      (SynchronousTest
+       (fn []
+         (run-fixtures
+          once-fixtures
+          (fn []
+            (doseq [test registered]
+              (execute-registered-test! test each-fixtures))
+            true)))))))
+
+(defn- ^boolean run-namespace-tests! [^string namespace]
+  (run-block (list (namespace-test-action namespace))))
 
 (defn- run-registered-tests!
-  "Runs synchronous tests registered for `namespaces` in definition order."
+  "Runs registered tests for `namespaces` in definition order."
   [namespaces]
   (clear-env!)
   (set-env! (empty-env))
-  (doseq [namespace namespaces]
-    (run-namespace-tests! namespace))
-  (get-and-clear-env!))
+  (let [summary (atom (get-current-env))]
+    (run-block-then
+     (map namespace-test-action namespaces)
+     (fn []
+       (reset! summary (get-and-clear-env!))
+       true))
+    @summary))
 
 (defn- run-single-test!
   "Runs one synchronous test thunk `run` named `name`."
@@ -328,21 +426,76 @@
   (run-registered-test! (registered-test-value _name run))
   (get-and-clear-env!))
 
-(defn run-block
-  "Runs synchronous test thunks in order.
+(defn- run-block-then [actions finished]
+  (let [remaining (seq actions)]
+    (if (empty? remaining)
+      (finished)
+      (match (first remaining)
+        (Some (SynchronousTest run))
+        (do
+          (run)
+          (run-block-then (rest remaining) finished))
 
-  Asynchronous and injected continuation results remain outside this static
-  overload."
-  [steps]
-  (doseq [step steps]
-    (step))
-  true)
+        (Some (AsyncTest start))
+        (let [completed (atom false)
+              continue
+              (fn []
+                (if @completed
+                  (do
+                    (println
+                     "WARNING: Async test called done more than one time.")
+                    false)
+                  (do
+                    (reset! completed true)
+                    (run-block-then (rest remaining) finished))))]
+          (start continue)
+          true)
+
+        (Some (TestBlock injected))
+        (run-block-then (concat injected (rest remaining)) finished)
+
+        None (finished)))))
+
+(defn run-block
+  "Runs closed synchronous, asynchronous, and injected test actions in order."
+  [actions]
+  (run-block-then (seq actions) (fn [] true)))
+
+(defn async?
+  "Returns `true` when `action` is an asynchronous test action."
+  [action]
+  (match action
+    (AsyncTest _) true
+    _ false))
+
+(defn synchronous-test-action
+  "Wraps synchronous test thunk `run` in the closed runner action type."
+  [run]
+  (SynchronousTest run))
+
+(defn- async-test-action [start]
+  (AsyncTest start))
+
+(defn block
+  "Wraps `actions` as a block injected before the remaining actions."
+  [actions]
+  (TestBlock (reverse (reduce conj (list) actions))))
+
+(defmacro async
+  "Wraps `body` as a CPS test action that binds completion callback `done`."
+  [done & body]
+  (assert (symbol? done) "async expects a symbol completion callback")
+  `(cljs.test/async-test-action
+    (fn [~done]
+      ~@body
+      true)))
 
 (defn- registered-test-step [name run]
-  (fn []
-    (execute-registered-test!
-     (registered-test-value name run)
-     (list))))
+  (synchronous-test-action
+   (fn []
+     (execute-registered-test!
+      (registered-test-value name run)
+      (list)))))
 
 (defn test-var-block
   "Returns a synchronous block for test thunk `run`."
@@ -394,19 +547,31 @@
         (clojure.test/expand-are 'cljs.test/is argv expr args)))
 
 (defmacro deftest
-  "Defines and registers a synchronous test named `name`."
+  "Defines and registers a synchronous or direct asynchronous test named `name`."
   [name & body]
   (assert (symbol? name) "deftest expects a symbol name")
   (let [namespace (:ns &env)
-        test-name (str name)]
-    `(do
-       (defn ~name [] ~@body)
-       (cljs.test/register-test!
-        ~namespace
-        ~test-name
-        (fn []
-          (~name)
-          true)))))
+        test-name (str name)
+        first-form (first body)
+        first-symbol (if (seq? first-form) (first first-form) nil)
+        async-test (and (= 1 (count body))
+                        (or (= 'async first-symbol)
+                            (= 'cljs.test/async first-symbol)))]
+    (if async-test
+      `(do
+         (defn ~name [] ~first-form)
+         (cljs.test/register-test-action!
+          ~namespace
+          ~test-name
+          (~name)))
+      `(do
+         (defn ~name [] ~@body)
+         (cljs.test/register-test!
+          ~namespace
+          ~test-name
+          (fn []
+            (~name)
+            true))))))
 
 (defmacro use-fixtures
   "Registers synchronous `fixtures` of `kind` for the current namespace.

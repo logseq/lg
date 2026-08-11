@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 645 source entries (65.48%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 124 static-typing blockers,
+macro surfaces. The current baseline is 648 source entries (65.79%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 121 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -921,12 +921,17 @@ The synchronous block batch also ports `run-block`, `test-var-block`,
 `test-var`, `test-vars-block`, `test-vars`, and `testing-vars-str`. Static test
 thunks remain homogeneous, execute left to right, and reuse the registered-test
 counter path. A closed test-location record replaces the heterogeneous report
-event map for file, line, and optional-column rendering. These overloads do not
-claim support for ClojureScript async markers, injected continuation blocks, or
-analyzer Var metadata.
-Async tests and fixtures, namespace hooks, analyzer-wide
-test discovery, special assertion methods, and open custom reporters remain
-explicit blockers rather than silently falling back to dynamic values.
+event map for file, line, and optional-column rendering. The next batch ports
+`async`, `async?`, and `block` through a recursive closed `test-action` sum with
+synchronous thunk, asynchronous CPS, and injected-block cases. `run-block`
+preserves left-to-right execution, resumes at `done`, prepends injected blocks,
+and warns without rerunning the continuation when `done` is called twice.
+Direct outer `async` forms in `deftest` participate in the static registry and
+delay subsequent tests until their continuation runs. Async tests combined
+with fixtures, async forms nested inside `testing`, namespace hooks,
+analyzer-wide test discovery, special assertion methods, and open custom
+reporters remain explicit blockers rather than silently falling back to dynamic
+values.
 Inventory reporting keeps that namespace-level blocker
 while allowing each source-owned var to resolve as `source-aggregate`; a
 blocked sibling does not downgrade a ported qualified var.

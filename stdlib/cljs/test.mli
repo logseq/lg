@@ -6,14 +6,19 @@
   (testing-contexts :list<string>)
   (reporter :keyword))
 
-(type-record registered-test
-  (registered-test-name :string)
-  (registered-test-run :fn<bool>))
-
 (type-record test-location
   (file :string)
   (line :int)
   (column :option<int>))
+
+(type-variant test-action
+  (SynchronousTest :fn<bool>)
+  (AsyncTest :fn<fn<bool>;bool>)
+  (TestBlock :list<test-action>))
+
+(type-record registered-test
+  (registered-test-name :string)
+  (registered-test-action :test-action))
 
 (signature cljs.test/*current-env*
   :option<test-env>)
@@ -45,6 +50,8 @@
   :ref<map<string;list<registered-test>>>)
 (signature cljs.test/register-test!
   :fn<string;string;fn<bool>;registered-test>)
+(signature cljs.test/register-test-action!
+  :fn<string;string;test-action;registered-test>)
 (signature cljs.test/run-registered-test!
   :fn<registered-test;test-env>)
 (signature cljs.test/run-registered-tests!
@@ -52,15 +59,27 @@
 (signature cljs.test/run-single-test!
   :fn<string;fn<bool>;test-env>)
 (signature cljs.test/run-block [storage]
-  :fn<seqable<fn<bool>;storage>;bool>)
+  :fn<seqable<test-action;storage>;bool>)
+(signature cljs.test/run-block-then
+  :fn<seq<test-action>;fn<bool>;bool>)
+(signature cljs.test/async?
+  :fn<test-action;bool>)
+(signature cljs.test/synchronous-test-action
+  :fn<fn<bool>;test-action>)
+(signature cljs.test/async-test-action
+  :fn<fn<fn<bool>;bool>;test-action>)
+(signature cljs.test/block [storage]
+  :fn<seqable<test-action;storage>;test-action>)
 (signature cljs.test/registered-test-step
-  :fn<string;fn<bool>;fn<bool>>)
+  :fn<string;fn<bool>;test-action>)
+(signature cljs.test/namespace-test-action
+  :fn<string;test-action>)
 (signature cljs.test/test-var-block
-  :fn<fn<bool>;list<fn<bool>>>)
+  :fn<fn<bool>;list<test-action>>)
 (signature cljs.test/test-var
   :fn<fn<bool>;bool>)
 (signature cljs.test/test-vars-block [storage]
-  :fn<seqable<fn<bool>;storage>;seq<fn<bool>>>)
+  :fn<seqable<fn<bool>;storage>;seq<test-action>>)
 (signature cljs.test/test-vars [storage]
   :fn<seqable<fn<bool>;storage>;bool>)
 (signature cljs.test/is-result

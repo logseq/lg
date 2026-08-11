@@ -29388,7 +29388,9 @@ let test_source_cljs_test_synchronous_blocks_match_clojurescript () =
     (swap! events conj value)
     true))
 
-(run-block (list (step 1) (step 2)))
+(run-block
+ (list (test/synchronous-test-action (step 1))
+       (test/synchronous-test-action (step 2))))
 (println (= (list 2 1) @events))
 
 (reset! events (list))
@@ -29487,6 +29489,142 @@ let test_cljs_test_synchronous_blocks_are_source_owned () =
       "test-vars";
       "testing-vars-str";
     ]
+
+let test_source_cljs_test_async_blocks_match_clojurescript_control_flow () =
+  let source =
+    {|
+(ns app.cljs-test-async-blocks
+  (:require [cljs.test :as test :refer [async async? block run-block]]))
+
+(def events (atom (list)))
+(defn record-step [value]
+  (test/synchronous-test-action
+   (fn []
+     (swap! events conj value)
+     true)))
+
+(def async-step
+  (async done
+    (swap! events conj 2)
+    (done)))
+
+(def nested
+  (block (list (record-step 3) (record-step 4))))
+
+(println (async? async-step))
+(println (not (async? (record-step 0))))
+(println (not (async? nested)))
+
+(run-block (list (record-step 1) async-step nested (record-step 5)))
+(println (= (list 5 4 3 2 1) @events))
+
+(def continuation-count (atom 0))
+(def repeated-done
+  (async done
+    (done)
+    (done)))
+(run-block
+ (list repeated-done
+       (test/synchronous-test-action
+        (fn []
+          (swap! continuation-count inc)
+          true))))
+(println (= 1 @continuation-count))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "test/source_cljs_test_async_blocks.cljc"
+      source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "async cljs.test blocks must use a closed static action type";
+  assert_ocaml_runs "source_cljs_test_async_blocks"
+    (String.concat ""
+       [
+         "true\n";
+         "true\n";
+         "true\n";
+         "true\n";
+         "WARNING: Async test called done more than one time.\n";
+         "true\n";
+       ])
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_async_blocks.cljc" source)
+
+let test_source_cljs_test_async_blocks_reject_invalid_arguments () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_async_bad_block.cljc"
+    {|
+(ns app.cljs-test-async-bad-block
+  (:require [cljs.test :refer [block]]))
+(block (list 1 2))
+|}
+  |> expect_error_contains "expected of type";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_async_bad_done.cljc"
+    {|
+(ns app.cljs-test-async-bad-done
+  (:require [cljs.test :refer [async]]))
+(async :done true)
+|}
+  |> expect_error_contains "async expects a symbol"
+
+let test_source_cljs_test_async_deftest_continues_registry_in_order () =
+  let source =
+    {|
+(ns app.cljs-test-async-registry
+  (:require [cljs.test :refer [async deftest is run-tests]]))
+
+(def events (atom (list)))
+
+(deftest first-async
+  (async done
+    (swap! events conj 1)
+    (is true)
+    (done)))
+
+(deftest second-sync
+  (swap! events conj 2)
+  (is true))
+
+(def summary (run-tests 'app.cljs-test-async-registry))
+(println (= (list 2 1) @events))
+(println (= 2 (get (:report-counters summary) :test)))
+(println (= 2 (get (:report-counters summary) :pass)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_async_registry.cljc" source
+  in
+  assert_ocaml_runs "source_cljs_test_async_registry" "true\ntrue\ntrue\n"
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_async_registry.cljc" source)
+
+let test_cljs_test_async_blocks_are_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  if not (string_contains_substring source "(defmacro async") then
+    failwith "cljs.test/async is not source-owned";
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "async?"; "block"; "run-block" ]
 
 let test_source_chunk_buffer_and_array_chunk_match_clojurescript () =
   let source =
@@ -44042,6 +44180,14 @@ let tests =
       test_source_cljs_test_synchronous_blocks_reject_invalid_arguments );
     ( "cljs.test synchronous blocks are source-owned",
       test_cljs_test_synchronous_blocks_are_source_owned );
+    ( "source cljs.test async blocks match ClojureScript control flow",
+      test_source_cljs_test_async_blocks_match_clojurescript_control_flow );
+    ( "source cljs.test async blocks reject invalid arguments",
+      test_source_cljs_test_async_blocks_reject_invalid_arguments );
+    ( "source cljs.test async deftest continues registry in order",
+      test_source_cljs_test_async_deftest_continues_registry_in_order );
+    ( "cljs.test async blocks are source-owned",
+      test_cljs_test_async_blocks_are_source_owned );
     ( "source chunk buffer and array chunk match ClojureScript",
       test_source_chunk_buffer_and_array_chunk_match_clojurescript );
     ( "source chunk buffer and array chunk reject invalid arguments",
