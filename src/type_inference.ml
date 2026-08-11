@@ -1889,7 +1889,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | Some constraint_ty, FSymbol receiver :: rest ->
           Result.bind
             (constrain_protocol_symbol constraint_ty params receiver)
-            (fun params -> infer_all params rest)
+            (fun params ->
+              match lookup_function_ty name with
+              | Ok (TFn (_receiver_ty :: parameter_tys, _))
+                when List.length parameter_tys = List.length rest ->
+                  List.fold_left2
+                    (fun result expected_ty argument ->
+                      Result.bind result (fun params ->
+                          infer_expected expected_ty params argument))
+                    (Ok params) parameter_tys rest
+              | Ok _ | Error _ -> infer_all params rest)
       | Some _, _ | None, _ -> (
           let function_ty =
             Result.map (freshen_call_type name) (lookup_function_ty name)
@@ -3978,25 +3987,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_nth"; FSymbol collection; index ] ->
         Result.bind (constrain_seqable TUnknown params collection)
           (fun params -> infer_expected TInt params index)
-    | FList (FSymbol qualified_method :: FSymbol receiver :: _)
+    | FList (FSymbol qualified_method :: FSymbol receiver :: arguments)
       when (match String.split_on_char '/' qualified_method with
            | [ protocol_name; method_name ] ->
                String.starts_with ~prefix:"-" method_name
                && Option.is_some (lookup_protocol_constraint protocol_name)
            | _ -> false) -> (
-        match String.split_on_char '/' qualified_method with
-        | [ protocol_name; _method_name ] -> (
-            match lookup_protocol_constraint protocol_name with
-            | Some constraint_ty ->
-                constrain_protocol_symbol constraint_ty params receiver
-            | None -> assert false)
-        | _ -> Ok params)
-    | FList (FSymbol method_name :: FSymbol receiver :: _)
-      when Option.is_some (lookup_protocol_constraint method_name) -> (
-        match lookup_protocol_constraint method_name with
-        | Some constraint_ty ->
-            constrain_protocol_symbol constraint_ty params receiver
-        | None -> assert false)
+        infer_known_call qualified_method params
+          (FSymbol receiver :: arguments))
+    | FList (FSymbol method_name :: FSymbol receiver :: arguments)
+      when Option.is_some (lookup_protocol_constraint method_name) ->
+        infer_known_call method_name params (FSymbol receiver :: arguments)
     | FList [ FSymbol "satisfies?"; FSymbol protocol_name; FSymbol receiver ]
       -> (
         match lookup_protocol_constraint protocol_name with

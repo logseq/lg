@@ -473,6 +473,7 @@ let is_generated_callback_argument name =
   || String.starts_with ~prefix:"__lg_erased_seqable_item" name
   || String.starts_with ~prefix:"__lg_constrained_argument" name
   || String.starts_with ~prefix:"__lg_adapt_collection_item" name
+  || String.starts_with ~prefix:"__lg_protocol_witness_argument_" name
 
 let protocol_witness_expression protocol_id receiver =
   match Semantic_ir.unlocated receiver.semantic_expr with

@@ -17910,6 +17910,38 @@ let test_generic_protocol_witness_packs_seqable_arguments () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_generic_protocol_seqable_parameters_keep_closed_sum_instances () =
+  let source =
+    {|
+(type-variant query-value
+  (QueryInt :int)
+  (QueryText :string))
+(defprotocol Queryable
+  (-query-size [database ^:seqable<query-value> pattern] :int))
+(defrecord QueryDatabase []
+  Queryable
+  (-query-size [_ pattern]
+    (count pattern)))
+(defn query-size [database pattern]
+  (-query-size database pattern))
+(def database (QueryDatabase.))
+(println
+  (str
+    (query-size database [(QueryInt 1) (QueryText "two")])
+    ":"
+    (query-size database
+      (map (fn [value] value) [(QueryText "three")]))
+    ":"
+    (query-size database [])))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "generic_protocol_seqable_parameters_keep_closed_sum_instances"
+    "2:1:0\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_generic_protocol_witness_flows_through_sequence_callbacks () =
   let source =
     {|
@@ -44671,6 +44703,8 @@ let tests =
       test_generic_protocol_witness_evaluates_receiver_once );
     ( "generic protocol witness packs seqable arguments",
       test_generic_protocol_witness_packs_seqable_arguments );
+    ( "generic protocol seqable parameters keep closed sum instances",
+      test_generic_protocol_seqable_parameters_keep_closed_sum_instances );
     ( "generic protocol witness flows through sequence callbacks",
       test_generic_protocol_witness_flows_through_sequence_callbacks );
     ( "closed-sum protocol witness supports parser-style recursion",
