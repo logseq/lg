@@ -470,6 +470,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
             compile_deferred_call ()
         | Ok function_ when is_callable_map_type function_.ty ->
             compile_deferred_call ()
+        | Ok { ty = TOverloaded_fn arities; _ }
+          when List.exists
+                 (fun arity ->
+                   let fixed_count = List.length arity.fixed_params in
+                   fixed_count = 1
+                   || (fixed_count < 1 && Option.is_some arity.rest_param))
+                 arities ->
+            compile_deferred_call ()
         | Ok
             {
               ty = TFn ([ parameter_ty ], _);

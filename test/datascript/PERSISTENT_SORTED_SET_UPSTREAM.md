@@ -66,6 +66,6 @@ across a persistent update because LG does not expose JVM mutable transient
 identity.
 
 The PSS types and signatures live in
-`datascript/me/tonsky/persistent_sorted_set.mli`. The implementation audit
+`datascript/me/tonsky/persistent_sorted_set.lgi`. The implementation audit
 rejects type declarations or signatures left in the `.cljc` file and verifies
 that every compile manifest loads the interface before the implementation.

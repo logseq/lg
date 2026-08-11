@@ -59,9 +59,19 @@ dune exec bin/lg_cli.exe -- \
   app.cljc -o app_chunk.ml
 ```
 
-Consumers must not enumerate individual stdlib `.mli` or `.cljc` files.
+Consumers must not enumerate individual stdlib `.lgi` or `.cljc` files.
 `test/stdlib` exercises this contract, including negative type tests restored
 from the same aggregate state.
+
+In-process tooling can pass the restored compiler state to
+`Language_service.analyze_from_state` or
+`Language_service.analyze_workspace_from_state`. This keeps completion, hover,
+definitions, and workspace analysis on the same source registry as ordinary
+compilation. A consumer that intentionally analyzes a source fragment without
+an `ns` form can first call `Compiler.with_source_scope ""`; this selects the
+root source scope and installs automatic core refers without reintroducing
+name-based compiler dispatch. Ordinary source files should continue to declare
+their namespace.
 
 The compiler regression runner follows the same contract. Its ordinary
 `Lg.Compiler.compile_string` test facade compiles application chunks from one
@@ -70,12 +80,11 @@ tests that intentionally exercise an empty compiler state. This prevents
 source-owned core names from being reintroduced as public compiler dispatch
 merely to keep legacy compiler-only test fixtures working.
 
-LG signature sidecars use the `.mli` extension consistently. These files
+LG signature sidecars use the `.lgi` extension consistently. These files
 contain LG `signature` forms and are compiled by `lg_cli` before their matching
-`.cljc` source; they are not parsed as OCaml interface syntax. Runtime modules
-also use ordinary OCaml `.mli` files, with the consuming Dune rule determining
-which frontend owns each interface. The legacy `.mil` extension is rejected by
-the repository architecture test and is not part of the bootstrap contract.
+`.cljc` source. The `.mli` extension is reserved for ordinary OCaml interfaces
+parsed by the OCaml compiler. The legacy `.mil` extension and LG signature forms
+stored in `.mli` files are rejected by repository architecture tests.
 
 Multi-file compilation prepares each source once. The parsed forms provide
 both required OCaml packages and the subsequent incremental compilation input;
@@ -163,7 +172,7 @@ sequence.
    code being migrated.
 2. Pin the relevant ClojureScript source commit in `stdlib/upstream.edn`.
 3. Copy the public algorithm into `stdlib/<namespace>.cljc`, keeping upstream
-   control flow and observable arities. Add the narrowest `.mli` signatures
+   control flow and observable arities. Add the narrowest `.lgi` signatures
    needed to state relationships that inference cannot yet recover.
 4. Classify every upstream definition in the manifest. Document every static
    adaptation or deferred definition instead of silently replacing behavior.

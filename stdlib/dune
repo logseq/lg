@@ -1,29 +1,29 @@
 (rule
  (targets lg_stdlib_native.ml lg_stdlib_native.state)
  (deps
-  clojure/core.mli
+  clojure/core.lgi
   clojure/core.cljc
-  clojure/string.mli
+  clojure/string.lgi
   clojure/string.cljc
-  clojure/edn.mli
+  clojure/edn.lgi
   clojure/edn.cljc
-  cljs/reader.mli
+  cljs/reader.lgi
   cljs/reader.cljc
-  cljs/math.mli
+  cljs/math.lgi
   cljs/math.cljc
   cljs/cache.cljc
-  cljs/pprint.mli
+  cljs/pprint.lgi
   cljs/pprint.cljc
-  cljs/test.mli
+  cljs/test.lgi
   cljs/test.cljc
   clojure/core/protocols.cljc
-  clojure/set.mli
+  clojure/set.lgi
   clojure/set.cljc
-  clojure/data.mli
+  clojure/data.lgi
   clojure/data.cljc
-  clojure/walk.mli
+  clojure/walk.lgi
   clojure/walk.cljc
-  clojure/zip.mli
+  clojure/zip.lgi
   clojure/zip.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
@@ -34,29 +34,29 @@
    native
    --compile-files-state
    lg_stdlib_native.state
-   %{dep:clojure/core.mli}
+   %{dep:clojure/core.lgi}
    %{dep:clojure/core.cljc}
-   %{dep:clojure/string.mli}
+   %{dep:clojure/string.lgi}
    %{dep:clojure/string.cljc}
-   %{dep:clojure/edn.mli}
+   %{dep:clojure/edn.lgi}
    %{dep:clojure/edn.cljc}
-   %{dep:cljs/reader.mli}
+   %{dep:cljs/reader.lgi}
    %{dep:cljs/reader.cljc}
-   %{dep:cljs/math.mli}
+   %{dep:cljs/math.lgi}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
-   %{dep:cljs/pprint.mli}
+   %{dep:cljs/pprint.lgi}
    %{dep:cljs/pprint.cljc}
-   %{dep:cljs/test.mli}
+   %{dep:cljs/test.lgi}
    %{dep:cljs/test.cljc}
    %{dep:clojure/core/protocols.cljc}
-   %{dep:clojure/set.mli}
+   %{dep:clojure/set.lgi}
    %{dep:clojure/set.cljc}
-   %{dep:clojure/data.mli}
+   %{dep:clojure/data.lgi}
    %{dep:clojure/data.cljc}
-   %{dep:clojure/walk.mli}
+   %{dep:clojure/walk.lgi}
    %{dep:clojure/walk.cljc}
-   %{dep:clojure/zip.mli}
+   %{dep:clojure/zip.lgi}
    %{dep:clojure/zip.cljc}
    -o
    lg_stdlib_native.ml)))
@@ -68,29 +68,29 @@
 (rule
  (targets lg_stdlib_melange.ml lg_stdlib_melange.state)
  (deps
-  clojure/core.mli
+  clojure/core.lgi
   clojure/core.cljc
-  clojure/string.mli
+  clojure/string.lgi
   clojure/string.cljc
-  clojure/edn.mli
+  clojure/edn.lgi
   clojure/edn.cljc
-  cljs/reader.mli
+  cljs/reader.lgi
   cljs/reader.cljc
-  cljs/math.mli
+  cljs/math.lgi
   cljs/math.cljc
   cljs/cache.cljc
-  cljs/pprint.mli
+  cljs/pprint.lgi
   cljs/pprint.cljc
-  cljs/test.mli
+  cljs/test.lgi
   cljs/test.cljc
   clojure/core/protocols.cljc
-  clojure/set.mli
+  clojure/set.lgi
   clojure/set.cljc
-  clojure/data.mli
+  clojure/data.lgi
   clojure/data.cljc
-  clojure/walk.mli
+  clojure/walk.lgi
   clojure/walk.cljc
-  clojure/zip.mli
+  clojure/zip.lgi
   clojure/zip.cljc
   %{lib:lg.runtime:lg_runtime.cma}
   ../bin/lg_cli.exe)
@@ -101,29 +101,29 @@
    melange
    --compile-files-state
    lg_stdlib_melange.state
-   %{dep:clojure/core.mli}
+   %{dep:clojure/core.lgi}
    %{dep:clojure/core.cljc}
-   %{dep:clojure/string.mli}
+   %{dep:clojure/string.lgi}
    %{dep:clojure/string.cljc}
-   %{dep:clojure/edn.mli}
+   %{dep:clojure/edn.lgi}
    %{dep:clojure/edn.cljc}
-   %{dep:cljs/reader.mli}
+   %{dep:cljs/reader.lgi}
    %{dep:cljs/reader.cljc}
-   %{dep:cljs/math.mli}
+   %{dep:cljs/math.lgi}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
-   %{dep:cljs/pprint.mli}
+   %{dep:cljs/pprint.lgi}
    %{dep:cljs/pprint.cljc}
-   %{dep:cljs/test.mli}
+   %{dep:cljs/test.lgi}
    %{dep:cljs/test.cljc}
    %{dep:clojure/core/protocols.cljc}
-   %{dep:clojure/set.mli}
+   %{dep:clojure/set.lgi}
    %{dep:clojure/set.cljc}
-   %{dep:clojure/data.mli}
+   %{dep:clojure/data.lgi}
    %{dep:clojure/data.cljc}
-   %{dep:clojure/walk.mli}
+   %{dep:clojure/walk.lgi}
    %{dep:clojure/walk.cljc}
-   %{dep:clojure/zip.mli}
+   %{dep:clojure/zip.lgi}
    %{dep:clojure/zip.cljc}
    -o
    lg_stdlib_melange.ml)))

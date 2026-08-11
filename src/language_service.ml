@@ -75,6 +75,17 @@ let analyze ~filename source =
           | Error _ as err -> err
           | Ok forms -> Ok { source; tokens; forms; compiler }))
 
+let analyze_from_state ?(target = Target.default) ~filename state source =
+  match Toolchain.analyze_from_state ~target ~filename state source with
+  | Error _ as err -> err
+  | Ok compiler -> (
+      match Lexer.tokenize source with
+      | Error _ as err -> err
+      | Ok tokens -> (
+          match Parser.parse_located tokens with
+          | Error _ as err -> err
+          | Ok forms -> Ok { source; tokens; forms; compiler }))
+
 let recover_completed_prefix ~filename source =
   match Lexer.tokenize source with
   | Error _ -> None
@@ -86,7 +97,7 @@ let recover_completed_prefix ~filename source =
           analyze ~filename prefix |> Result.to_option
       | _ -> None)
 
-let analyze_workspace_with_errors sources =
+let analyze_workspace_with_errors_using analyze_compiler sources =
   let rec parse acc = function
     | [] -> Ok (List.rev acc)
     | (filename, source) :: rest -> (
@@ -100,7 +111,7 @@ let analyze_workspace_with_errors sources =
   match parse [] sources with
   | Error _ as err -> err
   | Ok parsed -> (
-      match Toolchain.analyze_workspace_with_errors sources with
+      match analyze_compiler sources with
       | Error _ as err -> err
       | Ok (analyses, errors) ->
           let compiler filename = List.assoc_opt filename analyses in
@@ -113,8 +124,26 @@ let analyze_workspace_with_errors sources =
                 parsed,
               errors ))
 
+let analyze_workspace_with_errors sources =
+  analyze_workspace_with_errors_using Toolchain.analyze_workspace_with_errors
+    sources
+
+let analyze_workspace_with_errors_from_state ?(target = Target.default) state
+    sources =
+  analyze_workspace_with_errors_using
+    (Toolchain.analyze_workspace_with_errors_from_state ~target state)
+    sources
+
 let analyze_workspace sources =
   match analyze_workspace_with_errors sources with
+  | Error _ as err -> err
+  | Ok ([], (_, error) :: _) -> Error error
+  | Ok ([], []) -> Error.error "workspace contains no analyzable lg files"
+  | Ok (analyses, []) -> Ok analyses
+  | Ok (analyses, _errors) -> Ok analyses
+
+let analyze_workspace_from_state ?(target = Target.default) state sources =
+  match analyze_workspace_with_errors_from_state ~target state sources with
   | Error _ as err -> err
   | Ok ([], (_, error) :: _) -> Error error
   | Ok ([], []) -> Error.error "workspace contains no analyzable lg files"

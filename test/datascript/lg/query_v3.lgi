@@ -133,6 +133,9 @@
 (signature datascript.query-v3/relation-row-print-string-v3
   :fn<array<datascript.lg.query-types/result>;string>)
 
+(signature datascript.query-v3/context-constants-print-string-v3
+  :fn<map<string;datascript.lg.query-types/result>;string>)
+
 (signature datascript.query-v3/coll-rel-with-lookups
   :fn<vector<datascript.parser/pattern-element>;vector<datascript.query-v3/coll-relation-row-v3>;map<string;datascript.db/database-view>;datascript.query-v3/relation-v3>)
 
@@ -207,6 +210,18 @@
 
 (signature datascript.query-v3/add-collected-key
   :fn<vector<datascript.query-v3/collected-key-v3>;datascript.query-v3/collected-key-v3;vector<datascript.query-v3/collected-key-v3>>)
+
+(signature datascript.query-v3/collected-key-member? [storage]
+  :fn<seqable<datascript.query-v3/collected-key-v3;storage>;datascript.query-v3/collected-key-v3;bool>)
+
+(signature datascript.query-v3/collect-opt
+  :fn<datascript.query-v3/query-context-v3;vector<string>;vector<datascript.query-v3/collected-key-v3>>)
+
+(signature datascript.query-v3/relation-row-key
+  :fn<datascript.query-v3/relation-v3;array<datascript.lg.query-types/result>;vector<string>;datascript.query-v3/collected-key-v3>)
+
+(signature datascript.query-v3/subtract-from-rel
+  :fn<datascript.query-v3/relation-v3;vector<string>;vector<datascript.query-v3/collected-key-v3>;datascript.query-v3/relation-v3>)
 
 (signature datascript.query-v3/fill-collect-specimen!
   :fn<datascript.query-v3/relation-v3;array<datascript.lg.query-types/result>;vector<string>;datascript.query-v3/collect-specimen-v3;unit>)

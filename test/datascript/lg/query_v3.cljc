@@ -1246,16 +1246,18 @@
    (fn [_ index argument]
      (if-some [variable (parser/argument-variable-name argument)]
        (if-some [value (get (context-constants context) variable)]
-         (aset target index (Some value))
+         (Stdlib.ignore (aset target index (Some value)))
          (Stdlib.ignore 0))
        (if-some [value (parser/argument-constant argument)]
-         (aset target index (Some (query-types/value-result value)))
+         (Stdlib.ignore
+          (aset target index (Some (query-types/value-result value))))
          (if-some [source-name
                    (parser/argument-source-name argument)]
-           (aset
-            target
-            index
-            (Some (predicate-source-result context source-name)))
+           (Stdlib.ignore
+            (aset
+             target
+             index
+             (Some (predicate-source-result context source-name))))
            (Stdlib.invalid_arg "Invalid predicate argument"))))
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)
@@ -1785,7 +1787,8 @@
    (fn [_ ^:int index ^:string symbol]
      (if-some [relation-index
                (get (relation-offset-map relation) symbol)]
-       (aset specimen index (Some (aget row (int relation-index))))
+       (Stdlib.ignore
+        (aset specimen index (Some (aget row (int relation-index)))))
        (Stdlib.ignore 0))
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)
@@ -2429,7 +2432,7 @@
      (let [symbol (tuple-get symbol-index 0)
            index (tuple-get symbol-index 1)]
        (if-some [value (get constants symbol)]
-         (aset specimen index (Some value))
+         (Stdlib.ignore (aset specimen index (Some value)))
          (Stdlib.ignore 0)))
      (Stdlib.ignore 0))
    (Stdlib.ignore 0)

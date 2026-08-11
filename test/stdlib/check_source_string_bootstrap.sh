@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 
-for file in stdlib/clojure/string.mli stdlib/clojure/string.cljc; do
+for file in stdlib/clojure/string.lgi stdlib/clojure/string.cljc; do
   if ! test -f "$root/$file"; then
     echo "$file is missing from the source standard library" >&2
     exit 1

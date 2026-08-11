@@ -21,6 +21,7 @@ type prepared_source = Toolchain.prepared_source
 
 let empty_state = Toolchain.empty_state
 let cacheable_state = Toolchain.cacheable_state
+let with_source_scope = Toolchain.with_source_scope
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =

@@ -3,10 +3,10 @@ set -euo pipefail
 
 workspace_root=$(cd "$(dirname "$0")/../.." && pwd)
 source_file="$workspace_root/test/datascript/lg/datafy.cljc"
-interface_file="$workspace_root/test/datascript/lg/datafy.mli"
+interface_file="$workspace_root/test/datascript/lg/datafy.lgi"
 
 if [[ ! -f "$interface_file" ]]; then
-  echo "missing DataScript datafy interface: test/datascript/lg/datafy.mli" >&2
+  echo "missing DataScript datafy interface: test/datascript/lg/datafy.lgi" >&2
   exit 1
 fi
 
@@ -17,7 +17,7 @@ fi
 
 for manifest in "$workspace_root/test/dune" "$workspace_root/test/datascript_conn_tests.inc"; do
   source_count=$(rg -c 'datascript/lg/datafy\.cljc' "$manifest")
-  interface_count=$(rg -c 'datascript/lg/datafy\.mli' "$manifest" || true)
+  interface_count=$(rg -c 'datascript/lg/datafy\.lgi' "$manifest" || true)
   if [[ "$source_count" -ne "$interface_count" ]]; then
     echo "datafy interface/source count mismatch in $manifest: $interface_count/$source_count" >&2
     exit 1

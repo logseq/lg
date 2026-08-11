@@ -17,3 +17,5 @@ let empty =
 
 let with_target target state =
   { state with env = Compiler_environment.with_target target state.env }
+
+let with_scope scope state = { state with scope }

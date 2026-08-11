@@ -4,7 +4,7 @@ set -eu
 root=$1
 consumer="$root/test/stdlib/dune"
 
-if grep -E 'stdlib/(clojure|cljs)/.*\.mli|--compile-files' "$consumer" >/dev/null; then
+if grep -E 'stdlib/(clojure|cljs)/.*\.lgi|--compile-files' "$consumer" >/dev/null; then
   echo "stdlib consumer still enumerates individual namespace sources" >&2
   exit 1
 fi

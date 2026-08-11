@@ -3,10 +3,10 @@ set -euo pipefail
 
 workspace_root=$(cd "$(dirname "$0")/../.." && pwd)
 source_file="$workspace_root/datascript/me/tonsky/persistent_sorted_set.cljc"
-interface_file="$workspace_root/datascript/me/tonsky/persistent_sorted_set.mli"
+interface_file="$workspace_root/datascript/me/tonsky/persistent_sorted_set.lgi"
 
 if [[ ! -f "$interface_file" ]]; then
-  echo "missing PSS interface: datascript/me/tonsky/persistent_sorted_set.mli" >&2
+  echo "missing PSS interface: datascript/me/tonsky/persistent_sorted_set.lgi" >&2
   exit 1
 fi
 
@@ -24,7 +24,7 @@ mapfile -t compile_manifests < <(
 
 for manifest in "${compile_manifests[@]}"; do
   source_count=$(rg -c 'persistent_sorted_set\.cljc' "$manifest")
-  interface_count=$(rg -c 'persistent_sorted_set\.mli' "$manifest" || true)
+  interface_count=$(rg -c 'persistent_sorted_set\.lgi' "$manifest" || true)
   if [[ "$source_count" -ne "$interface_count" ]]; then
     echo "PSS interface/source count mismatch in $manifest: $interface_count/$source_count" >&2
     exit 1

@@ -6,26 +6,27 @@
   ../stdlib/lg_stdlib_native.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mli
+  ../datascript/me/tonsky/persistent_sorted_set.lgi
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/lg/annotations.mli
+  datascript/lg/annotations.lgi
+  datascript/lg/util.lgi
   datascript/upstream/util.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/entity.cljc
-  datascript/lg/built_ins.mli
+  datascript/lg/built_ins.lgi
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/lg/datafy.mli
+  datascript/lg/datafy.lgi
   datascript/lg/datafy.cljc
-  datascript/lg/query_types.mli
+  datascript/lg/query_types.lgi
   datascript/lg/query_types.cljc
-  datascript/lg/query.mli
+  datascript/lg/query.lgi
   datascript/lg/query.cljc
-  datascript/lg/query_v3.mli
+  datascript/lg/query_v3.lgi
   datascript/lg/query_v3.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/storage_file.cljc
@@ -50,26 +51,27 @@
    datascript_conn_native_runtime.state
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.lgi}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/lg/annotations.mli}
+   %{dep:datascript/lg/annotations.lgi}
+   %{dep:datascript/lg/util.lgi}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/entity.cljc}
-   %{dep:datascript/lg/built_ins.mli}
+   %{dep:datascript/lg/built_ins.lgi}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/lg/datafy.mli}
+   %{dep:datascript/lg/datafy.lgi}
    %{dep:datascript/lg/datafy.cljc}
-   %{dep:datascript/lg/query_types.mli}
+   %{dep:datascript/lg/query_types.lgi}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mli}
+   %{dep:datascript/lg/query.lgi}
    %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/lg/query_v3.mli}
+   %{dep:datascript/lg/query_v3.lgi}
    %{dep:datascript/lg/query_v3.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/storage_file.cljc}
@@ -146,26 +148,27 @@
   ../stdlib/lg_stdlib_melange.state
   ../datascript/me/tonsky/persistent_sorted_set/arrays.cljc
   ../datascript/me/tonsky/persistent_sorted_set/protocol.cljc
-  ../datascript/me/tonsky/persistent_sorted_set.mli
+  ../datascript/me/tonsky/persistent_sorted_set.lgi
   ../datascript/me/tonsky/persistent_sorted_set.cljc
-  datascript/lg/annotations.mli
+  datascript/lg/annotations.lgi
+  datascript/lg/util.lgi
   datascript/upstream/util.cljc
   datascript/upstream/lru.cljc
   datascript/upstream/schema.cljc
   datascript/upstream/db.cljc
   datascript/upstream/parser.cljc
   datascript/upstream/entity.cljc
-  datascript/lg/built_ins.mli
+  datascript/lg/built_ins.lgi
   datascript/upstream/built_ins.cljc
   datascript/upstream/pull_parser.cljc
   datascript/upstream/pull_api.cljc
-  datascript/lg/datafy.mli
+  datascript/lg/datafy.lgi
   datascript/lg/datafy.cljc
-  datascript/lg/query_types.mli
+  datascript/lg/query_types.lgi
   datascript/lg/query_types.cljc
-  datascript/lg/query.mli
+  datascript/lg/query.lgi
   datascript/lg/query.cljc
-  datascript/lg/query_v3.mli
+  datascript/lg/query_v3.lgi
   datascript/lg/query_v3.cljc
   datascript/upstream/storage.cljc
   datascript/upstream/serialize.cljc
@@ -192,26 +195,27 @@
    datascript_conn_melange_base.state
    %{dep:../datascript/me/tonsky/persistent_sorted_set/arrays.cljc}
    %{dep:../datascript/me/tonsky/persistent_sorted_set/protocol.cljc}
-   %{dep:../datascript/me/tonsky/persistent_sorted_set.mli}
+   %{dep:../datascript/me/tonsky/persistent_sorted_set.lgi}
    %{dep:../datascript/me/tonsky/persistent_sorted_set.cljc}
-   %{dep:datascript/lg/annotations.mli}
+   %{dep:datascript/lg/annotations.lgi}
+   %{dep:datascript/lg/util.lgi}
    %{dep:datascript/upstream/util.cljc}
    %{dep:datascript/upstream/lru.cljc}
    %{dep:datascript/upstream/schema.cljc}
    %{dep:datascript/upstream/db.cljc}
    %{dep:datascript/upstream/parser.cljc}
    %{dep:datascript/upstream/entity.cljc}
-   %{dep:datascript/lg/built_ins.mli}
+   %{dep:datascript/lg/built_ins.lgi}
    %{dep:datascript/upstream/built_ins.cljc}
    %{dep:datascript/upstream/pull_parser.cljc}
    %{dep:datascript/upstream/pull_api.cljc}
-   %{dep:datascript/lg/datafy.mli}
+   %{dep:datascript/lg/datafy.lgi}
    %{dep:datascript/lg/datafy.cljc}
-   %{dep:datascript/lg/query_types.mli}
+   %{dep:datascript/lg/query_types.lgi}
    %{dep:datascript/lg/query_types.cljc}
-   %{dep:datascript/lg/query.mli}
+   %{dep:datascript/lg/query.lgi}
    %{dep:datascript/lg/query.cljc}
-   %{dep:datascript/lg/query_v3.mli}
+   %{dep:datascript/lg/query_v3.lgi}
    %{dep:datascript/lg/query_v3.cljc}
    %{dep:datascript/upstream/storage.cljc}
    %{dep:datascript/upstream/serialize.cljc}

@@ -3,7 +3,7 @@ set -eu
 
 root=$1
 source_file="$root/stdlib/clojure/zip.cljc"
-interface_file="$root/stdlib/clojure/zip.mli"
+interface_file="$root/stdlib/clojure/zip.lgi"
 
 for file in "$source_file" "$interface_file"; do
   if ! test -f "$file"; then

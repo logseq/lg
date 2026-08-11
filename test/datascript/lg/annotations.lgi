@@ -25,6 +25,12 @@
 (signature datascript.db/empty-schema-drafts
   :map<int;map<keyword;Datascript_runtime.Data_value.t>>)
 
+(signature datascript.storage/serialize-schema
+  :fn<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>;map<string;map<string;Datascript_runtime.Data_value.t>>>)
+
+(signature datascript.js/transact [metadata]
+  :variadic-fn<datascript.conn/Conn;vector<datascript.db/tx-entry>;map<keyword;Datascript_runtime.Data_value.t>;datascript.db/TxReport>)
+
 (signature datascript.db/datom
   :overload<fn<int;keyword;Datascript_runtime.Data_value.t;datascript.db/Datom>;fn<int;keyword;Datascript_runtime.Data_value.t;int;datascript.db/Datom>;fn<int;keyword;Datascript_runtime.Data_value.t;int;bool;datascript.db/Datom>>)
 

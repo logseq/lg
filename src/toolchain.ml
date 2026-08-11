@@ -941,6 +941,19 @@ let empty_state =
 
 let cacheable_state state = { state with ocaml_env = None }
 
+let with_source_scope scope state =
+  let typecheck_state = Compiler_state.with_scope scope state.typecheck_state in
+  let typecheck_state =
+    {
+      typecheck_state with
+      env = Require.add_source_core_bindings typecheck_state.env scope;
+    }
+  in
+  {
+    state with
+    typecheck_state;
+  }
+
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
   let packages =
@@ -1792,11 +1805,14 @@ let interface ?(target = Target.default) ?(filename = "<string>") source =
              Format.asprintf "%a@." Printtyp.signature
                analysis.typed_structure.str_type))
 
-let analyze_workspace_with_errors ?(target = Target.default) sources =
+let analyze_workspace_with_errors_from_state ?(target = Target.default)
+    initial_state sources =
   let validate_ocaml state =
     match Lowering.structure_of_located_items state.located_items with
     | Error _ as err -> err
-    | Ok structure -> Ocaml_typechecker.analyze structure |> Result.map ignore
+    | Ok structure ->
+        Ocaml_typechecker.analyze ?compiler_env:initial_state.ocaml_env structure
+        |> Result.map ignore
   in
   let rec parse parsed errors = function
     | [] -> Ok (List.rev parsed, List.rev errors)
@@ -1834,7 +1850,7 @@ let analyze_workspace_with_errors ?(target = Target.default) sources =
   match parse [] [] sources with
   | Error _ as err -> err
   | Ok (parsed, parse_errors) -> (
-      match compile empty_state [] parsed with
+      match compile initial_state [] parsed with
       | Error _ as err -> err
       | Ok (_state, [], compile_errors) -> Ok ([], parse_errors @ compile_errors)
       | Ok (state, filenames, compile_errors) -> (
@@ -1844,7 +1860,10 @@ let analyze_workspace_with_errors ?(target = Target.default) sources =
               if Sys.getenv_opt "LG_DUMP_ML" = Some "1" then
                 Printf.eprintf "%s\n%!"
                   (Ocaml_parsetree.print_implementation structure);
-              match Ocaml_typechecker.analyze structure with
+              match
+                Ocaml_typechecker.analyze
+                  ?compiler_env:initial_state.ocaml_env structure
+              with
               | Error _ as err -> err
               | Ok analysis ->
                   let result filename =
@@ -1868,6 +1887,21 @@ let analyze_workspace_with_errors ?(target = Target.default) sources =
                         (fun filename -> (filename, result filename))
                         filenames,
                       parse_errors @ compile_errors ))))
+
+let analyze_workspace_with_errors ?(target = Target.default) sources =
+  analyze_workspace_with_errors_from_state ~target empty_state sources
+
+let analyze_from_state ?(target = Target.default) ?(filename = "<string>")
+    state source =
+  match
+    analyze_workspace_with_errors_from_state ~target state
+      [ (filename, source) ]
+  with
+  | Error _ as err -> err
+  | Ok ((_, analysis) :: _, []) -> Ok analysis
+  | Ok ([], (_, error) :: _) -> Error error
+  | Ok ([], []) -> Error.error "source contains no analyzable lg forms"
+  | Ok ((_, analysis) :: _, _errors) -> Ok analysis
 
 let analyze_workspace ?(target = Target.default) sources =
   match analyze_workspace_with_errors ~target sources with

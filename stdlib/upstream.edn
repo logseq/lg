@@ -21,7 +21,7 @@
  {clojure.core
   {:source "src/main/cljs/cljs/core.cljs"
    :implementation "clojure/core.cljc"
-   :interface "clojure/core.mli"
+   :interface "clojure/core.lgi"
    :definitions
    {comment {:status :ported
              :reason :source-macro-preserves-the-upstream-ignored-body-and-nil-result}
@@ -1294,7 +1294,7 @@
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
    :implementation "clojure/string.cljc"
-   :interface "clojure/string.mli"
+   :interface "clojure/string.lgi"
    :definitions
    {blank? {:status :static-adaptation :reason :typed-host-string-primitive}
     capitalize {:status :static-adaptation :reason :typed-host-string-primitive}
@@ -1332,7 +1332,7 @@
   clojure.edn
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "clojure/edn.cljc"
-   :interface "clojure/edn.mli"
+   :interface "clojure/edn.lgi"
    :definitions
    {read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
@@ -1342,7 +1342,7 @@
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "cljs/reader.cljc"
-   :interface "cljs/reader.mli"
+   :interface "cljs/reader.lgi"
    :definitions
    {read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
@@ -1364,7 +1364,7 @@
   cljs.math
   {:source "src/main/cljs/cljs/math.cljs"
    :implementation "cljs/math.cljc"
-   :interface "cljs/math.mli"
+   :interface "cljs/math.lgi"
    :definitions
    {E {:status :ported}
     PI {:status :ported}
@@ -1436,7 +1436,7 @@
   cljs.test
   {:source "src/main/cljs/cljs/test.cljs"
    :implementation "cljs/test.cljc"
-   :interface "cljs/test.mli"
+   :interface "cljs/test.lgi"
    :status :blocked
    :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
    :definitions
@@ -1579,7 +1579,7 @@
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :implementation "clojure/data.cljc"
-   :interface "clojure/data.mli"
+   :interface "clojure/data.lgi"
    :definitions
   {diff {:status :static-adaptation
           :reason :source-public-function-uses-the-closed-lg-edn-backend-tree-domain-while-the-typed-runtime-port-preserves-upstream-equality-partitions-recursive-map-and-sequential-diffs-set-diffs-membership-order-and-nil-results-without-runtime-dynamic}
@@ -1591,7 +1591,7 @@
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"
    :implementation "clojure/walk.cljc"
-   :interface "clojure/walk.mli"
+   :interface "clojure/walk.lgi"
    :definitions
    {walk {:status :static-adaptation
           :reason :source-public-function-preserves-upstream-inner-before-outer-order-over-the-closed-edn-tree-domain-while-a-minimal-typed-primitive-rebuilds-one-collection-level}
@@ -1611,7 +1611,7 @@
   clojure.zip
   {:source "src/main/cljs/clojure/zip.cljs"
    :implementation "clojure/zip.cljc"
-   :interface "clojure/zip.mli"
+   :interface "clojure/zip.lgi"
    :definitions
    {zipper {:status :static-adaptation
             :reason :source-algorithm-uses-a-parameterized-closed-location-path-and-callback-context-instead-of-an-upstream-heterogeneous-metadata-vector}
@@ -1707,7 +1707,7 @@
   clojure.set
   {:source "src/main/cljs/clojure/set.cljs"
    :implementation "clojure/set.cljc"
-   :interface "clojure/set.mli"
+   :interface "clojure/set.lgi"
    :definitions
    {union {:status :static-adaptation
            :reason :typed-binary-helper}

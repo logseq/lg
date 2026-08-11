@@ -5253,7 +5253,8 @@ let create ~compile_expr =
       match arg_forms with
       | [ transducer; collection ] ->
           compile_expr scope env
-            (FList [ FSymbol "sequence"; transducer; collection ])
+            (FList
+               [ FSymbol "__lg_transformer_sequence"; transducer; collection ])
       | _ -> Error.error "->Eduction expects a transducer and collection"
     else if member_name = "__lg_defer_seq" then
       match arg_forms with
@@ -8640,15 +8641,61 @@ let create ~compile_expr =
                         | [ _; output_ty ], [ _; input_ty ]
                           when argument_compatible input_ty
                                  collection_element ->
-                            Ok
-                              (typed_ir (TSeq output_ty)
-                                 (apply
+                            let input_name =
+                              "__lg_transformer_sequence_input"
+                            in
+                            let input =
+                              typed_ir collection_element
+                                (Semantic_ir.Ident input_name)
+                            in
+                            Result.bind
+                              (if Types.equal input_ty collection_element then
+                                 Ok sequence
+                               else
+                                 Result.map
+                                   (fun packed ->
+                                     apply "Lg_runtime.Runtime_seq.map"
+                                       [
+                                         Semantic_ir.Fun
+                                           ( [ Semantic_ir.PVar input_name ],
+                                             packed );
+                                         sequence;
+                                       ])
+                                   (pack_constrained_value env input_ty input))
+                              (fun sequence ->
+                                let transformed =
+                                  apply
                                     (match Env.target env with
                                     | Target.Melange ->
                                         "Lg_runtime.Runtime_seq_melange.transformer_sequence"
                                     | Target.Native | Target.Js_of_ocaml ->
                                         "Lg_runtime.Runtime_seq.transformer_sequence")
-                                    [ xform.semantic_expr; sequence ]))
+                                    [ xform.semantic_expr; sequence ]
+                                in
+                                let output_value_ty =
+                                  Types.constraint_value_type output_ty
+                                in
+                                if Types.equal output_value_ty output_ty then
+                                  Ok (typed_ir (TSeq output_ty) transformed)
+                                else
+                                  let output_name =
+                                    "__lg_constrained_argument_transformer_output"
+                                  in
+                                  let output =
+                                    Collection_capability.constraint_value_expression
+                                      output_ty (Semantic_ir.Ident output_name)
+                                  in
+                                  Ok
+                                    (typed_ir (TSeq output_value_ty)
+                                       (apply "Lg_runtime.Runtime_seq.map"
+                                          [
+                                            Semantic_ir.Fun
+                                              ( [
+                                                  Semantic_ir.PVar output_name;
+                                                ],
+                                                output );
+                                            transformed;
+                                          ])))
                         | _ ->
                             Error.error
                               "__lg_transformer_sequence expects binary reducing-function arities")

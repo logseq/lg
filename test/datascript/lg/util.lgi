@@ -1,0 +1,4 @@
+(ns datascript.util)
+
+(signature datascript.util/find [value storage predicate-result]
+  :fn<fn<value;truthy<predicate-result>>;seqable<value;storage>;option<value>>)

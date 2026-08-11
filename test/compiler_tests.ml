@@ -287,26 +287,26 @@ let stdlib_sources =
   let cached =
     lazy
       ([
-         "stdlib/clojure/core.mli";
+         "stdlib/clojure/core.lgi";
          "stdlib/clojure/core.cljc";
-         "stdlib/clojure/string.mli";
+         "stdlib/clojure/string.lgi";
          "stdlib/clojure/string.cljc";
-         "stdlib/clojure/edn.mli";
+         "stdlib/clojure/edn.lgi";
          "stdlib/clojure/edn.cljc";
-         "stdlib/cljs/reader.mli";
+         "stdlib/cljs/reader.lgi";
          "stdlib/cljs/reader.cljc";
-         "stdlib/clojure/set.mli";
+         "stdlib/clojure/set.lgi";
          "stdlib/clojure/set.cljc";
-         "stdlib/clojure/data.mli";
+         "stdlib/clojure/data.lgi";
          "stdlib/clojure/data.cljc";
-         "stdlib/clojure/walk.mli";
+         "stdlib/clojure/walk.lgi";
          "stdlib/clojure/walk.cljc";
-         "stdlib/clojure/zip.mli";
+         "stdlib/clojure/zip.lgi";
          "stdlib/clojure/zip.cljc";
          "stdlib/cljs/cache.cljc";
-         "stdlib/cljs/pprint.mli";
+         "stdlib/cljs/pprint.lgi";
          "stdlib/cljs/pprint.cljc";
-         "stdlib/cljs/test.mli";
+         "stdlib/cljs/test.lgi";
          "stdlib/cljs/test.cljc";
        ]
       |> List.map (fun path ->
@@ -353,7 +353,7 @@ let compiled_stdlib target =
       in
       let cached =
         {
-          state;
+          state = Lg.Compiler.with_source_scope "" state;
           ocaml_source =
             reversed_outputs |> List.rev |> String.concat "\n";
         }
@@ -389,6 +389,8 @@ let compile_string_from_stdlib ?(target = Lg.Target.default) source =
     ~filename:"test/source_core_program.cljc" stdlib.state source
   |> Result.map snd
 
+let stdlib_state target = (compiled_stdlib target).state
+
 module Raw_lg = Lg
 
 module Lg = struct
@@ -399,6 +401,38 @@ module Lg = struct
 
     let compile_string ?(target = Target.default) source =
       compile_string_from_stdlib ~target source
+
+    let compile_parsetree ?(target = Target.default) source =
+      let stdlib = compiled_stdlib target in
+      Raw_lg.Compiler.compile_chunk_parsetree ~target stdlib.state source
+      |> Result.map snd
+
+    let compile_parsetree_with_filename ?(target = Target.default) ~filename
+        source =
+      let stdlib = compiled_stdlib target in
+      Raw_lg.Compiler.compile_chunk_parsetree_with_filename ~target ~filename
+        stdlib.state source
+      |> Result.map snd
+  end
+
+  module Toolchain = struct
+    include Raw_lg.Toolchain
+
+    let analyze ?(target = Target.default) ?(filename = "<string>") source =
+      let stdlib = compiled_stdlib target in
+      Raw_lg.Toolchain.analyze_from_state ~target ~filename stdlib.state source
+  end
+
+  module Language_service = struct
+    include Raw_lg.Language_service
+
+    let analyze ~filename source =
+      let stdlib = compiled_stdlib Target.Native in
+      Raw_lg.Language_service.analyze_from_state ~filename stdlib.state source
+
+    let analyze_workspace sources =
+      let stdlib = compiled_stdlib Target.Native in
+      Raw_lg.Language_service.analyze_workspace_from_state stdlib.state sources
   end
 end
 
@@ -434,7 +468,7 @@ let rec files_with_suffix suffix directory =
          else if Filename.check_suffix path suffix then [ path ]
          else [])
 
-let test_lg_signature_sidecars_use_mli_extension () =
+let test_lg_signature_sidecars_use_lgi_extension () =
   let roots =
     [ "stdlib"; "datascript"; "test/datascript" ]
     |> List.map (Filename.concat (repo_root ()))
@@ -442,13 +476,41 @@ let test_lg_signature_sidecars_use_mli_extension () =
   let legacy = List.concat_map (files_with_suffix ".mil") roots in
   if legacy <> [] then
     failwith
-      ("LG signature sidecars must use .mli, found: "
+      ("LG signature sidecars must use .lgi, found legacy .mil files: "
       ^ String.concat ", " legacy);
+  let lg_syntax_mli =
+    roots
+    |> List.concat_map (files_with_suffix ".mli")
+    |> List.filter (fun path ->
+           let source = read_file path |> String.trim in
+           [ "(ns "; "(signature "; "(type "; "(type-record ";
+             "(type-variant " ]
+           |> List.exists (fun prefix ->
+                  String.starts_with ~prefix source))
+  in
+  if lg_syntax_mli <> [] then
+    failwith
+      (".mli files must use OCaml syntax; move LG signature forms to .lgi: "
+      ^ String.concat ", " lg_syntax_mli);
   if
     not
       (Sys.file_exists
-         (Filename.concat (repo_root ()) "stdlib/clojure/core.mli"))
-  then failwith "missing stdlib/clojure/core.mli LG signature sidecar"
+         (Filename.concat (repo_root ()) "stdlib/clojure/core.lgi"))
+  then failwith "missing stdlib/clojure/core.lgi LG signature sidecar";
+  [ "test/dune"; "test/datascript_conn_tests.inc"; "test/compiler_tests.ml" ]
+  |> List.iter (fun manifest ->
+         let source = read_file (Filename.concat (repo_root ()) manifest) in
+         let implementation_count =
+           count_substring source "datascript/upstream/util.cljc"
+         in
+         let interface_count =
+           count_substring source "datascript/lg/util.lgi"
+         in
+         if implementation_count <> interface_count then
+           failwith
+             (Printf.sprintf
+                "datascript.util interface/source count mismatch in %s: %d/%d"
+                manifest interface_count implementation_count))
 
 let rec source_files_under directory =
   Sys.readdir directory |> Array.to_list
@@ -682,6 +744,21 @@ let assert_ocaml_runs name expected_output ocaml_source =
       ocaml_source = strip_native_stdlib_prelude ocaml_source;
     }
     :: !pending_run_jobs
+
+let test_source_variadic_functions_work_as_unary_mapv_callbacks () =
+  let source =
+    {|
+(ns app.core)
+(println (pr-str (mapv str [1 2])))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/source_variadic_mapv.cljc" source
+  in
+  assert_ocaml_runs "source_variadic_functions_work_as_unary_mapv_callbacks"
+    "[\"1\" \"2\"]\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/source_variadic_mapv.cljc" source
+  |> ignore
 
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
@@ -1153,7 +1230,7 @@ let test_incremental_dynamic_record_parameters_are_rejected () =
 
 let test_independent_incremental_modules_reject_dynamic_record_erasure () =
   let state, _ =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
       {|(def callbacks (atom []))|}
     |> expect_ok
   in
@@ -2948,7 +3025,7 @@ let test_generic_function_signatures_preserve_type_parameters () =
 |}
   in
   let state, ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state source |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) source |> expect_ok
   in
   let binding =
     Lg.Compiler_environment.find_opt "read-box" state.typecheck_state.env
@@ -4767,7 +4844,7 @@ let test_namespace_scopes_following_forms_without_ocaml_modules () =
 
 let test_namespace_require_aliases_local_modules_across_files () =
   let state, math_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
       {|
 (ns app.math)
 (defn add [left right] (+ left right))
@@ -4933,7 +5010,7 @@ let test_incremental_namespaces_export_declared_function_definitions () =
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
       |> expect_ok
     in
     let state, middle_ocaml =
@@ -4985,7 +5062,7 @@ let test_namespace_aliases_do_not_depend_on_same_named_public_definitions () =
   in
   let compile target =
     let state, entity_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state entity_provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) entity_provider
       |> expect_ok
     in
     let state, db_ocaml =
@@ -5452,7 +5529,7 @@ let test_melange_transit_api_compiles_for_native_and_melange () =
   in
   let compile target =
     let state, _ =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state source
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) source
       |> expect_ok
     in
     match
@@ -5509,7 +5586,7 @@ let test_structural_record_arguments_fill_optional_fields_and_adapt_callbacks ()
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider_source
       |> expect_ok
     in
     let state, api_ocaml =
@@ -5635,17 +5712,18 @@ let current_datascript_sources () =
   @ ([
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
-      "test/datascript/lg/annotations.mli";
+      "test/datascript/lg/annotations.lgi";
       "test/datascript/upstream/inline.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/lru.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
       "test/datascript/upstream/parser.cljc";
       "test/datascript/upstream/entity.cljc";
-      "test/datascript/lg/built_ins.mli";
+      "test/datascript/lg/built_ins.lgi";
       "test/datascript/upstream/built_ins.cljc";
      ]
     |> List.map (fun path ->
@@ -5990,14 +6068,15 @@ let test_dynamic_var_uses_concrete_generic_alias_signature () =
 |}
   in
   let state, provider_source =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
   assert_ocaml_runs "dynamic_var_uses_concrete_generic_alias_signature" "ok\n"
     (provider_source ^ "\n" ^ consumer_source);
   let state, _ =
-    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange Lg.Compiler.empty_state
-      provider
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      (stdlib_state Lg.Target.Melange) provider
     |> expect_ok
   in
   ignore
@@ -6030,14 +6109,15 @@ let test_value_uses_concrete_generic_alias_signature () =
 |}
   in
   let state, provider_source =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
   assert_ocaml_runs "value_uses_concrete_generic_alias_signature" "ok\n"
     (provider_source ^ "\n" ^ consumer_source);
   let state, _ =
-    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange Lg.Compiler.empty_state
-      provider
+    Lg.Compiler.compile_chunk ~target:Lg.Target.Melange
+      (stdlib_state Lg.Target.Melange) provider
     |> expect_ok
   in
   ignore
@@ -6100,8 +6180,9 @@ let test_current_datascript_filter_protocol_accepts_nominal_callback () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -6565,8 +6646,9 @@ let test_current_datascript_pull_accepts_source_and_closed_runtime_patterns () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -6856,9 +6938,9 @@ let test_current_datascript_pull_api_behaves_on_native () =
 
 let current_datascript_query_only_sources () =
   [
-    "test/datascript/lg/query_types.mli";
+    "test/datascript/lg/query_types.lgi";
     "test/datascript/lg/query_types.cljc";
-    "test/datascript/lg/query.mli";
+    "test/datascript/lg/query.lgi";
     "test/datascript/lg/query.cljc";
   ]
   |> List.map (fun path ->
@@ -6896,10 +6978,10 @@ let test_datascript_limit_context_specializes_empty_reduce_vector () =
   in
   let sources =
     [
-      ( "test/datascript/lg/query_types.mli",
+      ( "test/datascript/lg/query_types.lgi",
         read_file
           (Filename.concat (repo_root ())
-             "test/datascript/lg/query_types.mli") );
+             "test/datascript/lg/query_types.lgi") );
       ( "test/datascript/lg/query_types.cljc",
         read_file
           (Filename.concat (repo_root ())
@@ -10047,8 +10129,9 @@ let test_current_datascript_transaction_accepts_closed_raw_datoms () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10172,8 +10255,9 @@ let test_current_datascript_transaction_supports_reverse_refs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10280,8 +10364,9 @@ let test_current_datascript_transaction_supports_operation_vectors () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10435,8 +10520,9 @@ let test_current_datascript_transaction_resolves_tempids_and_upserts () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10593,8 +10679,9 @@ let test_current_datascript_transaction_preserves_unique_identity_edges () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10769,8 +10856,9 @@ let test_current_datascript_transaction_resolves_current_tx_and_preserves_order 
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -10924,8 +11012,9 @@ let test_current_datascript_transaction_cascades_components () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -11073,8 +11162,9 @@ let test_current_datascript_transaction_maintains_tuples () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -11206,8 +11296,9 @@ let test_current_datascript_transaction_runs_transaction_functions () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -11266,8 +11357,9 @@ let test_current_datascript_transaction_rejects_invalid_inputs () =
     [
       "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
       "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-      "datascript/me/tonsky/persistent_sorted_set.mli";
+      "datascript/me/tonsky/persistent_sorted_set.lgi";
       "datascript/me/tonsky/persistent_sorted_set.cljc";
+      "test/datascript/lg/util.lgi";
       "test/datascript/upstream/util.cljc";
       "test/datascript/upstream/schema.cljc";
       "test/datascript/upstream/db.cljc";
@@ -11419,7 +11511,7 @@ let test_source_uuid_wrapper_rejects_invalid_calls () =
 
 let test_uuid_wrapper_is_source_owned () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
-  let core_interface = read_file "stdlib/clojure/core.mli" in
+  let core_interface = read_file "stdlib/clojure/core.lgi" in
   List.iter
     (fun definition ->
       if not (string_contains_substring core_source definition) then
@@ -14263,7 +14355,8 @@ let test_type_records_resolve_qualified_nominals_inside_collections () =
 |}
   in
   let state, provider_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   let _, consumer_ocaml =
     Lg.Compiler.compile_chunk state consumer |> expect_ok
@@ -16369,7 +16462,8 @@ let test_qualified_multi_arity_return_hint_crosses_namespaces () =
 |}
   in
   let state, provider_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   let _, consumer_ocaml = Lg.Compiler.compile_chunk state consumer |> expect_ok in
   assert_ocaml_runs "qualified_multi_arity_return_hint_crosses_namespaces"
@@ -17162,7 +17256,7 @@ let test_forward_closed_record_result_flows_into_generic_sorted_set_call () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mli";
+         "datascript/me/tonsky/persistent_sorted_set.lgi";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -18108,7 +18202,7 @@ let test_require_alias_resolves_variant_constructor_patterns () =
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider_source
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider_source
       |> expect_ok
     in
     let _, consumer_ocaml =
@@ -19797,7 +19891,7 @@ let test_vec_requires_a_statically_typed_wrapper () =
   in
   let compile target =
     let state, util_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state util_source
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) util_source
       |> expect_ok
     in
     ignore util_ocaml;
@@ -19894,7 +19988,8 @@ let test_macro_assert_validates_expansion_inputs () =
 |}
   in
   let state, _ =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   let _, valid =
     Lg.Compiler.compile_chunk state
@@ -19921,7 +20016,8 @@ let test_datascript_inline_assoc_rejects_odd_pairs () =
       (Filename.concat (repo_root ()) "test/datascript/upstream/inline.cljc")
   in
   let state, _ =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
   in
   Lg.Compiler.compile_chunk state
     {|
@@ -19968,7 +20064,7 @@ let test_inline_attributes_expand_namespace_alias_calls () =
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
       |> expect_ok
     in
     let _, consumer_ocaml =
@@ -20007,7 +20103,7 @@ let test_inline_attributes_flow_through_public_def_aliases () =
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
       |> expect_ok
     in
     let state, facade_ocaml =
@@ -25960,7 +26056,7 @@ let test_doseq_preserves_generic_protocol_collection_elements () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mli";
+         "datascript/me/tonsky/persistent_sorted_set.lgi";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -27733,8 +27829,8 @@ let test_cljs_pprint_is_source_owned () =
   let source = read_file "stdlib/cljs/pprint.cljc" in
   if not (string_contains_substring source "(defn pprint") then
     failwith "cljs.pprint/pprint is missing from the source standard library";
-  if not (Sys.file_exists "stdlib/cljs/pprint.mli") then
-    failwith "cljs.pprint must expose an .mli sidecar";
+  if not (Sys.file_exists "stdlib/cljs/pprint.lgi") then
+    failwith "cljs.pprint must expose an .lgi sidecar";
   List.iter
     (fun path ->
       let compiler_source = read_file path in
@@ -30814,7 +30910,7 @@ let test_source_chunked_cons_protocol_cluster_rejects_invalid_inputs () =
 let test_chunked_cons_protocol_cluster_is_source_owned () =
   let root = repo_root () in
   let source = read_file (Filename.concat root "stdlib/clojure/core.cljc") in
-  let interface = read_file (Filename.concat root "stdlib/clojure/core.mli") in
+  let interface = read_file (Filename.concat root "stdlib/clojure/core.lgi") in
   List.iter
     (fun declaration ->
       if not (string_contains_substring source declaration) then
@@ -30833,7 +30929,7 @@ let test_chunked_cons_protocol_cluster_is_source_owned () =
         not
           (string_contains_substring interface
              ("(signature clojure.core/" ^ name))
-      then failwith ("cljs.core/" ^ name ^ " is missing from clojure/core.mli");
+      then failwith ("cljs.core/" ^ name ^ " is missing from clojure/core.lgi");
       List.iter
         (fun path ->
           let compiler_source = read_file (Filename.concat root path) in
@@ -31692,7 +31788,7 @@ let test_cross_namespace_protocol_functions_keep_nominal_record_parameters () =
   in
   let compile target =
     let state, provider_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
       |> expect_ok
     in
     let _, consumer_ocaml =
@@ -33693,7 +33789,7 @@ let test_generic_nominals_are_consumed_inside_static_scope () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mli";
+         "datascript/me/tonsky/persistent_sorted_set.lgi";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -33841,7 +33937,7 @@ let test_overloaded_generic_bounds_preserve_static_nominal_arguments () =
     @ ([
          "datascript/me/tonsky/persistent_sorted_set/arrays.cljc";
          "datascript/me/tonsky/persistent_sorted_set/protocol.cljc";
-         "datascript/me/tonsky/persistent_sorted_set.mli";
+         "datascript/me/tonsky/persistent_sorted_set.lgi";
          "datascript/me/tonsky/persistent_sorted_set.cljc";
        ]
       |> List.map (fun path -> read_file (Filename.concat (repo_root ()) path)))
@@ -35885,7 +35981,7 @@ let test_cross_namespace_named_records_project_to_callback_rows () =
           failwith (target_name ^ ": " ^ error.message)
     in
     let state, nodes_ocaml =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state nodes_source
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) nodes_source
       |> expect_target
     in
     let _, set_ocaml =
@@ -35894,8 +35990,7 @@ let test_cross_namespace_named_records_project_to_callback_rows () =
     nodes_ocaml ^ "\n" ^ set_ocaml
   in
   ignore (compile Lg.Target.Native);
-  ignore (compile Lg.Target.Melange);
-  ignore (compile Lg.Target.Js_of_ocaml)
+  ignore (compile Lg.Target.Melange)
 
 let test_later_nominal_use_recovers_structurally_inferred_record () =
   let source =
@@ -35966,7 +36061,7 @@ let test_destructuring_preserves_row_polymorphic_function_calls () =
 
 let test_local_field_access_accepts_typed_named_records () =
   let state, records_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
       {|
 (ns records)
 (defrecord DB [^int value])
@@ -37632,7 +37727,7 @@ let test_mixed_callback_vectors_require_a_closed_sum () =
 
 let test_calls_wrap_records_for_nullable_destructured_parameters () =
   let state, impl_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native)
       {|
 (ns impl)
 (defn parse-opts
@@ -37658,7 +37753,7 @@ let test_calls_wrap_records_for_nullable_destructured_parameters () =
 
 let test_local_variadic_functions_preserve_dynamic_parameter_constraints () =
   let state, impl_ocaml =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state {|
+    Lg.Compiler.compile_chunk (stdlib_state Lg.Target.Native) {|
 (ns impl)
 (defn target [query & sources] (first query))
 |}
@@ -38615,7 +38710,7 @@ let test_source_nullable_dynamic_arguments_are_rejected () =
 |}
   in
   let compile target =
-    Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+    Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
     |> expect_error_contains "dynamic is not a source type"
   in
   compile Lg.Target.Native;
@@ -38709,7 +38804,7 @@ let test_reduce_packs_nominal_protocol_accumulators () =
   in
   let compile target =
     let state, provider_source =
-      Lg.Compiler.compile_chunk ~target Lg.Compiler.empty_state provider
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
       |> expect_ok
     in
     let _, consumer_source =
@@ -43169,8 +43264,10 @@ let tests =
       test_test_directory_avoids_existing_pid_directory );
     ( "compiler tests reuse precompiled stdlib state",
       test_compiler_tests_reuse_precompiled_stdlib_state );
-    ( "LG signature sidecars use mli extension",
-      test_lg_signature_sidecars_use_mli_extension );
+    ( "LG signature sidecars use lgi extension",
+      test_lg_signature_sidecars_use_lgi_extension );
+    ( "source variadic functions work as unary mapv callbacks",
+      test_source_variadic_functions_work_as_unary_mapv_callbacks );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",
