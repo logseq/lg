@@ -950,7 +950,12 @@ let annotate_receiver receiver_ty = function
       match Type_annotation.of_param_annotation annotation with
       | Error _ as err -> err
       | Ok ty ->
-          if Types.equal ty receiver_ty then Ok (FVector params)
+          if
+            Types.same_shape ty receiver_ty
+            || Option.equal ( = )
+                 (registry_receiver_id ty)
+                 (registry_receiver_id receiver_ty)
+          then Ok (FVector params)
           else
             Error.error
               ("protocol implementation receiver must be " ^ source_name receiver_ty))

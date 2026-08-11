@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 661 source entries (67.11%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 109 static-typing blockers,
+macro surfaces. The current baseline is 664 source entries (67.41%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 106 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -423,6 +423,16 @@ and neither capability uses dynamic packing.
 `array-index<T>` carries only a closed `T -> int` witness, preserving integer
 and floating array indexes without an open numeric value. Array allocation,
 reads, writes, and reference allocation remain private typed primitives.
+`int-array`, `long-array`, and `double-array` are source-owned with their pinned
+one- and two-argument control flow. Private source protocols distinguish size
+inputs from homogeneous list, vector, sequence, and array inputs, and distinguish
+scalar initial values from sequence initializers without dynamic dispatch. The
+small generic runtime helper only performs bounded array filling. Because OCaml
+arrays cannot contain JavaScript's uninitialized holes, size-only numeric arrays
+use the corresponding Clojure zero value; shorter sequence initializers leave
+the remaining cells at that same zero value. Sequence inputs retain their
+homogeneous static element type instead of being numerically coerced, matching
+the pinned ClojureScript behavior.
 Generated OCaml names encode a trailing bang as `_bang`, so source definitions
 such as `volatile!` remain distinct from predicates such as `volatile?` and the
 generated bindings stay readable. The manifest records the upstream arities

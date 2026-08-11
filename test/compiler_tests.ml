@@ -11391,6 +11391,56 @@ let test_uuid_wrapper_is_source_owned () =
         [ "| \"uuid\"" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_numeric_array_constructors_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-numeric-arrays
+  (:require [clojure.core :as core
+             :refer [int-array long-array double-array]]))
+
+(def int-array-fn int-array)
+(def long-array-fn core/long-array)
+(def double-array-fn double-array)
+
+(def ints-from-size (int-array-fn 3))
+(def ints-from-vector (int-array-fn [1 2 3]))
+(def strings-without-coercion (int-array-fn ["a" "b"]))
+(def ints-from-init (int-array 3 7))
+(def ints-from-seq (int-array 4 (seq [4 5])))
+(def longs-from-list (long-array-fn (list 8 9)))
+(def doubles-from-array (double-array-fn (array 1.5 2.5)))
+(def doubles-from-init (double-array 2 3.5))
+
+(println (= [0 0 0] (vec ints-from-size)))
+(println (= [1 2 3] (vec ints-from-vector)))
+(println (= ["a" "b"] (vec strings-without-coercion)))
+(println (= [7 7 7] (vec ints-from-init)))
+(println (= [4 5 0 0] (vec ints-from-seq)))
+(println (= [8 9] (vec longs-from-list)))
+(println (= [1.5 2.5] (vec doubles-from-array)))
+(println (= [3.5 3.5] (vec doubles-from-init)))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "numeric array constructors must remain statically typed";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_numeric_array_constructors"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange numeric array constructors must remain statically typed"
+
+let test_numeric_array_constructors_are_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring core_source ("(defn " ^ name)) then
+        failwith (name ^ " is missing from the source standard library"))
+    [ "int-array"; "long-array"; "double-array" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43024,6 +43074,10 @@ let tests =
     ( "source UUID wrapper rejects invalid calls",
       test_source_uuid_wrapper_rejects_invalid_calls );
     ( "UUID wrapper is source-owned", test_uuid_wrapper_is_source_owned );
+    ( "source numeric array constructors match ClojureScript",
+      test_source_numeric_array_constructors_match_clojurescript );
+    ( "numeric array constructors are source-owned",
+      test_numeric_array_constructors_are_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

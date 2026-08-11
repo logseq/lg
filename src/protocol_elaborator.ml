@@ -548,7 +548,11 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                 in
                                 if
                                   not
-                                    (Types.equal receiver_ty receiver_value_ty)
+                                    (Types.same_shape receiver_ty receiver_value_ty
+                                    || Option.equal ( = )
+                                         (Protocol.registry_receiver_id receiver_ty)
+                                         (Protocol.registry_receiver_id
+                                            receiver_value_ty))
                                 then
                                   Error.error
                                     ("protocol implementation receiver must be "

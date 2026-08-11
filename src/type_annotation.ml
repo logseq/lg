@@ -281,6 +281,11 @@ let of_keyword = function
   | ":bool" -> Ok TBool
   | ":unit" -> Ok TUnit
   | ":buffer" -> Ok (TOcaml "Buffer.t")
+  | ":list" -> Ok (TList TUnknown)
+  | ":vector" -> Ok (TVector TUnknown)
+  | ":seq" -> Ok (TSeq TUnknown)
+  | ":array" -> Ok (TArray TUnknown)
+  | ":set" -> Ok (TSet TUnknown)
   | ":dynamic" -> reject_dynamic_type ()
   | ":transient-vector" ->
       Error.error

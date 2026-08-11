@@ -372,6 +372,114 @@
   [size initial]
   (__lg_make-array size initial))
 
+;; ClojureScript dispatches numeric array constructors between a size and a
+;; seqable value at runtime. LG preserves that public shape with static protocol
+;; witnesses. Numeric size-only arrays use the Clojure zero value because an
+;; OCaml array cannot contain JavaScript's uninitialized holes.
+(defprotocol ^:private IIntArraySource
+  (-int-array-source [source] :array<int>))
+
+(defprotocol ^:private IIntArrayInitial
+  (-int-array-initial [initial size] :array<int>))
+
+(defprotocol ^:private IDoubleArraySource
+  (-double-array-source [source] :array<float>))
+
+(defprotocol ^:private IDoubleArrayInitial
+  (-double-array-initial [initial size] :array<float>))
+
+(defn- ^:array<int> int-array-from-sized-seq
+  [^:int size ^:seq<int> values]
+  (runtime-array/of-seq-padded size 0 values))
+
+(defn- ^:array<float> double-array-from-sized-seq
+  [^:int size ^:seq<float> values]
+  (runtime-array/of-seq-padded size 0.0 values))
+
+(extend-type :int
+  IIntArraySource
+  (-int-array-source [^:int size] (make-array size 0))
+  IIntArrayInitial
+  (-int-array-initial [^:int initial ^:int size]
+    (make-array size initial)))
+
+(extend-type :float
+  IDoubleArrayInitial
+  (-double-array-initial [^:float initial ^:int size]
+    (make-array size initial)))
+
+(extend-type :nil
+  IIntArrayInitial
+  (-int-array-initial [_ ^:int size] (make-array size 0))
+  IDoubleArrayInitial
+  (-double-array-initial [_ ^:int size] (make-array size 0.0)))
+
+(extend-protocol IIntArraySource
+  :list
+  (-int-array-source [values] (runtime-array/of-list values))
+  :vector
+  (-int-array-source [values] (runtime-array/of-vector values))
+  :seq
+  (-int-array-source [values] (runtime-array/of-seq values))
+  :array
+  (-int-array-source [values] (runtime-array/copy values)))
+
+(extend-protocol IIntArrayInitial
+  :list
+  (-int-array-initial [values ^:int size]
+    (runtime-array/of-list-padded size 0 values))
+  :vector
+  (-int-array-initial [values ^:int size]
+    (runtime-array/of-vector-padded size 0 values))
+  :seq
+  (-int-array-initial [values ^:int size]
+    (int-array-from-sized-seq size values))
+  :array
+  (-int-array-initial [values ^:int size]
+    (runtime-array/of-array-padded size 0 values)))
+
+(extend-protocol IDoubleArraySource
+  :list
+  (-double-array-source [values] (runtime-array/of-list values))
+  :vector
+  (-double-array-source [values] (runtime-array/of-vector values))
+  :seq
+  (-double-array-source [values] (runtime-array/of-seq values))
+  :array
+  (-double-array-source [values] (runtime-array/copy values)))
+
+(extend-protocol IDoubleArrayInitial
+  :list
+  (-double-array-initial [values ^:int size]
+    (runtime-array/of-list-padded size 0.0 values))
+  :vector
+  (-double-array-initial [values ^:int size]
+    (runtime-array/of-vector-padded size 0.0 values))
+  :seq
+  (-double-array-initial [values ^:int size]
+    (double-array-from-sized-seq size values))
+  :array
+  (-double-array-initial [values ^:int size]
+    (runtime-array/of-array-padded size 0.0 values)))
+
+(defn int-array
+  ([size-or-seq]
+   (-int-array-source size-or-seq))
+  ([size initial-or-seq]
+   (-int-array-initial initial-or-seq size)))
+
+(defn long-array
+  ([size-or-seq]
+   (-int-array-source size-or-seq))
+  ([size initial-or-seq]
+   (-int-array-initial initial-or-seq size)))
+
+(defn double-array
+  ([size-or-seq]
+   (-double-array-source size-or-seq))
+  ([size initial-or-seq]
+   (-double-array-initial initial-or-seq size)))
+
 (defn aget
   {:inline (fn [array index]
              (list '__lg_aget array index))}

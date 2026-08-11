@@ -1108,8 +1108,8 @@
            :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-set-removal-with-a-homogeneous-static-element-domain}
     dispatch-fn {:status :blocked-static-typing
                  :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    double-array {:status :blocked-static-typing
-                  :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    double-array {:status :static-adaptation
+                  :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     dt->et {:status :special-form
             :reason :clojurescript-macro-helper-that-rewrites-deftype-and-defrecord-protocol-implementation-forms}
     eduction {:status :blocked-static-typing
@@ -1134,8 +1134,8 @@
                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     get-validator {:status :blocked-static-typing
                    :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
-    int-array {:status :blocked-static-typing
-               :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    int-array {:status :static-adaptation
+               :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     is_proto_ {:status :host-boundary
                :reason :tests-javascript-constructor-prototype-object-identity}
     iter {:status :host-boundary
@@ -1154,8 +1154,8 @@
              :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
     load-file {:status :host-boundary
                :reason :node-only-bootstrap-hook-loads-and-evaluates-a-javascript-file}
-    long-array {:status :blocked-static-typing
-                :reason :same-arity-size-or-seqable-overload-and-javascript-number-array-representation-are-not-source-expressible}
+    long-array {:status :static-adaptation
+                :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     methods {:status :blocked-static-typing
              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     missing-protocol {:status :host-boundary
