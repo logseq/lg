@@ -43,6 +43,9 @@
 (signature datascript.db/datom-get-idx
   :fn<datascript.db/Datom;int>)
 
+(signature datascript.db/ref?
+  :fn<datascript.db/DB;keyword;bool>)
+
 (signature Datascript_runtime.Data_value.tuple_entity_refs
   :fn<vector<string>;vector<string>;Datascript_runtime.Data_value.t;vector<Datascript_runtime.Data_value.entity_ref>>)
 

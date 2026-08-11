@@ -5740,7 +5740,60 @@ type datascript_chunk_cache_entry = {
 
 let datascript_chunk_cache = ref []
 
+let datascript_annotations_filename = "test/datascript/lg/annotations.lgi"
+let datascript_pss_filename =
+  "datascript/me/tonsky/persistent_sorted_set.cljc"
+
+let datascript_schema_filename = "test/datascript/upstream/schema.cljc"
+let datascript_db_filename = "test/datascript/upstream/db.cljc"
+
+let complete_datascript_provider_graph sources =
+  if List.exists (fun (filename, _) -> filename = datascript_annotations_filename) sources
+  then sources
+  else
+    let annotations =
+      ( datascript_annotations_filename,
+        read_file (Filename.concat (repo_root ()) datascript_annotations_filename)
+      )
+    in
+    let rec insert_before filename = function
+      | [] -> []
+      | ((candidate, _) as source) :: rest when candidate = filename ->
+          annotations :: source :: rest
+      | source :: rest -> source :: insert_before filename rest
+    in
+    let rec insert_after filename = function
+      | [] -> []
+      | ((candidate, _) as source) :: rest when candidate = filename ->
+          source :: annotations :: rest
+      | source :: rest -> source :: insert_after filename rest
+    in
+    if List.exists (fun (filename, _) -> filename = datascript_pss_filename) sources
+    then insert_after datascript_pss_filename sources
+    else if
+      List.exists (fun (filename, _) -> filename = datascript_schema_filename) sources
+    then insert_before datascript_schema_filename sources
+    else insert_before datascript_db_filename sources
+
+let test_datascript_provider_graph_loads_annotations_before_db () =
+  match
+    complete_datascript_provider_graph
+      [
+        (datascript_pss_filename, "(ns me.tonsky.persistent-sorted-set)");
+        (datascript_schema_filename, "(ns datascript.schema)");
+        (datascript_db_filename, "(ns datascript.db)");
+      ]
+  with
+  | [ (pss, _); (annotations, _); (schema, _); (database, _) ]
+    when annotations = datascript_annotations_filename
+         && pss = datascript_pss_filename
+         && schema = datascript_schema_filename
+         && database = datascript_db_filename ->
+      ()
+  | _ -> failwith "DataScript annotations must load before schema and db"
+
 let compile_datascript_sources ?(check_ocaml = true) target initial_state sources =
+  let sources = complete_datascript_provider_graph sources in
   let target_name = Lg.Target.to_string target in
   let state, reversed_outputs =
     List.fold_left
@@ -43771,6 +43824,8 @@ let tests =
       test_cross_module_extend_protocol_preserves_record_extension_field );
     ( "dotimes evaluates bounds once and returns nil",
       test_dotimes_evaluates_bounds_once_and_returns_nil );
+    ( "DataScript provider graph loads annotations before db",
+      test_datascript_provider_graph_loads_annotations_before_db );
     ( "current DataScript chain compiles for Native and Melange",
       test_current_datascript_chain_compiles_for_native_and_melange );
     ( "protocol calls contextualize anonymous callbacks",

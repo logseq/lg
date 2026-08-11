@@ -539,6 +539,24 @@ let inline_macros env = env.inline_macros
 let with_inline_macros inline_macros env = { env with inline_macros }
 let clear_inline_macros env = { env with inline_macros = String_map.empty }
 
+let without_source_callable ~scope name env =
+  if Names.is_qualified name then env
+  else
+    let keys = List.sort_uniq String.compare [ name; Names.scoped_key scope name ] in
+    {
+      env with
+      macros =
+        List.fold_left (fun macros key -> String_map.remove key macros) env.macros
+          keys;
+      inline_macros =
+        List.fold_left
+          (fun inline_macros key -> String_map.remove key inline_macros)
+          env.inline_macros keys;
+    }
+
+let source_callable_shadowed ~scope name env =
+  core_excluded ~scope name env
+
 let add_macro_function ~scope ~name definition env =
   let key = Names.scoped_key scope name in
   {

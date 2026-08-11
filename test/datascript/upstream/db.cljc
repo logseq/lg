@@ -2541,9 +2541,6 @@
     (some? (Datascript_runtime.Data_value.sequential_items value))
     (some? (Datascript_runtime.Data_value.set_items value)))))
 
-(signature datascript.db/ref?
-  :fn<datascript.db/DB;keyword;bool>)
-
 (defn ref? [db attr]
   (is-attr? db attr :db.type/ref))
 

@@ -1397,17 +1397,60 @@ let rec expand_all ~scope ~compiler_env = function
         | _ -> Error.error "record fields must be (field value) pairs"
       in
       expand_fields [] field_forms
+  | FList (FSymbol "let" :: FVector bindings :: body_forms) ->
+      let shadow_pattern env pattern =
+        Destructure.pattern_names pattern
+        |> List.fold_left
+             (fun env name -> Env.without_source_callable ~scope name env)
+             env
+      in
+      let rec expand_bindings env expanded = function
+        | pattern :: value :: rest ->
+            Result.bind
+              (expand_all ~scope ~compiler_env:env pattern)
+              (fun pattern ->
+                Result.bind
+                  (expand_all ~scope ~compiler_env:env value)
+                  (fun value ->
+                    expand_bindings (shadow_pattern env pattern)
+                      (value :: pattern :: expanded) rest))
+        | [] ->
+            Result.map
+              (fun body_forms ->
+                FList
+                  (FSymbol "let"
+                  :: FVector (List.rev expanded)
+                  :: body_forms))
+              (expand_all_forms ~scope ~compiler_env:env body_forms)
+        | remaining ->
+            Result.bind
+              (expand_all_forms ~scope ~compiler_env:env remaining)
+              (fun remaining ->
+                Result.map
+                  (fun body_forms ->
+                    FList
+                      (FSymbol "let"
+                      :: FVector (List.rev_append expanded remaining)
+                      :: body_forms))
+                  (expand_all_forms ~scope ~compiler_env:env body_forms))
+      in
+      expand_bindings compiler_env [] bindings
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name compiler_env with
-      | Some definition ->
+      | Some definition
+        when not
+               (Env.source_callable_shadowed ~scope name compiler_env)
+        ->
           Result.bind (expand ~scope ~compiler_env definition args) (fun expanded ->
               expand_all ~scope ~compiler_env expanded)
-      | None -> (
+      | Some _ | None -> (
           match Env.find_inline_macro ~scope name compiler_env with
-          | Some definition ->
+          | Some definition
+            when not
+                   (Env.source_callable_shadowed ~scope name compiler_env) ->
               Result.bind (expand ~scope ~compiler_env definition args)
                 (fun expanded -> expand_all ~scope ~compiler_env expanded)
-          | None ->
+          | Some _ | None ->
               Result.map
                 (fun forms -> FList forms)
                 (expand_all_forms ~scope ~compiler_env

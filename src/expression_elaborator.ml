@@ -292,17 +292,22 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_expr scope env (FList [ FSymbol "let"; FVector bindings; body ])
   | FList (FSymbol name :: args) -> (
       match Env.find_macro ~scope name env with
-      | None -> (
-          match Env.find_inline_macro ~scope name env with
-          | Some definition -> (
+      | Some definition
+        when not (Env.source_callable_shadowed ~scope name env) -> (
           match Macro_expander.expand ~scope ~compiler_env:env definition args with
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded)
-          | None -> compile_call scope env name args)
-      | Some definition -> (
-          match Macro_expander.expand ~scope ~compiler_env:env definition args with
-          | Error _ as err -> err
-          | Ok expanded -> compile_expr scope env expanded))
+      | Some _ | None -> (
+          match Env.find_inline_macro ~scope name env with
+          | Some definition
+            when not (Env.source_callable_shadowed ~scope name env)
+            -> (
+              match
+                Macro_expander.expand ~scope ~compiler_env:env definition args
+              with
+              | Error _ as err -> err
+              | Ok expanded -> compile_expr scope env expanded)
+          | Some _ | None -> compile_call scope env name args))
   | FList (FCoreSymbol core_symbol :: args) ->
       let name = Ast.core_symbol_qualified_name core_symbol in
       (match Env.find_inline_macro ~scope name env with

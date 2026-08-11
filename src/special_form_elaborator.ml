@@ -3312,9 +3312,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                      :: acc)
                                    ir_bindings
                         in
-                        bind
-                          (Env.add_bindings env_bindings env)
-                          ir_bindings rest))
+                        let env = Env.add_bindings env_bindings env in
+                        let env =
+                          Destructure.pattern_names pattern
+                          |> List.fold_left
+                               (fun env name ->
+                                 Env.without_source_callable ~scope name env)
+                               env
+                        in
+                        bind env ir_bindings rest))
             | [ _ ] ->
                 Error.error "let bindings require an even number of forms"
           in
