@@ -8461,7 +8461,9 @@ let create ~compile_expr =
                      (apply "Float.abs" [ arg.semantic_expr ]))
             | _ -> Error.error "abs expects a numeric argument")
         | Ok _ -> Error.error "abs expects 1 argument")
-    | "str" -> (
+    | ("__lg_str" | "__lg_print_str" | "__lg_pr_str") as render_name -> (
+        let readable = render_name = "__lg_pr_str" in
+        let separator = if render_name = "__lg_str" then "" else " " in
         let printable_env =
           Env.with_expected_type
             (Some (Types.printable_constraint (Type_solver.fresh ())))
@@ -8483,10 +8485,37 @@ let create ~compile_expr =
               | [] -> Semantic_ir.String ""
               | _ ->
                   args
-                  |> List.map (stringify_value scope env ~pr:false)
-                  |> Codegen.concat_expr
+                  |> List.map (stringify_value scope env ~pr:readable)
+                  |> fun values ->
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "String.concat",
+                      [ Semantic_ir.String separator; Semantic_ir.List values ] )
             in
             Ok (typed_ir TString expr))
+    | ("__lg_render_display_values" | "__lg_render_readable_values") as
+      render_name -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ separator; values ] when Types.equal separator.ty TString -> (
+            match Collection_capability.to_seq_expr env values with
+            | Ok (element_ty, sequence)
+              when Option.is_some (Types.printable_constraint_info element_ty)
+              ->
+                let runtime_name =
+                  if render_name = "__lg_render_display_values" then
+                    "Lg_runtime.Runtime_print.render_display_values"
+                  else "Lg_runtime.Runtime_print.render_readable_values"
+                in
+                Ok
+                  (typed_ir TString
+                     (apply runtime_name [ separator.semantic_expr; sequence ]))
+            | Ok _ ->
+                Error.error
+                  (render_name ^ " expects printable variadic values")
+            | Error _ ->
+                Error.error (render_name ^ " expects a printable sequence"))
+        | Ok [ _; _ ] -> Error.error (render_name ^ " expects a string separator")
+        | Ok _ -> Error.error (render_name ^ " expects 2 arguments"))
     | "__lg_with-meta" ->
         compile_metadata_call scope env name arg_forms
     | "__lg_nullable-value" -> (
@@ -8644,28 +8673,26 @@ let create ~compile_expr =
             Result.map (fun expression -> typed_ir TInt expression)
               (compile_static_hash_capability env value)
         | Ok _ -> Error.error "hash expects 1 argument")
-              | "class" | "type" ->
-                  Error.error
-                    "runtime class inspection is not supported; match a closed \
-                     sum type"
+    | "class" | "type" ->
+        Error.error
+          "runtime class inspection is not supported; match a closed sum type"
     | "__lg_identical-predicate" -> (
         match compile_args () with
         | Error _ as error -> error
         | Ok [ left; right ]
-                    when Types.is_dynamic left.ty || Types.is_dynamic right.ty
-                    -> (
+          when Types.is_dynamic left.ty || Types.is_dynamic right.ty -> (
             let dynamic_ty = Types.dynamic_constraint TUnknown in
-                      match
-               ( pack_dynamic_value env dynamic_ty left,
-                 pack_dynamic_value env dynamic_ty right )
-             with
+            match
+              ( pack_dynamic_value env dynamic_ty left,
+                pack_dynamic_value env dynamic_ty right )
+            with
             | (Error _ as error), _ | _, (Error _ as error) -> error
             | Ok left, Ok right ->
                 Ok
                   (typed_ir TBool
                      (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_dynamic.identical",
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_dynamic.identical",
                           [ left; right ] ))))
         | Ok [ left; right ]
           when Types.equal
@@ -8677,55 +8704,39 @@ let create ~compile_expr =
                     ( "==",
                       constrained_argument_value left,
                       constrained_argument_value right )))
-                  | Ok [ left; right ] ->
-                      Error.error
-                        ("identical? arguments must have the same type, got "
-                       ^ Types.source_name left.ty ^ " and "
-                       ^ Types.source_name right.ty)
+        | Ok [ left; right ] ->
+            Error.error
+              ("identical? arguments must have the same type, got "
+             ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
         | Ok _ -> Error.error "identical? expects 2 arguments")
-    | "pr-str" -> (
+    | ("re-matches" | "re-find") as regex_operation -> (
         match compile_args () with
-        | Error _ as err -> err
-        | Ok [ arg ] ->
-                      Ok
-                        (typed_ir TString
-                           (stringify_value scope env ~pr:true arg))
-        | Ok _ -> Error.error "pr-str expects 1 arguments")
-              | ("re-matches" | "re-find") as regex_operation -> (
-                  match compile_args () with
-                  | Error _ as error -> error
-                  | Ok [ expression; source ]
-                    when Types.equal expression.ty TRegex ->
-                      let source =
-                        if Types.equal source.ty TString then
-                          Ok source.semantic_expr
-                        else if Types.is_dynamic source.ty then
-                          dynamic_unpack env TString source.semantic_expr
-                        else
-                          Error.error
-                            (regex_operation ^ " expects a regex and string")
-                      in
-                      Result.map
-                        (fun source ->
-                          let matcher =
-                            if regex_operation = "re-matches" then
-                              "Lg_runtime.Runtime_string.regex_matches_groups"
-                            else "Lg_runtime.Runtime_string.regex_find_groups"
-                          in
-                          let groups =
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident matcher,
-                                [ expression.semantic_expr; source ] )
-                          in
-                          typed_ir (Types.dynamic_constraint TUnknown)
-                            (Semantic_ir.Apply
-                               ( Semantic_ir.Ident
-                                   "Lg_runtime.Runtime_dynamic.regex_match",
-                                 [ groups ] )))
-                        source
-                  | Ok _ ->
-                      Error.error
-                        (regex_operation ^ " expects a regex and string"))
+        | Error _ as error -> error
+        | Ok [ expression; source ] when Types.equal expression.ty TRegex ->
+            let source =
+              if Types.equal source.ty TString then Ok source.semantic_expr
+              else if Types.is_dynamic source.ty then
+                dynamic_unpack env TString source.semantic_expr
+              else Error.error (regex_operation ^ " expects a regex and string")
+            in
+            Result.map
+              (fun source ->
+                let matcher =
+                  if regex_operation = "re-matches" then
+                    "Lg_runtime.Runtime_string.regex_matches_groups"
+                  else "Lg_runtime.Runtime_string.regex_find_groups"
+                in
+                let groups =
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident matcher, [ expression.semantic_expr; source ])
+                in
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
+                       [ groups ] )))
+              source
+        | Ok _ ->
+            Error.error (regex_operation ^ " expects a regex and string"))
     | "__lg_pprint" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -8761,47 +8772,26 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok [ arg ] -> (
             match lookup_binding scope env "*out*" with
-                      | Error _ ->
-                          Error.error "pr requires a bound *out* writer"
+            | Error _ -> Error.error "pr requires a bound *out* writer"
             | Ok writer ->
                 Ok
                   (typed_ir TUnit
                      (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_print.write",
-                                    [
-                                      Semantic_ir.Ident writer.ocaml_name;
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+                          [ Semantic_ir.Ident writer.ocaml_name;
                             stringify_value scope env ~pr:true arg;
                           ] ))))
         | Ok _ -> Error.error "pr expects 1 argument")
-    | "print" | "println" -> (
+    | "__lg_print_output" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok [ arg ] ->
-                      let printer =
-                        if name = "print" then "print_string"
-                        else "print_endline"
-                      in
+        | Ok [ arg ] when Types.equal arg.ty TString ->
             Ok
               (typed_ir TUnit
                  (Semantic_ir.Apply
-                    ( Semantic_ir.Ident printer,
-                      [ stringify_value scope env ~pr:false arg ] )))
-        | Ok _ -> Error.error (name ^ " expects 1 arguments"))
-    | "prn" ->
-        Result.map
-          (fun args ->
-            let rendered =
-              args |> List.map (stringify_value scope env ~pr:true)
-              |> fun values ->
-              Semantic_ir.Apply
-                ( Semantic_ir.Ident "String.concat",
-                  [ Semantic_ir.String " "; Semantic_ir.List values ] )
-            in
-            typed_ir TUnit
-              (Semantic_ir.Apply
-                 (Semantic_ir.Ident "print_endline", [ rendered ])))
-          (compile_args ())
+                    (Semantic_ir.Ident "print_string", [ arg.semantic_expr ])))
+        | Ok [ _ ] -> Error.error "print output expects a string"
+        | Ok _ -> Error.error "print output expects 1 argument")
     | "__lg_list" -> compile_list scope env arg_forms
     | "__lg_list-star" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms

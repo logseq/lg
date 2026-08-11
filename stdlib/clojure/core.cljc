@@ -4894,3 +4894,57 @@
   {:inline (fn [value] (list '__lg_namespace value))}
   [value]
   (INamed/-namespace value))
+
+(defn str
+  {:inline (fn [& values] (cons '__lg_str values))}
+  [& values]
+  (__lg_render_display_values "" values))
+
+(defn pr-str
+  {:inline (fn [& values] (cons '__lg_pr_str values))}
+  [& values]
+  (__lg_render_readable_values " " values))
+
+(defn pr-str*
+  {:inline (fn [value] (list '__lg_pr_str value))}
+  [value]
+  (__lg_pr_str value))
+
+(defn print-str
+  {:inline (fn [& values] (cons '__lg_print_str values))}
+  [& values]
+  (__lg_render_display_values " " values))
+
+(defn println-str
+  {:inline (fn [& values]
+             (list '__lg_str (cons '__lg_print_str values) "\n"))}
+  [& values]
+  (__lg_str (__lg_render_display_values " " values) "\n"))
+
+(defn prn-str
+  {:inline (fn [& values]
+             (list '__lg_str (cons '__lg_pr_str values) "\n"))}
+  [& values]
+  (__lg_str (__lg_render_readable_values " " values) "\n"))
+
+(defn print
+  {:inline (fn [& values]
+             (list '__lg_print_output (cons '__lg_print_str values)))}
+  [& values]
+  (__lg_print_output (__lg_render_display_values " " values)))
+
+(defn println
+  {:inline (fn [& values]
+             (list '__lg_print_output
+                   (list '__lg_str (cons '__lg_print_str values) "\n")))}
+  [& values]
+  (__lg_print_output
+   (__lg_str (__lg_render_display_values " " values) "\n")))
+
+(defn prn
+  {:inline (fn [& values]
+             (list '__lg_print_output
+                   (list '__lg_str (cons '__lg_pr_str values) "\n")))}
+  [& values]
+  (__lg_print_output
+   (__lg_str (__lg_render_readable_values " " values) "\n")))

@@ -1180,8 +1180,12 @@
                               :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
     pr-seq-writer {:status :blocked-static-typing
                    :reason :printer-callback-must-accept-arbitrary-heterogeneous-values-with-a-shared-writer-and-options-domain}
-    pr-str* {:status :blocked-static-typing
-             :reason :variadic-readable-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    str {:status :static-adaptation
+         :reason :source-function-and-inline-macro-preserve-zero-one-and-variadic-display-rendering-with-per-argument-static-printer-witnesses}
+    pr-str {:status :static-adaptation
+            :reason :source-function-and-inline-macro-preserve-zero-one-and-variadic-readable-rendering-with-per-argument-static-printer-witnesses}
+    pr-str* {:status :static-adaptation
+             :reason :source-wrapper-preserves-single-value-readable-rendering-through-a-private-static-printer-primitive}
     pr-str-with-opts {:status :blocked-static-typing
                       :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
     prefer-method {:status :blocked-static-typing
@@ -1194,12 +1198,18 @@
                  :reason :printer-options-and-value-metadata-require-a-shared-heterogeneous-map-domain}
     print-prefix-map {:status :blocked-static-typing
                       :reason :namespaced-map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
-    print-str {:status :blocked-static-typing
-               :reason :variadic-display-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
-    println-str {:status :blocked-static-typing
-                 :reason :variadic-display-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
-    prn-str {:status :blocked-static-typing
-             :reason :variadic-readable-printing-requires-a-static-printer-witness-for-every-heterogeneous-argument}
+    print-str {:status :static-adaptation
+               :reason :source-function-and-inline-macro-preserve-space-separated-display-rendering-with-per-argument-static-printer-witnesses}
+    println-str {:status :static-adaptation
+                 :reason :source-function-and-inline-macro-preserve-space-separated-display-rendering-and-the-trailing-newline-with-per-argument-static-printer-witnesses}
+    prn-str {:status :static-adaptation
+             :reason :source-function-and-inline-macro-preserve-space-separated-readable-rendering-and-the-trailing-newline-with-per-argument-static-printer-witnesses}
+    print {:status :static-adaptation
+           :reason :source-function-and-inline-macro-preserve-space-separated-display-output-through-a-private-static-string-output-boundary}
+    println {:status :static-adaptation
+             :reason :source-function-and-inline-macro-preserve-space-separated-display-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
+    prn {:status :static-adaptation
+         :reason :source-function-and-inline-macro-preserve-space-separated-readable-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
     prn-str-with-opts {:status :blocked-static-typing
                        :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
     ranged-iterator {:status :host-boundary

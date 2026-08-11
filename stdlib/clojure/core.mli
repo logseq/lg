@@ -718,3 +718,22 @@
   :fn<seqable<value>;set<value>>)
 (signature clojure.core/set-lite [value]
   :fn<seqable<value>;set<value>>)
+
+(signature clojure.core/str [value]
+  :variadic-fn<printable<value>;string>)
+(signature clojure.core/pr-str [value]
+  :variadic-fn<printable<value>;string>)
+(signature clojure.core/pr-str* [value]
+  :fn<printable<value>;string>)
+(signature clojure.core/print-str [value]
+  :variadic-fn<printable<value>;string>)
+(signature clojure.core/println-str [value]
+  :variadic-fn<printable<value>;string>)
+(signature clojure.core/prn-str [value]
+  :variadic-fn<printable<value>;string>)
+(signature clojure.core/print [value]
+  :variadic-fn<printable<value>;unit>)
+(signature clojure.core/println [value]
+  :variadic-fn<printable<value>;unit>)
+(signature clojure.core/prn [value]
+  :variadic-fn<printable<value>;unit>)

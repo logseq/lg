@@ -203,11 +203,21 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 675 source entries (68.53%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 95 static-typing blockers,
+macro surfaces. The current baseline is 684 source entries (69.44%), 23 typed
+primitives, 43 special forms, 93 host boundaries, 91 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
+
+The printing entry-point cluster is source-owned. `str`, `pr-str`, `pr-str*`,
+`print-str`, `println-str`, `prn-str`, `print`, `println`, and `prn` retain
+their zero, one, and variadic public shapes. Direct calls expand through source
+inline definitions so heterogeneous arguments keep independent display and
+readable printer witnesses; first-class calls use the homogeneous static
+variadic signature. Only display rendering, readable rendering, and static
+string output remain private typed ABI operations. Automatic core references
+and qualified/referred calls use the same inline definitions; the compiler no
+longer dispatches on those public names.
 
 `munge` and `demunge` preserve ClojureScript's string-or-symbol result identity
 through private protocols with a static `:self` return. Their source functions
@@ -947,8 +957,8 @@ counters use LG's default hashmap, and `testing` preserves upstream
 push/body/finally/pop order.
 This required general `try`/`finally` support, including finally-only forms and
 exception propagation, and generates readable `Fun.protect` code without
-`Runtime_dynamic`. The open polymorphic formatter field and the `::pprint`
-reporter remain blocked on static printer witnesses and are recorded as an
+`Runtime_dynamic`. The open polymorphic formatter field and reporter
+multimethod remain blocked on a static open-dispatch representation and are recorded as an
 `empty-env` adaptation in `stdlib/upstream.edn`. The remaining runner and
 assertion batch uses a homogeneous static synchronous-test registry in
 definition order. Boolean assertions retain single evaluation and pass, fail,
@@ -1001,8 +1011,9 @@ are now precompiled source definitions, using private static protocols and a
 typed UTF-16 code-unit boundary. The upstream `getf` and `setf` state macros are
 also source-owned and preserve their double-dereference lookup and
 `swap!`/`assoc` update behavior. The formatter, writer, and dispatch-table
-surface remains explicitly blocked because full logical-block layout needs
-distinct static printer witnesses. `pprint` itself is source-owned for both
+surface remains explicitly blocked because full logical-block layout,
+right-margin state, and custom dispatch need a closed static pretty-writer
+domain. `pprint` itself is source-owned for both
 upstream arities: direct output and `Buffer.t` writer output use a private
 typed readable-printer primitive and append the upstream newline. This removes
 the public compiler dispatch and resolves Logseq's qualified `pprint` calls;

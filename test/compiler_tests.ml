@@ -1242,12 +1242,12 @@ let test_println_outputs_record_values () =
 (println z)
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "println_outputs_record_values"
     "{:name \"Ada\", :admin? true}\n" ocaml_source
 
 let test_println_rejects_unknown_symbols () =
-  Lg.Compiler.compile_string {|(println missing)|}
+  compile_string_from_stdlib {|(println missing)|}
   |> expect_error "unknown symbol missing"
 
 let test_print_and_println_match_clojure_output () =
@@ -1260,7 +1260,7 @@ let test_print_and_println_match_clojure_output () =
 (debug-value [1 2])
 (prn)
 |} in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "print_and_println_match_clojure_output"
     "abc\n\"value\" [1 2]\n\n"
     ocaml_source
@@ -17266,11 +17266,11 @@ let test_str_uses_static_printable_witnesses () =
 (println (str (render 42) ":" (render "Ada")))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  if string_contains_substring ocaml_source "Runtime_dynamic" then
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
     failwith "generic str must use static printable witnesses";
   assert_ocaml_runs "str_uses_static_printable_witnesses" "42:Ada\n"
-    ocaml_source
+    (compile_string_with_stdlib source |> expect_ok)
 
 let test_conditional_function_type_relationship_is_checked_by_ocaml () =
   Lg.Compiler.compile_string
@@ -27693,6 +27693,69 @@ let test_cljs_pprint_is_source_owned () =
           then failwith (name ^ " still has public-name compiler dispatch"))
         [ "cljs.pprint/pprint"; "clojure.pprint/pprint" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
+let test_source_printing_function_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-printing-cluster
+  (:require [clojure.core :as core
+             :refer [print-str println-str pr-str prn-str]]))
+
+(def render-display print-str)
+(def render-readable pr-str)
+
+(print (str "zero=" (= ["" "" "\n" "" "\n"]
+                         [(str) (print-str) (println-str)
+                          (pr-str) (prn-str)]) "\n"))
+(print (str "str=" (str "Ada" :ready 42) "\n"))
+(print (str "print-str=" (print-str "Ada" :ready 42) "\n"))
+(print (str "println-str=" (println-str "Ada" :ready 42)))
+(print (str "pr-str=" (pr-str "Ada" :ready 42) "\n"))
+(print (str "prn-str=" (prn-str "Ada" :ready 42)))
+(print (str "first-class-display=" (render-display "Ada" "Lovelace") "\n"))
+(print (str "first-class-readable=" (render-readable "Ada" "Lovelace") "\n"))
+(core/println "qualified" :ready 42)
+(prn "readable" :ready 42)
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source printing functions must use static printer witnesses";
+  let expected =
+    "zero=true\nstr=Ada:ready42\nprint-str=Ada :ready 42\nprintln-str=Ada :ready 42\n\
+     pr-str=\"Ada\" :ready 42\nprn-str=\"Ada\" :ready 42\n\
+     first-class-display=Ada Lovelace\n\
+     first-class-readable=\"Ada\" \"Lovelace\"\nqualified :ready 42\n\
+     \"readable\" :ready 42\n"
+  in
+  assert_ocaml_runs "source_printing_function_cluster" expected
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange source printing functions must remain statically typed"
+
+let test_source_printing_function_cluster_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith (name ^ " is missing from the source standard library"))
+    [ "str"; "pr-str"; "pr-str*"; "print-str"; "println-str"; "prn-str";
+      "print"; "println"; "prn";
+    ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "str"; "pr-str"; "print"; "println"; "prn" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml"; "src/top_level_elaborator.ml";
+    ]
 
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
@@ -44834,6 +44897,10 @@ let tests =
     ( "source cljs.pprint prints readable values",
       test_source_cljs_pprint_prints_readable_values );
     ( "cljs.pprint pprint is source-owned", test_cljs_pprint_is_source_owned );
+    ( "source printing function cluster matches ClojureScript",
+      test_source_printing_function_cluster_matches_clojurescript );
+    ( "source printing function cluster is source-owned",
+      test_source_printing_function_cluster_is_source_owned );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

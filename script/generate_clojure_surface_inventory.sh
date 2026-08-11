@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 199; then
-  echo "compiler call dispatch changed: expected 199 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 200; then
+  echo "compiler call dispatch changed: expected 200 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -121,6 +121,12 @@ awk '
     internal_abi["__lg_builtin-namespace"] = "typed-built-in-keyword-and-symbol-namespace-extraction-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
     internal_abi["__lg_pprint"] = "typed-readable-value-and-buffer-writer-pprint-primitive"
+    internal_abi["__lg_str"] = "typed-per-argument-display-rendering-primitive"
+    internal_abi["__lg_print_str"] = "typed-space-separated-per-argument-display-rendering-primitive"
+    internal_abi["__lg_pr_str"] = "typed-space-separated-per-argument-readable-rendering-primitive"
+    internal_abi["__lg_print_output"] = "typed-static-string-output-primitive"
+    internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
+    internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
     internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
     internal_abi["__lg_contains"] = "typed-key-index-and-membership-capability-primitive"

@@ -28,7 +28,6 @@ let prepare_inferred_recursive_fn_with_return =
   Expression_elaborator.prepare_inferred_recursive_fn_with_return
 
 let fn_code = Expression_elaborator.fn_code
-let compile_call = Expression_elaborator.compile_call
 let binding_of_expr = Expression_support.binding_of_expr
 let lookup_function = Expression_support.lookup_function
 let allocate_anonymous_record = Expression_support.allocate_anonymous_record
@@ -3198,16 +3197,6 @@ let rec compile scope env next_type form =
             |> Env.add_bindings module_bindings
           in
           Ok (scope, env, next_type, item))
-  | FList (FSymbol (("print" | "println" | "prn") as name) :: args) -> (
-      match compile_call scope env name args with
-      | Error _ as err -> err
-      | Ok expr ->
-          Ok
-            ( scope,
-              env,
-              next_type,
-              Value_binding
-                { pattern = Unit_pattern; expression = expr.semantic_expr } ))
   | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
       let env = Require.add_source_core_bindings env namespace_name in
       let env =

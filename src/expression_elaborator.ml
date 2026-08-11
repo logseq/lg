@@ -303,7 +303,13 @@ and compile_expr_unlocated scope (env : Env.t) = function
           | Error _ as err -> err
           | Ok expanded -> compile_expr scope env expanded))
   | FList (FCoreSymbol core_symbol :: args) ->
-      compile_call scope env (Ast.core_symbol_qualified_name core_symbol) args
+      let name = Ast.core_symbol_qualified_name core_symbol in
+      (match Env.find_inline_macro ~scope name env with
+      | Some definition -> (
+          match Macro_expander.expand ~scope ~compiler_env:env definition args with
+          | Error _ as error -> error
+          | Ok expanded -> compile_expr scope env expanded)
+      | None -> compile_call scope env name args)
   | FList [] -> compile_call scope env "__lg_list" []
   | FList
       [ FList (FSymbol "juxt" :: keyword_forms); argument ]

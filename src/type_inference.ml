@@ -619,7 +619,9 @@ let rec inferred_form_type params = function
         _metadata;
       ] ->
       inferred_form_type params value
-  | FList (FSymbol ("str" | "clojure.core/str") :: _) -> TString
+  | FList
+      (FSymbol ("__lg_str" | "__lg_print_str" | "__lg_pr_str") :: _) ->
+      TString
   | FList [ FSymbol ("first" | "__lg_first"); FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
@@ -4122,7 +4124,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         params name
                   | Ok params, _ -> Ok params)
                 (Ok params) values value_types)
-    | FList (FSymbol "prn" :: values) ->
+    | FList (FSymbol "__lg_pr_str" :: values) ->
         List.fold_left
           (fun result value ->
             Result.bind result (fun params ->
@@ -5004,7 +5006,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         with
         | Error _ as error -> error
         | Ok params -> infer_all params [ reducer; init ])
-    | FList (FSymbol "str" :: args) ->
+    | FList (FSymbol ("__lg_str" | "__lg_print_str") :: args) ->
         List.fold_left
           (fun result arg ->
             Result.bind result (fun params ->
