@@ -15,7 +15,7 @@
   :source "tailrecursion/priority_map.cljs"}
 
  :aggregate-namespaces
- [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math cljs.cache cljs.pprint clojure.set clojure.data clojure.walk clojure.zip]
+ [clojure.core clojure.core.protocols clojure.string clojure.edn cljs.reader cljs.math cljs.cache cljs.pprint cljs.test clojure.set clojure.data clojure.walk clojure.zip]
 
  :namespaces
  {clojure.core
@@ -1390,9 +1390,15 @@
              :reason :upstream-macro-generates-generic-unannotated-defrecord-fields-and-nominal-constructor-predicate-semantics-not-representable-without-dynamic-fields-or-changing-the-public-record-api}}}
 
   cljs.test
-  {:source "src/main/cljs/cljs/test.cljc"
+  {:source "src/main/cljs/cljs/test.cljs"
+   :implementation "cljs/test.cljc"
+   :interface "cljs/test.mli"
    :status :blocked
-   :reason :requires-analyzer-backed-macro-expansion-dynamic-test-environments-and-closed-report-event-sums}
+   :reason :remaining-test-runner-and-assertion-surface-requires-analyzer-backed-macro-expansion-a-closed-static-test-environment-and-closed-report-event-sums
+   :definitions
+   {compose-fixtures {:status :ported}
+    join-fixtures {:status :ported}
+    successful? {:status :ported}}}
 
   cljs.spec.alpha
   {:source "src/main/cljs/cljs/spec/alpha.cljs"

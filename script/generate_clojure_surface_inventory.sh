@@ -281,6 +281,7 @@ if test -n "$clojurescript_root"; then
     'cljs.reader|stdlib/cljs/reader.cljc' \
     'cljs.math|stdlib/cljs/math.cljc' \
     'cljs.pprint|stdlib/cljs/pprint.cljc' \
+    'cljs.test|stdlib/cljs/test.cljc' \
     'clojure.data|stdlib/clojure/data.cljc' \
     'clojure.walk|stdlib/clojure/walk.cljc' \
     'clojure.zip|stdlib/clojure/zip.cljc'; do
@@ -408,6 +409,8 @@ for namespace in \
     ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.set; then
     ownership=source
+  elif test "$namespace" = cljs.test; then
+    ownership=source
   elif grep -F "\"$namespace\"" "$core_namespaces" >/dev/null; then
     ownership=compiler-owned
   fi
@@ -426,6 +429,9 @@ cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 cljs.pprint/float?|source
 cljs.pprint/char-code|source
+cljs.test/compose-fixtures|source
+cljs.test/join-fixtures|source
+cljs.test/successful?|source
 clojure.set/project|source
 clojure.set/rename|source
 clojure.string/escape|source
@@ -485,8 +491,12 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
     $1 == "namespace" && $3 != "source-aggregate" {
       print $2 "\t" $3 "\t" $4
     }
-    $1 == "definition" && $3 != "source" {
-      print $2 "\t" $3 "\t" $4
+    $1 == "definition" {
+      if ($3 == "source") {
+        print $2 "\tsource-aggregate\tprecompiled-lg-source"
+      } else {
+        print $2 "\t" $3 "\t" $4
+      }
     }
   ' "$tmp/manifest-status" >>"$tmp/namespace-support"
 

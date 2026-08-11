@@ -17,6 +17,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
             [clojure.walk :as walk]
             [cljs.reader :as reader]
             [cljs.pprint :as pprint]
+            [cljs.test :as test]
             [cljs.spec.alpha :as spec]
             [cljs.core.async :as async]
             [cljs.core.async.impl.channels :as async-channels]
@@ -41,6 +42,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (reader/read-string "{:answer 42}")
 (reader/parse-timestamp "2020-01-01T00:00:00.000Z")
 (pprint/pprint "value")
+(test/successful? {:fail 0 :error 0})
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
@@ -332,6 +334,8 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.string" && $3 == 
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.set" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.walk" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "readable-and-display-printing-require-distinct-static-printer-witnesses" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 == "cljs.test/join-fixtures" || $2 == "cljs.test/successful?") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "excluded-by-project-scope" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

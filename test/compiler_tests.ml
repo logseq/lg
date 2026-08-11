@@ -305,6 +305,8 @@ let stdlib_sources =
          "stdlib/clojure/zip.cljc";
          "stdlib/cljs/cache.cljc";
          "stdlib/cljs/pprint.cljc";
+         "stdlib/cljs/test.mli";
+         "stdlib/cljs/test.cljc";
        ]
       |> List.map (fun path ->
              (path, read_file (Filename.concat (repo_root ()) path))))
@@ -28908,6 +28910,93 @@ let test_rseq_dispatches_to_reversible_protocol () =
   ignore
     (compile_with_stdlib Lg.Target.Js_of_ocaml "test/rseq_protocol.cljc" source)
 
+let test_source_cljs_test_fixture_helpers_match_clojurescript () =
+  let source =
+    {|
+(ns app.cljs-test-fixtures
+  (:require [cljs.test :as test
+             :refer [compose-fixtures join-fixtures successful?]]))
+
+(defn outer-fixture [body]
+  (+ 1 (body)))
+
+(defn inner-fixture [body]
+  (* 2 (body)))
+
+(def composed (compose-fixtures outer-fixture inner-fixture))
+(def joined (test/join-fixtures [outer-fixture inner-fixture]))
+(def identity-fixture (join-fixtures []))
+(def successful-summary? successful?)
+
+(println
+  (and (= 7 (composed (fn [] 3)))
+       (= 7 (joined (fn [] 3)))
+       (= 3 (identity-fixture (fn [] 3)))
+       (successful-summary? {:fail 0 :error 0})
+       (successful-summary? {:pass 4})
+       (not (test/successful? {:fail 1 :error 0}))
+       (not (successful? {:fail 0 :error 2}))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_cljs_test_fixtures.cljc"
+      source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.test fixture helpers must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_fixture_helpers" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_fixtures.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith "Melange cljs.test fixture helpers must remain statically typed";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_compose_bad_arity.cljc"
+    {|
+(ns app.cljs-test-compose-error
+  (:require [cljs.test :refer [compose-fixtures]]))
+(compose-fixtures (fn [body] (body)))
+|}
+  |> expect_error_contains "compose-fixtures";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_summary_bad_type.cljc"
+    {|
+(ns app.cljs-test-summary-error
+  (:require [cljs.test :refer [successful?]]))
+(successful? [0 0])
+|}
+  |> expect_error_contains "successful?"
+
+let test_cljs_test_fixture_helpers_are_source_owned () =
+  let root = repo_root () in
+  let source_path = Filename.concat root "stdlib/cljs/test.cljc" in
+  if not (Sys.file_exists source_path) then
+    failwith "cljs.test fixture helpers are missing from the source stdlib";
+  let source = read_file source_path in
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "compose-fixtures"; "join-fixtures"; "successful?" ];
+  let core_namespaces =
+    read_file (Filename.concat root "src/core_namespaces.ml")
+  in
+  if string_contains_substring core_namespaces "cljs.test" then
+    failwith "cljs.test must resolve through the aggregate source registry"
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -43301,6 +43390,10 @@ let tests =
       test_optional_record_fields_keep_precise_types );
     ( "rseq dispatches to reversible protocol",
       test_rseq_dispatches_to_reversible_protocol );
+    ( "source cljs.test fixture helpers match ClojureScript",
+      test_source_cljs_test_fixture_helpers_match_clojurescript );
+    ( "cljs.test fixture helpers are source-owned",
+      test_cljs_test_fixture_helpers_are_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",

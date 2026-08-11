@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 615 source entries (62.44%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 154 static-typing blockers,
+macro surfaces. The current baseline is 618 source entries (62.74%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 151 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -887,8 +887,16 @@ selection, natural-key intersection, key-map inversion, scan order, and nested
 merge reduction through small typed helpers. Generated fold binders use
 reserved hygienic names, so a nested reduction cannot capture the outer row.
 The same checkout also reports
-`cljs.test` occurs 229 times and is explicitly blocked on analyzer-backed
-macros, dynamic test environments, and a closed report-event domain.
+`cljs.test` occurs 229 times and now participates in the aggregate source
+library. Its independent `compose-fixtures`, `join-fixtures`, and
+`successful?` functions preserve the pinned ClojureScript control flow,
+first-class behavior, fixture order, empty-fixture identity, and missing
+summary-counter defaults with static signatures. The remaining runner and
+assertion surface is explicitly blocked on analyzer-backed macros, a closed
+static test environment, and closed report-event sums. Inventory reporting
+keeps that namespace-level blocker while allowing the three source-owned vars
+to resolve as `source-aggregate`; a blocked sibling no longer downgrades a
+ported qualified var.
 `clojure.test` occurs 51 times and is classified as a JVM-only host boundary.
 `cljs.pprint` occurs 15 times. Its independent `float?` and `char-code` helpers
 are now precompiled source definitions, using private static protocols and a

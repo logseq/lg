@@ -13,6 +13,8 @@
   cljs/math.cljc
   cljs/cache.cljc
   cljs/pprint.cljc
+  cljs/test.mli
+  cljs/test.cljc
   clojure/core/protocols.cljc
   clojure/set.mli
   clojure/set.cljc
@@ -43,6 +45,8 @@
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
    %{dep:cljs/pprint.cljc}
+   %{dep:cljs/test.mli}
+   %{dep:cljs/test.cljc}
    %{dep:clojure/core/protocols.cljc}
    %{dep:clojure/set.mli}
    %{dep:clojure/set.cljc}
@@ -74,6 +78,8 @@
   cljs/math.cljc
   cljs/cache.cljc
   cljs/pprint.cljc
+  cljs/test.mli
+  cljs/test.cljc
   clojure/core/protocols.cljc
   clojure/set.mli
   clojure/set.cljc
@@ -104,6 +110,8 @@
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
    %{dep:cljs/pprint.cljc}
+   %{dep:cljs/test.mli}
+   %{dep:cljs/test.cljc}
    %{dep:clojure/core/protocols.cljc}
    %{dep:clojure/set.mli}
    %{dep:clojure/set.cljc}
