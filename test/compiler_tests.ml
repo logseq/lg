@@ -11441,6 +11441,51 @@ let test_numeric_array_constructors_are_source_owned () =
         failwith (name ^ " is missing from the source standard library"))
     [ "int-array"; "long-array"; "double-array" ]
 
+let test_source_clone_protocol_preserves_values_and_fresh_identity () =
+  let source =
+    {|
+(ns app.source-clone
+  (:require [clojure.core :as core :refer [clone]]))
+
+(def clone-fn core/clone)
+(def source-list (list 1 2 3))
+(def source-vector [4 5 6])
+(def source-seq (seq [7 8 9]))
+(def source-map (hash-map :answer 42))
+(def cloned-list (clone-fn source-list))
+(def cloned-vector (clone source-vector))
+(def cloned-seq (clone source-seq))
+(def cloned-map (clone source-map))
+
+(println (and (= source-list cloned-list)
+              (not (identical? source-list cloned-list))))
+(println (and (= source-vector cloned-vector)
+              (not (identical? source-vector cloned-vector))))
+(println (and (= source-seq cloned-seq)
+              (not (identical? source-seq cloned-seq))))
+(println (and (= source-map cloned-map)
+              (not (identical? source-map cloned-map))))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source clone protocol must remain statically typed";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_clone_protocol" "true\ntrue\ntrue\ntrue\n" native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange clone protocol must remain statically typed"
+
+let test_clone_protocol_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring core_source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defprotocol ICloneable"; "(-clone [value] :self)"; "(defn clone" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43078,6 +43123,9 @@ let tests =
       test_source_numeric_array_constructors_match_clojurescript );
     ( "numeric array constructors are source-owned",
       test_numeric_array_constructors_are_source_owned );
+    ( "source clone protocol preserves values and fresh identity",
+      test_source_clone_protocol_preserves_values_and_fresh_identity );
+    ( "clone protocol is source-owned", test_clone_protocol_is_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

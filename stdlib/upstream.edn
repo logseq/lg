@@ -159,8 +159,8 @@
                    :reason :source-ichunkedseq-method-preserves-the-upstream-more-sequence-result-over-the-closed-chunked-cons-record}
     -drop-first {:status :static-adaptation
                  :reason :source-ichunk-protocol-preserves-arraychunk-drop-first-and-empty-chunk-errors-over-a-parameterized-static-arraychunk-type}
-    -clone {:status :blocked-static-typing
-            :reason :same-static-receiver-result-across-arrays-and-cljs-collection-types-needs-a-clone-capability-witness}
+    -clone {:status :static-adaptation
+            :reason :source-icloneable-method-uses-a-static-self-result-witness-with-fresh-nonempty-list-vector-sequence-and-hash-map-implementations-while-ocaml-empty-list-and-vector-singletons-retain-identity}
     -invoke {:status :blocked-static-typing
              :reason :upstream-ifn-exposes-zero-through-twenty-one-and-variadic-arities-not-representable-by-one-static-protocol-method}
     -first {:status :static-adaptation
@@ -874,8 +874,8 @@
              :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}
     frequencies {:status :static-adaptation
                  :reason :persistent-reduce-preserves-upstream-counting-semantics-without-a-transient-representation-boundary}
-    clone {:status :blocked-static-typing
-           :reason :fresh-clone-identity-is-observable-and-cannot-be-preserved-for-every-immutable-static-collection-representation}
+    clone {:status :static-adaptation
+           :reason :source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity}
     cloneable? {:status :blocked-static-typing
                 :reason :first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value}
     default-dispatch-val {:status :blocked-static-typing

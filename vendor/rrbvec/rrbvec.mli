@@ -3,6 +3,9 @@ type 'a t
 (** The empty vector. *)
 val empty : 'a t
 
+(** Return a fresh vector wrapper sharing the immutable trie storage. *)
+val copy : 'a t -> 'a t
+
 (** Return the number of values in the vector. *)
 val length : 'a t -> int
 

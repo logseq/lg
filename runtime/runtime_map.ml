@@ -38,6 +38,14 @@ type 'key operations = {
 let empty =
   { root = None; sequence = Rrbvec.empty; size = 0; metadata = None }
 
+let copy map =
+  {
+    root = map.root;
+    sequence = map.sequence;
+    size = map.size;
+    metadata = map.metadata;
+  }
+
 let dynamic_key_equal left right =
   Runtime_dynamic.equal left right || Runtime_dynamic.equal right left
 

@@ -17,3 +17,6 @@ let count_array = Array.length
 let count_string = String.length
 let count_host_list = List.length
 let count_host_array = Array.length
+
+let clone_list values = List.map Fun.id values
+let clone_vector = Rrbvec.copy

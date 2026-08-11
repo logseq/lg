@@ -20,7 +20,7 @@ while IFS="$tab" read -r name status reason; do
     failed=1
   fi
 done <<'EOF'
-clone	blocked-static-typing	fresh-clone-identity-is-observable-and-cannot-be-preserved-for-every-immutable-static-collection-representation
+clone	source	source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity
 cloneable?	blocked-static-typing	first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value
 default-dispatch-val	blocked-static-typing	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
 delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values

@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 664 source entries (67.41%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 106 static-typing blockers,
+macro surfaces. The current baseline is 666 source entries (67.61%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 104 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -433,6 +433,15 @@ use the corresponding Clojure zero value; shorter sequence initializers leave
 the remaining cells at that same zero value. Sequence inputs retain their
 homogeneous static element type instead of being numerically coerced, matching
 the pinned ClojureScript behavior.
+`ICloneable`, `-clone`, and `clone` are source-owned. The protocol's `:self`
+result keeps each receiver and clone in one static type. LG supplies fresh,
+equal list, vector, sequence, and hash-map implementations; the map clone shares
+immutable HAMT nodes and insertion-order storage while allocating a new typed
+map record, and a nonempty vector clone allocates only a new wrapper around the
+immutable RRB trie. OCaml's empty list and empty vector are singleton values, so
+their clone retains physical identity; this observable static adaptation is
+recorded in the manifest. `cloneable?` remains blocked because its first-class upstream shape
+must accept arbitrary protocol and non-protocol values.
 Generated OCaml names encode a trailing bang as `_bang`, so source definitions
 such as `volatile!` remain distinct from predicates such as `volatile?` and the
 generated bindings stay readable. The manifest records the upstream arities

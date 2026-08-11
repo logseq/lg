@@ -286,6 +286,7 @@ let of_keyword = function
   | ":seq" -> Ok (TSeq TUnknown)
   | ":array" -> Ok (TArray TUnknown)
   | ":set" -> Ok (TSet TUnknown)
+  | ":map" -> Ok (Types.dynamic_map TUnknown TUnknown)
   | ":dynamic" -> reject_dynamic_type ()
   | ":transient-vector" ->
       Error.error

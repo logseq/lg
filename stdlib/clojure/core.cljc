@@ -10,10 +10,12 @@
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
             [ocaml.Lg_runtime.Runtime_chunk_buffer :as runtime-chunk-buffer]
+            [ocaml.Lg_runtime.Runtime_collection :as runtime-collection]
             [ocaml.Lg_runtime.Runtime_future :as runtime-future]
             [ocaml.Lg_runtime.Runtime_hierarchy :as runtime-hierarchy]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
             [ocaml.Lg_runtime.Runtime_int_melange :as runtime-int-melange]
+            [ocaml.Lg_runtime.Runtime_map :as runtime-map]
             [ocaml.Lg_runtime.Runtime_number_melange :as runtime-number-melange]
             [ocaml.Lg_runtime.Runtime_random :as runtime-random]
             [ocaml.Lg_runtime.Runtime_reduced :as runtime-reduced]
@@ -153,6 +155,9 @@
 (defprotocol IStack
   (-peek [coll])
   (-pop [coll]))
+
+(defprotocol ICloneable
+  (-clone [value] :self))
 
 (defprotocol IVector
   (-assoc-n [coll index value]))
@@ -479,6 +484,19 @@
    (-double-array-source size-or-seq))
   ([size initial-or-seq]
    (-double-array-initial initial-or-seq size)))
+
+(extend-protocol ICloneable
+  :list
+  (-clone [values] (runtime-collection/clone-list values))
+  :vector
+  (-clone [values] (runtime-collection/clone-vector values))
+  :seq
+  (-clone [values] (map identity values))
+  :map
+  (-clone [mapping] (runtime-map/copy mapping)))
+
+(defn clone [value]
+  (-clone value))
 
 (defn aget
   {:inline (fn [array index]

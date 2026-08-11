@@ -25,6 +25,8 @@ type 'a t =
 
 let empty = Empty_vector
 
+let copy = function Empty_vector -> Empty_vector | Vector vector -> Vector vector
+
 let vector_or_empty v = if v.count = 0 then Empty_vector else Vector v
 
 let length = function
