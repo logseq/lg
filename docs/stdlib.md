@@ -59,6 +59,18 @@ dune exec bin/lg_cli.exe -- \
   app.cljc -o app_chunk.ml
 ```
 
+The CLI can also compile and execute a consumer against the same artifact pair:
+
+```sh
+dune exec bin/lg_cli.exe -- \
+  --run-from _build/default/stdlib/lg_stdlib_native.state \
+  _build/default/stdlib/lg_stdlib_native.ml app.cljc
+```
+
+Use `--run-files-from` with the same first two arguments for a multi-file
+consumer. These commands compile only consumer chunks; they do not rebuild or
+enumerate stdlib sources.
+
 Consumers must not enumerate individual stdlib `.lgi` or `.cljc` files.
 `test/stdlib` exercises this contract, including negative type tests restored
 from the same aggregate state.

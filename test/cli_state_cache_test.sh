@@ -5,6 +5,7 @@ set -eu
 cli="$1"
 source_file="$2"
 continuation_file="$3"
+stdlib_state="$4"
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/lg-state-cache-test.XXXXXX")
 
 cleanup() {
@@ -13,7 +14,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 LG_CACHE_DIR="$test_dir/state-cache" \
-  "$cli" --compile-files-state "$test_dir/base.state" \
+  "$cli" --compile-files-from-state "$stdlib_state" "$test_dir/base.state" \
     "$source_file" -o "$test_dir/base.ml"
 
 if [ -d "$test_dir/state-cache/compile-files" ]; then
@@ -32,7 +33,7 @@ if [ -d "$test_dir/state-cache/compile-files" ]; then
 fi
 
 LG_CACHE_DIR="$test_dir/output-cache" \
-  "$cli" --compile-files "$source_file" -o "$test_dir/output.ml"
+  "$cli" --compile-files-from "$stdlib_state" "$source_file" -o "$test_dir/output.ml"
 
 if ! find "$test_dir/output-cache/compile-files" \
     -name '*.state.marshal' -type f | grep -q .; then

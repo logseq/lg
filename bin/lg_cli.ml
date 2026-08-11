@@ -9,7 +9,9 @@ let usage () =
      --compile-chunk-from <state> <input.cljc> [-o output.ml] | \
      --compile-chunk-state <input-state> <output-state> <input.cljc> [-o \
      output.ml] | \
-     --run-files <input.cljc>... | --lsp";
+     --run-from <state> <implementation.ml> <input.cljc> | \
+     --run-files <input.cljc>... | \
+     --run-files-from <state> <implementation.ml> <input.cljc>... | --lsp";
   exit 2
 
 let tune_compiler_gc () =
@@ -214,6 +216,11 @@ type mode =
   | Compile of { input_path : string; output_path : string option }
   | Interface of { input_path : string; output_path : string option }
   | Run of { input_path : string }
+  | Run_from of {
+      state_path : string;
+      implementation_path : string;
+      input_path : string;
+    }
   | Compile_files of { input_paths : string list; output_path : string }
   | Compile_files_state of {
       state_path : string;
@@ -243,6 +250,11 @@ type mode =
       output_path : string option;
     }
   | Run_files of { input_paths : string list }
+  | Run_files_from of {
+      state_path : string;
+      implementation_path : string;
+      input_paths : string list;
+    }
   | Lsp
 
 let extract_target args =
@@ -272,6 +284,8 @@ let parse_args argv =
     | [ _program; input; "-o"; output ] ->
         Compile { input_path = input; output_path = Some output }
     | [ _program; "--run"; input ] -> Run { input_path = input }
+    | [ _program; "--run-from"; state_path; implementation_path; input_path ] ->
+        Run_from { state_path; implementation_path; input_path }
     | _program :: "--compile-files" :: args -> (
         match List.rev args with
         | output_path :: "-o" :: reversed_inputs when reversed_inputs <> [] ->
@@ -349,6 +363,10 @@ let parse_args argv =
           { state_path; output_state_path; input_path; output_path = None }
     | _program :: "--run-files" :: input_paths when input_paths <> [] ->
         Run_files { input_paths }
+    | _program :: "--run-files-from" :: state_path :: implementation_path
+      :: input_paths
+      when input_paths <> [] ->
+        Run_files_from { state_path; implementation_path; input_paths }
     | _ -> usage ()
   in
   (target, mode)
@@ -387,7 +405,10 @@ let run_ocaml_source packages ocaml_source =
   let ml_path = Filename.temp_file "lg" ".ml" in
   let exe_path = Filename.temp_file "lg" ".exe" in
   write_output (Some ml_path) ocaml_source;
-  let packages = List.sort_uniq String.compare ("unix" :: packages) in
+  let packages =
+    List.sort_uniq String.compare
+      ("lg.edn-backend.native" :: "unix" :: packages)
+  in
   let package_options =
     "-package " ^ Filename.quote (String.concat "," packages) ^ " -linkpkg "
   in
@@ -703,6 +724,14 @@ let () =
       | Ok (packages, compilation) ->
           report_diagnostics compilation.diagnostics;
           run_ocaml_source packages compilation.ocaml_source)
+  | Run_from { state_path; implementation_path; input_path } -> (
+      match compile_chunk_from_saved_state target state_path input_path with
+      | Error err -> report_error err
+      | Ok (_state, packages, compilation) ->
+          report_diagnostics compilation.diagnostics;
+          run_ocaml_source packages
+            (concatenate_compilation_outputs
+               [ read_file implementation_path; compilation.ocaml_source ]))
   | Compile_files { input_paths; output_path } -> (
       match compile_files target input_paths with
       | Error err -> report_error err
@@ -768,4 +797,13 @@ let () =
       | Ok (_state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           run_ocaml_source packages ocaml_source)
+  | Run_files_from
+      { state_path; implementation_path; input_paths } -> (
+      match compile_files_from_saved_state target state_path input_paths with
+      | Error err -> report_error err
+      | Ok (_state, packages, ocaml_source, diagnostics) ->
+          report_diagnostics diagnostics;
+          run_ocaml_source packages
+            (concatenate_compilation_outputs
+               [ read_file implementation_path; ocaml_source ]))
   | Lsp -> run_lsp ()

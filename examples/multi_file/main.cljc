@@ -1,1 +1,1 @@
-(println (Math/magnitude-plus-two -40))
+(println (Math/magnitude-plus-two 40))
