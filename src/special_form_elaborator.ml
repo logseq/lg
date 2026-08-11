@@ -2565,7 +2565,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 Types.next_seq (merge_element inner)
                             | None -> init_ty))
                   | FList [ FSymbol name; collection ]
-                    when name = "first"
+                    when name = "__lg_first"
+                         || name = "first"
                          || String.ends_with ~suffix:"/first" name -> (
                       match form_type aliases collection with
                       | TList inner | TVector inner | TSeq inner ->
@@ -2575,7 +2576,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | Some inner -> TNullable inner
                           | None -> TUnknown))
                   | FList [ FSymbol name; collection ]
-                    when name = "next"
+                    when name = "__lg_next"
+                         || name = "next"
                          || String.ends_with ~suffix:"/next" name -> (
                       let collection_ty = form_type aliases collection in
                       match collection_ty with
@@ -2589,7 +2591,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               | Some inner -> Types.next_seq inner
                                   | None -> TUnknown)))
                   | FList [ FSymbol name; collection; item ]
-                    when name = "conj"
+                    when name = "__lg_conj"
+                         || name = "conj"
                          || String.ends_with ~suffix:"/conj" name ->
                       let collection_ty = form_type aliases collection in
                       let item_ty = form_type aliases item in

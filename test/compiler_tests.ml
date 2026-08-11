@@ -33855,7 +33855,9 @@ let test_vector_preserves_nullable_collection_elements () =
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "vector_preserves_nullable_collection_elements"
-    "ok\n" ocaml_source
+    "ok\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_loop_normalizes_seqable_parameters_to_sequences () =
   let source =
@@ -37962,7 +37964,10 @@ let test_sets_support_named_records () =
     compile_with_stdlib Lg.Target.Native "test/named_record_sets.cljc" source
   in
   assert_ocaml_runs "sets_support_named_records" "1:true:true:1:true:0:true\n"
-    ocaml_source
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/named_record_sets.cljc"
+       source)
 
 let test_anonymous_record_fields_parameterize_polymorphic_sets () =
   let source =

@@ -139,6 +139,19 @@ let callback_parameters_compatible expected actual =
               (Type_solver.unify Type_solver.empty expected actual))
        expected actual
 
+let unresolved_record_placeholder = function
+  | TOcaml name -> String.starts_with ~prefix:"__lg_record:" name
+  | _ -> false
+
+let callback_record_compatible env expected actual =
+  let expected = Collection_capability.resolve_callback_record env expected in
+  (unresolved_record_placeholder expected
+  && Option.is_some (Types.record_fields actual))
+  ||
+  (Option.is_some (Types.record_fields expected)
+  && Option.is_some (Types.record_fields actual)
+  && Types.row_compatible ~expected ~actual)
+
 let expects_dynamic_value = Types.is_dynamic
 
 let expects_optional_dynamic_value = function
@@ -10315,9 +10328,18 @@ let create ~compile_expr =
                                              (fun result template actual ->
                                                Result.bind result
                                                  (fun substitutions ->
-                                                   Type_solver.unify
-                                                     substitutions template
-                                                     actual))
+                                                   let template =
+                                                     Type_solver.apply
+                                                       substitutions template
+                                                   in
+                                                   if
+                                                     callback_record_compatible
+                                                       env template actual
+                                                   then Ok substitutions
+                                                   else
+                                                     Type_solver.unify
+                                                       substitutions template
+                                                       actual))
                                              (Ok substitutions) template_params
                                              actual_params)
                                           (fun substitutions ->
@@ -10345,10 +10367,19 @@ let create ~compile_expr =
                                       argument )
                                 with
                                 | Some expected_element, Some actual_element ->
-                                    (match
-                                       Type_solver.unify substitutions
-                                         expected_element actual_element
-                                     with
+                                    let expected_element =
+                                      Type_solver.apply substitutions
+                                        expected_element
+                                    in
+                                    if
+                                      callback_record_compatible env
+                                        expected_element actual_element
+                                    then Ok substitutions
+                                    else (
+                                      match
+                                        Type_solver.unify substitutions
+                                          expected_element actual_element
+                                      with
                                     | Ok substitutions ->
                                         Ok
                                           (Type_solver.unify substitutions
@@ -10372,9 +10403,9 @@ let create ~compile_expr =
                                         Ok
                                           (Protocol.infer_constraint_substitutions
                                              env substitutions
-                                             (Type_solver.apply substitutions
-                                                expected_element)
-                                             actual_element)
+                                            (Type_solver.apply substitutions
+                                              expected_element)
+                                              actual_element)
                                     | Error _ as error -> error)
                                 | None, _ | _, None ->
                                     Ok
@@ -10799,11 +10830,16 @@ let create ~compile_expr =
                     ( Types.seqable_constraint_info expected,
                       Collection_capability.element_type_of_ty env actual )
                   with
-                  | Some (_, expected_element, _), Some actual_element
-                    when known_scalar expected_element
-                         && known_scalar actual_element ->
-                      argument_compatible expected actual
-                      && argument_compatible expected_element actual_element
+                  | Some (_, expected_element, _), Some actual_element ->
+                      if callback_record_compatible env expected_element actual_element
+                      then true
+                      else if
+                        known_scalar expected_element
+                        && known_scalar actual_element
+                      then
+                        argument_compatible expected actual
+                        && argument_compatible expected_element actual_element
+                      else argument_compatible expected actual
                   | Some _, _ | None, _ ->
                       argument_compatible expected actual
                 in
