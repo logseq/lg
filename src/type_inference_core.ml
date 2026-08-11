@@ -554,6 +554,16 @@ let constrain_array_index_symbol params name =
   match string_assoc_opt name params with
   | Some ty when Option.is_some (Types.array_index_constraint_info ty) ->
       Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.array_index_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok
+        (replace_param name
+           (Types.array_index_constraint value_ty)
+           params)
   | Some ty ->
       let value_ty = Types.constraint_value_type ty in
       if Types.equal value_ty TInt || Types.equal value_ty TFloat then

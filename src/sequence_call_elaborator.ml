@@ -1811,6 +1811,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   | Ok initial_fn ->
                       let refined_fn =
                         match initial_fn.ty with
+                        | TFn
+                            ([ TSet (TUnknown | TMeta _ | TVar _); _ ],
+                              (TSet _ as accumulator_ty)) ->
+                            compile_reducer scope env accumulator_ty inner
+                              fn_form
                         | TFn ([ accumulator_ty; _ ], return_ty)
                           when (Types.is_dynamic return_ty
                                ||
