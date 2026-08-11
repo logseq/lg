@@ -202,6 +202,10 @@ let rec parse_ocaml_type source =
                       match args with
                       | [ inner ] -> Ok (Types.truthy_constraint inner)
                       | _ -> Error.error "truthy expects one type argument"
+                    else if name = "printable" then
+                      match args with
+                      | [ inner ] -> Ok (Types.printable_constraint inner)
+                      | _ -> Error.error "printable expects one type argument"
                     else if name = "hashable" then
                       match args with
                       | [ inner ] -> Ok (Types.hashable_constraint inner)

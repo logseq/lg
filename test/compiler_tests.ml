@@ -304,6 +304,7 @@ let stdlib_sources =
          "stdlib/clojure/zip.mli";
          "stdlib/clojure/zip.cljc";
          "stdlib/cljs/cache.cljc";
+         "stdlib/cljs/pprint.mli";
          "stdlib/cljs/pprint.cljc";
          "stdlib/cljs/test.mli";
          "stdlib/cljs/test.cljc";
@@ -27643,6 +27644,56 @@ let test_source_cljs_pprint_state_access_macros_match_clojurescript () =
 |}
   |> expect_error_contains "getf called with unsupported macro arity 0"
 
+let test_source_cljs_pprint_prints_readable_values () =
+  let source =
+    {|
+(ns app.source-pprint-output
+  (:require [cljs.pprint :as pprint :refer [pprint]]
+            [ocaml.Buffer :as buffer]))
+
+(def pprint-value pprint)
+(def writer (buffer/create 64))
+
+(pprint-value "Ada")
+(pprint-value [1 2])
+(pprint/pprint (hash-map :answer 42) writer)
+(print (buffer/contents writer))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.pprint/pprint must use a static printer witness";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_cljs_pprint_output"
+    "\"Ada\"\n[1 2]\n{:answer 42}\n" native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange cljs.pprint/pprint must remain statically typed";
+  compile_string_from_stdlib {|(cljs.pprint/pprint)|}
+  |> expect_error_contains "unsupported macro arity 0";
+  compile_string_from_stdlib {|(cljs.pprint/pprint 1 2 3)|}
+  |> expect_error_contains "unsupported macro arity 3";
+  compile_string_from_stdlib {|(cljs.pprint/pprint 1 "not-a-writer")|}
+  |> expect_error_contains "pprint writer must be Buffer.t"
+
+let test_cljs_pprint_is_source_owned () =
+  let source = read_file "stdlib/cljs/pprint.cljc" in
+  if not (string_contains_substring source "(defn pprint") then
+    failwith "cljs.pprint/pprint is missing from the source standard library";
+  if not (Sys.file_exists "stdlib/cljs/pprint.mli") then
+    failwith "cljs.pprint must expose an .mli sidecar";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "cljs.pprint/pprint"; "clojure.pprint/pprint" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
     {|
@@ -44780,6 +44831,9 @@ let tests =
     );
     ( "source cljs.pprint state access macros match ClojureScript",
       test_source_cljs_pprint_state_access_macros_match_clojurescript );
+    ( "source cljs.pprint prints readable values",
+      test_source_cljs_pprint_prints_readable_values );
+    ( "cljs.pprint pprint is source-owned", test_cljs_pprint_is_source_owned );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

@@ -61,3 +61,14 @@
              (list 'cljs.pprint/-char-code value))}
   [value]
   (ICharCode/-char-code value))
+
+(defn pprint
+  {:inline (fn
+             ([object]
+              (list '__lg_pprint object))
+             ([object writer]
+              (list '__lg_pprint object writer)))}
+  ([object]
+   (__lg_pprint object))
+  ([object writer]
+   (__lg_pprint object writer)))

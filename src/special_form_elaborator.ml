@@ -82,7 +82,15 @@ let rec capability_pattern name ty =
           | Some value_ty -> layer (name ^ "__nil") value_ty
           | None -> (
               match Types.printable_constraint_info ty with
-              | Some value_ty -> layer (name ^ "__print") value_ty
+              | Some value_ty ->
+                  Semantic_ir.PTuple
+                    [
+                      Semantic_ir.PTuple
+                        [ Semantic_ir.PVar (name ^ "__print");
+                          Semantic_ir.PVar (name ^ "__pr");
+                        ];
+                      capability_pattern name value_ty;
+                    ]
               | None -> (
                   match Types.hashable_constraint_info ty with
                   | Some value_ty -> layer (name ^ "__hash") value_ty

@@ -442,7 +442,15 @@ let capability_storage_expression ty expression =
                 | Some value_ty -> layer (name ^ "__nil") value_ty
                 | None -> (
                     match Types.printable_constraint_info ty with
-                    | Some value_ty -> layer (name ^ "__print") value_ty
+                    | Some value_ty ->
+                        Semantic_ir.Tuple
+                          [
+                            Semantic_ir.Tuple
+                              [ Semantic_ir.Ident (name ^ "__print");
+                                Semantic_ir.Ident (name ^ "__pr");
+                              ];
+                            build name value_ty;
+                          ]
                     | None -> (
                         match Types.hashable_constraint_info ty with
                         | Some value_ty -> layer (name ^ "__hash") value_ty

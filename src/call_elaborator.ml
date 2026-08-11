@@ -561,7 +561,10 @@ let constrained_identifier_expression name ty =
                 | Some value_ty ->
                     Semantic_ir.Tuple
                       [
-                        Semantic_ir.Ident (name ^ "__print");
+                        Semantic_ir.Tuple
+                          [ Semantic_ir.Ident (name ^ "__print");
+                            Semantic_ir.Ident (name ^ "__pr");
+                          ];
                         build value_ty;
                     ]
                 | None -> (
@@ -656,7 +659,10 @@ let constrained_identifier_pattern name ty =
                 | Some value_ty ->
                     Semantic_ir.PTuple
                       [
-                        Semantic_ir.PVar (name ^ "__print");
+                        Semantic_ir.PTuple
+                          [ Semantic_ir.PVar (name ^ "__print");
+                            Semantic_ir.PVar (name ^ "__pr");
+                          ];
                         build value_ty;
                     ]
                 | None -> (
@@ -1642,13 +1648,20 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       let value =
         typed_ir witness_value_ty (Semantic_ir.Ident value_name)
       in
-      let witness =
+      let display_witness =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
             Codegen.stringify_expr_ir ~pr:false value )
       in
+      let readable_witness =
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar value_name ],
+            Codegen.stringify_expr_ir ~pr:true value )
+      in
       Result.map
-        (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+        (fun packed ->
+          Semantic_ir.Tuple
+            [ Semantic_ir.Tuple [ display_witness; readable_witness ]; packed ])
         (pack_constrained_value env value_ty argument)
   | expected, actual
     when Option.is_some (Types.hashable_constraint_info expected)
@@ -4516,11 +4529,17 @@ let create ~compile_expr =
         match Semantic_ir.unlocated value.semantic_expr with
         | Semantic_ir.Ident name ->
             Semantic_ir.Apply
-              (Semantic_ir.Ident (name ^ "__print"), [ value.semantic_expr ])
+              ( Semantic_ir.Ident (name ^ if pr then "__pr" else "__print"),
+                [ value.semantic_expr ] )
         | _ ->
+            let witnesses =
+              Semantic_ir.Apply
+                (Semantic_ir.Ident "fst", [ value.semantic_expr ])
+            in
             Semantic_ir.Apply
               ( Semantic_ir.Apply
-                  (Semantic_ir.Ident "fst", [ value.semantic_expr ]),
+                  ( Semantic_ir.Ident (if pr then "snd" else "fst"),
+                    [ witnesses ] ),
                 [
                   Semantic_ir.Apply
                     (Semantic_ir.Ident "snd", [ value.semantic_expr ]);
@@ -8707,27 +8726,36 @@ let create ~compile_expr =
                   | Ok _ ->
                       Error.error
                         (regex_operation ^ " expects a regex and string"))
-    | "clojure.pprint/pprint" -> (
+    | "__lg_pprint" -> (
         match compile_args () with
         | Error _ as error -> error
-        | Ok [ arg ] -> (
-            match lookup_binding scope env "*out*" with
-            | Error _ ->
-                Error.error "clojure.pprint/pprint requires a bound *out* writer"
-            | Ok writer ->
-                Ok
-                  (typed_ir TUnit
-                     (Semantic_ir.Sequence
+        | Ok [ arg ] ->
+            Ok
+              (typed_ir TUnit
+                 (apply "print_endline"
+                    [ stringify_value scope env ~pr:true arg ]))
+        | Ok [ arg; writer ]
+          when Types.equal writer.ty (TOcaml "Buffer.t")
+               || (match writer.ty with
+                  | TUnknown | TMeta _ | TVar _ -> true
+                  | _ -> false) ->
+            let writer_name = "__lg_pprint_writer" in
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.Let
+                    ( [ (Semantic_ir.PVar writer_name, writer.semantic_expr) ],
+                      Semantic_ir.Sequence
                         [ apply "Lg_runtime.Runtime_print.write"
-                            [ Semantic_ir.Ident writer.ocaml_name;
+                            [ Semantic_ir.Ident writer_name;
                               stringify_value scope env ~pr:true arg;
                             ];
                           apply "Lg_runtime.Runtime_print.write"
-                            [ Semantic_ir.Ident writer.ocaml_name;
+                            [ Semantic_ir.Ident writer_name;
                               Semantic_ir.String "\n";
                             ];
-                        ])))
-        | Ok _ -> Error.error "clojure.pprint/pprint expects 1 argument")
+                        ] )))
+        | Ok [ _; _ ] -> Error.error "pprint writer must be Buffer.t"
+        | Ok _ -> Error.error "pprint expects 1 or 2 arguments")
     | "pr" -> (
         match compile_args () with
         | Error _ as error -> error

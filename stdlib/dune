@@ -12,6 +12,7 @@
   cljs/math.mli
   cljs/math.cljc
   cljs/cache.cljc
+  cljs/pprint.mli
   cljs/pprint.cljc
   cljs/test.mli
   cljs/test.cljc
@@ -44,6 +45,7 @@
    %{dep:cljs/math.mli}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
+   %{dep:cljs/pprint.mli}
    %{dep:cljs/pprint.cljc}
    %{dep:cljs/test.mli}
    %{dep:cljs/test.cljc}
@@ -77,6 +79,7 @@
   cljs/math.mli
   cljs/math.cljc
   cljs/cache.cljc
+  cljs/pprint.mli
   cljs/pprint.cljc
   cljs/test.mli
   cljs/test.cljc
@@ -109,6 +112,7 @@
    %{dep:cljs/math.mli}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
+   %{dep:cljs/pprint.mli}
    %{dep:cljs/pprint.cljc}
    %{dep:cljs/test.mli}
    %{dep:cljs/test.cljc}

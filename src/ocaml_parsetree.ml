@@ -96,8 +96,14 @@ let rec core_type ?(type_variables = []) = function
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
-          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
-                   (type_constructor "string" []));
+          ( None,
+            Ast_helper.Typ.tuple ~loc
+              [
+                (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                         (type_constructor "string" []));
+                (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                         (type_constructor "string" []));
+              ] );
           (None, value_ty);
         ]
   | Types.TOcaml_app (name, [ value_ty ])

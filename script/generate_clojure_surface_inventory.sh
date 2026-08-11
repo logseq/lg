@@ -86,7 +86,7 @@ awk '
     blocked["re-matches"] = 1
     blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
-    split("clj->js clojure.pprint/pprint current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
+    split("clj->js current-time-millis enable-console-print! ex-info future-call pr pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
     split("+ - * / < <= = == > >= inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
@@ -120,6 +120,7 @@ awk '
     internal_abi["__lg_builtin-symbol"] = "typed-string-keyword-symbol-and-optional-namespace-symbol-construction-primitive"
     internal_abi["__lg_builtin-namespace"] = "typed-built-in-keyword-and-symbol-namespace-extraction-primitive"
     internal_abi["__lg_write"] = "typed-writer-buffer-effect-primitive"
+    internal_abi["__lg_pprint"] = "typed-readable-value-and-buffer-writer-pprint-primitive"
     internal_abi["__lg_assoc"] = "typed-associated-map-vector-and-record-shape-primitive"
     internal_abi["__lg_dissoc"] = "typed-map-and-record-shape-removal-primitive"
     internal_abi["__lg_contains"] = "typed-key-index-and-membership-capability-primitive"
@@ -429,6 +430,7 @@ cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 cljs.pprint/float?|source
 cljs.pprint/char-code|source
+cljs.pprint/pprint|source
 cljs.test/empty-env|source
 cljs.test/*current-env*|source
 cljs.test/get-current-env|source

@@ -1223,7 +1223,10 @@ let fn_code ?(row_param_type_names = []) parts =
             | Some value_ty ->
                 Semantic_ir.PTuple
                   [
-                    Semantic_ir.PVar (name ^ "__print");
+                    Semantic_ir.PTuple
+                      [ Semantic_ir.PVar (name ^ "__print");
+                        Semantic_ir.PVar (name ^ "__pr");
+                      ];
                     capability_pattern ?value_type name value_ty;
                   ]
             | None -> (
