@@ -5277,8 +5277,7 @@ let test_object_marker_cannot_request_dynamic_arrays () =
   reject {|(def values (into-array Object [1 2]))|};
   reject {|(def values (make-array Object 2))|};
   compile_string_with_stdlib {|(def values (make-array 2))|}
-  |> expect_error_contains
-       "make-array requires a size and a statically typed initial value"
+  |> expect_error_contains "make-array called with unsupported macro arity 1"
 
 let test_lazily_persistent_vector_rejects_dynamic_object_arrays () =
   let source =
@@ -12279,7 +12278,8 @@ let test_named_record_metadata_rejects_record_erasure () =
 |}
   in
   compile_string_with_stdlib source
-  |> expect_error_contains "records cannot cross a dynamic boundary"
+  |> expect_error_contains
+       "with-meta requires the nominal record to implement IWithMeta"
 
 let test_named_record_protocol_metadata_rejects_dynamic_erasure () =
   let source =
@@ -21091,9 +21091,13 @@ let test_arithmetic_core_arities () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "arithmetic_core_arities" "0:1:6:-5:5:2\n" ocaml_source
 
-let test_integer_division_rejects_unsupported_arities () =
-  Lg.Compiler.compile_string {|(def x (/ 10))|}
-  |> expect_error "/ expects at least 2 arguments"
+let test_integer_division_supports_source_unary_reciprocal () =
+  let source = {|(println (/ 10))|} in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "integer_division_supports_source_unary_reciprocal" "0\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_chained_comparisons () =
   let source =
@@ -22358,7 +22362,7 @@ let test_batched_core_functions_reject_bad_arities () =
   |> expect_error_contains "called with incompatible arguments";
   compile_with_stdlib_result Lg.Target.Native "test/bad_realized_arity.cljc"
     {|(def x (realized?))|}
-  |> expect_error_contains "called with incompatible arguments";
+  |> expect_error_contains "realized? called with unsupported macro arity 0";
   compile_with_stdlib_result Lg.Target.Native "test/bad_array_from_arity.cljc"
     {|(def x (array-from [1] [2]))|}
   |> expect_error_contains "called with incompatible arguments";
@@ -25531,9 +25535,23 @@ let test_batched_numeric_scalar_core_functions_reject_unchecked_arity () =
   |> expect_error_contains
        "unchecked-add called with incompatible arguments: expected (int, int)"
 
-let test_batched_numeric_scalar_core_functions_reject_bad_name_arg () =
-  Lg.Compiler.compile_string {|(def x (name 1))|}
-  |> expect_error "name expects keyword, string, or symbol"
+let test_source_name_rejects_unsupported_values_at_runtime () =
+  let source =
+    {|
+(println
+  (try
+    (name 1)
+    false
+    (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source name must use a static protocol capability";
+  assert_ocaml_runs "source_name_rejects_unsupported_values_at_runtime"
+    "true\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_batched_numeric_scalar_core_functions_infer_int_params () =
   let source =
@@ -29640,7 +29658,7 @@ let test_batched_sequence_functions_reject_bad_counts () =
 let test_batched_sequence_functions_reject_reduce_kv_non_collection () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_reduce_kv.cljc"
     {|(def x (reduce-kv (fn [acc i x] (+ acc x)) 0 (__lg_list 1 2)))|}
-  |> expect_error_contains "IKVReduce"
+  |> expect_error_contains "reduce-kv expects a vector or map"
 
 let test_interleave_accepts_multiple_collections () =
   let source =
@@ -34238,16 +34256,17 @@ let test_source_equality_supports_statically_typed_first_class_use () =
   assert_ocaml_runs "source_equality_first_class_use" "true\n"
     (compile_string_with_stdlib source |> expect_ok)
 
-let test_function_maps_require_a_closed_sum_for_numeric_functions () =
+let test_numeric_core_functions_are_typed_first_class_values () =
   let source =
     {|
 (def compare-values compare)
 (println (compare-values 2 3))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "compare cannot be used as an untyped first-class function";
+  let compare_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring compare_source "Runtime_dynamic" then
+    failwith "first-class compare must remain static";
+  assert_ocaml_runs "first_class_compare_remains_static" "-1\n" compare_source;
   let static_source =
     compile_string_with_stdlib
       {|
@@ -34304,33 +34323,43 @@ let test_function_maps_require_a_closed_sum_for_logical_functions () =
   assert_ocaml_runs "source_identity_is_a_typed_first_class_function" "7\n"
     ocaml_source
 
-let test_collection_core_functions_reject_untyped_first_class_use () =
+let test_collection_core_functions_are_typed_first_class_values () =
   let source =
     {|
 (def make-vector vector)
 (println (make-vector 1 2))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "vector cannot be used as an untyped first-class function"
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class vector must remain static";
+  assert_ocaml_runs "first_class_vector_remains_static" "[1 2]\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_printing_functions_reject_untyped_first_class_use () =
+let test_printing_functions_are_typed_first_class_values () =
   let source =
     {|
 (def print-value pr-str)
 (println (print-value [1 2]))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "pr-str cannot be used as an untyped first-class function";
-  Lg.Compiler.compile_string
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class pr-str must remain static";
+  assert_ocaml_runs "first_class_pr_str_remains_static" "[1 2]\n"
+    native_source;
+  let writer_source =
     {|
 (def write-value pr-writer)
 |}
-  |> expect_error_contains
-       "pr-writer cannot be used as an untyped first-class function"
+  in
+  ignore (compile_string_with_stdlib writer_source |> expect_ok);
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange writer_source
+    |> expect_ok)
 
 let test_str_requires_source_stdlib_state () =
   let source =
@@ -34365,18 +34394,22 @@ let test_clojure_string_escape_is_typed_first_class_source () =
 (ns string-query.bad (:require [clojure.string :as str]))
 (str/escape "a<b" {\< 1})
 |}
-  |> expect_error_contains "expected of type"
+  |> expect_error_contains "str/escape called with incompatible arguments"
 
-let test_function_maps_require_a_closed_sum_for_type_predicates () =
+let test_type_predicates_are_typed_first_class_values () =
   let source =
     {|
 (def predicate number?)
 (println (predicate 1.5))
 |}
   in
-  Lg.Compiler.compile_string source
-  |> expect_error_contains
-       "number? cannot be used as an untyped first-class function"
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class number? must remain static";
+  assert_ocaml_runs "first_class_number_predicate_remains_static" "true\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_heterogeneous_function_maps_require_a_closed_sum () =
   let source =
@@ -35579,7 +35612,7 @@ let test_and_or_single_values_are_unchanged () =
 
 let test_additional_sequence_helpers_reject_bad_reductions_arity () =
   Lg.Compiler.compile_string {|(def x (reductions +))|}
-  |> expect_error "reductions expects function, optional init, and collection"
+  |> expect_error_contains "reductions called with unsupported arity 1"
 
 let test_let_defn_and_fn_values () =
   let source =
@@ -36785,9 +36818,9 @@ let test_source_core_map_entry_and_parse_boolean_helpers () =
 
 let test_source_core_map_entry_and_parse_boolean_helpers_reject_bad_calls () =
   [
-    ("(key)", "called with incompatible arguments");
-    ("(val 1 2)", "called with incompatible arguments");
-    ("(key 42)", "OCaml typecheck failed");
+    ("(key)", "key called with unsupported macro arity 0");
+    ("(val 1 2)", "val called with unsupported macro arity 2");
+    ("(key 42)", "no protocol implementation for IMapEntry/-key and int");
     ("(parse-boolean)", "called with incompatible arguments");
     ("(parse-boolean true)", "called with incompatible arguments");
   ]
@@ -38052,7 +38085,7 @@ let test_take_and_drop_core_api () =
 
 let test_take_and_drop_reject_non_int_counts () =
   Lg.Compiler.compile_string {|(def x (take "2" [1 2]))|}
-  |> expect_error "take count must be int"
+  |> expect_error_contains "take called with incompatible arguments"
 
 let test_take_and_drop_support_sets () =
   let source = {|(println (pr-str (drop 1 (__lg_hash-set 1 2))))|} in
@@ -39442,7 +39475,7 @@ let test_let_rejects_odd_binding_forms () =
 
 let test_map_rejects_non_function_argument () =
   compile_string_with_stdlib {|(def xs (map 1 [1 2]))|}
-  |> expect_error_contains "map-seq called with incompatible arguments"
+  |> expect_error_contains "called with incompatible arguments"
 
 let test_match_expression_works () =
   let source =
@@ -44826,8 +44859,8 @@ let tests =
     ( "arithmetic rejects non-int arguments",
       test_arithmetic_rejects_non_int_arguments );
     ("arithmetic core arities work", test_arithmetic_core_arities);
-    ( "integer division rejects unsupported arities",
-      test_integer_division_rejects_unsupported_arities );
+    ( "integer division supports source unary reciprocal",
+      test_integer_division_supports_source_unary_reciprocal );
     ("chained comparisons work", test_chained_comparisons);
     ("not= core api works", test_not_equal_core_api);
     ("not= rejects mixed types", test_not_equal_rejects_mixed_types);
@@ -45099,8 +45132,8 @@ let tests =
       test_case_supports_closed_keyword_and_string_targets );
     ( "batched numeric/scalar core functions reject unchecked arity",
       test_batched_numeric_scalar_core_functions_reject_unchecked_arity );
-    ( "batched numeric/scalar core functions reject bad name arg",
-      test_batched_numeric_scalar_core_functions_reject_bad_name_arg );
+    ( "source name rejects unsupported values at runtime",
+      test_source_name_rejects_unsupported_values_at_runtime );
     ( "batched numeric/scalar core functions infer int params",
       test_batched_numeric_scalar_core_functions_infer_int_params );
     ("clojure.string module batch works", test_clojure_string_module_batch_works);
@@ -45677,21 +45710,21 @@ let tests =
       test_conj_uses_a_statically_typed_first_class_wrapper );
     ( "source equality supports statically typed first-class use",
       test_source_equality_supports_statically_typed_first_class_use );
-    ( "function maps require a closed sum for numeric functions",
-      test_function_maps_require_a_closed_sum_for_numeric_functions );
+    ( "numeric core functions are typed first-class values",
+      test_numeric_core_functions_are_typed_first_class_values );
     ( "function maps require a closed sum for random functions",
       test_function_maps_require_a_closed_sum_for_random_functions );
     ( "function maps require a closed sum for logical functions",
       test_function_maps_require_a_closed_sum_for_logical_functions );
-    ( "collection core functions reject untyped first-class use",
-      test_collection_core_functions_reject_untyped_first_class_use );
-    ( "printing functions reject untyped first-class use",
-      test_printing_functions_reject_untyped_first_class_use );
+    ( "collection core functions are typed first-class values",
+      test_collection_core_functions_are_typed_first_class_values );
+    ( "printing functions are typed first-class values",
+      test_printing_functions_are_typed_first_class_values );
     ( "str requires source stdlib state", test_str_requires_source_stdlib_state );
     ( "clojure.string escape is typed first-class source",
       test_clojure_string_escape_is_typed_first_class_source );
-    ( "function maps require a closed sum for type predicates",
-      test_function_maps_require_a_closed_sum_for_type_predicates );
+    ( "type predicates are typed first-class values",
+      test_type_predicates_are_typed_first_class_values );
     ( "heterogeneous function maps require a closed sum",
       test_heterogeneous_function_maps_require_a_closed_sum );
     ( "sort accepts typed query function parameters",
