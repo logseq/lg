@@ -39795,9 +39795,13 @@ let test_match_expression_works () =
     "zero:n=2:0:7:7:99:0:7:7:99:keys:other:small\n" ocaml_source
 
 let test_match_requires_closed_sum_for_mixed_branch_types () =
-  Lg.Compiler.compile_string {|(println (pr-str (match 1 0 "zero" _ 1)))|}
-  |> expect_error_contains
-       "define a closed sum type containing every branch type"
+  List.iter
+    (fun target ->
+      Lg.Compiler.compile_string ~target
+        {|(println (pr-str (match 1 0 "zero" _ 1)))|}
+      |> expect_error_contains
+           "define a closed sum type containing every branch type")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_match_rejects_bad_clause_count () =
   Lg.Compiler.compile_string {|(def x (match 1 0 "zero" _))|}

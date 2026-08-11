@@ -1833,10 +1833,17 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 (Some first_result.ty) rest
             in
             let result_ty =
+              let same_string_representation = function
+                | TString | TSymbol | TKeyword -> true
+                | _ -> false
+              in
               match (result_ty, Env.expected_type env) with
               | None, Some expected
                 when Option.is_some (Types.printable_constraint_info expected)
-                  ->
+                     && List.for_all
+                          (fun (_, _, result) ->
+                            same_string_representation result.ty)
+                          clauses ->
                   Some expected
               | result_ty, _ -> result_ty
             in
