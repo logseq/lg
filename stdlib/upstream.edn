@@ -1394,7 +1394,7 @@
    :implementation "cljs/test.cljc"
    :interface "cljs/test.mli"
    :status :blocked
-   :reason :remaining-async-fixture-nested-testing-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
+   :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
    :definitions
    {empty-env {:status :static-adaptation
                :reason :source-function-preserves-upstream-default-and-custom-reporter-counters-and-empty-context-state-in-a-closed-static-test-environment-record-while-the-open-polymorphic-formatter-field-and-pprint-reporter-remain-blocked-on-static-printer-witnesses}
@@ -1415,7 +1415,7 @@
     run-block {:status :static-adaptation
                :reason :source-function-preserves-left-to-right-synchronous-execution-async-done-continuation-order-duplicate-done-warning-and-injected-block-prepending-over-a-closed-recursive-test-action-sum}
     async {:status :static-adaptation
-           :reason :source-macro-preserves-upstream-cps-body-bound-done-callback-direct-deftest-registration-and-continuation-order-in-an-explicit-async-test-action-constructor-instead-of-runtime-marker-protocol-mutation-while-async-fixture-and-nested-testing-lifetimes-remain-blocked}
+           :reason :source-macro-preserves-upstream-cps-body-bound-done-callback-deftest-registration-and-continuation-order-in-an-explicit-async-test-action-constructor-instead-of-runtime-marker-protocol-mutation-while-async-fixture-lifetimes-remain-blocked}
     async? {:status :static-adaptation
             :reason :source-function-tests-the-closed-async-test-action-constructor-instead-of-accepting-arbitrary-runtime-values-through-a-marker-protocol-predicate}
     block {:status :static-adaptation
@@ -1428,8 +1428,8 @@
                      :reason :source-function-preserves-input-order-while-building-a-homogeneous-synchronous-thunk-sequence-instead-of-analyzer-var-grouping-and-async-block-injection}
     test-vars {:status :static-adaptation
                :reason :source-function-runs-the-static-synchronous-test-vars-block-in-input-order-while-async-report-finalization-remains-blocked}
-    testing {:status :ported
-             :reason :source-macro-preserves-upstream-push-body-finally-pop-control-flow-with-general-lg-try-finally-support}
+    testing {:status :static-adaptation
+             :reason :source-macro-preserves-upstream-push-body-finally-pop-control-flow-for-synchronous-tests-and-defers-nested-async-context-pop-until-done-or-exception-through-the-closed-test-action-runner}
     is {:status :static-adaptation
         :reason :source-macro-preserves-single-evaluation-pass-fail-error-counter-control-flow-for-statically-boolean-assertions-while-open-truthiness-special-assertion-methods-and-report-event-payloads-remain-separate-capabilities}
     are {:status :static-adaptation
@@ -1437,7 +1437,7 @@
     try-expr {:status :static-adaptation
               :reason :source-macro-preserves-upstream-unexpected-exception-capture-and-error-counting-while-returning-false-to-keep-the-static-boolean-result-domain-closed}
     deftest {:status :static-adaptation
-             :reason :source-macro-defines-the-public-zero-argument-test-function-and-registers-a-closed-synchronous-or-direct-async-action-in-definition-order-instead-of-javascript-var-test-metadata-while-arbitrary-analyzer-var-return-discovery-remains-blocked}
+             :reason :source-macro-defines-the-public-zero-argument-test-function-and-registers-a-closed-synchronous-or-deferred-async-action-in-definition-order-instead-of-javascript-var-test-metadata-while-arbitrary-analyzer-var-return-discovery-remains-blocked}
     run-test {:status :static-adaptation
               :reason :source-macro-runs-one-statically-resolved-synchronous-test-with-a-fresh-environment-while-async-tests-remain-explicitly-blocked}
     run-tests {:status :static-adaptation

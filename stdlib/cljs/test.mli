@@ -14,6 +14,7 @@
 (type-variant test-action
   (SynchronousTest :fn<bool>)
   (AsyncTest :fn<fn<bool>;bool>)
+  (DeferredTest :fn<test-action>)
   (TestBlock :list<test-action>))
 
 (type-record registered-test
@@ -68,6 +69,10 @@
   :fn<fn<bool>;test-action>)
 (signature cljs.test/async-test-action
   :fn<fn<fn<bool>;bool>;test-action>)
+(signature cljs.test/deferred-test-action
+  :fn<fn<test-action>;test-action>)
+(signature cljs.test/async-testing-action
+  :fn<string;fn<test-action>;test-action>)
 (signature cljs.test/block [storage]
   :fn<seqable<test-action;storage>;test-action>)
 (signature cljs.test/registered-test-step

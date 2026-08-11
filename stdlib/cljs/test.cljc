@@ -117,11 +117,21 @@
 (defmacro testing
   "Evaluates `body` with `string` appended to the active testing context."
   [string & body]
-  `(do
-     (cljs.test/push-testing-context! ~string)
-     (try
-       ~@body
-       (finally (cljs.test/pop-testing-context!)))))
+  (let [last-form (last body)
+        last-symbol (if (seq? last-form) (first last-form) nil)
+        action-body (or (= 'async last-symbol)
+                        (= 'cljs.test/async last-symbol)
+                        (= 'testing last-symbol)
+                        (= 'cljs.test/testing last-symbol))]
+    (if action-body
+      `(cljs.test/async-testing-action
+        ~string
+        (fn [] ~@body))
+      `(do
+         (cljs.test/push-testing-context! ~string)
+         (try
+           ~@body
+           (finally (cljs.test/pop-testing-context!)))))))
 
 (defprotocol ITestNamespaceValue
   (-test-namespace-value? [value]))
@@ -365,6 +375,27 @@
                (finish))))
          true)))
 
+    (DeferredTest create)
+    (AsyncTest
+     (fn [continue]
+       (let [previous (begin-registered-test! registered-test)
+             finished (atom false)
+             finish
+             (fn []
+               (if @finished
+                 (continue)
+                 (do
+                   (reset! finished true)
+                   (finish-registered-test! previous)
+                   (continue))))]
+         (try
+           (run-block-then (seq (list (create))) finish)
+           (catch _
+             (do
+               (inc-report-counter! :error)
+               (finish))))
+         true)))
+
     (TestBlock actions)
     (TestBlock actions)))
 
@@ -377,7 +408,11 @@
         contains-async
         (reduce
          (fn [found test]
-           (or found (async? (:registered-test-action test))))
+           (or
+            found
+            (match (:registered-test-action test)
+              (SynchronousTest _) false
+              _ true)))
          false
          registered)]
     (validate-fixture-types! once-fixtures each-fixtures)
@@ -451,6 +486,11 @@
           (start continue)
           true)
 
+        (Some (DeferredTest create))
+        (run-block-then
+         (concat (list (create)) (rest remaining))
+         finished)
+
         (Some (TestBlock injected))
         (run-block-then (concat injected (rest remaining)) finished)
 
@@ -475,6 +515,26 @@
 
 (defn- async-test-action [start]
   (AsyncTest start))
+
+(defn- deferred-test-action [create]
+  (DeferredTest create))
+
+(defn- async-testing-action [context create]
+  (AsyncTest
+   (fn [continue]
+     (push-testing-context! context)
+     (try
+       (run-block-then
+        (seq (list (create)))
+        (fn []
+          (pop-testing-context!)
+          (continue)))
+       (catch error
+         (do
+           (pop-testing-context!)
+           (raise error)
+           false)))
+     true)))
 
 (defn block
   "Wraps `actions` as a block injected before the remaining actions."
@@ -552,18 +612,19 @@
   (assert (symbol? name) "deftest expects a symbol name")
   (let [namespace (:ns &env)
         test-name (str name)
-        first-form (first body)
-        first-symbol (if (seq? first-form) (first first-form) nil)
-        async-test (and (= 1 (count body))
-                        (or (= 'async first-symbol)
-                            (= 'cljs.test/async first-symbol)))]
-    (if async-test
+        last-form (last body)
+        last-symbol (if (seq? last-form) (first last-form) nil)
+        action-test (or (= 'async last-symbol)
+                        (= 'cljs.test/async last-symbol)
+                        (= 'testing last-symbol)
+                        (= 'cljs.test/testing last-symbol))]
+    (if action-test
       `(do
-         (defn ~name [] ~first-form)
+         (defn ~name [] ~@body)
          (cljs.test/register-test-action!
           ~namespace
           ~test-name
-          (~name)))
+          (cljs.test/deferred-test-action (fn [] (~name)))))
       `(do
          (defn ~name [] ~@body)
          (cljs.test/register-test!

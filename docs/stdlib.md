@@ -927,11 +927,12 @@ synchronous thunk, asynchronous CPS, and injected-block cases. `run-block`
 preserves left-to-right execution, resumes at `done`, prepends injected blocks,
 and warns without rerunning the continuation when `done` is called twice.
 Direct outer `async` forms in `deftest` participate in the static registry and
-delay subsequent tests until their continuation runs. Async tests combined
-with fixtures, async forms nested inside `testing`, namespace hooks,
-analyzer-wide test discovery, special assertion methods, and open custom
-reporters remain explicit blockers rather than silently falling back to dynamic
-values.
+delay subsequent tests until their continuation runs. Nested `testing` forms
+use a deferred action so their context stack remains active until asynchronous
+completion, including exception cleanup. Async tests combined with fixtures,
+namespace hooks, analyzer-wide test discovery, special assertion methods, and
+open custom reporters remain explicit blockers rather than silently falling
+back to dynamic values.
 Inventory reporting keeps that namespace-level blocker
 while allowing each source-owned var to resolve as `source-aggregate`; a
 blocked sibling does not downgrade a ported qualified var.

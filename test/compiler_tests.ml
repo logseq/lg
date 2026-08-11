@@ -29606,6 +29606,83 @@ let test_source_cljs_test_async_deftest_continues_registry_in_order () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_cljs_test_async_registry.cljc" source)
 
+let test_source_cljs_test_nested_async_testing_preserves_context_lifetime () =
+  let source =
+    {|
+(ns app.cljs-test-nested-async
+  (:require [cljs.test :refer [async deftest get-current-env is run-tests
+                               testing testing-contexts-str]]))
+
+(def saved-done (atom (fn [] false)))
+(def async-context (atom ""))
+(def after-delay-ran (atom false))
+(def after-delay-context (atom "missing"))
+(def after-error-context (atom "missing"))
+(def final-counters (atom (hash-map :test 0 :pass 0 :fail 0 :error 0)))
+
+(deftest delayed-nested
+  (testing "outer"
+    (testing "inner"
+      (async done
+        (reset! saved-done done)
+        (reset! async-context (testing-contexts-str))))))
+
+(deftest after-delay
+  (reset! after-delay-ran true)
+  (reset! after-delay-context (testing-contexts-str))
+  (is true))
+
+(deftest throwing-nested
+  (testing "error-context"
+    (async done
+      (raise (Failure "boom")))))
+
+(deftest after-error
+  (reset! after-error-context (testing-contexts-str))
+  (is true)
+  (reset! final-counters (:report-counters (get-current-env))))
+
+(run-tests 'app.cljs-test-nested-async)
+(println (not @after-delay-ran))
+(@saved-done)
+(println (= "outer inner" @async-context))
+(println @after-delay-ran)
+(println (= "" @after-delay-context))
+(println (= "" @after-error-context))
+(println (= 4 (get @final-counters :test)))
+(println (= 2 (get @final-counters :pass)))
+(println (= 1 (get @final-counters :error)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_nested_async.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "nested async testing contexts must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_nested_async"
+    (String.concat "" (List.init 8 (fun _ -> "true\n")))
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_nested_async.cljc" source)
+
+let test_cljs_test_nested_async_testing_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  if not (string_contains_substring source "(defn- async-testing-action") then
+    failwith "cljs.test async testing action wrapper is not source-owned";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file (Filename.concat root path) in
+      if string_contains_substring compiler_source "\"async-testing-action\""
+      then
+        failwith
+          ("cljs.test async testing action wrapper has name dispatch in "
+         ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_cljs_test_async_blocks_are_source_owned () =
   let root = repo_root () in
   let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
@@ -44186,6 +44263,10 @@ let tests =
       test_source_cljs_test_async_blocks_reject_invalid_arguments );
     ( "source cljs.test async deftest continues registry in order",
       test_source_cljs_test_async_deftest_continues_registry_in_order );
+    ( "source cljs.test nested async testing preserves context lifetime",
+      test_source_cljs_test_nested_async_testing_preserves_context_lifetime );
+    ( "cljs.test nested async testing is source-owned",
+      test_cljs_test_nested_async_testing_is_source_owned );
     ( "cljs.test async blocks are source-owned",
       test_cljs_test_async_blocks_are_source_owned );
     ( "source chunk buffer and array chunk match ClojureScript",
