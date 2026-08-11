@@ -498,6 +498,11 @@
 (defn clone [value]
   (-clone value))
 
+(defn cloneable?
+  {:inline (fn [value] (list 'satisfies? 'ICloneable value))}
+  [value]
+  (satisfies? ICloneable value))
+
 (defn aget
   {:inline (fn [array index]
              (list '__lg_aget array index))}

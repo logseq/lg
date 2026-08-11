@@ -876,8 +876,8 @@
                  :reason :persistent-reduce-preserves-upstream-counting-semantics-without-a-transient-representation-boundary}
     clone {:status :static-adaptation
            :reason :source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity}
-    cloneable? {:status :blocked-static-typing
-                :reason :first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value}
+    cloneable? {:status :static-adaptation
+                :reason :source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch}
     default-dispatch-val {:status :blocked-static-typing
                           :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     ifn? {:status :blocked-static-typing

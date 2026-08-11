@@ -11445,9 +11445,10 @@ let test_source_clone_protocol_preserves_values_and_fresh_identity () =
   let source =
     {|
 (ns app.source-clone
-  (:require [clojure.core :as core :refer [clone]]))
+  (:require [clojure.core :as core :refer [clone cloneable?]]))
 
 (def clone-fn core/clone)
+(def cloneable-fn cloneable?)
 (def source-list (list 1 2 3))
 (def source-vector [4 5 6])
 (def source-seq (seq [7 8 9]))
@@ -11465,13 +11466,18 @@ let test_source_clone_protocol_preserves_values_and_fresh_identity () =
               (not (identical? source-seq cloned-seq))))
 (println (and (= source-map cloned-map)
               (not (identical? source-map cloned-map))))
+(println (cloneable-fn source-list))
+(println (cloneable-fn source-vector))
+(println (cloneable-fn source-map))
+(println (not (cloneable-fn 42)))
 |}
   in
   let native_consumer = compile_string_from_stdlib source |> expect_ok in
   if string_contains_substring native_consumer "Runtime_dynamic" then
     failwith "source clone protocol must remain statically typed";
   let native = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "source_clone_protocol" "true\ntrue\ntrue\ntrue\n" native;
+  assert_ocaml_runs "source_clone_protocol"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native;
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
@@ -11484,7 +11490,11 @@ let test_clone_protocol_is_source_owned () =
     (fun declaration ->
       if not (string_contains_substring core_source declaration) then
         failwith (declaration ^ " is missing from the source standard library"))
-    [ "(defprotocol ICloneable"; "(-clone [value] :self)"; "(defn clone" ]
+    [ "(defprotocol ICloneable";
+      "(-clone [value] :self)";
+      "(defn clone";
+      "(defn cloneable?";
+    ]
 
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =

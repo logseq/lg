@@ -21,7 +21,7 @@ while IFS="$tab" read -r name status reason; do
   fi
 done <<'EOF'
 clone	source	source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity
-cloneable?	blocked-static-typing	first-class-protocol-predicate-must-accept-every-static-value-type-without-a-universal-open-value
+cloneable?	source	source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
 default-dispatch-val	blocked-static-typing	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
 delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values
 doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path

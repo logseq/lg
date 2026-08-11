@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 666 source entries (67.61%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 104 static-typing blockers,
+macro surfaces. The current baseline is 667 source entries (67.72%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 103 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -440,8 +440,9 @@ immutable HAMT nodes and insertion-order storage while allocating a new typed
 map record, and a nonempty vector clone allocates only a new wrapper around the
 immutable RRB trie. OCaml's empty list and empty vector are singleton values, so
 their clone retains physical identity; this observable static adaptation is
-recorded in the manifest. `cloneable?` remains blocked because its first-class upstream shape
-must accept arbitrary protocol and non-protocol values.
+recorded in the manifest. `cloneable?` is also source-owned: both direct and
+first-class calls use an optional static `ICloneable` witness and return false
+for non-implementing values without dynamic inspection.
 Generated OCaml names encode a trailing bang as `_bang`, so source definitions
 such as `volatile!` remain distinct from predicates such as `volatile?` and the
 generated bindings stay readable. The manifest records the upstream arities
