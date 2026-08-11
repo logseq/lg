@@ -33,7 +33,9 @@
   lg.runtime
   lg.edn-backend.native
   unix
-  rrbvec))
+  rrbvec)
+ (action
+  (chdir %{workspace_root} (run %{test}))))
 
 (test
  (name compiler_support_performance_tests)
@@ -465,6 +467,22 @@
 
 (rule
  (alias runtest)
+ (deps
+  cross_runtime_smoke.sh
+  cross_runtime_native_melange.expected
+  lgc_native.exe
+  (alias lgc-melange)
+  lgc-melange/test/lgc_melange.js)
+ (action
+  (run
+   sh
+   %{dep:cross_runtime_smoke.sh}
+   %{exe:lgc_native.exe}
+   %{dep:lgc-melange/test/lgc_melange.js}
+   %{dep:cross_runtime_native_melange.expected})))
+
+(rule
+ (alias jsoo-cross-runtime)
  (deps
   cross_runtime_smoke.sh
   cross_runtime.expected

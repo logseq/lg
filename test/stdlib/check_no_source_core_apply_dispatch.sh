@@ -9,7 +9,7 @@ if ! grep -E '^\(defn apply([[:space:]]|$)' \
   exit 1
 fi
 
-if ! grep -F "(cons '__lg_apply args)" \
+if ! grep -F "(list '__lg_apply" \
   "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/apply does not inline to its private typed primitive" >&2
   exit 1

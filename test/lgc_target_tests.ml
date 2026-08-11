@@ -197,7 +197,8 @@ let test_splices_reader_conditionals_into_collections () =
 (defn #?@(:clj [^:bool selected?] :cljs [^boolean selected?])
   [value]
   value)
-(println (str values ":" (:b options) ":" (selected? true)))
+(def selected-value (selected? true))
+(def selected-option (:b options))
 |}
   in
   let generated = compile Lg.Target.Native source in
@@ -210,12 +211,11 @@ let test_splices_reader_conditionals_into_collections () =
 let test_javascript_spliced_recur_marks_defn_recursive () =
   let source =
     {|
-(defn normalize [value]
-  (cond
-    (int? value) value
-    #?@(:cljs [(array? value) (recur (array-seq value))])
-    :else 0))
-(def answer (normalize 42))
+(defn normalize [^:bool value]
+  (do
+    #?@(:cljs [(if value (recur false) value)]
+        :clj [value])))
+(def answer (normalize true))
 |}
   in
   [ Lg.Target.Melange; Lg.Target.Js_of_ocaml ]
