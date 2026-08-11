@@ -429,6 +429,14 @@ cljs.reader/read-string|source
 cljs.reader/register-tag-parser!|host-boundary
 cljs.pprint/float?|source
 cljs.pprint/char-code|source
+cljs.test/empty-env|source
+cljs.test/get-current-env|source
+cljs.test/set-env!|source
+cljs.test/clear-env!|source
+cljs.test/get-and-clear-env!|source
+cljs.test/inc-report-counter!|source
+cljs.test/testing-contexts-str|source
+cljs.test/testing|source
 cljs.test/compose-fixtures|source
 cljs.test/join-fixtures|source
 cljs.test/successful?|source

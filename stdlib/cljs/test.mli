@@ -1,5 +1,36 @@
 (ns cljs.test)
 
+(type-record test-env
+  (report-counters :map<keyword;int>)
+  (testing-vars :list<string>)
+  (testing-contexts :list<string>)
+  (reporter :keyword))
+
+(signature cljs.test/*current-env*
+  :option<test-env>)
+(signature cljs.test/empty-env
+  :overload<fn<test-env>;fn<keyword;test-env>>)
+(signature cljs.test/get-current-env
+  :fn<test-env>)
+(signature cljs.test/set-env!
+  :fn<test-env;test-env>)
+(signature cljs.test/clear-env!
+  :fn<option<test-env>>)
+(signature cljs.test/get-and-clear-env!
+  :fn<test-env>)
+(signature cljs.test/inc-report-counter!
+  :fn<keyword;test-env>)
+(signature cljs.test/testing-contexts-str
+  :fn<string>)
+(signature cljs.test/test-env-value
+  :fn<map<keyword;int>;list<string>;list<string>;keyword;test-env>)
+(signature cljs.test/replace-current-env!
+  :fn<test-env;map<keyword;int>;list<string>;test-env>)
+(signature cljs.test/push-testing-context!
+  :fn<string;test-env>)
+(signature cljs.test/pop-testing-context!
+  :fn<test-env>)
+
 (signature cljs.test/compose-fixtures [result]
   :fn<fn<fn<result>;result>;fn<fn<result>;result>;fn<fn<result>;result>>)
 (signature cljs.test/join-fixtures [result storage]

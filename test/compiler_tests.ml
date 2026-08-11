@@ -28997,6 +28997,131 @@ let test_cljs_test_fixture_helpers_are_source_owned () =
   if string_contains_substring core_namespaces "cljs.test" then
     failwith "cljs.test must resolve through the aggregate source registry"
 
+let test_source_cljs_test_environment_matches_clojurescript () =
+  let source =
+    {|
+(ns app.cljs-test-environment
+  (:require [cljs.test :as test
+             :refer [empty-env get-current-env set-env! clear-env!
+                     get-and-clear-env! inc-report-counter!
+                     testing-contexts-str testing]]))
+
+(def current get-current-env)
+(def custom-env (empty-env :app/custom-reporter))
+(def observations (atom []))
+
+(clear-env!)
+(def assigned (set-env! custom-env))
+(inc-report-counter! :pass)
+(test/inc-report-counter! :pass)
+(inc-report-counter! :custom)
+
+(def testing-result
+  (testing "outer"
+    (swap! observations conj (testing-contexts-str))
+    (testing "inner"
+      (swap! observations conj (test/testing-contexts-str)))
+    7))
+
+(def saved (get-and-clear-env!))
+(def fresh (current))
+
+(println
+  (and (identical? assigned custom-env)
+       (not (identical? saved custom-env))
+       (= 7 testing-result)
+       (= ["outer" "outer inner"] @observations)
+       (= "" (testing-contexts-str))
+       (= :app/custom-reporter (:reporter saved))
+       (= 2 (get (:report-counters saved) :pass 0))
+       (= 1 (get (:report-counters saved) :custom 0))
+       (= :cljs.test/default (:reporter fresh))
+       (= 0 (get (:report-counters fresh) :fail 0))
+       (= (list) (:testing-contexts fresh))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_environment.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.test environment must use a closed static representation";
+  if not (string_contains_substring native_consumer "Fun.protect") then
+    failwith "cljs.test/testing must generate readable finally control flow";
+  assert_ocaml_runs "source_cljs_test_environment" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_environment.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith
+      "Melange cljs.test environment must use a closed static representation";
+  if not (string_contains_substring melange_consumer "Fun.protect") then
+    failwith
+      "Melange cljs.test/testing must generate readable finally control flow";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_environment_bad_reporter.cljc"
+    {|
+(ns app.cljs-test-environment-reporter-error
+  (:require [cljs.test :refer [empty-env]]))
+(empty-env "not-a-keyword")
+|}
+  |> expect_error_contains "empty-env";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_environment_bad_env.cljc"
+    {|
+(ns app.cljs-test-environment-value-error
+  (:require [cljs.test :refer [set-env!]]))
+(set-env! [1 2 3])
+|}
+  |> expect_error_contains "set-env!";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_environment_bad_counter.cljc"
+    {|
+(ns app.cljs-test-environment-counter-error
+  (:require [cljs.test :refer [inc-report-counter!]]))
+(inc-report-counter! "pass")
+|}
+  |> expect_error_contains "inc-report-counter!"
+
+let test_cljs_test_environment_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring source ("(defn " ^ name)
+          || string_contains_substring source ("(defmacro " ^ name))
+      then failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [
+      "empty-env";
+      "get-current-env";
+      "set-env!";
+      "clear-env!";
+      "get-and-clear-env!";
+      "inc-report-counter!";
+      "testing-contexts-str";
+      "testing";
+    ];
+  let core_namespaces =
+    read_file (Filename.concat root "src/core_namespaces.ml")
+  in
+  if string_contains_substring core_namespaces "cljs.test" then
+    failwith "cljs.test environment must remain an aggregate source namespace"
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -39530,9 +39655,38 @@ let test_try_supports_normal_results_multiple_body_forms_and_handlers () =
     "try_supports_normal_results_multiple_body_forms_and_handlers"
     "body\nhandled\nok:invalid:bad\n" ocaml_source
 
+let test_try_supports_finally_with_and_without_catch () =
+  let source =
+    {|
+(def normal
+  (try
+    (println "body")
+    42
+    (finally (println "normal-finally"))))
+(def recovered
+  (try
+    (raise (Failure "boom"))
+    (catch (Failure message) message)
+    (finally (println "caught-finally"))))
+(def propagated
+  (try
+    (try
+      (raise (Failure "again"))
+      (finally (println "propagated-finally")))
+    (catch (Failure message) message)))
+(println (str normal ":" recovered ":" propagated))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "try_supports_finally_with_and_without_catch"
+    "body\nnormal-finally\ncaught-finally\npropagated-finally\n42:boom:again\n"
+    ocaml_source
+
 let test_try_and_raise_reject_malformed_forms () =
   Lg.Compiler.compile_string {|(def value (try 42))|}
-  |> expect_error "try requires at least one catch clause";
+  |> expect_error "try requires at least one catch or finally clause";
+  Lg.Compiler.compile_string {|(def value (try 42 (finally)))|}
+  |> expect_error "finally requires a body";
   Lg.Compiler.compile_string {|(def value (try 42 (catch)))|}
   |> expect_error "catch requires a pattern and body";
   Lg.Compiler.compile_string {|(def value (try (catch _ 42)))|}
@@ -43394,6 +43548,10 @@ let tests =
       test_source_cljs_test_fixture_helpers_match_clojurescript );
     ( "cljs.test fixture helpers are source-owned",
       test_cljs_test_fixture_helpers_are_source_owned );
+    ( "source cljs.test environment matches ClojureScript",
+      test_source_cljs_test_environment_matches_clojurescript );
+    ( "cljs.test environment is source-owned",
+      test_cljs_test_environment_is_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",
@@ -44193,6 +44351,8 @@ let tests =
     ("try catches OCaml exceptions", test_try_catches_ocaml_exceptions);
     ( "try supports normal results multiple body forms and handlers",
       test_try_supports_normal_results_multiple_body_forms_and_handlers );
+    ( "try supports finally with and without catch",
+      test_try_supports_finally_with_and_without_catch );
     ( "try and raise reject malformed forms",
       test_try_and_raise_reject_malformed_forms );
     ( "try requires closed sum for mixed branch types",

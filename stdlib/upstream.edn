@@ -1394,9 +1394,25 @@
    :implementation "cljs/test.cljc"
    :interface "cljs/test.mli"
    :status :blocked
-   :reason :remaining-test-runner-and-assertion-surface-requires-analyzer-backed-macro-expansion-a-closed-static-test-environment-and-closed-report-event-sums
+   :reason :remaining-test-runner-and-assertion-surface-requires-analyzer-backed-macro-expansion-and-closed-report-event-sums
    :definitions
-   {compose-fixtures {:status :ported}
+   {empty-env {:status :static-adaptation
+               :reason :source-function-preserves-upstream-default-and-custom-reporter-counters-and-empty-context-state-in-a-closed-static-test-environment-record-while-the-open-polymorphic-formatter-field-and-pprint-reporter-remain-blocked-on-static-printer-witnesses}
+    get-current-env {:status :static-adaptation
+                     :reason :source-function-preserves-upstream-current-or-fresh-default-control-flow-through-a-statically-typed-runtime-binding}
+    set-env! {:status :static-adaptation
+              :reason :source-function-preserves-upstream-current-environment-replacement-and-return-value-through-a-statically-typed-runtime-binding}
+    clear-env! {:status :static-adaptation
+                :reason :source-function-preserves-upstream-current-environment-clearing-through-a-statically-typed-option-runtime-binding}
+    get-and-clear-env! {:status :static-adaptation
+                        :reason :source-function-preserves-upstream-read-before-clear-order-through-a-statically-typed-option-runtime-binding}
+    inc-report-counter! {:status :static-adaptation
+                         :reason :source-function-preserves-upstream-missing-counter-default-and-persistent-environment-replacement-over-the-default-lg-hashmap}
+    testing-contexts-str {:status :ported
+                          :reason :source-function-preserves-upstream-outermost-to-innermost-space-joined-context-order}
+    testing {:status :ported
+             :reason :source-macro-preserves-upstream-push-body-finally-pop-control-flow-with-general-lg-try-finally-support}
+    compose-fixtures {:status :ported}
     join-fixtures {:status :ported}
     successful? {:status :ported}}}
 

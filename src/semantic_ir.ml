@@ -155,6 +155,12 @@ let rec never_returns = function
   | Apply (Ident "raise", [ _ ])
   | Apply (Ident "Lg_runtime.Runtime_exception.throw", [ _ ]) ->
       true
+  | Labelled_apply (Ident "Fun.protect", arguments) ->
+      List.exists
+        (function
+          | None, Fun ([ PUnit ], body) -> never_returns body
+          | _ -> false)
+        arguments
   | Sequence expressions -> (
       match List.rev expressions with
       | last :: _ -> never_returns last

@@ -1873,10 +1873,24 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | FList (FSymbol "catch" :: _) -> true
       | _ -> false
     in
+    let is_finally_clause = function
+      | FList (FSymbol "finally" :: _) -> true
+      | _ -> false
+    in
     let rec split_body acc = function
-      | [] -> Error.error "try requires at least one catch clause"
-      | form :: rest when is_catch_clause form -> Ok (List.rev acc, form :: rest)
+      | [] -> Error.error "try requires at least one catch or finally clause"
+      | form :: rest
+        when is_catch_clause form || is_finally_clause form ->
+          Ok (List.rev acc, form :: rest)
       | form :: rest -> split_body (form :: acc) rest
+    in
+    let split_finally handler_forms =
+      match List.rev handler_forms with
+      | FList (FSymbol "finally" :: finally_forms) :: reversed_catches -> (
+          match finally_forms with
+          | [] -> Error.error "finally requires a body"
+          | _ -> Ok (List.rev reversed_catches, Some finally_forms))
+      | _ -> Ok (handler_forms, None)
     in
     let parse_catch = function
       | FList
@@ -1968,53 +1982,85 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 ^ Types.source_name handlers_ty
                 ^ "; define a closed sum type containing every branch type"))
     in
+    let compile_catches body catches =
+      match catches with
+      | [] -> Ok body
+      | _ -> (
+          let exception_name = "__lg_caught_exception" in
+          let exception_binding =
+            ( Names.scoped_key scope exception_name,
+              Types.binding exception_name (TOcaml "exn") )
+          in
+          match
+            compile_match scope
+              (Env.add (fst exception_binding) (snd exception_binding) env)
+              (FSymbol exception_name)
+              (List.concat_map
+                 (fun (pattern, handler) -> [ pattern; handler ])
+                 catches)
+          with
+          | Error _ as err -> err
+          | Ok handlers -> (
+              match
+                ( Semantic_ir.unlocated handlers.semantic_expr,
+                  compatible_try_type body handlers )
+              with
+              | _, (Error _ as err) -> err
+              | Semantic_ir.Match_guarded (_, cases), Ok ty ->
+                  let body_expression =
+                    coerce_expression_to_type ty body.ty body.semantic_expr
+                  in
+                  let cases =
+                    List.map
+                      (fun (pattern, guard, expression) ->
+                        ( pattern,
+                          guard,
+                          coerce_expression_to_type ty handlers.ty expression
+                        ))
+                      cases
+                  in
+                  Ok (typed_ir ty (Semantic_ir.Try (body_expression, cases)))
+              | _, Ok _ ->
+                  Error.error "internal error: malformed try handlers"))
+    in
+    let protect_with_finally body finally =
+      typed_ir body.ty
+        (Semantic_ir.Labelled_apply
+           ( Semantic_ir.Ident "Fun.protect",
+             [
+               ( Some "finally",
+                 Semantic_ir.Fun
+                   ( [ Semantic_ir.PUnit ],
+                     Semantic_ir.Sequence
+                       [ finally.semantic_expr; Semantic_ir.Unit ] ) );
+               ( None,
+                 Semantic_ir.Fun
+                   ([ Semantic_ir.PUnit ], body.semantic_expr) );
+             ] ))
+    in
     match split_body [] forms with
     | Error _ as err -> err
     | Ok ([], _) -> Error.error "try requires a body"
-    | Ok (body_forms, catch_forms) -> (
-        match
-          ( compile_body scope env "try requires a body" body_forms,
-            parse_catches [] catch_forms )
-        with
-        | (Error _ as err), _ -> err
-        | _, (Error _ as err) -> err
-        | Ok body, Ok catches -> (
-            let exception_name = "__lg_caught_exception" in
-            let exception_binding =
-              ( Names.scoped_key scope exception_name,
-                Types.binding exception_name (TOcaml "exn") )
-            in
+    | Ok (body_forms, handler_forms) -> (
+        match split_finally handler_forms with
+        | Error _ as err -> err
+        | Ok (catch_forms, finally_forms) -> (
             match
-              compile_match scope
-                (Env.add (fst exception_binding) (snd exception_binding) env)
-                (FSymbol exception_name)
-                (List.concat_map
-                   (fun (pattern, handler) -> [ pattern; handler ])
-                   catches)
+              ( compile_body scope env "try requires a body" body_forms,
+                parse_catches [] catch_forms )
             with
-            | Error _ as err -> err
-            | Ok handlers -> (
-                match
-                  ( Semantic_ir.unlocated handlers.semantic_expr,
-                    compatible_try_type body handlers )
-                with
-                | _, (Error _ as err) -> err
-                | Semantic_ir.Match_guarded (_, cases), Ok ty ->
-                    let body_expression =
-                      coerce_expression_to_type ty body.ty body.semantic_expr
-                    in
-                    let cases =
-                      List.map
-                        (fun (pattern, guard, expression) ->
-                          ( pattern,
-                            guard,
-                            coerce_expression_to_type ty handlers.ty expression
-                          ))
-                        cases
-                    in
-                    Ok (typed_ir ty (Semantic_ir.Try (body_expression, cases)))
-                | _, Ok _ ->
-                    Error.error "internal error: malformed try handlers")))
+            | (Error _ as err), _ -> err
+            | _, (Error _ as err) -> err
+            | Ok body, Ok catches -> (
+                match (compile_catches body catches, finally_forms) with
+                | (Error _ as err), _ -> err
+                | Ok body, None -> Ok body
+                | Ok body, Some finally_forms ->
+                    Result.map
+                      (protect_with_finally body)
+                      (compile_body scope
+                         (Env.with_expected_type None env)
+                         "finally requires a body" finally_forms))))
   and loop_branch_type left right =
     match merge_branch_types left right with
     | Some ty -> Ok ty
