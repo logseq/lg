@@ -1036,8 +1036,8 @@
                :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
     defmulti {:status :blocked-static-typing
               :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
-    implements? {:status :blocked-static-typing
-                  :reason :analyzer-protocol-mask-testing-must-accept-arbitrary-static-value-types}
+    implements? {:status :static-adaptation
+                  :reason :source-macro-preserves-static-protocol-satisfaction-and-single-value-evaluation-by-expanding-to-satisfies-while-clojurescript-javascript-mask-layout-is-not-part-of-lg-runtime-representation}
     specify {:status :blocked-static-typing
              :reason :per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
     specify! {:status :blocked-static-typing

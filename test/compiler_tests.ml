@@ -11555,6 +11555,49 @@ let test_record_and_chunked_predicates_are_source_owned () =
         [ "record?"; "chunked-seq?" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_implements_macro_matches_static_protocols () =
+  let source =
+    {|
+(ns app.source-implements
+  (:require [clojure.core :as core :refer [implements?]]))
+
+(def evaluations (atom 0))
+
+(println (implements? ICloneable (list 1 2)))
+(println (core/implements? core/ICloneable [1 2]))
+(println (not (implements? ICloneable 42)))
+(println
+ (implements? ICloneable
+   (do
+     (swap! evaluations inc)
+     (hash-map :answer 42))))
+(println (= 1 @evaluations))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "implements? must use static protocol witnesses";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_implements_macro"
+    (String.concat "" (List.init 5 (fun _ -> "true\n")))
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange implements? must use static protocol witnesses"
+
+let test_implements_macro_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defmacro implements?") then
+    failwith "implements? is missing from the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"implements?\"" then
+        failwith ("implements? still has public-name dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43199,6 +43242,9 @@ let tests =
       test_source_record_and_chunked_predicates_match_clojurescript );
     ( "record and chunked predicates are source-owned",
       test_record_and_chunked_predicates_are_source_owned );
+    ( "source implements macro matches static protocols",
+      test_source_implements_macro_matches_static_protocols );
+    ( "implements macro is source-owned", test_implements_macro_is_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

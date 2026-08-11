@@ -2506,15 +2506,18 @@
     false
     (satisfies? IMap x)))
 
+(defmacro implements? [protocol value]
+  (list 'satisfies? protocol value))
+
 (defn record?
   {:inline (fn [x] (list 'satisfies? 'IRecord x))}
   [x]
   (satisfies? IRecord x))
 
 (defn chunked-seq?
-  {:inline (fn [x] (list 'satisfies? 'IChunkedSeq x))}
+  {:inline (fn [x] (list 'implements? 'IChunkedSeq x))}
   [x]
-  (satisfies? IChunkedSeq x))
+  (implements? IChunkedSeq x))
 
 (defn fn?
   {:inline (fn [x] (list '__lg_fn-predicate x))}

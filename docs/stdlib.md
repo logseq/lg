@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 669 source entries (67.92%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 101 static-typing blockers,
+macro surfaces. The current baseline is 670 source entries (68.02%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 100 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -982,7 +982,10 @@ the upstream empty-chunk content branch without a value-dependent return type,
 while nonempty chunks retain first/rest/next protocol behavior. The
 vector-trie-specific `chunked-seq` constructors remain blocked. The
 `chunked-seq?` predicate is source-owned and uses an optional static
-`IChunkedSeq` witness for first-class true and false calls.
+`IChunkedSeq` witness for first-class true and false calls. The source-owned
+`implements?` macro expands to the same static `satisfies?` test, preserving
+single evaluation without exposing ClojureScript's JavaScript protocol-mask
+layout in the LG runtime.
 Inventory reporting keeps that namespace-level blocker
 while allowing each source-owned var to resolve as `source-aggregate`; a
 blocked sibling does not downgrade a ported qualified var.
