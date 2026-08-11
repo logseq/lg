@@ -1202,6 +1202,20 @@ therefore needs a closed recursive value domain. A faithful first-class
 potentially heterogeneous argument tuples as cache keys; LG cannot yet express
 that returned-function relationship statically.
 
+`apply` is source-owned and available through automatic core refer, explicit
+`:refer`, `cljs.core` aliases, and qualified `clojure.core` calls. Its four
+statically expressible fixed source arities are precompiled in the aggregate
+stdlib. Direct calls of every upstream arity inline to the private
+`__lg_apply` primitive, which preserves the dependent relationship between
+fixed arguments, the final seqable argument, overloaded function arities, and
+the result type. Core source helpers use that same private boundary during
+bootstrap so their overloaded callbacks are not monomorphized through the
+narrower first-class source signature. The pinned Logseq scan contains eight
+qualified `clojure.core/apply` calls; they resolve through the aggregate source
+namespace. The upstream five-fixed-plus-final-sequence first-class arity remains
+documented as unrepresentable because its rest arguments are heterogeneous by
+construction.
+
 The architecture tests in `test/stdlib` enforce that `clojure.set` is no
 longer classified as compiler-owned and that source-owned core functions have
 no name-based call elaboration or inference path.

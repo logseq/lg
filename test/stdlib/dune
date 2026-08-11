@@ -1786,6 +1786,30 @@
   (run sh %{dep:check_no_source_core_comp_dispatch.sh} ../..)))
 
 (rule
+ (alias no-source-core-apply-dispatch)
+ (deps
+  check_no_source_core_apply_dispatch.sh
+  ../../stdlib/upstream.edn
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_apply_dispatch.sh} ../..)))
+
+(rule
+ (alias runtest)
+ (deps
+  check_no_source_core_apply_dispatch.sh
+  ../../stdlib/upstream.edn
+  ../../stdlib/clojure/core.cljc
+  ../../src/call_elaborator.ml
+  ../../src/function_combinator_elaborator.ml
+  ../../src/type_inference.ml)
+ (action
+  (run sh %{dep:check_no_source_core_apply_dispatch.sh} ../..)))
+
+(rule
  (alias runtest)
  (deps
   check_no_source_core_comp_dispatch.sh

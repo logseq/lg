@@ -8754,7 +8754,7 @@ let create ~compile_expr =
                       "__lg_complete_transformed expects an overloaded reducing function"))
         | _ -> Error.error "__lg_complete_transformed expects 2 arguments")
     | "__lg_reduce" -> compile_reduce scope env arg_forms
-    | "apply" -> (
+    | "__lg_apply" -> (
         match arg_forms with
         | FSymbol "__lg_mapv" :: constructor_form :: fixed_and_rest
           when List.length fixed_and_rest >= 2 ->

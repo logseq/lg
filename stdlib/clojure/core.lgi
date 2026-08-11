@@ -140,6 +140,8 @@
   :fn<fn<value>;Lg_runtime.Runtime_future.t<value>>)
 (signature clojure.core/enable-console-print!
   :fn<unit>)
+(signature clojure.core/apply [value result storage]
+  :overload<fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;value;seqable<value;storage>;result>>)
 
 (signature clojure.core/map-seq [input output]
   :fn<fn<input;output>;seq<input>;seq<output>>)

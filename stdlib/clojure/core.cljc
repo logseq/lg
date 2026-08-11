@@ -1698,6 +1698,17 @@
 (defmacro lazy-cat [& colls]
   `(concat ~@(map (fn [coll] `(lazy-seq ~coll)) colls)))
 
+(defn apply
+  {:inline (fn [& args] (cons '__lg_apply args))}
+  ([f args]
+   (__lg_apply f args))
+  ([f x args]
+   (__lg_apply f x args))
+  ([f x y args]
+   (__lg_apply f x y args))
+  ([f x y z args]
+   (__lg_apply f x y z args)))
+
 (defn- map-seq [f coll]
   (lazy-seq
    (if coll
@@ -1733,7 +1744,7 @@
             third-coll
             (every? (fn [coll] (seq coll)) colls))
      (cons
-      (apply f
+      (__lg_apply f
              (nth first-coll 0)
              (nth second-coll 0)
              (nth third-coll 0)
@@ -2066,7 +2077,7 @@
      (rest third-coll)
      (map (fn [coll] (rest coll)) colls)
      (conj result
-           (apply f
+           (__lg_apply f
                   (nth first-coll 0)
                   (nth second-coll 0)
                   (nth third-coll 0)
@@ -3348,7 +3359,7 @@
     (~update-fn (IDeref/-deref ~reference) ~@args)))
 
 (defn- swap-apply [update-fn value x y more]
-  (apply update-fn value x y more))
+  (__lg_apply update-fn value x y more))
 
 (defn swap!
   {:inline
@@ -4210,10 +4221,10 @@
              nil))))))))
 
 (defn- juxt-apply [function x y z args]
-  (apply function x y z args))
+  (__lg_apply function x y z args))
 
 (defn- comp-apply [function x y z args]
-  (apply function x y z args))
+  (__lg_apply function x y z args))
 
 (defn- comp-many [functions x]
   (loop [result ((nth functions 0) x)
@@ -4223,13 +4234,13 @@
       result)))
 
 (defn- partial-apply-one [function arg1 x y z args]
-  (apply function arg1 x y z args))
+  (__lg_apply function arg1 x y z args))
 
 (defn- partial-apply-two [function arg1 arg2 x y z args]
-  (apply function arg1 arg2 x y z args))
+  (__lg_apply function arg1 arg2 x y z args))
 
 (defn- partial-apply-three [function arg1 arg2 arg3 x y z args]
-  (apply function arg1 arg2 arg3 x y z args))
+  (__lg_apply function arg1 arg2 arg3 x y z args))
 
 (defn partial
   {:inline (fn [& arguments] (cons '__lg_partial arguments))}
@@ -4258,7 +4269,7 @@
       (partial-apply-three f arg1 arg2 arg3 x y z args))))
   ([f arg1 arg2 arg3 & more]
    (fn [& args]
-     (apply f arg1 arg2 arg3 (concat more args)))))
+     (__lg_apply f arg1 arg2 arg3 (concat more args)))))
 
 (defn- fnil-value [fallback value]
   (if (nil? value) fallback value))
@@ -4270,13 +4281,13 @@
      ([a] (f (fnil-value x a)))
      ([a b] (f (fnil-value x a) b))
      ([a b c] (f (fnil-value x a) b c))
-     ([a b c & args] (apply f (fnil-value x a) b c args))))
+     ([a b c & args] (__lg_apply f (fnil-value x a) b c args))))
   ([f x y]
    (fn
      ([a b] (f (fnil-value x a) (fnil-value y b)))
      ([a b c] (f (fnil-value x a) (fnil-value y b) c))
      ([a b c & args]
-      (apply f (fnil-value x a) (fnil-value y b) c args))))
+      (__lg_apply f (fnil-value x a) (fnil-value y b) c args))))
   ([f x y z]
    (fn
      ([a b] (f (fnil-value x a) (fnil-value y b)))
@@ -4285,7 +4296,7 @@
          (fnil-value y b)
          (fnil-value z c)))
      ([a b c & args]
-      (apply f
+      (__lg_apply f
              (fnil-value x a)
              (fnil-value y b)
              (fnil-value z c)
@@ -4321,7 +4332,7 @@
      ([x] (vector (f x)))
      ([x y] (vector (f x y)))
      ([x y z] (vector (f x y z)))
-     ([x y z & args] (vector (apply f x y z args)))))
+     ([x y z & args] (vector (__lg_apply f x y z args)))))
   ([f g]
    (fn
      ([]
@@ -4341,8 +4352,8 @@
             g-result (g x y z)]
         (vector f-result g-result)))
      ([x y z & args]
-      (let [f-result (apply f x y z args)
-            g-result (apply g x y z args)]
+      (let [f-result (__lg_apply f x y z args)
+            g-result (__lg_apply g x y z args)]
         (vector f-result g-result)))))
   ([f g h]
    (fn
@@ -4367,9 +4378,9 @@
             h-result (h x y z)]
         (vector f-result g-result h-result)))
      ([x y z & args]
-      (let [f-result (apply f x y z args)
-            g-result (apply g x y z args)
-            h-result (apply h x y z args)]
+      (let [f-result (__lg_apply f x y z args)
+            g-result (__lg_apply g x y z args)
+            h-result (__lg_apply h x y z args)]
         (vector f-result g-result h-result)))))
   ([f g h & fs]
    (let [functions (list* f g h fs)]
@@ -4649,7 +4660,7 @@
   (IMeta/-meta value))
 
 (defn- vary-meta-apply [update-fn metadata a b c d args]
-  (apply update-fn metadata a b c d args))
+  (__lg_apply update-fn metadata a b c d args))
 
 (defn vary-meta
   {:inline

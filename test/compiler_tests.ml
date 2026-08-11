@@ -19246,24 +19246,28 @@ let test_buffer_annotations_work_in_ordinary_functions () =
 let test_apply_pr_accepts_lazy_sequences () =
   let source =
     {|
+(deftype PrintItem [^int e ^:keyword a ^:string v ^int tx])
 (defn write-values [^:buffer writer values]
   (binding [*out* writer]
     (apply pr
       (map
-        (fn [[e a v tx]] [e a v tx])
+        (fn [^PrintItem item]
+          (str (.-e item) ":" (.-a item) ":" (.-v item) ":" (.-tx item)))
         values))))
-(deftype Person [^:vector<tuple<int;keyword;string;int>> items])
+(deftype Person [^:vector<PrintItem> items])
 (defmethod print-method Person [^Person person ^:buffer writer]
   (Buffer.add_string writer "#person ")
   (write-values writer (.-items person)))
-(println (pr-str (Person. [[1 :name "Ada" 2]])))
+(println (pr-str (Person. [(PrintItem. 1 :name "Ada" 2)])))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/apply_pr_lazy.cljc" source
+  in
   assert_ocaml_runs "apply_pr_accepts_lazy_sequences"
-    "#person [1 :name \"Ada\" 2]\n" ocaml_source;
+    "#person \"1::name:Ada:2\"\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/apply_pr_lazy.cljc" source)
 
 let test_apply_pr_accepts_refined_protocol_sequences () =
   let source =
@@ -19273,18 +19277,12 @@ let test_apply_pr_accepts_refined_protocol_sequences () =
 (defprotocol Schema
   (-schema [source]))
 (deftype Item [^int value])
-(defn print-items [source, ^:buffer writer]
-  (binding [*out* writer]
-    (pr (-schema source))
-    (apply pr
-      (map (fn [^Item item] [(.-value item)])
-        (-items source)))))
 (deftype DirectSource [^int unused]
   Items
   (-items [_] (Some (seq [(Item. 42)])))
   Schema
   (-schema [_] {}))
-(deftype FilteredSource [source]
+(deftype FilteredSource [^DirectSource source]
   Items
   (-items [_]
     (filter (fn [^Item item] (pos? (.-value item)))
@@ -19292,14 +19290,23 @@ let test_apply_pr_accepts_refined_protocol_sequences () =
   Schema
   (-schema [_] (-schema source)))
 (defn print-direct [^DirectSource source, ^:buffer writer]
-  (print-items source writer))
+  (binding [*out* writer]
+    (pr (-schema source))
+    (apply pr
+      (map (fn [^Item item] [(.-value item)])
+        (-items source)))))
 (defn print-filtered [^FilteredSource source, ^:buffer writer]
-  (print-items source writer))
+  (binding [*out* writer]
+    (pr (-schema source))
+    (apply pr
+      (map (fn [^Item item] [(.-value item)])
+        (-items source)))))
 |}
   in
-  ignore (Lg.Compiler.compile_string source |> expect_ok);
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Native "test/apply_pr_protocol.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/apply_pr_protocol.cljc" source)
 
 let test_protocol_methods_merge_concrete_static_sequence_returns () =
   let source =
@@ -36958,6 +36965,30 @@ let test_function_helpers () =
   in
   assert_ocaml_runs "function_helpers" "18:7:ok:ok:ok:6:6:true\n" ocaml_source
 
+let test_source_apply_namespace_resolution () =
+  let source =
+    {|
+(ns app.source-apply
+  (:require [cljs.core :as core :refer [apply]]))
+(def source-apply apply)
+(println (= 10 (apply + [1 2 3 4])))
+(println (= "lg" (core/apply str ["l" "g"])))
+(println (= 10 (clojure.core/apply + 1 2 [3 4])))
+(println (= 10 (source-apply + [1 2 3 4])))
+|}
+  in
+  let expected = "true\ntrue\ntrue\ntrue\n" in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_apply_resolution.cljc"
+      source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source apply namespace calls must remain statically typed";
+  assert_ocaml_runs "source_apply_namespace_resolution" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_apply_resolution.cljc"
+       source)
+
 let test_source_core_map_entry_and_parse_boolean_helpers () =
   let source =
     {|
@@ -37623,8 +37654,9 @@ let test_common_higher_order_helpers_reject_compare_type_mismatch () =
   |> expect_error_contains "compare called with incompatible arguments"
 
 let test_apply_rejects_bad_set_reducers () =
-  Lg.Compiler.compile_string {|(def x (apply + (__lg_hash-set "a" "b")))|}
-  |> expect_error "apply currently supports int binary reducers"
+  compile_with_stdlib_result Lg.Target.Native "test/apply_bad_set.cljc"
+    {|(def x (apply + (__lg_hash-set "a" "b")))|}
+  |> expect_error "apply argument type mismatch: expected int, got string"
 
 let test_apply_distinct_accepts_generic_seqable_values () =
   let source =
@@ -46110,6 +46142,8 @@ let tests =
       test_destructuring_rejects_bad_or_defaults );
     ("sequence core api works on vectors", test_sequence_core_api_on_vectors);
     ("function helpers work", test_function_helpers);
+    ( "source apply resolves through ordinary namespaces",
+      test_source_apply_namespace_resolution );
     ( "source core map-entry and parse-boolean helpers work",
       test_source_core_map_entry_and_parse_boolean_helpers );
     ( "source core map-entry and parse-boolean helpers reject bad calls",

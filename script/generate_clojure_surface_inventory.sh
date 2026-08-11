@@ -64,9 +64,8 @@ awk '
     for (i in xs) special[xs[i]] = 1
     special_reason["instance?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
     special_reason["satisfies?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
-    split("apply assoc-in doall drop drop-while filter get-in keep map map-indexed mapcat max merge min next rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
+    split("assoc-in doall drop drop-while filter get-in keep map map-indexed mapcat max merge min next rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
-    blocked_reason["apply"] = "variadic-apply-requires-dependent-fixed-arguments-and-final-sequence-expansion"
     split("assoc-in get-in update-in", xs)
     for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
     split("map", xs)
@@ -109,6 +108,7 @@ awk '
     internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
     internal_abi["__lg_ensure-reduced"] = "typed-conditional-parameterized-reduced-wrapper-primitive"
     internal_abi["__lg_force"] = "typed-lazy-force-or-static-identity-primitive"
+    internal_abi["__lg_apply"] = "typed-dependent-fixed-arguments-and-final-sequence-application-primitive"
     internal_abi["__lg_rand"] = "typed-int-or-float-random-bound-specialization-primitive"
     internal_abi["__lg_max"] = "typed-numeric-extrema-specialization-primitive"
     internal_abi["__lg_min"] = "typed-numeric-extrema-specialization-primitive"

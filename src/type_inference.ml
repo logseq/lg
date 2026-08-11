@@ -4146,16 +4146,28 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (Types.printable_constraint (Type_solver.fresh ()))
                       params value))
           (Ok params) values
-    | FList (FSymbol "apply" :: FSymbol ("pr" | "clojure.core/pr") :: arguments)
+    | FList
+        (FSymbol "__lg_apply" :: FSymbol ("pr" | "clojure.core/pr") :: arguments)
       -> (
         match List.rev arguments with
-        | FSymbol collection :: _ ->
-            constrain_seqable
-              (Types.printable_constraint (Type_solver.fresh ()))
-              params collection
-        | _ -> infer_all params arguments)
+        | [] -> Ok params
+        | collection :: reversed_fixed ->
+            let printable =
+              Types.printable_constraint (Type_solver.fresh ())
+            in
+            Result.bind
+              (List.fold_left
+                 (fun result argument ->
+                   Result.bind result (fun params ->
+                       infer_expected printable params argument))
+                 (Ok params) (List.rev reversed_fixed))
+              (fun params ->
+                infer_expected (Types.seqable_constraint printable) params
+                  collection))
     | FList
-        (FSymbol "apply" :: FSymbol ("__lg_map" | "__lg_mapv") :: constructor_form
+        (FSymbol "__lg_apply"
+        :: FSymbol ("__lg_map" | "__lg_mapv")
+        :: constructor_form
         :: fixed_and_rest)
       when List.length fixed_and_rest >= 2
            && is_variadic_vector_constructor params constructor_form ->
@@ -4178,7 +4190,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             | FSymbol name ->
                 constrain_seqable (TVector element_ty) params name
             | form -> infer_form params form)
-    | FList (FSymbol "apply" :: function_form :: arguments) ->
+    | FList (FSymbol "__lg_apply" :: function_form :: arguments) ->
         let is_dynamic_function_type ty =
           Types.is_dynamic ty
           || match ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
@@ -5409,8 +5421,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             let rec infer_alias_constraints params = function
               | FList
                   (FSymbol apply_name :: FSymbol function_name :: arguments)
-                when apply_name = "apply"
-                     || String.ends_with ~suffix:"/apply" apply_name -> (
+                when apply_name = "__lg_apply" -> (
                   match string_assoc_opt function_name aliases with
                   | Some function_form ->
                       infer_form params
