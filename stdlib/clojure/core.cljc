@@ -167,6 +167,13 @@
 (defprotocol ISeqable
   (-seq [value]))
 
+(defprotocol ISeq
+  (-first [value])
+  (-rest [value]))
+
+(defprotocol INext
+  (-next [value]))
+
 (defprotocol IReversible
   (-rseq [coll]))
 

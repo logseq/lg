@@ -173,7 +173,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/conj" && $3 == "source" {
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/namespace" || $2 == "clojure.core/unreduced") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   BEGIN {
-    split("-as-transient -assoc -assoc! -assoc-n -assoc-n! -comparator -compare -compare-and-set! -conj -conj! -contains-key? -count -deref -disjoin -disjoin! -dissoc -dissoc! -empty -entry-key -equiv -find -hash -kv-reduce -lookup -meta -nth -peek -persistent! -pop -pop! -reduce -reset! -rseq -seq -sorted-seq -sorted-seq-from -swap! -vreset! -with-meta", names, " ")
+    split("-as-transient -assoc -assoc! -assoc-n -assoc-n! -comparator -compare -compare-and-set! -conj -conj! -contains-key? -count -deref -disjoin -disjoin! -dissoc -dissoc! -empty -entry-key -equiv -find -first -hash -kv-reduce -lookup -meta -next -nth -peek -persistent! -pop -pop! -reduce -reset! -rest -rseq -seq -sorted-seq -sorted-seq-from -swap! -vreset! -with-meta", names, " ")
     for (i in names) required["clojure.core/" names[i]] = 1
   }
   $1 == "definition" && ($2 in required) && $3 == "source" {found[$2] = 1}

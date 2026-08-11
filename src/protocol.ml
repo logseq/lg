@@ -34,6 +34,15 @@ let canonical_protocol_name protocol_name =
   | "IEmptyableCollection" -> "Emptyable"
   | _ -> protocol_name
 
+let protocol_marker_type = TOcaml "__lg_protocol_marker"
+
+let protocol_binding protocol_id =
+  Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
+    protocol_marker_type
+
+let binding_protocol_id (binding : binding) =
+  if Types.equal binding.ty protocol_marker_type then binding.protocol_id else None
+
 let marker_binding protocol_id signature =
   Types.binding ~protocol_id (Protocol_id.to_string protocol_id)
     signature.method_ty
@@ -80,13 +89,24 @@ let resolve_protocol_id ~scope env protocol_id =
     | _ -> protocol_id
 
 let find_protocol_id scope env protocol_name =
-  let protocol_name = canonical_protocol_name protocol_name in
+  let source_name = protocol_name in
+  let protocol_name = canonical_protocol_name source_name in
   let registry = Env.protocols env in
+  let referred_id =
+    Option.bind
+      (Env.find_opt (Names.scoped_key scope source_name) env)
+      binding_protocol_id
+  in
   let scoped_id =
     protocol_id scope protocol_name |> resolve_protocol_id ~scope env
   in
   let root_id = Protocol_id.create ~owner:[] ~name:protocol_name in
-  if Option.is_some (Protocol_registry.find_protocol scoped_id registry) then
+  if
+    match referred_id with
+    | Some id -> Option.is_some (Protocol_registry.find_protocol id registry)
+    | None -> false
+  then referred_id
+  else if Option.is_some (Protocol_registry.find_protocol scoped_id registry) then
     Some scoped_id
   else if Option.is_some (Protocol_registry.find_protocol root_id registry) then
     Some root_id

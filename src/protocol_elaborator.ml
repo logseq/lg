@@ -37,6 +37,10 @@ let export_method_bindings scope env protocol_id signatures =
             env)
     env signatures
 
+let export_protocol_binding scope env protocol_name protocol_id =
+  Env.add (Names.scoped_key scope protocol_name)
+    (Protocol.protocol_binding protocol_id) env
+
 let validate_core_protocol_surface protocol_id source_signatures declaration =
   let source_methods =
     List.map
@@ -119,6 +123,8 @@ let define ?location scope env protocol_name method_forms =
           | Error _ as err -> err
           | Ok () ->
               let env =
+                export_protocol_binding scope env protocol_name protocol_id
+                |> fun env ->
                 export_method_bindings scope env protocol_id signatures
               in
               Ok
@@ -135,6 +141,8 @@ let define ?location scope env protocol_name method_forms =
       | Ok protocols ->
           let env =
             Env.with_protocols protocols env
+            |> fun env ->
+            export_protocol_binding scope env protocol_name protocol_id
             |> fun env ->
             export_method_bindings scope env protocol_id signatures
           in

@@ -200,6 +200,9 @@ let drop count sequence =
     match sequence () with Seq.Nil -> Seq.empty | Seq.Cons (_, rest) -> rest
   else sequence |> Seq.drop count |> memoize
 
+let rest sequence = drop 1 sequence
+let next sequence = drop 1 sequence
+
 let non_empty sequence =
   match sequence () with Seq.Nil -> None | Seq.Cons _ -> Some sequence
 

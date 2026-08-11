@@ -10,6 +10,14 @@ for file in stdlib/clojure/core.mli stdlib/clojure/core.cljc; do
   fi
 done
 
+for protocol in ISeq INext; do
+  if ! grep -F "(defprotocol $protocol" \
+    "$root/stdlib/clojure/core.cljc" >/dev/null; then
+    echo "clojure.core/$protocol is not source-declared" >&2
+    exit 1
+  fi
+done
+
 for name in \
   identity completing complement every-pred some-fn boolean truth_ not zero? pos? neg? abs byte float short unchecked-byte unchecked-char unchecked-short unchecked-float unchecked-double unchecked-int unchecked-long double int long reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? int-rotate-left imul m3-mix-K1 m3-mix-H1 m3-fmix m3-hash-int m3-hash-unencoded-chars hash-string* mix-collection-hash \
   alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array array-from array-binary-search-left array-binary-search-right quot rem mod \

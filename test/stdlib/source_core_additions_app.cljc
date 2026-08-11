@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+  (:require [cljs.core :as core :refer [INext ISeq NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser! parse-and-validate-timestamp]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
@@ -1209,3 +1209,24 @@
 (println (invalid-reader-timestamp? "2020-01-01T24"))
 (println (invalid-reader-timestamp? "2020-01-01T23:60"))
 (println (invalid-reader-timestamp? "2020-01-01T23:58:60"))
+
+(def source-sequence (seq [1 2 3]))
+(println
+ (and (= 1 (core/ISeq/-first source-sequence))
+      (= [2 3] (vec (ISeq/-rest source-sequence)))
+      (= [2 3] (vec (INext/-next source-sequence)))
+      (empty? (INext/-next (seq [1])))))
+
+(deftype SourceSequence [^:seq<int> values]
+  ISeq
+  (-first [source] (first (.-values source)))
+  (-rest [source] (rest (.-values source)))
+
+  INext
+  (-next [source] (next (.-values source))))
+
+(def custom-source-sequence (SourceSequence. (seq [4 5 6])))
+(println
+ (and (= 4 (core/ISeq/-first custom-source-sequence))
+      (= [5 6] (vec (ISeq/-rest custom-source-sequence)))
+      (= [5 6] (vec (INext/-next custom-source-sequence)))))

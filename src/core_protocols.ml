@@ -7,6 +7,8 @@ let method_id protocol_id name =
 
 let seqable_id = Protocol_id.create ~owner:[] ~name:"Seqable"
 let seq_method_id = Method_id.create ~owner:[ "Seqable" ] ~name:"-seq"
+let iseq_id = Protocol_id.create ~owner:[] ~name:"ISeq"
+let inext_id = Protocol_id.create ~owner:[] ~name:"INext"
 let reducible_id = Protocol_id.create ~owner:[] ~name:"Reducible"
 let reduce_method_id = Method_id.create ~owner:[ "Reducible" ] ~name:"-reduce"
 let counted_id = Protocol_id.create ~owner:[] ~name:"Counted"
@@ -86,6 +88,42 @@ let add_edn_seqable registry =
     (Receiver_id.Host_receiver "Lg_edn_backend.t")
     binding registry
   |> add_or_fail
+
+let declare_sequence_protocols registry =
+  let element = TVar "sequence_element" in
+  let sequence = TSeq element in
+  registry
+  |> Protocol_registry.declare iseq_id
+       [
+         signature (method_id iseq_id "-first") [ sequence ]
+           (TOcaml_app ("option", [ element ]));
+         signature (method_id iseq_id "-rest") [ sequence ] sequence;
+       ]
+  |> add_or_fail
+  |> Protocol_registry.declare inext_id
+       [
+         signature (method_id inext_id "-next") [ sequence ]
+           (Types.next_seq element);
+       ]
+  |> add_or_fail
+
+let add_sequence_protocols registry =
+  let element = TVar "sequence_element" in
+  let sequence = TSeq element in
+  let add protocol_id method_name ocaml_name method_ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name method_ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
+      Receiver_id.Seq_receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add iseq_id "-first" "Lg_runtime.Runtime_seq.first_opt"
+       (TFn ([ sequence ], TOcaml_app ("option", [ element ])))
+  |> add iseq_id "-rest" "Lg_runtime.Runtime_seq.rest"
+       (TFn ([ sequence ], sequence))
+  |> add inext_id "-next" "Lg_runtime.Runtime_seq.next"
+       (TFn ([ sequence ], Types.next_seq element))
 
 let declare_reducible registry =
   Protocol_registry.declare reducible_id
@@ -733,6 +771,7 @@ let initial_registry =
        "Lg_runtime.Runtime_seq.of_host_seq_alias"
   |> add_seqable runtime_map_receiver "Lg_runtime.Runtime_map.to_seq"
   |> add_edn_seqable
+  |> declare_sequence_protocols |> add_sequence_protocols
   |> declare_reducible
   |> add_reducible Receiver_id.List_receiver "Lg.Core_protocols.reduce_list"
   |> add_reducible Receiver_id.Vector_receiver "Lg.Core_protocols.reduce_vector"

@@ -26803,6 +26803,131 @@ let test_source_core_protocol_surface_uses_typed_builtin_implementations () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_core_protocols.cljc" source)
 
+let test_source_protocol_names_can_be_referred_across_namespaces () =
+  let provider =
+    ( "app/protocol_source.cljc",
+      {|
+(ns app.protocol-source)
+
+(defprotocol Readable
+  (read-value [value] :int))
+|} )
+  in
+  let consumer =
+    ( "app/protocol_consumer.cljc",
+      {|
+(ns app.protocol-consumer
+  (:require [app.protocol-source :as source :refer [Readable]]))
+
+(deftype Box [^int value]
+  Readable
+  (read-value [box] (.-value box)))
+
+(def boxed (Box. 7))
+(println
+  (str (satisfies? Readable boxed)
+       ":"
+       (source/read-value boxed)))
+|} )
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let provider_filename, provider_source = provider in
+    let state, source_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:provider_filename stdlib.state provider_source
+      |> expect_ok
+    in
+    let consumer_filename, consumer_source = consumer in
+    let _, consumer_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:consumer_filename state consumer_source
+      |> expect_ok
+    in
+    ( String.concat "\n"
+        [ stdlib.ocaml_source; source_output; consumer_output ],
+      consumer_output )
+  in
+  let native_source, native_consumer = compile Lg.Target.Native in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "referred protocol markers must remain compile-time-only";
+  assert_ocaml_runs "source_protocol_names_can_be_referred" "true:7\n"
+    native_source;
+  ignore (compile Lg.Target.Melange);
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let provider_filename, provider_source = provider in
+  let state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+      ~filename:provider_filename stdlib.state provider_source
+    |> expect_ok
+  in
+  Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+    ~filename:"app/protocol_marker_value.cljc" state
+    {|
+(ns app.protocol-marker-value
+  (:require [app.protocol-source :refer [Readable]]))
+(def marker Readable)
+|}
+  |> expect_error_contains "compile-time marker"
+
+let test_source_iseq_and_inext_protocols_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-sequence-protocols
+  (:require [cljs.core :as core :refer [INext ISeq]]))
+
+(defn protocol-first [value]
+  (core/ISeq/-first value))
+
+(defn protocol-rest [value]
+  (ISeq/-rest value))
+
+(defn protocol-next [value]
+  (INext/-next value))
+
+(def builtin-sequence (seq [1 2 3]))
+(println
+  (and (= 1 (protocol-first builtin-sequence))
+       (= [2 3] (vec (protocol-rest builtin-sequence)))
+       (= [2 3] (vec (protocol-next builtin-sequence)))
+       (empty? (protocol-next (seq [1])))))
+
+(deftype SourceSequence [^:seq<int> values]
+  ISeq
+  (-first [source] (first (.-values source)))
+  (-rest [source] (rest (.-values source)))
+
+  INext
+  (-next [source] (next (.-values source))))
+
+(def custom-sequence (SourceSequence. (seq [4 5 6])))
+(println
+  (and (= 4 (protocol-first custom-sequence))
+       (= [5 6] (vec (protocol-rest custom-sequence)))
+       (= [5 6] (vec (protocol-next custom-sequence)))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_sequence_protocols.cljc"
+      source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "ISeq and INext protocol dispatch must remain statically typed";
+  assert_ocaml_runs "source_iseq_and_inext_protocols_match_clojurescript"
+    "true\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_sequence_protocols.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_sequence_protocol_bad_receiver.cljc"
+    {|
+(ns app.source-sequence-protocol-bad-receiver
+  (:require [cljs.core :as core]))
+(core/ISeq/-first [1 2])
+|}
+  |> expect_error_contains "ISeq"
+
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
     {|
@@ -42740,6 +42865,10 @@ let tests =
       test_namespace_has_no_public_name_dispatch );
     ( "source core protocol surface uses typed builtin implementations",
       test_source_core_protocol_surface_uses_typed_builtin_implementations );
+    ( "source protocol names can be referred across namespaces",
+      test_source_protocol_names_can_be_referred_across_namespaces );
+    ( "source ISeq and INext protocols match ClojureScript",
+      test_source_iseq_and_inext_protocols_match_clojurescript );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

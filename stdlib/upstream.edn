@@ -163,12 +163,12 @@
             :reason :same-static-receiver-result-across-arrays-and-cljs-collection-types-needs-a-clone-capability-witness}
     -invoke {:status :blocked-static-typing
              :reason :upstream-ifn-exposes-zero-through-twenty-one-and-variadic-arities-not-representable-by-one-static-protocol-method}
-    -first {:status :blocked-static-typing
-            :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
-    -rest {:status :blocked-static-typing
-           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
-    -next {:status :blocked-static-typing
-           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
+    -first {:status :static-adaptation
+            :reason :source-iseq-protocol-uses-a-static-option-element-result-and-a-typed-seq-receiver-witness}
+    -rest {:status :static-adaptation
+           :reason :source-iseq-protocol-uses-a-static-sequence-result-and-a-typed-seq-receiver-witness}
+    -next {:status :static-adaptation
+           :reason :source-inext-protocol-uses-the-static-empty-aware-next-sequence-result-and-a-typed-seq-receiver-witness}
     -drop {:status :blocked-static-typing
            :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
     -key {:status :blocked-static-typing
