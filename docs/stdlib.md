@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 602 source entries (61.12%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 167 static-typing blockers,
+macro surfaces. The current baseline is 603 source entries (61.22%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 166 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -535,8 +535,12 @@ compiler/runtime boundary.
 The current `read-string` source wrapper supports the ordinary one-argument
 entry point. Its upstream options-map arity and the stream-oriented `read`
 overloads remain explicit blockers until reader/default/eof options have a
-closed static source domain. Timestamp validation is blocked on typed regex
-capture groups, while `parse-timestamp` remains a JavaScript `Date` boundary.
+closed static source domain. `parse-and-validate-timestamp` now preserves the
+pinned ClojureScript defaults, leap-year rules, fractional-millisecond
+normalization, range errors, and offset calculation in source. A narrow typed
+runtime matcher exposes only `option<list<option<string>>>` captures for the
+fixed upstream timestamp regex; no dynamic capture vector crosses the
+boundary. `parse-timestamp` remains a JavaScript `Date` boundary.
 
 At the current checkpoint, the Logseq tree requires
 `clojure.string` 391 times,

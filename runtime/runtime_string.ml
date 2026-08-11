@@ -202,6 +202,12 @@ let regex_matches_groups expression source =
   Lg_edn_backend.regex_matches_groups_with_flags ~pattern ~flags source
   |> Option.map regex_captures
 
+let timestamp_pattern =
+  regex
+    "(\\d\\d\\d\\d)(?:-(\\d\\d)(?:-(\\d\\d)(?:[T](\\d\\d)(?::(\\d\\d)(?::(\\d\\d)(?:[.](\\d+))?)?)?)?)?)?(?:[Z]|([-+])(\\d\\d):(\\d\\d))?"
+
+let timestamp_captures source = regex_matches_groups timestamp_pattern source
+
 let escape_regex_literal source =
   let buffer = Buffer.create (String.length source) in
   String.iter

@@ -1,6 +1,6 @@
 (ns source-core-additions-app
   (:require [cljs.core :as core :refer [NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
-            [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser!]]
+            [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser! parse-and-validate-timestamp]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
             [clojure.walk :as walk :refer [keywordize-keys postwalk-replace prewalk-replace stringify-keys]]
@@ -1185,3 +1185,27 @@
 (println (= #{1 2} (clojure.core/into #{1} [2])))
 (def collect-into into)
 (println (= [1 2 3] (collect-into [1] [2 3])))
+
+(defn invalid-reader-timestamp? [source]
+  (try
+    (do (reader/parse-and-validate-timestamp source) false)
+    (catch _ true)))
+
+(println (= [2020 1 1 0 0 0 0 0]
+            (reader/parse-and-validate-timestamp "2020")))
+(println (= [2020 2 29 23 59 60 123 0]
+            (parse-and-validate-timestamp "2020-02-29T23:59:60.1234Z")))
+(println (= [2019 12 31 4 5 6 100 150]
+            (cljs.reader/parse-and-validate-timestamp
+             "2019-12-31T04:05:06.1+02:30")))
+(println (= [2019 12 31 4 5 6 7 -195]
+            (reader/parse-and-validate-timestamp
+             "2019-12-31T04:05:06.007-03:15")))
+(println (= [2020 1 1 0 0 0 0 6039]
+            (reader/parse-and-validate-timestamp "2020+99:99")))
+(println (invalid-reader-timestamp? "not-a-timestamp"))
+(println (invalid-reader-timestamp? "2020-13"))
+(println (invalid-reader-timestamp? "2019-02-29"))
+(println (invalid-reader-timestamp? "2020-01-01T24"))
+(println (invalid-reader-timestamp? "2020-01-01T23:60"))
+(println (invalid-reader-timestamp? "2020-01-01T23:58:60"))

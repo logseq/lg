@@ -5264,6 +5264,63 @@ let test_cljs_reader_registered_tag_parsers_affect_read_string () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/cljs_reader_tags.cljc" source)
 
+let test_cljs_reader_timestamp_validation_matches_clojurescript () =
+  let source =
+    {|
+(ns app.reader-timestamp
+  (:require [cljs.reader :as reader :refer [parse-and-validate-timestamp]]))
+
+(defn invalid-timestamp? [source]
+  (try
+    (do (reader/parse-and-validate-timestamp source) false)
+    (catch _ true)))
+
+(println (= [2020 1 1 0 0 0 0 0]
+            (reader/parse-and-validate-timestamp "2020")))
+(println (= [2020 2 29 23 59 60 123 0]
+            (parse-and-validate-timestamp "2020-02-29T23:59:60.1234Z")))
+(println (= [2019 12 31 4 5 6 100 150]
+            (cljs.reader/parse-and-validate-timestamp
+              "2019-12-31T04:05:06.1+02:30")))
+(println (= [2019 12 31 4 5 6 7 -195]
+            (reader/parse-and-validate-timestamp
+              "2019-12-31T04:05:06.007-03:15")))
+(println (= [2020 1 1 0 0 0 0 6039]
+            (reader/parse-and-validate-timestamp "2020+99:99")))
+(println (invalid-timestamp? "not-a-timestamp"))
+(println (invalid-timestamp? "2020-13"))
+(println (invalid-timestamp? "2019-02-29"))
+(println (invalid-timestamp? "2020-01-01T24"))
+(println (invalid-timestamp? "2020-01-01T23:60"))
+(println (invalid-timestamp? "2020-01-01T23:58:60"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/cljs_reader_timestamp.cljc" source
+  in
+  assert_ocaml_runs "cljs_reader_timestamp_validation_matches_clojurescript"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/cljs_reader_timestamp.cljc"
+       source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/cljs_reader_timestamp_bad_arity.cljc"
+    {|
+(ns app.reader-timestamp-bad-arity
+  (:require [cljs.reader :as reader]))
+(reader/parse-and-validate-timestamp)
+|}
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/cljs_reader_timestamp_bad_type.cljc"
+    {|
+(ns app.reader-timestamp-bad-type
+  (:require [cljs.reader :as reader]))
+(reader/parse-and-validate-timestamp 2020)
+|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_clojure_edn_read_string_rejects_invalid_collections () =
   let source =
     {|
@@ -41169,6 +41226,8 @@ let tests =
       test_external_overloaded_functions_require_a_static_wrapper );
     ( "cljs.reader registered tag parsers affect read-string",
       test_cljs_reader_registered_tag_parsers_affect_read_string );
+    ( "cljs.reader timestamp validation matches ClojureScript",
+      test_cljs_reader_timestamp_validation_matches_clojurescript );
     ( "clojure.edn read-string rejects invalid collections",
       test_clojure_edn_read_string_rejects_invalid_collections );
     ( "clojure.edn read-string supports symbolic numbers",

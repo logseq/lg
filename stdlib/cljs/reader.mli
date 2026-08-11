@@ -3,6 +3,9 @@
 (signature cljs.reader/read-string
   :fn<string;Lg_edn_backend.t>)
 
+(signature cljs.reader/parse-and-validate-timestamp
+  :fn<string;vector<int>>)
+
 (signature cljs.reader/register-tag-parser! [reader]
   :fn<symbol;fn<Lg_edn_backend.t;Lg_edn_backend.t>;option<fn<Lg_edn_backend.t;Lg_edn_backend.t>>>)
 

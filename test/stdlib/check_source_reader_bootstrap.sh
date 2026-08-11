@@ -20,7 +20,8 @@ if grep -F '"read-string"' "$root/src/core_edn.ml" >/dev/null; then
 fi
 
 for name in register-tag-parser! deregister-tag-parser! \
-  register-default-tag-parser! deregister-default-tag-parser!; do
+  register-default-tag-parser! deregister-default-tag-parser! \
+  parse-and-validate-timestamp; do
   if ! grep -F "(defn $name" "$root/stdlib/cljs/reader.cljc" >/dev/null; then
     echo "cljs.reader/$name is not source-defined" >&2
     exit 1
@@ -61,8 +62,8 @@ assert_status() {
   fi
 }
 
-assert_status cljs.reader/parse-and-validate-timestamp blocked-static-typing \
-  regex-capture-dependent-optional-string-groups-are-not-exposed-by-the-static-regex-boundary
+assert_status cljs.reader/parse-and-validate-timestamp source \
+  source-port-preserves-upstream-validation-and-offset-control-flow-over-a-narrow-static-homogeneous-regex-capture-boundary
 assert_status cljs.reader/parse-timestamp host-boundary \
   returns-a-javascript-date-which-has-no-shared-native-source-representation
 assert_status cljs.reader/read blocked-static-typing \

@@ -1312,8 +1312,8 @@
                                   :reason :source-wrapper-preserves-previous-default-return-and-restores-the-public-symbol-tag-before-calling-the-closed-edn-source-callback}
     deregister-default-tag-parser! {:status :static-adaptation
                                     :reason :source-wrapper-preserves-previous-default-return-and-clears-the-runtime-registration}
-    parse-and-validate-timestamp {:status :blocked-static-typing
-                                  :reason :regex-capture-dependent-optional-string-groups-are-not-exposed-by-the-static-regex-boundary}
+    parse-and-validate-timestamp {:status :static-adaptation
+                                  :reason :source-port-preserves-upstream-validation-and-offset-control-flow-over-a-narrow-static-homogeneous-regex-capture-boundary}
     parse-timestamp {:status :host-boundary
                      :reason :returns-a-javascript-date-which-has-no-shared-native-source-representation}
     read {:status :blocked-static-typing
