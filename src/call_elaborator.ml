@@ -12138,13 +12138,28 @@ let create ~compile_expr =
                                         | Some argument -> argument.ty
                                         | None ->
                                             Types.dynamic_constraint TUnknown)
-                                    | _, TFn (_, TUnknown) ->
-                                        Protocol.common_method_return env
-                                          protocol_id method_name
+                                    | _,
+                                      TFn
+                                        ( parameters,
+                                          ((TUnknown | TMeta _ | TVar _) as declared) ) ->
+                                        let inferred =
+                                          Protocol.common_method_return_for_arity
+                                            env protocol_id method_name
+                                            {
+                                              fixed_params = parameters;
+                                              rest_param = None;
+                                              return_ty = TUnknown;
+                                            }
+                                        in
+                                        inferred
                                         |> Option.value
                                              ~default:
-                                               (Types.dynamic_constraint
-                                                  TUnknown)
+                                               (match declared with
+                                               | TMeta _ | TVar _ -> declared
+                                               | TUnknown ->
+                                                   Types.dynamic_constraint
+                                                     TUnknown
+                                               | _ -> assert false)
                                     | _, TFn (_, return_ty) -> return_ty
                                     | _ -> TUnknown
                                   in

@@ -218,15 +218,30 @@ let satisfied_protocols env receiver_ty =
          else None)
 
 let constraint_type_for_id env protocol_id =
-      Protocol_registry.find_protocol protocol_id (Env.protocols env)
-      |> Option.map (fun (declaration : Protocol_registry.declaration) ->
-             let method_types =
-               declaration.methods
-               |> Protocol_registry.Method_map.bindings
-               |> List.map (fun (_, (signature : Protocol_registry.method_signature)) ->
-                      signature.method_ty)
-             in
-             Types.protocol_constraint protocol_id method_types TUnknown)
+  let freshen_open_returns = function
+    | TFn (parameters, (TUnknown | TMeta _)) ->
+        TFn (parameters, Type_solver.fresh ())
+    | TOverloaded_fn arities ->
+        TOverloaded_fn
+          (List.map
+             (fun (arity : fn_arity) ->
+               match arity.return_ty with
+               | TUnknown | TMeta _ ->
+                   { arity with return_ty = Type_solver.fresh () }
+               | _ -> arity)
+             arities)
+    | ty -> ty
+  in
+  Protocol_registry.find_protocol protocol_id (Env.protocols env)
+  |> Option.map (fun (declaration : Protocol_registry.declaration) ->
+         let method_types =
+           declaration.methods
+           |> Protocol_registry.Method_map.bindings
+           |> List.map
+                (fun (_, (signature : Protocol_registry.method_signature)) ->
+                  freshen_open_returns signature.method_ty)
+         in
+         Types.protocol_constraint protocol_id method_types TUnknown)
 
 let instantiate_receiver_binding receiver_ty (implementation : binding) =
   {
@@ -480,6 +495,44 @@ let common_method_return env protocol_id method_name =
               merge_method_return_types env merged return_ty))
         (Some first) rest
 
+let common_method_return_for_arity env protocol_id method_name
+    (target : fn_arity) =
+  let method_id = method_id protocol_id method_name in
+  let registry =
+    Compiler_environment.protocol_evidence env
+    |> Option.value ~default:(Env.protocols env)
+  in
+  let same_arity (arity : fn_arity) =
+    List.length arity.fixed_params = List.length target.fixed_params
+    && Option.is_some arity.rest_param = Option.is_some target.rest_param
+  in
+  let return_types =
+    Protocol_registry.implementations_for_method protocol_id method_id registry
+    |> List.filter_map (fun (implementation : binding) ->
+           match implementation.ty with
+           | TOverloaded_fn arities ->
+               arities
+               |> List.find_opt same_arity
+               |> Option.map (fun arity -> arity.return_ty)
+           | TFn (parameters, return_ty)
+             when Option.is_none target.rest_param
+                  && List.length parameters
+                     = List.length target.fixed_params ->
+               Some return_ty
+           | _ -> None)
+    |> List.filter (fun return_ty ->
+           not (Types.equal return_ty TUnknown))
+    |> List.map stable_method_return_type
+  in
+  match return_types with
+  | [] -> None
+  | first :: rest ->
+      List.fold_left
+        (fun merged return_ty ->
+          Option.bind merged (fun merged ->
+              merge_method_return_types env merged return_ty))
+        (Some first) rest
+
 let has_self_returning_method env protocol_id =
   let returns_self = function
     | TFn (_, TVar "__lg_protocol_self") -> true
@@ -500,7 +553,7 @@ let has_self_returning_method env protocol_id =
 let refine_marker_signature env protocol_id target_method_id
     (signature : Protocol_registry.method_signature) =
   let registry = Env.protocols env in
-  let refine_arity use_common_return (arity : fn_arity) =
+  let refine_arity ?overloaded_arity use_common_return (arity : fn_arity) =
     let fixed_params =
       List.map
         (function TUnknown -> Type_solver.fresh () | ty -> ty)
@@ -513,8 +566,13 @@ let refine_marker_signature env protocol_id target_method_id
           | receiver :: _ -> receiver
           | [] -> Type_solver.fresh ())
       | TUnknown | TMeta _ when use_common_return ->
-          common_method_return env protocol_id
-            (Method_id.name target_method_id)
+          (match overloaded_arity with
+          | Some target ->
+              common_method_return_for_arity env protocol_id
+                (Method_id.name target_method_id) target
+          | None ->
+              common_method_return env protocol_id
+                (Method_id.name target_method_id))
           |> Option.value ~default:(Type_solver.fresh ())
       | TUnknown | TMeta _ -> Type_solver.fresh ()
       | ty -> ty
@@ -530,7 +588,11 @@ let refine_marker_signature env protocol_id target_method_id
         in
         TFn (arity.fixed_params, arity.return_ty)
     | TOverloaded_fn arities ->
-        TOverloaded_fn (List.map (refine_arity false) arities)
+        TOverloaded_fn
+          (List.map
+             (fun arity ->
+               refine_arity ~overloaded_arity:arity true arity)
+             arities)
     | ty -> ty
   in
   let first_receiver = function
@@ -702,6 +764,10 @@ let common_method_returns env protocol_id =
       |> List.map (fun (method_id, _) ->
              common_method_return env protocol_id (Method_id.name method_id))
 
+let common_overloaded_method_return env protocol_id method_id arity =
+  common_method_return_for_arity env protocol_id (Method_id.name method_id)
+    arity
+
 let common_method_parameters env protocol_id method_id =
   let registry =
     Compiler_environment.protocol_evidence env
@@ -782,7 +848,9 @@ let refine_constraint_methods env ty =
             let methods =
               List.map2
                 (fun method_ty
-                     ((inferred_parameters, inferred_return), declared_return_is_open)
+                     ( (method_id, _),
+                       ( (inferred_parameters, inferred_return),
+                         declared_return_is_open ) )
                    ->
                   match method_ty with
                   | TFn (receiver :: existing_parameters, existing_return)
@@ -832,10 +900,34 @@ let refine_constraint_methods env ty =
                               merge_method_return_types env existing inferred
                               |> Option.value ~default:existing )
                       | _, return_ty, _ -> TFn (params, return_ty))
+                  | TOverloaded_fn arities ->
+                      TOverloaded_fn
+                        (List.map
+                           (fun (arity : fn_arity) ->
+                             let existing_return =
+                               stable_method_return_type arity.return_ty
+                             in
+                             let return_ty =
+                               match
+                                 common_overloaded_method_return env protocol_id
+                                   method_id arity
+                               with
+                               | Some inferred -> (
+                                   match existing_return with
+                                   | TUnknown | TMeta _ -> inferred
+                                   | existing ->
+                                       merge_method_return_types env existing
+                                         inferred
+                                       |> Option.value ~default:existing)
+                               | None -> existing_return
+                             in
+                             { arity with return_ty })
+                           arities)
                   | _ -> method_ty)
                 methods
-                (List.combine (List.combine parameters returns)
-                   declared_returns_are_open)
+                (List.combine declaration_methods
+                   (List.combine (List.combine parameters returns)
+                      declared_returns_are_open))
             in
             Types.protocol_constraint protocol_id methods value_ty)
 
@@ -847,17 +939,40 @@ let constraint_return_substitutions env substitutions ty =
       | None -> substitutions
       | Some methods ->
           let returns = common_method_returns env protocol_id in
-          if List.length methods <> List.length returns then substitutions
+          let declaration_methods =
+            Protocol_registry.find_protocol protocol_id (Env.protocols env)
+            |> Option.map (fun (declaration : Protocol_registry.declaration) ->
+                   Protocol_registry.Method_map.bindings declaration.methods)
+            |> Option.value ~default:[]
+          in
+          if
+            List.length methods <> List.length returns
+            || List.length methods <> List.length declaration_methods
+          then substitutions
           else
             List.fold_left2
-              (fun substitutions method_ty return_ty ->
+              (fun substitutions method_ty ((method_id, _), return_ty) ->
                 match (method_ty, return_ty) with
                 | TFn (_, existing_return), Some inferred_return ->
                     Type_solver.unify substitutions existing_return
                       inferred_return
                     |> Result.value ~default:substitutions
+                | TOverloaded_fn arities, _ ->
+                    List.fold_left
+                      (fun substitutions (arity : fn_arity) ->
+                        match
+                          common_overloaded_method_return env protocol_id
+                            method_id arity
+                        with
+                        | Some inferred_return ->
+                            Type_solver.unify substitutions arity.return_ty
+                              inferred_return
+                            |> Result.value ~default:substitutions
+                        | None -> substitutions)
+                      substitutions arities
                 | _, (Some _ | None) -> substitutions)
-              substitutions methods returns)
+              substitutions methods
+              (List.combine declaration_methods returns))
 
 let refine_deferred_type env = function
   | TFn (parameters, _) as ty ->
@@ -876,34 +991,9 @@ let refine_deferred_type env = function
   | ty -> ty
 
 let refine_source_function_type env ty =
-  let rec is_sequence_boundary = function
-    | TSeq _ -> true
-    | TNullable return_ty -> is_sequence_boundary return_ty
-    | _ -> false
-  in
-  let method_has_sequence_return = function
-    | TFn (_, return_ty) ->
-        is_sequence_boundary (stable_method_return_type return_ty)
-    | TOverloaded_fn arities ->
-        List.exists
-          (fun (arity : fn_arity) ->
-            is_sequence_boundary
-              (stable_method_return_type arity.return_ty))
-          arities
-    | _ -> false
-  in
   let rec constraint_needs_stabilization parameter_ty =
     match Types.protocol_constraint_info parameter_ty with
-    | Some (protocol_id, witness_ty, _) -> (
-        match Types.protocol_witness_method_types witness_ty with
-        | Some methods ->
-            let returns = common_method_returns env protocol_id in
-            List.exists method_has_sequence_return methods
-            || (List.length methods = List.length returns
-               && List.exists
-                    (Option.fold ~none:false ~some:is_sequence_boundary)
-                    returns)
-        | None -> false)
+    | Some _ -> true
     | None -> (
         match parameter_ty with
         | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
