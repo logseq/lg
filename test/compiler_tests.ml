@@ -19266,6 +19266,33 @@ let test_protocol_methods_merge_concrete_static_sequence_returns () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_protocol_sequence_returns_support_ordinary_core_calls () =
+  let source =
+    {|
+(defprotocol Items
+  (-items [source]))
+(deftype Item [^int value])
+(defrecord DirectSource [^:vector<Item> items]
+  Items
+  (-items [source]
+    (map (fn [item] item) (:items source))))
+(defn describe-items [source]
+  (let [items (conj (vec (-items source)) (Item. 9))]
+    (str
+      (count items)
+      ":"
+      (apply str
+        (map (fn [^Item item] (.-value item)) items)))))
+(println (describe-items (DirectSource. [(Item. 4) (Item. 2)])))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_sequence_returns_support_ordinary_core_calls" "3:429\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_recursive_protocol_sequence_returns_remain_concrete () =
   let source =
     {|
@@ -44754,6 +44781,8 @@ let tests =
       test_apply_pr_accepts_refined_protocol_sequences );
     ( "protocol methods merge concrete static sequence returns",
       test_protocol_methods_merge_concrete_static_sequence_returns );
+    ( "protocol sequence returns support ordinary core calls",
+      test_protocol_sequence_returns_support_ordinary_core_calls );
     ( "recursive protocol sequence returns remain concrete",
       test_recursive_protocol_sequence_returns_remain_concrete );
     ( "recursive protocol vectors keep static protocol elements",

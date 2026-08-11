@@ -508,6 +508,10 @@ let deferred_value_type env (expr : Types.typed_expr) =
     (Protocol.refine_deferred_type env expr.ty)
     expr.semantic_expr
 
+let preserves_required_seqable_protocol_result (expr : Types.typed_expr) =
+  Semantic_ir.exists_identifier (String.equal "__lg_seqable_value")
+    expr.semantic_expr
+
 let located_value_pattern form pattern =
   match Source_context.find form with
   | None -> pattern
@@ -3022,8 +3026,14 @@ let rec compile scope env next_type form =
           | Ok () -> (
               match expr.ty with
               | TFn _ ->
+                  let published_ty =
+                    if preserves_required_seqable_protocol_result expr then
+                      expr.ty
+                    else Protocol.refine_source_function_type env expr.ty
+                  in
                   let binding =
-                    binding_of_expr ~row_param_types ocaml_name expr
+                    binding_of_expr ~row_param_types ocaml_name
+                      { expr with ty = published_ty }
                   in
                   let type_items =
                     return_type_items @ local_type_items

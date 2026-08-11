@@ -410,6 +410,14 @@ let rec merge_method_return_types env left right =
   | left, right when Types.equal left right -> Some left
   | left, right when Types.is_dynamic left || Types.is_dynamic right ->
       Some (Types.dynamic_constraint Types.TUnknown)
+  | Types.TNullable left, Types.TNullable right ->
+      Option.map
+        (fun value -> Types.TNullable value)
+        (merge_method_return_types env left right)
+  | Types.TNullable left, right | right, Types.TNullable left ->
+      Option.map
+        (fun value -> Types.TNullable value)
+        (merge_method_return_types env left right)
   | Types.TSeq left, Types.TSeq right ->
       Option.map
         (fun element -> Types.TSeq element)
@@ -437,6 +445,18 @@ let rec merge_method_return_types env left right =
             (merge_method_return_types env left right)
       | None, _ | _, None -> None)
 
+let rec stable_method_return_type = function
+  | Types.TNullable return_ty ->
+      Types.TNullable (stable_method_return_type return_ty)
+  | Types.TOcaml_app (name, [ element_ty; _ ])
+    when name = Types.seqable_constraint_name ->
+      Types.TSeq element_ty
+  | Types.TOcaml_app (name, [ element_ty; _ ])
+    when name = Types.optional_seqable_constraint_name
+         || name = Types.optional_sequential_constraint_name ->
+      Types.TNullable (Types.TSeq element_ty)
+  | return_ty -> return_ty
+
 let common_method_return env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
   let registry =
@@ -448,7 +468,7 @@ let common_method_return env protocol_id method_name =
     |> List.filter_map (fun (implementation : binding) ->
            match implementation.ty with
            | TFn (_, return_ty) when not (Types.equal return_ty TUnknown) ->
-               Some return_ty
+               Some (stable_method_return_type return_ty)
            | _ -> None)
   in
   match return_types with
@@ -735,23 +755,35 @@ let refine_constraint_methods env ty =
       | None -> ty
       | Some methods ->
           let returns = common_method_returns env protocol_id in
-          let parameters =
+          let declaration_methods =
             Protocol_registry.find_protocol protocol_id (Env.protocols env)
             |> Option.map (fun (declaration : Protocol_registry.declaration) ->
-                   declaration.methods
-                   |> Protocol_registry.Method_map.bindings
-                   |> List.map (fun (method_id, _) ->
-                          common_method_parameters env protocol_id method_id))
+                   Protocol_registry.Method_map.bindings declaration.methods)
             |> Option.value ~default:[]
+          in
+          let parameters =
+            declaration_methods
+            |> List.map (fun (method_id, _) ->
+                   common_method_parameters env protocol_id method_id)
+          in
+          let declared_returns_are_open =
+            declaration_methods
+            |> List.map (fun (_, signature) ->
+                   match signature.Protocol_registry.method_ty with
+                   | TFn (_, (TUnknown | TMeta _)) -> true
+                   | _ -> false)
           in
           if
             List.length methods <> List.length returns
             || List.length methods <> List.length parameters
+            || List.length methods <> List.length declared_returns_are_open
           then ty
           else
             let methods =
               List.map2
-                (fun method_ty (inferred_parameters, inferred_return) ->
+                (fun method_ty
+                     ((inferred_parameters, inferred_return), declared_return_is_open)
+                   ->
                   match method_ty with
                   | TFn (receiver :: existing_parameters, existing_return)
                     when List.length existing_parameters
@@ -765,18 +797,45 @@ let refine_constraint_methods env ty =
                             | existing, _ -> existing)
                           existing_parameters inferred_parameters
                       in
+                      let existing_return =
+                        stable_method_return_type existing_return
+                      in
                       let return_ty =
-                        match (existing_return, inferred_return) with
-                        | (TUnknown | TMeta _), Some inferred -> inferred
-                        | existing, _ -> existing
+                        match
+                          ( declared_return_is_open,
+                            existing_return,
+                            inferred_return )
+                        with
+                        | true, _, Some inferred -> inferred
+                        | _, (TUnknown | TMeta _), Some inferred -> inferred
+                        | _, existing, Some inferred ->
+                            merge_method_return_types env existing inferred
+                            |> Option.value ~default:existing
+                        | _, existing, _ -> existing
                       in
                       TFn (receiver :: parameters, return_ty)
-                  | TFn (params, (TUnknown | TMeta _)) -> (
-                      match inferred_return with
-                      | Some return_ty -> TFn (params, return_ty)
-                      | None -> method_ty)
+                  | TFn (params, existing_return) -> (
+                      let existing_return =
+                        stable_method_return_type existing_return
+                      in
+                      match
+                        ( declared_return_is_open,
+                          existing_return,
+                          inferred_return )
+                      with
+                      | true, _, Some return_ty
+                      | _, (TUnknown | TMeta _), Some return_ty ->
+                          TFn (params, return_ty)
+                      | _, existing, Some inferred ->
+                          TFn
+                            ( params,
+                              merge_method_return_types env existing inferred
+                              |> Option.value ~default:existing )
+                      | _, return_ty, _ -> TFn (params, return_ty))
                   | _ -> method_ty)
-                methods (List.combine parameters returns)
+                methods
+                (List.combine (List.combine parameters returns)
+                   declared_returns_are_open)
             in
             Types.protocol_constraint protocol_id methods value_ty)
 
@@ -815,6 +874,47 @@ let refine_deferred_type env = function
               return_ty )
       | _ -> assert false)
   | ty -> ty
+
+let refine_source_function_type env ty =
+  let rec is_sequence_boundary = function
+    | TSeq _ -> true
+    | TNullable return_ty -> is_sequence_boundary return_ty
+    | _ -> false
+  in
+  let method_has_sequence_return = function
+    | TFn (_, return_ty) ->
+        is_sequence_boundary (stable_method_return_type return_ty)
+    | TOverloaded_fn arities ->
+        List.exists
+          (fun (arity : fn_arity) ->
+            is_sequence_boundary
+              (stable_method_return_type arity.return_ty))
+          arities
+    | _ -> false
+  in
+  let rec constraint_needs_stabilization parameter_ty =
+    match Types.protocol_constraint_info parameter_ty with
+    | Some (protocol_id, witness_ty, _) -> (
+        match Types.protocol_witness_method_types witness_ty with
+        | Some methods ->
+            let returns = common_method_returns env protocol_id in
+            List.exists method_has_sequence_return methods
+            || (List.length methods = List.length returns
+               && List.exists
+                    (Option.fold ~none:false ~some:is_sequence_boundary)
+                    returns)
+        | None -> false)
+    | None -> (
+        match parameter_ty with
+        | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+            constraint_needs_stabilization value_ty
+        | _ -> false)
+  in
+  match ty with
+  | TFn (parameters, _)
+    when List.exists constraint_needs_stabilization parameters ->
+      refine_deferred_type env ty
+  | _ -> ty
 
 let common_method_return_param_index env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
