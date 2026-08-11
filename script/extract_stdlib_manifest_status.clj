@@ -25,6 +25,19 @@
     (System/exit 2))
   (let [manifest (-> path io/file slurp edn/read-string)]
     (doseq [[namespace entry] (sort-by (comp str key) (:namespaces manifest))]
+      (println
+       (str "namespace-ownership\t" namespace "\t"
+            (if (:implementation entry)
+              (if (:primitive-boundary entry)
+                "source-with-primitive-boundary"
+                "source")
+              "manifest-only")
+            "\t"
+            (if (:implementation entry)
+              (if (:primitive-boundary entry)
+                "precompiled-lg-source-with-explicit-typed-or-host-boundary"
+                "precompiled-lg-source")
+              (reason entry))))
       (let [status (or (classification (:status entry))
                        (when (:implementation entry) "source-aggregate"))]
         (when status

@@ -272,6 +272,35 @@ awk -F '\t' '
   $1 == "namespace" && $3 == "compiler-owned" {found = 1}
   END {exit found}
 ' "$tmp/inventory.tsv"
+awk -F '\t' '
+  $1 == "namespace" &&
+  (($2 == "cljs.math" && $3 == "source-with-primitive-boundary") ||
+   ($2 == "cljs.cache" && $3 == "source-with-primitive-boundary") ||
+   ($2 == "clojure.core.protocols" && $3 == "source")) {found[$2] = 1}
+  END {
+    exit !(found["cljs.math"] && found["cljs.cache"] &&
+           found["clojure.core.protocols"])
+  }
+' "$tmp/inventory.tsv"
+manifest_namespace_count=$(awk -F '\t' '$1 == "namespace" {count++} END {print count + 0}' \
+  "$tmp/manifest-status.tsv")
+inventory_namespace_count=$(awk -F '\t' '$1 == "namespace" {count++} END {print count + 0}' \
+  "$tmp/inventory.tsv")
+if test "$inventory_namespace_count" -ne "$((manifest_namespace_count + 1))"; then
+  echo "inventory must cover every manifest namespace plus the cljs.core alias" >&2
+  exit 1
+fi
+awk -F '\t' '
+  FNR == NR && $1 == "namespace" {required[$2] = 1; next}
+  $1 == "namespace" {delete required[$2]}
+  END {
+    for (namespace in required) {
+      print "manifest namespace missing from inventory: " namespace > "/dev/stderr"
+      failed = 1
+    }
+    exit failed
+  }
+' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
 
 awk -F '\t' '
   ($1 == "logseq-namespace-status" ||

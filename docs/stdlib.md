@@ -219,14 +219,14 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 708 source entries (71.88%), zero typed
-primitives, 46 special forms, 88 host boundaries, 92 static-typing blockers,
+macro surfaces. The current baseline is 710 source entries (72.08%), zero typed
+primitives, 46 special forms, 87 host boundaries, 91 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
 
 The printing entry-point cluster is source-owned. `str`, `pr-str`, `pr-str*`,
-`print-str`, `println-str`, `prn-str`, `print`, `println`, and `prn` retain
+`print-str`, `println-str`, `prn-str`, `pr`, `print`, `println`, and `prn` retain
 their zero, one, and variadic public shapes. Direct calls expand through source
 inline definitions so heterogeneous arguments keep independent display and
 readable printer witnesses; first-class calls use the homogeneous static
@@ -1228,3 +1228,13 @@ identifies the two automatic-refer namespace names, but supplies no public
 bindings or qualified-member implementations. This distinction prevents the
 automatic core environment rule from being mistaken for compiler ownership of
 the standard-library namespace.
+
+Namespace ownership rows are generated from `stdlib/upstream.edn`, not from a
+second namespace list in the audit script. Every manifest namespace therefore
+appears in the inventory, and `cljs.core` is added as the documented automatic
+alias of the `clojure.core` implementation. The manifest's explicit
+`:primitive-boundary` marker distinguishes pure aggregate source namespaces
+from source namespaces that call a typed or host primitive. CI compares the
+manifest and inventory namespace counts, so adding `cljs.math`, `cljs.cache`,
+`clojure.core.protocols`, or a future aggregate namespace cannot silently omit
+it from the audit.

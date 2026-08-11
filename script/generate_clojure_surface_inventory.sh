@@ -418,33 +418,20 @@ if test -n "$clojurescript_root"; then
     | LC_ALL=C sort -t '	' -k2,2 -k3,3
 fi
 
-for namespace in \
-  clojure.core cljs.core clojure.data clojure.edn cljs.reader clojure.string \
-  clojure.set clojure.walk cljs.pprint cljs.test cljs.spec.alpha clojure.zip \
-  clojure.test clojure.spec.alpha clojure.pprint; do
-  ownership=manifest-only
-  if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
-    ownership=source-with-primitive-boundary
-  elif test "$namespace" = clojure.string \
-    || test "$namespace" = clojure.edn \
-    || test "$namespace" = cljs.reader \
-    || test "$namespace" = cljs.pprint \
-    || test "$namespace" = clojure.data \
-    || test "$namespace" = clojure.walk \
-    || test "$namespace" = clojure.zip; then
-    ownership=source-with-primitive-boundary
-  elif test "$namespace" = clojure.set; then
-    ownership=source
-  elif test "$namespace" = cljs.test; then
-    ownership=source
-  elif grep -F "\"$namespace\"" "$core_namespaces" >/dev/null; then
-    ownership=compiler-owned
-  fi
-  printf 'namespace\t%s\t%s\n' "$namespace" "$ownership"
-  if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
-    printf 'namespace-bootstrap\t%s\tautomatic-core-refer\n' "$namespace"
-  fi
-done
+awk -F '\t' '$1 == "namespace-ownership" {
+  print "namespace\t" $2 "\t" $3
+}' "$tmp/manifest-status"
+
+core_ownership=$(awk -F '\t' '
+  $1 == "namespace-ownership" && $2 == "clojure.core" {print $3}
+' "$tmp/manifest-status")
+if test -z "$core_ownership"; then
+  echo "stdlib manifest does not classify clojure.core ownership" >&2
+  exit 1
+fi
+printf 'namespace\tcljs.core\t%s\n' "$core_ownership"
+printf 'namespace-bootstrap\tclojure.core\tautomatic-core-refer\n'
+printf 'namespace-bootstrap\tcljs.core\tautomatic-core-refer\n'
 
 while IFS='|' read -r var classification; do
   printf 'namespace-var\t%s\t%s\n' "$var" "$classification"

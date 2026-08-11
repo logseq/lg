@@ -21,6 +21,7 @@
  {clojure.core
   {:source "src/main/cljs/cljs/core.cljs"
    :implementation "clojure/core.cljc"
+   :primitive-boundary true
    :interface "clojure/core.lgi"
    :definitions
    {comment {:status :ported
@@ -1298,6 +1299,7 @@
   clojure.string
   {:source "src/main/cljs/clojure/string.cljs"
    :implementation "clojure/string.cljc"
+   :primitive-boundary true
    :interface "clojure/string.lgi"
    :definitions
    {blank? {:status :static-adaptation :reason :typed-host-string-primitive}
@@ -1336,6 +1338,7 @@
   clojure.edn
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "clojure/edn.cljc"
+   :primitive-boundary true
    :interface "clojure/edn.lgi"
    :definitions
    {read-string {:status :static-adaptation
@@ -1346,6 +1349,7 @@
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
    :implementation "cljs/reader.cljc"
+   :primitive-boundary true
    :interface "cljs/reader.lgi"
    :definitions
    {read-string {:status :static-adaptation
@@ -1368,6 +1372,7 @@
   cljs.math
   {:source "src/main/cljs/cljs/math.cljs"
    :implementation "cljs/math.cljc"
+   :primitive-boundary true
    :interface "cljs/math.lgi"
    :definitions
    {E {:status :ported}
@@ -1421,6 +1426,7 @@
   cljs.pprint
   {:source "src/main/cljs/cljs/pprint.cljs"
    :implementation "cljs/pprint.cljc"
+   :primitive-boundary true
    :status :blocked
    :reason :logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
    :definitions
@@ -1583,6 +1589,7 @@
   clojure.data
   {:source "src/main/cljs/clojure/data.cljs"
    :implementation "clojure/data.cljc"
+   :primitive-boundary true
    :interface "clojure/data.lgi"
    :definitions
   {diff {:status :static-adaptation
@@ -1595,6 +1602,7 @@
   clojure.walk
   {:source "src/main/cljs/clojure/walk.cljs"
    :implementation "clojure/walk.cljc"
+   :primitive-boundary true
    :interface "clojure/walk.lgi"
    :definitions
    {walk {:status :static-adaptation
@@ -1615,6 +1623,7 @@
   clojure.zip
   {:source "src/main/cljs/clojure/zip.cljs"
    :implementation "clojure/zip.cljc"
+   :primitive-boundary true
    :interface "clojure/zip.lgi"
    :definitions
    {zipper {:status :static-adaptation
@@ -1654,6 +1663,7 @@
   cljs.cache
   {:source "cljs-cache-0.1.4.jar!/cljs/cache.cljs"
    :implementation "cljs/cache.cljc"
+   :primitive-boundary true
    :definitions
    {CacheProtocol {:status :ported}
     lookup {:status :ported}
