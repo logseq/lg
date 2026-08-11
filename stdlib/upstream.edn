@@ -1396,7 +1396,9 @@
    :status :blocked
    :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
    :definitions
-   {empty-env {:status :static-adaptation
+   {*current-env* {:status :static-adaptation
+                   :reason :source-dynamic-var-retains-a-closed-option-test-environment-type-and-supports-static-binding-without-a-dynamic-value-domain}
+    empty-env {:status :static-adaptation
                :reason :source-function-preserves-upstream-default-and-custom-reporter-counters-and-empty-context-state-in-a-closed-static-test-environment-record-while-the-open-polymorphic-formatter-field-and-pprint-reporter-remain-blocked-on-static-printer-witnesses}
     get-current-env {:status :static-adaptation
                      :reason :source-function-preserves-upstream-current-or-fresh-default-control-flow-through-a-statically-typed-runtime-binding}

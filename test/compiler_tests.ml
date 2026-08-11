@@ -29090,6 +29090,16 @@ let test_source_cljs_test_environment_matches_clojurescript () =
 let test_cljs_test_environment_is_source_owned () =
   let root = repo_root () in
   let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  if not (string_contains_substring source "(def ^:dynamic *current-env*") then
+    failwith "cljs.test/*current-env* is not source-owned";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file (Filename.concat root path) in
+      if string_contains_substring compiler_source "\"*current-env*\"" then
+        failwith
+          ("cljs.test/*current-env* still has public-name compiler dispatch in "
+         ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ];
   List.iter
     (fun name ->
       if

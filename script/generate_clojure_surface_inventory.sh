@@ -430,6 +430,7 @@ cljs.reader/register-tag-parser!|host-boundary
 cljs.pprint/float?|source
 cljs.pprint/char-code|source
 cljs.test/empty-env|source
+cljs.test/*current-env*|source
 cljs.test/get-current-env|source
 cljs.test/set-env!|source
 cljs.test/clear-env!|source

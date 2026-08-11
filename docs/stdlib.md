@@ -902,6 +902,8 @@ environment lifecycle, report-counter updates, context rendering, `testing`,
 `is`, `are`, `try-expr`, `deftest`, `run-test`, `run-tests`, `ns?`,
 `use-fixtures`, `compose-fixtures`, `join-fixtures`, and `successful?`. The
 environment is a closed record backed by a statically typed dynamic binding;
+`*current-env*` itself is inventoried as a source var rather than inheriting the
+namespace's remaining async/report blocker.
 counters use LG's default hashmap, and `testing` preserves upstream
 push/body/finally/pop order.
 This required general `try`/`finally` support, including finally-only forms and
