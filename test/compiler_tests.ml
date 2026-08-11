@@ -3920,7 +3920,7 @@ let test_protocol_implementation_populates_typed_registry () =
     typecheck_state
       {|
 (defprotocol Labelled (label [x] :string))
-(extend-type :int Labelled (label [x] (str x)))
+(extend-type :int Labelled (label [x] (__lg_str x)))
 |}
   in
   let protocol = Lg.Protocol_id.create ~owner:[] ~name:"Labelled" in
@@ -3966,7 +3966,7 @@ let test_module_protocols_preserve_typed_registry_state () =
       {|
 (module Labels
   (defprotocol Labelled (label [x] :string))
-  (extend-type :int Labelled (label [x] (str x))))
+  (extend-type :int Labelled (label [x] (__lg_str x))))
 |}
   in
   let protocol = Lg.Protocol_id.create ~owner:[ "Labels" ] ~name:"Labelled" in
@@ -4026,7 +4026,7 @@ let test_protocol_metadata_does_not_use_encoded_symbol_keys () =
     typecheck_state
       {|
 (defprotocol Labelled (label [x] :string))
-(extend-type :int Labelled (label [x] (str x)))
+(extend-type :int Labelled (label [x] (__lg_str x)))
 |}
   in
   let encoded =
@@ -4609,7 +4609,8 @@ let test_persistent_hash_map_shares_updates_and_handles_collisions () =
 let test_semantic_ast_preserves_nested_types () =
   let expression =
     Lg.Expression_elaborator.compile_expr "" Lg.Compiler_environment.empty
-      (Lg.Ast.FList [ Lg.Ast.FSymbol "+"; Lg.Ast.FInt 1; Lg.Ast.FInt 2 ])
+      (Lg.Ast.FList
+         [ Lg.Ast.FSymbol "__lg_add"; Lg.Ast.FInt 1; Lg.Ast.FInt 2 ])
     |> expect_ok
   in
   let annotations = Lg.Semantic_ir.type_annotations expression.semantic_expr in
@@ -13000,13 +13001,17 @@ let test_user_macros_receive_call_site_namespace () =
 (namespace-scope consumer.tests)
 (require [macro.source :refer [call-site-namespace]])
 (println (call-site-namespace))
-|}
+  |}
   in
+  let stdlib = compiled_stdlib Lg.Target.Native in
   let state, provider_source =
-    Lg.Compiler.compile_chunk Lg.Compiler.empty_state provider |> expect_ok
+    Lg.Compiler.compile_chunk stdlib.state provider |> expect_ok
   in
   let _, consumer_source = Lg.Compiler.compile_chunk state consumer |> expect_ok in
-  let ocaml_source = provider_source ^ "\n" ^ consumer_source in
+  let ocaml_source =
+    String.concat "\n"
+      [ stdlib.ocaml_source; provider_source; consumer_source ]
+  in
   assert_ocaml_runs "user_macros_receive_call_site_namespace"
     "consumer.tests\n" ocaml_source
 
@@ -13889,7 +13894,7 @@ let test_parsetree_typecheck_gate_accepts_runtime_dependencies () =
 (def user {:name "Ada", :age 36})
 (def xs [1 2 3])
 (def users (__lg_hash-set user))
-(def answer (+ (__lg_count xs) (__lg_count users)))
+(def answer (__lg_add (__lg_count xs) (__lg_count users)))
 |}
   |> expect_ok
 
@@ -34596,23 +34601,22 @@ let test_closed_record_keys_preserve_common_generic_field_types () =
   CatalogInfo
   (-catalog-count [this] (:count this)))
 (defn box-item [box]
-  (+ (:item box) 0))
+  (__lg_add (:item box) 0))
 (defn validate-catalog [catalog]
   (-catalog-count catalog))
 (defn choose-box [catalog key]
   (match key
-    Left (+ (box-item (:left catalog)) (- (validate-catalog catalog) 2))
-    Right (+ (box-item (:right catalog)) (- (validate-catalog catalog) 2))
+    Left (__lg_add (box-item (:left catalog))
+                   (__lg_subtract (validate-catalog catalog) 2))
+    Right (__lg_add (box-item (:right catalog))
+                    (__lg_subtract (validate-catalog catalog) 2))
     Count -1))
 (def catalog-value
   (record catalog
     (left (record box (item 20)))
     (right (record box (item 22)))
     (count 2)))
-(println
-  (str (choose-box catalog-value Left) ":"
-       (choose-box catalog-value Right) ":"
-       (choose-box catalog-value Count)))
+(def selected-box (choose-box catalog-value Left))
 |}
   in
   let state = typecheck_state source in
@@ -34635,11 +34639,21 @@ let test_closed_record_keys_preserve_common_generic_field_types () =
         ("expected choose-box to be a function, got "
         ^ Lg.Types.source_name binding.ty)
   | None -> failwith "missing choose-box binding");
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let runtime_source =
+    source
+    ^ {|
+(println
+  (str (choose-box catalog-value Left) ":"
+       (choose-box catalog-value Right) ":"
+       (choose-box catalog-value Count)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string runtime_source |> expect_ok in
   assert_ocaml_runs "closed_record_keys_preserve_common_generic_field_types"
     "20:22:-1\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange runtime_source
+    |> expect_ok)
 
 let test_deferred_generic_protocol_parameters_compile () =
   let source =
@@ -42559,9 +42573,8 @@ let test_portable_compiler_state_rebuilds_ocaml_environment () =
       [ first.ocaml_source ]
     |> expect_ok
   in
-  ignore
-    (Lg.Compiler.compile_chunk restored {|(println (:name user))|}
-    |> expect_ok)
+  ignore (Lg.Compiler.compile_chunk restored {|(def restored-name (:name user))|}
+         |> expect_ok)
 
 let test_parsetree_backend_prints_runnable_ocaml () =
   let source =
