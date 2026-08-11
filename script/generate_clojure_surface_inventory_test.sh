@@ -45,6 +45,12 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (test/successful? {:fail 0 :error 0})
 (test/empty-env)
 (test/testing "inventory" true)
+(test/deftest inventory-test (test/is true))
+(test/are [value] (= value 1) 1)
+(test/try-expr nil true)
+(test/ns? 'example)
+(test/run-test inventory-test)
+(test/run-tests 'example)
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
@@ -338,8 +344,10 @@ awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.walk" && $3 == "s
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.pprint" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "readable-and-display-printing-require-distinct-static-printer-witnesses" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 == "cljs.test/join-fixtures" || $2 == "cljs.test/successful?") && $3 == "source" {found++} END {exit found != 3}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/get-current-env" || $2 == "cljs.test/set-env!" || $2 == "cljs.test/clear-env!" || $2 == "cljs.test/get-and-clear-env!" || $2 == "cljs.test/inc-report-counter!" || $2 == "cljs.test/testing-contexts-str" || $2 == "cljs.test/testing") && $3 == "source" {found++} END {exit found != 8}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/is" || $2 == "cljs.test/are" || $2 == "cljs.test/try-expr" || $2 == "cljs.test/deftest" || $2 == "cljs.test/run-test" || $2 == "cljs.test/run-tests" || $2 == "cljs.test/ns?") && $3 == "source" {found++} END {exit found != 7}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/testing") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "excluded-by-project-scope" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

@@ -96,6 +96,139 @@
        ~@body
        (finally (cljs.test/pop-testing-context!)))))
 
+(defprotocol ITestNamespaceValue
+  (-test-namespace-value? [value]))
+
+(extend-type :symbol
+  ITestNamespaceValue
+  (-test-namespace-value? [_value] true))
+
+(extend-type :string
+  ITestNamespaceValue
+  (-test-namespace-value? [_value] false))
+
+(defn ns?
+  "Returns `true` when `value` is a namespace symbol value."
+  [value]
+  (ITestNamespaceValue/-test-namespace-value? value))
+
+(def ^:private registered-tests
+  (atom (hash-map)))
+
+(defn- registered-test-value [name run]
+  (record registered-test
+    (registered-test-name name)
+    (registered-test-run run)))
+
+(defn- register-test!
+  "Registers synchronous test thunk `run` under `namespace` and `name`."
+  [namespace name run]
+  (let [registered (registered-test-value name run)
+        namespace-tests (get @registered-tests namespace (list))]
+    (swap! registered-tests assoc namespace (conj namespace-tests registered))
+    registered))
+
+(defn- run-registered-test!
+  "Runs `registered-test` and returns the updated test environment."
+  [registered-test]
+  (inc-report-counter! :test)
+  (try
+    ((:registered-test-run registered-test))
+    (catch _
+      (do
+        (inc-report-counter! :error)
+        false)))
+  (get-current-env))
+
+(defn- run-registered-tests!
+  "Runs synchronous tests registered for `namespaces` in definition order."
+  [namespaces]
+  (clear-env!)
+  (set-env! (empty-env))
+  (doseq [namespace namespaces
+          registered (reverse (get @registered-tests namespace (list)))]
+    (run-registered-test! registered))
+  (get-and-clear-env!))
+
+(defn- run-single-test!
+  "Runs one synchronous test thunk `run` named `name`."
+  [_name run]
+  (clear-env!)
+  (set-env! (empty-env))
+  (run-registered-test! (registered-test-value _name run))
+  (get-and-clear-env!))
+
+(defn- is-result [result]
+  (if result
+    (inc-report-counter! :pass)
+    (inc-report-counter! :fail))
+  result)
+
+(defmacro try-expr
+  "Evaluates boolean `form`, records its outcome, and catches errors."
+  [msg form]
+  `(try
+     (cljs.test/is-result ~form)
+     (catch _
+       (do
+         (cljs.test/inc-report-counter! :error)
+         false))))
+
+(defmacro is
+  "Evaluates boolean `form`, records its outcome, and returns the result."
+  ([form] `(cljs.test/is ~form nil))
+  ([form msg] `(cljs.test/try-expr ~msg ~form)))
+
+(defmacro are
+  "Checks each substitution of `argv` into `expr` with [[is]]."
+  [argv expr & args]
+  (cons 'do
+        (clojure.test/expand-are 'cljs.test/is argv expr args)))
+
+(defmacro deftest
+  "Defines and registers a synchronous test named `name`."
+  [name & body]
+  (assert (symbol? name) "deftest expects a symbol name")
+  (let [namespace (:ns &env)
+        test-name (str name)]
+    `(do
+       (defn ~name [] ~@body)
+       (cljs.test/register-test!
+        ~namespace
+        ~test-name
+        (fn []
+          (~name)
+          true)))))
+
+(defmacro run-test
+  "Runs the synchronous test named by `test-symbol` and returns its environment."
+  [test-symbol]
+  (assert (symbol? test-symbol) "run-test expects a test symbol")
+  `(cljs.test/run-single-test!
+    ~(str test-symbol)
+    (fn []
+      (~test-symbol)
+      true)))
+
+(defmacro run-tests
+  "Runs registered synchronous tests for quoted `namespaces`."
+  [& namespaces]
+  (let [namespaces (if (empty? namespaces)
+                     (list (list 'quote (:ns &env)))
+                     namespaces)]
+    (assert
+     (= (count namespaces)
+        (count
+         (filter
+          (fn [namespace]
+            (and (seq? namespace)
+                 (= 'quote (first namespace))
+                 (symbol? (second namespace))))
+          namespaces)))
+     "run-tests expects each quoted namespace argument to be a quoted namespace symbol")
+    `(cljs.test/run-registered-tests!
+      (list ~@(map (fn [namespace] (str (second namespace))) namespaces)))))
+
 (defn- default-fixture [fixture]
   (fixture))
 

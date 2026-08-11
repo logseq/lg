@@ -1394,7 +1394,7 @@
    :implementation "cljs/test.cljc"
    :interface "cljs/test.mli"
    :status :blocked
-   :reason :remaining-test-runner-and-assertion-surface-requires-analyzer-backed-macro-expansion-and-closed-report-event-sums
+   :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-async-block-fixture-registry-and-closed-report-event-capabilities
    :definitions
    {empty-env {:status :static-adaptation
                :reason :source-function-preserves-upstream-default-and-custom-reporter-counters-and-empty-context-state-in-a-closed-static-test-environment-record-while-the-open-polymorphic-formatter-field-and-pprint-reporter-remain-blocked-on-static-printer-witnesses}
@@ -1412,6 +1412,20 @@
                           :reason :source-function-preserves-upstream-outermost-to-innermost-space-joined-context-order}
     testing {:status :ported
              :reason :source-macro-preserves-upstream-push-body-finally-pop-control-flow-with-general-lg-try-finally-support}
+    is {:status :static-adaptation
+        :reason :source-macro-preserves-single-evaluation-pass-fail-error-counter-control-flow-for-statically-boolean-assertions-while-open-truthiness-special-assertion-methods-and-report-event-payloads-remain-separate-capabilities}
+    are {:status :static-adaptation
+         :reason :source-macro-preserves-upstream-template-substitution-order-and-argument-count-validation-over-the-static-boolean-is-surface}
+    try-expr {:status :static-adaptation
+              :reason :source-macro-preserves-upstream-unexpected-exception-capture-and-error-counting-while-returning-false-to-keep-the-static-boolean-result-domain-closed}
+    deftest {:status :static-adaptation
+             :reason :source-macro-defines-the-public-zero-argument-test-function-and-registers-a-homogeneous-static-synchronous-thunk-in-definition-order-instead-of-javascript-var-test-metadata}
+    run-test {:status :static-adaptation
+              :reason :source-macro-runs-one-statically-resolved-synchronous-test-with-a-fresh-environment-while-async-and-fixtures-remain-explicitly-blocked}
+    run-tests {:status :static-adaptation
+               :reason :source-macro-validates-quoted-namespaces-and-runs-their-static-synchronous-registry-in-definition-order-while-async-fixtures-hooks-and-analyzer-wide-discovery-remain-explicitly-blocked}
+    ns? {:status :static-adaptation
+         :reason :source-function-distinguishes-the-static-symbol-and-string-domains-through-a-closed-protocol-instead-of-inspecting-arbitrary-code-data}
     compose-fixtures {:status :ported}
     join-fixtures {:status :ported}
     successful? {:status :ported}}}

@@ -6,6 +6,10 @@
   (testing-contexts :list<string>)
   (reporter :keyword))
 
+(type-record registered-test
+  (registered-test-name :string)
+  (registered-test-run :fn<bool>))
+
 (signature cljs.test/*current-env*
   :option<test-env>)
 (signature cljs.test/empty-env
@@ -30,6 +34,18 @@
   :fn<string;test-env>)
 (signature cljs.test/pop-testing-context!
   :fn<test-env>)
+(signature cljs.test/registered-tests
+  :ref<map<string;list<registered-test>>>)
+(signature cljs.test/register-test!
+  :fn<string;string;fn<bool>;registered-test>)
+(signature cljs.test/run-registered-test!
+  :fn<registered-test;test-env>)
+(signature cljs.test/run-registered-tests!
+  :fn<list<string>;test-env>)
+(signature cljs.test/run-single-test!
+  :fn<string;fn<bool>;test-env>)
+(signature cljs.test/is-result
+  :fn<bool;bool>)
 
 (signature cljs.test/compose-fixtures [result]
   :fn<fn<fn<result>;result>;fn<fn<result>;result>;fn<fn<result>;result>>)

@@ -729,7 +729,7 @@ and invoke_function_definition context (definition : Macro_definition.t)
                 { context with namespace = definition.namespace; locals }
                 arity.body))
 
-and expand_are parameters expression arguments =
+and expand_are assertion_symbol parameters expression arguments =
   let rec substitute bindings = function
     | FSymbol name as form ->
         Option.value (List.assoc_opt name bindings) ~default:form
@@ -752,7 +752,7 @@ and expand_are parameters expression arguments =
   in
   match parameters with
   | [] when arguments = [] ->
-      Ok (Form (FList [ FList [ FSymbol "clojure.test/is"; expression ] ]))
+      Ok (Form (FList [ FList [ FSymbol assertion_symbol; expression ] ]))
   | [] -> Error.error "The number of args doesn't match are's argv."
   | parameters ->
       let rec expanded_assertions accumulated = function
@@ -764,13 +764,18 @@ and expand_are parameters expression arguments =
                 let assertion =
                   FList
                     [
-                      FSymbol "clojure.test/is";
+                      FSymbol assertion_symbol;
                       substitute bindings expression;
                     ]
                 in
                 expanded_assertions (assertion :: accumulated) rest)
       in
       expanded_assertions [] arguments
+
+and parse_are_parameters accumulated = function
+  | [] -> Ok (List.rev accumulated)
+  | FSymbol name :: rest -> parse_are_parameters (name :: accumulated) rest
+  | _ -> Error.error "are expects a vector of symbols"
 
 and eval_builtin context name arg_forms =
   let eval_args () = eval_forms context arg_forms in
@@ -1053,16 +1058,20 @@ and eval_builtin context name arg_forms =
             Form expression;
             Form (FList arguments);
           ] ->
-          let rec parameter_names accumulated = function
-            | [] -> Ok (List.rev accumulated)
-            | FSymbol name :: rest -> parameter_names (name :: accumulated) rest
-            | _ -> Error.error "are expects a vector of symbols"
-          in
-          Result.bind (parameter_names [] parameters) (fun parameters ->
-              expand_are parameters expression arguments)
+          Result.bind (parse_are_parameters [] parameters) (fun parameters ->
+              expand_are "clojure.test/is" parameters expression arguments)
+      | Ok
+          [
+            Form (FSymbol assertion_symbol);
+            Form (FVector parameters);
+            Form expression;
+            Form (FList arguments);
+          ] ->
+          Result.bind (parse_are_parameters [] parameters) (fun parameters ->
+              expand_are assertion_symbol parameters expression arguments)
       | Ok _ ->
           Error.error
-            "clojure.test/expand-are expects parameters, expression, and arguments"
+            "clojure.test/expand-are expects an optional assertion symbol, parameters, expression, and arguments"
       | Error _ as error -> error)
   | _ -> Error.error ("unsupported macro function " ^ name)
 

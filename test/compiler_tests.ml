@@ -29122,6 +29122,132 @@ let test_cljs_test_environment_is_source_owned () =
   if string_contains_substring core_namespaces "cljs.test" then
     failwith "cljs.test environment must remain an aggregate source namespace"
 
+let test_source_cljs_test_sync_registry_matches_supported_clojurescript () =
+  let source =
+    {|
+(ns app.cljs-test-sync-registry
+  (:require [cljs.test :as test
+             :refer [are deftest get-current-env is ns? run-test run-tests]]))
+
+(def order (atom []))
+
+(deftest arithmetic
+  (swap! order conj :arithmetic)
+  (is (= 4 (+ 2 2)) "addition")
+  (are [expected actual]
+       (= expected actual)
+       2 (+ 1 1)
+       6 (* 2 3)))
+
+(deftest failure
+  (swap! order conj :failure)
+  (is false "expected failure"))
+
+(deftest unexpected-error
+  (swap! order conj :error)
+  (is (do (raise (Failure "boom")) true)))
+
+(def all-summary (run-tests 'app.cljs-test-sync-registry))
+(def all-counters (:report-counters all-summary))
+(def all-order @order)
+
+(reset! order [])
+(def one-summary (run-test arithmetic))
+(def one-counters (:report-counters one-summary))
+
+(println
+  (and (= [:arithmetic :failure :error] all-order)
+       (= 3 (get all-counters :test 0))
+       (= 3 (get all-counters :pass 0))
+       (= 1 (get all-counters :fail 0))
+       (= 1 (get all-counters :error 0))
+       (= [:arithmetic] @order)
+       (= 1 (get one-counters :test 0))
+       (= 3 (get one-counters :pass 0))
+       (= 0 (get one-counters :fail 0))
+       (= 0 (get one-counters :error 0))
+       (ns? 'app.cljs-test-sync-registry)
+       (not (test/ns? "app.cljs-test-sync-registry"))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_sync_registry.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "the synchronous cljs.test registry must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_sync_registry" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_sync_registry.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith
+      "the Melange synchronous cljs.test registry must remain statically typed"
+
+let test_source_cljs_test_sync_registry_rejects_invalid_forms () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_is_non_boolean.cljc"
+    {|
+(ns app.cljs-test-is-type-error
+  (:require [cljs.test :refer [is]]))
+(is 42)
+|}
+  |> expect_error_contains "is";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_are_bad_arguments.cljc"
+    {|
+(ns app.cljs-test-are-arguments-error
+  (:require [cljs.test :refer [are]]))
+(are [x y] (= x y) 1 1 2)
+|}
+  |> expect_error_contains "number of args";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_run_tests_bad_namespace.cljc"
+    {|
+(ns app.cljs-test-run-tests-namespace-error
+  (:require [cljs.test :refer [run-tests]]))
+(run-tests "app.not-a-symbol")
+|}
+  |> expect_error_contains "quoted namespace";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_deftest_bad_name.cljc"
+    {|
+(ns app.cljs-test-deftest-name-error
+  (:require [cljs.test :refer [deftest]]))
+(deftest :not-a-symbol true)
+|}
+  |> expect_error_contains "deftest"
+
+let test_cljs_test_sync_registry_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  List.iter
+    (fun name ->
+      if
+        not
+          (string_contains_substring source ("(defn " ^ name)
+          || string_contains_substring source ("(defmacro " ^ name))
+      then failwith ("cljs.test/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.test/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "is"; "are"; "try-expr"; "deftest"; "run-test"; "run-tests"; "ns?" ];
+  let core_namespaces =
+    read_file (Filename.concat root "src/core_namespaces.ml")
+  in
+  if string_contains_substring core_namespaces "cljs.test" then
+    failwith "the cljs.test registry must remain an aggregate source namespace"
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -43552,6 +43678,12 @@ let tests =
       test_source_cljs_test_environment_matches_clojurescript );
     ( "cljs.test environment is source-owned",
       test_cljs_test_environment_is_source_owned );
+    ( "source cljs.test synchronous registry matches supported ClojureScript",
+      test_source_cljs_test_sync_registry_matches_supported_clojurescript );
+    ( "source cljs.test synchronous registry rejects invalid forms",
+      test_source_cljs_test_sync_registry_rejects_invalid_forms );
+    ( "cljs.test synchronous registry is source-owned",
+      test_cljs_test_sync_registry_is_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",

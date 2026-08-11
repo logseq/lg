@@ -437,6 +437,13 @@ cljs.test/get-and-clear-env!|source
 cljs.test/inc-report-counter!|source
 cljs.test/testing-contexts-str|source
 cljs.test/testing|source
+cljs.test/is|source
+cljs.test/are|source
+cljs.test/try-expr|source
+cljs.test/deftest|source
+cljs.test/run-test|source
+cljs.test/run-tests|source
+cljs.test/ns?|source
 cljs.test/compose-fixtures|source
 cljs.test/join-fixtures|source
 cljs.test/successful?|source
