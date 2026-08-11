@@ -1,5 +1,7 @@
 type t = string
 
+let of_string value = value
+
 let compare_identifier left right =
   let parts value =
     let start =

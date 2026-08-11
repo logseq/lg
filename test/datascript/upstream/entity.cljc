@@ -271,7 +271,9 @@
 
 (defn entity-attr
   [db attr datoms]
-  (entity-value db attr (raw-entity-attr db attr datoms)))
+  (if (empty? datoms)
+    None
+    (entity-value db attr (raw-entity-attr db attr datoms))))
 
 (defn- -lookup-backwards
   [db eid attr]

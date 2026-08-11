@@ -91,7 +91,8 @@
 
 (defn- data-value-keyword [field value]
   (match value
-    (Datascript_runtime.Data_value.Keyword result) (keyword result)
+    (Datascript_runtime.Data_value.Keyword result)
+    (Lg_runtime.Runtime_keyword.of_string result)
     _
     (Stdlib.invalid_arg
      (str "js->Datom expected keyword field " field))))
@@ -187,8 +188,10 @@
 
 (defn- pull-source-keyword [source]
   (match source
-    (Datascript_runtime.Data_value.Keyword name) (keyword name)
-    (Datascript_runtime.Data_value.String name) (keyword name)
+    (Datascript_runtime.Data_value.Keyword name)
+    (Lg_runtime.Runtime_keyword.of_string name)
+    (Datascript_runtime.Data_value.String name)
+    (Lg_runtime.Runtime_keyword.of_string name)
     _
     (Stdlib.invalid_arg
      (str
@@ -200,10 +203,10 @@
   (if-some
     [name
      (Datascript_runtime.Data_value.keyword_value source)]
-    (Some (keyword name))
+    (Some (Lg_runtime.Runtime_keyword.of_string name))
     (match source
       (Datascript_runtime.Data_value.String name)
-      (Some (keyword name))
+      (Some (Lg_runtime.Runtime_keyword.of_string name))
       _ None)))
 
 (defn- pull-source-wildcard?

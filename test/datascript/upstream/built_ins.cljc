@@ -558,15 +558,13 @@
     Modulo
     (Datascript_runtime.Data_value.modulo values)
     Increment
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.increment (nth values 0))
-      (Stdlib.invalid_arg
-       (str "Invalid arity: " (count values))))
+    (if (empty? values)
+      (Some (Datascript_runtime.Data_value.Float ##NaN))
+      (Datascript_runtime.Data_value.increment (nth values 0)))
     Decrement
-    (if (= 1 (count values))
-      (Datascript_runtime.Data_value.decrement (nth values 0))
-      (Stdlib.invalid_arg
-       (str "Invalid arity: " (count values))))
+    (if (empty? values)
+      (Some (Datascript_runtime.Data_value.Float ##NaN))
+      (Datascript_runtime.Data_value.decrement (nth values 0)))
     Maximum
     (Datascript_runtime.Data_value.maximum values)
     Minimum

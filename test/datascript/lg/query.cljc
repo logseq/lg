@@ -2393,7 +2393,9 @@
              (if (map? value)
                (vec value)
                (if (seq? value)
-                 (if (= (str (first value)) "hash-set")
+                 (if (or
+                      (= (str (first value)) "hash-set")
+                      (= (str (first value)) "__lg_hash-set"))
                    (vec (next value))
                    (if (= (str (first value)) "quote")
                      (literal-collection-values (second value))

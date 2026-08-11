@@ -2562,9 +2562,13 @@
   (= \_ (nth (name attr) 0)))
 
 (defn reverse-ref [attr]
-  (if (reverse-ref? attr)
-    (keyword (namespace attr) (subs (name attr) 1))
-    (keyword (namespace attr) (str "_" (name attr)))))
+  (let [reversed-name
+        (if (reverse-ref? attr)
+          (subs (name attr) 1)
+          (str "_" (name attr)))]
+    (if-some [ns (namespace attr)]
+      (keyword ns reversed-name)
+      (keyword reversed-name))))
 
 (signature datascript.db/schema-tuple-attrs
   :fn<datascript.db/DB;keyword;vector<string>>)
@@ -2947,7 +2951,7 @@
   [ value]
   (match value
     (Datascript_runtime.Data_value.Keyword ident)
-    (keyword ident)
+    (Lg_runtime.Runtime_keyword.of_string ident)
     _ (raise (Invalid_argument
               "Schema :db/ident must be a keyword"))))
 
