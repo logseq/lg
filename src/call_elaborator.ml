@@ -8357,12 +8357,25 @@ let create ~compile_expr =
               match args with
               | [] -> Semantic_ir.String ""
               | _ ->
-                  args
-                  |> List.map (stringify_value scope env ~pr:readable)
-                  |> fun values ->
-                  Semantic_ir.Apply
-                    ( Semantic_ir.Ident "String.concat",
-                      [ Semantic_ir.String separator; Semantic_ir.List values ] )
+                  let bindings, values =
+                    args
+                    |> List.mapi (fun index argument ->
+                           let name =
+                             "__lg_render_argument_" ^ string_of_int index
+                           in
+                           ( ( Semantic_ir.PVar name,
+                               stringify_value scope env ~pr:readable argument ),
+                             Semantic_ir.Ident name ))
+                    |> List.split
+                  in
+                  let rendered =
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "String.concat",
+                        [ Semantic_ir.String separator; Semantic_ir.List values ] )
+                  in
+                  List.fold_right
+                    (fun binding body -> Semantic_ir.Let ([ binding ], body))
+                    bindings rendered
             in
             Ok (typed_ir TString expr))
     | ("__lg_render_display_values" | "__lg_render_readable_values") as

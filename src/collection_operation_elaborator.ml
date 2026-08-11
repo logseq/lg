@@ -736,6 +736,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                      [ value; collection.semantic_expr ] ))))
             | TSet inner ->
                 heterogeneous_collection_type_error "set" [ inner; value.ty ]
+            | TMeta _ | TVar _ ->
+                Error.error
+                  "conj cannot infer a concrete static collection element \
+                   type; define a closed sum type containing every alternative \
+                   when the collection is heterogeneous"
             | _ ->
                 Error.error
                   ("conj expects a list, vector, set, or sequence, got "
