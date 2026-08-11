@@ -1480,7 +1480,7 @@
   (map-from-keyvals keyvals))
 
 (defn- set-from-coll [coll]
-  (__lg_reduce (fn [result value] (conj result value)) #{} coll))
+  (__lg_reduce (fn [result value] (__lg_conj result value)) #{} coll))
 
 (defn set
   {:inline (fn [coll] (list '__lg_set coll))}
@@ -2060,7 +2060,7 @@
   ([] [])
   ([to] to)
   ([to from]
-   (__lg_reduce (fn [result item] (conj result item)) to from))
+   (__lg_reduce (fn [result item] (__lg_conj result item)) to from))
   ([to xform from]
    (into to (sequence xform from))))
 
@@ -2076,7 +2076,7 @@
      (rest second-coll)
      (rest third-coll)
      (map (fn [coll] (rest coll)) colls)
-     (conj result
+     (__lg_conj result
            (__lg_apply f
                   (nth first-coll 0)
                   (nth second-coll 0)
@@ -2241,7 +2241,7 @@
   (__lg_reduce
    (fn [result input]
      (let [key (f input)]
-       (assoc result key (conj (get result key []) input))))
+       (assoc result key (__lg_conj (get result key []) input))))
    {}
    coll))
 
@@ -2299,7 +2299,7 @@
   (__lg_reduce
    (fn [result input]
      (if (pred input)
-       (conj result input)
+       (__lg_conj result input)
        result))
    []
    coll))
@@ -2351,7 +2351,7 @@
                 (vreset! buffer [])
                 (rf (runtime-reduced/unreduced (rf result pending)))))))
          ([result input]
-          (let [pending (conj @buffer input)]
+          (let [pending (__lg_conj @buffer input)]
             (if (= n (count pending))
               (do
                 (vreset! buffer [])
@@ -2421,7 +2421,7 @@
             (if (or (empty? pending)
                     (= key (nth @keys 0)))
               (do
-                (vreset! buffer (conj pending input))
+                (vreset! buffer (__lg_conj pending input))
                 (vreset! keys [key])
                 (runtime-reduced/continue result))
               (do
@@ -4387,27 +4387,27 @@
      (fn
        ([]
         (reduce (fn [results function]
-                  (conj results (function)))
+                  (__lg_conj results (function)))
                 []
                 functions))
        ([x]
         (reduce (fn [results function]
-                  (conj results (function x)))
+                  (__lg_conj results (function x)))
                 []
                 functions))
        ([x y]
         (reduce (fn [results function]
-                  (conj results (function x y)))
+                  (__lg_conj results (function x y)))
                 []
                 functions))
        ([x y z]
         (reduce (fn [results function]
-                  (conj results (function x y z)))
+                  (__lg_conj results (function x y z)))
                 []
                 functions))
        ([x y z & args]
         (reduce (fn [results function]
-                  (conj results (juxt-apply function x y z args)))
+                  (__lg_conj results (juxt-apply function x y z args)))
                 []
                 functions))))))
 
@@ -4450,7 +4450,7 @@
    (take (- (count coll) n) coll)))
 
 (defn reverse [coll]
-  (__lg_reduce (fn [result item] (conj result item)) (list) coll))
+  (__lg_reduce (fn [result item] (__lg_conj result item)) (list) coll))
 
 (defn interpose [separator coll]
   (drop 1 (interleave (repeat separator) coll)))
@@ -4524,8 +4524,8 @@
             (let [item (nth remaining 0)]
               (if (contains? seen item)
                 (recur seen result (next remaining))
-                (recur (conj seen item)
-                       (conj result item)
+                (recur (__lg_conj seen item)
+                       (__lg_conj result item)
                        (next remaining))))
             (reverse result))))
       (list))))
@@ -4543,7 +4543,7 @@
          (let [item (nth remaining 0)]
            (if (contains? seen item)
              false
-             (recur (conj seen item) (next remaining))))
+             (recur (__lg_conj seen item) (next remaining))))
          true))
      false)))
 
@@ -4956,7 +4956,11 @@
                        (cons (if (or (= function 'update)
                                      (= function 'clojure.core/update))
                                '__lg_update
-                               function)
+                               (if (or (= function 'conj)
+                                       (= function 'clojure.core/conj)
+                                       (= function 'cljs.core/conj))
+                                 '__lg_conj
+                                 function))
                              args)))))}
   ([map key function]
    (assoc map key (function (get map key))))

@@ -105,7 +105,7 @@
     (replace-current-env!
      current
      (:report-counters current)
-     (conj (:testing-contexts current) context))))
+     (__lg_conj (:testing-contexts current) context))))
 
 (defn- pop-testing-context! []
   (let [current (get-current-env)]
@@ -170,7 +170,7 @@
   [namespace name run]
   (let [registered (registered-test-value name run)
         namespace-tests (get @registered-tests namespace (list))]
-    (swap! registered-tests assoc namespace (conj namespace-tests registered))
+    (swap! registered-tests assoc namespace (__lg_conj namespace-tests registered))
     registered))
 
 (defn- register-test-action!
@@ -178,7 +178,7 @@
   [namespace name action]
   (let [registered (registered-action-value name action)
         namespace-tests (get @registered-tests namespace (list))]
-    (swap! registered-tests assoc namespace (conj namespace-tests registered))
+    (swap! registered-tests assoc namespace (__lg_conj namespace-tests registered))
     registered))
 
 (defn- ^:namespace-fixtures namespace-fixtures-value
@@ -206,13 +206,15 @@
         updated
         (if (= kind :once)
           (namespace-fixtures-value
-           (reduce (fn [result fixture] (conj result fixture))
+           (reduce (fn [^:list<test-fixture> result fixture]
+                     (__lg_conj result fixture))
                    (:once-fixtures current)
                    fixtures)
            (:each-fixtures current))
           (namespace-fixtures-value
            (:once-fixtures current)
-           (reduce (fn [result fixture] (conj result fixture))
+           (reduce (fn [^:list<test-fixture> result fixture]
+                     (__lg_conj result fixture))
                    (:each-fixtures current)
                    fixtures)))]
     (swap! registered-fixtures assoc namespace updated)
@@ -294,7 +296,7 @@
     (set-env!
      (test-env-value
       (:report-counters current)
-      (conj (:testing-vars current) (:registered-test-name registered-test))
+      (__lg_conj (:testing-vars current) (:registered-test-name registered-test))
       (:testing-contexts current)
       (:reporter current)))
     (try
@@ -332,7 +334,7 @@
     (set-env!
      (test-env-value
       (:report-counters current)
-      (conj (:testing-vars current) (:registered-test-name registered-test))
+      (__lg_conj (:testing-vars current) (:registered-test-name registered-test))
       (:testing-contexts current)
       (:reporter current)))
     (inc-report-counter! :test)
@@ -422,7 +424,7 @@
          (reverse
           (reduce
            (fn [actions test]
-             (conj actions (registered-test-execution test (list))))
+             (__lg_conj actions (registered-test-execution test (list))))
            (list)
            registered)))
         (raise

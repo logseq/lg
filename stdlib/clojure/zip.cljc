@@ -88,7 +88,7 @@
               old-path (:zip-path-value loc)
               parent-nodes
               (match old-path
-                (Some value) (conj (:zip-parent-nodes value) (node loc))
+                (Some value) (__lg_conj (:zip-parent-nodes value) (node loc))
                 None [(node loc)])
               new-path
               (record zip-path
@@ -160,7 +160,7 @@
       (if (pos? (count right-values))
         (Some
          (replace-path loc (nth right-values 0)
-                       (conj left-values (node loc))
+                       (__lg_conj left-values (node loc))
                        (vec (rest right-values)) (:zip-changed value)))
         None))))
 
@@ -173,7 +173,7 @@
       (if (pos? (count stored-right))
         (let [right-values (vec stored-right)]
           (replace-path loc (nth right-values (dec (count right-values)))
-                        (into (conj left-values (node loc))
+                        (into (__lg_conj left-values (node loc))
                               (butlast right-values))
                         [] (:zip-changed value)))
         loc))))
@@ -209,7 +209,7 @@
   (match (:zip-path-value loc)
     None (raise (Failure "Insert at top"))
     (Some value)
-    (replace-path loc (node loc) (conj (:zip-left value) item)
+    (replace-path loc (node loc) (__lg_conj (:zip-left value) item)
                   (:zip-right value) true)))
 
 (defn insert-right [loc item]

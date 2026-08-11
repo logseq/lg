@@ -751,7 +751,7 @@ let rec inferred_form_type params = function
       | TSet inner -> TSet (refine_type inner element_ty)
       | TVector inner -> TVector (refine_type inner element_ty)
       | _ -> TVector element_ty)
-  | FList (FSymbol "conj" :: target :: values) ->
+  | FList (FSymbol "__lg_conj" :: target :: values) ->
       let value_tys = List.map (inferred_form_type params) values in
       let refine_element element_ty =
         List.fold_left refine_type element_ty value_tys
@@ -1311,7 +1311,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (FSymbol "__lg_conj"
         :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
         :: values) -> infer_conj_get params target values
-    | FList (FSymbol "conj" :: target :: values) -> (
+    | FList (FSymbol "__lg_conj" :: target :: values) -> (
         match expected_ty with
         | TList element_ty | TVector element_ty | TSet element_ty
         | TSeq element_ty ->
@@ -3346,14 +3346,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         let infer_then_branch =
           match (then_form, inferred_form_type branch_params else_form) with
-          | ( FList (FSymbol "conj" :: FSymbol target :: values),
+          | ( FList (FSymbol "__lg_conj" :: FSymbol target :: values),
               (TList element_ty | TSeq element_ty) )
             when String.equal target binding ->
               Result.bind
                 (constrain_symbol (TSeq element_ty) branch_params binding)
                 (fun branch_params ->
                   infer_expected_all element_ty branch_params values)
-          | ( FList (FSymbol "conj" :: FSymbol target :: values),
+          | ( FList (FSymbol "__lg_conj" :: FSymbol target :: values),
               ((TVector element_ty | TSet element_ty) as collection_ty) )
             when String.equal target binding ->
               Result.bind
@@ -3698,32 +3698,6 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [
           FSymbol "__lg_swap!";
           FSymbol reference;
-          FSymbol "conj";
-          value;
-        ] -> (
-        let element_ty =
-          match inferred_form_type params value with
-          | TUnknown -> Type_solver.fresh ()
-          | ty -> ty
-        in
-        let collection_ty =
-          match string_assoc_opt reference params with
-          | Some (TRef (TVector _)) -> Some (TVector element_ty)
-          | Some (TRef (TList _)) -> Some (TList element_ty)
-          | Some (TRef (TSet _)) -> Some (TSet element_ty)
-          | Some (TRef (TSeq _)) -> Some (TSeq element_ty)
-          | Some _ | None -> None
-        in
-        match collection_ty with
-        | None -> infer_form params value
-        | Some collection_ty ->
-            Result.bind
-              (constrain_symbol (TRef collection_ty) params reference)
-              (fun params -> infer_expected element_ty params value))
-    | FList
-        [
-          FSymbol "__lg_swap!";
-          FSymbol reference;
           FSymbol "__lg_assoc!";
           key;
           value;
@@ -3951,7 +3925,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         :: extra_arguments) -> (
         let signature =
           match (updater, extra_arguments) with
-          | ("conj" | "clojure.core/conj"), _ :: _ ->
+          | "__lg_conj", _ :: _ ->
               let element_ty =
                 extra_arguments
                 |> List.map (inferred_form_type params)
@@ -3963,12 +3937,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   string_assoc_opt target params
                   |> fun target_ty ->
                   Option.bind target_ty (fun target_ty ->
-                         match Types.constraint_value_type target_ty with
-                         | TRecord fields | TNamed_record { fields; _ } ->
-                             Option.map
-                               (fun (field : field) -> field.ty)
-                               (Types.find_field keyword fields)
-                         | _ -> None)
+                      match Types.constraint_value_type target_ty with
+                      | TRecord fields | TNamed_record { fields; _ } ->
+                          Option.map
+                            (fun (field : field) -> field.ty)
+                            (Types.find_field keyword fields)
+                      | _ -> None)
                 with
                 | Some (TList _) -> TList element_ty
                 | Some (TSeq _) -> TSeq element_ty
@@ -5117,7 +5091,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         (FSymbol "__lg_conj"
         :: (FList [ FSymbol "__lg_get"; _; _ ] as target)
         :: values) -> infer_conj_get params target values
-    | FList (FSymbol "conj" :: target :: values) -> (
+    | FList (FSymbol "__lg_conj" :: target :: values) -> (
         let inferred_value_type value =
           match inferred_form_type params value with
           | (TUnknown | TMeta _ | TVar _) as unresolved -> (

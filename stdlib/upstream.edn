@@ -568,7 +568,7 @@
     cons {:status :static-adaptation
           :reason :source-function-and-inline-specialization-preserve-upstream-prepending-over-homogeneous-static-seqables-through-a-private-typed-primitive}
     conj {:status :static-adaptation
-          :reason :source-overloads-preserve-upstream-zero-one-two-and-variadic-left-to-right-category-preserving-conjoin-while-direct-calls-inline-to-a-private-static-collection-primitive-and-map-entries-use-a-static-key-value-tuple-because-upstream-two-element-vectors-can-be-heterogeneous}
+          :reason :source-overloads-preserve-upstream-zero-one-two-and-variadic-left-to-right-category-preserving-conjoin-while-direct-calls-and-source-stdlib-internal-calls-canonicalize-to-a-private-static-collection-primitive-before-inference-and-map-entries-use-a-static-key-value-tuple-because-upstream-two-element-vectors-can-be-heterogeneous}
     nth {:status :static-adaptation
          :reason :source-overloads-and-inline-specialization-delegate-to-clojurescript-iindexed-while-preserving-static-list-vector-array-string-default-and-explicit-protocol-behavior}
     get {:status :static-adaptation
@@ -578,7 +578,7 @@
     assoc-in {:status :static-adaptation
               :reason :source-port-preserves-upstream-recursive-nested-association-through-homogeneous-static-map-paths-and-private-shape-preserving-association}
     update {:status :static-adaptation
-            :reason :source-overloads-preserve-upstream-read-apply-associate-control-flow-and-extra-argument-arities-through-private-static-lookup-and-association-primitives}
+            :reason :source-overloads-preserve-upstream-read-apply-associate-control-flow-and-extra-argument-arities-through-private-static-lookup-and-association-primitives-while-conj-updaters-canonicalize-to-the-private-static-collection-primitive-before-inference}
     update-in {:status :static-adaptation
                :reason :source-port-preserves-upstream-recursive-nested-update-control-flow-through-homogeneous-static-map-paths-and-private-shape-preserving-primitives}
     select-keys {:status :static-adaptation

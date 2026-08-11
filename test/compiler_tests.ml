@@ -25636,6 +25636,7 @@ let test_source_conj_preserves_clojurescript_collection_categories () =
 
 (def add conj)
 (def vector-values (add [1 2] 3 4))
+(def string-values (add ["a"] "b"))
 (def list-values (add (list 3) 2 1))
 (def set-values (add #{1 2} 2 3))
 (def seq-values (add (seq [2 3]) 1))
@@ -25646,12 +25647,15 @@ let test_source_conj_preserves_clojurescript_collection_categories () =
   (and (= [] (conj))
        (= [1 2] (conj [1 2]))
        (= [1 2 3 4] vector-values)
+       (= ["a" "b"] string-values)
        (= [1 2 3] (vec list-values))
        (= #{1 2 3} set-values)
        (= [1 2 3] (vec seq-values))
        (= 2 (:b map-values))
        (= [1 2] bag-values)
-       (= [1 2 3] (core/conj [1 2] 3))))
+       (= [1 2 3] (core/conj [1 2] 3))
+       (= [1 2 3] (cljs.core/conj [1 2] 3))
+       (= [1 2 3] (clojure.core/conj [1 2] 3))))
 |}
   in
   let consumer_source =

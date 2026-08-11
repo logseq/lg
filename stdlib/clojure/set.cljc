@@ -90,7 +90,7 @@
   [xrel keys]
   (__lg_reduce
    (fn [result item]
-     (conj result (select-keys item keys)))
+     (__lg_conj result (select-keys item keys)))
    (empty xrel)
    xrel))
 
@@ -126,7 +126,7 @@
   [xrel key-map]
   (__lg_reduce
    (fn [result item]
-     (conj result (rename-keys item key-map)))
+     (__lg_conj result (rename-keys item key-map)))
    (empty xrel)
    xrel))
 
@@ -138,7 +138,7 @@
      (let [index-key (select-keys item keys)]
        (assoc result
               index-key
-              (conj (get result index-key (empty xrel)) item))))
+              (__lg_conj (get result index-key (empty xrel)) item))))
    {}
    xrel))
 
@@ -152,7 +152,7 @@
          (if-some [found (get indexed index-key)]
            (__lg_reduce
             (fn [joined indexed-item]
-              (conj joined (merge indexed-item item)))
+              (__lg_conj joined (merge indexed-item item)))
             result
             found)
            result)))
@@ -166,7 +166,7 @@
        (if-some [found (get indexed (select-keys item join-keys))]
          (__lg_reduce
           (fn [joined indexed-item]
-            (conj joined (merge indexed-item item)))
+            (__lg_conj joined (merge indexed-item item)))
           result
           found)
          result))
