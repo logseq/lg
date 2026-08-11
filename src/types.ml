@@ -1327,10 +1327,24 @@ let instantiate_type ~templates ~actuals ty =
 let instantiate_type_fields ~templates ~actuals ty =
   if List.length templates <> List.length actuals then ty
   else
+    let rec inference_actual template actual =
+      match (template, actual) with
+      | (TUnknown | TMeta _ | TVar _), actual ->
+          let payload = constraint_value_type actual in
+          if equal payload actual then actual else payload
+      | TFn (template_params, template_return),
+        TFn (actual_params, actual_return)
+        when List.length template_params = List.length actual_params ->
+          TFn
+            ( List.map2 inference_actual template_params actual_params,
+              inference_actual template_return actual_return )
+      | _ -> actual
+    in
     let substitutions =
       List.fold_left2
         (fun substitutions template actual ->
-          infer_type_substitutions substitutions ~template ~actual)
+          infer_type_substitutions substitutions ~template
+            ~actual:(inference_actual template actual))
         Type_solver.empty templates actuals
     in
     let instantiated = substitute_type_variables substitutions ty in
@@ -1369,7 +1383,10 @@ let instantiate_type_fields ~templates ~actuals ty =
               match (templates, actuals) with
               | template :: templates, actual :: actuals ->
                   let template = substitute_type_variables substitutions template in
-                  let actual = substitute_type_variables substitutions actual in
+                  let actual =
+                    inference_actual template actual
+                    |> substitute_type_variables substitutions
+                  in
                   let field =
                     {
                       field with

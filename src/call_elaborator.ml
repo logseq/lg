@@ -4289,12 +4289,40 @@ let callback_parameters_need_adapter expected actual =
          && not (Types.equal expected_ty actual_ty)))
        expected actual
 
+let callback_payload_parameters_compatible expected actual =
+  List.length expected = List.length actual
+  && List.for_all2
+       (fun expected_ty actual_ty ->
+         let actual_ty =
+           if has_capability_constraint actual_ty then
+             Types.constraint_value_type actual_ty
+           else actual_ty
+         in
+         Types.assignable ~policy:Host_boundary ~expected:expected_ty
+           ~actual:actual_ty
+         || Result.is_ok
+              (Type_solver.unify Type_solver.empty expected_ty actual_ty))
+       expected actual
+
+let pack_static_callback_capability env actual_ty value =
+  match Types.comparable_constraint_info actual_ty with
+  | Some ((TUnknown | TMeta _ | TVar _) as value_ty) ->
+      Ok
+        (Semantic_ir.Tuple
+           [
+             Semantic_ir.Ident "Stdlib.compare";
+             coerce_expression_to_type value_ty value.ty value.semantic_expr;
+           ])
+  | Some _ | None -> pack_constrained_value env actual_ty value
+
 let adapt_dynamic_callback env expected arg =
   match (expected, arg.ty) with
   | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
     when (Types.is_dynamic expected_return
          || callback_parameters_need_adapter expected_params actual_params)
-         && callback_parameters_compatible expected_params actual_params ->
+         && (callback_parameters_compatible expected_params actual_params
+            || callback_payload_parameters_compatible expected_params
+                 actual_params) ->
       let expected_return =
         Types.maybe_reduced_callback_element expected_return
         |> Option.value ~default:expected_return
@@ -4330,7 +4358,7 @@ let adapt_dynamic_callback env expected arg =
                 Ok
                   (constrained_value_expression expected_ty value.semantic_expr)
               else if has_capability_constraint actual_ty then
-                pack_constrained_value env actual_ty value
+                pack_static_callback_capability env actual_ty value
               else Ok value.semantic_expr
             in
             Result.bind adapted (fun expression ->
@@ -7518,6 +7546,29 @@ let create ~compile_expr =
                             | None -> assert false
                             | Some expected_field ->
                                 if
+                                  match (expected_field.ty, value.ty) with
+                                  | TFn (expected_params, _),
+                                    TFn (actual_params, _) ->
+                                      callback_parameters_need_adapter
+                                        expected_params actual_params
+                                      && callback_payload_parameters_compatible
+                                           expected_params actual_params
+                                  | _ -> false
+                                then
+                                  Result.bind
+                                    (adapt_dynamic_callback env expected_field.ty
+                                       value)
+                                    (fun semantic_expr ->
+                                      adapt_fields
+                                        ( ( expected_field,
+                                            {
+                                              value with
+                                              ty = expected_field.ty;
+                                              semantic_expr;
+                                            } )
+                                        :: adapted )
+                                        rest)
+                                else if
                                   function_has_host_int_return_boundary
                                     expected_field.ty value.ty
                                 then
@@ -11516,9 +11567,33 @@ let create ~compile_expr =
                       let callback_expected_ty =
                         match
                           ( expected_ty,
-                            List.nth_opt storage_param_tys index )
+                            List.nth_opt storage_param_tys index,
+                            arg.ty )
                         with
-                        | TFn (expected_params, expected_return), storage_ty
+                        | ( TFn (_, _),
+                            Some (TFn (storage_params, storage_return)),
+                            TFn (actual_params, _) )
+                          when List.length storage_params
+                               = List.length actual_params
+                               && List.exists2
+                                    (fun storage actual ->
+                                      (match storage with
+                                      | TUnknown | TMeta _ | TVar _ -> true
+                                      | _ -> false)
+                                      && has_capability_constraint actual)
+                                    storage_params actual_params ->
+                            TFn
+                              ( List.map2
+                                  (fun storage actual ->
+                                    match storage with
+                                    | TUnknown | TMeta _ | TVar _ ->
+                                        Types.constraint_value_type actual
+                                    | storage -> storage)
+                                  storage_params actual_params,
+                                storage_return )
+                        | ( TFn (expected_params, expected_return),
+                            storage_ty,
+                            _ )
                           when erased_callback_storage_call ->
                             let storage_params, storage_return =
                               match storage_ty with
