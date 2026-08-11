@@ -114,6 +114,13 @@
 (defprotocol IChunk
   (-drop-first [coll]))
 
+(defprotocol IChunkedSeq
+  (-chunked-first [coll])
+  (-chunked-rest [coll]))
+
+(defprotocol IChunkedNext
+  (-chunked-next [coll]))
+
 (defprotocol IEmptyableCollection
   (-empty [coll]))
 
@@ -260,6 +267,11 @@
   (chunk-values :array<value>)
   (chunk-offset :int)
   (chunk-end :int))
+
+(type-record chunked-cons-value [value]
+  (chunked-cons-chunk :option<ArrayChunk<value>>)
+  (chunked-cons-more :seq<value>)
+  (chunked-cons-metadata :Lg_edn_backend.t))
 
 (extend-type :keyword
   INamed
@@ -3339,6 +3351,90 @@
   "Returns the populated values of `buffer` as an array-backed chunk."
   [buffer]
   (array-chunk (runtime-chunk-buffer/to-array buffer)))
+
+(defn- array-chunk-to-seq [chunk index]
+  (lazy-seq
+   (if (< index (array-chunk-count chunk))
+     (cons (aget (:chunk-values chunk) (+ (:chunk-offset chunk) index))
+           (array-chunk-to-seq chunk (inc index)))
+     nil)))
+
+(defn- chunked-cons-seq [value]
+  (match (:chunked-cons-chunk value)
+    None (:chunked-cons-more value)
+    (Some chunk)
+    (concat
+     (array-chunk-to-seq chunk 0)
+     (:chunked-cons-more value))))
+
+(defn- chunked-cons-with-meta [value metadata]
+  (record chunked-cons-value
+          (chunked-cons-chunk (:chunked-cons-chunk value))
+          (chunked-cons-more (:chunked-cons-more value))
+          (chunked-cons-metadata metadata)))
+
+(defn- chunked-cons-first-value [value]
+  (match (:chunked-cons-chunk value)
+    None
+    (raise (Invalid_argument "chunk-first of a non-chunked rest"))
+    (Some chunk) chunk))
+
+(defn- chunked-cons-rest-value [value]
+  (match (:chunked-cons-chunk value)
+    None
+    (raise (Invalid_argument "chunk-rest of a non-chunked rest"))
+    (Some _) (:chunked-cons-more value)))
+
+(defn- chunked-cons-next-value [value]
+  (match (:chunked-cons-chunk value)
+    None
+    (raise (Invalid_argument "chunk-next of a non-chunked rest"))
+    (Some _) (:chunked-cons-more value)))
+
+(extend-type chunked-cons-value
+  ISeqable
+  (-seq [value]
+    (chunked-cons-seq value))
+  IMeta
+  (-meta [value]
+    (:chunked-cons-metadata value))
+  IWithMeta
+  (-with-meta [value metadata]
+    (chunked-cons-with-meta value metadata))
+  IChunkedSeq
+  (-chunked-first [value]
+    (chunked-cons-first-value value))
+  (-chunked-rest [value]
+    (chunked-cons-rest-value value))
+  IChunkedNext
+  (-chunked-next [value]
+    (chunked-cons-next-value value)))
+
+(defn chunk-cons
+  "Prepends `chunk` to `rest` as a statically typed chunked sequence."
+  [chunk rest]
+  (let [remaining (seq rest)
+        metadata (meta {})]
+    (record chunked-cons-value
+            (chunked-cons-chunk
+             (if (zero? (array-chunk-count chunk)) None (Some chunk)))
+            (chunked-cons-more remaining)
+            (chunked-cons-metadata metadata))))
+
+(defn chunk-first
+  "Returns the first array-backed chunk of `sequence`."
+  [sequence]
+  (chunked-cons-first-value sequence))
+
+(defn chunk-rest
+  "Returns the sequence following the first chunk of `sequence`."
+  [sequence]
+  (chunked-cons-rest-value sequence))
+
+(defn chunk-next
+  "Returns the next sequence following the first chunk of `sequence`."
+  [sequence]
+  (chunked-cons-next-value sequence))
 
 (defn set-from-indexed-seq [indexed-seq]
   (set indexed-seq))

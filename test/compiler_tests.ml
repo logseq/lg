@@ -29930,6 +29930,114 @@ let test_chunk_buffer_and_array_chunk_are_source_owned () =
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "chunk-buffer"; "array-chunk"; "chunk-append"; "chunk" ]
 
+let test_source_chunked_cons_protocol_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.chunked-cons
+  (:require [cljs.core :as core
+             :refer [array-chunk array-values chunk-cons chunk-first
+                     chunk-next chunk-rest count first meta nth rest seq
+                     with-meta]]))
+
+(def numbers
+  (chunk-cons (array-chunk (array-values 1 2 3)) (list 4 5)))
+
+(println (= (list 1 2 3 4 5) (seq numbers)))
+(println (= 3 (count (chunk-first numbers))))
+(println (= 2 (nth (chunk-first numbers) 1)))
+(println (= (list 4 5) (chunk-rest numbers)))
+(println (= (list 4 5) (chunk-next numbers)))
+(println (= 3 (count (core/IChunkedSeq/-chunked-first numbers))))
+(println (= (list 4 5) (core/IChunkedSeq/-chunked-rest numbers)))
+(println (= (list 4 5) (core/IChunkedNext/-chunked-next numbers)))
+(println (= 1 (first numbers)))
+(println (= (list 2 3 4 5) (rest numbers)))
+
+(def tagged (with-meta numbers {:source "chunked-cons-test"}))
+(def ^:string tagged-source (:source (meta tagged)))
+(println (= "chunked-cons-test" tagged-source))
+(println (= (list 1 2 3 4 5) (seq tagged)))
+
+(def empty-chunk
+  (chunk-cons (array-chunk (make-array 0 0)) (list 7 8)))
+(println (= (list 7 8) (seq empty-chunk)))
+(println
+ (try
+   (do (chunk-first empty-chunk) false)
+   (catch _ true)))
+
+(def words
+  (core/chunk-cons
+   (array-chunk (array-values "one" "two"))
+   (list "three")))
+(println (= (list "one" "two" "three") (seq words)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "test/source_chunked_cons.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "chunked cons protocol cluster must remain statically typed";
+  assert_ocaml_runs "source_chunked_cons"
+    (String.concat "" (List.init 15 (fun _ -> "true\n")))
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_chunked_cons.cljc"
+       source)
+
+let test_source_chunked_cons_protocol_cluster_rejects_invalid_inputs () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_chunk_first_bad_receiver.cljc"
+    {|
+(ns app.chunk-first-bad
+  (:require [cljs.core :refer [chunk-first]]))
+(chunk-first [1 2 3])
+|}
+  |> expect_error_contains "incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_chunk_cons_mixed_values.cljc"
+    {|
+(ns app.chunk-cons-mixed
+  (:require [cljs.core :refer [array-chunk array-values chunk-cons]]))
+(chunk-cons (array-chunk (array-values 1 2)) (list "three"))
+|}
+  |> expect_error_contains "expected of type"
+
+let test_chunked_cons_protocol_cluster_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/clojure/core.cljc") in
+  let interface = read_file (Filename.concat root "stdlib/clojure/core.mli") in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring source declaration) then
+        failwith (declaration ^ " is not source-owned"))
+    [
+      "(defprotocol IChunkedSeq";
+      "(defprotocol IChunkedNext";
+      "(type-record ArrayChunk";
+      "(type-record chunked-cons-value";
+    ];
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith ("cljs.core/" ^ name ^ " is not source-owned");
+      if
+        not
+          (string_contains_substring interface
+             ("(signature clojure.core/" ^ name))
+      then failwith ("cljs.core/" ^ name ^ " is missing from clojure/core.mli");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.core/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "chunk-cons"; "chunk-first"; "chunk-rest"; "chunk-next" ]
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -44402,6 +44510,12 @@ let tests =
       test_source_chunk_buffer_and_array_chunk_reject_invalid_arguments );
     ( "chunk buffer and array chunk are source-owned",
       test_chunk_buffer_and_array_chunk_are_source_owned );
+    ( "source chunked cons protocol cluster matches ClojureScript",
+      test_source_chunked_cons_protocol_cluster_matches_clojurescript );
+    ( "source chunked cons protocol cluster rejects invalid inputs",
+      test_source_chunked_cons_protocol_cluster_rejects_invalid_inputs );
+    ( "chunked cons protocol cluster is source-owned",
+      test_chunked_cons_protocol_cluster_is_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",

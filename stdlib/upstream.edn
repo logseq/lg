@@ -151,12 +151,12 @@
     -assoc-n! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -dissoc! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -pop! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
-    -chunked-first {:status :blocked-static-typing
-                    :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    -chunked-next {:status :blocked-static-typing
-                   :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    -chunked-rest {:status :blocked-static-typing
-                   :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -chunked-first {:status :static-adaptation
+                    :reason :source-ichunkedseq-method-returns-the-parameterized-arraychunk-from-the-closed-chunked-cons-record-and-rejects-the-empty-chunk-rest-branch}
+    -chunked-next {:status :static-adaptation
+                   :reason :source-ichunkednext-method-preserves-the-upstream-more-sequence-result-over-the-closed-chunked-cons-record}
+    -chunked-rest {:status :static-adaptation
+                   :reason :source-ichunkedseq-method-preserves-the-upstream-more-sequence-result-over-the-closed-chunked-cons-record}
     -drop-first {:status :static-adaptation
                  :reason :source-ichunk-protocol-preserves-arraychunk-drop-first-and-empty-chunk-errors-over-a-parameterized-static-arraychunk-type}
     -clone {:status :blocked-static-typing
@@ -1070,16 +1070,16 @@
                   :reason :source-function-appends-to-a-capacity-checked-parameterized-mutable-array-buffer-and-rejects-appends-after-the-buffer-is-frozen-into-a-chunk}
     chunk-buffer {:status :static-adaptation
                   :reason :source-function-constructs-a-parameterized-mutable-array-buffer-through-a-minimal-typed-runtime-boundary-because-the-element-type-is-inferred-from-subsequent-appends}
-    chunk-cons {:status :blocked-static-typing
-                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    chunk-first {:status :blocked-static-typing
-                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    chunk-next {:status :blocked-static-typing
-                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    chunk-rest {:status :blocked-static-typing
-                :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    chunk-cons {:status :static-adaptation
+                :reason :source-function-preserves-upstream-empty-chunk-content-nonempty-chunk-prepending-and-chunkedcons-metadata-through-a-parameterized-record-with-an-optional-arraychunk-while-empty-input-wraps-instead-of-returning-the-original-rest-because-lg-has-no-value-dependent-return-type}
+    chunk-first {:status :static-adaptation
+                 :reason :source-function-preserves-upstream-first-chunk-access-and-nonchunked-rest-error-through-the-closed-chunked-cons-accessor}
+    chunk-next {:status :static-adaptation
+                :reason :source-function-preserves-upstream-ichunkednext-more-sequence-result-through-the-closed-chunked-cons-accessor}
+    chunk-rest {:status :static-adaptation
+                :reason :source-function-preserves-upstream-ichunkedseq-more-sequence-result-through-the-closed-chunked-cons-accessor}
     chunked-seq {:status :blocked-static-typing
-                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+                 :reason :upstream-chunkedseq-arities-require-persistent-vector-trie-node-array-for-and-offset-traversal-capabilities-not-yet-exposed-to-source}
     chunked-seq? {:status :blocked-static-typing
                   :reason :first-class-predicate-needs-a-shared-static-chunked-sequence-capability}
     create-ns {:status :host-boundary

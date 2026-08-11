@@ -483,6 +483,26 @@
   :fn<Lg_runtime.Runtime_chunk_buffer.t<value>;value;unit>)
 (signature clojure.core/chunk [value]
   :fn<Lg_runtime.Runtime_chunk_buffer.t<value>;ArrayChunk<value>>)
+(signature clojure.core/array-chunk-to-seq [value]
+  :fn<ArrayChunk<value>;int;seq<value>>)
+(signature clojure.core/chunked-cons-seq [value]
+  :fn<chunked-cons-value<value>;seq<value>>)
+(signature clojure.core/chunked-cons-with-meta [value]
+  :fn<chunked-cons-value<value>;Lg_edn_backend.t;chunked-cons-value<value>>)
+(signature clojure.core/chunked-cons-first-value [value]
+  :fn<chunked-cons-value<value>;ArrayChunk<value>>)
+(signature clojure.core/chunked-cons-rest-value [value]
+  :fn<chunked-cons-value<value>;seq<value>>)
+(signature clojure.core/chunked-cons-next-value [value]
+  :fn<chunked-cons-value<value>;seq<value>>)
+(signature clojure.core/chunk-cons [value storage]
+  :fn<ArrayChunk<value>;seqable<value;storage>;chunked-cons-value<value>>)
+(signature clojure.core/chunk-first [value]
+  :fn<chunked-cons-value<value>;ArrayChunk<value>>)
+(signature clojure.core/chunk-rest [value]
+  :fn<chunked-cons-value<value>;seq<value>>)
+(signature clojure.core/chunk-next [value]
+  :fn<chunked-cons-value<value>;seq<value>>)
 (signature clojure.core/set-from-indexed-seq [value]
   :fn<seq<value>;set<value>>)
 (signature clojure.core/munge-str :fn<string;string>)

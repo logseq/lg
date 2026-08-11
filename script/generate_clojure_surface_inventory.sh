@@ -467,6 +467,13 @@ clojure.core/chunk-buffer|source
 clojure.core/array-chunk|source
 clojure.core/chunk-append|source
 clojure.core/chunk|source
+clojure.core/-chunked-first|source
+clojure.core/-chunked-rest|source
+clojure.core/-chunked-next|source
+clojure.core/chunk-cons|source
+clojure.core/chunk-first|source
+clojure.core/chunk-rest|source
+clojure.core/chunk-next|source
 clojure.set/project|source
 clojure.set/rename|source
 clojure.string/escape|source
