@@ -30475,13 +30475,24 @@ let test_source_cljs_test_synchronous_fixtures_match_clojurescript_order () =
         failwith "cljs.test fixtures must remain statically typed";
       if
         name = "source_cljs_test_map_fixtures"
-        && not (string_contains_substring native "Fun.protect")
+        && not
+             (string_contains_substring
+                (compiled_stdlib Lg.Target.Native).ocaml_source "Fun.protect")
       then
-        failwith "map fixture cleanup must generate readable finally code";
+        failwith
+          "Native stdlib map fixture cleanup must generate readable finally code";
       assert_ocaml_runs name "true\n" native;
       ignore
         (compile_with_stdlib Lg.Target.Melange ("test/" ^ name ^ ".cljc")
-           source))
+           source);
+      if
+        name = "source_cljs_test_map_fixtures"
+        && not
+             (string_contains_substring
+                (compiled_stdlib Lg.Target.Melange).ocaml_source "Fun.protect")
+      then
+        failwith
+          "Melange stdlib map fixture cleanup must generate readable finally code")
     [
       ("source_cljs_test_map_fixtures", map_source);
       ("source_cljs_test_function_fixtures", function_source);
