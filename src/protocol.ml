@@ -168,6 +168,9 @@ let source_type_implicitly_satisfies protocol_id receiver_ty =
       ("IMap" | "IAssociative" | "ICollection"),
       TNamed_record { nominal = false; _ } ) ->
       true
+  | ([] | [ "clojure.core" ]), "IRecord",
+    TNamed_record { nominal = false; _ } ->
+      true
   | _ -> false
 
 let type_satisfies env protocol_id receiver_ty =

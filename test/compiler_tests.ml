@@ -11496,6 +11496,65 @@ let test_clone_protocol_is_source_owned () =
       "(defn cloneable?";
     ]
 
+let test_source_record_and_chunked_predicates_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-protocol-predicates
+  (:require [clojure.core :as core
+             :refer [array-chunk array-values chunk-cons chunked-seq? record?]]))
+
+(defrecord Person [^:string name])
+(type-record Box (value :int))
+
+(def record-predicate core/record?)
+(def chunked-predicate chunked-seq?)
+(def person (Person. "Ada"))
+(def ordinary-map (hash-map :name "Ada"))
+(def nominal-box (record Box (value 42)))
+(def chunked-values
+  (chunk-cons (array-chunk (array-values 1 2 3)) (list 4)))
+
+(println (record? person))
+(println (record-predicate person))
+(println (not (record-predicate ordinary-map)))
+(println (not (record-predicate nominal-box)))
+(println (not (record-predicate nil)))
+(println (chunked-seq? chunked-values))
+(println (chunked-predicate chunked-values))
+(println (not (chunked-predicate (list 1 2 3))))
+(println (not (chunked-predicate nil)))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "record and chunked predicates must remain statically typed";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_record_and_chunked_predicates"
+    (String.concat "" (List.init 9 (fun _ -> "true\n")))
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange record and chunked predicates must remain statically typed"
+
+let test_record_and_chunked_predicates_are_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring core_source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defprotocol IRecord"; "(defn record?"; "(defn chunked-seq?" ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "record?"; "chunked-seq?" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43136,6 +43195,10 @@ let tests =
     ( "source clone protocol preserves values and fresh identity",
       test_source_clone_protocol_preserves_values_and_fresh_identity );
     ( "clone protocol is source-owned", test_clone_protocol_is_source_owned );
+    ( "source record and chunked predicates match ClojureScript",
+      test_source_record_and_chunked_predicates_match_clojurescript );
+    ( "record and chunked predicates are source-owned",
+      test_record_and_chunked_predicates_are_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

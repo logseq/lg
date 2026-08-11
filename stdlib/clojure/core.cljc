@@ -159,6 +159,8 @@
 (defprotocol ICloneable
   (-clone [value] :self))
 
+(defprotocol IRecord)
+
 (defprotocol IVector
   (-assoc-n [coll index value]))
 
@@ -2503,6 +2505,16 @@
   (if (nil? x)
     false
     (satisfies? IMap x)))
+
+(defn record?
+  {:inline (fn [x] (list 'satisfies? 'IRecord x))}
+  [x]
+  (satisfies? IRecord x))
+
+(defn chunked-seq?
+  {:inline (fn [x] (list 'satisfies? 'IChunkedSeq x))}
+  [x]
+  (satisfies? IChunkedSeq x))
 
 (defn fn?
   {:inline (fn [x] (list '__lg_fn-predicate x))}

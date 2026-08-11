@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 667 source entries (67.72%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 103 static-typing blockers,
+macro surfaces. The current baseline is 669 source entries (67.92%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 101 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -980,8 +980,9 @@ and `chunk-next`. A parameterized record stores an optional `ArrayChunk`, the
 typed remaining sequence, and metadata. This closed representation preserves
 the upstream empty-chunk content branch without a value-dependent return type,
 while nonempty chunks retain first/rest/next protocol behavior. The
-vector-trie-specific `chunked-seq` constructors and the universal
-`chunked-seq?` predicate remain separately recorded blockers.
+vector-trie-specific `chunked-seq` constructors remain blocked. The
+`chunked-seq?` predicate is source-owned and uses an optional static
+`IChunkedSeq` witness for first-class true and false calls.
 Inventory reporting keeps that namespace-level blocker
 while allowing each source-owned var to resolve as `source-aggregate`; a
 blocked sibling does not downgrade a ported qualified var.
@@ -1099,8 +1100,11 @@ documented host boundary because it has no shared Native/Melange iterator type.
 The inventory explicitly classifies the audited clone, dependent-result,
 transducer, tagged-literal, and metadata-transform surfaces. `clone` cannot be
 replaced by identity because `identical?` observes the fresh collection objects
-created by ClojureScript, while `cloneable?`, `record?`, and `tagged-literal?`
-are first-class predicates over arbitrary values. `replace` still combines a
+created by ClojureScript. `record?` is now source-owned through an `IRecord`
+marker that only non-nominal `defrecord` types implicitly satisfy; ordinary
+maps, nominal type records, and unrelated values return false through an
+optional static witness. `tagged-literal?` remains blocked because its nominal
+value constructor still lacks a public closed source value domain. `replace` still combines a
 transducer arity with representation-dependent lazy or vector results.
 `spread`, `trampoline`, and
 `vec-lite` each require a heterogeneous or dependent function relationship

@@ -886,8 +886,8 @@
                     :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
     random-sample {:status :ported
                    :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary}
-    record? {:status :blocked-static-typing
-             :reason :first-class-marker-predicate-must-accept-arbitrary-record-and-non-record-static-types-without-a-universal-open-value}
+    record? {:status :static-adaptation
+             :reason :source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch}
     replace {:status :blocked-static-typing
              :reason :one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type}
     spread {:status :blocked-static-typing
@@ -1082,8 +1082,8 @@
                 :reason :source-function-preserves-upstream-ichunkedseq-more-sequence-result-through-the-closed-chunked-cons-accessor}
     chunked-seq {:status :blocked-static-typing
                  :reason :upstream-chunkedseq-arities-require-persistent-vector-trie-node-array-for-and-offset-traversal-capabilities-not-yet-exposed-to-source}
-    chunked-seq? {:status :blocked-static-typing
-                  :reason :first-class-predicate-needs-a-shared-static-chunked-sequence-capability}
+    chunked-seq? {:status :static-adaptation
+                  :reason :source-function-and-inline-specialization-use-an-optional-static-ichunkedseq-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch}
     create-ns {:status :host-boundary
                :reason :bootstrap-namespace-wrapper-is-backed-by-a-javascript-namespace-object}
     defmacro {:status :special-form
