@@ -12407,6 +12407,22 @@ let create ~compile_expr =
                                     (Semantic_ir.Apply (method_expr, arguments)))
                                 (prepare [] expected_params call_args))
                       | _ -> (
+                          let typed_primitive =
+                            match marker.protocol_id with
+                            | Some protocol_id
+                              when Protocol_id.equal protocol_id
+                                     Core_protocols.seqable_id
+                                   && method_name = "-seq" -> (
+                                match
+                                  Collection_capability.seq_expr env receiver
+                                with
+                                | Ok result -> Some result
+                                | Error _ -> None)
+                            | Some _ | None -> None
+                          in
+                          match typed_primitive with
+                          | Some result -> Ok result
+                          | None -> (
                           match
                             Protocol.lookup_marker_impl env marker method_name
                               receiver.ty
@@ -12614,7 +12630,7 @@ let create ~compile_expr =
                                             Types.source_name argument.ty)
                                           args)
                                    ^ ")")
-                              | _ -> Error.error (name ^ " is not callable")))))
+                              | _ -> Error.error (name ^ " is not callable"))))))
               | _ -> Error.error (name ^ " is not callable"))))
   and compile_args_for scope env arg_forms =
     let rec loop acc = function
