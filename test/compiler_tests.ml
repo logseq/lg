@@ -23099,12 +23099,14 @@ let test_associative_predicate_uses_the_clojurescript_protocol () =
   if
     not
       (string_contains_substring native_source
-         "(1 >= 0) && (1 < (V.length (V.of_list [1; 2])))")
+         "Runtime_vector.contains_index (V.of_list [1; 2]) 1")
   then
-    failwith "vector -contains-key? should emit a readable bounds check";
+    failwith "vector -contains-key? should emit the typed vector primitive";
   if
-    not (string_contains_substring native_source "V.set (V.of_list [1; 2]) 1 9")
-  then failwith "vector -assoc should emit a readable persistent update";
+    not
+      (string_contains_substring native_source
+         "Runtime_vector.assoc (V.of_list [1; 2]) 1 9")
+  then failwith "vector -assoc should emit the typed vector primitive";
   assert_ocaml_runs
     "associative_predicate_uses_the_clojurescript_iassociative_protocol"
     expected native_source;
