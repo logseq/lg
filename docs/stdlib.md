@@ -1219,3 +1219,12 @@ construction.
 The architecture tests in `test/stdlib` enforce that `clojure.set` is no
 longer classified as compiler-owned and that source-owned core functions have
 no name-based call elaboration or inference path.
+
+The inventory reports `clojure.core` and `cljs.core` as
+`source-with-primitive-boundary`, matching the aggregate source artifact that
+owns their public vars. It records their compiler bootstrap role separately as
+`namespace-bootstrap ... automatic-core-refer`. `Core_namespaces` therefore
+identifies the two automatic-refer namespace names, but supplies no public
+bindings or qualified-member implementations. This distinction prevents the
+automatic core environment rule from being mistaken for compiler ownership of
+the standard-library namespace.

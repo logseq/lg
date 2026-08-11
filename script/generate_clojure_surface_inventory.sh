@@ -424,7 +424,7 @@ for namespace in \
   clojure.test clojure.spec.alpha clojure.pprint; do
   ownership=manifest-only
   if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
-    ownership=compiler-owned
+    ownership=source-with-primitive-boundary
   elif test "$namespace" = clojure.string \
     || test "$namespace" = clojure.edn \
     || test "$namespace" = cljs.reader \
@@ -441,6 +441,9 @@ for namespace in \
     ownership=compiler-owned
   fi
   printf 'namespace\t%s\t%s\n' "$namespace" "$ownership"
+  if test "$namespace" = clojure.core || test "$namespace" = cljs.core; then
+    printf 'namespace-bootstrap\t%s\tautomatic-core-refer\n' "$namespace"
+  fi
 done
 
 while IFS='|' read -r var classification; do

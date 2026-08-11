@@ -257,6 +257,23 @@ awk -F '\t' '$1 == "namespace" && ($2 == "cljs.core.async" || $2 == "cljs.core.a
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
 
 awk -F '\t' '
+  $1 == "namespace" &&
+  ($2 == "clojure.core" || $2 == "cljs.core") &&
+  $3 == "source-with-primitive-boundary" {found[$2] = 1}
+  END {exit !(found["clojure.core"] && found["cljs.core"])}
+' "$tmp/inventory.tsv"
+awk -F '\t' '
+  $1 == "namespace-bootstrap" &&
+  ($2 == "clojure.core" || $2 == "cljs.core") &&
+  $3 == "automatic-core-refer" {found[$2] = 1}
+  END {exit !(found["clojure.core"] && found["cljs.core"])}
+' "$tmp/inventory.tsv"
+awk -F '\t' '
+  $1 == "namespace" && $3 == "compiler-owned" {found = 1}
+  END {exit found}
+' "$tmp/inventory.tsv"
+
+awk -F '\t' '
   ($1 == "logseq-namespace-status" ||
    $1 == "logseq-qualified-var-status") && $3 == "unsupported" {
     print "unclassified Logseq dependency: " $2 > "/dev/stderr"
