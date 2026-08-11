@@ -29096,6 +29096,23 @@ let test_source_array_binary_search_uses_native_indices () =
 |}
   |> expect_error_contains "expected of type"
 
+let test_source_array_binary_search_erases_comparable_callback_storage () =
+  let source =
+    {|
+(def values (array-values 1 3 5 7))
+(defn compare-int [left right] (compare left right))
+(def search-left array-binary-search-left)
+(println (search-left compare-int values 3 4))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "__lg_adapt_collection_item" then
+    failwith
+      "a callback capability must not change sibling array element storage";
+  assert_ocaml_runs
+    "source_array_binary_search_erases_comparable_callback_storage"
+    "2.\n" ocaml_source
+
 let test_ordering_values_use_ocaml_int_inputs_and_results () =
   let source =
     {|
@@ -45713,6 +45730,8 @@ let tests =
       test_ocaml_uncurried_call_emits_melange_direct_application );
     ( "source array binary search uses native indices",
       test_source_array_binary_search_uses_native_indices );
+    ( "source array binary search erases comparable callback storage",
+      test_source_array_binary_search_erases_comparable_callback_storage );
     ( "ordering values use OCaml int inputs and results",
       test_ordering_values_use_ocaml_int_inputs_and_results );
     ( "Melange binary search consumes static orderings",

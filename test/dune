@@ -1304,7 +1304,7 @@
    %{dep:datascript/persistent_sorted_set/storage.expected})))
 
 (rule
- (alias runtest)
+ (alias jsoo-runtest)
  (deps
   datascript/jsoo_smoke.sh
   datascript/persistent_sorted_set/storage_jsoo.expected

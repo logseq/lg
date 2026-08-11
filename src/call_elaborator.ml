@@ -11034,22 +11034,54 @@ let create ~compile_expr =
                     if preserve_optional then (template, actual)
                     else align_optional_inference template actual
                   in
-                  match
-                    ( Types.seqable_constraint_info template,
-                      Types.seqable_constraint_info actual,
-                      Collection_capability.element_type_of_ty env actual )
-                  with
-                  | ( Some (`Required, expected_element, expected_value),
-                      None,
-                      Some actual_element ) ->
-                      (match
-                         unify_argument ~preserve_optional:true substitutions
-                           expected_element actual_element
-                       with
-                      | Error _ as error -> error
-                      | Ok substitutions ->
-                          Type_solver.unify substitutions expected_value actual)
-                  | _ -> Type_solver.unify substitutions template actual
+                  match (template, actual) with
+                  | ( TFn (template_params, template_return),
+                      TFn (actual_params, actual_return) )
+                    when List.length template_params = List.length actual_params
+                    ->
+                      let rec unify_callback_parameters substitutions templates
+                          actuals =
+                        match (templates, actuals) with
+                        | [], [] ->
+                            unify_argument ~preserve_optional:true substitutions
+                              template_return actual_return
+                        | template :: templates, actual :: actuals ->
+                            let actual =
+                              match template with
+                              | TUnknown | TMeta _ | TVar _
+                                when Option.is_some
+                                       (Types.comparable_constraint_info actual)
+                                ->
+                                  Types.constraint_value_type actual
+                              | _ -> actual
+                            in
+                            Result.bind
+                              (unify_argument ~preserve_optional:true
+                                 substitutions template actual)
+                              (fun substitutions ->
+                                unify_callback_parameters substitutions templates
+                                  actuals)
+                        | _ -> assert false
+                      in
+                      unify_callback_parameters substitutions template_params
+                        actual_params
+                  | _ -> (
+                      match
+                        ( Types.seqable_constraint_info template,
+                          Types.seqable_constraint_info actual,
+                          Collection_capability.element_type_of_ty env actual )
+                      with
+                      | ( Some (`Required, expected_element, expected_value),
+                          None,
+                          Some actual_element ) ->
+                          (match
+                             unify_argument ~preserve_optional:true substitutions
+                               expected_element actual_element
+                           with
+                          | Error _ as error -> error
+                          | Ok substitutions ->
+                              Type_solver.unify substitutions expected_value actual)
+                      | _ -> Type_solver.unify substitutions template actual)
                 in
                 let rec infer_arguments substitutions templates actuals =
                   match (templates, actuals) with
