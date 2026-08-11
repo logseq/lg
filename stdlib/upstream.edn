@@ -169,14 +169,14 @@
            :reason :source-iseq-protocol-uses-a-static-sequence-result-and-a-typed-seq-receiver-witness}
     -next {:status :static-adaptation
            :reason :source-inext-protocol-uses-the-static-empty-aware-next-sequence-result-and-a-typed-seq-receiver-witness}
-    -drop {:status :blocked-static-typing
-           :reason :nil-versus-empty-sequence-and-receiver-specific-return-types-require-associated-sequence-result-types}
-    -key {:status :blocked-static-typing
-          :reason :map-entry-key-and-value-are-distinct-associated-types-not-expressible-by-one-first-class-method-signature}
-    -val {:status :blocked-static-typing
-          :reason :map-entry-key-and-value-are-distinct-associated-types-not-expressible-by-one-first-class-method-signature}
-    -realized? {:status :blocked-static-typing
-                :reason :pending-receiver-payload-and-realization-state-require-a-generic-host-type-extension-not-source-expressible}
+    -drop {:status :static-adaptation
+           :reason :source-idrop-protocol-uses-associated-method-witness-results-with-typed-seq-and-vector-implementations-and-an-empty-aware-next-sequence-result}
+    -key {:status :static-adaptation
+          :reason :source-imapentry-protocol-preserves-an-independent-associated-key-result-with-a-typed-tuple-witness}
+    -val {:status :static-adaptation
+          :reason :source-imapentry-protocol-preserves-an-independent-associated-value-result-with-a-typed-tuple-witness}
+    -realized? {:status :static-adaptation
+                :reason :source-ipending-protocol-has-closed-lazy-future-and-user-defined-static-witnesses-while-lg-seq-values-do-not-expose-realization-state}
     -clj->js {:status :host-boundary
               :reason :recursive-javascript-object-conversion-requires-open-javascript-host-values}
     -js->clj {:status :host-boundary
@@ -752,7 +752,7 @@
     decimal? {:status :static-adaptation
               :reason :lg-has-no-decimal-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
     realized? {:status :static-adaptation
-               :reason :source-wrapper-supports-the-current-statically-typed-future-boundary-while-full-upstream-ipending-delay-and-lazy-sequence-dispatch-remains-protocol-blocked}
+               :reason :source-wrapper-dispatches-through-ipending-for-static-delay-future-and-user-defined-receivers-while-lg-seq-values-do-not-expose-realization-state}
     range {:status :static-adaptation
            :reason :integer-only-source-wrapper-preserves-upstream-arities-direction-and-zero-step-control-flow-through-typed-lazy-sequence-primitives}
     shuffle {:status :static-adaptation
@@ -856,9 +856,9 @@
     zipmap {:status :static-adaptation
             :reason :uses-persistent-assoc-and-indexed-access-after-static-nonempty-checks-instead-of-transients}
     key {:status :static-adaptation
-         :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
+         :reason :source-wrapper-dispatches-through-imapentry-with-independent-associated-key-and-value-method-results-and-a-typed-tuple-witness}
     val {:status :static-adaptation
-         :reason :map-entries-are-statically-typed-key-value-tuples-instead-of-open-imapentry-values}
+         :reason :source-wrapper-dispatches-through-imapentry-with-independent-associated-key-and-value-method-results-and-a-typed-tuple-witness}
     merge-with {:status :static-adaptation
                 :reason :source-port-preserves-upstream-entry-fold-and-left-to-right-variadic-order-while-supplied-all-nil-maps-produce-an-empty-static-map-because-value-dependent-nullability-is-not-source-expressible}
     vec {:status :static-adaptation

@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 606 source entries (61.52%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 163 static-typing blockers,
+macro surfaces. The current baseline is 610 source entries (61.93%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 159 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -329,7 +329,7 @@ call elaborator.
 
 The statically supported ClojureScript collection, lookup, metadata,
 comparison, reference, sorted-collection, and transient protocol declarations
-also live in `clojure/core.cljc`. Their 41 public methods are source-owned; the
+also live in `clojure/core.cljc`. Their 45 public methods are source-owned; the
 compiler registry retains only the receiver-specific typed implementations for
 built-in lists, vectors, hash maps, sets, references, and host-backed
 collections. A source declaration is checked against that implementation
@@ -351,8 +351,19 @@ work through ordinary `:refer` across precompiled chunks without creating a
 runtime protocol object or a parallel protocol identity; using such a marker as
 an ordinary runtime value remains rejected.
 
-The complete pinned protocol-method surface now has no deferred entries: 49
-methods are source-defined, 23 have concrete static-typing blockers, 7 are
+`IDrop` uses an associated method-result witness, so vectors, sequences, and
+user-defined receivers can return their statically known element sequence
+without a universal collection value. Its nil-at-end result uses the same
+empty-aware static sequence adaptation as `INext`. `IMapEntry` carries separate
+`-key` and `-val` result types in one witness; the built-in map-entry tuple and
+user-defined records therefore preserve different key and value types through
+first-class `key` and `val` aliases. `IPending` has closed witnesses for LG
+delays (`Lazy.t`), eager futures, and user implementations. LG's erased `Seq.t`
+representation does not expose lazy realization state, so that unsupported
+receiver difference remains explicit in `stdlib/upstream.edn`.
+
+The complete pinned protocol-method surface now has no deferred entries: 53
+methods are source-defined, 19 have concrete static-typing blockers, 7 are
 explicit host boundaries, and 7 are out of scope. The compiler registry still
 provides the receiver-specific typed implementations behind source-declared
 protocol methods; those implementation witnesses are not separate public vars

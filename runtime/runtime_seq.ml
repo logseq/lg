@@ -202,6 +202,8 @@ let drop count sequence =
 
 let rest sequence = drop 1 sequence
 let next sequence = drop 1 sequence
+let drop_from_sequence sequence count = drop count sequence
+let drop_from_vector vector count = drop count (of_vector vector)
 
 let non_empty sequence =
   match sequence () with Seq.Nil -> None | Seq.Cons _ -> Some sequence

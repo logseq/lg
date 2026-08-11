@@ -132,6 +132,10 @@
 (defprotocol IMap
   (-dissoc [coll key]))
 
+(defprotocol IMapEntry
+  (-key [entry])
+  (-val [entry]))
+
 (defprotocol ISet
   (-disjoin [coll value]))
 
@@ -144,6 +148,9 @@
 
 (defprotocol IDeref
   (-deref [value]))
+
+(defprotocol IPending
+  (-realized? [value] :bool))
 
 (defprotocol IMeta
   (-meta [value]))
@@ -173,6 +180,9 @@
 
 (defprotocol INext
   (-next [value]))
+
+(defprotocol IDrop
+  (-drop [value count]))
 
 (defprotocol IReversible
   (-rseq [coll]))
@@ -3192,8 +3202,10 @@
   (runtime-static-value/consume x)
   false)
 
-(defn realized? [future]
-  (runtime-future/realized future))
+(defn realized?
+  {:inline (fn [value] (list 'IPending/-realized? value))}
+  [value]
+  (IPending/-realized? value))
 
 (defn range
   ([] (runtime-seq/range 0 1))
@@ -4087,11 +4099,15 @@
         result)
       result)))
 
-(defn key [map-entry]
-  (stdlib/fst map-entry))
+(defn key
+  {:inline (fn [map-entry] (list 'IMapEntry/-key map-entry))}
+  [map-entry]
+  (IMapEntry/-key map-entry))
 
-(defn val [map-entry]
-  (stdlib/snd map-entry))
+(defn val
+  {:inline (fn [map-entry] (list 'IMapEntry/-val map-entry))}
+  [map-entry]
+  (IMapEntry/-val map-entry))
 
 (defn rseq
   {:inline (fn [rev] (list 'IReversible/-rseq rev))}

@@ -21773,10 +21773,10 @@ let test_batched_core_functions_reject_bad_arities () =
 |}
   |> expect_error_contains "called with incompatible arguments"
 
-let test_source_realized_rejects_non_future_values () =
+let test_source_realized_rejects_non_pending_values () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_realized_value.cljc"
     {|(def x (realized? 1))|}
-  |> expect_error_contains "expected of type"
+  |> expect_error_contains "IPending"
 
 let test_source_array_helpers_reject_incompatible_values () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_array_from_value.cljc"
@@ -26927,6 +26927,96 @@ let test_source_iseq_and_inext_protocols_match_clojurescript () =
 (core/ISeq/-first [1 2])
 |}
   |> expect_error_contains "ISeq"
+
+let test_source_drop_map_entry_and_pending_protocols_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-associated-protocols
+  (:require [cljs.core :as core
+             :refer [IDrop IMapEntry IPending key realized? val]]))
+
+(defn drop-values [value count]
+  (IDrop/-drop value count))
+
+(deftype SourceDrop [^:seq<int> values]
+  IDrop
+  (-drop [source count]
+    (drop count (.-values source))))
+
+(deftype SourceEntry [^:string entry-key ^int entry-value]
+  IMapEntry
+  (-key [entry] (.-entry-key entry))
+  (-val [entry] (.-entry-value entry)))
+
+(deftype PendingFlag [^:bool ready]
+  IPending
+  (-realized? [flag] (.-ready flag)))
+
+(def source-key key)
+(def source-val val)
+(def source-realized? realized?)
+(def tuple-entry (tuple :answer 42))
+(def record-entry (SourceEntry. "answer" 7))
+(def delayed (delay 9))
+(def before-force (source-realized? delayed))
+(def forced (force delayed))
+
+(println
+  (and (= [3 4] (vec (drop-values [1 2 3 4] 2)))
+       (= [3 4] (vec (core/IDrop/-drop (seq [1 2 3 4]) 2)))
+       (= [3 4] (vec (drop-values (SourceDrop. (seq [1 2 3 4])) 2)))
+       (empty? (drop-values [1 2] 2))
+       (= :answer (source-key tuple-entry))
+       (= 42 (source-val tuple-entry))
+       (= "answer" (source-key record-entry))
+       (= 8 (inc (source-val record-entry)))
+       (= "answer" (core/IMapEntry/-key record-entry))
+       (= 7 (IMapEntry/-val record-entry))
+       (not before-force)
+       (= 9 forced)
+       (source-realized? delayed)
+       (source-realized? (future-call (fn [] 1)))
+       (not (source-realized? (PendingFlag. false)))
+       (source-realized? (PendingFlag. true))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_associated_protocols.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "associated protocol results must remain statically typed";
+  assert_ocaml_runs
+    "source_drop_map_entry_and_pending_protocols_match_clojurescript" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_associated_protocols.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_drop_bad_count.cljc"
+    {|
+(ns app.source-drop-bad-count
+  (:require [cljs.core :as core]))
+(core/IDrop/-drop [1 2] "1")
+|}
+  |> expect_error_contains "-drop";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_map_entry_bad_receiver.cljc"
+    {|
+(ns app.source-map-entry-bad-receiver
+  (:require [cljs.core :as core]))
+(core/IMapEntry/-key [1 2])
+|}
+  |> expect_error_contains "IMapEntry";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_pending_bad_receiver.cljc"
+    {|
+(ns app.source-pending-bad-receiver
+  (:require [cljs.core :as core]))
+(core/IPending/-realized? 1)
+|}
+  |> expect_error_contains "IPending"
 
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
@@ -42589,8 +42679,8 @@ let tests =
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
       test_batched_core_functions_reject_bad_arities );
-    ( "source realized? rejects non-future values",
-      test_source_realized_rejects_non_future_values );
+    ( "source realized? rejects non-pending values",
+      test_source_realized_rejects_non_pending_values );
     ( "source array helpers reject incompatible values",
       test_source_array_helpers_reject_incompatible_values );
     ( "source array-values rejects invalid arguments",
@@ -42869,6 +42959,8 @@ let tests =
       test_source_protocol_names_can_be_referred_across_namespaces );
     ( "source ISeq and INext protocols match ClojureScript",
       test_source_iseq_and_inext_protocols_match_clojurescript );
+    ( "source drop, map entry, and pending protocols match ClojureScript",
+      test_source_drop_map_entry_and_pending_protocols_match_clojurescript );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

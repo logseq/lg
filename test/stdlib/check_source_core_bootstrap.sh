@@ -10,7 +10,7 @@ for file in stdlib/clojure/core.mli stdlib/clojure/core.cljc; do
   fi
 done
 
-for protocol in ISeq INext; do
+for protocol in IDrop IMapEntry INext IPending ISeq; do
   if ! grep -F "(defprotocol $protocol" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$protocol is not source-declared" >&2

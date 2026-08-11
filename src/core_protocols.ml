@@ -9,6 +9,7 @@ let seqable_id = Protocol_id.create ~owner:[] ~name:"Seqable"
 let seq_method_id = Method_id.create ~owner:[ "Seqable" ] ~name:"-seq"
 let iseq_id = Protocol_id.create ~owner:[] ~name:"ISeq"
 let inext_id = Protocol_id.create ~owner:[] ~name:"INext"
+let drop_id = Protocol_id.create ~owner:[] ~name:"IDrop"
 let reducible_id = Protocol_id.create ~owner:[] ~name:"Reducible"
 let reduce_method_id = Method_id.create ~owner:[ "Reducible" ] ~name:"-reduce"
 let counted_id = Protocol_id.create ~owner:[] ~name:"Counted"
@@ -38,6 +39,7 @@ let transient_set_id = Protocol_id.create ~owner:[] ~name:"ITransientSet"
 let equiv_id = Protocol_id.create ~owner:[] ~name:"IEquiv"
 let hash_id = Protocol_id.create ~owner:[] ~name:"IHash"
 let deref_id = Protocol_id.create ~owner:[] ~name:"IDeref"
+let pending_id = Protocol_id.create ~owner:[] ~name:"IPending"
 let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
 let volatile_id = Protocol_id.create ~owner:[] ~name:"IVolatile"
@@ -124,6 +126,33 @@ let add_sequence_protocols registry =
        (TFn ([ sequence ], sequence))
   |> add inext_id "-next" "Lg_runtime.Runtime_seq.next"
        (TFn ([ sequence ], Types.next_seq element))
+
+let declare_drop_protocol registry =
+  Protocol_registry.declare drop_id
+    [
+      signature (method_id drop_id "-drop") [ TUnknown; TInt ]
+        (Types.next_seq TUnknown);
+    ]
+    registry
+  |> add_or_fail
+
+let add_drop_protocol registry =
+  let element = TVar "drop_element" in
+  let sequence = TSeq element in
+  let vector = TVector element in
+  let result = Types.next_seq element in
+  let add receiver ocaml_name method_ty registry =
+    let binding = Types.binding ~protocol_id:drop_id ocaml_name method_ty in
+    Protocol_registry.add_implementation drop_id (method_id drop_id "-drop")
+      receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add Receiver_id.Seq_receiver
+       "Lg_runtime.Runtime_seq.drop_from_sequence"
+       (TFn ([ sequence; TInt ], result))
+  |> add Receiver_id.Vector_receiver "Lg_runtime.Runtime_seq.drop_from_vector"
+       (TFn ([ vector; TInt ], result))
 
 let declare_reducible registry =
   Protocol_registry.declare reducible_id
@@ -339,6 +368,9 @@ let add_transient_protocols registry =
 let declare_protocol_predicate_family registry =
   let indexed_element = TVar "indexed_element" in
   let indexed_receiver = TVar "indexed_receiver" in
+  let map_entry_key = TVar "map_entry_key" in
+  let map_entry_value = TVar "map_entry_value" in
+  let map_entry = TVar "map_entry_receiver" in
   registry
   |> Protocol_registry.declare iindexed_id
        [
@@ -363,7 +395,12 @@ let declare_protocol_predicate_family registry =
   |> add_or_fail
   |> Protocol_registry.declare sequential_id []
   |> add_or_fail
-  |> Protocol_registry.declare map_entry_id []
+  |> Protocol_registry.declare map_entry_id
+       [
+         signature (method_id map_entry_id "-key") [ map_entry ] map_entry_key;
+         signature (method_id map_entry_id "-val") [ map_entry ]
+           map_entry_value;
+       ]
   |> add_or_fail
   |> Protocol_registry.declare sorted_id
        [
@@ -380,6 +417,9 @@ let declare_protocol_predicate_family registry =
 let add_protocol_predicate_family registry =
   let element = TVar "indexed_element" in
   let vector = TVector element in
+  let map_entry_key = TVar "map_entry_key" in
+  let map_entry_value = TVar "map_entry_value" in
+  let map_entry = TTuple [ map_entry_key; map_entry_value ] in
   let indexed_binding =
     Types.binding ~protocol_id:iindexed_id
       ~overload_targets:
@@ -409,8 +449,16 @@ let add_protocol_predicate_family registry =
   |> add_marker Receiver_id.List_receiver
   |> add_marker Receiver_id.Vector_receiver
   |> add_marker Receiver_id.Seq_receiver
-  |> Protocol_registry.add_marker_implementation map_entry_id
-       Receiver_id.Tuple_receiver
+  |> Protocol_registry.add_implementation map_entry_id
+       (method_id map_entry_id "-key") Receiver_id.Tuple_receiver
+       (Types.binding ~protocol_id:map_entry_id "Stdlib.fst"
+          (TFn ([ map_entry ], map_entry_key)))
+  |> add_or_fail
+  |> Protocol_registry.add_implementation map_entry_id
+       (method_id map_entry_id "-val") Receiver_id.Tuple_receiver
+       (Types.binding ~protocol_id:map_entry_id "Stdlib.snd"
+          (TFn ([ map_entry ], map_entry_value)))
+  |> add_or_fail
 
 let add_vector_reversible_protocol registry =
   let element = TVar "reversible_element" in
@@ -427,6 +475,12 @@ let add_vector_reversible_protocol registry =
 let declare_deref registry =
   Protocol_registry.declare deref_id
     [ signature (method_id deref_id "-deref") [ TUnknown ] TUnknown ]
+    registry
+  |> add_or_fail
+
+let declare_pending registry =
+  Protocol_registry.declare pending_id
+    [ signature (method_id pending_id "-realized?") [ TUnknown ] TBool ]
     registry
   |> add_or_fail
 
@@ -458,6 +512,11 @@ let add_reference_protocols registry =
        "-deref" "Lg_runtime.Runtime_future.get" (TFn ([ future ], value))
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") deref_id
        "-deref" "Lg_runtime.Runtime_slot.get" (TFn ([ slot ], value))
+  |> add (Receiver_id.Host_receiver "Lazy.t") pending_id "-realized?"
+       "Lazy.is_val" (TFn ([ lazy_value ], TBool))
+  |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_future.t") pending_id
+       "-realized?" "Lg_runtime.Runtime_future.realized"
+       (TFn ([ future ], TBool))
   |> add Receiver_id.Ref_receiver reset_id "-reset!"
        "Lg_runtime.Runtime_reference.reset"
        (TFn ([ reference; value ], value))
@@ -772,6 +831,7 @@ let initial_registry =
   |> add_seqable runtime_map_receiver "Lg_runtime.Runtime_map.to_seq"
   |> add_edn_seqable
   |> declare_sequence_protocols |> add_sequence_protocols
+  |> declare_drop_protocol |> add_drop_protocol
   |> declare_reducible
   |> add_reducible Receiver_id.List_receiver "Lg.Core_protocols.reduce_list"
   |> add_reducible Receiver_id.Vector_receiver "Lg.Core_protocols.reduce_vector"
@@ -838,7 +898,7 @@ let initial_registry =
   |> declare_collection_lifecycle_protocols |> add_transient_protocols
   |> add_vector_reversible_protocol
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
-  |> declare_deref
+  |> declare_deref |> declare_pending
   |> declare_compare_and_set |> declare_reset |> declare_volatile |> declare_swap
   |> add_reference_protocols
   |> declare_comparable_protocol

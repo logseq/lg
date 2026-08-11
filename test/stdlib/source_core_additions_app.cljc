@@ -1,5 +1,5 @@
 (ns source-core-additions-app
-  (:require [cljs.core :as core :refer [INext ISeq NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
+  (:require [cljs.core :as core :refer [IDrop IMapEntry INext IPending ISeq NaN? add-to-string-hash-cache areduce array-binary-search-left array-binary-search-right array-from array-index-of array-values bit-and bit-not bit-or bit-shift-left bit-shift-right bit-xor concat dec decimal? divide equiv-map flush hash-double hash-keyword hash-long hash-map-lite hash-string ifind? inc infinite? into iterate key-test keyword-identical? locking map-entry? mapv merge-with parse-double parse-long parse-uuid partitionv ratio? realized? reduceable? regexp? set-lite special-symbol? symbol-identical? tree-seq vector-lite volatile?]]
             [cljs.reader :as reader :refer [deregister-default-tag-parser! deregister-tag-parser! parse-and-validate-timestamp]]
             [clojure.data :as data :refer [diff]]
             [clojure.string :as string :refer [split]]
@@ -1230,3 +1230,29 @@
  (and (= 4 (core/ISeq/-first custom-source-sequence))
       (= [5 6] (vec (ISeq/-rest custom-source-sequence)))
       (= [5 6] (vec (INext/-next custom-source-sequence)))))
+
+(deftype SourceEntry [^:string entry-key ^int entry-value]
+  IMapEntry
+  (-key [entry] (.-entry-key entry))
+  (-val [entry] (.-entry-value entry)))
+
+(deftype PendingFlag [^:bool ready]
+  IPending
+  (-realized? [flag] (.-ready flag)))
+
+(def source-entry (SourceEntry. "answer" 7))
+(def pending-delay (delay 9))
+(def pending-before-force (realized? pending-delay))
+(def pending-forced (force pending-delay))
+(println
+ (and (= [3 4] (vec (IDrop/-drop [1 2 3 4] 2)))
+      (= [3 4] (vec (core/IDrop/-drop (seq [1 2 3 4]) 2)))
+      (= "answer" (key source-entry))
+      (= 7 (val source-entry))
+      (= "answer" (core/IMapEntry/-key source-entry))
+      (not pending-before-force)
+      (= 9 pending-forced)
+      (realized? pending-delay)
+      (realized? (future-call (fn [] 1)))
+      (not (core/IPending/-realized? (PendingFlag. false)))
+      (IPending/-realized? (PendingFlag. true))))

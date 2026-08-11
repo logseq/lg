@@ -441,8 +441,6 @@
   :overload<fn<symbol>;fn<string;symbol>>)
 (signature clojure.core/ratio? [value] :fn<value;bool>)
 (signature clojure.core/decimal? [value] :fn<value;bool>)
-(signature clojure.core/realized? [value]
-  :fn<Lg_runtime.Runtime_future.t<value>;bool>)
 (signature clojure.core/range
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)
 (signature clojure.core/shuffle [value]
@@ -617,12 +615,6 @@
 
 (signature clojure.core/zipmap [key value]
   :fn<seqable<key>;seqable<value>;map<key;value>>)
-
-(signature clojure.core/key [key value]
-  :fn<tuple<key;value>;key>)
-
-(signature clojure.core/val [key value]
-  :fn<tuple<key;value>;value>)
 
 (signature clojure.core/keyword-identical? [value]
   :fn<value;value;bool>)
