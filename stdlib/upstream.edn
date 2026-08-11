@@ -157,8 +157,8 @@
                    :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
     -chunked-rest {:status :blocked-static-typing
                    :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
-    -drop-first {:status :blocked-static-typing
-                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    -drop-first {:status :static-adaptation
+                 :reason :source-ichunk-protocol-preserves-arraychunk-drop-first-and-empty-chunk-errors-over-a-parameterized-static-arraychunk-type}
     -clone {:status :blocked-static-typing
             :reason :same-static-receiver-result-across-arrays-and-cljs-collection-types-needs-a-clone-capability-witness}
     -invoke {:status :blocked-static-typing
@@ -1056,20 +1056,20 @@
                :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
     alter-meta! {:status :blocked-static-typing
                  :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map-or-a-statically-typed-metadata-update-capability}
-    array-chunk {:status :blocked-static-typing
-                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
+    array-chunk {:status :ported
+                 :reason :source-function-preserves-all-three-upstream-arities-over-a-parameterized-array-backed-chunk-with-count-index-reduce-and-drop-first-protocols}
     array-iter {:status :host-boundary
                 :reason :constructs-a-javascript-iterator-object-over-a-javascript-array}
     array-list {:status :host-boundary
                 :reason :constructs-a-mutable-javascript-object-used-by-stateful-transducers}
     bases {:status :host-boundary
            :reason :reads-google-closure-javascript-constructor-inheritance-metadata}
-    chunk {:status :blocked-static-typing
-           :reason :clojurescript-chunk-buffer-and-chunk-result-have-no-lg-static-source-types}
-    chunk-append {:status :blocked-static-typing
-                  :reason :clojurescript-mutable-chunk-buffer-has-no-lg-static-source-type}
-    chunk-buffer {:status :blocked-static-typing
-                  :reason :clojurescript-mutable-chunk-buffer-has-no-lg-static-source-type}
+    chunk {:status :ported
+           :reason :source-function-freezes-the-populated-prefix-of-a-typed-mutable-chunk-buffer-into-an-arraychunk}
+    chunk-append {:status :ported
+                  :reason :source-function-appends-to-a-capacity-checked-parameterized-mutable-array-buffer-and-rejects-appends-after-the-buffer-is-frozen-into-a-chunk}
+    chunk-buffer {:status :static-adaptation
+                  :reason :source-function-constructs-a-parameterized-mutable-array-buffer-through-a-minimal-typed-runtime-boundary-because-the-element-type-is-inferred-from-subsequent-appends}
     chunk-cons {:status :blocked-static-typing
                 :reason :clojurescript-chunked-sequence-representation-has-no-lg-static-source-type}
     chunk-first {:status :blocked-static-typing

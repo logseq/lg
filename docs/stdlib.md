@@ -198,8 +198,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 634 source entries (64.37%), 25 typed
-primitives, 43 special forms, 97 host boundaries, 135 static-typing blockers,
+macro surfaces. The current baseline is 639 source entries (64.87%), 25 typed
+primitives, 43 special forms, 97 host boundaries, 130 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -729,6 +729,15 @@ static specialization for nil, lists, vectors, sets, maps, strings, arrays,
 and indexed defaults. Named protocol functions used as collection callbacks
 are contextualized into concrete closures, so higher-order uses such as
 `(map count)` carry the correct static witness without dynamic storage.
+The first chunking batch ports `IChunk/-drop-first`, `array-chunk`,
+`chunk-buffer`, `chunk-append`, and `chunk`. `ArrayChunk` is a parameterized
+array-backed source record implementing `ICounted`, `IIndexed`, `IChunk`, and
+`IReduce`; the mutable builder uses a minimal parameterized OCaml buffer with
+capacity checks, one-time freeze semantics, and no dynamic storage. Custom
+`IReduce` receivers can now be
+reduced directly without also pretending to be seqable. Small typed helpers
+keep arithmetic outside protocol method declarations, avoiding false
+dependency edges in the current aggregate source scheduler.
 The numeric coercions `int`, `long`, `double`, `unchecked-int`, and
 `unchecked-long` are source functions with inline source specialization over
 internal typed primitives. The unchecked pair deliberately shares the

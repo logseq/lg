@@ -55,6 +55,8 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
+(cljs.core/chunk-buffer 4)
+(cljs.core/array-chunk (cljs.core/array-values 1 2))
 (io/resource "fixture.edn")
 (shell/sh "true")
 (build/create-basis {})
@@ -240,6 +242,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/rand" && $3 == "source" &
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "source" && $4 == "source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/keep-indexed" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/doseq" && $3 == "source" && $4 == "source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/chunk-buffer" || $2 == "clojure.core/array-chunk" || $2 == "clojure.core/chunk-append" || $2 == "clojure.core/chunk" || $2 == "clojure.core/-drop-first") && $3 == "source" {found++} END {exit found != 5}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.set/project" || $2 == "clojure.set/rename") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.set/index" || $2 == "clojure.set/join") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.walk/postwalk" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -347,6 +350,7 @@ awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/compose-fixtures" || $2 
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/get-current-env" || $2 == "cljs.test/set-env!" || $2 == "cljs.test/clear-env!" || $2 == "cljs.test/get-and-clear-env!" || $2 == "cljs.test/inc-report-counter!" || $2 == "cljs.test/testing-contexts-str" || $2 == "cljs.test/testing") && $3 == "source" {found++} END {exit found != 8}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && ($2 == "cljs.test/is" || $2 == "cljs.test/are" || $2 == "cljs.test/try-expr" || $2 == "cljs.test/deftest" || $2 == "cljs.test/run-test" || $2 == "cljs.test/run-tests" || $2 == "cljs.test/ns?") && $3 == "source" {found++} END {exit found != 7}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace-var" && $2 == "cljs.test/use-fixtures" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "namespace-var" && ($2 == "clojure.core/chunk-buffer" || $2 == "clojure.core/array-chunk" || $2 == "clojure.core/chunk-append" || $2 == "clojure.core/chunk") && $3 == "source" {found++} END {exit found != 4}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/testing") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"

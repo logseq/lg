@@ -448,6 +448,10 @@ cljs.test/ns?|source
 cljs.test/compose-fixtures|source
 cljs.test/join-fixtures|source
 cljs.test/successful?|source
+clojure.core/chunk-buffer|source
+clojure.core/array-chunk|source
+clojure.core/chunk-append|source
+clojure.core/chunk|source
 clojure.set/project|source
 clojure.set/rename|source
 clojure.string/escape|source

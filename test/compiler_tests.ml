@@ -29372,6 +29372,112 @@ let test_cljs_test_synchronous_fixtures_are_source_owned () =
          ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_chunk_buffer_and_array_chunk_match_clojurescript () =
+  let source =
+    {|
+(ns app.chunk-buffer
+  (:require [cljs.core :as core
+             :refer [array-chunk array-values chunk chunk-append chunk-buffer
+                     count nth reduce]]))
+
+(def buffer (chunk-buffer 3))
+(chunk-append buffer 4)
+(core/chunk-append buffer 5)
+(chunk-append buffer 6)
+(def whole (chunk buffer))
+(def dropped (core/IChunk/-drop-first whole))
+(def slice (array-chunk (array-values 1 2 3 4) 1 3))
+
+(println (= 3 (count whole)))
+(println (= 4 (nth whole 0)))
+(println (= 6 (nth whole 2)))
+(println (= 2 (count dropped)))
+(println (= 5 (nth dropped 0)))
+(println (= 11 (reduce + 0 dropped)))
+(println (= 2 (count slice)))
+(println (= 2 (nth slice 0)))
+(println (= 3 (nth slice 1)))
+
+(def empty-drop-errors
+  (try
+    (do (core/IChunk/-drop-first (array-chunk (make-array 0 0))) false)
+    (catch _ true)))
+
+(def overflow-errors
+  (try
+    (let [buffer (chunk-buffer 1)]
+      (chunk-append buffer 1)
+      (chunk-append buffer 2)
+      false)
+    (catch _ true)))
+
+(def append-after-chunk-errors
+  (try
+    (let [buffer (chunk-buffer 2)]
+      (chunk-append buffer 1)
+      (chunk buffer)
+      (chunk-append buffer 2)
+      false)
+    (catch _ true)))
+
+(println empty-drop-errors)
+(println overflow-errors)
+(println append-after-chunk-errors)
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_chunk_buffer_array_chunk.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "chunk buffers and array chunks must remain statically typed";
+  let expected = String.concat "" (List.init 12 (fun _ -> "true\n")) in
+  assert_ocaml_runs "source_chunk_buffer_array_chunk" expected native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_chunk_buffer_array_chunk.cljc" source)
+
+let test_source_chunk_buffer_and_array_chunk_reject_invalid_arguments () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_chunk_buffer_bad_capacity.cljc"
+    {|
+(ns app.chunk-buffer-bad-capacity
+  (:require [cljs.core :refer [chunk-buffer]]))
+(chunk-buffer "three")
+|}
+  |> expect_error_contains "incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_array_chunk_bad_offset.cljc"
+    {|
+(ns app.array-chunk-bad-offset
+  (:require [cljs.core :refer [array-chunk array-values]]))
+(array-chunk (array-values 1 2 3) "one")
+|}
+  |> expect_error_contains "incompatible arguments"
+
+let test_chunk_buffer_and_array_chunk_are_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/clojure/core.cljc") in
+  if not (string_contains_substring source "(defprotocol IChunk") then
+    failwith "cljs.core/IChunk is not source-owned";
+  if not (string_contains_substring source "(type-record ArrayChunk") then
+    failwith "cljs.core/ArrayChunk is not source-owned";
+  List.iter
+    (fun name ->
+      if not (string_contains_substring source ("(defn " ^ name)) then
+        failwith ("cljs.core/" ^ name ^ " is not source-owned");
+      List.iter
+        (fun path ->
+          let compiler_source = read_file (Filename.concat root path) in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              ("cljs.core/" ^ name
+             ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "chunk-buffer"; "array-chunk"; "chunk-append"; "chunk" ]
+
 let test_source_collection_projection_family_matches_clojurescript () =
   let source =
     {|
@@ -43814,6 +43920,12 @@ let tests =
       test_source_cljs_test_synchronous_fixtures_reject_invalid_forms );
     ( "cljs.test synchronous fixtures are source-owned",
       test_cljs_test_synchronous_fixtures_are_source_owned );
+    ( "source chunk buffer and array chunk match ClojureScript",
+      test_source_chunk_buffer_and_array_chunk_match_clojurescript );
+    ( "source chunk buffer and array chunk reject invalid arguments",
+      test_source_chunk_buffer_and_array_chunk_reject_invalid_arguments );
+    ( "chunk buffer and array chunk are source-owned",
+      test_chunk_buffer_and_array_chunk_are_source_owned );
     ( "source collection projection family matches ClojureScript",
       test_source_collection_projection_family_matches_clojurescript );
     ( "collection projection family has no public-name dispatch",

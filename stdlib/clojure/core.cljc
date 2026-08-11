@@ -9,6 +9,7 @@
             [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
             [ocaml.Lg_runtime.Runtime_array_melange :as runtime-array-melange]
+            [ocaml.Lg_runtime.Runtime_chunk_buffer :as runtime-chunk-buffer]
             [ocaml.Lg_runtime.Runtime_future :as runtime-future]
             [ocaml.Lg_runtime.Runtime_hierarchy :as runtime-hierarchy]
             [ocaml.Lg_runtime.Runtime_int :as runtime-int]
@@ -109,6 +110,9 @@
 ;; the same protocols without routing public method names through call dispatch.
 (defprotocol ICounted
   (-count [coll]))
+
+(defprotocol IChunk
+  (-drop-first [coll]))
 
 (defprotocol IEmptyableCollection
   (-empty [coll]))
@@ -251,6 +255,11 @@
 (type-record persistent-tree-set [value]
   (mapping :persistent-tree-map<value;bool>)
   (metadata :Lg_edn_backend.t))
+
+(type-record ArrayChunk [value]
+  (chunk-values :array<value>)
+  (chunk-offset :int)
+  (chunk-end :int))
 
 (extend-type :keyword
   INamed
@@ -3268,6 +3277,68 @@
 
 (defn array-from [coll]
   (to-array coll))
+
+(defn- array-chunk-value [values offset end]
+  (record ArrayChunk
+          (chunk-values values)
+          (chunk-offset offset)
+          (chunk-end end)))
+
+(defn- array-chunk-count [chunk]
+  (- (:chunk-end chunk) (:chunk-offset chunk)))
+
+(extend-type ArrayChunk
+  ICounted
+  (-count [chunk]
+    (array-chunk-count chunk))
+  IIndexed
+  (-nth [chunk index]
+    (aget (:chunk-values chunk) (+ (:chunk-offset chunk) index)))
+  (-nth [chunk index not-found]
+    (if (and (>= index 0)
+             (< index (array-chunk-count chunk)))
+      (aget (:chunk-values chunk) (+ (:chunk-offset chunk) index))
+      not-found))
+  IChunk
+  (-drop-first [chunk]
+    (if (= (:chunk-offset chunk) (:chunk-end chunk))
+      (raise (Invalid_argument "-drop-first of empty chunk"))
+      (array-chunk-value
+       (:chunk-values chunk)
+       (+ (:chunk-offset chunk) 1)
+       (:chunk-end chunk))))
+  IReduce
+  (-reduce [chunk reducer initial]
+    (loop [result initial
+           index (:chunk-offset chunk)]
+      (if (< index (:chunk-end chunk))
+        (recur (reducer result (aget (:chunk-values chunk) index))
+               (+ index 1))
+        result))))
+
+(defn array-chunk
+  "Creates an array-backed chunk over `values` between `offset` and `end`."
+  ([values]
+   (array-chunk-value values 0 (alength values)))
+  ([values offset]
+   (array-chunk-value values offset (alength values)))
+  ([values offset end]
+   (array-chunk-value values offset end)))
+
+(defn chunk-buffer
+  "Creates a typed mutable chunk buffer with `capacity` slots."
+  [capacity]
+  (runtime-chunk-buffer/create capacity))
+
+(defn chunk-append
+  "Appends `value` to `buffer`."
+  [buffer value]
+  (runtime-chunk-buffer/append buffer value))
+
+(defn chunk
+  "Returns the populated values of `buffer` as an array-backed chunk."
+  [buffer]
+  (array-chunk (runtime-chunk-buffer/to-array buffer)))
 
 (defn set-from-indexed-seq [indexed-seq]
   (set indexed-seq))

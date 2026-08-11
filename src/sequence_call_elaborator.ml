@@ -1773,11 +1773,30 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           | (Error _ as err), _ -> err
           | _, (Error _ as err) -> err
           | Ok init, Ok collection -> (
-              match Collection_capability.to_seq_expr env collection with
-            | Error _ ->
-                Error.error
-                  ("reduce expects a seqable value, got "
-                  ^ Types.source_name collection.ty)
+              let reducible_input =
+                match Collection_capability.to_seq_expr env collection with
+                | Ok input -> Ok input
+                | Error _ -> (
+                    match
+                      Core_protocols.find_reducible collection.ty
+                        (Compiler_environment.protocols env)
+                    with
+                    | Some
+                        { ty =
+                            TFn
+                              ([ _receiver;
+                                 TFn ([ _accumulator; item ], _reducer_result);
+                                 _initial ],
+                               _return);
+                          _ } ->
+                        Ok (item, Semantic_ir.Ident "Seq.empty")
+                    | Some _ | None ->
+                        Error.error
+                          ("reduce expects a seqable or reducible value, got "
+                          ^ Types.source_name collection.ty))
+              in
+              match reducible_input with
+              | Error _ as error -> error
               | Ok (inner, sequence) -> (
                   match compile_reducer scope env init.ty inner fn_form with
                   | Error _ as err -> err

@@ -471,6 +471,18 @@
   :fn<seqable<value>;array<value>>)
 (signature clojure.core/array-from [value]
   :fn<seqable<value>;array<value>>)
+(signature clojure.core/array-chunk-value [value]
+  :fn<array<value>;int;int;ArrayChunk<value>>)
+(signature clojure.core/array-chunk-count [value]
+  :fn<ArrayChunk<value>;int>)
+(signature clojure.core/array-chunk [value]
+  :overload<fn<array<value>;ArrayChunk<value>>;fn<array<value>;int;ArrayChunk<value>>;fn<array<value>;int;int;ArrayChunk<value>>>)
+(signature clojure.core/chunk-buffer [value]
+  :fn<int;Lg_runtime.Runtime_chunk_buffer.t<value>>)
+(signature clojure.core/chunk-append [value]
+  :fn<Lg_runtime.Runtime_chunk_buffer.t<value>;value;unit>)
+(signature clojure.core/chunk [value]
+  :fn<Lg_runtime.Runtime_chunk_buffer.t<value>;ArrayChunk<value>>)
 (signature clojure.core/set-from-indexed-seq [value]
   :fn<seq<value>;set<value>>)
 (signature clojure.core/munge-str :fn<string;string>)
