@@ -1,5 +1,12 @@
 (ns clojure.core)
 
+(signature clojure.core/tagged-literal-tag-value [form]
+  :fn<TaggedLiteral<form>;symbol>)
+(signature clojure.core/tagged-literal-form-value [form]
+  :fn<TaggedLiteral<form>;form>)
+(signature clojure.core/tagged-literal [form]
+  :fn<symbol;hashable<form>;TaggedLiteral<form>>)
+
 (signature clojure.core/make-hierarchy
   :fn<Lg_edn_backend.t>)
 (signature clojure.core/isa?

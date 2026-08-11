@@ -33,10 +33,10 @@ implements?	source	source-macro-preserves-static-protocol-satisfaction-and-singl
 list*	source	source-macro-preserves-all-direct-upstream-arities-final-sequence-expansion-left-to-right-single-evaluation-and-existing-eager-typed-list-results-for-one-static-element-type-while-the-complete-first-class-heterogeneous-variadic-function-shape-remains-unrepresentable
 rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 record?	source	source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch
-replace	blocked-static-typing	one-arity-transducer-and-two-arity-vector-or-lazy-sequence-dependent-results-cannot-share-one-source-function-type
+replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation
 spread	blocked-static-typing	argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence
-tagged-literal	blocked-static-typing	tagged-literal-forms-accept-arbitrary-clojure-values-without-a-public-closed-source-value-domain
-tagged-literal?	blocked-static-typing	first-class-nominal-predicate-must-accept-every-static-value-type-without-a-universal-open-value
+tagged-literal	source	source-parameterized-nominal-type-preserves-symbol-tags-statically-typed-payloads-literal-keyword-or-get-field-access-structural-equality-and-upstream-hash-composition-without-an-open-dynamic-value
+tagged-literal?	source	source-function-and-inline-specialization-use-an-optional-static-itaggedliteral-marker-witness-for-first-class-true-and-false-calls
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
 to-array-2d	source	source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses
 unsafe-bit-and	blocked-static-typing	javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve

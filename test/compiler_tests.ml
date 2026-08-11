@@ -11598,6 +11598,136 @@ let test_implements_macro_is_source_owned () =
         failwith ("implements? still has public-name dispatch in " ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_tagged_literals_match_clojurescript () =
+  let source =
+    {|
+(ns app.source-tagged-literals
+  (:require [clojure.core :as core :refer [record? tagged-literal tagged-literal?]]))
+
+(def tagged-predicate core/tagged-literal?)
+(def integer-value (tagged-literal 'lg/point [10 20]))
+(def equal-integer-value (tagged-literal 'lg/point [10 20]))
+(def string-value (core/tagged-literal 'lg/name "Ada"))
+
+(println (tagged-literal? integer-value))
+(println (tagged-predicate string-value))
+(println (not (tagged-predicate 42)))
+(println (= 'lg/point (:tag integer-value)))
+(println (= [10 20] (:form integer-value)))
+(println (= 'lg/point (get integer-value :tag)))
+(println (= "Ada" (:form string-value)))
+(println (= integer-value equal-integer-value))
+(println (= (hash integer-value) (hash equal-integer-value)))
+(println (not (= integer-value (tagged-literal 'lg/point [10 21]))))
+(println (not (record? integer-value)))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "tagged literals must preserve their statically typed payload";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_tagged_literals"
+    (String.concat "" (List.init 11 (fun _ -> "true\n")))
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange tagged literals must remain statically typed";
+  compile_string_from_stdlib {|(tagged-literal "not-a-symbol" 42)|}
+  |> expect_error_contains "symbol"
+
+let test_tagged_literals_are_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring core_source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defprotocol ITaggedLiteral";
+      "(type-record TaggedLiteral";
+      "(defn tagged-literal?";
+      "(defn tagged-literal";
+    ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "tagged-literal"; "tagged-literal?" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
+let test_source_replace_matches_clojurescript_collection_shapes () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let inferred_state, _ =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+      ~filename:"test/source_replace_type.cljc" stdlib.state
+      {|
+(ns app.source-replace-type
+  (:require [clojure.core :refer [replace]]))
+(def replaced-seq (replace (hash-map :a :A) (seq [:a :b :a])))
+|}
+    |> expect_ok
+  in
+  (match
+     Lg.Compiler_environment.find_opt "app.source-replace-type/replaced-seq"
+       inferred_state.typecheck_state.env
+   with
+  | Some { ty = Lg.Types.TSeq _; _ } -> ()
+  | Some binding ->
+      failwith
+        ("replace seq result inferred as " ^ Lg.Types.source_name binding.ty)
+  | None -> failwith "missing inferred replace seq result");
+  let source =
+    {|
+(ns app.source-replace
+  (:require [clojure.core :as core :refer [replace]]))
+
+(def replace-fn core/replace)
+(def replaced-vector (replace (hash-map 1 10 3 30) [1 2 3]))
+(def replaced-list (replace-fn (hash-map "a" "A") (list "a" "b" "a")))
+(def replaced-seq (core/replace (hash-map :a :A) (seq [:a :b :a])))
+(def replace-xf (replace (hash-map 2 20)))
+(def replaced-transduced (into [] replace-xf [1 2 3]))
+
+(println (= [10 2 30] replaced-vector))
+(println (vector? replaced-vector))
+(println (= (list "A" "b" "A") replaced-list))
+(println (seq? replaced-list))
+(println (and (= :A (first replaced-seq))
+              (= :b (second replaced-seq))
+              (= :A (nth replaced-seq 2))))
+(println (= [1 20 3] replaced-transduced))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "replace must preserve homogeneous static element types";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_replace_collection_shapes"
+    (String.concat "" (List.init 6 (fun _ -> "true\n")))
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange replace must remain statically typed"
+
+let test_replace_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring core_source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defprotocol IReplaceCollection"; "(defn replace" ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"replace\"" then
+        failwith ("replace still has public-name compiler dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -43245,6 +43375,12 @@ let tests =
     ( "source implements macro matches static protocols",
       test_source_implements_macro_matches_static_protocols );
     ( "implements macro is source-owned", test_implements_macro_is_source_owned );
+    ( "source tagged literals match ClojureScript",
+      test_source_tagged_literals_match_clojurescript );
+    ( "tagged literals are source-owned", test_tagged_literals_are_source_owned );
+    ( "source replace matches ClojureScript collection shapes",
+      test_source_replace_matches_clojurescript_collection_shapes );
+    ( "replace is source-owned", test_replace_is_source_owned );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

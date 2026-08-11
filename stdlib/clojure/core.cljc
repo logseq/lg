@@ -161,6 +161,11 @@
 
 (defprotocol IRecord)
 
+(defprotocol ITaggedLiteral)
+
+(defprotocol IReplaceCollection
+  (-replace-collection [coll replacements]))
+
 (defprotocol IVector
   (-assoc-n [coll index value]))
 
@@ -279,6 +284,25 @@
   (chunked-cons-chunk :option<ArrayChunk<value>>)
   (chunked-cons-more :seq<value>)
   (chunked-cons-metadata :Lg_edn_backend.t))
+
+;; The payload stays parameterized instead of crossing an open dynamic boundary.
+(type-record TaggedLiteral [form]
+  (tag :symbol)
+  (form :form)
+  (form-hash :int))
+
+(extend-type TaggedLiteral
+  ITaggedLiteral
+  IHash
+  (-hash [value]
+    (+ (* 31 (hash (:tag value)))
+       (:form-hash value))))
+
+(defn- tagged-literal-tag-value [value]
+  (:tag value))
+
+(defn- tagged-literal-form-value [value]
+  (:form value))
 
 (extend-type :keyword
   INamed
@@ -2514,6 +2538,17 @@
   [x]
   (satisfies? IRecord x))
 
+(defn tagged-literal?
+  {:inline (fn [value] (list 'satisfies? 'ITaggedLiteral value))}
+  [value]
+  (satisfies? ITaggedLiteral value))
+
+(defn tagged-literal [tag form]
+  (record TaggedLiteral
+          (tag tag)
+          (form form)
+          (form-hash (hash form))))
+
 (defn chunked-seq?
   {:inline (fn [x] (list 'implements? 'IChunkedSeq x))}
   [x]
@@ -4441,6 +4476,45 @@
   {:inline (fn [coll key] (list '__lg_find coll key))}
   [coll key]
   (__lg_find coll key))
+
+(defn- replace-value [replacements value]
+  (match (find replacements value)
+    (Some entry) (val entry)
+    None value))
+
+(extend-protocol IReplaceCollection
+  :vector
+  (-replace-collection [coll replacements]
+    (mapv (fn [value] (replace-value replacements value)) coll))
+  :list
+  (-replace-collection [coll replacements]
+    (map (fn [value] (replace-value replacements value)) coll))
+  :seq
+  (-replace-collection [coll replacements]
+    (map (fn [value] (replace-value replacements value)) coll))
+  :array
+  (-replace-collection [coll replacements]
+    (map (fn [value] (replace-value replacements value)) coll))
+  :set
+  (-replace-collection [coll replacements]
+    (map (fn [value] (replace-value replacements value)) coll))
+  :map
+  (-replace-collection [coll replacements]
+    (map (fn [value] (replace-value replacements value)) coll)))
+
+(defn- replace-transducer [replacements]
+  (map (fn [value] (replace-value replacements value))))
+
+(defn replace
+  {:inline (fn
+             ([replacements]
+              (list 'replace-transducer replacements))
+             ([replacements coll]
+              (list '-replace-collection coll replacements)))}
+  ([replacements]
+   (replace-transducer replacements))
+  ([replacements coll]
+   (-replace-collection coll replacements)))
 
 (defn equiv-map
   "Test map equivalence. Returns true if x equals y, otherwise returns false."

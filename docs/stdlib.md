@@ -203,8 +203,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 670 source entries (68.02%), 25 typed
-primitives, 43 special forms, 96 host boundaries, 100 static-typing blockers,
+macro surfaces. The current baseline is 673 source entries (68.32%), 25 typed
+primitives, 43 special forms, 96 host boundaries, 97 static-typing blockers,
 51 out-of-scope entries, and zero deferred entries. Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -1106,9 +1106,14 @@ replaced by identity because `identical?` observes the fresh collection objects
 created by ClojureScript. `record?` is now source-owned through an `IRecord`
 marker that only non-nominal `defrecord` types implicitly satisfy; ordinary
 maps, nominal type records, and unrelated values return false through an
-optional static witness. `tagged-literal?` remains blocked because its nominal
-value constructor still lacks a public closed source value domain. `replace` still combines a
-transducer arity with representation-dependent lazy or vector results.
+optional static witness. Tagged literals now use a parameterized nominal source
+type, so each payload remains statically typed while direct `:tag` and `:form`
+access, static `get`, structural equality, upstream hash composition, and
+first-class `tagged-literal?` need no universal value. `replace` preserves its
+transducer arity and representation-dependent
+lazy or vector result through inline protocol dispatch; vector metadata is
+not yet representable by LG's current static vector runtime and is recorded as
+the remaining adaptation.
 `spread`, `trampoline`, and
 `vec-lite` each require a heterogeneous or dependent function relationship
 that the current static source type system cannot express without narrowing an
