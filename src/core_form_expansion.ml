@@ -1,5 +1,7 @@
 open Ast
 
+let core_call symbol arguments = FList (FCoreSymbol symbol :: arguments)
+
 let get_in target keys default =
   let rec expand target = function
     | [] -> target
@@ -7,8 +9,8 @@ let get_in target keys default =
         let get =
           match (rest, default) with
           | [], Some default ->
-              FList [ FSymbol "__lg_get"; target; key; default ]
-          | _ -> FList [ FSymbol "__lg_get"; target; key ]
+              core_call Core_get [ target; key; default ]
+          | _ -> core_call Core_get [ target; key ]
         in
         expand get rest
   in
@@ -28,8 +30,7 @@ let assoc_in target keys value =
       | [] -> value
       | _ ->
           expand (depth + 1)
-            (FList
-               [ FSymbol "__lg_get"; FSymbol target_name; FSymbol key_name ])
+            (core_call Core_get [ FSymbol target_name; FSymbol key_name ])
             rest
     in
     FList
@@ -37,13 +38,8 @@ let assoc_in target keys value =
         FSymbol "let";
         FVector
           [ FSymbol target_name; target; FSymbol key_name; key ];
-        FList
-          [
-            FSymbol "__lg_assoc";
-            FSymbol target_name;
-            FSymbol key_name;
-            nested_value;
-          ];
+        core_call Core_assoc
+          [ FSymbol target_name; FSymbol key_name; nested_value ];
       ]
   in
   expand 0 target keys
@@ -53,7 +49,6 @@ let update_in target keys function_form argument_forms =
     | [] -> function_form :: argument_forms
     | [ key ] -> key :: function_form :: argument_forms
     | key :: rest ->
-        key :: FSymbol "__lg_update" :: update_arguments rest
+        key :: FCoreSymbol Core_update :: update_arguments rest
   in
-  FList
-    (FSymbol "__lg_update" :: target :: update_arguments keys)
+  core_call Core_update (target :: update_arguments keys)

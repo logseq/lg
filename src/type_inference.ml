@@ -3135,7 +3135,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList (FCoreSymbol core_symbol :: arguments) ->
         let name =
           match core_symbol with
-          | Core_update -> Ast.core_symbol_qualified_name core_symbol
+          | Core_update -> "__lg_update"
           | _ -> Ast.core_symbol_name core_symbol
         in
         infer_form params
