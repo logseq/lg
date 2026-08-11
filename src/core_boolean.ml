@@ -79,6 +79,13 @@ let compile_string_family_predicate name ~keyword args =
             else Semantic_ir.Prefix ("not", starts_with_colon)
           in
           Ok (typed_ir TBool expression)
+      | actual
+        when Option.is_some (Types.protocol_constraint_info actual)
+             || Option.is_some (Types.contains_constraint_info actual) ->
+          Error.error
+            (name
+           ^ " requires a closed sum type when the value may have multiple \
+              static types")
       | actual ->
           let matches = if keyword then Types.equal actual TKeyword else Types.equal actual TString in
           Ok

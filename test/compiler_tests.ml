@@ -13175,12 +13175,16 @@ let test_keyword_or_string_parameters_require_a_closed_sum () =
        (if-let [ns (namespace (keyword value))]
          (= "db" ns)
          false)))
-(println (str (system-keyword? :db/ident) ":"
+  (println (str (system-keyword? :db/ident) ":"
               (system-keyword? "db/ident") ":"
               (system-keyword? :user/name)))
 |}
   in
-  compile_string_with_stdlib source |> expect_error_contains "closed sum type"
+  List.iter
+    (fun target ->
+      compile_string_with_stdlib ~target source
+      |> expect_error_contains "closed sum type")
+    [ Lg.Target.Native; Lg.Target.Melange ]
 
 let test_datascript_schema_reads_regex_literals () =
   let source =
