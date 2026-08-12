@@ -12339,6 +12339,23 @@ let test_system_current_time_millis_compiles_for_native () =
   assert_ocaml_compiles "system_current_time_millis_compiles_for_native"
     ocaml_source
 
+let test_system_get_property_line_separator_matches_native_runtime () =
+  let source =
+    {|
+(defn platform-newlines [s]
+  (let [separator (System/getProperty "line.separator")]
+    (.replace s "\n" separator)))
+
+(println (= "\n" (System/getProperty "line.separator")))
+(println (= (str "a" "\n" "b") (platform-newlines (str "a" "\n" "b"))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "system_get_property_line_separator_matches_native_runtime"
+    "true\ntrue\n" native_source;
+  compile_string_with_stdlib ~target:Lg.Target.Melange source
+  |> expect_error_contains "System/getProperty is only available on Native"
+
 let test_source_uuid_wrapper_matches_clojurescript () =
   let source =
     {|
@@ -46358,6 +46375,8 @@ let tests =
       test_namespace_ignores_clojure_compiler_directives );
     ( "System currentTimeMillis compiles for native",
       test_system_current_time_millis_compiles_for_native );
+    ( "System getProperty line separator matches native runtime",
+      test_system_get_property_line_separator_matches_native_runtime );
     ( "source UUID wrapper matches ClojureScript",
       test_source_uuid_wrapper_matches_clojurescript );
     ( "source UUID wrapper rejects invalid calls",

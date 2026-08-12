@@ -20,19 +20,19 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 48 |
-| compile failed | 428 |
+| compiled | 49 |
+| compile failed | 427 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 21 |
+| namespaces compiled on both native and Melange | 22 |
 | namespaces failed on both native and Melange | 211 |
 | native-only compiled namespaces | 0 |
-| Melange-only compiled namespaces | 6 |
+| Melange-only compiled namespaces | 5 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 21 | 217 |
+| native | 22 | 216 |
 | Melange | 27 | 211 |
 
 Namespaces currently compiling on both targets:
@@ -58,13 +58,14 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.symbol`
 - `clojure.core-test.when`
 - `clojure.core-test.when-not`
+- `clojure.core-test.with-out-str`
 
 ## Failure classes
 
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
-| `host-boundary-or-platform-specific` | 84 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; other JS globals remain host-boundary. The large count comes from `number_range.cljc` reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
+| `host-boundary-or-platform-specific` | 83 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal. Other JS/JVM globals remain host-boundary. The large count comes from `number_range.cljc` reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
@@ -77,11 +78,10 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
 - `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
 - `clojure.core-test.some-qmark`: Melange compiles; native fails on `Object`.
-- `clojure.core-test.with-out-str`: Melange compiles; native fails on `Unbound module System`.
 
 ## Current interpretation
 
-The 428 compile failures are not 428 independent core defects. The current
+The 427 compile failures are not 427 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -112,6 +112,13 @@ in `scan_report.json` but still be blocked from smoke promotion.
   parameter as `int array`; size-created `object-array` remains
   `option array` to preserve nil slots. Fixing this without dynamic requires a
   static array read/write capability or call-site specialization.
+- `clojure.core-test.with-out-str`: LG generation succeeds for Native and
+  Melange after the narrow Native `System/getProperty "line.separator"` and
+  string `.replace` support. Smoke promotion currently fails at runtime because
+  `with-out-str` binds `*out*` to a buffer but source `print`, `println`, and
+  `prn` still write to process stdout instead of the dynamically bound writer.
+  Fixing this requires making source print functions respect the typed
+  dynamically bindable `*out*` writer on both Native and Melange.
 
 ## Common API blockers that are not missing APIs
 

@@ -6511,6 +6511,19 @@ let create ~compile_expr =
                  (Semantic_ir.Apply
                     (Semantic_ir.Ident conversion, [ current_time ])))
         | _ -> Error.error "current-time-millis expects 0 arguments")
+    | "System/getProperty" -> (
+        match (Env.target env, arg_forms) with
+        | Target.Native, [ FString "line.separator" ] ->
+            Ok (typed_ir TString (Semantic_ir.String "\n"))
+        | Target.Native, [ FString property ] ->
+            Error.error
+              ("unsupported System/getProperty property " ^ property)
+        | Target.Native, [ _ ] ->
+            Error.error
+              "System/getProperty expects a string literal property name"
+        | Target.Native, _ ->
+            Error.error "System/getProperty expects 1 argument"
+        | _, _ -> Error.error "System/getProperty is only available on Native")
     | "js/performance.now" -> (
         match (Env.target env, arg_forms) with
         | Target.Melange, [] ->
@@ -7304,6 +7317,29 @@ let create ~compile_expr =
                         Error.error
                           ".map expects an array and a unary function")))
         | _ -> Error.error ".map expects an array and a unary function")
+    | ".replace" -> (
+        let string_env = Env.with_expected_type (Some TString) env in
+        let compile_string_argument form =
+          Result.bind (compile_expr scope string_env form)
+            (adapt_value_to_type env TString)
+        in
+        match arg_forms with
+        | [ receiver_form; match_form; replacement_form ] -> (
+            match
+              ( compile_string_argument receiver_form,
+                compile_string_argument match_form,
+                compile_string_argument replacement_form )
+            with
+            | Ok receiver, Ok match_value, Ok replacement ->
+                Ok
+                  (typed_ir TString
+                     (apply "Lg_runtime.Runtime_string.replace"
+                        [ receiver; match_value; replacement ]))
+            | Error _ as error, _, _
+            | _, (Error _ as error), _
+            | _, _, (Error _ as error) ->
+                error)
+        | _ -> Error.error ".replace expects a receiver, match, and replacement")
     | method_name
       when String.starts_with ~prefix:"." method_name
            && not
