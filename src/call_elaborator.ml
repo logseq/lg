@@ -4847,8 +4847,32 @@ let create ~compile_expr =
         | (Error _ as error), _ | _, (Error _ as error) -> error)
     | _ -> Error.error "cljs.test/report expects one report event"
   in
-  let rec stringify_value scope env ~pr ?print_length ?print_level value =
+  let rec stringify_value scope env ~pr ?(print_context = true) ?print_length
+      ?print_level value =
+    let float_printer =
+      match (Env.target env, pr) with
+      | Target.Melange, true -> "Lg_runtime.Runtime_print.cljs_readable_float"
+      | Target.Melange, false -> "Lg_runtime.Runtime_print.cljs_display_float"
+      | (Target.Native | Target.Js_of_ocaml), true ->
+          "Lg_runtime.Runtime_print.clj_readable_float"
+      | (Target.Native | Target.Js_of_ocaml), false ->
+          "Lg_runtime.Runtime_print.clj_display_float"
+    in
+    let readable_char_printer =
+      match Env.target env with
+      | Target.Melange -> "Lg_runtime.Runtime_print.cljs_readable_char"
+      | Target.Native | Target.Js_of_ocaml ->
+          "Lg_runtime.Runtime_print.clj_readable_char"
+    in
     match value.ty with
+    | TFloat when print_context ->
+        Semantic_ir.Apply (Semantic_ir.Ident float_printer, [ value.semantic_expr ])
+    | TChar when print_context && pr ->
+        Semantic_ir.Apply
+          (Semantic_ir.Ident readable_char_printer, [ value.semantic_expr ])
+    | TChar when print_context ->
+        Semantic_ir.Apply
+          (Semantic_ir.Ident "String.make", [ Semantic_ir.Int 1; value.semantic_expr ])
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
         match Semantic_ir.unlocated value.semantic_expr with
         | Semantic_ir.Ident name ->
@@ -4871,7 +4895,7 @@ let create ~compile_expr =
     | ty
       when Option.is_some (Types.protocol_constraint_info ty)
            || Option.is_some (Types.seqable_constraint_info ty) ->
-        stringify_value scope env ~pr ?print_length ?print_level
+        stringify_value scope env ~pr ~print_context ?print_length ?print_level
           (typed_ir (Types.constraint_value_type ty)
              (constrained_argument_value value))
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -4884,6 +4908,7 @@ let create ~compile_expr =
               ( Semantic_ir.PConstructor
                   ("Some", Some (Semantic_ir.PVar value_name)),
                 stringify_value scope env ~pr ?print_length ?print_level
+                  ~print_context
                   (typed_ir inner (Semantic_ir.Ident value_name)) );
             ] )
     | TNamed_record record -> (
@@ -4899,7 +4924,7 @@ let create ~compile_expr =
                          Semantic_ir.Fun
                            ( [ Semantic_ir.PVar item_name ],
                              stringify_value scope env ~pr ?print_length
-                               ?print_level:child_print_level
+                               ~print_context ?print_level:child_print_level
                                (typed_ir element_ty
                                   (Semantic_ir.Ident item_name)) )
                        in
@@ -9354,6 +9379,7 @@ let create ~compile_expr =
     | ("__lg_str" | "__lg_print_str" | "__lg_pr_str") as render_name -> (
         let readable = render_name = "__lg_pr_str" in
         let separator = if render_name = "__lg_str" then "" else " " in
+        let print_context = render_name <> "__lg_str" in
         let print_length =
           if readable then print_length_expr scope env else None
         in
@@ -9388,7 +9414,8 @@ let create ~compile_expr =
                            in
                            ( ( Semantic_ir.PVar name,
                                stringify_value scope env ~pr:readable
-                                 ?print_length ?print_level argument ),
+                                 ~print_context ?print_length ?print_level
+                                 argument ),
                              Semantic_ir.Ident name ))
                     |> List.split
                   in

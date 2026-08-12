@@ -5735,6 +5735,21 @@ let test_print_readably_dynamic_var_controls_printers () =
 |}
   |> expect_error_contains "expects bool, got int"
 
+let test_print_scalar_format_matches_clojure_suite () =
+  let source =
+    {|
+(ns app.print-scalars
+  (:require [clojure.core :refer [println pr-str print-str]]))
+(println (pr-str \A \space 17.0))
+(println (print-str \A \space 17.0))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/print_scalars.cljc" source
+  in
+  assert_ocaml_runs "print_scalar_format_matches_clojure_suite"
+    "\\A \\space 17.0\nA   17.0\n" native_source
+
 let test_flush_on_newline_dynamic_var_is_typed_source () =
   let source =
     {|
@@ -46046,6 +46061,8 @@ let tests =
       test_print_newline_dynamic_var_controls_output_newline );
     ( "print readably dynamic var controls printers",
       test_print_readably_dynamic_var_controls_printers );
+    ( "print scalar format matches clojure suite",
+      test_print_scalar_format_matches_clojure_suite );
     ( "flush on newline dynamic var is typed source",
       test_flush_on_newline_dynamic_var_is_typed_source );
     ( "with-open binds managed values portably",

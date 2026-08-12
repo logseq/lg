@@ -17,10 +17,4 @@
    :status :blocked-number-literals
    :first-error "unknown symbol 0N"
    :example "(str 0N)"
-   :reason "The upstream str test covers Clojure bigint, ratio, and bigdecimal literals that LG does not yet parse/model as source numeric domains."}
-  {:namespace clojure.core-test.println-str
-   :file "vendor/clojure-test-suite/test/clojure/core_test/println_str.cljc"
-   :status :float-print-mismatch
-   :first-error "expected ... 17.0 ..., got ... 17. ..."
-   :example "(println-str 17.0)"
-   :reason "LG currently renders whole floats through OCaml string_of_float as 17.; Clojure expects 17.0 on JVM/default and ClojureScript expects 17."}]}
+   :reason "The upstream str test covers Clojure bigint, ratio, and bigdecimal literals that LG does not yet parse/model as source numeric domains."}]}

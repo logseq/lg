@@ -7,6 +7,48 @@ let output_line text newline flush_on_newline =
     if flush_on_newline then flush stdout)
   else ()
 
+let string_ends_with_dot value =
+  let length = String.length value in
+  length > 0 && value.[length - 1] = '.'
+
+let ensure_decimal_fraction value =
+  if string_ends_with_dot value then value ^ "0" else value
+
+let clj_display_float value = string_of_float value |> ensure_decimal_fraction
+
+let clj_readable_float value =
+  if Float.is_nan value then "##NaN"
+  else if value = Float.infinity then "##Inf"
+  else if value = Float.neg_infinity then "##-Inf"
+  else clj_display_float value
+
+let integral_float value =
+  Float.is_finite value && Float.floor value = value
+
+let cljs_display_float value =
+  if Float.is_nan value then "NaN"
+  else if value = Float.infinity then "Infinity"
+  else if value = Float.neg_infinity then "-Infinity"
+  else if integral_float value then string_of_int (int_of_float value)
+  else string_of_float value
+
+let cljs_readable_float value =
+  if Float.is_nan value then "##NaN"
+  else if value = Float.infinity then "##Inf"
+  else if value = Float.neg_infinity then "##-Inf"
+  else cljs_display_float value
+
+let clj_readable_char = function
+  | ' ' -> "\\space"
+  | '\n' -> "\\newline"
+  | '\t' -> "\\tab"
+  | '\r' -> "\\return"
+  | '\b' -> "\\backspace"
+  | '\012' -> "\\formfeed"
+  | value -> "\\" ^ String.make 1 value
+
+let cljs_readable_char value = Printf.sprintf "%S" (String.make 1 value)
+
 let render_strings separator print_length values =
   let rec append writer remaining = function
     | [] -> ()
