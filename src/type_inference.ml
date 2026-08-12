@@ -602,6 +602,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_ex-message"; _ ] -> TNullable TString
   | FList [ FSymbol "__lg_ex-cause"; _ ] -> TNullable (TOcaml "exn")
   | FList [ FSymbol "__lg_ex-data"; _ ] -> Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_cljs-test-report"; _reporter; _event ] -> TUnit
   | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
@@ -4846,6 +4847,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-data"; arg ] ->
         infer_expected (TOcaml "exn") params arg
+    | FList [ FSymbol "__lg_cljs-test-report"; reporter; event ] ->
+        Result.bind (infer_expected TKeyword params reporter) (fun params ->
+            match event with
+            | FSymbol _ ->
+                infer_expected (Types.dynamic_constraint TUnknown) params event
+            | _ -> Ok params)
     | FList [ FSymbol "__lg_re-pattern"; arg ] ->
         let expected_ty =
           if Types.equal (inferred_form_type params arg) TRegex then TRegex

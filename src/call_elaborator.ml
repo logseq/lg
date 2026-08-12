@@ -308,9 +308,19 @@ let overloaded_arity_parameters (arity : fn_arity) argument_count =
 
 let is_edn_value_type = Edn_value_elaborator.is_value_type
 
+let edn_compatible_static_type = function
+  | TNil | TBool | TString | TChar | TSymbol | TKeyword | TInt | TFloat
+  | TRegex ->
+      true
+  | TOcaml "int" | TOcaml "int64" | TOcaml "float" | TOcaml "string"
+  | TOcaml "bool" ->
+      true
+  | _ -> false
+
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true
-  else if is_edn_value_type expected then is_edn_value_type actual
+  else if is_edn_value_type expected then
+    is_edn_value_type actual || edn_compatible_static_type actual
   else if Option.is_some (Types.protocol_constraint_info expected) then true
   else if Option.is_some (Types.truthy_constraint_info expected) then true
   else if Option.is_some (Types.nil_predicate_constraint_info expected) then
@@ -1227,6 +1237,26 @@ let pack_dynamic_value _env expected_dynamic argument =
              target_ty = expected_dynamic;
              conversion = argument.semantic_expr;
            })
+
+let dynamic_scalar_value env expected_dynamic argument =
+  let apply name =
+    Ok
+      (Semantic_ir.Apply
+         (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), [ argument.semantic_expr ]))
+  in
+  if Types.is_dynamic argument.ty then Ok argument.semantic_expr
+  else
+    match Types.constraint_value_type argument.ty with
+    | TNil -> Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+    | TInt | TOcaml "int" -> apply "int"
+    | TFloat -> apply "float"
+    | TChar -> apply "char"
+    | TString -> apply "string"
+    | TRegex -> apply "regex"
+    | TSymbol -> apply "symbol"
+    | TKeyword -> apply "keyword"
+    | TBool -> apply "bool"
+    | _ -> pack_dynamic_value env expected_dynamic argument
 
 let rec pack_metadata_expression ty expression =
   let convert name =
@@ -2930,6 +2960,11 @@ let rec adapt_value_to_type env expected actual =
           (Types.set_module_name actual_element))
   else if Types.equal expected (TOcaml "int") && Types.equal actual.ty TInt then
     Ok actual.semantic_expr
+  else if
+    Types.equal expected (TOcaml "Lg_edn_backend.t")
+    && (is_edn_value_type actual.ty || edn_compatible_static_type actual.ty)
+  then
+    pack_metadata_expression actual.ty actual.semantic_expr
   else if
     Types.equal expected TUnit
     &&
@@ -4644,6 +4679,44 @@ let create ~compile_expr =
   let compile_compare = comparisons.compile_compare in
   let compile_hash_set = comparisons.compile_hash_set in
   let compile_set_of = comparisons.compile_set_of in
+  let cljs_test_report_call_symbol scope env = function
+    | "report" -> (
+        match Env.find_inline_macro ~scope "report" env with
+        | Some definition -> String.equal definition.namespace "cljs.test"
+        | None -> String.equal scope "cljs.test")
+    | "cljs.test/report" | "t/report" | "ct/report" -> true
+    | _ -> false
+  in
+  let compile_cljs_test_report_call scope env arg_forms =
+    match arg_forms with
+    | [ event_form ] -> (
+        let reporter_form =
+          FList
+            [
+              FKeyword ":reporter";
+              FList [ FSymbol "cljs.test/get-current-env" ];
+            ]
+        in
+        match
+          ( Report_dynamic_boundary.compile_form ~compile_expr scope env
+              reporter_form,
+            Report_dynamic_boundary.compile_form ~compile_expr scope env
+              event_form )
+        with
+        | Ok reporter, Ok event ->
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.Sequence
+                    [
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_test_report.report",
+                          [ reporter.semantic_expr; event.semantic_expr ] );
+                      Semantic_ir.Unit;
+                    ]))
+        | (Error _ as error), _ | _, (Error _ as error) -> error)
+    | _ -> Error.error "cljs.test/report expects one report event"
+  in
   let rec stringify_value scope env ~pr value =
     match value.ty with
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
@@ -5053,7 +5126,7 @@ let create ~compile_expr =
             | _ -> Error.error "EDN metadata lookup requires a keyword key")
         | Ok target, Ok key when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
-            match pack_dynamic_value env expected key with
+            match dynamic_scalar_value env expected key with
             | Error _ as error -> error
             | Ok key ->
                 Ok
@@ -5074,8 +5147,8 @@ let create ~compile_expr =
         | Ok target, Ok key, Ok default when Types.is_dynamic target.ty -> (
             let expected = Types.dynamic_constraint TUnknown in
             match
-               ( pack_dynamic_value env expected key,
-                 pack_dynamic_value env expected default )
+               ( dynamic_scalar_value env expected key,
+                 dynamic_scalar_value env expected default )
              with
             | (Error _ as error), _ -> error
             | _, (Error _ as error) -> error
@@ -5519,6 +5592,9 @@ let create ~compile_expr =
           String.sub name 2 (String.length name - 2) ^ "."
       | None -> name
     in
+    if cljs_test_report_call_symbol scope env name then
+      compile_cljs_test_report_call scope env arg_forms
+    else
     match lookup_binding scope env name with
     | Ok _ when not (Resolver.starts_with_uppercase name) ->
         compile_named_function_call scope env name arg_forms
@@ -8934,6 +9010,28 @@ let create ~compile_expr =
                        ] )))
               source
         | Ok _ -> Error.error "re-seq expects a regex and string")
+    | "__lg_cljs-test-report" -> (
+        match arg_forms with
+        | [ reporter_form; event_form ] -> (
+            match
+              ( Report_dynamic_boundary.compile_form ~compile_expr scope env
+                  reporter_form,
+                Report_dynamic_boundary.compile_form ~compile_expr scope env
+                  event_form )
+            with
+            | Ok reporter, Ok event ->
+                Ok
+                  (typed_ir TUnit
+                     (Semantic_ir.Sequence
+                        [
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_test_report.report",
+                              [ reporter.semantic_expr; event.semantic_expr ] );
+                          Semantic_ir.Unit;
+                        ]))
+            | (Error _ as error), _ | _, (Error _ as error) -> error)
+        | _ -> Error.error "cljs.test/report expects one report event")
     | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =

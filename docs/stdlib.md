@@ -704,11 +704,10 @@ At the current checkpoint, the pinned Logseq tree requires
 `clojure.string` 416 times,
 `clojure.set` 75 times, `clojure.walk` 33 times, `clojure.edn` 27 times,
 `cljs.reader` 28 times, and `clojure.data` 6 times. It also requires
-`cljs.test` in 287 files and `cljs.pprint` in 15. All observed qualified vars
-in those namespaces are source-owned except five `cljs.test/report` uses in
-custom `defmethod` reporters; those remain explicitly blocked on the
-multimethod runtime domain rather than being hidden as generic namespace
-support. This makes the remaining
+`cljs.test` in 287 files and `cljs.pprint` in 15. Observed `cljs.test/report`
+uses in custom `defmethod` reporters now resolve through the aggregate source
+namespace and a documented report-event multimethod boundary. This keeps the
+remaining
 reader boundaries visible instead of treating `clojure.set` as the
 scope of the standard-library migration. The same scan finds 677 `some?` and
 44 `boolean?` occurrences. It also finds 537 `empty?`, 77 `integer?`, one
@@ -1062,7 +1061,8 @@ The same checkout also reports
 library. Its source implementation includes `empty-env`, the current
 environment lifecycle, report-counter updates, context rendering, `testing`,
 `is`, `are`, `try-expr`, `deftest`, `run-test`, `run-tests`, `ns?`,
-`use-fixtures`, `compose-fixtures`, `join-fixtures`, and `successful?`. The
+`use-fixtures`, `compose-fixtures`, `join-fixtures`, `successful?`, and
+`report`. The
 environment is a closed record backed by a statically typed dynamic binding;
 `*current-env*` itself is inventoried as a source var rather than inheriting the
 namespace's remaining async/report blocker.
@@ -1070,9 +1070,10 @@ counters use LG's default hashmap, and `testing` preserves upstream
 push/body/finally/pop order.
 This required general `try`/`finally` support, including finally-only forms and
 exception propagation, and generates readable `Fun.protect` code without
-`Runtime_dynamic`. The open polymorphic formatter field and reporter
-multimethod remain blocked on a static open-dispatch representation and are recorded as an
-`empty-env` adaptation in `stdlib/upstream.edn`. The remaining runner and
+`Runtime_dynamic`. The open reporter event payload is restricted to the
+`cljs.test/report` primitive boundary; reporter state, counters, and current
+environment remain statically typed. The open polymorphic formatter field is
+still recorded as an `empty-env` adaptation in `stdlib/upstream.edn`. The remaining runner and
 assertion batch uses a homogeneous static synchronous-test registry in
 definition order. Boolean assertions retain single evaluation and pass, fail,
 and unexpected-error counting; `are` retains template order and validates its
@@ -1094,9 +1095,9 @@ Direct outer `async` forms in `deftest` participate in the static registry and
 delay subsequent tests until their continuation runs. Nested `testing` forms
 use a deferred action so their context stack remains active until asynchronous
 completion, including exception cleanup. Async tests combined with fixtures,
-namespace hooks, analyzer-wide test discovery, special assertion methods, and
-open custom reporters remain explicit blockers rather than silently falling
-back to dynamic values. `test-all-vars-block`, `test-all-vars`, `test-ns-block`,
+namespace hooks, analyzer-wide test discovery, and special assertion methods
+remain explicit blockers rather than silently falling back to dynamic values.
+`test-all-vars-block`, `test-all-vars`, `test-ns-block`,
 `test-ns`, and `run-tests-block` now validate quoted namespace forms and compose
 the same closed runner actions in upstream order. The static definition-order
 namespace registry replaces analyzer Var metadata discovery; environment setup

@@ -924,7 +924,7 @@ logseq-qualified-var-status	cljs.test/empty-env	source-aggregate	3	precompiled-l
 logseq-qualified-var-status	cljs.test/get-current-env	source-aggregate	1	precompiled-lg-source
 logseq-qualified-var-status	cljs.test/inc-report-counter!	source-aggregate	1	precompiled-lg-source
 logseq-qualified-var-status	cljs.test/is	source-aggregate	7	precompiled-lg-source
-logseq-qualified-var-status	cljs.test/report	blocked-static-typing	5	runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters
+logseq-qualified-var-status	cljs.test/report	source-aggregate	5	precompiled-lg-source
 logseq-qualified-var-status	cljs.test/run-tests	source-aggregate	2	precompiled-lg-source
 logseq-qualified-var-status	cljs.test/successful?	source-aggregate	3	precompiled-lg-source
 logseq-qualified-var-status	clojure.core.async/<!	out-of-scope	2	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port

@@ -35,6 +35,8 @@
   :fn<test-env>)
 (signature cljs.test/inc-report-counter!
   :fn<keyword;test-env>)
+(signature cljs.test/report
+  :fn<map<keyword;keyword>;unit>)
 (signature cljs.test/testing-contexts-str
   :fn<string>)
 (signature cljs.test/testing-vars-str

@@ -201,10 +201,9 @@ awk -F '\t' '
   $1 == "definition" &&
   ($2 == "cljs.test/assert-expr" ||
    $2 == "cljs.test/update-current-env!" ||
-   $2 == "cljs.test/report" ||
    $2 == "cljs.test/do-report") &&
   $3 == "blocked-static-typing" && $4 != "" {found++}
-  END {exit found != 4}
+  END {exit found != 3}
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   BEGIN {
@@ -562,7 +561,7 @@ awk -F '\t' '$1 == "namespace-var" && ($2 == "clojure.core/-chunked-first" || $2
 awk -F '\t' '$1 == "namespace-var" && $2 == "clojure.core/uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/testing") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/report" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/report" && $3 == "source-aggregate" && $4 == 1 && $5 == "precompiled-lg-source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/*current-env*" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-find" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

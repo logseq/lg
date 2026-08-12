@@ -769,6 +769,67 @@ let test_source_variadic_functions_work_as_unary_mapv_callbacks () =
   compile_with_stdlib Lg.Target.Melange "app/source_variadic_mapv.cljc" source
   |> ignore
 
+let test_cljs_test_report_dispatches_custom_reporter_methods () =
+  let source =
+    {|
+(ns app.cljs-test-report
+  (:require [cljs.test :as t :refer [empty-env get-current-env report set-env!]]
+            [clojure.core :refer [derive]]))
+
+(derive :app/custom :cljs.test/default)
+
+(defmethod t/report [:app/custom :pass] [m]
+  (do
+    (println (:message m))
+    (t/inc-report-counter! :pass)
+    nil))
+
+(set-env! (empty-env :app/custom))
+(report {:type :pass :message :custom-pass})
+(report {:type :fail :message :default-fail})
+
+(println
+  (str (get (:report-counters (get-current-env)) :pass 0)
+       ":"
+       (get (:report-counters (get-current-env)) :fail 0)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/cljs_test_report.cljc" source
+  in
+  assert_ocaml_runs "cljs_test_report_dispatches_custom_reporter_methods"
+    ":custom-pass\n1:1\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/cljs_test_report.cljc" source
+  |> ignore
+
+let test_cljs_test_report_accepts_qualified_defmethod_target () =
+  let source =
+    {|
+(ns app.cljs-test-qualified-report
+  (:require [cljs.test :as ct :refer [empty-env set-env! report]]))
+
+(defmethod cljs.test/report [:app/qualified :error] [m]
+  (do
+    (println (:message m))
+    (ct/inc-report-counter! :error)
+    nil))
+
+(set-env! (empty-env :app/qualified))
+(report {:type :error :message :qualified})
+
+(println (ct/successful? (:report-counters (ct/get-current-env))))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/cljs_test_qualified_report.cljc"
+      source
+  in
+  assert_ocaml_runs "cljs_test_report_accepts_qualified_defmethod_target"
+    ":qualified\nfalse\n" native;
+  compile_with_stdlib Lg.Target.Melange
+    "app/cljs_test_qualified_report.cljc" source
+  |> ignore
+
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
     {|
@@ -43995,6 +44056,10 @@ let tests =
       test_lg_signature_sidecars_use_lgi_extension );
     ( "source variadic functions work as unary mapv callbacks",
       test_source_variadic_functions_work_as_unary_mapv_callbacks );
+    ( "cljs.test report dispatches custom reporter methods",
+      test_cljs_test_report_dispatches_custom_reporter_methods );
+    ( "cljs.test report accepts qualified defmethod target",
+      test_cljs_test_report_accepts_qualified_defmethod_target );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",

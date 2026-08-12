@@ -5,6 +5,17 @@ module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
 
+let cljs_test_report_method_counter = ref 0
+
+let next_cljs_test_report_method_name () =
+  incr cljs_test_report_method_counter;
+  "__lg_cljs_test_report_method_" ^ string_of_int !cljs_test_report_method_counter
+
+let cljs_test_report_method_symbol scope = function
+  | "report" -> String.equal scope "cljs.test"
+  | "cljs.test/report" | "t/report" | "ct/report" -> true
+  | _ -> false
+
 let compile_source_expr scope env form =
   let rec compile = function
     | FList (FSymbol name :: args) as form -> (
@@ -1874,6 +1885,54 @@ let rec compile scope env next_type form =
                       pattern = Named ocaml_name;
                         expression = implementation.semantic_expr;
                     } )))
+  | FList
+      (FSymbol "defmethod"
+      :: FSymbol method_name
+      :: dispatch_form
+      :: (FVector _ as params_form)
+      :: body_forms)
+    when cljs_test_report_method_symbol scope method_name -> (
+      let dynamic = Types.dynamic_constraint TUnknown in
+      match
+        ( Report_dynamic_boundary.compile_form ~compile_expr scope env
+            dispatch_form,
+          Expression_elaborator.compile_fn
+            ~param_type_overrides:[ Some dynamic ]
+            scope env params_form body_forms )
+      with
+      | Ok dispatch, Ok implementation ->
+          let method_name = next_cljs_test_report_method_name () in
+          let callback_name = method_name ^ "_callback" in
+          let event_name = method_name ^ "_event" in
+          let callback =
+            Semantic_ir.Fun
+              ( [ Semantic_ir.PVar event_name ],
+                Semantic_ir.Sequence
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident callback_name,
+                        [ Semantic_ir.Ident event_name ] );
+                    Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                  ] )
+          in
+          let expression =
+            Semantic_ir.Let
+              ( [ (Semantic_ir.PVar callback_name, implementation.semantic_expr) ],
+                Semantic_ir.Sequence
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_test_report.register",
+                        [ dispatch.semantic_expr; callback ] );
+                    Semantic_ir.Unit;
+                  ] )
+          in
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Value_binding { pattern = Named method_name; expression } )
+      | (Error _ as error), _ | _, (Error _ as error) -> error)
   | FList
       (FSymbol "defmethod"
       :: FSymbol (("t/assert-expr" | "t/report") as method_name)

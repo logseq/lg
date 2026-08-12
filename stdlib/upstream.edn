@@ -1627,8 +1627,8 @@
                             :reason :reads-clojurescript-generated-javascript-source-map-segments-with-open-host-map-shapes}
     file-and-line {:status :host-boundary
                    :reason :reads-javascript-error-stack-filename-and-line-number-properties-and-generated-source-maps}
-    report {:status :blocked-static-typing
-            :reason :runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters}
+    report {:status :static-adaptation
+            :reason :source-function-dispatches-through-a-documented-cljs-test-report-event-dynamic-boundary-with-a-typed-current-environment-and-counter-state}
     do-report {:status :blocked-static-typing
                :reason :normalizes-open-fail-and-error-event-maps-from-javascript-stack-data-before-invoking-the-extensible-report-multimethod}
     compose-fixtures {:status :ported}

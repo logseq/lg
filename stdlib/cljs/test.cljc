@@ -80,6 +80,27 @@
      (assoc counters name (inc (get counters name 0)))
      (:testing-contexts current))))
 
+(defn report
+  "Dispatches report event `m` through the current `cljs.test` reporter."
+  {:inline (fn [m]
+             (list '__lg_cljs-test-report
+                   (list ':reporter (list 'cljs.test/get-current-env))
+                   m))}
+  [m]
+  (__lg_cljs-test-report (:reporter (get-current-env)) m))
+
+(defmethod report [:cljs.test/default :pass] [_m]
+  (inc-report-counter! :pass))
+
+(defmethod report [:cljs.test/default :fail] [_m]
+  (inc-report-counter! :fail))
+
+(defmethod report [:cljs.test/default :error] [_m]
+  (inc-report-counter! :error))
+
+(defmethod report [:cljs.test/default :end-run-tests] [_m]
+  nil)
+
 (defn testing-contexts-str
   "Returns active testing contexts joined from outermost to innermost."
   []
