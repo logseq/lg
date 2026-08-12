@@ -9128,6 +9128,45 @@ let create ~compile_expr =
                        [ Semantic_ir.String id ] )))
               (resolve_multimethod_key scope env multifn_form)
         | _ -> Error.error "default-dispatch-val expects one multimethod")
+    | "__lg_multimethod-prefer-method" -> (
+        match arg_forms with
+        | [ multifn_form; preferred_form; other_form ] -> (
+            match
+              ( resolve_multimethod_key scope env multifn_form,
+                Multimethod_dynamic_boundary.compile_form ~compile_expr scope env
+                  preferred_form,
+                Multimethod_dynamic_boundary.compile_form ~compile_expr scope env
+                  other_form )
+            with
+            | Ok id, Ok preferred, Ok other ->
+                Ok
+                  (typed_ir (Types.dynamic_constraint TUnknown)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_multimethod.prefer_method",
+                          [
+                            Semantic_ir.String id;
+                            preferred.semantic_expr;
+                            other.semantic_expr;
+                          ] )))
+            | (Error _ as error), _, _
+            | _, (Error _ as error), _
+            | _, _, (Error _ as error) ->
+                error)
+        | _ ->
+            Error.error
+              "prefer-method expects a multimethod and two dispatch values")
+    | "__lg_multimethod-prefers" -> (
+        match arg_forms with
+        | [ multifn_form ] ->
+            Result.map
+              (fun id ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.prefers",
+                       [ Semantic_ir.String id ] )))
+              (resolve_multimethod_key scope env multifn_form)
+        | _ -> Error.error "prefers expects one multimethod")
     | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =

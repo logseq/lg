@@ -31,6 +31,8 @@ force	source	source-public-function-matches-cljs-delay-force-with-a-first-class-
 ifn?	source	source-function-uses-a-strict-function-fallback-signature-while-inline-specialization-delegates-to-a-private-static-callable-type-predicate-covering-functions-ifn-deftypes-keywords-symbols-vectors-maps-and-sets-without-runtime-dynamic-dispatch
 implements?	source	source-macro-preserves-static-protocol-satisfaction-and-single-value-evaluation-by-expanding-to-satisfies-while-clojurescript-javascript-mask-layout-is-not-part-of-lg-runtime-representation
 list*	source	source-macro-preserves-all-direct-upstream-arities-final-sequence-expansion-left-to-right-single-evaluation-and-existing-eager-typed-list-results-for-one-static-element-type-while-the-complete-first-class-heterogeneous-variadic-function-shape-remains-unrepresentable
+prefer-method	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
+prefers	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 record?	source	source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch
 replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation

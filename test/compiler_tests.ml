@@ -912,6 +912,41 @@ let test_source_multimethods_expose_mutation_boundaries () =
   compile_with_stdlib Lg.Target.Melange "app/multimethod_remove.cljc" source
   |> ignore
 
+let test_source_multimethods_support_preferences () =
+  let source =
+    {|
+(ns app.multimethod-prefer
+  (:require [clojure.core :refer [defmulti defmethod derive methods prefer-method
+                                  prefers]]))
+
+(derive :app/cat :app/animal)
+(derive :app/cat :app/pet)
+
+(defmulti render :kind)
+(defmethod render :app/pet [m]
+  (str "pet:" (:name m)))
+(defmethod render :app/animal [m]
+  (str "animal:" (:name m)))
+
+(prefer-method render :app/pet :app/animal)
+(println (isa? :app/cat :app/pet))
+(println (isa? (:kind {:kind :app/cat}) :app/pet))
+(println (contains? (methods render) :app/pet))
+(println (contains? (methods render) :app/animal))
+(println (render {:kind :app/pet :name "milo"}))
+(println (render {:kind :app/cat :name "milo"}))
+(println (contains? (prefers render) :app/pet))
+(println (contains? (get (prefers render) :app/pet) :app/animal))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/multimethod_prefer.cljc" source
+  in
+  assert_ocaml_runs "source_multimethods_support_preferences"
+    "true\ntrue\ntrue\ntrue\npet:milo\npet:milo\ntrue\ntrue\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/multimethod_prefer.cljc" source
+  |> ignore
+
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
     {|
@@ -44227,6 +44262,8 @@ let tests =
       test_source_multimethods_support_alias_and_multi_argument_dispatch );
     ( "source multimethods expose mutation boundaries",
       test_source_multimethods_expose_mutation_boundaries );
+    ( "source multimethods support preferences",
+      test_source_multimethods_support_preferences );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",

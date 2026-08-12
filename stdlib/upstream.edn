@@ -241,14 +241,14 @@
                  :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
     -remove-method {:status :static-adaptation
                     :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
-    -prefer-method {:status :blocked-static-typing
-                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -prefer-method {:status :static-adaptation
+                    :reason :runtime-multifn-boundary-provides-preference-table-mutation-and-introspection-through-a-documented-dynamic-boundary}
     -get-method {:status :static-adaptation
                  :reason :runtime-multifn-boundary-provides-symbol-call-site-method-introspection-through-a-documented-dynamic-method-table}
     -methods {:status :static-adaptation
               :reason :runtime-multifn-boundary-provides-symbol-call-site-method-map-introspection-through-a-documented-dynamic-method-table}
-    -prefers {:status :blocked-static-typing
-              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -prefers {:status :static-adaptation
+              :reason :runtime-multifn-boundary-provides-preference-table-mutation-and-introspection-through-a-documented-dynamic-boundary}
     -dispatch-fn {:status :static-adaptation
                   :reason :runtime-multifn-boundary-provides-symbol-call-site-dispatch-function-introspection-as-a-non-callable-dynamic-handle}
     -default-dispatch-val {:status :static-adaptation
@@ -1312,10 +1312,10 @@
              :reason :source-wrapper-preserves-single-value-readable-rendering-through-a-private-static-printer-primitive}
     pr-str-with-opts {:status :static-adaptation
                       :reason :source-function-preserves-empty-and-space-separated-readable-rendering-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
-    prefer-method {:status :blocked-static-typing
-                   :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    prefers {:status :blocked-static-typing
-             :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    prefer-method {:status :static-adaptation
+                   :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
+    prefers {:status :static-adaptation
+             :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
     print-map {:status :blocked-static-typing
                :reason :map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
     print-meta? {:status :blocked-static-typing

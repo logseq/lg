@@ -3106,6 +3106,14 @@
   [multifn]
   (list '__lg_multimethod-default-dispatch-val multifn))
 
+(defmacro prefer-method
+  [multifn preferred other]
+  (list '__lg_multimethod-prefer-method multifn preferred other))
+
+(defmacro prefers
+  [multifn]
+  (list '__lg_multimethod-prefers multifn))
+
 (defn re-pattern
   {:inline (fn [expression] (list '__lg_re-pattern expression))}
   [expression]

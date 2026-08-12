@@ -31,10 +31,15 @@ let register dispatch fn =
          !methods;
   ()
 
+let edn_named_value name =
+  if String.length name > 0 && name.[0] = ':' then
+    String.sub name 1 (String.length name - 1)
+  else name
+
 let keyword_or_symbol_to_edn value =
   match value.Dynamic.payload with
-  | Dynamic.Keyword name -> Some (Lg_edn_backend.Keyword name)
-  | Dynamic.Symbol name -> Some (Lg_edn_backend.Symbol name)
+  | Dynamic.Keyword name -> Some (Lg_edn_backend.Keyword (edn_named_value name))
+  | Dynamic.Symbol name -> Some (Lg_edn_backend.Symbol (edn_named_value name))
   | _ -> None
 
 let vector2 value =

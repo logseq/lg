@@ -615,6 +615,16 @@ let rec inferred_form_type params = function
       Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_multimethod-default-dispatch-val"; _multifn ] ->
       Types.dynamic_constraint TUnknown
+  | FList
+      [
+        FSymbol "__lg_multimethod-prefer-method";
+        _multifn;
+        _preferred;
+        _other;
+      ] ->
+      Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_multimethod-prefers"; _multifn ] ->
+      Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
@@ -4875,6 +4885,15 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Ok params
     | FList [ FSymbol "__lg_multimethod-default-dispatch-val"; _multifn ] ->
         Ok params
+    | FList
+        [
+          FSymbol "__lg_multimethod-prefer-method";
+          _multifn;
+          _preferred;
+          _other;
+        ] ->
+        Ok params
+    | FList [ FSymbol "__lg_multimethod-prefers"; _multifn ] -> Ok params
     | FList [ FSymbol "__lg_re-pattern"; arg ] ->
         let expected_ty =
           if Types.equal (inferred_form_type params arg) TRegex then TRegex

@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 209; then
-  echo "compiler call dispatch changed: expected 209 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 211; then
+  echo "compiler call dispatch changed: expected 211 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -103,6 +103,8 @@ awk '
     internal_abi["__lg_multimethod-remove-method"] = "documented-runtime-multifn-dynamic-method-table-mutation-boundary"
     internal_abi["__lg_multimethod-remove-all-methods"] = "documented-runtime-multifn-dynamic-method-table-mutation-boundary"
     internal_abi["__lg_multimethod-default-dispatch-val"] = "documented-runtime-multifn-dynamic-default-dispatch-boundary"
+    internal_abi["__lg_multimethod-prefer-method"] = "documented-runtime-multifn-dynamic-preference-table-mutation-boundary"
+    internal_abi["__lg_multimethod-prefers"] = "documented-runtime-multifn-dynamic-preference-table-introspection-boundary"
     internal_abi["__lg_sort"] = "typed-stable-sequence-sort-primitive"
     internal_abi["__lg_sort-by"] = "typed-key-projection-and-stable-sequence-sort-primitive"
     internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"
@@ -288,8 +290,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 134; then
-  echo "compiler form dispatch changed: expected 134 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 136; then
+  echo "compiler form dispatch changed: expected 136 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

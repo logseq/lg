@@ -10,6 +10,7 @@ type multifn = {
   dispatch_fn : dispatch_fn;
   default_dispatch : Dynamic.t;
   mutable methods : method_entry list;
+  mutable preferences : (Dynamic.t * Dynamic.t list) list;
 }
 
 let registry : (string, multifn) Hashtbl.t = Hashtbl.create 64
@@ -34,17 +35,23 @@ let dynamic_map_of_runtime_map key_mapper value_mapper map =
   |> List.of_seq |> Dynamic.map
 
 let register id dispatch_fn default_dispatch =
-  let methods =
+  let methods, preferences =
     match Hashtbl.find_opt registry id with
-    | Some existing -> existing.methods
-    | None -> []
+    | Some existing -> (existing.methods, existing.preferences)
+    | None -> ([], [])
   in
-  Hashtbl.replace registry id { id; dispatch_fn; default_dispatch; methods }
+  Hashtbl.replace registry id
+    { id; dispatch_fn; default_dispatch; methods; preferences }
+
+let edn_named_value name =
+  if String.length name > 0 && name.[0] = ':' then
+    String.sub name 1 (String.length name - 1)
+  else name
 
 let keyword_or_symbol_to_edn value =
   match value.Dynamic.payload with
-  | Dynamic.Keyword name -> Some (Lg_edn_backend.Keyword name)
-  | Dynamic.Symbol name -> Some (Lg_edn_backend.Symbol name)
+  | Dynamic.Keyword name -> Some (Lg_edn_backend.Keyword (edn_named_value name))
+  | Dynamic.Symbol name -> Some (Lg_edn_backend.Symbol (edn_named_value name))
   | _ -> None
 
 let method_matches actual registered =
@@ -67,6 +74,33 @@ let register_method id dispatch fn =
          (fun method_ -> not (Dynamic.equal method_.dispatch dispatch))
          multifn.methods
 
+let preferred_values multifn preferred =
+  multifn.preferences
+  |> List.find_map (fun (candidate, values) ->
+         if Dynamic.equal candidate preferred then Some values else None)
+  |> Option.value ~default:[]
+
+let prefers_value multifn preferred other =
+  preferred_values multifn preferred
+  |> List.exists (fun candidate -> Dynamic.equal candidate other)
+
+let prefer_method id preferred other =
+  let multifn = find_multifn id in
+  if prefers_value multifn other preferred then
+    invalid_arg "preference conflict in multimethod";
+  let existing = preferred_values multifn preferred in
+  let values =
+    if List.exists (fun candidate -> Dynamic.equal candidate other) existing then
+      existing
+    else other :: existing
+  in
+  multifn.preferences <-
+    (preferred, values)
+    :: List.filter
+         (fun (candidate, _) -> not (Dynamic.equal candidate preferred))
+         multifn.preferences;
+  Dynamic.opaque ("multimethod:" ^ id)
+
 let remove_method id dispatch =
   let multifn = find_multifn id in
   multifn.methods <-
@@ -80,12 +114,31 @@ let remove_all_methods id =
   multifn.methods <- [];
   Dynamic.opaque ("multimethod:" ^ id)
 
+let dominates multifn left right =
+  prefers_value multifn left right
+  ||
+  match (keyword_or_symbol_to_edn left, keyword_or_symbol_to_edn right) with
+  | Some left, Some right -> Runtime_hierarchy.global_isa left right
+  | _ -> false
+
+let best_method_entry multifn matches =
+  List.fold_left
+    (fun best candidate ->
+      match best with
+      | None -> Some candidate
+      | Some current
+        when dominates multifn candidate.dispatch current.dispatch ->
+          Some candidate
+      | Some _ -> best)
+    None matches
+
 let find_method_entry multifn dispatch =
-  match
-    List.find_opt
+  let matches =
+    List.filter
       (fun method_ -> method_matches dispatch method_.dispatch)
       multifn.methods
-  with
+  in
+  match best_method_entry multifn matches with
   | Some _ as method_ -> method_
   | None ->
       List.find_opt
@@ -120,3 +173,10 @@ let dispatch_fn id =
 let default_dispatch_val id =
   let multifn = find_multifn id in
   multifn.default_dispatch
+
+let prefers id =
+  let multifn = find_multifn id in
+  multifn.preferences
+  |> List.map (fun (preferred, values) ->
+         (preferred, Dynamic.set (List.to_seq values)))
+  |> Dynamic.map
