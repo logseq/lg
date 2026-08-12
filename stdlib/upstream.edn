@@ -1012,8 +1012,8 @@
              :reason :source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch}
     replace {:status :static-adaptation
              :reason :source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation}
-    spread {:status :blocked-static-typing
-            :reason :argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence}
+    spread {:status :special-form
+            :reason :compiler-owned-apply-argument-splicing-helper-with-heterogeneous-fixed-arguments-and-a-typed-final-seqable-tail-covered-by-the-source-apply-wrapper-and-__lg_apply-primitive}
     swap-vals! {:status :static-adaptation
                 :reason :source-function-preserves-all-clojurescript-arities-old-new-vector-results-and-non-atom-protocol-dispatch-while-direct-calls-inline-to-the-private-contextual-swap-specialization-and-the-supported-reference-runtime-retains-its-existing-sequential-atomicity-boundary}
     tagged-literal {:status :static-adaptation
