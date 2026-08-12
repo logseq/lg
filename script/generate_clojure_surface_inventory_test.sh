@@ -76,6 +76,9 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (test/use-fixtures :each (fn [body] (body)))
 (test/report {:type :pass})
 (spec/valid? string? "value")
+(re-find #"value" "fixture value")
+(ex-data (ex-info "fixture" {:code :fixture}))
+(add-watch (atom 0) ::fixture-watch (fn [_ _ _ _] nil))
 (zip/root nil)
 (cljs.core/identity 1)
 (cljs.core/chunk-buffer 4)
@@ -394,7 +397,8 @@ awk -F '\t' '
 
 awk -F '\t' '
   ($1 == "logseq-namespace-status" ||
-   $1 == "logseq-qualified-var-status") && $3 == "unsupported" {
+   $1 == "logseq-qualified-var-status" ||
+   $1 == "logseq-core-var-status") && $3 == "unsupported" {
     print "unclassified Logseq dependency: " $2 > "/dev/stderr"
     failed = 1
   }
@@ -543,6 +547,9 @@ awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/report" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/*current-env*" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-find" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/ex-data" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/add-watch" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "spec-is-explicitly-excluded-from-the-lg-stdlib-port" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

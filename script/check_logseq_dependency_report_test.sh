@@ -44,12 +44,14 @@ awk -F '\t' -v commit="$expected_commit" '
   END {exit !found}
 ' "$report"
 awk -F '\t' '
-  ($1 == "logseq-namespace-status" || $1 == "logseq-qualified-var-status") &&
+  ($1 == "logseq-namespace-status" || $1 == "logseq-qualified-var-status" ||
+   $1 == "logseq-core-var-status") &&
   $3 == "unsupported" {
     print "unexplained unsupported Logseq dependency: " $2 > "/dev/stderr"
     failed=1
   }
-  ($1 == "logseq-namespace-status" || $1 == "logseq-qualified-var-status") &&
+  ($1 == "logseq-namespace-status" || $1 == "logseq-qualified-var-status" ||
+   $1 == "logseq-core-var-status") &&
   ($3 == "blocked-static-typing" || $3 == "host-boundary" ||
    $3 == "out-of-scope") && ($5 == "" || $5 == "manifest-source") {
     print "Logseq dependency lacks a concrete boundary reason: " $2 > "/dev/stderr"

@@ -664,6 +664,9 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
         $2 == "qualified-var" {
           print "logseq-qualified-var\t" $3 "\t" $1
         }
+        $2 == "core-var" {
+          print "logseq-core-var\t" $3 "\t" $1
+        }
       ' \
     | LC_ALL=C sort -t '	' -k1,1 -k3,3nr -k2,2 \
     >"$tmp/logseq-counts"
@@ -681,16 +684,23 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
       return namespace in reason ? reason[namespace] : "not-in-aggregate-or-blocked-manifest"
     }
     {
-      print
       if ($1 == "logseq-namespace") {
+        print
         print "logseq-namespace-status\t" $2 "\t" namespace_status($2) \
           "\t" $3 "\t" namespace_reason($2)
       } else if ($1 == "logseq-qualified-var") {
+        print
         split($2, qualified, "/")
         namespace = qualified[1]
         print "logseq-qualified-var-status\t" $2 "\t" \
           ($2 in support ? support[$2] : namespace_status(namespace)) "\t" $3 "\t" \
           ($2 in reason ? reason[$2] : namespace_reason(namespace))
+      } else if ($1 == "logseq-core-var") {
+        if ($2 in support) {
+          print
+          print "logseq-core-var-status\t" $2 "\t" \
+            support[$2] "\t" $3 "\t" reason[$2]
+        }
       }
     }
   ' "$tmp/namespace-support" "$tmp/logseq-counts" \

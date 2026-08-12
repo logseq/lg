@@ -26,6 +26,19 @@
        (filter #(#{:require :require-macros} (first %)))
        (mapcat rest)))
 
+(defn- refer-clojure-exclusions [ns-form]
+  (->> (drop 2 ns-form)
+       (filter seq?)
+       (filter #(= :refer-clojure (first %)))
+       (mapcat rest)
+       (partition 2)
+       (keep (fn [[option value]]
+               (when (= :exclude option)
+                 value)))
+       (mapcat identity)
+       (map str)
+       set))
+
 (defn- spec-info [spec]
   (let [spec (if (symbol? spec) [spec] spec)
         namespace (first spec)
@@ -48,13 +61,24 @@
                (when-let [prefix (namespace symbol)]
                  [prefix (name symbol)])))))
 
+(defn- unqualified-symbols [forms ns-form]
+  (->> forms
+       (remove #(identical? ns-form %))
+       (mapcat #(tree-seq coll? seq %))
+       (filter symbol?)
+       (keep (fn [symbol]
+               (when-not (namespace symbol)
+                 (name symbol))))))
+
 (defn- inspect-file [path]
   (try
     (let [forms (read-forms path)
-          infos (keep spec-info (require-specs (ns-form forms)))
+          ns-form (ns-form forms)
+          infos (keep spec-info (require-specs ns-form))
           aliases (into {} (keep (fn [{:keys [namespace alias]}]
                                    (when alias [alias namespace])))
-                        infos)]
+                        infos)
+          excluded-core (refer-clojure-exclusions ns-form)]
       (doseq [{:keys [namespace]} infos
               :when (standard-namespace? namespace)]
         (println "namespace" namespace))
@@ -62,7 +86,10 @@
               :let [namespace (or (get aliases prefix)
                                   (when (standard-namespace? prefix) prefix))]
               :when (and namespace (standard-namespace? namespace))]
-        (println "qualified-var" (str namespace "/" member))))
+        (println "qualified-var" (str namespace "/" member)))
+      (doseq [member (unqualified-symbols forms ns-form)
+              :when (not (contains? excluded-core member))]
+        (println "core-var" (str "clojure.core/" member))))
     (catch Exception error
       (swap! failures inc)
       (binding [*out* *err*]

@@ -1,5 +1,661 @@
 meta	logseq-repository	https://github.com/logseq/logseq
 meta	logseq-commit	eed97cac01f58073333ec5415d4307093e0ccd8b
+logseq-core-var	clojure.core/*	406
+logseq-core-var	clojure.core/*command-line-args*	14
+logseq-core-var	clojure.core/*print-err-fn*	7
+logseq-core-var	clojure.core/*print-fn*	8
+logseq-core-var	clojure.core/*print-length*	1
+logseq-core-var	clojure.core/*warn-on-infer*	1
+logseq-core-var	clojure.core/+	402
+logseq-core-var	clojure.core/-	472
+logseq-core-var	clojure.core/->	2262
+logseq-core-var	clojure.core/->>	1613
+logseq-core-var	clojure.core/-assoc	3
+logseq-core-var	clojure.core/-clj->js	1
+logseq-core-var	clojure.core/-conj	1
+logseq-core-var	clojure.core/-contains-key?	1
+logseq-core-var	clojure.core/-dissoc	1
+logseq-core-var	clojure.core/-key->js	1
+logseq-core-var	clojure.core/-lookup	1
+logseq-core-var	clojure.core/-name	1
+logseq-core-var	clojure.core/-namespace	1
+logseq-core-var	clojure.core/-pr-writer	3
+logseq-core-var	clojure.core/-seq	2
+logseq-core-var	clojure.core/-write	1
+logseq-core-var	clojure.core/..	121
+logseq-core-var	clojure.core//	175
+logseq-core-var	clojure.core/<	224
+logseq-core-var	clojure.core/<=	176
+logseq-core-var	clojure.core/=	11492
+logseq-core-var	clojure.core/==	4
+logseq-core-var	clojure.core/>	361
+logseq-core-var	clojure.core/>=	165
+logseq-core-var	clojure.core/ExceptionInfo	6
+logseq-core-var	clojure.core/abs	12
+logseq-core-var	clojure.core/add-watch	36
+logseq-core-var	clojure.core/aget	633
+logseq-core-var	clojure.core/alength	6
+logseq-core-var	clojure.core/ancestors	2
+logseq-core-var	clojure.core/and	3936
+logseq-core-var	clojure.core/any?	2
+logseq-core-var	clojure.core/apply	405
+logseq-core-var	clojure.core/array	11
+logseq-core-var	clojure.core/array-map	2
+logseq-core-var	clojure.core/array-seq	43
+logseq-core-var	clojure.core/array?	24
+logseq-core-var	clojure.core/as->	5
+logseq-core-var	clojure.core/aset	110
+logseq-core-var	clojure.core/assoc	2295
+logseq-core-var	clojure.core/assoc!	6
+logseq-core-var	clojure.core/assoc-in	124
+logseq-core-var	clojure.core/atom	2427
+logseq-core-var	clojure.core/bit-and	5
+logseq-core-var	clojure.core/bit-or	16
+logseq-core-var	clojure.core/bit-shift-left	6
+logseq-core-var	clojure.core/bit-shift-right	3
+logseq-core-var	clojure.core/bit-xor	11
+logseq-core-var	clojure.core/boolean	323
+logseq-core-var	clojure.core/boolean?	51
+logseq-core-var	clojure.core/butlast	27
+logseq-core-var	clojure.core/byte	3
+logseq-core-var	clojure.core/bytes	3
+logseq-core-var	clojure.core/cat	1
+logseq-core-var	clojure.core/chunk	51
+logseq-core-var	clojure.core/coll?	122
+logseq-core-var	clojure.core/comment	66
+logseq-core-var	clojure.core/comp	193
+logseq-core-var	clojure.core/compare	37
+logseq-core-var	clojure.core/compare-and-set!	9
+logseq-core-var	clojure.core/complement	10
+logseq-core-var	clojure.core/concat	456
+logseq-core-var	clojure.core/cond	1276
+logseq-core-var	clojure.core/cond->	736
+logseq-core-var	clojure.core/cond->>	45
+logseq-core-var	clojure.core/conj	1869
+logseq-core-var	clojure.core/conj!	33
+logseq-core-var	clojure.core/cons	144
+logseq-core-var	clojure.core/constantly	689
+logseq-core-var	clojure.core/contains?	1716
+logseq-core-var	clojure.core/count	1674
+logseq-core-var	clojure.core/counted?	1
+logseq-core-var	clojure.core/cycle	1
+logseq-core-var	clojure.core/dec	200
+logseq-core-var	clojure.core/declare	112
+logseq-core-var	clojure.core/defmacro	28
+logseq-core-var	clojure.core/defmethod	162
+logseq-core-var	clojure.core/defmulti	8
+logseq-core-var	clojure.core/defn	4586
+logseq-core-var	clojure.core/defn-	5971
+logseq-core-var	clojure.core/defonce	410
+logseq-core-var	clojure.core/defprotocol	7
+logseq-core-var	clojure.core/defrecord	9
+logseq-core-var	clojure.core/deftype	3
+logseq-core-var	clojure.core/deref	84
+logseq-core-var	clojure.core/derive	3
+logseq-core-var	clojure.core/disj	57
+logseq-core-var	clojure.core/dispatch-fn	7
+logseq-core-var	clojure.core/dissoc	429
+logseq-core-var	clojure.core/distinct	221
+logseq-core-var	clojure.core/doall	19
+logseq-core-var	clojure.core/dorun	1
+logseq-core-var	clojure.core/doseq	499
+logseq-core-var	clojure.core/doto	62
+logseq-core-var	clojure.core/double	6
+logseq-core-var	clojure.core/double?	1
+logseq-core-var	clojure.core/drop	18
+logseq-core-var	clojure.core/drop-last	2
+logseq-core-var	clojure.core/drop-while	11
+logseq-core-var	clojure.core/empty	2
+logseq-core-var	clojure.core/empty?	595
+logseq-core-var	clojure.core/eval	1
+logseq-core-var	clojure.core/even?	3
+logseq-core-var	clojure.core/every-pred	1
+logseq-core-var	clojure.core/every?	243
+logseq-core-var	clojure.core/ex-cause	6
+logseq-core-var	clojure.core/ex-data	210
+logseq-core-var	clojure.core/ex-info	859
+logseq-core-var	clojure.core/ex-message	85
+logseq-core-var	clojure.core/exists?	71
+logseq-core-var	clojure.core/extend-protocol	2
+logseq-core-var	clojure.core/extend-type	4
+logseq-core-var	clojure.core/false?	496
+logseq-core-var	clojure.core/ffirst	90
+logseq-core-var	clojure.core/filter	728
+logseq-core-var	clojure.core/filterv	40
+logseq-core-var	clojure.core/find	4
+logseq-core-var	clojure.core/find-ns	9
+logseq-core-var	clojure.core/find-ns-obj	4
+logseq-core-var	clojure.core/first	1989
+logseq-core-var	clojure.core/flatten	15
+logseq-core-var	clojure.core/flush	14
+logseq-core-var	clojure.core/fn?	307
+logseq-core-var	clojure.core/fnil	63
+logseq-core-var	clojure.core/force	1
+logseq-core-var	clojure.core/frequencies	9
+logseq-core-var	clojure.core/gensym	1
+logseq-core-var	clojure.core/get	1341
+logseq-core-var	clojure.core/get-in	1845
+logseq-core-var	clojure.core/get-method	1
+logseq-core-var	clojure.core/goog-define	12
+logseq-core-var	clojure.core/group-by	78
+logseq-core-var	clojure.core/hash	10
+logseq-core-var	clojure.core/hash-map	47
+logseq-core-var	clojure.core/hash-set	1
+logseq-core-var	clojure.core/identical?	83
+logseq-core-var	clojure.core/identity	155
+logseq-core-var	clojure.core/if-let	627
+logseq-core-var	clojure.core/if-not	280
+logseq-core-var	clojure.core/if-some	8
+logseq-core-var	clojure.core/inc	584
+logseq-core-var	clojure.core/inst-ms	2
+logseq-core-var	clojure.core/inst?	2
+logseq-core-var	clojure.core/instance?	132
+logseq-core-var	clojure.core/int	24
+logseq-core-var	clojure.core/int?	18
+logseq-core-var	clojure.core/integer?	93
+logseq-core-var	clojure.core/interpose	5
+logseq-core-var	clojure.core/into	817
+logseq-core-var	clojure.core/into-array	14
+logseq-core-var	clojure.core/iterate	2
+logseq-core-var	clojure.core/js->clj	221
+logseq-core-var	clojure.core/js-delete	21
+logseq-core-var	clojure.core/js-in	1
+logseq-core-var	clojure.core/js-invoke	15
+logseq-core-var	clojure.core/js-iterable?	2
+logseq-core-var	clojure.core/js-obj	72
+logseq-core-var	clojure.core/juxt	92
+logseq-core-var	clojure.core/keep	540
+logseq-core-var	clojure.core/keep-indexed	24
+logseq-core-var	clojure.core/key	720
+logseq-core-var	clojure.core/keys	298
+logseq-core-var	clojure.core/keyword	403
+logseq-core-var	clojure.core/keyword-identical?	12
+logseq-core-var	clojure.core/keyword?	187
+logseq-core-var	clojure.core/last	228
+logseq-core-var	clojure.core/lazy-seq	5
+logseq-core-var	clojure.core/letfn	67
+logseq-core-var	clojure.core/list	53
+logseq-core-var	clojure.core/list*	2
+logseq-core-var	clojure.core/list?	12
+logseq-core-var	clojure.core/long	9
+logseq-core-var	clojure.core/map	2096
+logseq-core-var	clojure.core/map-indexed	88
+logseq-core-var	clojure.core/map?	464
+logseq-core-var	clojure.core/mapcat	447
+logseq-core-var	clojure.core/mapv	1023
+logseq-core-var	clojure.core/max	186
+logseq-core-var	clojure.core/max-key	3
+logseq-core-var	clojure.core/memoize	10
+logseq-core-var	clojure.core/merge	515
+logseq-core-var	clojure.core/merge-with	13
+logseq-core-var	clojure.core/meta	118
+logseq-core-var	clojure.core/methods	5
+logseq-core-var	clojure.core/min	131
+logseq-core-var	clojure.core/mod	44
+logseq-core-var	clojure.core/munge	3
+logseq-core-var	clojure.core/name	892
+logseq-core-var	clojure.core/namespace	128
+logseq-core-var	clojure.core/nat-int?	8
+logseq-core-var	clojure.core/neg-int?	2
+logseq-core-var	clojure.core/neg?	49
+logseq-core-var	clojure.core/next	75
+logseq-core-var	clojure.core/nil?	1373
+logseq-core-var	clojure.core/nnext	6
+logseq-core-var	clojure.core/not	2424
+logseq-core-var	clojure.core/not-any?	77
+logseq-core-var	clojure.core/not-empty	85
+logseq-core-var	clojure.core/not-every?	3
+logseq-core-var	clojure.core/not=	545
+logseq-core-var	clojure.core/ns-interns	3
+logseq-core-var	clojure.core/ns-publics	1
+logseq-core-var	clojure.core/nth	401
+logseq-core-var	clojure.core/number?	300
+logseq-core-var	clojure.core/object?	12
+logseq-core-var	clojure.core/odd?	2
+logseq-core-var	clojure.core/or	3528
+logseq-core-var	clojure.core/parents	58
+logseq-core-var	clojure.core/parse-double	4
+logseq-core-var	clojure.core/parse-long	22
+logseq-core-var	clojure.core/parse-uuid	43
+logseq-core-var	clojure.core/partial	59
+logseq-core-var	clojure.core/partition	4
+logseq-core-var	clojure.core/partition-all	13
+logseq-core-var	clojure.core/partition-by	5
+logseq-core-var	clojure.core/peek	18
+logseq-core-var	clojure.core/persistent!	24
+logseq-core-var	clojure.core/pop	27
+logseq-core-var	clojure.core/pos-int?	15
+logseq-core-var	clojure.core/pos?	172
+logseq-core-var	clojure.core/pr-str	253
+logseq-core-var	clojure.core/print	2
+logseq-core-var	clojure.core/print-str	10
+logseq-core-var	clojure.core/println	363
+logseq-core-var	clojure.core/prn	74
+logseq-core-var	clojure.core/qualified-keyword?	58
+logseq-core-var	clojure.core/qualified-symbol?	2
+logseq-core-var	clojure.core/quot	33
+logseq-core-var	clojure.core/rand	1
+logseq-core-var	clojure.core/rand-int	5
+logseq-core-var	clojure.core/rand-nth	6
+logseq-core-var	clojure.core/random-uuid	1264
+logseq-core-var	clojure.core/range	181
+logseq-core-var	clojure.core/re-find	290
+logseq-core-var	clojure.core/re-matches	87
+logseq-core-var	clojure.core/re-pattern	31
+logseq-core-var	clojure.core/re-seq	23
+logseq-core-var	clojure.core/reduce	273
+logseq-core-var	clojure.core/reduce-kv	56
+logseq-core-var	clojure.core/reduced	5
+logseq-core-var	clojure.core/reductions	1
+logseq-core-var	clojure.core/remove	731
+logseq-core-var	clojure.core/remove-watch	14
+logseq-core-var	clojure.core/repeat	87
+logseq-core-var	clojure.core/repeatedly	23
+logseq-core-var	clojure.core/require	3
+logseq-core-var	clojure.core/reset!	1682
+logseq-core-var	clojure.core/rest	205
+logseq-core-var	clojure.core/reverse	54
+logseq-core-var	clojure.core/rseq	5
+logseq-core-var	clojure.core/run!	25
+logseq-core-var	clojure.core/satisfies?	3
+logseq-core-var	clojure.core/second	711
+logseq-core-var	clojure.core/select-keys	301
+logseq-core-var	clojure.core/seq	2145
+logseq-core-var	clojure.core/seq?	11
+logseq-core-var	clojure.core/seqable?	2
+logseq-core-var	clojure.core/sequence	15
+logseq-core-var	clojure.core/sequential?	133
+logseq-core-var	clojure.core/set	1047
+logseq-core-var	clojure.core/set-print-err-fn!	2
+logseq-core-var	clojure.core/set-print-fn!	4
+logseq-core-var	clojure.core/set?	94
+logseq-core-var	clojure.core/shuffle	3
+logseq-core-var	clojure.core/simple-keyword?	1
+logseq-core-var	clojure.core/simple-symbol?	1
+logseq-core-var	clojure.core/some	723
+logseq-core-var	clojure.core/some->	1187
+logseq-core-var	clojure.core/some->>	163
+logseq-core-var	clojure.core/some-fn	7
+logseq-core-var	clojure.core/some?	718
+logseq-core-var	clojure.core/sort	66
+logseq-core-var	clojure.core/sort-by	195
+logseq-core-var	clojure.core/split-at	2
+logseq-core-var	clojure.core/split-with	8
+logseq-core-var	clojure.core/str	5096
+logseq-core-var	clojure.core/string?	900
+logseq-core-var	clojure.core/subs	362
+logseq-core-var	clojure.core/subvec	83
+logseq-core-var	clojure.core/swap!	1909
+logseq-core-var	clojure.core/swap-vals!	1
+logseq-core-var	clojure.core/symbol	25
+logseq-core-var	clojure.core/symbol?	18
+logseq-core-var	clojure.core/system-time	2
+logseq-core-var	clojure.core/take	132
+logseq-core-var	clojure.core/take-last	10
+logseq-core-var	clojure.core/take-nth	2
+logseq-core-var	clojure.core/take-while	14
+logseq-core-var	clojure.core/this-as	15
+logseq-core-var	clojure.core/time	53
+logseq-core-var	clojure.core/to-array	31
+logseq-core-var	clojure.core/transient	24
+logseq-core-var	clojure.core/tree-seq	10
+logseq-core-var	clojure.core/true?	615
+logseq-core-var	clojure.core/type	499
+logseq-core-var	clojure.core/undefined?	1
+logseq-core-var	clojure.core/unsigned-bit-shift-right	4
+logseq-core-var	clojure.core/update	454
+logseq-core-var	clojure.core/update-in	36
+logseq-core-var	clojure.core/update-keys	7
+logseq-core-var	clojure.core/update-vals	31
+logseq-core-var	clojure.core/uuid	660
+logseq-core-var	clojure.core/uuid?	242
+logseq-core-var	clojure.core/val	216
+logseq-core-var	clojure.core/vals	154
+logseq-core-var	clojure.core/vary-meta	1
+logseq-core-var	clojure.core/vec	958
+logseq-core-var	clojure.core/vector	136
+logseq-core-var	clojure.core/vector?	330
+logseq-core-var	clojure.core/volatile!	73
+logseq-core-var	clojure.core/volatile?	1
+logseq-core-var	clojure.core/vreset!	48
+logseq-core-var	clojure.core/vswap!	57
+logseq-core-var	clojure.core/when	5401
+logseq-core-var	clojure.core/when-let	1801
+logseq-core-var	clojure.core/when-not	1223
+logseq-core-var	clojure.core/when-some	8
+logseq-core-var	clojure.core/while	1
+logseq-core-var	clojure.core/with-meta	21
+logseq-core-var	clojure.core/with-redefs	427
+logseq-core-var	clojure.core/zero?	187
+logseq-core-var	clojure.core/zipmap	39
+logseq-core-var-status	clojure.core/*	source-aggregate	406	precompiled-lg-source
+logseq-core-var-status	clojure.core/*command-line-args*	host-boundary	14	target-startup-host-injects-an-optional-process-argument-sequence
+logseq-core-var-status	clojure.core/*print-err-fn*	host-boundary	7	target-runtime-installs-a-mutable-variadic-javascript-error-output-callback
+logseq-core-var-status	clojure.core/*print-fn*	host-boundary	8	target-runtime-installs-a-mutable-variadic-javascript-string-output-callback
+logseq-core-var-status	clojure.core/*print-length*	blocked-static-typing	1	optional-print-limit-state-is-not-yet-threaded-through-every-static-collection-printer-witness
+logseq-core-var-status	clojure.core/*warn-on-infer*	special-form	1	compiler-intrinsic-mutates-file-scoped-analyzer-inference-warning-configuration-and-emits-no-runtime-var
+logseq-core-var-status	clojure.core/+	source-aggregate	402	precompiled-lg-source
+logseq-core-var-status	clojure.core/-	source-aggregate	472	precompiled-lg-source
+logseq-core-var-status	clojure.core/->	source-aggregate	2262	precompiled-lg-source
+logseq-core-var-status	clojure.core/->>	source-aggregate	1613	precompiled-lg-source
+logseq-core-var-status	clojure.core/-assoc	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/-clj->js	host-boundary	1	recursive-javascript-object-conversion-requires-open-javascript-host-values
+logseq-core-var-status	clojure.core/-conj	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-contains-key?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-dissoc	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-key->js	host-boundary	1	recursive-javascript-object-conversion-requires-open-javascript-host-values
+logseq-core-var-status	clojure.core/-lookup	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-name	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-namespace	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/-pr-writer	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/-seq	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/-write	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/..	host-boundary	121	javascript-property-and-method-chain-expansion
+logseq-core-var-status	clojure.core//	source-aggregate	175	precompiled-lg-source
+logseq-core-var-status	clojure.core/<	source-aggregate	224	precompiled-lg-source
+logseq-core-var-status	clojure.core/<=	source-aggregate	176	precompiled-lg-source
+logseq-core-var-status	clojure.core/=	source-aggregate	11492	precompiled-lg-source
+logseq-core-var-status	clojure.core/==	source-aggregate	4	precompiled-lg-source
+logseq-core-var-status	clojure.core/>	source-aggregate	361	precompiled-lg-source
+logseq-core-var-status	clojure.core/>=	source-aggregate	165	precompiled-lg-source
+logseq-core-var-status	clojure.core/ExceptionInfo	host-boundary	6	clojurescript-javascript-error-constructor-with-open-ex-data-and-host-stack-fields
+logseq-core-var-status	clojure.core/abs	source-aggregate	12	precompiled-lg-source
+logseq-core-var-status	clojure.core/add-watch	blocked-static-typing	36	watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type
+logseq-core-var-status	clojure.core/aget	source-aggregate	633	precompiled-lg-source
+logseq-core-var-status	clojure.core/alength	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/ancestors	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/and	source-aggregate	3936	precompiled-lg-source
+logseq-core-var-status	clojure.core/any?	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/apply	source-aggregate	405	precompiled-lg-source
+logseq-core-var-status	clojure.core/array	source-aggregate	11	precompiled-lg-source
+logseq-core-var-status	clojure.core/array-map	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/array-seq	source-aggregate	43	precompiled-lg-source
+logseq-core-var-status	clojure.core/array?	source-aggregate	24	precompiled-lg-source
+logseq-core-var-status	clojure.core/as->	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/aset	source-aggregate	110	precompiled-lg-source
+logseq-core-var-status	clojure.core/assoc	source-aggregate	2295	precompiled-lg-source
+logseq-core-var-status	clojure.core/assoc!	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/assoc-in	source-aggregate	124	precompiled-lg-source
+logseq-core-var-status	clojure.core/atom	source-aggregate	2427	precompiled-lg-source
+logseq-core-var-status	clojure.core/bit-and	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/bit-or	source-aggregate	16	precompiled-lg-source
+logseq-core-var-status	clojure.core/bit-shift-left	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/bit-shift-right	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/bit-xor	source-aggregate	11	precompiled-lg-source
+logseq-core-var-status	clojure.core/boolean	source-aggregate	323	precompiled-lg-source
+logseq-core-var-status	clojure.core/boolean?	source-aggregate	51	precompiled-lg-source
+logseq-core-var-status	clojure.core/butlast	source-aggregate	27	precompiled-lg-source
+logseq-core-var-status	clojure.core/byte	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/bytes	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/cat	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/chunk	source-aggregate	51	precompiled-lg-source
+logseq-core-var-status	clojure.core/coll?	source-aggregate	122	precompiled-lg-source
+logseq-core-var-status	clojure.core/comment	source-aggregate	66	precompiled-lg-source
+logseq-core-var-status	clojure.core/comp	source-aggregate	193	precompiled-lg-source
+logseq-core-var-status	clojure.core/compare	source-aggregate	37	precompiled-lg-source
+logseq-core-var-status	clojure.core/compare-and-set!	source-aggregate	9	precompiled-lg-source
+logseq-core-var-status	clojure.core/complement	source-aggregate	10	precompiled-lg-source
+logseq-core-var-status	clojure.core/concat	source-aggregate	456	precompiled-lg-source
+logseq-core-var-status	clojure.core/cond	source-aggregate	1276	precompiled-lg-source
+logseq-core-var-status	clojure.core/cond->	source-aggregate	736	precompiled-lg-source
+logseq-core-var-status	clojure.core/cond->>	source-aggregate	45	precompiled-lg-source
+logseq-core-var-status	clojure.core/conj	source-aggregate	1869	precompiled-lg-source
+logseq-core-var-status	clojure.core/conj!	source-aggregate	33	precompiled-lg-source
+logseq-core-var-status	clojure.core/cons	source-aggregate	144	precompiled-lg-source
+logseq-core-var-status	clojure.core/constantly	source-aggregate	689	precompiled-lg-source
+logseq-core-var-status	clojure.core/contains?	source-aggregate	1716	precompiled-lg-source
+logseq-core-var-status	clojure.core/count	source-aggregate	1674	precompiled-lg-source
+logseq-core-var-status	clojure.core/counted?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/cycle	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/dec	source-aggregate	200	precompiled-lg-source
+logseq-core-var-status	clojure.core/declare	special-form	112	compiler-owned-forward-binding-declaration
+logseq-core-var-status	clojure.core/defmacro	special-form	28	analyzer-owned-macro-definition-and-metadata-rewrite
+logseq-core-var-status	clojure.core/defmethod	blocked-static-typing	162	requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table
+logseq-core-var-status	clojure.core/defmulti	blocked-static-typing	8	requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table
+logseq-core-var-status	clojure.core/defn	special-form	4586	clojurescript-macro-bootstrap-var-expands-function-definitions-through-analyzer-def-and-fn-forms
+logseq-core-var-status	clojure.core/defn-	special-form	5971	compiler-owned-private-function-definition-syntax
+logseq-core-var-status	clojure.core/defonce	special-form	410	compiler-owned-single-initialization-definition-syntax
+logseq-core-var-status	clojure.core/defprotocol	special-form	7	compiler-owned-static-protocol-declaration-syntax
+logseq-core-var-status	clojure.core/defrecord	special-form	9	compiler-owned-static-record-declaration-syntax
+logseq-core-var-status	clojure.core/deftype	special-form	3	compiler-owned-static-type-declaration-syntax
+logseq-core-var-status	clojure.core/deref	source-aggregate	84	precompiled-lg-source
+logseq-core-var-status	clojure.core/derive	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/disj	source-aggregate	57	precompiled-lg-source
+logseq-core-var-status	clojure.core/dispatch-fn	blocked-static-typing	7	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/dissoc	source-aggregate	429	precompiled-lg-source
+logseq-core-var-status	clojure.core/distinct	source-aggregate	221	precompiled-lg-source
+logseq-core-var-status	clojure.core/doall	source-aggregate	19	precompiled-lg-source
+logseq-core-var-status	clojure.core/dorun	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/doseq	source-aggregate	499	precompiled-lg-source
+logseq-core-var-status	clojure.core/doto	source-aggregate	62	precompiled-lg-source
+logseq-core-var-status	clojure.core/double	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/double?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/drop	source-aggregate	18	precompiled-lg-source
+logseq-core-var-status	clojure.core/drop-last	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/drop-while	source-aggregate	11	precompiled-lg-source
+logseq-core-var-status	clojure.core/empty	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/empty?	source-aggregate	595	precompiled-lg-source
+logseq-core-var-status	clojure.core/eval	host-boundary	1	delegates-code-data-to-the-self-hosted-clojurescript-evaluator-environment
+logseq-core-var-status	clojure.core/even?	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/every-pred	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/every?	source-aggregate	243	precompiled-lg-source
+logseq-core-var-status	clojure.core/ex-cause	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/ex-data	blocked-static-typing	210	exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type
+logseq-core-var-status	clojure.core/ex-info	host-boundary	859	two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary
+logseq-core-var-status	clojure.core/ex-message	source-aggregate	85	precompiled-lg-source
+logseq-core-var-status	clojure.core/exists?	host-boundary	71	tests-javascript-global-name-existence
+logseq-core-var-status	clojure.core/extend-protocol	special-form	2	compiler-owned-static-multi-receiver-protocol-extension-syntax
+logseq-core-var-status	clojure.core/extend-type	special-form	4	compiler-owned-static-protocol-extension-syntax
+logseq-core-var-status	clojure.core/false?	source-aggregate	496	precompiled-lg-source
+logseq-core-var-status	clojure.core/ffirst	source-aggregate	90	precompiled-lg-source
+logseq-core-var-status	clojure.core/filter	source-aggregate	728	precompiled-lg-source
+logseq-core-var-status	clojure.core/filterv	source-aggregate	40	precompiled-lg-source
+logseq-core-var-status	clojure.core/find	source-aggregate	4	precompiled-lg-source
+logseq-core-var-status	clojure.core/find-ns	host-boundary	9	bootstrap-namespace-lookup-walks-javascript-global-objects-and-a-mutable-cache
+logseq-core-var-status	clojure.core/find-ns-obj	host-boundary	4	bootstrap-namespace-lookup-traverses-munged-javascript-global-object-properties
+logseq-core-var-status	clojure.core/first	source-aggregate	1989	precompiled-lg-source
+logseq-core-var-status	clojure.core/flatten	blocked-static-typing	15	arbitrarily-nested-sequential-input-can-produce-heterogeneous-leaf-types-without-a-closed-recursive-value-domain
+logseq-core-var-status	clojure.core/flush	source-aggregate	14	precompiled-lg-source
+logseq-core-var-status	clojure.core/fn?	source-aggregate	307	precompiled-lg-source
+logseq-core-var-status	clojure.core/fnil	source-aggregate	63	precompiled-lg-source
+logseq-core-var-status	clojure.core/force	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/frequencies	source-aggregate	9	precompiled-lg-source
+logseq-core-var-status	clojure.core/gensym	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/get	source-aggregate	1341	precompiled-lg-source
+logseq-core-var-status	clojure.core/get-in	source-aggregate	1845	precompiled-lg-source
+logseq-core-var-status	clojure.core/get-method	blocked-static-typing	1	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/goog-define	host-boundary	12	emits-a-google-closure-compile-time-define
+logseq-core-var-status	clojure.core/group-by	source-aggregate	78	precompiled-lg-source
+logseq-core-var-status	clojure.core/hash	source-aggregate	10	precompiled-lg-source
+logseq-core-var-status	clojure.core/hash-map	source-aggregate	47	precompiled-lg-source
+logseq-core-var-status	clojure.core/hash-set	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/identical?	source-aggregate	83	precompiled-lg-source
+logseq-core-var-status	clojure.core/identity	source-aggregate	155	precompiled-lg-source
+logseq-core-var-status	clojure.core/if-let	source-aggregate	627	precompiled-lg-source
+logseq-core-var-status	clojure.core/if-not	source-aggregate	280	precompiled-lg-source
+logseq-core-var-status	clojure.core/if-some	source-aggregate	8	precompiled-lg-source
+logseq-core-var-status	clojure.core/inc	source-aggregate	584	precompiled-lg-source
+logseq-core-var-status	clojure.core/inst-ms	host-boundary	2	clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation
+logseq-core-var-status	clojure.core/inst?	host-boundary	2	clojurescript-inst-is-a-javascript-date-protocol-with-no-shared-native-source-representation
+logseq-core-var-status	clojure.core/instance?	special-form	132	compiler-owned-static-nominal-type-or-protocol-witness-elaboration-because-the-type-position-is-an-analyzer-symbol-not-a-first-class-source-value
+logseq-core-var-status	clojure.core/int	source-aggregate	24	precompiled-lg-source
+logseq-core-var-status	clojure.core/int?	source-aggregate	18	precompiled-lg-source
+logseq-core-var-status	clojure.core/integer?	source-aggregate	93	precompiled-lg-source
+logseq-core-var-status	clojure.core/interpose	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/into	source-aggregate	817	precompiled-lg-source
+logseq-core-var-status	clojure.core/into-array	source-aggregate	14	precompiled-lg-source
+logseq-core-var-status	clojure.core/iterate	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/js->clj	host-boundary	221	recursive-conversion-of-arbitrary-javascript-object-graphs-requires-a-javascript-host-value-boundary-and-open-heterogeneous-result-domain-unavailable-on-native
+logseq-core-var-status	clojure.core/js-delete	host-boundary	21	emits-the-javascript-delete-operator
+logseq-core-var-status	clojure.core/js-in	host-boundary	1	emits-the-javascript-in-operator
+logseq-core-var-status	clojure.core/js-invoke	host-boundary	15	invokes-an-arbitrary-javascript-function-with-javascript-arguments-and-result
+logseq-core-var-status	clojure.core/js-iterable?	host-boundary	2	tests-the-javascript-symbol-iterator-property
+logseq-core-var-status	clojure.core/js-obj	host-boundary	72	javascript-object-construction-has-no-portable-native-ocaml-representation-and-cannot-be-modeled-as-a-static-clojure-map-without-changing-identity-and-interop-semantics
+logseq-core-var-status	clojure.core/juxt	source-aggregate	92	precompiled-lg-source
+logseq-core-var-status	clojure.core/keep	source-aggregate	540	precompiled-lg-source
+logseq-core-var-status	clojure.core/keep-indexed	source-aggregate	24	precompiled-lg-source
+logseq-core-var-status	clojure.core/key	source-aggregate	720	precompiled-lg-source
+logseq-core-var-status	clojure.core/keys	source-aggregate	298	precompiled-lg-source
+logseq-core-var-status	clojure.core/keyword	source-aggregate	403	precompiled-lg-source
+logseq-core-var-status	clojure.core/keyword-identical?	source-aggregate	12	precompiled-lg-source
+logseq-core-var-status	clojure.core/keyword?	source-aggregate	187	precompiled-lg-source
+logseq-core-var-status	clojure.core/last	source-aggregate	228	precompiled-lg-source
+logseq-core-var-status	clojure.core/lazy-seq	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/letfn	special-form	67	compiler-owned-mutually-recursive-local-function-binding-syntax
+logseq-core-var-status	clojure.core/list	source-aggregate	53	precompiled-lg-source
+logseq-core-var-status	clojure.core/list*	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/list?	source-aggregate	12	precompiled-lg-source
+logseq-core-var-status	clojure.core/long	source-aggregate	9	precompiled-lg-source
+logseq-core-var-status	clojure.core/map	source-aggregate	2096	precompiled-lg-source
+logseq-core-var-status	clojure.core/map-indexed	source-aggregate	88	precompiled-lg-source
+logseq-core-var-status	clojure.core/map?	source-aggregate	464	precompiled-lg-source
+logseq-core-var-status	clojure.core/mapcat	source-aggregate	447	precompiled-lg-source
+logseq-core-var-status	clojure.core/mapv	source-aggregate	1023	precompiled-lg-source
+logseq-core-var-status	clojure.core/max	source-aggregate	186	precompiled-lg-source
+logseq-core-var-status	clojure.core/max-key	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/memoize	blocked-static-typing	10	returned-function-must-preserve-the-input-functions-complete-arity-shape-and-cache-heterogeneous-argument-tuples
+logseq-core-var-status	clojure.core/merge	source-aggregate	515	precompiled-lg-source
+logseq-core-var-status	clojure.core/merge-with	source-aggregate	13	precompiled-lg-source
+logseq-core-var-status	clojure.core/meta	source-aggregate	118	precompiled-lg-source
+logseq-core-var-status	clojure.core/methods	blocked-static-typing	5	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/min	source-aggregate	131	precompiled-lg-source
+logseq-core-var-status	clojure.core/mod	source-aggregate	44	precompiled-lg-source
+logseq-core-var-status	clojure.core/munge	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/name	source-aggregate	892	precompiled-lg-source
+logseq-core-var-status	clojure.core/namespace	source-aggregate	128	precompiled-lg-source
+logseq-core-var-status	clojure.core/nat-int?	source-aggregate	8	precompiled-lg-source
+logseq-core-var-status	clojure.core/neg-int?	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/neg?	source-aggregate	49	precompiled-lg-source
+logseq-core-var-status	clojure.core/next	source-aggregate	75	precompiled-lg-source
+logseq-core-var-status	clojure.core/nil?	source-aggregate	1373	precompiled-lg-source
+logseq-core-var-status	clojure.core/nnext	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/not	source-aggregate	2424	precompiled-lg-source
+logseq-core-var-status	clojure.core/not-any?	source-aggregate	77	precompiled-lg-source
+logseq-core-var-status	clojure.core/not-empty	source-aggregate	85	precompiled-lg-source
+logseq-core-var-status	clojure.core/not-every?	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/not=	source-aggregate	545	precompiled-lg-source
+logseq-core-var-status	clojure.core/ns-interns	special-form	3	analyzer-owned-namespace-intern-introspection
+logseq-core-var-status	clojure.core/ns-publics	special-form	1	analyzer-owned-public-var-introspection
+logseq-core-var-status	clojure.core/nth	source-aggregate	401	precompiled-lg-source
+logseq-core-var-status	clojure.core/number?	source-aggregate	300	precompiled-lg-source
+logseq-core-var-status	clojure.core/object?	host-boundary	12	tests-the-javascript-object-constructor-and-has-no-equivalent-native-object-category
+logseq-core-var-status	clojure.core/odd?	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/or	source-aggregate	3528	precompiled-lg-source
+logseq-core-var-status	clojure.core/parents	source-aggregate	58	precompiled-lg-source
+logseq-core-var-status	clojure.core/parse-double	source-aggregate	4	precompiled-lg-source
+logseq-core-var-status	clojure.core/parse-long	source-aggregate	22	precompiled-lg-source
+logseq-core-var-status	clojure.core/parse-uuid	source-aggregate	43	precompiled-lg-source
+logseq-core-var-status	clojure.core/partial	source-aggregate	59	precompiled-lg-source
+logseq-core-var-status	clojure.core/partition	source-aggregate	4	precompiled-lg-source
+logseq-core-var-status	clojure.core/partition-all	source-aggregate	13	precompiled-lg-source
+logseq-core-var-status	clojure.core/partition-by	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/peek	source-aggregate	18	precompiled-lg-source
+logseq-core-var-status	clojure.core/persistent!	source-aggregate	24	precompiled-lg-source
+logseq-core-var-status	clojure.core/pop	source-aggregate	27	precompiled-lg-source
+logseq-core-var-status	clojure.core/pos-int?	source-aggregate	15	precompiled-lg-source
+logseq-core-var-status	clojure.core/pos?	source-aggregate	172	precompiled-lg-source
+logseq-core-var-status	clojure.core/pr-str	source-aggregate	253	precompiled-lg-source
+logseq-core-var-status	clojure.core/print	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/print-str	source-aggregate	10	precompiled-lg-source
+logseq-core-var-status	clojure.core/println	source-aggregate	363	precompiled-lg-source
+logseq-core-var-status	clojure.core/prn	source-aggregate	74	precompiled-lg-source
+logseq-core-var-status	clojure.core/qualified-keyword?	source-aggregate	58	precompiled-lg-source
+logseq-core-var-status	clojure.core/qualified-symbol?	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/quot	source-aggregate	33	precompiled-lg-source
+logseq-core-var-status	clojure.core/rand	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/rand-int	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/rand-nth	source-aggregate	6	precompiled-lg-source
+logseq-core-var-status	clojure.core/random-uuid	source-aggregate	1264	precompiled-lg-source
+logseq-core-var-status	clojure.core/range	source-aggregate	181	precompiled-lg-source
+logseq-core-var-status	clojure.core/re-find	blocked-static-typing	290	capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary
+logseq-core-var-status	clojure.core/re-matches	blocked-static-typing	87	capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary
+logseq-core-var-status	clojure.core/re-pattern	source-aggregate	31	precompiled-lg-source
+logseq-core-var-status	clojure.core/re-seq	blocked-static-typing	23	lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core
+logseq-core-var-status	clojure.core/reduce	source-aggregate	273	precompiled-lg-source
+logseq-core-var-status	clojure.core/reduce-kv	source-aggregate	56	precompiled-lg-source
+logseq-core-var-status	clojure.core/reduced	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/reductions	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/remove	source-aggregate	731	precompiled-lg-source
+logseq-core-var-status	clojure.core/remove-watch	blocked-static-typing	14	watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type
+logseq-core-var-status	clojure.core/repeat	source-aggregate	87	precompiled-lg-source
+logseq-core-var-status	clojure.core/repeatedly	source-aggregate	23	precompiled-lg-source
+logseq-core-var-status	clojure.core/require	special-form	3	compiler-owned-namespace-loading-and-alias-environment-update
+logseq-core-var-status	clojure.core/reset!	source-aggregate	1682	precompiled-lg-source
+logseq-core-var-status	clojure.core/rest	source-aggregate	205	precompiled-lg-source
+logseq-core-var-status	clojure.core/reverse	source-aggregate	54	precompiled-lg-source
+logseq-core-var-status	clojure.core/rseq	source-aggregate	5	precompiled-lg-source
+logseq-core-var-status	clojure.core/run!	source-aggregate	25	precompiled-lg-source
+logseq-core-var-status	clojure.core/satisfies?	special-form	3	compiler-owned-static-protocol-witness-elaboration-because-the-protocol-position-is-an-analyzer-symbol-not-a-first-class-source-value
+logseq-core-var-status	clojure.core/second	source-aggregate	711	precompiled-lg-source
+logseq-core-var-status	clojure.core/select-keys	source-aggregate	301	precompiled-lg-source
+logseq-core-var-status	clojure.core/seq	source-aggregate	2145	precompiled-lg-source
+logseq-core-var-status	clojure.core/seq?	source-aggregate	11	precompiled-lg-source
+logseq-core-var-status	clojure.core/seqable?	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/sequence	source-aggregate	15	precompiled-lg-source
+logseq-core-var-status	clojure.core/sequential?	source-aggregate	133	precompiled-lg-source
+logseq-core-var-status	clojure.core/set	source-aggregate	1047	precompiled-lg-source
+logseq-core-var-status	clojure.core/set-print-err-fn!	host-boundary	2	mutates-the-target-specific-global-error-print-callback
+logseq-core-var-status	clojure.core/set-print-fn!	host-boundary	4	mutates-the-target-specific-global-output-print-callback
+logseq-core-var-status	clojure.core/set?	source-aggregate	94	precompiled-lg-source
+logseq-core-var-status	clojure.core/shuffle	source-aggregate	3	precompiled-lg-source
+logseq-core-var-status	clojure.core/simple-keyword?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/simple-symbol?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/some	source-aggregate	723	precompiled-lg-source
+logseq-core-var-status	clojure.core/some->	source-aggregate	1187	precompiled-lg-source
+logseq-core-var-status	clojure.core/some->>	source-aggregate	163	precompiled-lg-source
+logseq-core-var-status	clojure.core/some-fn	source-aggregate	7	precompiled-lg-source
+logseq-core-var-status	clojure.core/some?	source-aggregate	718	precompiled-lg-source
+logseq-core-var-status	clojure.core/sort	source-aggregate	66	precompiled-lg-source
+logseq-core-var-status	clojure.core/sort-by	source-aggregate	195	precompiled-lg-source
+logseq-core-var-status	clojure.core/split-at	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/split-with	source-aggregate	8	precompiled-lg-source
+logseq-core-var-status	clojure.core/str	source-aggregate	5096	precompiled-lg-source
+logseq-core-var-status	clojure.core/string?	source-aggregate	900	precompiled-lg-source
+logseq-core-var-status	clojure.core/subs	source-aggregate	362	precompiled-lg-source
+logseq-core-var-status	clojure.core/subvec	source-aggregate	83	precompiled-lg-source
+logseq-core-var-status	clojure.core/swap!	source-aggregate	1909	precompiled-lg-source
+logseq-core-var-status	clojure.core/swap-vals!	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/symbol	source-aggregate	25	precompiled-lg-source
+logseq-core-var-status	clojure.core/symbol?	source-aggregate	18	precompiled-lg-source
+logseq-core-var-status	clojure.core/system-time	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/take	source-aggregate	132	precompiled-lg-source
+logseq-core-var-status	clojure.core/take-last	source-aggregate	10	precompiled-lg-source
+logseq-core-var-status	clojure.core/take-nth	source-aggregate	2	precompiled-lg-source
+logseq-core-var-status	clojure.core/take-while	source-aggregate	14	precompiled-lg-source
+logseq-core-var-status	clojure.core/this-as	host-boundary	15	binds-the-javascript-this-value
+logseq-core-var-status	clojure.core/time	host-boundary	53	uses-javascript-date-timing-and-console-printing
+logseq-core-var-status	clojure.core/to-array	source-aggregate	31	precompiled-lg-source
+logseq-core-var-status	clojure.core/transient	source-aggregate	24	precompiled-lg-source
+logseq-core-var-status	clojure.core/tree-seq	source-aggregate	10	precompiled-lg-source
+logseq-core-var-status	clojure.core/true?	source-aggregate	615	precompiled-lg-source
+logseq-core-var-status	clojure.core/type	blocked-static-typing	499	runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design
+logseq-core-var-status	clojure.core/undefined?	host-boundary	1	tests-the-javascript-undefined-value
+logseq-core-var-status	clojure.core/unsigned-bit-shift-right	source-aggregate	4	precompiled-lg-source
+logseq-core-var-status	clojure.core/update	source-aggregate	454	precompiled-lg-source
+logseq-core-var-status	clojure.core/update-in	source-aggregate	36	precompiled-lg-source
+logseq-core-var-status	clojure.core/update-keys	source-aggregate	7	precompiled-lg-source
+logseq-core-var-status	clojure.core/update-vals	source-aggregate	31	precompiled-lg-source
+logseq-core-var-status	clojure.core/uuid	source-aggregate	660	precompiled-lg-source
+logseq-core-var-status	clojure.core/uuid?	source-aggregate	242	precompiled-lg-source
+logseq-core-var-status	clojure.core/val	source-aggregate	216	precompiled-lg-source
+logseq-core-var-status	clojure.core/vals	source-aggregate	154	precompiled-lg-source
+logseq-core-var-status	clojure.core/vary-meta	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/vec	source-aggregate	958	precompiled-lg-source
+logseq-core-var-status	clojure.core/vector	source-aggregate	136	precompiled-lg-source
+logseq-core-var-status	clojure.core/vector?	source-aggregate	330	precompiled-lg-source
+logseq-core-var-status	clojure.core/volatile!	source-aggregate	73	precompiled-lg-source
+logseq-core-var-status	clojure.core/volatile?	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/vreset!	source-aggregate	48	precompiled-lg-source
+logseq-core-var-status	clojure.core/vswap!	source-aggregate	57	precompiled-lg-source
+logseq-core-var-status	clojure.core/when	source-aggregate	5401	precompiled-lg-source
+logseq-core-var-status	clojure.core/when-let	source-aggregate	1801	precompiled-lg-source
+logseq-core-var-status	clojure.core/when-not	source-aggregate	1223	precompiled-lg-source
+logseq-core-var-status	clojure.core/when-some	source-aggregate	8	precompiled-lg-source
+logseq-core-var-status	clojure.core/while	source-aggregate	1	precompiled-lg-source
+logseq-core-var-status	clojure.core/with-meta	source-aggregate	21	precompiled-lg-source
+logseq-core-var-status	clojure.core/with-redefs	blocked-static-typing	427	temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation
+logseq-core-var-status	clojure.core/zero?	source-aggregate	187	precompiled-lg-source
+logseq-core-var-status	clojure.core/zipmap	source-aggregate	39	precompiled-lg-source
 logseq-namespace	cljs.analyzer.api	1
 logseq-namespace	cljs.cache	4
 logseq-namespace	cljs.core	1

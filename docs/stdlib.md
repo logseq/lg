@@ -212,11 +212,12 @@ script/generate_clojure_surface_inventory.sh . ../logseq ../clojurescript
 The tab-separated output records the pinned ClojureScript commit, every string
 alternative in the compiler's main call dispatcher, compiler-owned namespace
 vars, runtime primitive boundaries referenced directly or through stdlib
-namespace aliases, and Logseq standard-library
-namespace/qualified-var usage. The Logseq reader resolves aliases from each
-file's `ns` form and respects `.gitignore`; qualified-var counts are lexical
-occurrences after alias resolution, so they are a prioritization signal rather
-than a reachability analysis.
+namespace aliases, and Logseq standard-library namespace, qualified-var, and
+automatic core-refer usage. The Logseq reader resolves aliases from each file's
+`ns` form, respects `.gitignore`, and records unqualified symbols that match a
+known `clojure.core` manifest entry as `logseq-core-var` rows. Qualified-var and
+core-var counts are lexical occurrences after alias or core resolution, so they
+are a prioritization signal rather than a reachability analysis.
 
 When a pinned ClojureScript checkout is supplied, the report also contains an
 `upstream-var` row for every public function, macro, var, multimethod, and
@@ -239,6 +240,14 @@ surface therefore has explicit ownership and evidence.
 Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
+
+The corrected Logseq audit exposes high-frequency automatic core blockers that
+were invisible in qualified-var-only reports. At the pinned Logseq commit the
+largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
+`re-find` (290), `ex-data` (210), `defmethod` (162), `re-matches` (87),
+`add-watch` (36), `re-seq` (23), `flatten` (15), `remove-watch` (14), and
+`memoize` (10). These rows are the priority order for removing the remaining
+static blockers unless a lower-count item unlocks several higher-count ones.
 
 The printing entry-point cluster is source-owned. `str`, `pr-str`, `pr-str*`,
 `print-str`, `println-str`, `prn-str`, `pr`, `print`, `println`, and `prn` retain
