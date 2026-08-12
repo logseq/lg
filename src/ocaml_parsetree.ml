@@ -200,7 +200,8 @@ let rec core_type ?(type_variables = []) = function
   | Types.TArray inner ->
       type_constructor "array" [ core_type ~type_variables inner ]
   | Types.TRef inner ->
-      type_constructor "ref" [ core_type ~type_variables inner ]
+      type_constructor "Lg_runtime.Runtime_reference.t"
+        [ core_type ~type_variables inner ]
   | Types.TList inner ->
       type_constructor "list" [ core_type ~type_variables inner ]
   | Types.TSeq inner ->

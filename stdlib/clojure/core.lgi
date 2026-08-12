@@ -128,6 +128,10 @@
   :fn<value;ref<value>>)
 (signature clojure.core/volatile! [value]
   :fn<value;ref<value>>)
+(signature clojure.core/add-watch [value result]
+  :fn<ref<value>;keyword;fn<keyword;ref<value>;value;value;result>;ref<value>>)
+(signature clojure.core/remove-watch [value]
+  :fn<ref<value>;keyword;ref<value>>)
 (signature clojure.core/subvec [value]
   :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
 (signature clojure.core/array [value]

@@ -79,7 +79,9 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (re-find #"value" "fixture value")
 (re-matches #"fixture value" "fixture value")
 (ex-data (ex-info "fixture" {:code :fixture}))
-(add-watch (atom 0) ::fixture-watch (fn [_ _ _ _] nil))
+(def fixture-watch-reference (atom 0))
+(add-watch fixture-watch-reference ::fixture-watch (fn [_ _ _ _] nil))
+(remove-watch fixture-watch-reference ::fixture-watch)
 (zip/root nil)
 (cljs.core/identity 1)
 (cljs.core/chunk-buffer 4)
@@ -313,6 +315,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/delay?" && $3 == "source"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ensure-reduced" && $3 == "source" && $4 == "source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/force" && $3 == "source" && $4 == "source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ex-data" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/add-watch" || $2 == "clojure.core/remove-watch") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/re-matches" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/rand" && $3 == "source" && $4 == "source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "source" && $4 == "source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -462,6 +465,9 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-find" && $3 == "typed-primi
 awk -F '\t' '$1 == "compiler-call" && $2 == "re-matches" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-matches" && $3 == "typed-primitive" && $4 == "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_swap!" && $3 == "typed-primitive" && $4 == "typed-contextual-reference-swap-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "add-watch" || $2 == "remove-watch") {found=1} END {exit found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_add-watch" && $3 == "typed-primitive" && $4 == "typed-keyword-reference-watch-registration-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_remove-watch" && $3 == "typed-primitive" && $4 == "typed-keyword-reference-watch-removal-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ensure-reduced" && $3 == "typed-primitive" && $4 == "typed-conditional-parameterized-reduced-wrapper-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_force" && $3 == "typed-primitive" && $4 == "typed-lazy-force-or-static-identity-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_rand" && $3 == "typed-primitive" && $4 == "typed-int-or-float-random-bound-specialization-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
@@ -558,7 +564,8 @@ awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-find" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-matches" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/ex-data" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/add-watch" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/add-watch" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/remove-watch" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "spec-is-explicitly-excluded-from-the-lg-stdlib-port" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

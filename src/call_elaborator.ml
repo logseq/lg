@@ -6326,14 +6326,17 @@ let create ~compile_expr =
                             Result.map
                               (fun value ->
                                 Semantic_ir.Apply
-                                                ( Semantic_ir.Ident "ref",
+                                                ( Semantic_ir.Ident
+                                                    "Lg_runtime.Runtime_reference.of_value",
                                                   [ value ] ))
                               (pack_dynamic_value env inner arg)
                         | TRef inner ->
                             Result.map
                               (fun value ->
                                 Semantic_ir.Apply
-                                  (Semantic_ir.Ident "ref", [ value ]))
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_reference.of_value",
+                                    [ value ] ))
                               (adapt_value_to_type env inner arg)
                         | _ when Types.is_dynamic field.ty ->
                           pack_dynamic_value env field.ty arg
@@ -6527,10 +6530,10 @@ let create ~compile_expr =
                 | Some ({ ty = TRef value_ty; _ } as field) ->
                     Ok
                       (typed_ir value_ty
-                         (Semantic_ir.Prefix
-                            ( "!",
-                                        Structural_map.field_expr target field
-                                      )))
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_reference.deref",
+                              [ Structural_map.field_expr target field ] )))
                 | Some field ->
                     Ok
                       (typed_ir field.ty
@@ -7467,11 +7470,71 @@ let create ~compile_expr =
             Result.bind value_ty (fun value_ty ->
                 Result.map
                   (fun stored ->
-                    typed_ir (TRef value_ty) (apply "ref" [ stored ]))
+                    typed_ir (TRef value_ty)
+                      (apply "Lg_runtime.Runtime_reference.of_value"
+                         [ stored ]))
                   (if Types.is_dynamic value_ty then
                      pack_dynamic_value env value_ty value
                    else Ok value.semantic_expr))
         | Ok _ -> Error.error "atom expects 1 argument")
+    | "__lg_add-watch" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference; key; callback ] -> (
+            match reference.ty with
+            | TRef value_ty ->
+                if not (Types.equal key.ty TKeyword) then
+                  Error.error "add-watch key must be a keyword"
+                else
+                  let callback_result_ty =
+                    match callback.ty with
+                    | TFn (_, result_ty) -> result_ty
+                    | TOverloaded_fn (arity :: _) -> arity.return_ty
+                    | _ -> TUnknown
+                  in
+                  let expected_callback_ty =
+                    TFn
+                      ( [
+                          TKeyword;
+                          TRef value_ty;
+                          value_ty;
+                          value_ty;
+                        ],
+                        callback_result_ty )
+                  in
+                  Result.map
+                    (fun callback_expr ->
+                      typed_ir (TRef value_ty)
+                        (apply "Lg_runtime.Runtime_reference.add_watch"
+                           [
+                             reference.semantic_expr;
+                             key.semantic_expr;
+                             callback_expr;
+                           ]))
+                    (adapt_value_to_type env expected_callback_ty callback)
+            | ty when Types.is_dynamic ty ->
+                Error.error
+                  "add-watch requires a statically typed reference"
+            | _ -> Error.error "add-watch expects a reference")
+        | Ok _ -> Error.error "add-watch expects 3 arguments")
+    | "__lg_remove-watch" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference; key ] -> (
+            match reference.ty with
+            | TRef value_ty ->
+                if not (Types.equal key.ty TKeyword) then
+                  Error.error "remove-watch key must be a keyword"
+                else
+                  Ok
+                    (typed_ir (TRef value_ty)
+                       (apply "Lg_runtime.Runtime_reference.remove_watch"
+                          [ reference.semantic_expr; key.semantic_expr ]))
+            | ty when Types.is_dynamic ty ->
+                Error.error
+                  "remove-watch requires a statically typed reference"
+            | _ -> Error.error "remove-watch expects a reference")
+        | Ok _ -> Error.error "remove-watch expects 2 arguments")
     | "weak-ref" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -8035,7 +8098,8 @@ let create ~compile_expr =
                 Ok
                   (typed_ir (TRef value_ty)
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "ref",
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_reference.of_value",
                           [ Semantic_ir.Constructor ("None", None) ] )))
             | _ ->
                 Error.error
@@ -8070,7 +8134,9 @@ let create ~compile_expr =
                 Ok
                   (typed_ir (TRef initial.ty)
                      (Semantic_ir.Apply
-                        (Semantic_ir.Ident "ref", [ initial.semantic_expr ])))
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_reference.of_value",
+                          [ initial.semantic_expr ] )))
             | Ok _ -> Error.error "volatile! expects 1 argument"))
     | name when is_var_quote_marker name -> (
         match arg_forms with
@@ -8111,10 +8177,10 @@ let create ~compile_expr =
                                ],
                                Semantic_ir.Sequence
                                  [
-                                   Semantic_ir.Infix
-                                     ( ":=",
-                                       Semantic_ir.Ident ocaml_name,
-                                       stored );
+                                   Semantic_ir.Apply
+                                     ( Semantic_ir.Ident
+                                         "Lg_runtime.Runtime_reference.reset",
+                                       [ Semantic_ir.Ident ocaml_name; stored ] );
                                    Semantic_ir.Ident value_name;
                                  ] )))
                       (adapt_value_to_type env referenced_ty stored_value))
@@ -8201,9 +8267,10 @@ let create ~compile_expr =
                             Semantic_ir.Apply
                               ( updater.semantic_expr,
                                 [
-                                  Semantic_ir.Prefix
-                                    ( "!",
-                                      Semantic_ir.Ident reference_name );
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_reference.deref",
+                                      [ Semantic_ir.Ident reference_name ] );
                                 ] )
                           in
                           Ok
@@ -8215,14 +8282,13 @@ let create ~compile_expr =
                                       ( Semantic_ir.PVar updated_name,
                                         updated_expr );
                                     ],
-                                    Semantic_ir.Sequence
-                                      [
-                                        Semantic_ir.Infix
-                                          ( ":=",
-                                            Semantic_ir.Ident reference_name,
-                                            Semantic_ir.Ident updated_name );
-                                        Semantic_ir.Ident updated_name;
-                                      ] )))
+                                    Semantic_ir.Apply
+                                      ( Semantic_ir.Ident
+                                          "Lg_runtime.Runtime_reference.reset",
+                                        [
+                                          Semantic_ir.Ident reference_name;
+                                          Semantic_ir.Ident updated_name;
+                                        ] ) )))
                     in
                     compile_generic ()
                           | reference_ty when Types.is_dynamic reference_ty ->

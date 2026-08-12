@@ -232,8 +232,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 722 source entries (68.24%), zero typed
-primitives, 57 special forms, 121 host boundaries, 100 static-typing blockers,
+macro surfaces. The current baseline is 724 source entries (68.43%), zero typed
+primitives, 57 special forms, 121 host boundaries, 98 static-typing blockers,
 58 out-of-scope entries, and zero deferred entries. Every public function,
 macro, protocol method, multimethod, and public value discovered in the pinned
 surface therefore has explicit ownership and evidence.
@@ -244,8 +244,10 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`defmethod` (162), `add-watch` (36), `re-seq` (23), `flatten` (15),
-`remove-watch` (14), and `memoize` (10). `re-find` appears 290 times,
+`defmethod` (162), `re-seq` (23), `flatten` (15), and `memoize` (10).
+`add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
+source-aggregate owned through a typed reference watch registry with statically
+typed keyword keys. `re-find` appears 290 times,
 `ex-data` appears 210 times, and `re-matches` appears 87 times; all three are
 now source-aggregate owned, with regex match shapes and exception data recorded
 as documented narrow dynamic boundaries rather than blockers. These rows are

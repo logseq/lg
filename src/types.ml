@@ -940,7 +940,7 @@ let rec ocaml_name = function
       in
       "(" ^ (args |> List.map tuple_item |> String.concat " * ") ^ ")"
   | TArray inner -> ocaml_name inner ^ " array"
-  | TRef inner -> ocaml_name inner ^ " ref"
+  | TRef inner -> ocaml_name inner ^ " Lg_runtime.Runtime_reference.t"
   | TList inner -> ocaml_name inner ^ " list"
   | TVector inner -> ocaml_name inner ^ " Rrbvec.t"
   | TSet inner -> (

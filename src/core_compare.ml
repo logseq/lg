@@ -164,6 +164,8 @@ let rec equality_expr ?env left right =
       Semantic_ir.Apply
         ( Semantic_ir.Ident "Lg_runtime.Runtime_static_value.equal",
           [ left.semantic_expr; right.semantic_expr ] )
+  | TRef _, TRef _ ->
+      Semantic_ir.Infix ("==", left.semantic_expr, right.semantic_expr)
   | left_ty, right_ty
     when requires_runtime_equality left_ty
          && requires_runtime_equality right_ty ->

@@ -110,6 +110,7 @@ let rec of_compiler_type =
       | "array", [ inner ] -> TArray inner
       | "Rrbvec.t", [ inner ] -> TVector inner
       | "ref", [ inner ] -> TRef inner
+      | "Lg_runtime.Runtime_reference.t", [ inner ] -> TRef inner
       | name, [] -> TOcaml name
       | name, arguments -> TOcaml_app (name, arguments))
   | Opaque -> TOcaml "value"

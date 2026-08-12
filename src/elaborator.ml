@@ -287,7 +287,7 @@ let expand_deferred_binding name value_type return_param_index expression =
         expression =
           Semantic_ir.annotate reference_type
             (Semantic_ir.Apply
-               ( Semantic_ir.Ident "ref",
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.of_value",
                  [ Semantic_ir.Record
                      ( [ ( holder_field_name,
                            Semantic_ir.Constructor ("None", None) ) ],
@@ -299,7 +299,9 @@ let expand_deferred_binding name value_type return_param_index expression =
     Semantic_ir.Apply
       ( Semantic_ir.Ident "Option.get",
         [ Semantic_ir.Field
-            ( Semantic_ir.Prefix ("!", Semantic_ir.Ident implementation_name),
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+                  [ Semantic_ir.Ident implementation_name ] ),
               holder_field_name );
         ] )
   in
@@ -377,13 +379,20 @@ let expand_deferred_binding name value_type return_param_index expression =
     Lowered.Value_binding
       { pattern = Lowered.Unit_pattern;
         expression =
-          Semantic_ir.Infix
-            ( ":=",
-              Semantic_ir.Ident implementation_name,
-              Semantic_ir.Record
-                ( [ ( holder_field_name,
-                      Semantic_ir.Constructor ("Some", Some expression) ) ],
-                  Some holder_type_name ) );
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "ignore",
+              [
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.reset",
+                    [
+                      Semantic_ir.Ident implementation_name;
+                      Semantic_ir.Record
+                        ( [ ( holder_field_name,
+                              Semantic_ir.Constructor ("Some", Some expression) )
+                            ],
+                          Some holder_type_name );
+                    ] );
+              ] );
       }
   in
   ([ holder_type; reference; wrapper ], [ initialize ])

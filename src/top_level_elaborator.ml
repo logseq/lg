@@ -2462,7 +2462,8 @@ let rec compile scope env next_type form =
                       located_value_pattern name_form (Named ocaml_name);
                     expression =
                       Semantic_ir.Apply
-                        ( Semantic_ir.Ident "ref",
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_reference.of_value",
                           [
                             (match expected_ty with
                             | Some _ ->

@@ -31574,6 +31574,67 @@ let test_source_reference_protocol_family_matches_clojurescript () =
   if string_contains_substring melange_consumer "Runtime_dynamic" then
     failwith "Melange reference protocols must remain statically typed"
 
+let test_source_reference_watches_match_clojurescript () =
+  let source =
+    {|
+(ns app.reference-watches
+  (:require [cljs.core :as core :refer [add-watch remove-watch reset! swap!]]))
+
+(def install-watch add-watch)
+(def remove-through remove-watch)
+(def value (atom 1))
+(def events (atom []))
+
+(install-watch
+  value
+  :counter
+  (fn [key reference old-value new-value]
+    (swap! events conj
+           (str (name key) ":" old-value "->" new-value ":" @reference))))
+
+(println (= value (core/add-watch value :secondary
+  (fn [key reference old-value new-value]
+    (swap! events conj
+           (str (name key) ":" old-value "->" new-value ":" @reference))))))
+
+(reset! value 2)
+(swap! value + 3)
+(println (pr-str @events))
+(println (= value (remove-through value :counter)))
+(reset! value 9)
+(println (pr-str @events))
+(remove-watch value :secondary)
+(swap! value inc)
+(println (pr-str @events))
+|}
+  in
+  let expected =
+    "true\n"
+    ^ "[counter:1->2:2 secondary:1->2:2 counter:2->5:5 \
+       secondary:2->5:5]\n"
+    ^ "true\n"
+    ^ "[counter:1->2:2 secondary:1->2:2 counter:2->5:5 \
+       secondary:2->5:5 secondary:5->9:9]\n"
+    ^ "[counter:1->2:2 secondary:1->2:2 counter:2->5:5 \
+       secondary:2->5:5 secondary:5->9:9]\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_reference_watches.cljc"
+      source
+  in
+  ignore (compile_string_from_stdlib source |> expect_ok);
+  assert_ocaml_runs "source_reference_watches" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_reference_watches.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "test/bad_add_watch_target.cljc"
+    {|(add-watch 1 :k (fn [_ _ _ _] nil))|}
+  |> expect_error_contains "Runtime_reference.t";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/bad_add_watch_callback.cljc"
+    {|(add-watch (atom 1) :k (fn [_ _ _ new-value] (+ new-value "x")))|}
+  |> expect_error_contains "int"
+
 let test_reference_protocol_family_has_no_public_name_dispatch () =
   let core_source =
     read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
@@ -46110,6 +46171,8 @@ let tests =
       test_collection_projection_family_has_no_public_name_dispatch );
     ( "source reference protocol family matches ClojureScript",
       test_source_reference_protocol_family_matches_clojurescript );
+    ( "source reference watches match ClojureScript",
+      test_source_reference_watches_match_clojurescript );
     ( "reference protocol family has no public-name dispatch",
       test_reference_protocol_family_has_no_public_name_dispatch );
     ( "swap! is source-owned and matches ClojureScript arities",

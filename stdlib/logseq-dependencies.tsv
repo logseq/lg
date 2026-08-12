@@ -360,7 +360,7 @@ logseq-core-var-status	clojure.core/>	source-aggregate	361	precompiled-lg-source
 logseq-core-var-status	clojure.core/>=	source-aggregate	165	precompiled-lg-source
 logseq-core-var-status	clojure.core/ExceptionInfo	host-boundary	6	clojurescript-javascript-error-constructor-with-open-ex-data-and-host-stack-fields
 logseq-core-var-status	clojure.core/abs	source-aggregate	12	precompiled-lg-source
-logseq-core-var-status	clojure.core/add-watch	blocked-static-typing	36	watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type
+logseq-core-var-status	clojure.core/add-watch	source-aggregate	36	precompiled-lg-source
 logseq-core-var-status	clojure.core/aget	source-aggregate	633	precompiled-lg-source
 logseq-core-var-status	clojure.core/alength	source-aggregate	6	precompiled-lg-source
 logseq-core-var-status	clojure.core/ancestors	source-aggregate	2	precompiled-lg-source
@@ -576,7 +576,7 @@ logseq-core-var-status	clojure.core/reduce-kv	source-aggregate	56	precompiled-lg
 logseq-core-var-status	clojure.core/reduced	source-aggregate	5	precompiled-lg-source
 logseq-core-var-status	clojure.core/reductions	source-aggregate	1	precompiled-lg-source
 logseq-core-var-status	clojure.core/remove	source-aggregate	731	precompiled-lg-source
-logseq-core-var-status	clojure.core/remove-watch	blocked-static-typing	14	watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type
+logseq-core-var-status	clojure.core/remove-watch	source-aggregate	14	precompiled-lg-source
 logseq-core-var-status	clojure.core/repeat	source-aggregate	87	precompiled-lg-source
 logseq-core-var-status	clojure.core/repeatedly	source-aggregate	23	precompiled-lg-source
 logseq-core-var-status	clojure.core/require	special-form	3	compiler-owned-namespace-loading-and-alias-environment-update

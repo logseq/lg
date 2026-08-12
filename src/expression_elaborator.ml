@@ -112,7 +112,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
           } ->
           Ok
             (typed_ir value_ty
-               (Semantic_ir.Prefix ("!", Semantic_ir.Ident ocaml_name)))
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+                    [ Semantic_ir.Ident ocaml_name ] )))
       | Some binding when Option.is_some (Protocol.binding_protocol_id binding) ->
           Error.error
             ("protocol " ^ name

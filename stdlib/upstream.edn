@@ -1176,8 +1176,8 @@
                     :reason :walks-javascript-error-cause-chains-and-returns-open-exception-data-maps}
     add-tap {:status :blocked-static-typing
              :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
-    add-watch {:status :blocked-static-typing
-               :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    add-watch {:status :static-adaptation
+               :reason :source-function-preserves-keyword-watch-callbacks-through-a-typed-reference-watch-registry}
     alter-meta! {:status :blocked-static-typing
                  :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map-or-a-statically-typed-metadata-update-capability}
     array-chunk {:status :ported
@@ -1346,8 +1346,8 @@
                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     remove-tap {:status :blocked-static-typing
                 :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
-    remove-watch {:status :blocked-static-typing
-                  :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    remove-watch {:status :static-adaptation
+                  :reason :source-function-removes-keyword-watch-callbacks-from-the-typed-reference-watch-registry}
     reset-meta! {:status :blocked-static-typing
                  :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map}
     rsubseq {:status :static-adaptation

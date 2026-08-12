@@ -1,10 +1,10 @@
 let bind variable value body =
-  let previous = !variable in
-  variable := value;
+  let previous = Runtime_reference.deref variable in
+  ignore (Runtime_reference.reset variable value);
   match body () with
   | result ->
-      variable := previous;
+      ignore (Runtime_reference.reset variable previous);
       result
   | exception error ->
-      variable := previous;
+      ignore (Runtime_reference.reset variable previous);
       raise error

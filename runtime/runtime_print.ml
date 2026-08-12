@@ -1,6 +1,6 @@
 let write writer text = Buffer.add_string writer text
 
-let print_namespace_maps = ref false
+let print_namespace_maps = Runtime_reference.of_value false
 
 let render printer =
   let writer = Buffer.create 64 in

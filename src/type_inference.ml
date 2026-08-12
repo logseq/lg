@@ -566,6 +566,10 @@ let rec inferred_form_type params = function
       TRef (TVector TUnknown)
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FSymbol "nil" ] ->
       TRef (TNullable TUnknown)
+  | FList [ FSymbol "__lg_add-watch"; reference; _key; _callback ] ->
+      inferred_form_type params reference
+  | FList [ FSymbol "__lg_remove-watch"; reference; _key ] ->
+      inferred_form_type params reference
   | FList (FSymbol "delay" :: body_forms) -> (
       match List.rev body_forms with
       | result :: _ ->
@@ -1443,6 +1447,33 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         match expected_ty with
         | TRef value_ty -> infer_expected value_ty params value
         | _ -> infer_form params value)
+    | FList [ FSymbol "__lg_add-watch"; reference; key; callback ] -> (
+        let value_ty =
+          match inferred_form_type params reference with
+          | TRef value_ty -> value_ty
+          | _ -> (
+              match expected_ty with
+              | TRef value_ty -> value_ty
+              | _ -> Type_solver.fresh ())
+        in
+        Result.bind (infer_expected (TRef value_ty) params reference)
+          (fun params ->
+            Result.bind (infer_expected TKeyword params key) (fun params ->
+                infer_expected
+                  (TFn
+                     ([ TKeyword; TRef value_ty; value_ty; value_ty ], TUnknown))
+                  params callback)))
+    | FList [ FSymbol "__lg_remove-watch"; reference; key ] ->
+        let value_ty =
+          match inferred_form_type params reference with
+          | TRef value_ty -> value_ty
+          | _ -> (
+              match expected_ty with
+              | TRef value_ty -> value_ty
+              | _ -> Type_solver.fresh ())
+        in
+        Result.bind (infer_expected (TRef value_ty) params reference)
+          (fun params -> infer_expected TKeyword params key)
     | FVector values -> (
         let element_ty =
           match expected_ty with

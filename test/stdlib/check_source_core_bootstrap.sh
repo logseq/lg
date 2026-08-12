@@ -157,6 +157,16 @@ if ! grep -F '(defn re-matches' "$root/stdlib/clojure/core.cljc" >/dev/null; the
   exit 1
 fi
 
+if ! grep -F '(defn add-watch' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/add-watch is not source-defined as a function" >&2
+  exit 1
+fi
+
+if ! grep -F '(defn remove-watch' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/remove-watch is not source-defined as a function" >&2
+  exit 1
+fi
+
 if ! grep -F '[clojure.core ' \
   "$root/stdlib/upstream.edn" >/dev/null; then
   echo "clojure.core is not first in aggregate stdlib order" >&2

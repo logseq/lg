@@ -3402,6 +3402,14 @@
   [reference value]
   (IVolatile/-vreset! reference value))
 
+(defn add-watch
+  [reference key callback]
+  (__lg_add-watch reference key callback))
+
+(defn remove-watch
+  [reference key]
+  (__lg_remove-watch reference key))
+
 (defmacro vswap! [reference update-fn & args]
   `(IVolatile/-vreset!
     ~reference
