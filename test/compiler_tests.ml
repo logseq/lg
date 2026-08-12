@@ -16408,13 +16408,70 @@ let test_fn_predicate_recognizes_static_functions () =
 (defn increment [value] (inc value))
 (def boxed {:f increment})
 (println (fn? (:f boxed)))
+(println (fn? juxt))
 |}
   in
   let native_source = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "fn_predicate_recognizes_static_functions" "true\n"
+  assert_ocaml_runs "fn_predicate_recognizes_static_functions" "true\ntrue\n"
     native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_fn_predicate_preserves_overloaded_functions_after_state_roundtrip () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let cached_state = Lg.Compiler.cacheable_state stdlib.state in
+  let serialized = Marshal.to_string cached_state [] in
+  let cached_state : Lg.Compiler.state = Marshal.from_string serialized 0 in
+  let cached_state =
+    Lg.Compiler.restore_ocaml_environment ~packages:[] cached_state []
+    |> expect_ok
+  in
+  let _, ocaml_source =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"state_fn_predicate.cljc" cached_state
+      {|
+(println (fn? juxt))
+|}
+    |> expect_ok
+  in
+  assert_ocaml_runs
+    "fn_predicate_preserves_overloaded_functions_after_state_roundtrip"
+    "true\n"
+    (String.concat "\n" [ stdlib.ocaml_source; ocaml_source.ocaml_source ])
+
+let test_fn_predicate_preserves_overloaded_functions_after_test_prelude () =
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  let prelude_sources =
+    [
+      ("test_runner/clojure/test.cljc", read_file "test_runner/clojure/test.cljc");
+      ( "test_runner/clojure/test_native.cljc",
+        read_file "test_runner/clojure/test_native.cljc" );
+    ]
+  in
+  let state, prelude_outputs =
+    List.fold_left
+      (fun (state, outputs) (filename, source) ->
+        let state, output =
+          Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+            ~filename state source
+          |> expect_ok
+        in
+        (state, output :: outputs))
+      (stdlib.state, []) prelude_sources
+  in
+  let _, ocaml_source =
+    Lg.Compiler.compile_chunk_with_filename ~target:Lg.Target.Native
+      ~filename:"state_fn_predicate_after_test_prelude.cljc" state
+      {|
+(println (fn? juxt))
+|}
+    |> expect_ok
+  in
+  ignore prelude_outputs;
+  if not (string_contains_substring ocaml_source "string_of_bool true") then
+    failwith
+      ("fn? should recognize overloaded core functions after the test prelude; "
+     ^ "generated: " ^ ocaml_source)
 
 let test_ocaml_refs_reject_invalid_operations () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_deref.cljc"
@@ -46597,6 +46654,10 @@ let tests =
       test_array_packing_reuses_static_element_arrays );
     ( "fn predicate recognizes static functions",
       test_fn_predicate_recognizes_static_functions );
+    ( "fn predicate preserves overloaded functions after state roundtrip",
+      test_fn_predicate_preserves_overloaded_functions_after_state_roundtrip );
+    ( "fn predicate preserves overloaded functions after test prelude",
+      test_fn_predicate_preserves_overloaded_functions_after_test_prelude );
     ( "OCaml refs reject invalid operations",
       test_ocaml_refs_reject_invalid_operations );
     ( "syntax convergence: float arithmetic coerces mixed numeric types",

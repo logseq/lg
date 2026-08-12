@@ -6,6 +6,7 @@
   ../../test_runner/clojure/test_native.cljc
   lg_portability.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/fn_qmark.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -19,6 +20,7 @@
    %{dep:../../test_runner/clojure/test_native.cljc}
    %{dep:lg_portability.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/fn_qmark.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))
@@ -56,6 +58,7 @@
   ../../test_runner/clojure/test_melange.cljc
   lg_portability.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/fn_qmark.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -69,6 +72,7 @@
    %{dep:../../test_runner/clojure/test_melange.cljc}
    %{dep:lg_portability.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/fn_qmark.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))

@@ -130,7 +130,16 @@ let compile name args =
         (function TList _ | TSeq _ -> true | _ -> false)
         args
   | "__lg_fn-predicate" ->
-      compile_type_predicate name (function TFn _ -> true | _ -> false) args
+      let rec overloaded_storage_predicate = function
+        | TUnit -> true
+        | TTuple [ TFn _; rest ] -> overloaded_storage_predicate rest
+        | _ -> false
+      in
+      compile_type_predicate name
+        (function
+          | TFn _ | TOverloaded_fn _ -> true
+          | ty -> overloaded_storage_predicate ty)
+        args
   | "__lg_uuid-predicate" ->
       compile_type_predicate name
         (function TOcaml "Lg_runtime.Runtime_uuid.t" -> true | _ -> false)
