@@ -232,8 +232,8 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 724 source entries (68.43%), zero typed
-primitives, 57 special forms, 121 host boundaries, 98 static-typing blockers,
+macro surfaces. The current baseline is 725 source entries (68.53%), zero typed
+primitives, 57 special forms, 121 host boundaries, 97 static-typing blockers,
 58 out-of-scope entries, and zero deferred entries. Every public function,
 macro, protocol method, multimethod, and public value discovered in the pinned
 surface therefore has explicit ownership and evidence.
@@ -244,11 +244,12 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`defmethod` (162), `re-seq` (23), `flatten` (15), and `memoize` (10).
+`defmethod` (162), `flatten` (15), and `memoize` (10).
 `add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
 source-aggregate owned through a typed reference watch registry with statically
 typed keyword keys. `re-find` appears 290 times,
-`ex-data` appears 210 times, and `re-matches` appears 87 times; all three are
+`ex-data` appears 210 times, `re-matches` appears 87 times, and `re-seq`
+appears 23 times; all four are
 now source-aggregate owned, with regex match shapes and exception data recorded
 as documented narrow dynamic boundaries rather than blockers. These rows are
 the priority order for removing the remaining static blockers unless a
@@ -756,7 +757,7 @@ ClojureScript `(?flags)` prefix behavior. Melange passes those flags to
 JavaScript `RegExp`; Native maps `i`, `m`, and `s` to the OCaml Re backend,
 ignores the unobservable match-indices flag `d`, and uses the backend's string
 semantics for `u`. The unsupported JavaScript `x` flag remains an error.
-`re-find` and `re-matches` are source-owned and can be required, referred,
+`re-find`, `re-matches`, and `re-seq` are source-owned and can be required, referred,
 aliased, or used via automatic core refer. Their first-class sidecar type
 supports the common no-capture `regex -> string -> option<string>` case.
 Direct/open match results use the existing narrow
@@ -764,9 +765,10 @@ Direct/open match results use the existing narrow
 string, a capture vector with optional elements, or nil depending on the regex
 shape. The internal `__lg_re-find` and `__lg_re-matches` primitives record that
 boundary explicitly and also provide static optional string/vector
-specializations when the expected type is known. `re-seq` remains blocked until
-the same source ownership and documented boundary split is applied to lazy
-successive match results. Generated ML delegates matching and flag handling to
+specializations when the expected type is known. `re-seq` uses
+`__lg_re-seq` plus `Runtime_dynamic.regex_match_sequence` for the same open
+match shape across successive, non-overlapping matches, including nil for no
+match and zero-width progress. Generated ML delegates matching and flag handling to
 named `Runtime_string.regex_*` helpers instead of emitting target-specific
 regex state machines at each call site.
 `completing` is a pure source higher-order function with no runtime primitive.

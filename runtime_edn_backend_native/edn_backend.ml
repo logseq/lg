@@ -783,6 +783,11 @@ let regex_all_groups ~pattern source =
   |> List.map regex_match
   |> Array.of_list
 
+let regex_all_groups_with_flags ~pattern ~flags source =
+  Re.all (Re.Perl.compile_pat ~opts:(regex_options flags) pattern) source
+  |> List.map regex_match
+  |> Array.of_list
+
 let replacement_text source replacement groups =
   let group_count = Re.Group.nb_groups groups in
   let buffer = Buffer.create (String.length replacement) in

@@ -13301,6 +13301,60 @@ let test_source_re_find_can_be_required_from_source_core () =
   in
   ignore melange_source
 
+let test_re_seq_returns_clojure_match_values () =
+  let source =
+    {|
+(println
+  (str (pr-str (re-seq #"[0-9]+" "a1b22")) ":"
+       (pr-str (re-seq #"([a-z])([0-9]+)" "a1b22")) ":"
+       (pr-str (re-seq #"z+" "a1b22")) ":"
+       (pr-str (re-seq #"" "ab")) ":"
+       (pr-str (re-seq (re-pattern "(?i)a+") "bAa"))))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/re_seq_values.cljc" source
+  in
+  assert_ocaml_runs "re_seq_returns_clojure_match_values"
+    "(\"1\" \"22\"):([\"a1\" \"a\" \"1\"] [\"b22\" \"b\" \"22\"]):nil:(\"\" \"\" \"\"):(\"Aa\")\n"
+    ocaml_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/re_seq_values.cljc" source)
+
+let test_source_re_seq_can_be_required_from_source_core () =
+  let source =
+    {|
+(ns source-re-seq-app
+  (:require [cljs.core :as core :refer [re-seq re-pattern]]))
+
+(def scan re-seq)
+(def core-scan core/re-seq)
+
+(println
+  (str (pr-str (re-seq #"[0-9]+" "a1b22")) ":"
+       (pr-str (core/re-seq (re-pattern "([a-z])([0-9]+)") "a1b22")) ":"
+       (pr-str (scan #"[0-9]+" "a1b22")) ":"
+       (pr-str (core-scan #"[0-9]+" "a1b22"))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_re_seq.cljc" source
+  in
+  assert_ocaml_runs "source_re_seq"
+    "(\"1\" \"22\"):([\"a1\" \"a\" \"1\"] [\"b22\" \"b\" \"22\"]):(\"1\" \"22\"):(\"1\" \"22\")\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_re_seq.cljc" source)
+
+let test_re_seq_rejects_non_string_sources () =
+  let source = {|(println (re-seq #"a+" 1))|} in
+  compile_string_with_stdlib source
+  |> expect_error_contains "re-seq expects a regex and string"
+
+let test_re_seq_rejects_non_regex_expressions () =
+  let source = {|(println (re-seq "a+" "aaa"))|} in
+  compile_string_with_stdlib source
+  |> expect_error_contains "re-seq expects a regex and string"
+
 let test_regex_match_alternatives_require_a_closed_sum () =
   let source =
     {|
@@ -44685,6 +44739,14 @@ let tests =
       test_re_find_returns_clojure_match_values );
     ( "source re-find can be required from source core",
       test_source_re_find_can_be_required_from_source_core );
+    ( "re-seq returns Clojure match values",
+      test_re_seq_returns_clojure_match_values );
+    ( "source re-seq can be required from source core",
+      test_source_re_seq_can_be_required_from_source_core );
+    ( "re-seq rejects non-string sources",
+      test_re_seq_rejects_non_string_sources );
+    ( "re-seq rejects non-regex expressions",
+      test_re_seq_rejects_non_regex_expressions );
     ( "regex match alternatives require a closed sum",
       test_regex_match_alternatives_require_a_closed_sum );
     ( "source re-pattern matches ClojureScript",

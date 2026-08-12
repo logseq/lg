@@ -570,7 +570,7 @@ logseq-core-var-status	clojure.core/range	source-aggregate	181	precompiled-lg-so
 logseq-core-var-status	clojure.core/re-find	source-aggregate	290	precompiled-lg-source
 logseq-core-var-status	clojure.core/re-matches	source-aggregate	87	precompiled-lg-source
 logseq-core-var-status	clojure.core/re-pattern	source-aggregate	31	precompiled-lg-source
-logseq-core-var-status	clojure.core/re-seq	blocked-static-typing	23	lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core
+logseq-core-var-status	clojure.core/re-seq	source-aggregate	23	precompiled-lg-source
 logseq-core-var-status	clojure.core/reduce	source-aggregate	273	precompiled-lg-source
 logseq-core-var-status	clojure.core/reduce-kv	source-aggregate	56	precompiled-lg-source
 logseq-core-var-status	clojure.core/reduced	source-aggregate	5	precompiled-lg-source

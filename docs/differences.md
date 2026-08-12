@@ -733,8 +733,9 @@ function. Direct calls also preserve the ClojureScript regex-identity case.
 Melange uses JavaScript `RegExp` flags. Native maps `i`, `m`, and `s` to OCaml
 Re; `d` has no observable index result in LG, `u` follows the Native string
 backend, and unsupported `x` is rejected. Capture-dependent `re-find`,
-`re-matches`, and `re-seq` results are not yet source-portable without a closed
-match-value type.
+`re-matches`, and `re-seq` are source-owned public vars, while their open
+string-or-capture-vector match result shape remains inside a documented
+internal regex dynamic boundary.
 
 Host package aliases are explicit in top-level `require`; they do not introduce
 a lg namespace layer.

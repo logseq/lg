@@ -881,6 +881,8 @@ let regex_matches_groups_with_flags ~pattern ~flags source =
       then Some (regex_match result)
       else None
 
+let global_flags flags = if String.contains flags 'g' then flags else flags ^ "g"
+
 let regex_all_groups ~pattern source =
   let regexp = Js.Re.fromStringWithFlags pattern ~flags:"g" in
   let rec collect matches =
@@ -891,6 +893,20 @@ let regex_all_groups ~pattern source =
         let matched =
           value.captures.(0) |> Option.value ~default:""
         in
+        if String.length matched = 0 then
+          Js.Re.setLastIndex regexp (Js.Re.lastIndex regexp + 1);
+        collect (value :: matches)
+  in
+  collect []
+
+let regex_all_groups_with_flags ~pattern ~flags source =
+  let regexp = Js.Re.fromStringWithFlags pattern ~flags:(global_flags flags) in
+  let rec collect matches =
+    match Js.Re.exec ~str:source regexp with
+    | None -> Array.of_list (List.rev matches)
+    | Some result ->
+        let value = regex_match result in
+        let matched = value.captures.(0) |> Option.value ~default:"" in
         if String.length matched = 0 then
           Js.Re.setLastIndex regexp (Js.Re.lastIndex regexp + 1);
         collect (value :: matches)
@@ -913,8 +929,6 @@ let drop_trailing_empty values =
         | _ -> index
     in
     Array.sub values 0 (last_nonempty (Array.length values - 1) + 1)
-
-let global_flags flags = if String.contains flags 'g' then flags else flags ^ "g"
 
 let limited_regex_split pattern flags limit source =
   let regexp = Js.Re.fromStringWithFlags pattern ~flags:(global_flags flags) in

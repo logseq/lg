@@ -8910,6 +8910,30 @@ let create ~compile_expr =
               ("identical? arguments must have the same type, got "
              ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
         | Ok _ -> Error.error "identical? expects 2 arguments")
+    | "__lg_re-seq" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ expression; source ] when Types.equal expression.ty TRegex ->
+            let source =
+              if Types.equal source.ty TString then Ok source.semantic_expr
+              else if Types.is_dynamic source.ty then
+                dynamic_unpack env TString source.semantic_expr
+              else Error.error "re-seq expects a regex and string"
+            in
+            Result.map
+              (fun source ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_dynamic.regex_match_sequence",
+                       [
+                         Semantic_ir.Apply
+                           ( Semantic_ir.Ident
+                               "Lg_runtime.Runtime_string.regex_seq_groups",
+                             [ expression.semantic_expr; source ] );
+                       ] )))
+              source
+        | Ok _ -> Error.error "re-seq expects a regex and string")
     | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =

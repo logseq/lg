@@ -471,8 +471,8 @@
              :reason :source-function-exposes-first-class-no-capture-optional-string-use-while-direct-open-regex-match-results-remain-in-a-documented-internal-dynamic-boundary}
     re-matches {:status :static-adaptation
                 :reason :source-function-exposes-first-class-no-capture-optional-string-use-while-direct-open-regex-match-results-remain-in-a-documented-internal-dynamic-boundary}
-    re-seq {:status :blocked-static-typing
-            :reason :lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core}
+    re-seq {:status :static-adaptation
+            :reason :source-function-preserves-upstream-successive-regex-match-results-through-a-documented-internal-dynamic-boundary-for-the-open-string-or-capture-vector-result-shape}
     ex-data {:status :static-adaptation
              :reason :source-function-exposes-the-upstream-exception-info-data-through-a-documented-exception-only-dynamic-payload-boundary}
     js-obj {:status :host-boundary

@@ -3091,6 +3091,11 @@
   [expression source]
   (__lg_re-matches expression source))
 
+(defn re-seq
+  {:inline (fn [expression source] (list '__lg_re-seq expression source))}
+  [expression source]
+  (__lg_re-seq expression source))
+
 (defn +
   {:inline (fn [& values] (cons '__lg_add values))}
   ([] (__lg_add))

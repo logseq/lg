@@ -209,6 +209,11 @@ let regex_matches_groups expression source =
   Lg_edn_backend.regex_matches_groups_with_flags ~pattern ~flags source
   |> Option.map regex_captures
 
+let regex_seq_groups expression source =
+  let pattern, flags = regex_parts expression in
+  Lg_edn_backend.regex_all_groups_with_flags ~pattern ~flags source
+  |> Array.map regex_captures
+
 let regex_first_match groups =
   match groups with match_value :: _ -> match_value | [] -> None
 

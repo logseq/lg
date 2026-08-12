@@ -169,6 +169,8 @@ val regex_matches_groups : pattern:string -> string -> regex_match option
 val regex_matches_groups_with_flags :
   pattern:string -> flags:string -> string -> regex_match option
 val regex_all_groups : pattern:string -> string -> regex_match array
+val regex_all_groups_with_flags :
+  pattern:string -> flags:string -> string -> regex_match array
 val regex_replace :
   all:bool -> pattern:string -> replacement:string -> string -> string
 val regex_split :

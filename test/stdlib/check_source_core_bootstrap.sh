@@ -157,6 +157,11 @@ if ! grep -F '(defn re-matches' "$root/stdlib/clojure/core.cljc" >/dev/null; the
   exit 1
 fi
 
+if ! grep -F '(defn re-seq' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/re-seq is not source-defined as a function" >&2
+  exit 1
+fi
+
 if ! grep -F '(defn add-watch' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/add-watch is not source-defined as a function" >&2
   exit 1

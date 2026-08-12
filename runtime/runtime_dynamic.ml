@@ -213,6 +213,16 @@ let regex_match = function
       |> List.map (function Some value -> string value | None -> nil)
       |> Rrbvec.of_list |> vector
 
+let regex_match_sequence matches =
+  if Array.length matches = 0 then nil
+  else
+    make ~sequential:true
+      ~sequence:(fun () ->
+        matches
+        |> Array.to_seq
+        |> Seq.map (fun captures -> regex_match (Some captures)))
+      Seq
+
 let seq values =
   make ~sequential:true ~sequence:(fun () -> values) Seq
 

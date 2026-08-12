@@ -4654,6 +4654,7 @@
   ../script/extract_clojurescript_public_vars.clj
   ../script/extract_stdlib_manifest_status.clj
   ../script/extract_ocaml_string_dispatch.ml
+  ../script/extract_ocaml_form_symbol_patterns.ml
   ../script/clojure_namespace_inventory.clj
   ../stdlib/upstream.edn
   (source_tree ../src)
