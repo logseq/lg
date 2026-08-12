@@ -59,6 +59,8 @@ remove-all-methods	source	precompiled-lg-source-macro-with-runtime-multifn-dynam
 remove-method	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 remove-tap	source	source-function-preserves-upstream-nil-result-and-symbol-callback-removal-through-the-documented-runtime-tap-dynamic-boundary
 seq-to-map-for-destructuring	special-form	compiler-owned-destructuring-helper-covered-by-static-map-and-sequential-binding-elaboration-with-closed-key-value-types-instead-of-a-first-class-heterogeneous-helper-function
+specify	host-boundary	clojurescript-per-object-runtime-protocol-extension-depends-on-javascript-object-masks-and-conflicts-with-lg-static-protocol-dispatch
+specify!	host-boundary	mutable-clojurescript-per-object-runtime-protocol-extension-depends-on-javascript-object-masks-and-conflicts-with-lg-static-protocol-dispatch
 spread	special-form	compiler-owned-apply-argument-splicing-helper-with-heterogeneous-fixed-arguments-and-a-typed-final-seqable-tail-covered-by-the-source-apply-wrapper-and-__lg_apply-primitive
 tap>	source	source-function-preserves-upstream-boolean-result-and-open-value-delivery-through-a-narrow-runtime-dynamic-boundary-with-static-call-site-conversion
 tagged-literal	source	source-parameterized-nominal-type-preserves-symbol-tags-statically-typed-payloads-literal-keyword-or-get-field-access-structural-equality-and-upstream-hash-composition-without-an-open-dynamic-value

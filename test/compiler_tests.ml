@@ -12724,6 +12724,17 @@ let test_ifn_predicate_is_source_owned () =
         failwith ("ifn? still has public-name compiler dispatch in " ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_runtime_protocol_extension_forms_are_host_boundaries () =
+  let manifest = read_file "stdlib/upstream.edn" in
+  List.iter
+    (fun entry ->
+      if not (string_contains_substring manifest entry) then
+        failwith (entry ^ " is missing from the audited host boundaries"))
+    [
+      "specify {:status :host-boundary";
+      "specify! {:status :host-boundary";
+    ]
+
 let test_javascript_targets_compile_date_and_radix_interop () =
   let source =
     {|
@@ -46141,6 +46152,8 @@ let tests =
     ( "source ifn predicate matches static callable values",
       test_source_ifn_predicate_matches_static_callable_values );
     ( "ifn predicate is source-owned", test_ifn_predicate_is_source_owned );
+    ( "runtime protocol extension forms are host boundaries",
+      test_runtime_protocol_extension_forms_are_host_boundaries );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
     ( "JavaScript targets compile error classes",

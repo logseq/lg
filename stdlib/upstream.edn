@@ -1160,10 +1160,10 @@
               :reason :source-macro-and-compiler-top-level-registration-create-a-callable-runtime-multifn-boundary-with-static-arity-and-dynamic-dispatch-values}
     implements? {:status :static-adaptation
                   :reason :source-macro-preserves-static-protocol-satisfaction-and-single-value-evaluation-by-expanding-to-satisfies-while-clojurescript-javascript-mask-layout-is-not-part-of-lg-runtime-representation}
-    specify {:status :blocked-static-typing
-             :reason :per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
-    specify! {:status :blocked-static-typing
-              :reason :mutable-per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
+    specify {:status :host-boundary
+             :reason :clojurescript-per-object-runtime-protocol-extension-depends-on-javascript-object-masks-and-conflicts-with-lg-static-protocol-dispatch}
+    specify! {:status :host-boundary
+              :reason :mutable-clojurescript-per-object-runtime-protocol-extension-depends-on-javascript-object-masks-and-conflicts-with-lg-static-protocol-dispatch}
     with-redefs {:status :static-adaptation
                  :reason :source-macro-expands-to-a-private-typed-var-root-rebinding-form-for-ordinary-monomorphic-source-functions-that-restores-values-after-body-or-exception-and-keeps-replacement-values-at-the-root-static-type}
     *exec-tap-fn* {:status :static-adaptation
