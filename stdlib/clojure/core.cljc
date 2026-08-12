@@ -4586,6 +4586,11 @@
      (tree-seq-step branch? children pending))
    (seq [root])))
 
+(defn flatten
+  {:inline (fn [x] (list '__lg_flatten x))}
+  [x]
+  (__lg_flatten x))
+
 (defn- partitionv-step [n step remaining]
   (if remaining
     (let [partition (vec (take n remaining))]

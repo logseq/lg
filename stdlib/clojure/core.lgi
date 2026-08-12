@@ -664,6 +664,9 @@
 (signature clojure.core/tree-seq [node]
   :fn<fn<node;bool>;fn<node;seqable<node>>;node;seq<node>>)
 
+(signature clojure.core/flatten [value storage]
+  :fn<seqable<value;storage>;seq<value>>)
+
 (signature clojure.core/partitionv-step [value]
   :fn<int;int;seq<value>;option<tuple<vector<value>;seq<value>>>>)
 

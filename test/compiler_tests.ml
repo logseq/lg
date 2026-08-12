@@ -29494,6 +29494,25 @@ let test_ocaml_seq_unfold_contextualizes_tuple_state () =
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange tuple unfold state must remain statically typed"
 
+let test_source_flatten_flattens_static_seqable_layers () =
+  let source =
+    {|
+(ns source-flatten-app
+  (:require [cljs.core :as core :refer [flatten]]))
+
+(println (pr-str (vec (flatten [[1 2] [3] [] [4 5]]))))
+(println (pr-str (vec (core/flatten ["a" "b"]))))
+(println (pr-str (vec (clojure.core/flatten []))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "source/flatten_app.cljc" source
+  in
+  assert_ocaml_runs "source_flatten_flattens_static_seqable_layers"
+    "[1 2 3 4 5]\n[\"a\" \"b\"]\n[]\n" native_source;
+  compile_with_stdlib Lg.Target.Melange "source/flatten_app.cljc" source
+  |> ignore
+
 let test_if_some_first_fuses_first_and_next_for_tail_recursion () =
   let source =
     {|
@@ -46330,6 +46349,8 @@ let tests =
       test_ocaml_unmemoized_seq_unfold_avoids_lazy_cache_layers );
     ( "OCaml Seq unfold contextualizes tuple state",
       test_ocaml_seq_unfold_contextualizes_tuple_state );
+    ( "source flatten flattens static seqable layers",
+      test_source_flatten_flattens_static_seqable_layers );
     ( "if-some first fuses first and next for tail recursion",
       test_if_some_first_fuses_first_and_next_for_tail_recursion );
     ( "OCaml array sequences flat-map lazily",

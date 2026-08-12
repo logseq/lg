@@ -308,7 +308,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/parse-double" && $3 == "s
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/merge-with" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/keyword-identical?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/key-test" || $2 == "clojure.core/reduceable?" || $2 == "clojure.core/vector-lite" || $2 == "clojure.core/hash-map-lite" || $2 == "clojure.core/set-lite") && $3 == "source" {found++} END {exit found != 5}' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "blocked-static-typing" && $4 == "arbitrarily-nested-sequential-input-can-produce-heterogeneous-leaf-types-without-a-closed-recursive-value-domain" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "source" && $4 == "source-public-wrapper-preserves-cljs-flatten-for-statically-homogeneous-seqable-layers-through-a-private-typed-flatten-primitive-without-dynamic-erasure" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/memoize" && $3 == "blocked-static-typing" && $4 == "returned-function-must-preserve-the-input-functions-complete-arity-shape-and-cache-heterogeneous-argument-tuples" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/NaN?" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/uuid?" && $3 == "source" && $4 == "source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -356,7 +356,7 @@ awk -F '\t' '
     exit failed
   }
 ' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "source" && $4 == "source-public-wrapper-preserves-cljs-flatten-for-statically-homogeneous-seqable-layers-through-a-private-typed-flatten-primitive-without-dynamic-erasure" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "cljs.test/assert-expr" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 
 awk -F '\t' '
@@ -491,6 +491,7 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "re-matches" {found=1} END {exit fou
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-matches" && $3 == "typed-primitive" && $4 == "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "re-seq" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-seq" && $3 == "typed-primitive" && $4 == "documented-regex-sequence-dynamic-boundary-with-clojurescript-match-shape" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_flatten" && $3 == "typed-primitive" && $4 == "typed-homogeneous-seqable-layer-flatten-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_multimethod-remove-method" || $2 == "__lg_multimethod-remove-all-methods") && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-method-table-mutation-boundary" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-default-dispatch-val" && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-default-dispatch-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-prefer-method" && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-preference-table-mutation-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"

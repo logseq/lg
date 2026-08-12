@@ -243,11 +243,13 @@ percentage.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
-largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`flatten` (15), and `memoize` (10). `defmethod` appears 162 times, `defmulti`
-8 times, `dispatch-fn` 7 times, `methods` 5 times, and `get-method` once; those
-rows are now source-aggregate supported through the documented runtime multifn
-dynamic boundary.
+largest former blocker rows were `type` (499), `with-redefs` (427),
+`flatten` (15), and `memoize` (10). `type` is a documented host boundary, and
+`flatten` is now source-aggregate supported for statically homogeneous
+sequential layers through a private typed primitive. `defmethod` appears 162
+times, `defmulti` 8 times, `dispatch-fn` 7 times, `methods` 5 times, and
+`get-method` once; those rows are now source-aggregate supported through the
+documented runtime multifn dynamic boundary.
 `add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
 source-aggregate owned through a typed reference watch registry with statically
 typed keyword keys. `re-find` appears 290 times,
@@ -1275,12 +1277,19 @@ casts, and the host writer/newline functions are recorded as host boundaries.
 Native implementations do not substitute Clojure truthiness or unrelated
 nominal types for those target-specific behaviors.
 
-`flatten` and `memoize` are explicit blockers rather than partial Logseq-facing
-ports. Arbitrarily nested `flatten` input can yield heterogeneous leaf types and
-therefore needs a closed recursive value domain. A faithful first-class
-`memoize` must preserve every arity of its input function while using complete,
-potentially heterogeneous argument tuples as cache keys; LG cannot yet express
-that returned-function relationship statically.
+`flatten` is source-owned and available through automatic core refer, explicit
+`:refer`, `cljs.core` aliases, and qualified `clojure.core` calls. Direct calls
+inline to the private `__lg_flatten` primitive, which preserves ClojureScript's
+`sequential?` boundary instead of treating every `seqable?` value as nested:
+vectors, lists, and seqs are flattened one homogeneous static layer, while
+strings remain scalar values. Arbitrarily nested inputs whose leaves require a
+heterogeneous recursive value domain still need an explicit closed source
+variant before they can be represented statically.
+
+`memoize` remains an explicit blocker rather than a partial Logseq-facing port.
+A faithful first-class `memoize` must preserve every arity of its input function
+while using complete, potentially heterogeneous argument tuples as cache keys;
+LG cannot yet express that returned-function relationship statically.
 
 `apply` is source-owned and available through automatic core refer, explicit
 `:refer`, `cljs.core` aliases, and qualified `clojure.core` calls. Its four

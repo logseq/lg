@@ -9446,6 +9446,44 @@ let create ~compile_expr =
                     Error.error
                       "__lg_transformer_sequence expects a transducer"))
         | _ -> Error.error "__lg_transformer_sequence expects 2 arguments")
+    | "__lg_flatten" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ collection ] -> (
+            match Collection_capability.to_seq_expr env collection with
+            | Error _ -> Error.error "flatten expects a seqable value"
+            | Ok (item_ty, sequence) -> (
+                let item_name = "__lg_flatten_item" in
+                let item =
+                  typed_ir item_ty (Semantic_ir.Ident item_name)
+                in
+                let item_is_sequential =
+                  match Types.constraint_value_type item_ty with
+                  | TList _ | TVector _ | TSeq _ -> true
+                  | value_ty ->
+                      Protocol.type_satisfies env
+                        Core_protocols.sequential_id value_ty
+                in
+                match
+                  if item_is_sequential then
+                    Collection_capability.to_seq_expr env item
+                  else Error.error "flatten item is not sequential"
+                with
+                | Ok (inner_ty, inner_sequence) ->
+                    let flattened =
+                      apply "Seq.flat_map"
+                        [
+                          Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], inner_sequence);
+                          sequence;
+                        ]
+                    in
+                    Ok
+                      (typed_ir (TSeq inner_ty)
+                         (apply "Lg_runtime.Runtime_seq.memoize"
+                            [ flattened ]))
+                | Error _ -> Ok (typed_ir (TSeq item_ty) sequence)))
+        | Ok _ -> Error.error "flatten expects 1 argument")
     | "__lg_reduce_transformed" -> (
         match arg_forms with
         | [ _reducer_form; _initial_form; _collection_form ] ->

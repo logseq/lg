@@ -7,6 +7,30 @@ let rec stored_value_type ty =
   | Some (_, _, value_ty) -> stored_value_type value_ty
   | None -> ty
 
+let static_seqable_element_type ty =
+  match Types.constraint_value_type ty with
+  | TList element_ty | TVector element_ty | TSet element_ty | TSeq element_ty
+  | TArray element_ty ->
+      Some element_ty
+  | value_ty -> Types.seqable_constraint_element value_ty
+
+let static_sequential_element_type ty =
+  match Types.constraint_value_type ty with
+  | TList element_ty | TVector element_ty | TSeq element_ty ->
+      Some element_ty
+  | TOcaml_app (constraint_name, [ element_ty; _ ])
+    when constraint_name = Types.optional_sequential_constraint_name ->
+      Some element_ty
+  | _ -> None
+
+let flatten_result_type collection_ty =
+  match static_seqable_element_type collection_ty with
+  | None -> TUnknown
+  | Some item_ty -> (
+      match static_sequential_element_type item_ty with
+      | Some inner_ty -> TSeq inner_ty
+      | None -> TSeq item_ty)
+
 let record_field_type params receiver keyword =
   match string_assoc_opt receiver params with
   | None -> None
@@ -626,6 +650,11 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_multimethod-prefers"; _multifn ] ->
       Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
+  | FList [ FSymbol "__lg_flatten"; collection ] ->
+      (match returned_vector_type params collection with
+      | Some vector_ty -> vector_ty
+      | None -> inferred_form_type params collection)
+      |> flatten_result_type
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
       match string_assoc_opt fn params with
@@ -855,7 +884,7 @@ let rec inferred_form_type params = function
       | _ -> TUnknown)
   | _ -> TUnknown
 
-let rec returned_vector_type params = function
+and returned_vector_type params = function
   | FVector items ->
       let item_tys = List.map (inferred_form_type params) items in
       let element_ty =
@@ -4869,6 +4898,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-data"; arg ] ->
         infer_expected (TOcaml "exn") params arg
+    | FList [ FSymbol "__lg_flatten"; collection ] ->
+        infer_form params collection
     | FList [ FSymbol "__lg_cljs-test-report"; reporter; event ] ->
         Result.bind (infer_expected TKeyword params reporter) (fun params ->
             match event with

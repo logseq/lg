@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 211; then
-  echo "compiler call dispatch changed: expected 211 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 212; then
+  echo "compiler call dispatch changed: expected 212 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -96,6 +96,7 @@ awk '
     internal_abi["__lg_re-find"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-matches"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-seq"] = "documented-regex-sequence-dynamic-boundary-with-clojurescript-match-shape"
+    internal_abi["__lg_flatten"] = "typed-homogeneous-seqable-layer-flatten-primitive"
     internal_abi["__lg_cljs-test-report"] = "documented-cljs-test-multimethod-report-event-dynamic-boundary"
     internal_abi["__lg_multimethod-methods"] = "documented-runtime-multifn-dynamic-method-table-introspection-boundary"
     internal_abi["__lg_multimethod-get-method"] = "documented-runtime-multifn-dynamic-method-handle-introspection-boundary"
@@ -290,8 +291,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 136; then
-  echo "compiler form dispatch changed: expected 136 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 137; then
+  echo "compiler form dispatch changed: expected 137 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
