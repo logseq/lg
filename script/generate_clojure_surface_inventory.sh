@@ -64,13 +64,13 @@ awk '
     for (i in xs) special[xs[i]] = 1
     special_reason["instance?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
     special_reason["satisfies?"] = "compiler-owned-static-type-or-protocol-witness-elaboration"
-    split("assoc-in doall drop drop-while filter get-in keep map map-indexed mapcat max merge min next rand remove repeatedly rest select-keys some take take-while update-in vals", xs)
+    split("assoc-in doall drop filter get-in keep map map-indexed mapcat max merge min next rand repeatedly rest select-keys some take update-in vals", xs)
     for (i in xs) blocked[xs[i]] = 1
     split("assoc-in get-in update-in", xs)
     for (i in xs) blocked_reason[xs[i]] = "nested-map-paths-require-dependent-key-and-value-types"
     split("map", xs)
     for (i in xs) blocked_reason[xs[i]] = "variadic-multi-collection-arities-and-lazy-or-transducer-cases-are-not-source-expressible"
-    split("drop drop-while filter keep map-indexed mapcat remove repeatedly take take-while", xs)
+    split("drop filter keep map-indexed mapcat repeatedly take", xs)
     for (i in xs) blocked_reason[xs[i]] = "upstream-lazy-sequence-or-transducer-behavior-is-not-source-expressible"
     split("doall", xs)
     for (i in xs) blocked_reason[xs[i]] = "sequence-realization-and-effect-order-remain-a-compiler-runtime-boundary"

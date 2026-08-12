@@ -28610,6 +28610,27 @@ let test_batched_sequence_functions_work () =
      6):(1 2 1):(10 21):[1 3]:[2 3]:31:2:true\n"
     ocaml_source
 
+let test_source_sequence_predicates_have_no_public_dispatch () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defn remove"; "(defn take-while"; "(defn drop-while" ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun dispatch ->
+          if string_contains_substring compiler_source dispatch then
+            failwith (dispatch ^ " remains a public-name compiler dispatch"))
+        [ "(\"remove\" | \"take-while\" | \"drop-while\")";
+          "| \"remove\""; "| \"take-while\""; "| \"drop-while\"";
+        ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml"; "src/expression_elaborator.ml";
+    ]
+
 let test_thread_last_inferred_functions_pass_collections_to_take_while () =
   let source =
     {|
@@ -45771,6 +45792,8 @@ let tests =
     ( "cljs.cache implements upstream collection protocols",
       test_cljs_cache_implements_upstream_collection_protocols );
     ("batched sequence functions work", test_batched_sequence_functions_work);
+    ( "source sequence predicates have no public dispatch",
+      test_source_sequence_predicates_have_no_public_dispatch );
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
     ( "sort accepts statically typed record fields",
