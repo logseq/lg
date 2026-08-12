@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_SUITE_DIR = ROOT / "vendor" / "clojure-test-suite" / "test" / "clojure" / "core_test"
+SUITE_NAMESPACE_PREFIX = "clojure.core-test."
+LG_PORTABILITY_NAMESPACE = "clojure.core-test.portability"
 
 
 @dataclass
@@ -37,6 +39,53 @@ def namespace_for(source: str) -> str:
     if not match:
         raise ValueError("missing ns form")
     return match.group(1)
+
+
+def suite_namespace_file(suite_dir: pathlib.Path, namespace: str) -> pathlib.Path:
+    if not namespace.startswith(SUITE_NAMESPACE_PREFIX):
+        raise ValueError(f"not a clojure.core-test namespace: {namespace}")
+    relative = namespace.removeprefix(SUITE_NAMESPACE_PREFIX).replace(".", "/").replace("-", "_")
+    return suite_dir / f"{relative}.cljc"
+
+
+def suite_core_test_requires(source: str) -> set[str]:
+    namespaces = set()
+    for match in re.finditer(r"clojure\.core-test\.[A-Za-z0-9_.?!<>=*+\-/]+", source):
+        namespace = match.group(0).split("/", 1)[0]
+        namespaces.add(namespace)
+    return namespaces
+
+
+def suite_dependency_files(suite_dir: pathlib.Path, test_file: pathlib.Path) -> list[pathlib.Path]:
+    dependencies: list[pathlib.Path] = []
+    visited: set[pathlib.Path] = set()
+    visiting: set[pathlib.Path] = set()
+    target = test_file.resolve()
+
+    def visit(path: pathlib.Path) -> None:
+        resolved = path.resolve()
+        if resolved in visited:
+            return
+        if resolved in visiting:
+            raise ValueError(f"cyclic clojure-test-suite dependency involving {path}")
+        visiting.add(resolved)
+
+        source = path.read_text(encoding="utf-8")
+        namespace = namespace_for(source)
+        for dependency_namespace in sorted(suite_core_test_requires(source)):
+            if dependency_namespace in {namespace, LG_PORTABILITY_NAMESPACE}:
+                continue
+            dependency_file = suite_namespace_file(suite_dir, dependency_namespace)
+            if dependency_file.exists():
+                visit(dependency_file)
+
+        visiting.remove(resolved)
+        visited.add(resolved)
+        if resolved != target:
+            dependencies.append(path)
+
+    visit(test_file)
+    return dependencies
 
 
 def summarize(output: str) -> str:
@@ -66,7 +115,12 @@ def runner_source(namespace: str) -> str:
     )
 
 
-def compile_namespace(test_file: pathlib.Path, namespace: str, target: str) -> ScanResult:
+def compile_namespace(
+    test_file: pathlib.Path,
+    dependency_files: list[pathlib.Path],
+    namespace: str,
+    target: str,
+) -> ScanResult:
     state = ROOT / "_build" / "default" / "stdlib" / f"lg_stdlib_{target}.state"
     platform_test = ROOT / "test_runner" / "clojure" / (
         "test_native.cljc" if target == "native" else "test_melange.cljc"
@@ -90,6 +144,7 @@ def compile_namespace(test_file: pathlib.Path, namespace: str, target: str) -> S
             str(ROOT / "test_runner" / "clojure" / "test.cljc"),
             str(platform_test),
             str(ROOT / "test" / "clojure_suite" / "lg_portability.cljc"),
+            *(str(dependency_file) for dependency_file in dependency_files),
             str(test_file),
             str(runner),
             "-o",
@@ -144,8 +199,9 @@ def main() -> int:
     for index, test_file in enumerate(files, start=1):
         source = test_file.read_text(encoding="utf-8")
         namespace = namespace_for(source)
+        dependency_files = suite_dependency_files(suite_dir, test_file)
         for target in targets:
-            result = compile_namespace(test_file, namespace, target)
+            result = compile_namespace(test_file, dependency_files, namespace, target)
             results.append(result)
             write_report()
             print(
