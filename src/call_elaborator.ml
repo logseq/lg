@@ -9221,6 +9221,85 @@ let create ~compile_expr =
               ("identical? arguments must have the same type, got "
              ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
         | Ok _ -> Error.error "identical? expects 2 arguments")
+    | "__lg_exec-tap-fn" -> (
+        match arg_forms with
+        | [ thunk_form ] -> (
+            match
+              compile_expr scope
+                (Env.with_expected_type (Some (TFn ([], TUnit))) env)
+                thunk_form
+            with
+            | Error _ as error -> error
+            | Ok { ty = TFn ([], _); semantic_expr; _ } ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_tap.exec",
+                          [
+                            Semantic_ir.Fun
+                              ( [],
+                                Semantic_ir.Sequence
+                                  [
+                                    Semantic_ir.Apply (semantic_expr, []);
+                                    Semantic_ir.Unit;
+                                  ] );
+                          ] )))
+            | Ok thunk ->
+                Error.error
+                  ("*exec-tap-fn* expects a zero-argument function, got "
+                 ^ Types.source_name thunk.ty))
+        | _ -> Error.error "*exec-tap-fn* expects 1 argument")
+    | ("__lg_add-tap" | "__lg_remove-tap") as tap_operation -> (
+        match arg_forms with
+        | [ callback_form ] -> (
+            match
+              Tap_dynamic_boundary.compile_callback ~compile_expr scope env
+                callback_form
+            with
+            | Error _ as error -> error
+            | Ok callback ->
+                let runtime =
+                  if tap_operation = "__lg_add-tap" then
+                    "Lg_runtime.Runtime_tap.add"
+                  else "Lg_runtime.Runtime_tap.remove"
+                in
+                let identity =
+                  match callback_form with
+                  | FSymbol name ->
+                      Semantic_ir.Constructor
+                        ("Some", Some (Semantic_ir.String name))
+                  | FCoreSymbol symbol ->
+                      Semantic_ir.Constructor
+                        ( "Some",
+                          Some
+                            (Semantic_ir.String
+                               (Ast.core_symbol_qualified_name symbol)) )
+                  | _ -> Semantic_ir.Constructor ("None", None)
+                in
+                Ok
+                  (typed_ir TUnit
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident runtime,
+                          [ identity; callback.semantic_expr ] ))))
+        | _ ->
+            Error.error
+              (if tap_operation = "__lg_add-tap" then
+                 "add-tap expects 1 argument"
+               else "remove-tap expects 1 argument"))
+    | "__lg_tap" -> (
+        match arg_forms with
+        | [ value_form ] -> (
+            match
+              Tap_dynamic_boundary.compile_form ~compile_expr scope env value_form
+            with
+            | Error _ as error -> error
+            | Ok value ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_tap.tap",
+                          [ value.semantic_expr ] ))))
+        | _ -> Error.error "tap> expects 1 argument")
     | "__lg_re-seq" -> (
         match compile_args () with
         | Error _ as error -> error

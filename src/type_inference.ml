@@ -628,6 +628,10 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_ex-message"; _ ] -> TNullable TString
   | FList [ FSymbol "__lg_ex-cause"; _ ] -> TNullable (TOcaml "exn")
   | FList [ FSymbol "__lg_ex-data"; _ ] -> Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_exec-tap-fn"; _ ] -> TBool
+  | FList [ FSymbol "__lg_add-tap"; _ ] -> TUnit
+  | FList [ FSymbol "__lg_remove-tap"; _ ] -> TUnit
+  | FList [ FSymbol "__lg_tap"; _ ] -> TBool
   | FList [ FSymbol "__lg_cljs-test-report"; _reporter; _event ] -> TUnit
   | FList [ FSymbol "__lg_multimethod-methods"; _multifn ] ->
       Types.dynamic_constraint TUnknown
@@ -4903,6 +4907,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-data"; arg ] ->
         infer_expected (TOcaml "exn") params arg
+    | FList [ FSymbol "__lg_exec-tap-fn"; thunk ] ->
+        infer_expected (TFn ([], TUnit)) params thunk
+    | FList [ FSymbol "__lg_add-tap"; callback ]
+    | FList [ FSymbol "__lg_remove-tap"; callback ] ->
+        infer_expected
+          (TFn ([ Types.printable_constraint TUnknown ], TUnknown))
+          params callback
+    | FList [ FSymbol "__lg_tap"; value ] -> infer_form params value
     | FList [ FSymbol "__lg_flatten"; collection ] ->
         infer_form params collection
     | FList [ FSymbol "__lg_cljs-test-report"; reporter; event ] ->

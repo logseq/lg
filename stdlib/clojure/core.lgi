@@ -382,6 +382,13 @@
 (signature clojure.core/regexp? :fn<regex;bool>)
 (signature clojure.core/re-find :fn<regex;string;option<string>>)
 (signature clojure.core/re-matches :fn<regex;string;option<string>>)
+(signature clojure.core/*exec-tap-fn* :fn<fn<unit>;bool>)
+(signature clojure.core/add-tap [value]
+  :fn<fn<printable<value>;nil>;nil>)
+(signature clojure.core/remove-tap [value]
+  :fn<fn<printable<value>;nil>;nil>)
+(signature clojure.core/tap> [value]
+  :fn<value;bool>)
 (signature clojure.core/volatile? [value]
   :fn<ref<value>;bool>)
 (signature clojure.core/rational? :fn<int;bool>)

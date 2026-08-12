@@ -3151,6 +3151,28 @@
 (defn ex-data [ex]
   (__lg_ex-data ex))
 
+(defn *exec-tap-fn*
+  {:inline (fn [f] (list '__lg_exec-tap-fn f))}
+  [f]
+  (__lg_exec-tap-fn f))
+
+(defn add-tap
+  {:inline (fn [f] (list 'do (list '__lg_add-tap f) nil))}
+  [f]
+  (__lg_add-tap f)
+  nil)
+
+(defn remove-tap
+  {:inline (fn [f] (list 'do (list '__lg_remove-tap f) nil))}
+  [f]
+  (__lg_remove-tap f)
+  nil)
+
+(defn tap>
+  {:inline (fn [x] (list '__lg_tap x))}
+  [x]
+  (__lg_tap x))
+
 (defmacro defmulti
   [& _forms])
 

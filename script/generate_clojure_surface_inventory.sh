@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 218; then
-  echo "compiler call dispatch changed: expected 218 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 222; then
+  echo "compiler call dispatch changed: expected 222 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -96,6 +96,10 @@ awk '
     internal_abi["__lg_re-find"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-matches"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-seq"] = "documented-regex-sequence-dynamic-boundary-with-clojurescript-match-shape"
+    internal_abi["__lg_exec-tap-fn"] = "documented-tap-executor-callback-dynamic-boundary"
+    internal_abi["__lg_add-tap"] = "documented-tap-registry-callback-dynamic-boundary"
+    internal_abi["__lg_remove-tap"] = "documented-tap-registry-callback-dynamic-boundary"
+    internal_abi["__lg_tap"] = "documented-tap-value-dynamic-boundary"
     internal_abi["__lg_flatten"] = "typed-homogeneous-seqable-layer-flatten-primitive"
     internal_abi["__lg_cljs-test-report"] = "documented-cljs-test-multimethod-report-event-dynamic-boundary"
     internal_abi["__lg_multimethod-methods"] = "documented-runtime-multifn-dynamic-method-table-introspection-boundary"
@@ -297,8 +301,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 139; then
-  echo "compiler form dispatch changed: expected 139 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 143; then
+  echo "compiler form dispatch changed: expected 143 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

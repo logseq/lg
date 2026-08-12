@@ -775,6 +775,16 @@ its existing exception-only data boundary.
 payload. Non-empty EDN-like literal maps passed to `ex-info` are built directly
 inside that payload boundary, so ordinary records and collections still do not
 gain a global dynamic conversion path.
+`*exec-tap-fn*`, `add-tap`, `remove-tap`, and `tap>` are source-owned core
+functions backed by a documented tap runtime boundary. The boundary stores tap
+callbacks as `Runtime_dynamic.t -> unit` and converts each direct `tap>` call
+from its static source type at the call site; this is intentionally narrow and
+does not expose a source-level dynamic type or permit dynamic collections.
+Native and Melange execute the supplied tap thunk synchronously and return
+`true`, rather than using ClojureScript's default JavaScript `setTimeout`
+scheduler. `remove-tap` matches ordinary symbol/qualified-symbol callbacks by a
+stable source identity; anonymous callbacks can be added, but, as upstream
+requires, callers must retain the same callback identity to remove them.
 `defmulti` and `defmethod` are source-visible core macros backed by a documented
 runtime multifn boundary. The boundary stores dispatch values, method-table
 keys, and call arguments as `Runtime_dynamic.t` because ClojureScript

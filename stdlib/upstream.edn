@@ -1166,16 +1166,16 @@
               :reason :mutable-per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
     with-redefs {:status :blocked-static-typing
                  :reason :temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation}
-    *exec-tap-fn* {:status :blocked-static-typing
-                   :reason :global-tap-executor-must-store-and-invoke-callbacks-over-arbitrary-unrelated-static-value-types}
+    *exec-tap-fn* {:status :static-adaptation
+                   :reason :source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler}
     --destructure-map {:status :special-form
                        :reason :clojurescript-macro-implementation-helper-that-rewrites-binding-forms-at-analysis-time}
     ExceptionInfo {:status :host-boundary
                    :reason :clojurescript-javascript-error-constructor-with-open-ex-data-and-host-stack-fields}
     Throwable->map {:status :host-boundary
                     :reason :walks-javascript-error-cause-chains-and-returns-open-exception-data-maps}
-    add-tap {:status :blocked-static-typing
-             :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
+    add-tap {:status :static-adaptation
+             :reason :source-function-preserves-upstream-nil-result-and-global-callback-registration-through-a-narrow-runtime-dynamic-boundary-for-open-tap-values}
     add-watch {:status :static-adaptation
                :reason :source-function-preserves-keyword-watch-callbacks-through-a-typed-reference-watch-registry}
     alter-meta! {:status :static-adaptation
@@ -1344,8 +1344,8 @@
                         :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
     remove-method {:status :static-adaptation
                    :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
-    remove-tap {:status :blocked-static-typing
-                :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
+    remove-tap {:status :static-adaptation
+                :reason :source-function-preserves-upstream-nil-result-and-symbol-callback-removal-through-the-documented-runtime-tap-dynamic-boundary}
     remove-watch {:status :static-adaptation
                   :reason :source-function-removes-keyword-watch-callbacks-from-the-typed-reference-watch-registry}
     reset-meta! {:status :static-adaptation
@@ -1374,8 +1374,8 @@
             :reason :source-function-preserves-clojurescript-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     supers {:status :host-boundary
             :reason :reads-google-closure-javascript-constructor-inheritance-metadata}
-    tap> {:status :blocked-static-typing
-          :reason :global-tap-registry-must-invoke-callbacks-over-arbitrary-unrelated-static-value-types}
+    tap> {:status :static-adaptation
+          :reason :source-function-preserves-upstream-boolean-result-and-open-value-delivery-through-a-narrow-runtime-dynamic-boundary-with-static-call-site-conversion}
     test {:status :host-boundary
           :reason :reads-test-functions-from-clojurescript-var-metadata-or-javascript-function-properties}
     transformer-iterator {:status :host-boundary

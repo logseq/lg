@@ -23,6 +23,8 @@ done <<'EOF'
 clone	source	source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity
 cloneable?	source	source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
 chunked-seq?	source	source-function-and-inline-specialization-use-an-optional-static-ichunkedseq-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
+*exec-tap-fn*	source	source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler
+add-tap	source	source-function-preserves-upstream-nil-result-and-global-callback-registration-through-a-narrow-runtime-dynamic-boundary-for-open-tap-values
 default-dispatch-val	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values
 doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path
@@ -39,7 +41,9 @@ record?	source	source-function-and-inline-specialization-use-an-optional-static-
 replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation
 remove-all-methods	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 remove-method	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
+remove-tap	source	source-function-preserves-upstream-nil-result-and-symbol-callback-removal-through-the-documented-runtime-tap-dynamic-boundary
 spread	blocked-static-typing	argument-list-elements-are-heterogeneous-because-only-the-final-element-is-expanded-as-a-sequence
+tap>	source	source-function-preserves-upstream-boolean-result-and-open-value-delivery-through-a-narrow-runtime-dynamic-boundary-with-static-call-site-conversion
 tagged-literal	source	source-parameterized-nominal-type-preserves-symbol-tags-statically-typed-payloads-literal-keyword-or-get-field-access-structural-equality-and-upstream-hash-composition-without-an-open-dynamic-value
 tagged-literal?	source	source-function-and-inline-specialization-use-an-optional-static-itaggedliteral-marker-witness-for-first-class-true-and-false-calls
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply

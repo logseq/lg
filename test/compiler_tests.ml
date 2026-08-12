@@ -974,6 +974,50 @@ let test_source_multimethods_support_preferences () =
   compile_with_stdlib Lg.Target.Melange "app/multimethod_prefer.cljc" source
   |> ignore
 
+let test_source_tap_registry_uses_limited_dynamic_boundary () =
+  let source =
+    {|
+(ns app.tap-registry
+  (:require [cljs.core :as core :refer [add-tap remove-tap tap> atom swap! str]]))
+
+(def seen (atom ""))
+
+(defn remember [value]
+  (swap! seen str "[" value "]")
+  nil)
+
+(def add-result (add-tap remember))
+(def first-result (tap> 7))
+(def second-result (core/tap> "hi"))
+(def remove-result (remove-tap remember))
+(def third-result (tap> 9))
+
+(println
+ (str (nil? add-result) ":"
+      first-result ":"
+      second-result ":"
+      (nil? remove-result) ":"
+      third-result ":"
+      @seen))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/tap_registry.cljc" source
+  in
+  if
+    not
+      (string_contains_substring native "Lg_runtime.Runtime_tap"
+      && string_contains_substring native "Runtime_dynamic")
+  then
+    failwith "tap registry must use the documented narrow dynamic boundary";
+  assert_ocaml_runs "source_tap_registry_uses_limited_dynamic_boundary"
+    "true:true:true:true:true:[7][hi]\n" native;
+  let melange =
+    compile_with_stdlib Lg.Target.Melange "app/tap_registry.cljc" source
+  in
+  if not (string_contains_substring melange "Lg_runtime.Runtime_tap") then
+    failwith "Melange tap registry must use the shared runtime tap boundary"
+
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
     {|
@@ -44824,6 +44868,8 @@ let tests =
       test_source_multimethods_expose_mutation_boundaries );
     ( "source multimethods support preferences",
       test_source_multimethods_support_preferences );
+    ( "source tap registry uses limited dynamic boundary",
+      test_source_tap_registry_uses_limited_dynamic_boundary );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",
