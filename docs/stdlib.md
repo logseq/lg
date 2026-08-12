@@ -303,10 +303,15 @@ the same static readable printer witnesses. The custom more marker remains an
 explicit static adaptation instead of silently widening the options value to a
 dynamic map.
 The `*print-meta*`, `*print-dup*`, and `*print-namespace-maps*` switches are
-ordinary static Vars and no longer compiler-injected. Their downstream
-rendering behavior remains tracked separately by `print-meta?`, `print-map`,
-and `print-prefix-map`, because those require typed metadata and map-printer
-witnesses rather than another global Var hook.
+ordinary static Vars and no longer compiler-injected. `print-meta?`,
+`print-map`, and `print-prefix-map` are source public vars backed by private
+typed printer primitives: `print-meta?` checks the typed `{:meta bool}` option
+and closed EDN metadata without `Runtime_dynamic.t`, while map rendering uses
+independent static key/value printer witnesses and honors
+`*print-namespace-maps*` for literal namespaced keyword maps. The current
+static adaptation evaluates the upstream `print-one` callback argument but does
+not delegate rendering to arbitrary custom callbacks; that restriction is
+recorded in `stdlib/upstream.edn`.
 
 The numeric operator cluster is source-owned. `+`, `-`, `*`, `/`, `<`, `<=`,
 `>`, `>=`, and `==` preserve the pinned zero, unary, binary, and variadic

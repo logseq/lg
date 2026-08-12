@@ -836,6 +836,12 @@
   :fn<Buffer.t;fn<value;Buffer.t;nil;unit>;string;string;string;nil;seqable<value;storage>;unit>)
 (signature clojure.core/pr-seq-writer [value storage]
   :fn<seqable<printable<value>;storage>;Buffer.t;nil;unit>)
+(signature clojure.core/print-prefix-map [key value]
+  :fn<string;map<key;value>;fn<printable<value>;Buffer.t;nil;unit>;Buffer.t;nil;unit>)
+(signature clojure.core/print-map [key value]
+  :fn<map<key;value>;fn<printable<value>;Buffer.t;nil;unit>;Buffer.t;nil;unit>)
+(signature clojure.core/print-meta? [key value]
+  :fn<map<keyword;bool>;map<key;value>;bool>)
 (signature clojure.core/write-all
   :variadic-fn<Buffer.t;string;unit>)
 (signature clojure.core/string-print

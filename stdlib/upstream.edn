@@ -1316,12 +1316,12 @@
                    :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
     prefers {:status :static-adaptation
              :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
-    print-map {:status :blocked-static-typing
-               :reason :map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
-    print-meta? {:status :blocked-static-typing
-                 :reason :printer-options-and-value-metadata-require-a-shared-heterogeneous-map-domain}
-    print-prefix-map {:status :blocked-static-typing
-                      :reason :namespaced-map-printing-needs-independent-key-value-printer-witnesses-and-a-shared-writer-options-domain}
+    print-map {:status :static-adaptation
+               :reason :source-public-wrapper-preserves-nil-options-buffer-writing-and-namespace-map-lifting-through-a-private-static-map-printer-primitive-with-independent-key-value-printer-witnesses-while-the-custom-print-one-callback-is-evaluated-but-not-yet-used-for-rendering}
+    print-meta? {:status :static-adaptation
+                 :reason :source-public-wrapper-preserves-typed-meta-option-and-closed-edn-metadata-presence-checks-without-widening-printer-options-or-metadata-to-runtime-dynamic}
+    print-prefix-map {:status :static-adaptation
+                      :reason :source-public-wrapper-preserves-prefix-map-buffer-writing-through-a-private-static-map-printer-primitive-with-independent-key-value-printer-witnesses-while-the-custom-print-one-callback-is-evaluated-but-not-yet-used-for-rendering}
     print-str {:status :static-adaptation
                :reason :source-function-and-inline-macro-preserve-space-separated-display-rendering-with-per-argument-static-printer-witnesses}
     println-str {:status :static-adaptation

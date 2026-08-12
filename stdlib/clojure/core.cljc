@@ -5444,6 +5444,24 @@
   [objects writer options]
   (pr-sequential-writer writer pr-writer "" " " "" options objects))
 
+(defn print-prefix-map
+  {:inline (fn [prefix m print-one writer options]
+             (list '__lg_print-prefix-map prefix m print-one writer options))}
+  [prefix m print-one writer options]
+  (__lg_print-prefix-map prefix m print-one writer options))
+
+(defn print-map
+  {:inline (fn [m print-one writer options]
+             (list '__lg_print-map m print-one writer options))}
+  [m print-one writer options]
+  (__lg_print-map m print-one writer options))
+
+(defn print-meta?
+  {:inline (fn [options value]
+             (list '__lg_print-meta? options value))}
+  [options value]
+  (__lg_print-meta? options value))
+
 (defn pr-str-with-opts
   [objects options]
   (__lg_render_readable_values_with_opts " " objects options))

@@ -4914,6 +4914,311 @@ let create ~compile_expr =
                 ] )))
     | _ -> Codegen.stringify_expr_ir ~pr ?print_length ?print_level value
   in
+  let unresolved_ty = function TUnknown | TMeta _ | TVar _ -> true | _ -> false in
+  let print_namespace_maps_expr scope env =
+    let binding =
+      match
+        Env.find_opt (Names.scoped_key scope "*print-namespace-maps*") env
+      with
+      | Some binding -> Some binding
+      | None ->
+          Env.find_opt
+            (Names.scoped_key "clojure.core" "*print-namespace-maps*")
+            env
+    in
+    match binding with
+    | None -> Semantic_ir.Bool false
+    | Some binding -> (
+        match binding.ty with
+        | TRef TBool ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+                [ Semantic_ir.Ident binding.ocaml_name ] )
+        | TBool -> Semantic_ir.Ident binding.ocaml_name
+        | _ -> Semantic_ir.Bool false)
+  in
+  let keyword_namespace_and_name keyword =
+    let body =
+      if String.length keyword > 0 && keyword.[0] = ':' then
+        String.sub keyword 1 (String.length keyword - 1)
+      else keyword
+    in
+    match String.rindex_opt body '/' with
+    | None -> None
+    | Some index ->
+        let namespace = String.sub body 0 index in
+        let name =
+          String.sub body (index + 1) (String.length body - index - 1)
+        in
+        Some (namespace, ":" ^ name)
+  in
+  let render_printed_map_entries ?prefix entries =
+    let begin_expr =
+      match prefix with
+      | None -> Semantic_ir.String "{"
+      | Some prefix ->
+          Codegen.concat_expr [ prefix; Semantic_ir.String "{" ]
+    in
+    Codegen.concat_expr
+      [
+        begin_expr;
+        Codegen.render_strings (Semantic_ir.String ", ")
+          (Semantic_ir.List entries);
+        Semantic_ir.String "}";
+      ]
+  in
+  let render_record_print_map scope env ?prefix entries =
+    let render_entry key value_ty value_expr =
+      Codegen.concat_expr
+        [
+          Semantic_ir.String (key ^ " ");
+          stringify_value scope env ~pr:true (typed_ir value_ty value_expr);
+        ]
+    in
+    render_printed_map_entries ?prefix
+      (List.map
+         (fun ((field : field), value_expr) ->
+           render_entry field.keyword field.ty value_expr)
+         entries)
+  in
+  let render_runtime_print_map scope env ?prefix map key_ty value_ty =
+    let key_name = "__lg_print_map_key" in
+    let value_name = "__lg_print_map_value" in
+    let mapper =
+      Semantic_ir.Fun
+        ( [
+            Semantic_ir.PTuple
+              [ Semantic_ir.PVar key_name; Semantic_ir.PVar value_name ];
+          ],
+          Codegen.concat_expr
+            [
+              stringify_value scope env ~pr:true
+                (typed_ir key_ty (Semantic_ir.Ident key_name));
+              Semantic_ir.String " ";
+              stringify_value scope env ~pr:true
+                (typed_ir value_ty (Semantic_ir.Ident value_name));
+            ] )
+    in
+    let begin_expr =
+      match prefix with
+      | None -> Semantic_ir.String "{"
+      | Some prefix ->
+          Codegen.concat_expr [ prefix; Semantic_ir.String "{" ]
+    in
+    Codegen.concat_expr
+      [
+        begin_expr;
+        Codegen.render_strings (Semantic_ir.String ", ")
+          (Semantic_ir.Apply
+             ( Semantic_ir.Ident "List.map",
+               [
+                 mapper;
+                 Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_map.to_list",
+                     [ map.semantic_expr ] );
+               ] ));
+        Semantic_ir.String "}";
+      ]
+  in
+  let record_entries_of_printable_map map =
+    match (map.ty, map.record_values) with
+    | TRecord _fields, Some values
+    | TNamed_record { fields = _fields; nominal = false; _ }, Some values ->
+        Some values
+    | TRecord fields, None | TNamed_record { fields; nominal = false; _ }, None
+      ->
+        Some
+          (List.map
+             (fun (field : field) -> (field, Structural_map.field_expr map field))
+             fields)
+    | _ -> None
+  in
+  let render_print_map scope env map =
+    match record_entries_of_printable_map map with
+    | Some entries ->
+        let normal = render_record_print_map scope env entries in
+        let lifted =
+          match entries with
+          | [] -> None
+          | (first_field, _) :: rest -> (
+              match keyword_namespace_and_name first_field.keyword with
+              | None -> None
+              | Some (namespace, first_key) ->
+                  let collect acc ((field : field), value_expr) =
+                    match (acc, keyword_namespace_and_name field.keyword) with
+                    | Some acc, Some (candidate_namespace, key)
+                      when String.equal namespace candidate_namespace ->
+                        Some (({ field with keyword = key }, value_expr) :: acc)
+                    | _ -> None
+                  in
+                  (match List.fold_left collect (Some []) rest with
+                  | None -> None
+                  | Some stripped_rest ->
+                      let stripped =
+                        ({ first_field with keyword = first_key }, snd (List.hd entries))
+                        :: List.rev stripped_rest
+                      in
+                      Some
+                        (render_record_print_map scope env
+                           ~prefix:(Semantic_ir.String ("#:" ^ namespace))
+                           stripped)))
+        in
+        (match lifted with
+        | None -> normal
+        | Some lifted ->
+            Semantic_ir.If
+              (print_namespace_maps_expr scope env, lifted, normal))
+    | None -> (
+        match Types.dynamic_map_types map.ty with
+        | Some (key_ty, value_ty) ->
+            render_runtime_print_map scope env map key_ty value_ty
+        | None -> stringify_value scope env ~pr:true map)
+  in
+  let compile_print_map_call scope env name args =
+    let write writer text =
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+          [ writer.semantic_expr; text ] )
+    in
+    let validate_writer_and_options writer options =
+      if
+        not
+          (Types.equal writer.ty (TOcaml "Buffer.t") || unresolved_ty writer.ty)
+      then Error.error (name ^ " expects a Buffer.t writer")
+      else if not (Types.equal options.ty TNil || unresolved_ty options.ty)
+      then Error.error (name ^ " options must be nil")
+      else Ok ()
+    in
+    match (name, args) with
+    | "__lg_print-map", [ map; print_one; writer; options ] -> (
+        match validate_writer_and_options writer options with
+        | Error _ as error -> error
+        | Ok () ->
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.Let
+                    ( [ (Semantic_ir.PAny, print_one.semantic_expr);
+                        (Semantic_ir.PAny, options.semantic_expr);
+                      ],
+                      write writer (render_print_map scope env map) ))))
+    | "__lg_print-prefix-map", [ prefix; map; print_one; writer; options ] -> (
+        match validate_writer_and_options writer options with
+        | Error _ as error -> error
+        | Ok () ->
+            let prefix_expr =
+              if Types.equal prefix.ty TString || unresolved_ty prefix.ty then
+                Ok prefix.semantic_expr
+              else if Types.equal prefix.ty TNil then Ok (Semantic_ir.String "")
+              else Error.error "__lg_print-prefix-map prefix must be string or nil"
+            in
+            Result.map
+              (fun prefix ->
+                let rendered =
+                  match record_entries_of_printable_map map with
+                  | Some entries ->
+                      render_record_print_map scope env ~prefix entries
+                  | None -> (
+                      match Types.dynamic_map_types map.ty with
+                      | Some (key_ty, value_ty) ->
+                          render_runtime_print_map scope env ~prefix map key_ty
+                            value_ty
+                      | None -> render_print_map scope env map)
+                in
+                typed_ir TUnit
+                  (Semantic_ir.Let
+                     ( [ (Semantic_ir.PAny, print_one.semantic_expr);
+                         (Semantic_ir.PAny, options.semantic_expr);
+                       ],
+                       write writer rendered )))
+              prefix_expr)
+    | _ -> Error.error (name ^ " expects map, printer, writer, and options")
+  in
+  let compile_print_meta_call scope env args =
+    let option_meta_flag options =
+      match (options.ty, options.record_values) with
+      | TNil, _ -> Ok (Semantic_ir.Bool false)
+      | (TRecord fields | TNamed_record { fields; nominal = false; _ }), values
+        -> (
+          let field_value =
+            match values with
+            | Some values ->
+                values
+                |> List.find_map (fun ((field : field), value) ->
+                       if String.equal field.keyword ":meta" then
+                         Some (field, value)
+                       else None)
+            | None ->
+                fields
+                |> List.find_map (fun (field : field) ->
+                       if String.equal field.keyword ":meta" then
+                         Some (field, Structural_map.field_expr options field)
+                       else None)
+          in
+          match field_value with
+          | None -> Ok (Semantic_ir.Bool false)
+          | Some (field, value) when Types.equal field.ty TBool ->
+              Ok value
+          | Some _ -> Error.error "print-meta? :meta option must be bool")
+      | ty, _ when Option.is_some (Types.dynamic_map_types ty) -> (
+          match Types.dynamic_map_types ty with
+          | Some (key_ty, value_ty)
+            when Types.equal key_ty TKeyword && Types.equal value_ty TBool ->
+              Ok
+                (Semantic_ir.Apply
+                   ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_default",
+                     [
+                       options.semantic_expr;
+                       Semantic_ir.String ":meta";
+                       Semantic_ir.Bool false;
+                     ] ))
+          | _ -> Error.error "print-meta? options must be {:meta bool}")
+      | _ -> Error.error "print-meta? options must be nil or {:meta bool}"
+    in
+    let metadata_expr value =
+      match value.ty with
+      | ty when Option.is_some (Types.dynamic_map_types ty) ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_map.metadata",
+                 [ value.semantic_expr ] ))
+      | TRef _ ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.metadata",
+                 [ value.semantic_expr ] ))
+      | TNamed_record _ when Protocol.type_satisfies env Core_protocols.meta_id value.ty
+        ->
+          let value_name = "__lg_print_meta_value" in
+          let protocol_env =
+            Env.add (Names.scoped_key scope value_name)
+              (Types.binding value_name value.ty) env
+          in
+          Result.map
+            (fun result ->
+              Semantic_ir.Let
+                ( [ (Semantic_ir.PVar value_name, value.semantic_expr) ],
+                  result.semantic_expr ))
+            (compile_expr scope protocol_env
+               (FList [ FSymbol "IMeta/-meta"; FSymbol value_name ]))
+      | _ -> Ok (Semantic_ir.Ident "Lg_edn_backend.Nil")
+    in
+    match args with
+    | [ options; value ] -> (
+        match (option_meta_flag options, metadata_expr value) with
+        | (Error _ as error), _ | _, (Error _ as error) -> error
+        | Ok flag, Ok metadata ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Infix
+                    ( "&&",
+                      flag,
+                      Semantic_ir.Prefix
+                        ( "not",
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.is_nil",
+                              [ metadata ] ) ) ))))
+    | _ -> Error.error "print-meta? expects options and value"
+  in
   let rec compile_ocaml_arguments scope env forms =
     let rec parse acc = function
       | [] -> Ok (List.rev acc)
@@ -6217,6 +6522,14 @@ let create ~compile_expr =
                               stringify_value scope env ~pr:true value;
                             ] ) )))
         | Ok _ -> Error.error "pr-writer expects 3 arguments"
+        | Error _ as error -> error)
+    | ("__lg_print-map" | "__lg_print-prefix-map") as print_map_name -> (
+        match compile_args () with
+        | Ok args -> compile_print_map_call scope env print_map_name args
+        | Error _ as error -> error)
+    | "__lg_print-meta?" -> (
+        match compile_args () with
+        | Ok args -> compile_print_meta_call scope env args
         | Error _ as error -> error)
     | ".getClass" | ".getName" | ".compareTo" ->
         Error.error

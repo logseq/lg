@@ -29223,6 +29223,49 @@ let test_source_writer_printing_cluster_matches_clojurescript () =
 |}
   |> expect_error_contains "nil"
 
+let test_source_print_map_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-print-map
+  (:require [cljs.core :as core
+             :refer [*print-namespace-maps* print-map print-meta?
+                     print-prefix-map with-meta]]
+            [ocaml.Buffer :as buffer]))
+
+(def map-writer (buffer/create 64))
+(def prefix-writer (buffer/create 64))
+
+(binding [*print-namespace-maps* true]
+  (print-map {:user/name 42} core/pr-writer map-writer nil))
+(print-prefix-map "#:profile" {:name "Ada"} core/pr-writer prefix-writer nil)
+(print (buffer/contents map-writer))
+(print "|")
+(print (buffer/contents prefix-writer))
+(print "|")
+(print (print-meta? {:meta true} (with-meta {} {:source "test"})))
+(print ":")
+(print (print-meta? {:meta false} (with-meta {} {:source "test"})))
+|}
+  in
+  let native = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "source print-map functions must remain statically typed";
+  assert_ocaml_runs "source_print_map_cluster"
+    "#:user{:name 42}|#:profile{:name \"Ada\"}|true:false" native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange print-map functions must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.print-map-options-error
+  (:require [cljs.core :as core]
+            [ocaml.Buffer :as buffer]))
+(core/print-map {:a 1} core/pr-writer (buffer/create 8) true)
+|}
+  |> expect_error_contains "nil"
+
 let test_source_writer_printing_cluster_is_source_owned () =
   let source = read_file "stdlib/clojure/core.cljc" in
   List.iter
@@ -29231,7 +29274,8 @@ let test_source_writer_printing_cluster_is_source_owned () =
         failwith (declaration ^ " is missing from the source standard library"))
     [ "(defprotocol IPrintWithWriter"; "(defn pr-writer";
       "(defn pr-seq-writer";
-      "(defn pr-sequential-writer"; "(defn write-all";
+      "(defn pr-sequential-writer"; "(defn print-map";
+      "(defn print-meta?"; "(defn print-prefix-map"; "(defn write-all";
       "(defn string-print"; "(defn newline";
     ];
   List.iter
@@ -29241,7 +29285,9 @@ let test_source_writer_printing_cluster_is_source_owned () =
         (fun name ->
           if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
           then failwith (name ^ " still has public-name compiler dispatch"))
-        [ "pr-writer"; "pr-seq-writer"; "pr-sequential-writer" ])
+        [ "pr-writer"; "pr-seq-writer"; "pr-sequential-writer"; "print-map";
+          "print-meta?"; "print-prefix-map";
+        ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml";
       "src/expression_support.ml";
     ]
@@ -46937,6 +46983,8 @@ let tests =
       test_source_generic_equality_is_source_owned );
     ( "source writer printing cluster matches ClojureScript",
       test_source_writer_printing_cluster_matches_clojurescript );
+    ( "source print-map cluster matches ClojureScript",
+      test_source_print_map_cluster_matches_clojurescript );
     ( "source writer printing cluster is source-owned",
       test_source_writer_printing_cluster_is_source_owned );
     ( "source printing options cluster matches ClojureScript",
