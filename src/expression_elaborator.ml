@@ -257,6 +257,14 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_call scope env (type_name ^ ".") args
   | FList [ FSymbol "quote"; value ] -> compile_quoted scope env value
   | FList (FSymbol "quote" :: _) -> Error.error "quote expects one form"
+  | FList [ FSymbol "#uuid"; FString source ] ->
+      Ok
+        (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_uuid.of_string",
+                [ Semantic_ir.String source ] )))
+  | FList (FSymbol "#uuid" :: _) ->
+      Error.error "#uuid expects one string literal"
   | FList (FSymbol "do" :: body_forms) ->
       compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->

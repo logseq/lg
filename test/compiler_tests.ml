@@ -32489,6 +32489,32 @@ let test_cljs_test_assert_expr_is_source_owned () =
          ^ path))
     [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
 
+let test_source_cljs_test_are_accepts_parse_uuid_suite_shape () =
+  let source =
+    {|
+(ns app.cljs-test-are-parse-uuid-shape
+  (:require [cljs.core :refer [= get println]]
+            [cljs.test :refer [are deftest run-tests]]))
+
+(deftest shape
+  (are [expected s] (= #?(:clj nil :default nil) s)
+       #uuid "00000000-0000-0000-0000-000000000000" nil
+       #uuid "00000012-0034-0056-0078-000000000009" nil))
+
+(def counters (:report-counters (run-tests 'app.cljs-test-are-parse-uuid-shape)))
+(println (= 2 (get counters :pass 0)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_are_parse_uuid_shape.cljc" source
+  in
+  assert_ocaml_runs "source_cljs_test_are_parse_uuid_shape" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_are_parse_uuid_shape.cljc" source)
+
 let test_source_cljs_test_sync_registry_rejects_invalid_forms () =
   compile_with_stdlib_result Lg.Target.Native
     "test/source_cljs_test_is_non_boolean.cljc"
@@ -48280,6 +48306,8 @@ let tests =
       test_source_cljs_test_assert_expr_is_referable_macro_boundary );
     ( "cljs.test assert-expr is source-owned",
       test_cljs_test_assert_expr_is_source_owned );
+    ( "source cljs.test are accepts parse-uuid suite shape",
+      test_source_cljs_test_are_accepts_parse_uuid_suite_shape );
     ( "source cljs.test synchronous registry rejects invalid forms",
       test_source_cljs_test_sync_registry_rejects_invalid_forms );
     ( "cljs.test synchronous registry is source-owned",

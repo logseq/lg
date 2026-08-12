@@ -96,6 +96,23 @@ let rec parse_one ~target = function
             (FList (List.map (fun child -> child.form) children))
             span,
           rest )
+  | { desc = Symbol "#uuid"; span = prefix_span } :: rest -> (
+      match parse_one ~target rest with
+      | Error _ -> error_at prefix_span "#uuid literal expects a string"
+      | Ok (value, rest) -> (
+          match value.form with
+          | FString _ ->
+              let head = located (FSymbol "#uuid") prefix_span in
+              let children = [ head; value ] in
+              Ok
+                ( located ~children
+                    (FList (List.map (fun child -> child.form) children))
+                    {
+                      start_offset = prefix_span.start_offset;
+                      end_offset = value.span.end_offset;
+                    },
+                  rest )
+          | _ -> error_at value.span "#uuid literal expects a string"))
   | { desc = Symbol "#js"; span = prefix_span } :: rest -> (
       match parse_one ~target rest with
       | Error _ -> error_at prefix_span "#js literal expects a map or vector"

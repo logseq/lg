@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 54 |
-| compile failed | 422 |
+| compiled | 56 |
+| compile failed | 420 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 26 |
-| namespaces failed on both native and Melange | 210 |
+| namespaces compiled on both native and Melange | 27 |
+| namespaces failed on both native and Melange | 209 |
 | native-only compiled namespaces | 0 |
 | Melange-only compiled namespaces | 2 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 26 | 212 |
-| Melange | 28 | 210 |
+| native | 27 | 211 |
+| Melange | 29 | 209 |
 
 Namespaces currently compiling on both targets:
 
@@ -60,6 +60,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.sequential-qmark`
 - `clojure.core-test.some-qmark`
 - `clojure.core-test.symbol`
+- `clojure.core-test.uuid-qmark`
 - `clojure.core-test.when`
 - `clojure.core-test.when-not`
 - `clojure.core-test.with-out-str`
@@ -69,13 +70,13 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 243 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
-| `reader-or-numeric-literal` | 123 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
-| `missing-core-api-macro-or-var` | 29 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
-| `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
+| `reader-or-numeric-literal` | 119 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
+| `missing-core-api-macro-or-var` | 31 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
+| `host-boundary-or-platform-specific` | 13 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `java.util.UUID` and `cljs.core.UUID` record identity in `parse_uuid.cljc` remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
-| `unsupported-form-or-arity` | 2 | Known example: test macro `are` argument shape in `parse_uuid.cljc`. This is suite macro compatibility work, not a core function arity gap. |
+| `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
-| `other-compiler-error` | 3 | Inspect directly before changing compiler behavior. |
+| `other-compiler-error` | 4 | Inspect directly before changing compiler behavior. |
 
 ## Platform skew
 
@@ -84,7 +85,7 @@ Namespaces currently compiling on both targets:
 
 ## Current interpretation
 
-The 422 compile failures are not 422 independent core defects. The current
+The 420 compile failures are not 420 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -92,9 +93,10 @@ highest leverage blockers are:
    In LG, many of these should remain compile-time errors and need a separate
    static-error lane.
 2. Numeric boundaries now exposed past `number_range`: bigint, bigdecimal,
-   ratio, UUID, and char literal support must be scoped explicitly because they
+   ratio, and char literal support must be scoped explicitly because they
    affect reader, type system, equality, ordering, arithmetic, printing, and
-   EDN.
+   EDN. UUID string reader literals are supported, but Java/CLJS UUID class and
+   record identity remain separate host/representation boundaries.
 3. Missing API/macro forms: these should be triaged public-var by public-var.
    Some are source-portable functions; others are compiler/host behavior.
 4. Host boundaries: JVM class identity and JS globals are not portable stdlib
@@ -138,6 +140,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   dynamic result. The upstream `nth.cljc` namespace now fails later on the
   general `nth default must match collection element type` static rule, not on
   `re-find` arity.
+- `#uuid` tagged reader literals now parse as one literal form and elaborate to
+  `Lg_runtime.Runtime_uuid.t`. This clears the previous `are`/reader shape
+  blocker and promotes `clojure.core-test.uuid-qmark` on both Native and
+  Melange. The upstream `parse_uuid.cljc` namespace now fails later: Native
+  uses `java.util.UUID`, while Melange references the `cljs.core.UUID` record
+  type.
 - `clojure.core/fnil` now supports variadic function arities whose default
   positions fall in the wrapped function's rest parameter. The upstream
   `fnil.cljc` namespace now fails later because the test stores int defaults and

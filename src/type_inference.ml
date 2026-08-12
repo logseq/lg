@@ -580,6 +580,8 @@ let rec inferred_form_type params = function
         TNil
       |> Option.value ~default:TUnknown
   | FKeyword _ -> TKeyword
+  | FList [ FSymbol "#uuid"; FString _ ] ->
+      TOcaml "Lg_runtime.Runtime_uuid.t"
   | FList
       [
         FSymbol ("quote" | "clojure.core/quote");
