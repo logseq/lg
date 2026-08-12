@@ -14,6 +14,7 @@ type binding = {
   constant_keyword : string option;
   false_non_nil_names : string list;
   dynamically_bindable : bool;
+  redef_root_name : string option;
   multimethod : bool;
   never_returns : bool;
 }
@@ -41,7 +42,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
     ?constant_keyword ?(false_non_nil_names = []) ?(dynamically_bindable = false)
-    ?(multimethod = false) ?(never_returns = false)
+    ?redef_root_name ?(multimethod = false) ?(never_returns = false)
     ocaml_name ty =
   {
     ocaml_name;
@@ -57,9 +58,22 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     constant_keyword;
     false_non_nil_names;
     dynamically_bindable;
+    redef_root_name;
     multimethod;
     never_returns;
   }
+
+let is_runtime_root (binding : binding) =
+  binding.dynamically_bindable || Option.is_some binding.redef_root_name
+
+let runtime_root_value_type (binding : binding) =
+  if binding.dynamically_bindable then
+    match binding.ty with TRef value_ty -> Some value_ty | _ -> None
+  else Option.map (fun _ -> binding.ty) binding.redef_root_name
+
+let runtime_root_name (binding : binding) =
+  if binding.dynamically_bindable then Some binding.ocaml_name
+  else binding.redef_root_name
 
 let generalize_binding (binding : binding) =
   let scheme = Type_solver.generalize binding.ty in

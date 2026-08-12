@@ -29775,6 +29775,138 @@ let test_source_memoize_is_source_owned () =
       "src/expression_support.ml";
     ]
 
+let test_source_with_redefs_rebinds_typed_function_roots () =
+  let provider =
+    {|
+(ns app.redefs.provider)
+
+(defn label [^:string value]
+  (str "real:" value))
+
+(defn call-label [^:string value]
+  (label value))
+|}
+  in
+  let consumer =
+    {|
+(ns app.redefs.consumer
+  (:require [app.redefs.provider :as provider]
+            [cljs.core :refer [with-redefs]]))
+
+(println
+  (str
+   (provider/call-label "a") ":"
+   (with-redefs [provider/label (fn [^:string value] (str "fake:" value))]
+     (str (provider/label "b") ":" (provider/call-label "c"))) ":"
+   (provider/call-label "d")))
+|}
+  in
+  let files =
+    [
+      ("app/redefs/provider.cljc", provider);
+      ("app/redefs/consumer.cljc", consumer);
+    ]
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let _, user_outputs =
+      List.fold_left
+        (fun (state, outputs) (source_filename, source_text) ->
+          let state, output =
+            Lg.Compiler.compile_chunk_with_filename ~target
+              ~filename:source_filename state source_text
+            |> expect_ok
+          in
+          (state, output :: outputs))
+        (stdlib.state, []) files
+    in
+    let user_source = user_outputs |> List.rev |> String.concat "\n" in
+    (stdlib.ocaml_source ^ "\n" ^ user_source, user_source)
+  in
+  let native_source, native_user_source = compile Lg.Target.Native in
+  if string_contains_substring native_user_source "Runtime_dynamic" then
+    failwith "with-redefs typed function roots must not use Runtime_dynamic";
+  assert_ocaml_runs "source_with_redefs_rebinds_typed_function_roots"
+    "real:a:fake:b:fake:c:real:d\n" native_source;
+  let _melange_source, melange_user_source = compile Lg.Target.Melange in
+  if string_contains_substring melange_user_source "Runtime_dynamic" then
+    failwith
+      "Melange with-redefs typed function roots must not use Runtime_dynamic"
+
+let test_source_with_redefs_restores_after_exception () =
+  let source =
+    {|
+(ns app.redefs.restore
+  (:require [cljs.core :refer [with-redefs]]))
+
+(defn label [^:string value]
+  (str "real:" value))
+
+(try
+  (with-redefs [label (fn [^:string value]
+                        (if (= value "stop")
+                          (Stdlib.failwith "stop")
+                          (str "fake:" value)))]
+    (do
+      (println (label "before"))
+      (label "stop")))
+  (catch _ "caught"))
+
+(println (label "after"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/redefs/restore.cljc" source
+  in
+  assert_ocaml_runs "source_with_redefs_restores_after_exception"
+    "fake:before\nreal:after\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/redefs/restore.cljc" source)
+
+let test_source_with_redefs_rejects_incompatible_replacement () =
+  let source =
+    {|
+(ns app.redefs.bad
+  (:require [cljs.core :refer [with-redefs]]))
+
+(defn label [^:string value]
+  (str "real:" value))
+
+(with-redefs [label (fn [^:int value] (+ value 1))]
+  (label "a"))
+|}
+  in
+  compile_with_stdlib_result Lg.Target.Native "app/redefs/bad.cljc" source
+  |> expect_error_contains "with-redefs label expects";
+  compile_with_stdlib_result Lg.Target.Melange "app/redefs/bad.cljc" source
+  |> expect_error_contains "with-redefs label expects"
+
+let test_source_with_redefs_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring source "(defmacro with-redefs") then
+    failwith "clojure.core/with-redefs is not source-owned";
+  let upstream = read_file "stdlib/upstream.edn" in
+  if
+    string_contains_substring upstream
+      "with-redefs {:status :blocked-static-typing"
+  then failwith "clojure.core/with-redefs is still recorded as blocked";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"with-redefs\"" then
+        failwith "with-redefs still has public-name compiler dispatch")
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml";
+    ]
+
+let test_compiler_state_does_not_export_private_shared_values () =
+  let source = read_file "src/elaborator.ml" in
+  if string_contains_substring source "share_item_list state.shared_values" then
+    failwith
+      "private shared-value names must not be reused across compiler chunks";
+  if not (string_contains_substring source "share_item_list [] new_items") then
+    failwith "compiler chunks must share private values only within a chunk"
+
 let test_source_vary_meta_matches_clojurescript_arities () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring core_source "(defn vary-meta") then
@@ -47124,6 +47256,16 @@ let tests =
     ( "source memoize caches fixed arity calls",
       test_source_memoize_caches_fixed_arity_calls );
     ("source memoize is source-owned", test_source_memoize_is_source_owned);
+    ( "source with-redefs rebinds typed function roots",
+      test_source_with_redefs_rebinds_typed_function_roots );
+    ( "source with-redefs restores after exception",
+      test_source_with_redefs_restores_after_exception );
+    ( "source with-redefs rejects incompatible replacement",
+      test_source_with_redefs_rejects_incompatible_replacement );
+    ( "source with-redefs is source-owned",
+      test_source_with_redefs_is_source_owned );
+    ( "compiler state does not export private shared values",
+      test_compiler_state_does_not_export_private_shared_values );
     ( "source vary-meta matches ClojureScript arities",
       test_source_vary_meta_matches_clojurescript_arities );
     ( "generated ML preserves readable names and layout",

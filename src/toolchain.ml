@@ -1411,6 +1411,8 @@ let stabilize_typecheck ?compile_evidence ?compile_evidence_subset ~compile
     && left.overload_row_param_types = right.overload_row_param_types
     && left.overload_targets = right.overload_targets
     && left.return_param_index = right.return_param_index
+    && left.dynamically_bindable = right.dynamically_bindable
+    && left.redef_root_name = right.redef_root_name
   in
   let binding_abi_equal_for name (left : Types.binding)
       (right : Types.binding) =

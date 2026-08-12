@@ -947,16 +947,14 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
         new_items |> order_deferred_items
         |> resolve_anonymous_record_patterns env
       in
-      let new_items, shared_values =
-        share_item_list state.shared_values new_items
-      in
+      let new_items, _shared_values = share_item_list [] new_items in
       let next_state =
         {
           Compiler_state.scope;
           Compiler_state.env;
           next_type;
           items = state.items;
-          shared_values;
+          shared_values = [];
         }
       in
       Ok (next_state, new_items)

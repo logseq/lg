@@ -513,7 +513,7 @@ logseq-core-var-status	clojure.core/mapcat	source-aggregate	447	precompiled-lg-s
 logseq-core-var-status	clojure.core/mapv	source-aggregate	1023	precompiled-lg-source
 logseq-core-var-status	clojure.core/max	source-aggregate	186	precompiled-lg-source
 logseq-core-var-status	clojure.core/max-key	source-aggregate	3	precompiled-lg-source
-logseq-core-var-status	clojure.core/memoize	blocked-static-typing	10	returned-function-must-preserve-the-input-functions-complete-arity-shape-and-cache-heterogeneous-argument-tuples
+logseq-core-var-status	clojure.core/memoize	source-aggregate	10	precompiled-lg-source
 logseq-core-var-status	clojure.core/merge	source-aggregate	515	precompiled-lg-source
 logseq-core-var-status	clojure.core/merge-with	source-aggregate	13	precompiled-lg-source
 logseq-core-var-status	clojure.core/meta	source-aggregate	118	precompiled-lg-source
@@ -653,7 +653,7 @@ logseq-core-var-status	clojure.core/when-not	source-aggregate	1223	precompiled-l
 logseq-core-var-status	clojure.core/when-some	source-aggregate	8	precompiled-lg-source
 logseq-core-var-status	clojure.core/while	source-aggregate	1	precompiled-lg-source
 logseq-core-var-status	clojure.core/with-meta	source-aggregate	21	precompiled-lg-source
-logseq-core-var-status	clojure.core/with-redefs	blocked-static-typing	427	temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation
+logseq-core-var-status	clojure.core/with-redefs	source-aggregate	427	precompiled-lg-source
 logseq-core-var-status	clojure.core/zero?	source-aggregate	187	precompiled-lg-source
 logseq-core-var-status	clojure.core/zipmap	source-aggregate	39	precompiled-lg-source
 logseq-namespace	cljs.analyzer.api	1

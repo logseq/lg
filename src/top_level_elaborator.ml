@@ -521,6 +521,69 @@ let requires_stable_forward_binding env env_key expression =
 let compile_defprotocol = Protocol_elaborator.compile_defprotocol
 let compile_extend_type = Protocol_elaborator.compile_extend_type
 
+let runtime_root_expression expression =
+  Semantic_ir.Apply
+    ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.of_value",
+      [ expression ] )
+
+let redef_root_name ocaml_name = ocaml_name ^ "__root"
+
+let redefable_binding (binding : Types.binding) =
+  { binding with redef_root_name = Some (redef_root_name binding.ocaml_name) }
+
+let redefable_function_wrapper root_name = function
+  | TFn (parameter_tys, _) ->
+      let names =
+        List.mapi
+          (fun index _ -> "__lg_redef_arg_" ^ string_of_int index)
+          parameter_tys
+      in
+      let args = List.map (fun name -> Semantic_ir.Ident name) names in
+      Semantic_ir.Fun
+        ( List.map (fun name -> Semantic_ir.PVar name) names,
+          Semantic_ir.Apply
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+                  [ Semantic_ir.Ident root_name ] ),
+              args ) )
+  | _ -> assert false
+
+let rec contains_unresolved_type = function
+  | TUnknown | TMeta _ | TVar _ -> true
+  | TNullable ty | TArray ty | TRef ty | TList ty | TVector ty | TSet ty
+  | TSeq ty ->
+      contains_unresolved_type ty
+  | TOcaml_app (_, arguments) | TTuple arguments ->
+      List.exists contains_unresolved_type arguments
+  | TFn (parameters, return_ty) ->
+      List.exists contains_unresolved_type (return_ty :: parameters)
+  | TOverloaded_fn arities ->
+      List.exists
+        (fun (arity : fn_arity) ->
+          List.exists contains_unresolved_type
+            (arity.return_ty :: arity.fixed_params)
+          || Option.fold ~none:false ~some:contains_unresolved_type
+               arity.rest_param)
+        arities
+  | TRecord fields ->
+      List.exists (fun (field : field) -> contains_unresolved_type field.ty)
+        fields
+  | TNamed_record record ->
+      List.exists contains_unresolved_type record.type_arguments
+  | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
+  | TBool | TUnit | TNil | TOcaml _ ->
+      false
+
+let source_scope_redefable_roots scope =
+  (not (String.equal scope ""))
+  &&
+  not
+    (String.equal scope "clojure.core"
+    || String.starts_with ~prefix:"clojure." scope
+    || String.starts_with ~prefix:"cljs." scope
+    || String.starts_with ~prefix:"datascript." scope
+    || String.starts_with ~prefix:"me.tonsky." scope)
+
 let predeclare_protocol_groups scope env receiver_form groups =
   let rec protocol_constraints constraints ty =
     match Types.protocol_constraint_info ty with
@@ -3321,13 +3384,40 @@ let rec compile scope env next_type form =
                             expression = expr.semantic_expr;
                           } )
                     else
-                      ( binding,
-                        Value_binding
-                          {
-                            pattern =
-                              located_value_pattern name_form (Named ocaml_name);
-                            expression = expr.semantic_expr;
-                          } )
+                      let redefable =
+                        source_scope_redefable_roots scope
+                        && not (contains_unresolved_type published_ty)
+                      in
+                      if redefable then
+                        let root_name = redef_root_name ocaml_name in
+                        ( redefable_binding binding,
+                          Group
+                            [
+                              Value_binding
+                                {
+                                  pattern = Named root_name;
+                                  expression =
+                                    runtime_root_expression expr.semantic_expr;
+                                };
+                              Value_binding
+                                {
+                                  pattern =
+                                    located_value_pattern name_form
+                                      (Named ocaml_name);
+                                  expression =
+                                    redefable_function_wrapper root_name
+                                      published_ty;
+                                };
+                            ] )
+                      else
+                        ( binding,
+                          Value_binding
+                            {
+                              pattern =
+                                located_value_pattern name_form
+                                  (Named ocaml_name);
+                              expression = expr.semantic_expr;
+                            } )
                   in
                   Ok
                     ( scope,

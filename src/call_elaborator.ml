@@ -6160,6 +6160,80 @@ let create ~compile_expr =
                   (compile_expr scope env body_form))
         | _ -> Error.error "binding expects a binding vector and body"
                   )
+    | "__lg_with_redefs" -> (
+        match arg_forms with
+        | FVector bindings :: body_forms ->
+            let resolve_root name =
+              let lookup name = lookup_binding scope env name in
+              match lookup name with
+              | Ok binding -> Ok binding
+              | Error _ -> (
+                  match String.split_on_char '/' name with
+                  | [ alias; member ] -> (
+                      match Env.resolve_namespace_alias ~scope alias env with
+                      | Some namespace -> lookup (namespace ^ "/" ^ member)
+                      | None -> Error.error ("unknown with-redefs target " ^ name))
+                  | _ -> Error.error ("unknown with-redefs target " ^ name))
+            in
+            let rec compile_bindings compiled = function
+              | [] -> Ok (List.rev compiled)
+              | FSymbol name :: value_form :: rest -> (
+                  match resolve_root name with
+                  | Error _ as error -> error
+                  | Ok binding -> (
+                      match
+                        ( Types.runtime_root_name binding,
+                          Types.runtime_root_value_type binding )
+                      with
+                      | Some root_name, Some value_ty ->
+                          let value_env =
+                            Env.with_expected_type (Some value_ty) env
+                          in
+                          Result.bind
+                            (compile_expr scope value_env value_form)
+                            (fun value ->
+                              if argument_compatible value_ty value.ty then
+                                Result.bind
+                                  (adapt_value_to_type env value_ty value)
+                                  (fun value ->
+                                    compile_bindings
+                                      ((name, root_name, value)
+                                      :: compiled)
+                                      rest)
+                              else
+                                Error.error
+                                  ("with-redefs " ^ name ^ " expects "
+                                  ^ Types.source_name value_ty ^ ", got "
+                                  ^ Types.source_name value.ty))
+                      | None, _ | _, None ->
+                          Error.error
+                            ("with-redefs expects a redefable var root, got "
+                           ^ name)))
+              | _ -> Error.error "with-redefs expects symbol/value pairs"
+            in
+            let body_form =
+              match body_forms with
+              | [] -> FSymbol "nil"
+              | [ body ] -> body
+              | body_forms -> FList (FSymbol "do" :: body_forms)
+            in
+            Result.bind (compile_bindings [] bindings) (fun bindings ->
+                Result.map
+                  (fun body ->
+                    let expression =
+                      List.fold_right
+                        (fun (_source_name, ocaml_name, value) body ->
+                          apply "Lg_runtime.Runtime_binding.bind"
+                            [
+                              Semantic_ir.Ident ocaml_name;
+                              value;
+                              Semantic_ir.Fun ([], body);
+                            ])
+                        bindings body.semantic_expr
+                    in
+                    typed_ir body.ty expression)
+                  (compile_expr scope env body_form))
+        | _ -> Error.error "with-redefs expects a binding vector and body")
     | "with-open" -> (
         match arg_forms with
         | FVector bindings :: body_forms when List.length bindings mod 2 = 0 ->
@@ -11242,9 +11316,7 @@ let create ~compile_expr =
           match lookup_binding scope env name with
           | Ok binding ->
               let binding = Types.instantiate_binding binding in
-              Ok
-                (typed_ir binding.ty
-                   (binding_value_expression binding))
+              Ok (binding_runtime_value binding)
           | Error _ -> lookup_function scope env name)
       | form -> compile_expr scope env form
     in
@@ -13319,8 +13391,7 @@ let create ~compile_expr =
                         else ret
                 in
                 let call =
-                      Semantic_ir.Apply
-                        (Semantic_ir.Ident fn.ocaml_name, arg_exprs)
+                  Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)
                 in
                 let same_storage_representation =
                   match (storage_ret, ret) with

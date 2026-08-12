@@ -1693,6 +1693,9 @@
           "doseq requires an even number of forms in binding vector")
   `(__lg_doseq ~seq-exprs ~@body))
 
+(defmacro with-redefs [bindings & body]
+  `(__lg_with_redefs ~bindings ~@body))
+
 (defmacro -> [x & forms]
   (loop [x x
          forms forms]

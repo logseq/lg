@@ -232,9 +232,9 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 725 source entries (68.53%), zero typed
-primitives, 57 special forms, 121 host boundaries, 97 static-typing blockers,
-58 out-of-scope entries, and zero deferred entries. Every public function,
+macro surfaces. The current baseline is 740 source entries (80.96%), zero typed
+primitives, 44 special forms, 116 host boundaries, 14 static-typing blockers,
+and zero deferred entries. Every public function,
 macro, protocol method, multimethod, and public value discovered in the pinned
 surface therefore has explicit ownership and evidence.
 Source coverage only counts
@@ -244,9 +244,11 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest former blocker rows were `type` (499), `with-redefs` (427),
-`flatten` (15), and `memoize` (10). `type` is a documented host boundary, and
-`flatten` is now source-aggregate supported for statically homogeneous
-sequential layers through a private typed primitive. `defmethod` appears 162
+`flatten` (15), and `memoize` (10). `type` is a documented host boundary,
+`with-redefs` is now source-aggregate supported through typed var-root
+rebinding for ordinary Logseq test replacement shapes, and `flatten` is now
+source-aggregate supported for statically homogeneous sequential layers
+through a private typed primitive. `defmethod` appears 162
 times, `defmulti` 8 times, `dispatch-fn` 7 times, `methods` 5 times, and
 `get-method` once; those rows are now source-aggregate supported through the
 documented runtime multifn dynamic boundary.
@@ -1361,6 +1363,16 @@ without `Runtime_dynamic.t`. A faithful first-class variadic `memoize` function
 value still cannot be represented without erasing heterogeneous argument tuples,
 so that upstream gap is recorded as a static adaptation in
 `stdlib/upstream.edn`.
+
+`with-redefs` is source-owned as a macro that expands to the private
+`__lg_with_redefs` typed var-root primitive. Replacement values are checked
+against the root's static value type, the original root is restored after
+normal completion or exceptions, and ordinary calls through the root read the
+current typed function value. The current source adaptation rootizes ordinary
+monomorphic source `defn` functions outside the compiler-owned stdlib and
+DataScript implementation namespaces. This covers the common Logseq test
+pattern of temporarily replacing functions through aliases without widening
+those functions, arguments, or return values to `Runtime_dynamic.t`.
 
 `apply` is source-owned and available through automatic core refer, explicit
 `:refer`, `cljs.core` aliases, and qualified `clojure.core` calls. Its four

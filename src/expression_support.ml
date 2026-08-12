@@ -1069,6 +1069,15 @@ let binding_value_expression (binding : Types.binding) =
       overloaded_value binding.overload_targets
   | _ -> Semantic_ir.Ident binding.ocaml_name
 
+let binding_runtime_value (binding : Types.binding) =
+  match (binding.dynamically_bindable, Types.runtime_root_value_type binding) with
+  | true, Some value_ty ->
+      typed_ir value_ty
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+             [ Semantic_ir.Ident binding.ocaml_name ] ))
+  | _ -> typed_ir binding.ty (binding_value_expression binding)
+
 let untyped_first_class_collection_function_error name =
   name
   ^ " cannot be used as an untyped first-class function; define a statically \
@@ -1123,7 +1132,7 @@ let untyped_first_class_function_error = function
 let lookup_function scope env name =
   match lookup_binding scope env name with
   | Ok binding ->
-      Ok (typed_ir binding.ty (binding_value_expression binding))
+      Ok (binding_runtime_value binding)
   | Error _ -> (
       match untyped_first_class_function_error name with
       | Some message -> Error.error message

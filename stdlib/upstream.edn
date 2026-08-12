@@ -1164,8 +1164,8 @@
              :reason :per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
     specify! {:status :blocked-static-typing
               :reason :mutable-per-object-runtime-protocol-extension-conflicts-with-lg-static-protocol-dispatch}
-    with-redefs {:status :blocked-static-typing
-                 :reason :temporary-dynamic-var-root-rebinding-has-no-lg-static-binding-representation}
+    with-redefs {:status :static-adaptation
+                 :reason :source-macro-expands-to-a-private-typed-var-root-rebinding-form-for-ordinary-monomorphic-source-functions-that-restores-values-after-body-or-exception-and-keeps-replacement-values-at-the-root-static-type}
     *exec-tap-fn* {:status :static-adaptation
                    :reason :source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler}
     --destructure-map {:status :special-form
