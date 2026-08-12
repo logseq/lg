@@ -1,8 +1,11 @@
 let write writer text = Buffer.add_string writer text
 
-let output_line text newline =
+let output_line text newline flush_on_newline =
   print_string text;
-  if newline then print_string "\n" else ()
+  if newline then (
+    print_string "\n";
+    if flush_on_newline then flush stdout)
+  else ()
 
 let print_namespace_maps = Runtime_reference.of_value false
 

@@ -771,6 +771,8 @@
 (signature clojure.core/set-lite [value]
   :fn<seqable<value>;set<value>>)
 
+(signature clojure.core/*flush-on-newline*
+  :bool)
 (signature clojure.core/*print-newline*
   :bool)
 (signature clojure.core/*print-readably*

@@ -280,11 +280,13 @@ and both `newline` arities follow the pinned ClojureScript control flow. Built-i
 values and consumer extensions dispatch through static protocol witnesses, and
 writer callbacks remain first-class. The only compiler boundary is the private
 typed rendering operation used by built-in implementations. LG currently
-models `*print-newline*` and `*print-readably*` as source dynamic vars with type
-`bool` and `*print-length*` as a source dynamic var with type `option<int>`.
+models `*flush-on-newline*`, `*print-newline*`, and `*print-readably*` as source
+dynamic vars with type `bool` and `*print-length*` as a source dynamic var with
+type `option<int>`.
 `pr-str`, `pr-str*`, `pr`, `prn`, and `prn-str` select readable or display
 printer witnesses through `*print-readably*`, while `println` and `prn` use
-`*print-newline*` only for the trailing newline switch. `binding` and
+`*print-newline*` only for the trailing newline switch and `*flush-on-newline*`
+only for the newline-triggered stdout flush. `binding` and
 `pr-str-with-opts`/`prn-str-with-opts` support the typed `{:print-length n}`
 options map without widening printer options to `Runtime_dynamic.t`. Print-level
 and the custom more marker remain explicit static adaptations instead of

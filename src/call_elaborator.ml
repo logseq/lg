@@ -9440,20 +9440,31 @@ let create ~compile_expr =
     | "__lg_print_output_line" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok [ text; newline ]
-          when Types.equal text.ty TString && Types.equal newline.ty TBool ->
+        | Ok [ text; newline; flush_on_newline ]
+          when Types.equal text.ty TString && Types.equal newline.ty TBool
+               && Types.equal flush_on_newline.ty TBool ->
             Ok
               (typed_ir TUnit
                  (Semantic_ir.Apply
                     ( Semantic_ir.Ident
                         "Lg_runtime.Runtime_print.output_line",
-                      [ text.semantic_expr; newline.semantic_expr ] )))
-        | Ok [ text; _ ] when not (Types.equal text.ty TString) ->
+                      [
+                        text.semantic_expr;
+                        newline.semantic_expr;
+                        flush_on_newline.semantic_expr;
+                      ] )))
+        | Ok (text :: _ :: _ :: _) when not (Types.equal text.ty TString) ->
             Error.error "print output line expects a string"
-        | Ok [ _; newline ] when not (Types.equal newline.ty TBool) ->
+        | Ok [ _; newline; _ ] when not (Types.equal newline.ty TBool) ->
             Error.error "print output line expects a bool newline flag"
-        | Ok [ _; _ ] -> Error.error "print output line expects string and bool"
-        | Ok _ -> Error.error "print output line expects 2 arguments")
+        | Ok [ _; _; flush_on_newline ]
+          when not (Types.equal flush_on_newline.ty TBool) ->
+            Error.error "print output line expects a bool flush-on-newline flag"
+        | Ok [ _; _; _ ] ->
+            Error.error
+              "print output line expects string, bool newline flag, and bool \
+               flush-on-newline flag"
+        | Ok _ -> Error.error "print output line expects 3 arguments")
     | "__lg_list" -> compile_list scope env arg_forms
     | "__lg_list-star" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms

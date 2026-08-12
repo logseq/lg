@@ -5221,6 +5221,7 @@
   [value]
   (INamed/-namespace value))
 
+(def ^:dynamic *flush-on-newline* true)
 (def ^:dynamic *print-newline* true)
 (def ^:dynamic *print-readably* true)
 (def ^:dynamic *print-length* None)
@@ -5296,11 +5297,13 @@
   {:inline (fn [& values]
              (list '__lg_print_output_line
                    (cons '__lg_print_str values)
-                   '*print-newline*))}
+                   '*print-newline*
+                   '*flush-on-newline*))}
   [& values]
   (__lg_print_output_line
    (__lg_render_display_values " " values)
-   *print-newline*))
+   *print-newline*
+   *flush-on-newline*))
 
 (defn prn
   {:inline (fn [& values]
@@ -5308,13 +5311,15 @@
                    (list 'if '*print-readably*
                          (cons '__lg_pr_str values)
                          (cons '__lg_print_str values))
-                   '*print-newline*))}
+                   '*print-newline*
+                   '*flush-on-newline*))}
   [& values]
   (__lg_print_output_line
    (if *print-readably*
      (__lg_render_readable_values " " values)
      (__lg_render_display_values " " values))
-   *print-newline*))
+   *print-newline*
+   *flush-on-newline*))
 
 (defprotocol IPrintWithWriter
   (-pr-writer [value writer options]))

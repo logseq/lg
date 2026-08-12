@@ -53,8 +53,8 @@
           :reason :bootstrap-runtime-binds-the-current-javascript-namespace-wrapper}
     *out* {:status :special-form
            :reason :compiler-owned-binding-and-with-out-str-forms-lower-the-output-binding-to-a-lexical-buffer-writer}
-    *flush-on-newline* {:status :blocked-static-typing
-                        :reason :public-dynamic-printer-option-is-not-yet-threaded-through-the-closed-buffer-printer-capability}
+    *flush-on-newline* {:status :static-adaptation
+                        :reason :source-dynamic-var-preserves-the-upstream-boolean-newline-flush-switch-through-the-static-output-line-primitive}
     *print-newline* {:status :static-adaptation
                      :reason :source-dynamic-var-preserves-the-upstream-boolean-trailing-newline-output-switch-for-println-and-prn-through-the-static-output-primitive}
     *print-readably* {:status :static-adaptation

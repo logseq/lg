@@ -5537,6 +5537,39 @@ let test_print_readably_dynamic_var_controls_printers () =
 |}
   |> expect_error_contains "expects bool, got int"
 
+let test_flush_on_newline_dynamic_var_is_typed_source () =
+  let source =
+    {|
+(ns app.flush-on-newline-config
+  (:require [clojure.core :as core
+             :refer [*flush-on-newline* println]]))
+
+(println *flush-on-newline*)
+(binding [*flush-on-newline* false]
+  (println *flush-on-newline*)
+  (core/println "line"))
+(println *flush-on-newline*)
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "flush-on-newline must remain statically typed";
+  assert_ocaml_runs "flush_on_newline_dynamic_var_is_typed_source"
+    "true\nfalse\nline\ntrue\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange flush-on-newline must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-flush-on-newline
+  (:require [clojure.core :refer [*flush-on-newline*]]))
+(binding [*flush-on-newline* 1] nil)
+|}
+  |> expect_error_contains "expects bool, got int"
+
 let test_with_open_binds_managed_values_portably () =
   let source =
     {|
@@ -44991,6 +45024,8 @@ let tests =
       test_print_newline_dynamic_var_controls_output_newline );
     ( "print readably dynamic var controls printers",
       test_print_readably_dynamic_var_controls_printers );
+    ( "flush on newline dynamic var is typed source",
+      test_flush_on_newline_dynamic_var_is_typed_source );
     ( "with-open binds managed values portably",
       test_with_open_binds_managed_values_portably );
     ( "Clojure collection protocol names dispatch statically",

@@ -137,7 +137,7 @@ awk '
     internal_abi["__lg_print_str"] = "typed-space-separated-per-argument-display-rendering-primitive"
     internal_abi["__lg_pr_str"] = "typed-space-separated-per-argument-readable-rendering-primitive"
     internal_abi["__lg_print_output"] = "typed-static-string-output-primitive"
-    internal_abi["__lg_print_output_line"] = "typed-static-string-output-with-boolean-newline-primitive"
+    internal_abi["__lg_print_output_line"] = "typed-static-string-output-with-boolean-newline-and-flush-primitive"
     internal_abi["__lg_print_values"] = "typed-display-values-to-bound-writer-or-standard-output-primitive"
     internal_abi["__lg_pr"] = "typed-readable-values-to-bound-writer-or-standard-output-primitive"
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
