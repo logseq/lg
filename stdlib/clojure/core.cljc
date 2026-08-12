@@ -113,13 +113,29 @@
   ([namespace value]
    (keyword-two namespace value)))
 
+(defn- symbol-one [value]
+  (ISymbolCoercion/-coerce-symbol value))
+
+(defn- symbol-two [namespace value]
+  (__lg_builtin-symbol
+   (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+   (str value)))
+
 (defn symbol
+  {:inline
+   (fn
+     ([value]
+      (if (and (seq? value)
+               (or (= 'var (first value))
+                   (= '__lg-var-quote (first value))))
+        (list '__lg-var-symbol value)
+        (list 'symbol-one value)))
+     ([namespace value]
+      (list 'symbol-two namespace value)))}
   ([value]
-   (ISymbolCoercion/-coerce-symbol value))
+   (symbol-one value))
   ([namespace value]
-   (__lg_builtin-symbol
-    (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
-    (INameCoercion/-coerce-name value))))
+   (symbol-two namespace value)))
 
 ;; These declarations mirror the statically supported portion of the
 ;; ClojureScript core protocol surface. The compiler registry supplies typed

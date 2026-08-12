@@ -13063,6 +13063,26 @@ let test_var_quote_resolves_static_function_values () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/var_quote.cljc" source)
 
+let test_symbol_accepts_var_quote_literals () =
+  let source =
+    {|
+(ns app.symbol-var-quote
+  (:require [clojure.core :refer [println symbol]]))
+(println (symbol #'+))
+(println (symbol "abc" :abc))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/symbol_var_quote.cljc" source
+  in
+  assert_ocaml_runs "symbol_accepts_var_quote_literals"
+    "clojure.core/+\nabc/:abc\n" native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/symbol_var_quote.cljc" source
+  in
+  if not (string_contains_substring melange_source {|cljs.core/+|}) then
+    failwith "Melange var quote symbol should preserve the cljs.core owner"
+
 let test_var_quote_dereferences_qualified_chunk_values () =
   let compile target =
     let stdlib = compiled_stdlib target in
@@ -46297,6 +46317,7 @@ let tests =
       test_nth_rejects_non_integer_indexes );
     ( "var quote resolves static function values",
       test_var_quote_resolves_static_function_values );
+    ( "symbol accepts var quote literals", test_symbol_accepts_var_quote_literals );
     ( "var quote dereferences qualified chunk values",
       test_var_quote_dereferences_qualified_chunk_values );
     ( "persistent transient map is seqable",

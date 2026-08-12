@@ -131,6 +131,56 @@ let is_var_quote_marker name =
   String.equal name "__lg-var-quote"
   || String.ends_with ~suffix:"/__lg-var-quote" name
 
+let is_var_marker name =
+  String.equal name "var" || String.equal name "clojure.core/var"
+  || is_var_quote_marker name
+
+let canonical_core_namespace = function
+  | "cljs.core" -> "clojure.core"
+  | namespace -> namespace
+
+let core_var_symbol_namespace env =
+  match Env.target env with
+  | Target.Melange -> "cljs.core"
+  | Target.Native | Target.Js_of_ocaml -> "clojure.core"
+
+let resolve_var_symbol_name scope env name =
+  let binding_exists name = Option.is_some (Env.find_opt name env) in
+  let resolve_qualified alias member =
+    let resolved_owner =
+      Env.resolve_namespace_alias ~scope alias env |> Option.value ~default:alias
+    in
+    let lookup_owner = canonical_core_namespace resolved_owner in
+    let qualified = lookup_owner ^ "/" ^ member in
+    if binding_exists qualified then
+      let output_owner =
+        if String.equal lookup_owner "clojure.core" then
+          core_var_symbol_namespace env
+        else resolved_owner
+      in
+      Ok (output_owner ^ "/" ^ member)
+    else Error.error ("unknown var " ^ alias ^ "/" ^ member)
+  in
+  match String.rindex_opt name '/' with
+  | Some separator ->
+      let alias = String.sub name 0 separator in
+      let member =
+        String.sub name (separator + 1) (String.length name - separator - 1)
+      in
+      resolve_qualified alias member
+  | None ->
+      let local = Names.scoped_key scope name in
+      let core = Names.scoped_key "clojure.core" name in
+      let local_binding = Env.find_opt local env in
+      let core_binding = Env.find_opt core env in
+      (match (local_binding, core_binding) with
+      | Some local_binding, Some core_binding
+        when String.equal local_binding.ocaml_name core_binding.ocaml_name ->
+          Ok (Names.scoped_key (core_var_symbol_namespace env) name)
+      | Some _, _ -> Ok local
+      | None, Some _ -> Ok (Names.scoped_key (core_var_symbol_namespace env) name)
+      | None, None -> Error.error ("unknown var " ^ name))
+
 let is_java_namespace name =
   String.starts_with ~prefix:"java." name
   || String.starts_with ~prefix:"javax." name
@@ -5884,7 +5934,16 @@ let create ~compile_expr =
       | Some separator ->
           String.sub name (separator + 1) (String.length name - separator - 1)
     in
-    if is_java_namespace name then java_interop_error name
+    if member_name = "__lg-var-symbol" then
+      match arg_forms with
+      | [ FList [ FSymbol marker; FSymbol var_name ] ] when is_var_marker marker
+        ->
+          Result.map
+            (fun qualified_name ->
+              typed_ir TSymbol (Semantic_ir.String qualified_name))
+            (resolve_var_symbol_name scope env var_name)
+      | _ -> Error.error "symbol var literal expects #'var"
+    else if is_java_namespace name then java_interop_error name
     else if member_name = "->Eduction" then
       match arg_forms with
       | [ transducer; collection ] ->

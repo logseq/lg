@@ -508,7 +508,7 @@
     keyword {:status :static-adaptation
              :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-with-a-minimal-typed-construction-primitive-and-an-inline-literal-nil-branch-for-the-cljs-one-argument-nil-result-while-lg-string-backed-keywords-do-not-retain-separate-cljs-component-fields-for-multiple-slash-constructor-inputs}
     symbol {:status :static-adaptation
-            :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-while-upstream-var-input-and-separate-cljs-component-fields-remain-unavailable}
+            :reason :source-one-and-two-argument-functions-use-private-static-coercion-protocols-for-string-keyword-symbol-and-nil-namespace-inputs-with-a-compiler-private-var-literal-symbol-marker-for-cljs-var-owner-preservation-and-cljs-two-argument-name-stringification}
     apply {:status :static-adaptation
            :reason :source-function-preserves-the-four-statically-expressible-fixed-arities-and-inlines-all-direct-arities-to-a-private-typed-dependent-argument-expansion-primitive-while-the-first-class-five-fixed-plus-final-sequence-arity-remains-unrepresentable-without-heterogeneous-rest-parameters}
     list* {:status :static-adaptation
