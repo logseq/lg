@@ -1,180 +1,117 @@
 # clojure-test-suite failure classes
 
-This is the current classification from:
-
-- the local upstream clone at `vendor/clojure-test-suite`
-- upstream commit `6299706516f55d2ccb2d5abb5662489971584dea`
-- a local sample scan over the first 5 upstream namespaces
-- the interrupted full scan output up to `clojure.core-test.drop-while`
-- source-wide pattern counts over `vendor/clojure-test-suite/test/clojure/core_test/*.cljc`
-
-The full compile scan was intentionally paused before completion. Do not treat
-the counts below as pass/fail totals; use them to prioritize repair batches.
-
-## 1. Test harness/support namespaces
-
-Observed examples:
-
-- `clojure.core-test.abs` fails because `clojure.core-test.number-range` is not loaded.
-- `clojure.core-test.add-watch` fails because the LG portability shim does not expose `sleep`.
-
-Source-wide indicators:
-
-- `clojure.core-test.number-range` is required by 35 core test namespaces.
-- `clojure.core-test.portability` helpers beyond `when-var-exists` are needed by watch, lazy, and exception tests.
-
-Likely handling:
-
-- Port or shim suite support namespaces first.
-- Keep these under `test/clojure_suite`, not in the production stdlib unless a helper is actually public Clojure API.
-
-## 2. Host/JVM/JS boundary tests
-
-Observed examples:
-
-- `clojure.core-test.ancestors` fails on native with `unknown symbol Object`.
-- The same namespace fails on Melange with `unknown symbol js/Object`.
-
-Source-wide indicators:
-
-- JS host forms appear in 10 namespaces.
-- JVM/class forms such as `Object`, `Boolean`, and `clojure.lang.*` appear in 16 namespaces.
-- Var identity forms (`#'`) appear in 6 namespaces.
-- Object/array interop forms (`object-array`, `into-array`, `make-array`) appear in 12 namespaces.
-
-Likely handling:
-
-- Classify as host-boundary unless LG has an explicit portable static representation.
-- Do not emulate JVM class identity in the compiler.
-- Where a test has a CLJS branch that avoids JVM behavior, prefer running that branch for both native and Melange only if LG's intended semantics are CLJS-aligned for that var.
-
-## 3. Numeric tower and literal support
-
-Observed examples:
-
-- `clojure.core-test.str` fails on `unknown symbol 0N`.
-- `bigint`, `bigdec`, arithmetic, predicate, and comparison tests contain bigint, ratio, and bigdecimal literals.
-
-Source-wide indicators:
-
-- Bigint literals appear in 78 namespaces.
-- Bigdecimal literals appear in 71 namespaces.
-- Ratio literals appear in 70 namespaces.
-- `clojure.core-test.number-range` is also numeric-heavy and blocks 35 namespaces.
-
-Likely handling:
-
-- Decide explicit LG numeric tower scope before fixing these.
-- If only int/float remain supported, these tests need an unsupported-feature classification rather than dynamic fallback.
-- If bigint/ratio/decimal are in scope, add reader, type, runtime, print, equality, ordering, and arithmetic tests before implementation.
-
-## 4. Static compile error vs runtime `thrown?`
-
-Observed examples:
-
-- `clojure.core-test.count` expects `(p/thrown? (count 1))`; LG rejects it statically: `count expects a counted or seqable value, got int`.
-- Many numeric and collection tests assert runtime exceptions for bad argument types.
-
-Source-wide indicators:
-
-- `p/thrown?` / `thrown?` appears in 139 namespaces.
-
-Likely handling:
-
-- Split these into two lanes:
-  - LG static-error compatibility tests for cases intentionally rejected at compile time.
-  - Runtime exception tests only for calls whose argument types are statically valid.
-- Do not weaken static typing to make negative runtime tests compile.
-
-## 5. Open IFn behavior and seq coercion
-
-Observed examples:
-
-- `clojure.core-test.apply` fails at `(apply + "")`: Clojure treats an empty string as an empty seq at runtime, while LG types strings as `seq<char>` and `+` requires ints.
-- The same test also covers maps, keywords, vectors, and sets used as functions.
-
-Likely handling:
-
-- Model supported IFn cases as typed capabilities or closed dispatch forms.
-- Keep invalid/open calls as static errors unless the compatibility boundary is explicitly documented.
-- Avoid introducing a universal dynamic function application path.
-
-## 6. Watches, validators, dynamic vars, futures
-
-Observed examples:
-
-- `add-watch` currently first fails on missing `sleep`, but the source also covers atom watches, var watches, `ex-info`/`ex-data`, validators, and `alter-var-root`.
-- `binding`, `bound-fn`, and future tests cover thread/dynamic binding behavior.
-
-Source-wide indicators:
-
-- Watch/validator APIs appear in 3 namespaces.
-- Binding/future forms appear in 7 namespaces.
-
-Likely handling:
-
-- Atoms watches are plausible stdlib/runtime work.
-- Var watches, `alter-var-root`, and thread/future propagation are host/compiler boundary decisions.
-
-## 7. Hierarchy and multimethod related behavior
-
-Observed examples:
-
-- `ancestors` reaches host type inheritance immediately.
-
-Source-wide indicators:
-
-- Hierarchy APIs appear in 6 namespaces: `ancestors`, `derive`, `descendants`, `make-hierarchy`, `parents`, `underive`.
-
-Likely handling:
-
-- Keyword/symbol hierarchy relationships are source-portable.
-- Class/type inheritance parts are host-boundary.
-- Multimethod/hierarchy dynamic payloads may justify a documented narrow dynamic boundary, but not source-level dynamic escape hatches.
-
-## 8. Transients
-
-Source-wide indicators:
-
-- Transient APIs appear in 9 namespaces.
-
-Likely handling:
-
-- LG already has typed transient constraints; upstream tests likely need filtering between supported typed transient cases and unsupported open/heterogeneous cases.
-
-## 9. Regex
-
-Source-wide indicators:
-
-- Regex forms/functions appear in 6 namespaces.
-
-Likely handling:
-
-- Regex is a good candidate for a narrow host-boundary runtime type.
-- Keep captures and return shapes statically modeled where possible.
-
-## 10. Print dialect mismatch
-
-Observed examples:
-
-- `clojure.core-test.println-str` expects `17.0` on the default/JVM branch and `17` on the CLJS branch.
-- LG currently renders whole floats as `17.` through OCaml formatting.
-
-Likely handling:
-
-- Decide whether native LG should follow Clojure JVM or CLJS formatting for each printed type.
-- Then make `str`, `print-str`, `println-str`, `pr-str`, and DataScript/EDN print expectations consistent across native and Melange.
-
-## Suggested next order
-
-1. Finish support namespace ingestion: `number-range`, full LG `portability` shim.
-2. Complete the scanner so paused runs keep partial JSON and add a summarizer that groups errors by normalized message.
-3. Promote only namespaces that compile on both native and Melange into Dune smoke.
-4. For failures, repair in this order:
-   - source-portable support shims;
-   - static-error test lane for negative runtime cases;
-   - print formatting;
-   - regex;
-   - watches/ex-data;
-   - hierarchy/multimethods;
-   - numeric tower only after scope is decided.
+This classification is from the completed compile scan over the local upstream
+clone:
+
+- upstream: `https://github.com/jank-lang/clojure-test-suite`
+- commit: `6299706516f55d2ccb2d5abb5662489971584dea`
+- raw local report: `test/clojure_suite/scan_report.json`
+
+The raw report is ignored because it contains local paths. Regenerate the
+auditable summary with:
+
+```bash
+python3 test/clojure_suite/summarize_clojure_suite.py \
+  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea
+```
+
+## Compile coverage
+
+| metric | count |
+| --- | ---: |
+| compile attempts | 476 |
+| compiled | 43 |
+| compile failed | 433 |
+| namespaces scanned | 238 |
+| namespaces compiled on both native and Melange | 19 |
+| namespaces failed on both native and Melange | 214 |
+| native-only compiled namespaces | 1 |
+| Melange-only compiled namespaces | 4 |
+
+Target split:
+
+| target | compiled | compile failed |
+| --- | ---: | ---: |
+| native | 20 | 218 |
+| Melange | 23 | 215 |
+
+Namespaces currently compiling on both targets:
+
+- `clojure.core-test.aclone`
+- `clojure.core-test.and`
+- `clojure.core-test.any-qmark`
+- `clojure.core-test.associative-qmark`
+- `clojure.core-test.comment`
+- `clojure.core-test.keyword`
+- `clojure.core-test.make-hierarchy`
+- `clojure.core-test.name`
+- `clojure.core-test.nan-qmark`
+- `clojure.core-test.or`
+- `clojure.core-test.pr-str`
+- `clojure.core-test.print-str`
+- `clojure.core-test.println-str`
+- `clojure.core-test.prn-str`
+- `clojure.core-test.rand-int`
+- `clojure.core-test.sequential-qmark`
+- `clojure.core-test.symbol`
+- `clojure.core-test.when`
+- `clojure.core-test.when-not`
+
+## Failure classes
+
+| class | failures | handling |
+| --- | ---: | --- |
+| `static-typing-or-closed-domain-boundary` | 192 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. |
+| `missing-suite-support-namespace-or-helper` | 85 | Port test support namespaces/helpers first, especially `clojure.core-test.number-range`, `clojure.core-test.eq`, `clojure.core-test.every-qmark`, and missing `portability` helpers. |
+| `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
+| `suite-require-form-not-accepted` | 28 | Extend scan ingestion or namespace parsing for the suite's require form shape before treating these as stdlib failures. |
+| `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
+| `host-boundary-or-platform-specific` | 15 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. |
+| `reader-conditional-support` | 5 | Fix reader conditional edge cases separately from core var behavior. |
+| `unsupported-form-or-arity` | 3 | Known examples: `fnil` default positions and `re-find` arity. These are small, targeted compatibility tasks. |
+| `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
+
+## Platform skew
+
+- `clojure.core-test.format`: Melange compiles; native fails on missing `format`.
+- `clojure.core-test.nil-qmark`: native compiles; Melange fails on `js/undefined`.
+- `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
+- `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
+- `clojure.core-test.with-out-str`: Melange compiles; native fails on `Unbound module System`.
+
+## Current interpretation
+
+The 433 compile failures are not 433 independent core defects. The highest
+leverage blockers are:
+
+1. Suite ingestion and support namespaces: this blocks numeric, equality, lazy,
+   watch, and predicate test families before the actual public var behavior is
+   reached.
+2. Static typing versus upstream negative runtime tests: many upstream tests
+   intentionally call functions with bad argument types and expect `thrown?`.
+   In LG, many of these should remain compile-time errors and need a separate
+   static-error lane.
+3. Reader/numeric coverage: bigint, bigdecimal, ratio, UUID, and char literal
+   support must be scoped explicitly because they affect reader, type system,
+   equality, ordering, arithmetic, printing, and EDN.
+4. Missing API/macro forms: these should be triaged public-var by public-var.
+   Some are source-portable functions; others are compiler/host behavior.
+5. Host boundaries: JVM class identity and JS globals are not portable stdlib
+   source and should remain classified unless an LG-native representation is
+   designed.
+
+## Suggested repair order
+
+1. Fix suite ingestion/support first:
+   - load required `clojure.core-test.*` support namespaces;
+   - extend `lg_portability.cljc` only for test harness helpers;
+   - handle accepted require form variants used by the suite.
+2. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.
+3. Add a static-error test lane for upstream `thrown?` cases that LG rejects at
+   compile time by design.
+4. Repair small source-portable API gaps that do not require broad type-system
+   changes.
+5. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with
+   narrow documented runtime types where static closed domains are insufficient.
+6. Decide numeric tower scope before implementing bigint/ratio/bigdecimal
+   behavior.

@@ -23,3 +23,19 @@ rtk dune build @test/clojure_suite/clojure-test-suite-smoke
 Known candidate failures from the local upstream clone are tracked in
 `failures.edn`. Promote one namespace at a time from `failures.edn` into the
 smoke runner after adding the required LG support.
+
+Run a full compile scan of the local upstream clone with:
+
+```bash
+python3 test/clojure_suite/scan_clojure_suite.py \
+  --report test/clojure_suite/scan_report.json
+```
+
+Summarize the ignored raw report with:
+
+```bash
+python3 test/clojure_suite/summarize_clojure_suite.py \
+  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea
+```
+
+The current failure classification is tracked in `failure_classes.md`.
