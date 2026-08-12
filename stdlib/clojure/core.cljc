@@ -4973,6 +4973,7 @@
      false)))
 
 (defn not=
+  {:inline (fn [& values] (list 'not (cons '__lg_equal values)))}
   ([_x]
    false)
   ([x y]

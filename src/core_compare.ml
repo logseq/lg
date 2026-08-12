@@ -21,6 +21,36 @@ let sequential_type = function
   | TList _ | TVector _ | TArray _ | TSeq _ -> true
   | ty -> Option.is_some (Types.next_seq_element ty)
 
+let source_equality_class = function
+  | TInt | TFloat -> Some `Number
+  | TBool -> Some `Bool
+  | TChar -> Some `Char
+  | TString -> Some `String
+  | TRegex -> Some `Regex
+  | TSymbol -> Some `Symbol
+  | TKeyword -> Some `Keyword
+  | TUnit -> Some `Unit
+  | TNil -> Some `Nil
+  | TList _ | TVector _ | TArray _ | TSeq _ -> Some `Sequential
+  | TSet _ -> Some `Set
+  | TRecord _ | TNamed_record _ -> Some `Record
+  | TFn _ | TOverloaded_fn _ -> Some `Function
+  | ty when Option.is_some (Types.next_seq_element ty) -> Some `Sequential
+  | ty when Option.is_some (Types.dynamic_map_types ty) -> Some `Map
+  | TUnknown | TMeta _ | TVar _ | TNullable _ | TOcaml _ | TOcaml_app _
+  | TTuple _ | TRef _ | TMap_keys ->
+      None
+
+let disjoint_static_equality left_ty right_ty =
+  (not (Types.same_shape left_ty right_ty))
+  &&
+  match (source_equality_class left_ty, source_equality_class right_ty) with
+  | Some `Number, Some `Number -> false
+  | Some `Sequential, Some `Sequential -> false
+  | Some `Record, Some `Map | Some `Map, Some `Record -> false
+  | Some left, Some right -> left <> right
+  | _ -> false
+
 let rec equality_expr ?env left right =
   let resolve value =
     match env with
@@ -112,6 +142,9 @@ let rec equality_expr ?env left right =
       equality_expr ?env right left
   | TNil, TNil -> Semantic_ir.Infix ("=", left.semantic_expr, right.semantic_expr)
   | TNil, _ | _, TNil ->
+      Semantic_ir.Sequence
+        [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
+  | left_ty, right_ty when disjoint_static_equality left_ty right_ty ->
       Semantic_ir.Sequence
         [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ]
   | left_ty, right_ty
@@ -317,6 +350,7 @@ let compile ?env name args =
               || Types.is_dynamic arg.ty
               || Types.same_shape first.ty arg.ty
               || (Types.is_numeric first.ty && Types.is_numeric arg.ty)
+              || disjoint_static_equality first.ty arg.ty
               || (match (first.ty, arg.ty) with
                  | TNil, TNullable _ | TNullable _, TNil -> true
                  | TNullable inner, ty | ty, TNullable inner ->

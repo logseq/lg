@@ -67,8 +67,8 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 242 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after host constants were cleared because tests now reach deeper static boundaries. |
-| `reader-or-numeric-literal` | 121 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
+| `static-typing-or-closed-domain-boundary` | 240 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
+| `reader-or-numeric-literal` | 123 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
 | `missing-core-api-macro-or-var` | 30 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
@@ -125,6 +125,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `ex-data` payloads in one collection. That should be handled as a closed
   watch-event/ex-data domain or a documented narrow ex-data dynamic boundary,
   not by weakening ordinary record storage to dynamic.
+- `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
+  disjoint static source types without dynamic packing. The upstream
+  `eq.cljc` helper still fails because it passes equality as a first-class
+  parameter and reuses that parameter at unrelated argument types. Supporting
+  that shape requires a typed equality capability or overload representation,
+  not a universal dynamic function.
 
 ## Suggested repair order
 

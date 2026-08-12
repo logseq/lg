@@ -22477,9 +22477,25 @@ let test_not_equal_core_api () =
   assert_ocaml_runs "not_equal_core_api" "true:false:true:true:false\n"
     ocaml_source
 
-let test_not_equal_rejects_mixed_types () =
-  compile_string_with_stdlib {|(def x (not= 1 "1"))|}
-  |> expect_error_contains "not= called with incompatible arguments"
+let test_equality_accepts_disjoint_static_types () =
+  let source =
+    {|
+(println
+  (str (= nil 1) ":"
+       (= 1 "1") ":"
+       (= true :true) ":"
+       (= :same 'same) ":"
+       (not= 1 "1") ":"
+       (not= nil 1)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "disjoint static equality must not use Runtime_dynamic";
+  assert_ocaml_runs "equality_accepts_disjoint_static_types"
+    "false:false:false:false:true:true\n" native_source;
+  compile_string_from_stdlib ~target:Lg.Target.Melange source
+  |> expect_ok |> ignore
 
 let test_collection_equality_core_api () =
   let source =
@@ -29639,8 +29655,8 @@ let test_source_generic_equality_matches_clojurescript () =
   compile_string_from_stdlib ~target:Lg.Target.Melange source
   |> expect_ok |> ignore;
   compile_string_from_stdlib "(=)" |> expect_error_contains "expects at least 1";
-  compile_string_from_stdlib "(= nil 1)"
-  |> expect_error_contains "arguments must have the same type"
+  assert_ocaml_runs "source_generic_nil_int_equality" "false\n"
+    (compile_string_with_stdlib "(println (= nil 1))" |> expect_ok)
 
 let test_source_generic_equality_is_source_owned () =
   let source = read_file "stdlib/clojure/core.cljc" in
@@ -47464,7 +47480,8 @@ let tests =
       test_integer_division_supports_source_unary_reciprocal );
     ("chained comparisons work", test_chained_comparisons);
     ("not= core api works", test_not_equal_core_api);
-    ("not= rejects mixed types", test_not_equal_rejects_mixed_types);
+    ( "equality accepts disjoint static types",
+      test_equality_accepts_disjoint_static_types );
     ("collection equality core api works", test_collection_equality_core_api);
     ("get returns nil for unknown map fields",
       test_get_returns_nil_for_unknown_map_fields );
