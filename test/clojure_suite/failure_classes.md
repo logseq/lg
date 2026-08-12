@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 43 |
-| compile failed | 433 |
+| compiled | 45 |
+| compile failed | 431 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 19 |
-| namespaces failed on both native and Melange | 214 |
+| namespaces compiled on both native and Melange | 20 |
+| namespaces failed on both native and Melange | 213 |
 | native-only compiled namespaces | 1 |
 | Melange-only compiled namespaces | 4 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 20 | 218 |
-| Melange | 23 | 215 |
+| native | 21 | 217 |
+| Melange | 24 | 214 |
 
 Namespaces currently compiling on both targets:
 
@@ -42,6 +42,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.any-qmark`
 - `clojure.core-test.associative-qmark`
 - `clojure.core-test.comment`
+- `clojure.core-test.fn-qmark`
 - `clojure.core-test.keyword`
 - `clojure.core-test.make-hierarchy`
 - `clojure.core-test.name`
@@ -61,13 +62,12 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 210 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after harness helpers were loaded because those tests now reach real LG static boundaries. |
+| `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
 | `host-boundary-or-platform-specific` | 82 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
-| `suite-require-form-not-accepted` | 28 | Extend scan ingestion or namespace parsing for the suite's require form shape before treating these as stdlib failures. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `reader-conditional-support` | 5 | Fix reader conditional edge cases separately from core var behavior. |
-| `unsupported-form-or-arity` | 3 | Known examples: `fnil` default positions and `re-find` arity. These are small, targeted compatibility tasks. |
+| `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
 
 ## Platform skew
@@ -91,24 +91,20 @@ highest leverage blockers are:
    `js/Number.MAX_SAFE_INTEGER`, bigint, bigdecimal, ratio, UUID, and char
    literal support must be scoped explicitly because they affect reader, type
    system, equality, ordering, arithmetic, printing, and EDN.
-3. Suite namespace reader compatibility: 28 namespaces use `(:require
-   clojure.core ...)`, which LG currently rejects before testing the var.
-4. Missing API/macro forms: these should be triaged public-var by public-var.
+3. Missing API/macro forms: these should be triaged public-var by public-var.
    Some are source-portable functions; others are compiler/host behavior.
-5. Host boundaries: JVM class identity and JS globals are not portable stdlib
+4. Host boundaries: JVM class identity and JS globals are not portable stdlib
    source and should remain classified unless an LG-native representation is
    designed.
 
 ## Suggested repair order
 
-1. Fix suite ingestion/support first:
-   - handle accepted require form variants used by the suite.
-2. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.
-3. Add a static-error test lane for upstream `thrown?` cases that LG rejects at
+1. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.
+2. Add a static-error test lane for upstream `thrown?` cases that LG rejects at
    compile time by design.
-4. Repair small source-portable API gaps that do not require broad type-system
+3. Repair small source-portable API gaps that do not require broad type-system
    changes.
-5. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with
+4. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with
    narrow documented runtime types where static closed domains are insufficient.
-6. Decide numeric tower scope before implementing bigint/ratio/bigdecimal
+5. Decide numeric tower scope before implementing bigint/ratio/bigdecimal
    behavior.

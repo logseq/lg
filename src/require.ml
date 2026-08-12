@@ -315,6 +315,11 @@ let parse_entries entries =
     | _ -> Error.error "require :refer expects a vector of symbols"
   in
   let parse_require_entry = function
+    | FSymbol module_name when is_dynamic_runtime_module module_name ->
+        Error.error
+          "the universal dynamic runtime is not available to LG source; \
+           define a closed sum type"
+    | FSymbol module_name -> Ok [ Load { module_name } ]
     | FVector (FSymbol module_name :: _)
       when is_dynamic_runtime_module module_name ->
         Error.error

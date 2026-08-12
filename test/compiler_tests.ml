@@ -6397,6 +6397,27 @@ let test_reader_conditional_refer_macros_option_is_accepted () =
     "suite-ok\n" native_source;
   ignore (compile Lg.Target.Melange)
 
+let test_bare_symbol_require_entry_loads_namespace () =
+  let source =
+    {|
+(ns clojure.core-test.bare-core-require
+  (:require clojure.core
+            [cljs.core :as core]))
+
+(println (core/str "bare-" (+ 1 1)))
+|}
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let _, ocaml_source =
+      Lg.Compiler.compile_chunk ~target stdlib.state source |> expect_ok
+    in
+    stdlib.ocaml_source ^ "\n" ^ ocaml_source
+  in
+  assert_ocaml_runs "bare_symbol_require_entry_loads_namespace" "bare-2\n"
+    (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let current_datascript_sources () =
   stdlib_sources ()
   @ ([
@@ -45985,6 +46006,8 @@ let tests =
       test_clj_reader_conditional_macros_survive_deferred_melange_bodies );
     ( "reader conditional refer-macros option is accepted",
       test_reader_conditional_refer_macros_option_is_accepted );
+    ( "bare symbol require entry loads namespace",
+      test_bare_symbol_require_entry_loads_namespace );
     ( "reader conditional accepts metadata branch values",
       test_reader_conditional_accepts_metadata_branch_values );
     ( "metadata map prefixes compile without Java types",

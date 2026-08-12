@@ -131,7 +131,7 @@ def classify(error: str) -> str:
     if "unknown function" in lower or "unknown symbol" in lower or "cannot refer unknown symbol" in lower:
         return "missing-core-api-macro-or-var"
 
-    if "unsupported" in lower or "arity" in lower:
+    if "unsupported" in lower or "arity" in lower or "args doesn't match" in lower:
         return "unsupported-form-or-arity"
 
     return "other-compiler-error"
