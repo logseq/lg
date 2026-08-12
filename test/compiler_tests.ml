@@ -1794,6 +1794,32 @@ let test_melange_js_undefined_uses_cljs_nil_semantics () =
     source
   |> expect_error_contains "unknown symbol js/undefined"
 
+let test_native_object_constructor_is_truthy_suite_sentinel () =
+  let source =
+    {|
+(ns app.object-sentinel
+  (:require [clojure.core :refer [boolean nil? not some? str println]]))
+
+(println
+  (str (boolean (Object.)) ":"
+       (not (Object.)) ":"
+       (nil? (Object.)) ":"
+       (some? (Object.))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/object_sentinel.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "Object. truthy sentinel must not use Runtime_dynamic";
+  assert_ocaml_runs "native_object_constructor_is_truthy_suite_sentinel"
+    "true:false:false:true\n" native_source;
+  compile_with_stdlib_result Lg.Target.Melange "test/object_sentinel.cljc"
+    source
+  |> expect_error_contains "unknown record type Object"
+
 let test_nil_equality_accepts_annotated_options () =
   let source =
     {|
@@ -45845,6 +45871,8 @@ let tests =
       test_nil_predicates_and_truthiness_use_options );
     ( "Melange js undefined uses CLJS nil semantics",
       test_melange_js_undefined_uses_cljs_nil_semantics );
+    ( "Native Object constructor is truthy suite sentinel",
+      test_native_object_constructor_is_truthy_suite_sentinel );
     ( "nil equality accepts annotated options",
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",

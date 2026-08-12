@@ -6190,6 +6190,10 @@ let create ~compile_expr =
                (Semantic_ir.Constructor (constructor_name, payload)))
     in
     match name with
+    | "Object." when Env.target env = Target.Native -> (
+        match arg_forms with
+        | [] -> Ok (typed_ir (TOcaml "unit") Semantic_ir.Unit)
+        | _ -> Error.error "Object. expects 0 arguments")
     | "." -> (
         match arg_forms with
                   | [
