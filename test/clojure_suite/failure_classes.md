@@ -73,9 +73,9 @@ Namespaces currently compiling on both targets:
 | `missing-core-api-macro-or-var` | 29 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
-| `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
+| `unsupported-form-or-arity` | 5 | Known examples: `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
-| `other-compiler-error` | 1 | Inspect directly before changing compiler behavior. |
+| `other-compiler-error` | 3 | Inspect directly before changing compiler behavior. |
 
 ## Platform skew
 
@@ -125,6 +125,13 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `ex-data` payloads in one collection. That should be handled as a closed
   watch-event/ex-data domain or a documented narrow ex-data dynamic boundary,
   not by weakening ordinary record storage to dynamic.
+- Direct `clojure.core/atom` calls now accept static option pairs for `nil nil`,
+  `:meta`, `:validator`, and combined metadata/validator options in either
+  order. The upstream `atom.cljc` namespace still does not promote: Native is
+  blocked by naked `(atom nil)` forms that need an explicit
+  `ref<option<T>>` payload type, and Melange is blocked earlier by the
+  `cljs.core/IAtom` protocol alias. This should be fixed with typed option refs
+  and protocol alias support, not by widening refs to dynamic.
 - `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
   disjoint static source types without dynamic packing. The upstream
   `eq.cljc` helper still fails because it passes equality as a first-class

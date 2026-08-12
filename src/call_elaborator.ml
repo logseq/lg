@@ -78,6 +78,7 @@ let constrained_argument_counter = ref 0
 let function_adapter_counter = ref 0
 let row_argument_counter = ref 0
 let array_literal_counter = ref 0
+let atom_options_counter = ref 0
 
 let array_element_needs_binding expression =
   match Semantic_ir.unlocated expression with
@@ -8214,35 +8215,137 @@ let create ~compile_expr =
             in
             Error.error (source_name ^ " expects 1 argument"))
     | "__lg_atom" -> (
-        match compile_args () with
-        | Error _ as err -> err
-        | Ok [ value ] ->
-            let value_ty =
-              match (arg_forms, Env.expected_type env) with
-              | [ FVector [] ], Some (TRef (TVector _ as expected_ty)) ->
-                  Ok expected_ty
-              | [ FSymbol "nil" ],
-                Some
-                  (TRef
-                    ((TNullable _ | TOcaml_app ("option", [ _ ])) as expected_ty))
-                ->
-                  Ok expected_ty
-              | [ FSymbol "nil" ], _ ->
-                  Error.error
-                    "atom nil requires an explicit option element type, for \
-                     example ^:ref<option<int>>"
-              | _ -> Ok value.ty
-            in
-            Result.bind value_ty (fun value_ty ->
+        let rec option_pairs pairs = function
+          | [] -> Ok (List.rev pairs)
+          | key :: value :: rest -> option_pairs ((key, value) :: pairs) rest
+          | _ -> Error.error "atom expects a value followed by option pairs"
+        in
+        let compile_reference value_form option_forms =
+          match compile_expr scope env value_form with
+          | Error _ as error -> error
+          | Ok value ->
+              let value_ty =
+                match (value_form, Env.expected_type env) with
+                | FVector [], Some (TRef (TVector _ as expected_ty)) ->
+                    Ok expected_ty
+                | FSymbol "nil",
+                  Some
+                    (TRef
+                      ((TNullable _ | TOcaml_app ("option", [ _ ])) as expected_ty))
+                  ->
+                    Ok expected_ty
+                | FSymbol "nil", _ ->
+                    Error.error
+                      "atom nil requires an explicit option element type, for \
+                       example ^:ref<option<int>>"
+                | _ -> Ok value.ty
+              in
+              Result.bind value_ty (fun value_ty ->
+                  Result.bind
+                    (if Types.is_dynamic value_ty then
+                       pack_dynamic_value env value_ty value
+                     else Ok value.semantic_expr)
+                    (fun stored ->
+                      Result.map
+                        (fun pairs ->
+                          ( value_ty,
+                            apply "Lg_runtime.Runtime_reference.of_value"
+                              [ stored ],
+                            pairs ))
+                        (option_pairs [] option_forms)))
+        in
+        let compile_pair value_ty = function
+          | FSymbol "nil", value_form -> (
+              match compile_expr scope env value_form with
+              | Error _ as error -> error
+              | Ok value ->
+                  Ok
+                    (fun reference ->
+                      Semantic_ir.Sequence
+                        [ value.semantic_expr; reference ]))
+          | FKeyword ":meta", metadata_form -> (
+              match compile_expr scope env metadata_form with
+              | Error _ as error -> error
+              | Ok metadata -> (
+                  match
+                    pack_metadata_expression metadata.ty
+                      metadata.semantic_expr
+                  with
+                  | Error _ as error -> error
+                  | Ok metadata ->
+                      Ok
+                        (fun reference ->
+                          Semantic_ir.Sequence
+                            [
+                              apply
+                                "Lg_runtime.Runtime_reference.reset_metadata"
+                                [ reference; metadata ];
+                              reference;
+                            ])))
+          | FKeyword ":validator", validator_form -> (
+              match compile_expr scope env validator_form with
+              | Error _ as error -> error
+              | Ok validator ->
+                  let validator_ty = TFn ([ value_ty ], TBool) in
+                  let validator_expr =
+                    if Types.equal validator.ty TNil then
+                      Ok (Semantic_ir.Constructor ("None", None))
+                    else if
+                      Types.equal validator.ty
+                        (TOcaml_app ("option", [ validator_ty ]))
+                    then Ok validator.semantic_expr
+                    else
+                      Result.map
+                        (fun validator ->
+                          Semantic_ir.Constructor ("Some", Some validator))
+                        (adapt_value_to_type env validator_ty validator)
+                  in
+                  Result.map
+                    (fun validator ->
+                      fun reference ->
+                        Semantic_ir.Sequence
+                          [
+                            apply
+                              "Lg_runtime.Runtime_reference.set_validator"
+                              [ reference; validator ];
+                            reference;
+                          ])
+                    validator_expr)
+          | _ ->
+              Error.error "atom option key must be :meta, :validator, or nil"
+        in
+        let rec compile_option_steps value_ty steps = function
+          | [] -> Ok (List.rev steps)
+          | pair :: rest ->
+              Result.bind (compile_pair value_ty pair) (fun step ->
+                  compile_option_steps value_ty (step :: steps) rest)
+        in
+        match arg_forms with
+        | [] -> Error.error "atom expects at least 1 argument"
+        | value_form :: option_forms -> (
+            match compile_reference value_form option_forms with
+            | Error _ as error -> error
+            | Ok (value_ty, reference, pairs) ->
                 Result.map
-                  (fun stored ->
+                  (fun steps ->
+                    incr atom_options_counter;
+                    let reference_name =
+                      "__lg_atom_reference_"
+                      ^ string_of_int !atom_options_counter
+                    in
+                    let reference_expr =
+                      Semantic_ir.Ident reference_name
+                    in
+                    let body =
+                      List.fold_left
+                        (fun reference step -> step reference)
+                        reference_expr steps
+                    in
                     typed_ir (TRef value_ty)
-                      (apply "Lg_runtime.Runtime_reference.of_value"
-                         [ stored ]))
-                  (if Types.is_dynamic value_ty then
-                     pack_dynamic_value env value_ty value
-                   else Ok value.semantic_expr))
-        | Ok _ -> Error.error "atom expects 1 argument")
+                      (Semantic_ir.Let
+                         ( [ (Semantic_ir.PVar reference_name, reference) ],
+                           body )))
+                  (compile_option_steps value_ty [] pairs)))
     | "__lg_add-watch" -> (
         match compile_args () with
         | Error _ as err -> err

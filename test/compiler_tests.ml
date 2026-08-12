@@ -5834,6 +5834,50 @@ let test_reference_validators_are_typed_source_functions () =
 |}
   |> expect_error_contains "expected of type\n         bool"
 
+let test_atom_accepts_static_metadata_and_validator_options () =
+  let source =
+    {|
+(ns app.atom-options
+  (:require [cljs.core :as core
+             :refer [atom deref get-validator meta nil? reset!]]))
+
+(def ^:ref<option<int>> nil-value (atom nil nil nil))
+(def metadata-value (atom 1 :meta {:source "suite"}))
+(def validated-value (atom 2 :validator (fn [next] (> next 0))))
+(def ordered-value (atom 4 :meta {:source "ordered"} :validator (fn [next] (< next 10))))
+(def reversed-value (atom 5 :validator (fn [next] (< next 10)) :meta {:source "reversed"}))
+
+(println (nil? (deref nil-value)))
+(println (= "suite" (:source (meta metadata-value))))
+(println (if-some [validator (get-validator validated-value)] (validator 3) false))
+(println (= "ordered" (:source (meta ordered-value))))
+(println (if-some [validator (core/get-validator ordered-value)] (validator 9) false))
+(println (= "reversed" (:source (meta reversed-value))))
+(println (try
+           (reset! reversed-value 10)
+           false
+           (catch (Invalid_argument _) true)))
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "atom options must remain statically typed";
+  assert_ocaml_runs "atom_accepts_static_metadata_and_validator_options"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange atom options must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-atom-option
+  (:require [cljs.core :refer [atom]]))
+(atom 1 :bad true)
+|}
+  |> expect_error_contains "atom option key must be :meta, :validator, or nil"
+
 let test_print_newline_dynamic_var_controls_output_newline () =
   let source =
     {|
@@ -46295,6 +46339,8 @@ let tests =
       test_print_level_dynamic_var_limits_nested_collections );
     ( "reference validators are typed source functions",
       test_reference_validators_are_typed_source_functions );
+    ( "atom accepts static metadata and validator options",
+      test_atom_accepts_static_metadata_and_validator_options );
     ( "print newline dynamic var controls output newline",
       test_print_newline_dynamic_var_controls_output_newline );
     ( "print readably dynamic var controls printers",

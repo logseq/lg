@@ -705,8 +705,7 @@
   (__lg_aset array index value))
 
 (defn atom
-  {:inline (fn [value]
-             (list '__lg_atom value))}
+  {:inline (fn [& values] (cons '__lg_atom values))}
   [value]
   (__lg_atom value))
 
