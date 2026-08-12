@@ -25109,6 +25109,62 @@ let test_source_gensym_matches_clojurescript () =
     {|(def generated (gensym 1))|}
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_iteration_matches_clojurescript_sequence_and_reduce () =
+  let source =
+    {|
+(ns source-iteration-app
+  (:require [cljs.core :as core :refer [iteration]]))
+
+(def calls (atom []))
+(def values
+  (iteration
+   (fn [k]
+     (swap! calls conj k)
+     k)
+   :somef (fn [ret] (< ret 4))
+   :vf (fn [ret] (* ret 10))
+   :kf (fn [ret] (when (< ret 3) (inc ret)))
+   :initk 0))
+
+(def make-iteration core/iteration)
+(def alias-values
+  (make-iteration
+   (fn [k] k)
+   (fn [ret] (< ret 3))
+   inc
+   (fn [ret] (when (< ret 2) (inc ret)))
+   0))
+
+(println (= [0 10 20 30] (vec values)))
+(println (= 60 (reduce + 0 values)))
+(println (= [0 1 2 3] @calls))
+(println (= [1 2 3] (vec alias-values)))
+|}
+  in
+  let expected = String.concat "" (List.init 4 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_iteration.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source iteration must remain static";
+  assert_ocaml_runs "source_iteration" expected native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_iteration.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source iteration must remain static"
+
+let test_source_iteration_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/clojure/core.cljc") in
+  if not (string_contains_substring source "(defn iteration") then
+    failwith "clojure.core/iteration is not source-owned";
+  let upstream = read_file (Filename.concat root "stdlib/upstream.edn") in
+  if
+    string_contains_substring upstream
+      "iteration {:status :blocked-static-typing"
+  then failwith "clojure.core/iteration is still recorded as blocked"
+
 let test_source_truth_function_matches_clojurescript () =
   let source =
     {|
@@ -47141,6 +47197,9 @@ let tests =
       test_source_caching_hash_macro_matches_clojurescript );
     ( "source gensym matches ClojureScript",
       test_source_gensym_matches_clojurescript );
+    ( "source iteration matches ClojureScript sequence and reduce",
+      test_source_iteration_matches_clojurescript_sequence_and_reduce );
+    ("source iteration is source-owned", test_source_iteration_is_source_owned);
     ( "source truth function matches ClojureScript",
       test_source_truth_function_matches_clojurescript );
     ( "source control macros match ClojureScript",

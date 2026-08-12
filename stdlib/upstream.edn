@@ -1264,8 +1264,8 @@
           :reason :dispatches-to-the-javascript-symbol-iterator-protocol}
     iterable? {:status :host-boundary
                :reason :tests-the-javascript-symbol-iterator-protocol}
-    iteration {:status :blocked-static-typing
-               :reason :returned-value-combines-seq-and-reduce-capabilities-with-associated-step-token-result-and-value-types}
+    iteration {:status :static-adaptation
+               :reason :source-port-preserves-direct-upstream-keyword-option-calls-through-a-static-inline-rewrite-and-returns-a-memoized-seq-while-first-class-calls-use-the-five-argument-static-abi-instead-of-heterogeneous-keyword-varargs}
     js-invoke {:status :host-boundary
                :reason :invokes-an-arbitrary-javascript-function-with-javascript-arguments-and-result}
     js-iterable? {:status :host-boundary

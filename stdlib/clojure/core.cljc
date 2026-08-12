@@ -4735,6 +4735,50 @@
      (Some (tuple value (f value))))
    x))
 
+(defn- iteration-next [step somef vf kf ret]
+  (lazy-seq
+   (if (somef ret)
+     (cons (vf ret)
+           (if-some [k (kf ret)]
+             (iteration-next step somef vf kf (step k))
+             nil))
+     nil)))
+
+(defn- iteration-static [step somef vf kf initk]
+  (iteration-next step somef vf kf (step initk)))
+
+(defn iteration
+  "Creates a static seqable iteration from `step`, `somef`, `vf`, `kf`, and `initk`.
+
+  Direct calls also accept the upstream keyword form:
+
+  ```clojure
+  (iteration step :somef somef :vf vf :kf kf :initk initk)
+  ```
+
+  First-class calls use the five-argument static ABI because LG does not erase
+  heterogeneous keyword varargs into a dynamic rest sequence."
+  {:inline
+   (fn [step & args]
+     (if (= 4 (count args))
+       (let [[somef vf kf initk] args]
+         (list 'clojure.core/iteration-static step somef vf kf initk))
+       (do
+         (assert (= 8 (count args))
+                 "iteration expects static args or :somef/:vf/:kf/:initk keyword args")
+         (let [[somef-key somef vf-key vf kf-key kf initk-key initk] args]
+           (assert (= somef-key :somef)
+                   "iteration expects :somef as the first option")
+           (assert (= vf-key :vf)
+                   "iteration expects :vf as the second option")
+           (assert (= kf-key :kf)
+                   "iteration expects :kf as the third option")
+           (assert (= initk-key :initk)
+                   "iteration expects :initk as the fourth option")
+           (list 'clojure.core/iteration-static step somef vf kf initk)))))}
+  [step somef vf kf initk]
+  (iteration-static step somef vf kf initk))
+
 (defn- tree-seq-step [branch? children pending]
   (if pending
     (let [node (nth pending 0)

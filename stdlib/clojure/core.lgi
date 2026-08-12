@@ -694,6 +694,15 @@
 (signature clojure.core/iterate [value]
   :fn<fn<value;value>;value;seq<value>>)
 
+(signature clojure.core/iteration-next [token result value]
+  :fn<fn<token;result>;fn<result;bool>;fn<result;value>;fn<result;option<token>>;result;seq<value>>)
+
+(signature clojure.core/iteration-static [token result value]
+  :fn<fn<token;result>;fn<result;bool>;fn<result;value>;fn<result;option<token>>;token;seq<value>>)
+
+(signature clojure.core/iteration [token result value]
+  :fn<fn<token;result>;fn<result;bool>;fn<result;value>;fn<result;option<token>>;token;seq<value>>)
+
 (signature clojure.core/tree-seq-step [node]
   :fn<fn<node;bool>;fn<node;seqable<node>>;seq<node>;option<tuple<node;seq<node>>>>)
 

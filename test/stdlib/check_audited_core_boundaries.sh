@@ -41,6 +41,7 @@ force	source	source-public-function-matches-cljs-delay-force-with-a-first-class-
 flatten	source	source-public-wrapper-preserves-cljs-flatten-for-statically-homogeneous-seqable-layers-through-a-private-typed-flatten-primitive-without-dynamic-erasure
 ifn?	source	source-function-uses-a-strict-function-fallback-signature-while-inline-specialization-delegates-to-a-private-static-callable-type-predicate-covering-functions-ifn-deftypes-keywords-symbols-vectors-maps-and-sets-without-runtime-dynamic-dispatch
 implements?	source	source-macro-preserves-static-protocol-satisfaction-and-single-value-evaluation-by-expanding-to-satisfies-while-clojurescript-javascript-mask-layout-is-not-part-of-lg-runtime-representation
+iteration	source	source-port-preserves-direct-upstream-keyword-option-calls-through-a-static-inline-rewrite-and-returns-a-memoized-seq-while-first-class-calls-use-the-five-argument-static-abi-instead-of-heterogeneous-keyword-varargs
 list*	source	source-macro-preserves-all-direct-upstream-arities-final-sequence-expansion-left-to-right-single-evaluation-and-existing-eager-typed-list-results-for-one-static-element-type-while-the-complete-first-class-heterogeneous-variadic-function-shape-remains-unrepresentable
 memoize	source	source-macro-expands-direct-calls-to-a-private-typed-memoize-abi-for-zero-through-three-fixed-arity-functions-using-static-cache-keys-while-first-class-variadic-and-heterogeneous-argument-tuple-memoize-remains-unrepresentable
 prefer-method	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
