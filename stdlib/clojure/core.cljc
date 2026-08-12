@@ -1813,7 +1813,15 @@
                     (= function 'cljs.core/pr))
               '__lg_pr
               function)
-            x y z args)))}
+            x y z args))
+     ([function x y z w args]
+      (list '__lg_apply
+            (if (or (= function 'pr)
+                    (= function 'clojure.core/pr)
+                    (= function 'cljs.core/pr))
+              '__lg_pr
+              function)
+            x y z w args)))}
   ([f args]
    (__lg_apply f args))
   ([f x args]
@@ -1821,7 +1829,9 @@
   ([f x y args]
    (__lg_apply f x y args))
   ([f x y z args]
-   (__lg_apply f x y z args)))
+   (__lg_apply f x y z args))
+  ([f x y z w args]
+   (__lg_apply f x y z w args)))
 
 (defn trampoline [f]
   (match (f)

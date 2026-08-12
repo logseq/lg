@@ -91,6 +91,19 @@
                       ", got " actual-message#)
                  ~message))))))
 
+     (and (seq? form) (= '= (first form)) (= 3 (count form)))
+     (let [expected (second form)
+           actual (first (drop 2 form))]
+       `(let [expected# ~expected
+              actual# ~actual]
+          (if (= expected# actual#)
+            (clojure.test/pass!)
+            (clojure.test/fail!
+             (str ~(str form)
+                  " expected " (pr-str expected#)
+                  ", got " (pr-str actual#))
+             ~message))))
+
      :else
      `(if ~form
         (clojure.test/pass!)

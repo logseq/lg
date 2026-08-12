@@ -1,0 +1,116 @@
+(rule
+ (target clojure_test_suite_smoke_native_chunk.ml)
+ (deps
+  ../../stdlib/lg_stdlib_native.state
+  ../../test_runner/clojure/test.cljc
+  ../../test_runner/clojure/test_native.cljc
+  lg_portability.cljc
+  upstream/clojure/core_test/any_qmark.cljc
+  smoke_runner.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   native
+   --compile-files-from
+   %{dep:../../stdlib/lg_stdlib_native.state}
+   %{dep:../../test_runner/clojure/test.cljc}
+   %{dep:../../test_runner/clojure/test_native.cljc}
+   %{dep:lg_portability.cljc}
+   %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:smoke_runner.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target clojure_test_suite_smoke_native.ml)
+ (deps
+  ../../stdlib/lg_stdlib_native.ml
+  clojure_test_suite_smoke_native_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (cat %{dep:clojure_test_suite_smoke_native_chunk.ml})))))
+
+(executable
+ (name clojure_test_suite_smoke_native)
+ (modules clojure_test_suite_smoke_native)
+ (flags
+  (:standard -w -27-32-37))
+ (libraries
+  lg.runtime
+  lg.edn-backend.native
+  lg-test.runtime
+  lg-test.alcotest
+  re
+  rrbvec))
+
+(rule
+ (target clojure_test_suite_smoke_melange_chunk.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.state
+  ../../test_runner/clojure/test.cljc
+  ../../test_runner/clojure/test_melange.cljc
+  lg_portability.cljc
+  upstream/clojure/core_test/any_qmark.cljc
+  smoke_runner.cljc
+  ../../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../../bin/lg_cli.exe}
+   --target
+   melange
+   --compile-files-from
+   %{dep:../../stdlib/lg_stdlib_melange.state}
+   %{dep:../../test_runner/clojure/test.cljc}
+   %{dep:../../test_runner/clojure/test_melange.cljc}
+   %{dep:lg_portability.cljc}
+   %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:smoke_runner.cljc}
+   -o
+   %{target})))
+
+(rule
+ (target clojure_test_suite_smoke_melange.ml)
+ (deps
+  ../../stdlib/lg_stdlib_melange.ml
+  clojure_test_suite_smoke_melange_chunk.ml)
+ (action
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (cat %{dep:clojure_test_suite_smoke_melange_chunk.ml})))))
+
+(melange.emit
+ (target clojure-test-suite-smoke-melange)
+ (alias clojure-test-suite-smoke-melange)
+ (module_systems es6)
+ (modules clojure_test_suite_smoke_melange)
+ (preprocess
+  (pps melange.ppx))
+ (compile_flags -w -27-32-37)
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  lg-test.runtime
+  lg-test.melange
+  rrbvec))
+
+(rule
+ (alias clojure-test-suite-smoke)
+ (deps
+  clojure_test_suite_smoke_native.exe
+  (alias clojure-test-suite-smoke-melange)
+  clojure-test-suite-smoke-melange/test/clojure_suite/clojure_test_suite_smoke_melange.js)
+ (action
+  (progn
+   (run %{exe:clojure_test_suite_smoke_native.exe})
+   (run
+    node
+    %{dep:clojure-test-suite-smoke-melange/test/clojure_suite/clojure_test_suite_smoke_melange.js}))))

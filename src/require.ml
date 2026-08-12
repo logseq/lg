@@ -351,7 +351,7 @@ let parse_entries entries =
                 else Ok (Package package :: List.rev acc)
             | FKeyword ":as" :: FSymbol alias :: rest ->
                 parse_options (Alias { module_name; alias } :: acc) rest
-            | FKeyword ":refer" :: names :: rest -> (
+            | FKeyword (":refer" | ":refer-macros") :: names :: rest -> (
                 match parse_refer_names names with
                 | Error _ as err -> err
                 | Ok names ->
@@ -366,7 +366,7 @@ let parse_entries entries =
           | [] -> if acc = [] then Error.error "require entry requires :as or :refer" else Ok acc
           | FKeyword ":as" :: FSymbol alias :: rest ->
               parse_options (Alias { module_name; alias } :: acc) rest
-          | FKeyword ":refer" :: names :: rest -> (
+          | FKeyword (":refer" | ":refer-macros") :: names :: rest -> (
               match parse_refer_names names with
               | Error _ as err -> err
               | Ok names -> parse_options (Refer { module_name; names } :: acc) rest)

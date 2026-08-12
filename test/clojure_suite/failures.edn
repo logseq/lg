@@ -1,0 +1,26 @@
+{:upstream-commit "6299706516f55d2ccb2d5abb5662489971584dea"
+ :failing-candidates
+ [{:namespace clojure.core-test.apply
+   :file "vendor/clojure-test-suite/test/clojure/core_test/apply.cljc"
+   :status :blocked-static-typing
+   :first-error "apply argument type mismatch: expected int, got char"
+   :example "(apply + \"\")"
+   :reason "Clojure accepts an empty string as an empty seq at runtime. LG currently types strings as seq<char>, while + requires int arguments."}
+  {:namespace clojure.core-test.count
+   :file "vendor/clojure-test-suite/test/clojure/core_test/count.cljc"
+   :status :static-error-vs-runtime-throw
+   :first-error "count expects a counted or seqable value, got int"
+   :example "(count 1)"
+   :reason "The upstream negative test expects a runtime exception. LG currently rejects the bad argument statically before clojure.test can assert thrown?."}
+  {:namespace clojure.core-test.str
+   :file "vendor/clojure-test-suite/test/clojure/core_test/str.cljc"
+   :status :blocked-number-literals
+   :first-error "unknown symbol 0N"
+   :example "(str 0N)"
+   :reason "The upstream str test covers Clojure bigint, ratio, and bigdecimal literals that LG does not yet parse/model as source numeric domains."}
+  {:namespace clojure.core-test.println-str
+   :file "vendor/clojure-test-suite/test/clojure/core_test/println_str.cljc"
+   :status :float-print-mismatch
+   :first-error "expected ... 17.0 ..., got ... 17. ..."
+   :example "(println-str 17.0)"
+   :reason "LG currently renders whole floats through OCaml string_of_float as 17.; Clojure expects 17.0 on JVM/default and ClojureScript expects 17."}]}

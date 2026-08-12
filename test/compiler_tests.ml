@@ -6362,6 +6362,41 @@ let test_clj_reader_conditional_macros_survive_deferred_melange_bodies () =
     native_source;
   ignore (compile Lg.Target.Melange)
 
+let test_reader_conditional_refer_macros_option_is_accepted () =
+  let provider_source =
+    {|
+(ns clojure.core-test.portability)
+(defmacro when-var-exists [_var-sym & body]
+  `(do ~@body))
+|}
+  in
+  let consumer_source =
+    {|
+(ns clojure.core-test.consumer
+  (:require
+   [clojure.core-test.portability
+    #?(:cljs :refer-macros :default :refer)
+    [when-var-exists]]))
+(when-var-exists str
+  (println (str "suite" "-" "ok")))
+|}
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target stdlib.state provider_source
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer_source |> expect_ok
+    in
+    stdlib.ocaml_source ^ "\n" ^ provider_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "reader_conditional_refer_macros_option_is_accepted"
+    "suite-ok\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
 let current_datascript_sources () =
   stdlib_sources ()
   @ ([
@@ -45948,6 +45983,8 @@ let tests =
       test_referred_update_supports_threaded_nested_calls );
     ( "clj reader conditional macros survive deferred Melange bodies",
       test_clj_reader_conditional_macros_survive_deferred_melange_bodies );
+    ( "reader conditional refer-macros option is accepted",
+      test_reader_conditional_refer_macros_option_is_accepted );
     ( "reader conditional accepts metadata branch values",
       test_reader_conditional_accepts_metadata_branch_values );
     ( "metadata map prefixes compile without Java types",
