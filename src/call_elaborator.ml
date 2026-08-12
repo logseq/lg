@@ -2224,6 +2224,11 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                       when Types.equal actual_element expected_element ->
                         Ok None
                     | actual_element
+                      when has_capability_constraint actual_element
+                           && argument_compatible expected_element
+                                actual_element ->
+                        Ok None
+                    | actual_element
                       when Types.is_dynamic actual_element
                            && Types.is_dynamic expected_element ->
                         Ok None

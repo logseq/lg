@@ -28333,10 +28333,12 @@ let test_source_writer_printing_cluster_matches_clojurescript () =
     {|
 (ns app.source-writer-printing
   (:require [cljs.core :as core
-             :refer [newline pr-sequential-writer string-print write-all]]
+             :refer [newline pr-seq-writer pr-sequential-writer
+                     string-print write-all]]
             [ocaml.Buffer :as buffer]))
 
 (def writer (buffer/create 64))
+(def sequence-writer (buffer/create 64))
 (def render-sequence pr-sequential-writer)
 
 (write-all writer "<" "raw" ">")
@@ -28350,13 +28352,16 @@ let test_source_writer_printing_cluster_matches_clojurescript () =
 (newline)
 (newline nil)
 (print (buffer/contents writer))
+(pr-seq-writer [1 2 3] sequence-writer nil)
+(core/pr-seq-writer ["Ada" "Byron"] sequence-writer nil)
+(print (buffer/contents sequence-writer))
 |}
   in
   let consumer = compile_string_from_stdlib source |> expect_ok in
   if string_contains_substring consumer "Runtime_dynamic" then
     failwith "source writer printing functions must remain statically typed";
   assert_ocaml_runs "source_writer_printing_cluster"
-    "stdout\n\n<raw>\"Ada\"\"Byron\"[1,2,3]"
+    "stdout\n\n<raw>\"Ada\"\"Byron\"[1,2,3]1 2 3\"Ada\" \"Byron\""
     (compile_string_with_stdlib source |> expect_ok);
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
@@ -28370,6 +28375,14 @@ let test_source_writer_printing_cluster_matches_clojurescript () =
             [ocaml.Buffer :as buffer]))
 (core/pr-writer 1 (buffer/create 8) true)
 |}
+  |> expect_error_contains "nil";
+  compile_string_from_stdlib
+    {|
+(ns app.pr-seq-writer-options-error
+  (:require [cljs.core :as core]
+            [ocaml.Buffer :as buffer]))
+(core/pr-seq-writer [1] (buffer/create 8) true)
+|}
   |> expect_error_contains "nil"
 
 let test_source_writer_printing_cluster_is_source_owned () =
@@ -28379,6 +28392,7 @@ let test_source_writer_printing_cluster_is_source_owned () =
       if not (string_contains_substring source declaration) then
         failwith (declaration ^ " is missing from the source standard library"))
     [ "(defprotocol IPrintWithWriter"; "(defn pr-writer";
+      "(defn pr-seq-writer";
       "(defn pr-sequential-writer"; "(defn write-all";
       "(defn string-print"; "(defn newline";
     ];
@@ -28389,7 +28403,7 @@ let test_source_writer_printing_cluster_is_source_owned () =
         (fun name ->
           if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
           then failwith (name ^ " still has public-name compiler dispatch"))
-        [ "pr-writer"; "pr-sequential-writer" ])
+        [ "pr-writer"; "pr-seq-writer"; "pr-sequential-writer" ])
     [ "src/call_elaborator.ml"; "src/type_inference.ml";
       "src/expression_support.ml";
     ]
@@ -28402,9 +28416,13 @@ let test_source_printing_options_cluster_matches_clojurescript () =
              :refer [pr-str-with-opts prn-str-with-opts]]))
 
 (def render pr-str-with-opts)
+(defn render-through [values]
+  (core/pr-str-with-opts values nil))
 (println (= "" (render [] nil)))
 (println (= "1 2 3" (render [1 2 3] nil)))
 (println (= "\"Ada\" \"Byron\"" (core/pr-str-with-opts ["Ada" "Byron"] nil)))
+(println (= "4 5" (render-through [4 5])))
+(println (= "\"Grace\"" (render-through ["Grace"])))
 (println (= "\n" (prn-str-with-opts [] nil)))
 (println (= "1 2\n" (core/prn-str-with-opts [1 2] nil)))
 |}
@@ -28413,7 +28431,7 @@ let test_source_printing_options_cluster_matches_clojurescript () =
   if string_contains_substring consumer "Runtime_dynamic" then
     failwith "printing options functions must remain statically typed";
   assert_ocaml_runs "source_printing_options_cluster"
-    "true\ntrue\ntrue\ntrue\ntrue\n"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
     (compile_string_with_stdlib source |> expect_ok);
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok

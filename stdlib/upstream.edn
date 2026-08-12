@@ -1212,8 +1212,8 @@
                   :reason :same-arity-size-or-seqable-overload-requires-a-shared-object-array-element-domain}
     persistent-array-map-seq {:status :blocked-static-typing
                               :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
-    pr-seq-writer {:status :blocked-static-typing
-                   :reason :printer-callback-must-accept-arbitrary-heterogeneous-values-with-a-shared-writer-and-options-domain}
+    pr-seq-writer {:status :static-adaptation
+                   :reason :source-function-preserves-upstream-first-value-and-space-separated-writer-order-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
     pr-sequential-writer {:status :static-adaptation
                           :reason :source-function-preserves-prefix-separator-callback-order-and-suffix-over-a-homogeneous-static-seqable-and-buffer-writer-while-print-level-print-length-and-custom-more-marker-options-remain-explicitly-restricted-to-nil}
     str {:status :static-adaptation

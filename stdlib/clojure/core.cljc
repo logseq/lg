@@ -5170,13 +5170,17 @@
   collection)
   (IWriter/-write writer end))
 
+(defn pr-seq-writer
+  [objects writer options]
+  (pr-sequential-writer writer pr-writer "" " " "" options objects))
+
 (defn pr-str-with-opts
   [objects _options]
   (__lg_render_readable_values " " objects))
 
 (defn prn-str-with-opts
-  [objects _options]
-  (__lg_str (__lg_render_readable_values " " objects) "\n"))
+  [objects options]
+  (str (pr-str-with-opts objects options) "\n"))
 
 (defn write-all [writer & strings]
   (doseq [source strings]
