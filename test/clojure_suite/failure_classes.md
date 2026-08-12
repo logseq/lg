@@ -63,12 +63,11 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
-| `host-boundary-or-platform-specific` | 85 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. `#js` literals now parse, so `not.cljc` and `some_qmark.cljc` expose their real `Object`/`js/undefined` host-boundary blockers. |
+| `host-boundary-or-platform-specific` | 86 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. `#js` literals and nil splices now parse, so `not.cljc`, `some_qmark.cljc`, and `plus.cljc` expose their real host/numeric blockers. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
-| `reader-conditional-support` | 1 | Fix reader conditional edge cases separately from core var behavior. |
 
 ## Platform skew
 

@@ -59,6 +59,7 @@ let rec parse_one ~target = function
                  let forms =
                    match selected.form with
                    | FSymbol omitted when omitted = omitted_reader_form -> Ok []
+                   | FSymbol "nil" -> Ok []
                    | FList _ | FVector _ -> Ok selected.children
                    | _ ->
                        error_at selected.span

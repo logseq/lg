@@ -221,6 +221,19 @@ let test_javascript_spliced_recur_marks_defn_recursive () =
   [ Lg.Target.Melange; Lg.Target.Js_of_ocaml ]
   |> List.iter (fun target -> ignore (compile target source))
 
+let test_spliced_reader_conditional_nil_splices_no_forms () =
+  let source =
+    {|
+(def values [1 #?@(:cljs nil :clj [2 3]) 4])
+|}
+  in
+  let native = compile Lg.Target.Native source in
+  assert_contains native "2";
+  assert_contains native "3";
+  let melange = compile Lg.Target.Melange source in
+  assert_not_contains melange "2";
+  assert_not_contains melange "3"
+
 let test_js_literals_are_single_reader_forms_in_conditionals () =
   let source =
     {|
@@ -258,6 +271,8 @@ let tests =
       test_splices_reader_conditionals_into_collections );
     ( "JavaScript spliced recur marks defn recursive",
       test_javascript_spliced_recur_marks_defn_recursive );
+    ( "spliced reader conditional nil splices no forms",
+      test_spliced_reader_conditional_nil_splices_no_forms );
     ( "JavaScript literals are single reader forms in conditionals",
       test_js_literals_are_single_reader_forms_in_conditionals );
     ( "rejects invalid reader conditionals",
