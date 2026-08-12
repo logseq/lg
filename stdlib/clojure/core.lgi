@@ -454,6 +454,7 @@
 (signature clojure.core/inc :fn<int;int>)
 (signature clojure.core/dec :fn<int;int>)
 (signature clojure.core/bit-and-two :fn<int;int;int>)
+(signature clojure.core/unsafe-bit-and :fn<int;int;int>)
 (signature clojure.core/bit-and
   :overload<fn<int;int;int>;variadic-fn<int;int;int;int>>)
 (signature clojure.core/bit-or-two :fn<int;int;int>)

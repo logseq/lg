@@ -44,7 +44,7 @@ tagged-literal	source	source-parameterized-nominal-type-preserves-symbol-tags-st
 tagged-literal?	source	source-function-and-inline-specialization-use-an-optional-static-itaggedliteral-marker-witness-for-first-class-true-and-false-calls
 trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
 to-array-2d	source	source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses
-unsafe-bit-and	blocked-static-typing	javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve
+unsafe-bit-and	source	source-function-exposes-the-static-integer-bitwise-and-result-while-javascript-zero-falsiness-remains-a-separate-host-boundary
 uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings
 vec-lite	source	source-public-wrapper-preserves-cljs-seqable-to-vector-realization-through-the-existing-static-vec-boundary
 coercive-=	host-boundary	javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent

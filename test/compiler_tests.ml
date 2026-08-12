@@ -23195,6 +23195,38 @@ let test_batched_core_functions_work () =
     "true:true:true:true:true:true:false:5:-2:3:1:4:1:7:4:-1:8:4:true:false:true:false:true:false:true:false:true:false:true:false\n"
     ocaml_source
 
+let test_unsafe_bit_and_is_source_owned_static_int_function () =
+  let source =
+    {|
+(ns app.unsafe-bit-and
+  (:require [cljs.core :as core :refer [unsafe-bit-and zero?]]))
+
+(def direct (unsafe-bit-and 7 3))
+(def qualified (core/unsafe-bit-and 12 10))
+(def auto-core (clojure.core/unsafe-bit-and 15 6))
+(def as-function unsafe-bit-and)
+(println
+  (str direct ":" qualified ":" auto-core ":"
+       (as-function 5 1) ":"
+       (zero? (unsafe-bit-and 4 1))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/unsafe_bit_and.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "unsafe-bit-and must not use Runtime_dynamic";
+  assert_ocaml_runs "unsafe_bit_and_is_source_owned_static_int_function"
+    "3:8:6:1:true\n" native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/unsafe_bit_and.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange unsafe-bit-and must not use Runtime_dynamic";
+  compile_with_stdlib_result Lg.Target.Native "test/bad_unsafe_bit_and.cljc"
+    {|(def value (unsafe-bit-and 1 "1"))|}
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_seqable_predicate_checks_closed_sum_values () =
   let source =
     {|
@@ -46430,6 +46462,8 @@ let tests =
     ( "conditional forms accept truthy params",
       test_conditional_forms_accept_truthy_params );
     ("batched core functions work", test_batched_core_functions_work);
+    ( "unsafe-bit-and is source-owned static int function",
+      test_unsafe_bit_and_is_source_owned_static_int_function );
     ( "seqable predicate checks closed sum values",
       test_seqable_predicate_checks_closed_sum_values );
     ( "batched core functions reject non-int arguments",

@@ -3322,6 +3322,9 @@
 (defn- bit-and-two [x y]
   (runtime-int/bit-and x y))
 
+(defn unsafe-bit-and [x y]
+  (bit-and-two x y))
+
 (defn bit-and
   ([x y]
    (bit-and-two x y))
