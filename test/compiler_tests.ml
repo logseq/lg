@@ -29907,6 +29907,54 @@ let test_compiler_state_does_not_export_private_shared_values () =
   if not (string_contains_substring source "share_item_list [] new_items") then
     failwith "compiler chunks must share private values only within a chunk"
 
+let test_source_pprint_deftype_macro_generates_record_helpers () =
+  let source =
+    {|
+(ns app.pprint-deftype
+  (:require [cljs.pprint :as pprint :refer [deftype]]))
+
+(deftype token :data :start-pos :end-pos)
+
+(def value (make-token "abc" 10 13))
+
+(println (= :token (:type-tag value)))
+(println (= "abc" (:data value)))
+(println (= 10 (:start-pos value)))
+(println (= 13 (:end-pos value)))
+(println (token? value))
+(println (pprint/char-code "A"))
+|}
+  in
+  let expected = "true\ntrue\ntrue\ntrue\ntrue\n65\n" in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/pprint_deftype.cljc" source
+  in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "cljs.pprint/deftype must not require Runtime_dynamic";
+  assert_ocaml_runs "source_pprint_deftype_macro_generates_record_helpers"
+    expected native;
+  let melange =
+    compile_with_stdlib Lg.Target.Melange "app/pprint_deftype.cljc" source
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange cljs.pprint/deftype must not require Runtime_dynamic"
+
+let test_source_pprint_deftype_macro_is_source_owned () =
+  let source = read_file "stdlib/cljs/pprint.cljc" in
+  if not (string_contains_substring source "(defmacro deftype") then
+    failwith "cljs.pprint/deftype is not source-owned";
+  let stdlib = compiled_stdlib Lg.Target.Native in
+  if
+    Option.is_none
+      (Lg.Compiler_environment.find_macro ~scope:"cljs.pprint" "deftype"
+         stdlib.state.typecheck_state.env)
+  then failwith "cljs.pprint/deftype macro is not registered in stdlib state";
+  let upstream = read_file "stdlib/upstream.edn" in
+  if
+    string_contains_substring upstream
+      "deftype {:status :blocked-static-typing"
+  then failwith "cljs.pprint/deftype is still recorded as blocked"
+
 let test_source_vary_meta_matches_clojurescript_arities () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring core_source "(defn vary-meta") then
@@ -47266,6 +47314,10 @@ let tests =
       test_source_with_redefs_is_source_owned );
     ( "compiler state does not export private shared values",
       test_compiler_state_does_not_export_private_shared_values );
+    ( "source pprint deftype macro generates record helpers",
+      test_source_pprint_deftype_macro_generates_record_helpers );
+    ( "source pprint deftype macro is source-owned",
+      test_source_pprint_deftype_macro_is_source_owned );
     ( "source vary-meta matches ClojureScript arities",
       test_source_vary_meta_matches_clojurescript_arities );
     ( "generated ML preserves readable names and layout",

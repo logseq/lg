@@ -1438,6 +1438,14 @@ let rec compile scope env next_type form =
                     (predeclare_protocol_groups scope env receiver_form groups)
                     (fun env ->
                       compile_groups env next_type (items_of type_item) groups)))
+  | FList (FSymbol "deftype" :: args)
+    when Option.is_some (Env.find_macro ~scope "deftype" env) -> (
+      match Env.find_macro ~scope "deftype" env with
+      | None -> assert false
+      | Some definition -> (
+          match Macro_expander.expand ~scope ~compiler_env:env definition args with
+          | Error _ as error -> error
+          | Ok expanded -> compile scope env next_type expanded))
   | FList
       (FSymbol "deftype"
       :: (FSymbol name as name_form)

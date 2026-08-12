@@ -628,7 +628,7 @@ module Lg_frontend : FRONTEND = struct
            match located.Ast.form with
            | Ast.FList
                (Ast.FSymbol (("deftype" | "defrecord") as definition)
-               :: name :: fields :: (_ :: _ as methods))
+               :: name :: (Ast.FVector _ as fields) :: (_ :: _ as methods))
              when
                definition = "deftype"
                || all_fields_have_type_hints fields

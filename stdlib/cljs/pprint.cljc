@@ -16,6 +16,19 @@
   [sym new-value]
   `(swap! @~'this assoc ~sym ~new-value))
 
+(defmacro deftype [type-name & fields]
+  (let [name-str (name type-name)
+        field-symbols (map (fn [field] (symbol (name field))) fields)
+        constructor-name (symbol (str "make-" name-str))
+        predicate-name (symbol (str name-str "?"))
+        record-constructor (symbol (str name-str "."))]
+    `(do
+       (defrecord ~type-name [~'type-tag ~@field-symbols])
+       (defn- ~constructor-name ~(vec field-symbols)
+         (~record-constructor ~(keyword name-str) ~@field-symbols))
+       (defn- ~predicate-name [value#]
+         (= (:type-tag value#) ~(keyword name-str))))))
+
 (defprotocol IPPrintFloatPredicate
   (-pprint-float? [value] :bool))
 

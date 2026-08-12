@@ -12,11 +12,15 @@ bb "$root/script/extract_stdlib_manifest_status.clj" \
 tab=$(printf '\t')
 failed=0
 while IFS="$tab" read -r name status reason; do
-  if ! awk -F '\t' -v name="clojure.core/$name" -v status="$status" \
+  case "$name" in
+    */*) qualified_name="$name" ;;
+    *) qualified_name="clojure.core/$name" ;;
+  esac
+  if ! awk -F '\t' -v name="$qualified_name" -v status="$status" \
       -v reason="$reason" \
       '$1 == "definition" && $2 == name && $3 == status && $4 == reason { found=1 }
        END { exit !found }' "$actual"; then
-    echo "clojure.core/$name is missing audited $status reason: $reason" >&2
+    echo "$qualified_name is missing audited $status reason: $reason" >&2
     failed=1
   fi
 done <<'EOF'
@@ -42,6 +46,7 @@ prefer-method	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-bo
 prefers	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 with-redefs	source	source-macro-expands-to-a-private-typed-var-root-rebinding-form-for-ordinary-monomorphic-source-functions-that-restores-values-after-body-or-exception-and-keeps-replacement-values-at-the-root-static-type
+cljs.pprint/deftype	source	source-macro-preserves-the-upstream-defrecord-constructor-and-type-tag-predicate-expansion-while-field-types-remain-inferred-by-lg-static-record-use-instead-of-dynamic-fields
 record?	source	source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch
 replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation
 remove-all-methods	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary

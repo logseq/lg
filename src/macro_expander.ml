@@ -30,7 +30,7 @@ let is_unqualified_compile_time_primitive = function
   | "float?" | "symbol?" | "keyword?" | "vector?" | "map?" | "seq?"
   | "sequential?" | "empty?" | "not-empty" | "reverse" | "concat"
   | "clojure.core/concat" | "count" | "take" | "drop" | "/" | "nil?"
-  | "even?" | "partition" | "first" | "second" | "last" | "next"
+  | "even?" | "partition" | "name" | "symbol" | "keyword" | "first" | "second" | "last" | "next"
   | "nnext" | "butlast" | "=" | "list" | "cons" | "conj" | "assoc"
   | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
   | "filter"
@@ -292,6 +292,9 @@ let rec eval context = function
                          "next";
                          "nnext";
                          "butlast";
+                         "name";
+                         "symbol";
+                         "keyword";
                        ] ->
                   Ok (Builtin name)
               | None
@@ -908,6 +911,46 @@ and eval_builtin context name arg_forms =
       unary (function
         | Form (FInt value) -> Ok (Form (FBool (value mod 2 = 0)))
         | _ -> Error.error "even? expects an integer macro argument")
+  | "name" ->
+      unary (function
+        | Form (FSymbol value) ->
+            let name =
+              match String.rindex_opt value '/' with
+              | Some index ->
+                  String.sub value (index + 1) (String.length value - index - 1)
+              | None -> value
+            in
+            Ok (Form (FString name))
+        | Form (FKeyword value) ->
+            let value =
+              if String.starts_with ~prefix:":" value then
+                String.sub value 1 (String.length value - 1)
+              else value
+            in
+            let name =
+              match String.rindex_opt value '/' with
+              | Some index ->
+                  String.sub value (index + 1) (String.length value - index - 1)
+              | None -> value
+            in
+            Ok (Form (FString name))
+        | Form (FString value) -> Ok (Form (FString value))
+        | _ -> Error.error "name expects a macro symbol, keyword, or string")
+  | "symbol" ->
+      unary (function
+        | Form (FString value) | Form (FSymbol value) ->
+            Ok (Form (FSymbol value))
+        | _ -> Error.error "symbol expects a macro string or symbol")
+  | "keyword" ->
+      unary (function
+        | Form (FKeyword value) -> Ok (Form (FKeyword value))
+        | Form (FString value) | Form (FSymbol value) ->
+            let keyword =
+              if String.starts_with ~prefix:":" value then value
+              else ":" ^ value
+            in
+            Ok (Form (FKeyword keyword))
+        | _ -> Error.error "keyword expects a macro string, symbol, or keyword")
   | "partition" -> (
       match eval_args () with
       | Ok [ Form (FInt size); collection ] when size > 0 ->

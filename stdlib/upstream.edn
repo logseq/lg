@@ -1535,8 +1535,8 @@
           :reason :source-macro-preserves-the-upstream-swap-assoc-field-update-over-a-statically-typed-reference-map}
     pprint {:status :static-adaptation
             :reason :source-one-and-two-arity-wrapper-delegates-readable-static-value-rendering-and-buffer-output-to-a-private-typed-primitive-while-right-margin-logical-block-and-custom-dispatch-layout-remain-the-namespace-level-blocker}
-    deftype {:status :blocked-static-typing
-             :reason :upstream-macro-generates-generic-unannotated-defrecord-fields-and-nominal-constructor-predicate-semantics-not-representable-without-dynamic-fields-or-changing-the-public-record-api}}}
+    deftype {:status :static-adaptation
+             :reason :source-macro-preserves-the-upstream-defrecord-constructor-and-type-tag-predicate-expansion-while-field-types-remain-inferred-by-lg-static-record-use-instead-of-dynamic-fields}}}
 
   cljs.test
   {:source "src/main/cljs/cljs/test.cljs"
