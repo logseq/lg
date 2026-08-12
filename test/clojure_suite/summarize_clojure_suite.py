@@ -89,9 +89,11 @@ def classify(error: str) -> str:
         return "host-boundary-or-platform-specific"
 
     if (
-        re.search(r"unknown symbol -?\d+(?:N|M)\b", message)
+        re.search(r"unknown symbol -?\d+(?:\.\d+)?(?:N|M)\b", message)
+        or re.search(r"unknown symbol -?\d{19,}\b", message)
         or re.search(r"unknown symbol \d+/\d+", message)
         or "#uuid" in message
+        or "#inst" in message
         or "unknown symbol \\" in message
     ):
         return "reader-or-numeric-literal"

@@ -55,6 +55,21 @@ class SummaryClassificationTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(expected, self.summary.classify(message))
 
+    def test_classifies_reader_and_numeric_literals_before_missing_vars(self) -> None:
+        examples = [
+            "File \"<suite>/abs.cljc\", line <n>: lg: unknown symbol 123.456M",
+            "File \"<suite>/decimal_qmark.cljc\", line <n>: lg: unknown symbol 0.0M",
+            "File \"<suite>/identity.cljc\", line <n>: lg: unknown symbol #inst",
+            "File \"<suite>/long.cljc\", line <n>: lg: unknown symbol -9223372036854775808",
+        ]
+
+        for message in examples:
+            with self.subTest(message=message):
+                self.assertEqual(
+                    "reader-or-numeric-literal",
+                    self.summary.classify(message),
+                )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:
