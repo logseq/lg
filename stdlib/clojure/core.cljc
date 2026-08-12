@@ -3542,6 +3542,18 @@
   (-remove-watch reference key)
   reference)
 
+(defn get-validator
+  {:inline (fn [reference] (list '__lg_get-validator reference))}
+  [reference]
+  (__lg_get-validator reference))
+
+(defn set-validator!
+  {:inline (fn [reference validator]
+             (list 'do (list '__lg_set-validator! reference validator) nil))}
+  [reference validator]
+  (__lg_set-validator! reference validator)
+  nil)
+
 (defmacro vswap! [reference update-fn & args]
   `(IVolatile/-vreset!
     ~reference

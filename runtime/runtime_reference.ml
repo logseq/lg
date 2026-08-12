@@ -7,11 +7,31 @@ type 'value watch =
       }
       -> 'value watch
 
-and 'value t = { mutable value : 'value; mutable watches : 'value watch list }
+and 'value t = {
+  mutable value : 'value;
+  mutable watches : 'value watch list;
+  mutable validator : 'value validator;
+}
+and 'value validator = ('value -> bool) option
 
-let of_value value = { value; watches = [] }
+let of_value value = { value; watches = []; validator = None }
 
 let deref reference = reference.value
+
+let validate reference value =
+  match reference.validator with
+  | None -> ()
+  | Some validator ->
+      if validator value then () else invalid_arg "Invalid reference state"
+
+let get_validator reference = reference.validator
+
+let set_validator reference validator =
+  Option.iter
+    (fun validate ->
+      if validate reference.value then () else invalid_arg "Invalid reference state")
+    validator;
+  reference.validator <- validator
 
 let notify reference old_value new_value =
   List.iter
@@ -23,6 +43,7 @@ let notify_watches reference old_value new_value =
   notify reference old_value new_value
 
 let reset reference value =
+  validate reference value;
   let old_value = reference.value in
   reference.value <- value;
   notify reference old_value value;

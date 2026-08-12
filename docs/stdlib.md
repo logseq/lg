@@ -252,11 +252,13 @@ times, `defmulti` 8 times, `dispatch-fn` 7 times, `methods` 5 times, and
 documented runtime multifn dynamic boundary.
 `add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
 source-aggregate owned through `IWatchable/-add-watch` and
-`IWatchable/-remove-watch`. The underlying protocol methods, including
-`-notify-watches`, dispatch to a compiler-registered `Runtime_reference.t`
-implementation that keeps the watched value type parameterized and stores only
-keyword-keyed callbacks for that reference value type. `re-find` appears 290
-times,
+`IWatchable/-remove-watch`. `get-validator` and `set-validator!` are also
+source-aggregate owned; the reference runtime stores an optional
+`value -> bool` validator tied to the same reference value type. The underlying
+protocol methods, including `-notify-watches`, dispatch to a
+compiler-registered `Runtime_reference.t` implementation that keeps the
+watched value type parameterized and stores only keyword-keyed callbacks for
+that reference value type. `re-find` appears 290 times,
 `ex-data` appears 210 times, `re-matches` appears 87 times, and `re-seq`
 appears 23 times; all four are
 now source-aggregate owned, with regex match shapes and exception data recorded
@@ -878,8 +880,12 @@ nonmatching type. The exact Logseq scan finds 190 `uuid?` calls in 70 source
 files and 2 `delay?` calls in one source file.
 The reference functions delegate through the pinned ClojureScript `IDeref` and
 `IReset` protocol shape; static implementations cover refs, lazy values,
-futures, and slots without dynamic packing. `compare-and-set!` preserves the
-upstream deref/equality/reset control flow and evaluates its arguments once.
+futures, and slots without dynamic packing. `get-validator` and
+`set-validator!` are source functions over a typed reference-validator
+primitive. The stored callback is `value -> bool`, clearing uses `nil`, and
+`reset!`/`swap!` validate before mutating or notifying watches.
+`compare-and-set!` preserves the upstream deref/equality/reset control flow and
+evaluates its arguments once.
 `swap!` preserves all pinned ClojureScript arities as a first-class source
 function through `ISwap`. Direct calls use a private contextual specialization
 so overloaded update functions retain their static arity information; the

@@ -5513,6 +5513,56 @@ let test_print_level_dynamic_var_limits_nested_collections () =
 |}
   |> expect_error_contains "expects option<int>, got string"
 
+let test_reference_validators_are_typed_source_functions () =
+  let source =
+    {|
+(ns app.reference-validators
+  (:require [cljs.core :as core
+             :refer [atom deref get-validator set-validator! reset! swap! nil?]]))
+
+(def value (atom 1))
+(println (nil? (get-validator value)))
+(println (nil? (set-validator! value (fn [next] (> next 0)))))
+(println (if-some [validator (core/get-validator value)]
+           (validator 2)
+           false))
+(println
+  (try
+    (reset! value -1)
+    false
+    (catch (Invalid_argument _) true)))
+(println (deref value))
+(println
+  (try
+    (swap! value (fn [current] (- current 2)))
+    false
+    (catch (Invalid_argument _) true)))
+(println (deref value))
+(set-validator! value nil)
+(println (nil? (get-validator value)))
+(println (reset! value -1))
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "reference validators must remain statically typed";
+  assert_ocaml_runs "reference_validators_are_typed_source_functions"
+    "true\ntrue\ntrue\ntrue\n1\ntrue\n1\ntrue\n-1\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange reference validators must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-reference-validator
+  (:require [cljs.core :refer [atom set-validator!]]))
+(def value (atom 1))
+(set-validator! value (fn [next] (+ next 1)))
+|}
+  |> expect_error_contains "expected of type\n         bool"
+
 let test_print_newline_dynamic_var_controls_output_newline () =
   let source =
     {|
@@ -45067,6 +45117,8 @@ let tests =
       test_print_length_dynamic_var_limits_collections );
     ( "print level dynamic var limits nested collections",
       test_print_level_dynamic_var_limits_nested_collections );
+    ( "reference validators are typed source functions",
+      test_reference_validators_are_typed_source_functions );
     ( "print newline dynamic var controls output newline",
       test_print_newline_dynamic_var_controls_output_newline );
     ( "print readably dynamic var controls printers",

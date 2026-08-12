@@ -83,6 +83,8 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (def fixture-watch-reference (atom 0))
 (add-watch fixture-watch-reference ::fixture-watch (fn [_ _ _ _] nil))
 (remove-watch fixture-watch-reference ::fixture-watch)
+(get-validator fixture-watch-reference)
+(set-validator! fixture-watch-reference nil)
 (zip/root nil)
 (cljs.core/identity 1)
 (cljs.core/chunk-buffer 4)
@@ -323,7 +325,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/delay?" && $3 == "source"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ensure-reduced" && $3 == "source" && $4 == "source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/force" && $3 == "source" && $4 == "source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ex-data" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
-awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/add-watch" || $2 == "clojure.core/remove-watch") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/add-watch" || $2 == "clojure.core/remove-watch" || $2 == "clojure.core/get-validator" || $2 == "clojure.core/set-validator!") && $3 == "source" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/default-dispatch-val" || $2 == "clojure.core/remove-method" || $2 == "clojure.core/remove-all-methods") && $3 == "source" && $4 == "precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary" {found++} END {exit found != 3}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/-add-method" || $2 == "clojure.core/-remove-method" || $2 == "clojure.core/-default-dispatch-val" || $2 == "clojure.core/-reset") && $3 == "source" && $4 == "runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/prefer-method" || $2 == "clojure.core/prefers") && $3 == "source" && $4 == "precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
@@ -504,9 +506,11 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-default-dispatch-v
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-prefer-method" && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-preference-table-mutation-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-prefers" && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-preference-table-introspection-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_swap!" && $3 == "typed-primitive" && $4 == "typed-contextual-reference-swap-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "compiler-call" && ($2 == "add-watch" || $2 == "remove-watch") {found=1} END {exit found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "add-watch" || $2 == "remove-watch" || $2 == "get-validator" || $2 == "set-validator!") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_add-watch" && $3 == "typed-primitive" && $4 == "typed-keyword-reference-watch-registration-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_remove-watch" && $3 == "typed-primitive" && $4 == "typed-keyword-reference-watch-removal-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_get-validator" && $3 == "typed-primitive" && $4 == "typed-reference-validator-read-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_set-validator!" && $3 == "typed-primitive" && $4 == "typed-reference-validator-install-or-clear-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ensure-reduced" && $3 == "typed-primitive" && $4 == "typed-conditional-parameterized-reduced-wrapper-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_force" && $3 == "typed-primitive" && $4 == "typed-lazy-force-or-static-identity-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_rand" && $3 == "typed-primitive" && $4 == "typed-int-or-float-random-bound-specialization-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
@@ -609,6 +613,8 @@ awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-seq" && $3
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/ex-data" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/add-watch" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/remove-watch" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/get-validator" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/set-validator!" && $3 == "source-aggregate" && $4 > 0 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "spec-is-explicitly-excluded-from-the-lg-stdlib-port" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.zip" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "clojure.zip" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"

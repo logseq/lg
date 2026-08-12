@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 215; then
-  echo "compiler call dispatch changed: expected 215 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 217; then
+  echo "compiler call dispatch changed: expected 217 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -169,6 +169,8 @@ awk '
     internal_abi["__lg_atom"] = "typed-reference-allocation-primitive"
     internal_abi["__lg_add-watch"] = "typed-keyword-reference-watch-registration-primitive"
     internal_abi["__lg_remove-watch"] = "typed-keyword-reference-watch-removal-primitive"
+    internal_abi["__lg_get-validator"] = "typed-reference-validator-read-primitive"
+    internal_abi["__lg_set-validator!"] = "typed-reference-validator-install-or-clear-primitive"
     internal_abi["__lg_swap!"] = "typed-contextual-reference-swap-primitive"
     internal_abi["__lg_volatile!"] = "typed-volatile-reference-allocation-primitive"
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"

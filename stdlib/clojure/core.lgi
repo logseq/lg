@@ -146,6 +146,10 @@
   :fn<ref<value>;keyword;fn<keyword;ref<value>;value;value;result>;ref<value>>)
 (signature clojure.core/remove-watch [value]
   :fn<ref<value>;keyword;ref<value>>)
+(signature clojure.core/get-validator [value]
+  :fn<ref<value>;option<fn<value;bool>>>)
+(signature clojure.core/set-validator! [value]
+  :fn<ref<value>;option<fn<value;bool>>;nil>)
 (signature clojure.core/subvec [value]
   :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
 (signature clojure.core/array [value]

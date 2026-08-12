@@ -931,7 +931,13 @@ let rec ocaml_name = function
       "(" ^ ocaml_name witness_ty ^ " option * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
       ocaml_name inner ^ " Seq.t"
-  | TOcaml_app (name, [ arg ]) -> ocaml_name arg ^ " " ^ name
+  | TOcaml_app (name, [ arg ]) ->
+      let arg_name =
+        match arg with
+        | TFn _ -> "(" ^ ocaml_name arg ^ ")"
+        | _ -> ocaml_name arg
+      in
+      arg_name ^ " " ^ name
   | TOcaml_app (name, args) ->
       "(" ^ (args |> List.map ocaml_name |> String.concat ", ") ^ ") " ^ name
   | TTuple args ->

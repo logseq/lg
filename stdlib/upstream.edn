@@ -1254,8 +1254,8 @@
                  :reason :bootstrap-namespace-lookup-traverses-munged-javascript-global-object-properties}
     get-method {:status :static-adaptation
                 :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
-    get-validator {:status :blocked-static-typing
-                   :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
+    get-validator {:status :static-adaptation
+                   :reason :source-function-returns-the-typed-reference-validator-callback-option-without-dynamic-callback-storage}
     int-array {:status :static-adaptation
                :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     is_proto_ {:status :host-boundary
@@ -1360,8 +1360,8 @@
                        :reason :mutates-the-target-specific-global-error-print-callback}
     set-print-fn! {:status :host-boundary
                    :reason :mutates-the-target-specific-global-output-print-callback}
-    set-validator! {:status :blocked-static-typing
-                    :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
+    set-validator! {:status :static-adaptation
+                    :reason :source-function-installs-or-clears-a-validator-callback-tied-to-the-reference-value-type}
     sorted-map-by {:status :static-adaptation
                    :reason :source-persistent-red-black-tree-carries-a-static-key-comparator-returning-int-while-clojurescript-also-normalizes-boolean-predicate-comparators}
     sorted-set-by {:status :static-adaptation

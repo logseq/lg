@@ -7700,6 +7700,54 @@ let create ~compile_expr =
                   "remove-watch requires a statically typed reference"
             | _ -> Error.error "remove-watch expects a reference")
         | Ok _ -> Error.error "remove-watch expects 2 arguments")
+    | "__lg_get-validator" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference ] -> (
+            match reference.ty with
+            | TRef value_ty ->
+                Ok
+                  (typed_ir
+                     (TOcaml_app ("option", [ TFn ([ value_ty ], TBool) ]))
+                     (apply "Lg_runtime.Runtime_reference.get_validator"
+                        [ reference.semantic_expr ]))
+            | ty when Types.is_dynamic ty ->
+                Error.error
+                  "get-validator requires a statically typed reference"
+            | _ -> Error.error "get-validator expects a reference")
+        | Ok _ -> Error.error "get-validator expects 1 argument")
+    | "__lg_set-validator!" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ reference; validator ] -> (
+            match reference.ty with
+            | TRef value_ty ->
+                let validator_ty = TFn ([ value_ty ], TBool) in
+                let expected_option_ty =
+                  TOcaml_app ("option", [ validator_ty ])
+                in
+                let validator_expr =
+                  if Types.equal validator.ty TNil then
+                    Ok (Semantic_ir.Constructor ("None", None))
+                  else if Types.equal validator.ty expected_option_ty then
+                    Ok validator.semantic_expr
+                  else
+                    Result.map
+                      (fun validator_expr ->
+                        Semantic_ir.Constructor ("Some", Some validator_expr))
+                      (adapt_value_to_type env validator_ty validator)
+                in
+                Result.map
+                  (fun validator_expr ->
+                    typed_ir TUnit
+                      (apply "Lg_runtime.Runtime_reference.set_validator"
+                         [ reference.semantic_expr; validator_expr ]))
+                  validator_expr
+            | ty when Types.is_dynamic ty ->
+                Error.error
+                  "set-validator! requires a statically typed reference"
+            | _ -> Error.error "set-validator! expects a reference")
+        | Ok _ -> Error.error "set-validator! expects 2 arguments")
     | "weak-ref" -> (
         match compile_args () with
         | Error _ as err -> err

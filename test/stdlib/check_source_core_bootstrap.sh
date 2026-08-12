@@ -172,6 +172,32 @@ if ! grep -F '(defn remove-watch' "$root/stdlib/clojure/core.cljc" >/dev/null; t
   exit 1
 fi
 
+if ! grep -F '(defn get-validator' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/get-validator is not source-defined as a function" >&2
+  exit 1
+fi
+
+if ! grep -F '(defn set-validator!' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/set-validator! is not source-defined as a function" >&2
+  exit 1
+fi
+
+if ! grep -F '(signature clojure.core/get-validator [value]' \
+  "$root/stdlib/clojure/core.lgi" >/dev/null \
+  || ! grep -F ':fn<ref<value>;option<fn<value;bool>>>' \
+    "$root/stdlib/clojure/core.lgi" >/dev/null; then
+  echo "clojure.core/get-validator is not declared with a typed validator signature" >&2
+  exit 1
+fi
+
+if ! grep -F '(signature clojure.core/set-validator! [value]' \
+  "$root/stdlib/clojure/core.lgi" >/dev/null \
+  || ! grep -F ':fn<ref<value>;option<fn<value;bool>>;nil>' \
+    "$root/stdlib/clojure/core.lgi" >/dev/null; then
+  echo "clojure.core/set-validator! is not declared with a typed validator signature" >&2
+  exit 1
+fi
+
 if ! grep -F '(def ^:dynamic *flush-on-newline* true)' \
   "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/*flush-on-newline* is not source-defined as a dynamic var" >&2
