@@ -352,6 +352,7 @@
 (signature clojure.core/equiv-map [key value]
   :fn<map<key;value>;map<key;value>;bool>)
 (signature clojure.core/regexp? :fn<regex;bool>)
+(signature clojure.core/re-find :fn<regex;string;option<string>>)
 (signature clojure.core/volatile? [value]
   :fn<ref<value>;bool>)
 (signature clojure.core/rational? :fn<int;bool>)

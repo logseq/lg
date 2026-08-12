@@ -8753,7 +8753,14 @@ let create ~compile_expr =
               ("identical? arguments must have the same type, got "
              ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
         | Ok _ -> Error.error "identical? expects 2 arguments")
-    | ("re-matches" | "re-find") as regex_operation -> (
+    | ("re-matches" | "__lg_re-find" | "__lg_re-matches") as
+      regex_operation -> (
+        let public_operation =
+          match regex_operation with
+          | "__lg_re-find" -> "re-find"
+          | "__lg_re-matches" -> "re-matches"
+          | name -> name
+        in
         match compile_args () with
         | Error _ as error -> error
         | Ok [ expression; source ] when Types.equal expression.ty TRegex ->
@@ -8761,26 +8768,54 @@ let create ~compile_expr =
               if Types.equal source.ty TString then Ok source.semantic_expr
               else if Types.is_dynamic source.ty then
                 dynamic_unpack env TString source.semantic_expr
-              else Error.error (regex_operation ^ " expects a regex and string")
+              else Error.error (public_operation ^ " expects a regex and string")
             in
             Result.map
               (fun source ->
                 let matcher =
-                  if regex_operation = "re-matches" then
+                  if public_operation = "re-matches" then
                     "Lg_runtime.Runtime_string.regex_matches_groups"
                   else "Lg_runtime.Runtime_string.regex_find_groups"
                 in
-                let groups =
-                  Semantic_ir.Apply
-                    (Semantic_ir.Ident matcher, [ expression.semantic_expr; source ])
+                let match_string =
+                  if public_operation = "re-matches" then
+                    "Lg_runtime.Runtime_string.regex_matches_match"
+                  else "Lg_runtime.Runtime_string.regex_find_match"
                 in
-                typed_ir (Types.dynamic_constraint TUnknown)
-                  (Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.regex_match",
-                       [ groups ] )))
+                let group_vector =
+                  if public_operation = "re-matches" then
+                    "Lg_runtime.Runtime_string.regex_matches_group_vector"
+                  else "Lg_runtime.Runtime_string.regex_find_group_vector"
+                in
+                match Env.expected_type env with
+                | Some (TNullable TString | TOcaml_app ("option", [ TString ]))
+                  ->
+                    typed_ir (TNullable TString)
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident match_string,
+                           [ expression.semantic_expr; source ] ))
+                | Some
+                    ( TNullable (TVector (TNullable TString))
+                    | TOcaml_app
+                        ("option", [ TVector (TNullable TString) ]) ) ->
+                    typed_ir (TNullable (TVector (TNullable TString)))
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident group_vector,
+                           [ expression.semantic_expr; source ] ))
+                | _ ->
+                    let groups =
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident matcher,
+                          [ expression.semantic_expr; source ] )
+                    in
+                    typed_ir (Types.dynamic_constraint TUnknown)
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident
+                             "Lg_runtime.Runtime_dynamic.regex_match",
+                           [ groups ] )))
               source
         | Ok _ ->
-            Error.error (regex_operation ^ " expects a regex and string"))
+            Error.error (public_operation ^ " expects a regex and string"))
     | "__lg_pprint" -> (
         match compile_args () with
         | Error _ as error -> error

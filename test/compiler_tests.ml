@@ -13242,11 +13242,39 @@ let test_re_find_returns_clojure_match_values () =
        (pr-str (re-find #"z+" "caa"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/re_find_values.cljc" source
+  in
   assert_ocaml_runs "re_find_returns_clojure_match_values"
     "\"aa\":[\"abc-42\" \"abc\" \"42\"]:nil\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/re_find_values.cljc" source)
+
+let test_source_re_find_can_be_required_from_source_core () =
+  let source =
+    {|
+(ns source-re-find-static-app
+  (:require [cljs.core :refer [re-find]]))
+
+(let [plain (re-find #"a+" "caa")
+      missing (re-find #"z+" "caa")
+      [_ word digits] (re-find #"([a-z]+)-([0-9]+)" "x abc-42 y")]
+  (println (str (boolean plain) ":"
+                (boolean missing) ":"
+                word ":"
+                digits)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_re_find_static.cljc"
+      source
+  in
+  assert_ocaml_runs "source_re_find_static" "true:false:abc:42\n" native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_re_find_static.cljc"
+      source
+  in
+  ignore melange_source
 
 let test_regex_match_alternatives_require_a_closed_sum () =
   let source =
@@ -44536,6 +44564,8 @@ let tests =
       test_re_matches_returns_clojure_match_values );
     ( "re-find returns Clojure match values",
       test_re_find_returns_clojure_match_values );
+    ( "source re-find can be required from source core",
+      test_source_re_find_can_be_required_from_source_core );
     ( "regex match alternatives require a closed sum",
       test_regex_match_alternatives_require_a_closed_sum );
     ( "source re-pattern matches ClojureScript",

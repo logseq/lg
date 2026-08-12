@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 198; then
-  echo "compiler call dispatch changed: expected 198 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 199; then
+  echo "compiler call dispatch changed: expected 199 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -87,9 +87,7 @@ awk '
     blocked["type"] = 1
     blocked_reason["class"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
     blocked_reason["type"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
-    blocked["re-find"] = 1
     blocked["re-matches"] = 1
-    blocked_reason["re-find"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     blocked_reason["re-matches"] = "capture-count-dependent-optional-string-or-heterogeneous-capture-vector-result"
     split("clj->js current-time-millis enable-console-print! ex-info future-call pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
@@ -100,6 +98,8 @@ awk '
     internal_abi["__lg_ex-message"] = "static-exception-message-extraction-primitive"
     internal_abi["__lg_ex-cause"] = "static-optional-exception-cause-primitive"
     internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
+    internal_abi["__lg_re-find"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
+    internal_abi["__lg_re-matches"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_sort"] = "typed-stable-sequence-sort-primitive"
     internal_abi["__lg_sort-by"] = "typed-key-projection-and-stable-sequence-sort-primitive"
     internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"

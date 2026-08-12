@@ -244,10 +244,12 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`re-find` (290), `ex-data` (210), `defmethod` (162), `re-matches` (87),
-`add-watch` (36), `re-seq` (23), `flatten` (15), `remove-watch` (14), and
-`memoize` (10). These rows are the priority order for removing the remaining
-static blockers unless a lower-count item unlocks several higher-count ones.
+`ex-data` (210), `defmethod` (162), `re-matches` (87), `add-watch` (36),
+`re-seq` (23), `flatten` (15), `remove-watch` (14), and `memoize` (10).
+`re-find` appears 290 times and is now source-aggregate owned; its open match
+shape is a documented regex dynamic boundary rather than a blocker. These rows
+are the priority order for removing the remaining static blockers unless a
+lower-count item unlocks several higher-count ones.
 
 The printing entry-point cluster is source-owned. `str`, `pr-str`, `pr-str*`,
 `print-str`, `println-str`, `prn-str`, `pr`, `print`, `println`, and `prn` retain
@@ -749,12 +751,18 @@ ClojureScript `(?flags)` prefix behavior. Melange passes those flags to
 JavaScript `RegExp`; Native maps `i`, `m`, and `s` to the OCaml Re backend,
 ignores the unobservable match-indices flag `d`, and uses the backend's string
 semantics for `u`. The unsupported JavaScript `x` flag remains an error.
-`re-find`, `re-matches`, and `re-seq` remain explicitly blocked from source
-porting because their capture-count-dependent results need a closed match-value
-domain; the first two retain their existing narrow runtime result boundary.
-Their generated ML now delegates matching and flag handling to named
-`Runtime_string.regex_*_groups` functions instead of emitting target-specific
-regex state machines at each call site.
+`re-find` is source-owned and can be required, referred, aliased, or used via
+automatic core refer. Its first-class sidecar type supports the common
+no-capture `regex -> string -> option<string>` case. Direct/open match results
+use the existing narrow `Runtime_dynamic.regex_match` boundary because
+ClojureScript returns either a string, a capture vector with optional elements,
+or nil depending on the regex shape. The internal `__lg_re-find` primitive
+records that boundary explicitly and also provides static optional string/vector
+specializations when the expected type is known. `re-matches` and `re-seq`
+remain blocked until the same source ownership and documented boundary split is
+applied to them. Generated ML delegates matching and flag handling to named
+`Runtime_string.regex_*` helpers instead of emitting target-specific regex state
+machines at each call site.
 `completing` is a pure source higher-order function with no runtime primitive.
 Its sidecar signature retains the reducing callback's zero- and two-argument
 relations and the returned function's zero-, one-, and two-argument result
