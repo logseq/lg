@@ -700,6 +700,13 @@ compiler route. Overloaded calls now also unify repeated `seqable<T>` element
 variables across arguments, so a padding collection cannot silently use a
 different element type from the input collection.
 
+`eduction` is source-owned as a public macro over the existing typed
+`->Eduction` constructor. It preserves the upstream `xform*` then final
+collection call shape and composes transducers left-to-right before constructing
+the typed transformer sequence. A first-class variadic `eduction` function value
+is still not representable by LG's current static function type syntax, so the
+adaptation is recorded explicitly in `stdlib/upstream.edn`.
+
 The source array and host-stub batch adds the pinned `areduce`, `locking`,
 `flush`, and `add-to-string-hash-cache` definitions. `areduce` evaluates its
 array expression once and retains the upstream indexed accumulator loop.

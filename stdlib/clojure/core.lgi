@@ -249,6 +249,8 @@
   :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;seqable<input;storage>;accumulator>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;accumulator>>;accumulator;seqable<input;storage>;accumulator>>)
 (signature clojure.core/sequence [input output storage accumulator]
   :overload<fn<optional-seqable<input;storage>;seq<input>>;fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;optional-seqable<input;storage>;seq<output>>>)
+(signature clojure.core/eduction [input output storage accumulator]
+  :overload<fn<fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>;optional-seqable<input;storage>;seq<output>>>)
 (signature clojure.core/repeatedly [value]
   :overload<fn<fn<value>;seq<value>>;fn<int;fn<value>;seq<value>>>)
 (signature clojure.core/repeat [value]

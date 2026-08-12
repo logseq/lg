@@ -39998,10 +39998,13 @@ let test_into_accepts_inferred_seqable_parameters () =
 let test_eduction_applies_map_filter_and_cat_transducers () =
   let source =
     {|
-(def mapped (->Eduction (map inc) [1 2 3]))
-(def filtered (->Eduction (filter (fn [value] (> value 1))) [1 2 3]))
+(ns test.public-eduction
+  (:require [cljs.core :as core :refer [eduction]]))
+
+(def mapped (eduction (map inc) [1 2 3]))
+(def filtered (core/eduction (filter (fn [value] (> value 1))) [1 2 3]))
 (def flattened
-  (->Eduction (comp (map (fn [value] [value (inc value)])) cat) [1 3]))
+  (eduction (map (fn [value] [value (inc value)])) cat [1 3]))
 (def transduced (transduce (map inc) + 0 [1 2 3]))
 (println
   (str (pr-str (vec mapped)) ":"
@@ -40017,6 +40020,31 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/eduction_transducers.cljc"
        source)
+
+let test_eduction_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring source "(defmacro eduction") then
+    failwith "clojure.core/eduction is not source-owned";
+  let interface = read_file "stdlib/clojure/core.lgi" in
+  if not (string_contains_substring interface "clojure.core/eduction") then
+    failwith "clojure.core/eduction is missing from the source interface";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"eduction\"" then
+        failwith "eduction still has public-name compiler dispatch")
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml";
+    ]
+
+let test_eduction_rejects_missing_collection () =
+  {|
+(ns test.eduction-bad-arity
+  (:require [cljs.core :refer [eduction]]))
+(def values (eduction (map inc)))
+|}
+  |> compile_with_stdlib_result Lg.Target.Native "test/eduction_bad_arity.cljc"
+  |> expect_error_contains "unsupported macro arity 1"
 
 let test_eduction_preserves_statically_typed_sequence_elements () =
   let source =
@@ -47801,6 +47829,9 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ("Eduction is source-owned", test_eduction_is_source_owned);
+    ( "Eduction rejects missing collection",
+      test_eduction_rejects_missing_collection );
     ( "Eduction preserves statically typed sequence elements",
       test_eduction_preserves_statically_typed_sequence_elements );
     ( "take-while transducers compile and truncate sequences",

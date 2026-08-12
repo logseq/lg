@@ -1234,8 +1234,8 @@
                   :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     dt->et {:status :special-form
             :reason :clojurescript-macro-helper-that-rewrites-deftype-and-defrecord-protocol-implementation-forms}
-    eduction {:status :blocked-static-typing
-              :reason :returned-value-must-carry-seq-reduce-and-host-iterator-capabilities-over-a-composed-transducer}
+    eduction {:status :static-adaptation
+              :reason :source-macro-expands-the-upstream-xform-star-and-final-collection-shape-to-the-existing-typed-eduction-constructor-while-first-class-variadic-eduction-values-remain-unrepresentable}
     es6-entries-iterator {:status :host-boundary
                           :reason :constructs-a-javascript-es6-map-entry-iterator-object}
     es6-iterator {:status :host-boundary

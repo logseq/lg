@@ -2289,6 +2289,13 @@
   ([xform coll]
    (__lg_transformer_sequence xform coll)))
 
+(defmacro eduction
+  ([xform coll]
+   (list '->Eduction xform coll))
+  ([xform next-xform & more]
+   (let [forms (cons xform (cons next-xform more))]
+     (list '->Eduction (cons 'comp (butlast forms)) (last forms)))))
+
 (defn repeatedly
   ([f]
    (lazy-seq
