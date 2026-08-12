@@ -112,6 +112,16 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `option array` to preserve nil slots. Fixing this without dynamic requires a
   static array read/write capability or call-site specialization.
 
+## Common API blockers that are not missing APIs
+
+- `clojure.core/add-watch` and `clojure.core/remove-watch` are already
+  source-defined and covered by focused Native/Melange tests for typed refs and
+  `IWatchable`. The upstream `add-watch` namespace currently fails earlier in
+  the test body because it accumulates heterogeneous watcher event maps and
+  `ex-data` payloads in one collection. That should be handled as a closed
+  watch-event/ex-data domain or a documented narrow ex-data dynamic boundary,
+  not by weakening ordinary record storage to dynamic.
+
 ## Suggested repair order
 
 1. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.

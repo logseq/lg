@@ -23,4 +23,10 @@
    :status :promotion-typecheck-failed
    :first-error "OCaml typecheck failed: object-array has type 'a option array but clone-test was inferred as int array"
    :example "(clone-test (int-array 3) (int-array 0)) followed by (clone-test (object-array 3) (object-array 0))"
-   :reason "The LG compile scan emits OCaml for this namespace, but smoke promotion typechecks the generated code and exposes a source helper whose array parameter is monomorphized by aset writes. Supporting both int-array and nilable object-array without Runtime_dynamic requires a static array read/write capability or call-site specialization, not a name-dispatch workaround."}]}
+   :reason "The LG compile scan emits OCaml for this namespace, but smoke promotion typechecks the generated code and exposes a source helper whose array parameter is monomorphized by aset writes. Supporting both int-array and nilable object-array without Runtime_dynamic requires a static array read/write capability or call-site specialization, not a name-dispatch workaround."}
+  {:namespace clojure.core-test.add-watch
+   :file "vendor/clojure-test-suite/test/clojure/core_test/add_watch.cljc"
+   :status :blocked-dynamic-boundary
+   :first-error "records cannot cross a dynamic boundary; got record<{:key:keyword,:ref:ref<param>,:old:dynamic<any>,:new:dynamic<any>,:tester:keyword}>"
+   :example "(vswap! state conj {:key key :ref ref :old old :new new :tester 1}) inside multiple watcher callbacks"
+   :reason "clojure.core/add-watch and remove-watch are already source-defined and covered by focused Native/Melange tests for typed refs. The upstream suite stores heterogeneous watcher event maps and ex-data maps in one collection. Supporting that shape requires a narrow closed watch-event/ex-data domain or a documented ex-data dynamic boundary, not widening ordinary records or watch registries to Runtime_dynamic."}]}
