@@ -34,8 +34,13 @@ done
 
 for namespace in cljs.test; do
   if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
-    | grep -F ':status :blocked' >/dev/null; then
-    echo "$namespace is missing a concrete blocked status" >&2
+    | grep -F ':status :static-adaptation' >/dev/null; then
+    echo "$namespace is missing a concrete source migration status" >&2
+    exit 1
+  fi
+  if sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':blocked-static-typing' >/dev/null; then
+    echo "$namespace still contains a definition-level blocked status" >&2
     exit 1
   fi
 done

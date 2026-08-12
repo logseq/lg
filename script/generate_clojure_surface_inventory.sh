@@ -577,9 +577,11 @@ cljs.test/testing|source
 cljs.test/is|source
 cljs.test/are|source
 cljs.test/try-expr|source
+cljs.test/assert-expr|source
 cljs.test/deftest|source
 cljs.test/run-test|source
 cljs.test/run-tests|source
+cljs.test/update-current-env!|source
 cljs.test/use-fixtures|source
 cljs.test/ns?|source
 cljs.test/compose-fixtures|source
@@ -667,7 +669,7 @@ if test -n "$logseq_root" && test -d "$logseq_root"; then
   # blocked or host-only sibling must never downgrade an aggregate namespace or
   # another source definition in that namespace.
   awk -F '\t' '
-    $1 == "namespace" && $3 != "source-aggregate" {
+    $1 == "namespace" && $3 != "source-aggregate" && $3 != "source" {
       print $2 "\t" $3 "\t" $4
     }
     $1 == "definition" {

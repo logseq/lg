@@ -1542,8 +1542,8 @@
   {:source "src/main/cljs/cljs/test.cljs"
    :implementation "cljs/test.cljc"
    :interface "cljs/test.lgi"
-   :status :blocked-static-typing
-   :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
+   :status :static-adaptation
+   :reason :aggregate-source-namespace-with-closed-test-environment-static-registry-async-action-sum-and-documented-special-form-or-host-boundary-definitions-instead-of-remaining-definition-level-static-typing-blockers
    :definitions
    {*current-env* {:status :static-adaptation
                    :reason :source-dynamic-var-retains-a-closed-option-test-environment-type-and-supports-static-binding-without-a-dynamic-value-domain}

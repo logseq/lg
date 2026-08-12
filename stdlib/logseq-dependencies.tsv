@@ -692,7 +692,7 @@ logseq-namespace-status	cljs.core.match	out-of-scope	3	core-match-is-an-independ
 logseq-namespace-status	cljs.pprint	blocked-static-typing	15	logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
 logseq-namespace-status	cljs.reader	source-aggregate	28	aggregate-stdlib
 logseq-namespace-status	cljs.spec.alpha	out-of-scope	4	spec-is-explicitly-excluded-from-the-lg-stdlib-port
-logseq-namespace-status	cljs.test	blocked-static-typing	287	remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
+logseq-namespace-status	cljs.test	source-aggregate	287	aggregate-stdlib
 logseq-namespace-status	clojure.core.async	out-of-scope	1	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
 logseq-namespace-status	clojure.core.async.interop	out-of-scope	1	core-async-interop-is-explicitly-excluded-with-the-parent-library
 logseq-namespace-status	clojure.data	source-aggregate	6	aggregate-stdlib
