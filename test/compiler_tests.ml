@@ -29513,6 +29513,25 @@ let test_source_flatten_flattens_static_seqable_layers () =
   compile_with_stdlib Lg.Target.Melange "source/flatten_app.cljc" source
   |> ignore
 
+let test_source_vec_lite_is_source_owned_seqable_vectorization () =
+  let source =
+    {|
+(ns source-vec-lite-app
+  (:require [cljs.core :as core :refer [vec-lite]]))
+
+(println (pr-str (vec-lite (list 1 2 3))))
+(println (pr-str (core/vec-lite ["a" "b"])))
+(println (pr-str (clojure.core/vec-lite [])))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "source/vec_lite_app.cljc" source
+  in
+  assert_ocaml_runs "source_vec_lite_is_source_owned_seqable_vectorization"
+    "[1 2 3]\n[\"a\" \"b\"]\n[]\n" native_source;
+  compile_with_stdlib Lg.Target.Melange "source/vec_lite_app.cljc" source
+  |> ignore
+
 let test_if_some_first_fuses_first_and_next_for_tail_recursion () =
   let source =
     {|
@@ -46351,6 +46370,8 @@ let tests =
       test_ocaml_seq_unfold_contextualizes_tuple_state );
     ( "source flatten flattens static seqable layers",
       test_source_flatten_flattens_static_seqable_layers );
+    ( "source vec-lite is source-owned seqable vectorization",
+      test_source_vec_lite_is_source_owned_seqable_vectorization );
     ( "if-some first fuses first and next for tail recursion",
       test_if_some_first_fuses_first_and_next_for_tail_recursion );
     ( "OCaml array sequences flat-map lazily",

@@ -4847,6 +4847,9 @@
 (defn vec [coll]
   (rrb-vector/of-list (runtime-seq/to-list (seq coll))))
 
+(defn vec-lite [coll]
+  (vec coll))
+
 (defn comparator
   "Returns a comparator that orders `x` and `y` using `pred`."
   [pred]

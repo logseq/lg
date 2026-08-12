@@ -1266,10 +1266,10 @@ transducer arity and representation-dependent
 lazy or vector result through inline protocol dispatch; vector metadata is
 not yet representable by LG's current static vector runtime and is recorded as
 the remaining adaptation.
-`spread`, `trampoline`, and
-`vec-lite` each require a heterogeneous or dependent function relationship
-that the current static source type system cannot express without narrowing an
-upstream arity.
+`spread` and `trampoline` each require a heterogeneous or dependent function
+relationship that the current static source type system cannot express without
+narrowing an upstream arity. `vec-lite` is source-owned as a one-argument
+wrapper over the existing static `vec` realization boundary.
 
 JavaScript loose equality and falsiness macros, Closure `Uri`, JavaScript
 symbols and object constructors, CLJS `Var` and `Inst` values, analyzer-only

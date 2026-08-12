@@ -716,6 +716,9 @@
 (signature clojure.core/vec [value storage]
   :fn<seqable<value;storage>;vector<value>>)
 
+(signature clojure.core/vec-lite [value storage]
+  :fn<seqable<value;storage>;vector<value>>)
+
 (signature clojure.core/comparator [value result]
   :fn<fn<value;value;truthy<result>>;fn<value;value;int>>)
 

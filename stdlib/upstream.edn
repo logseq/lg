@@ -1026,8 +1026,8 @@
                     :reason :javascript-result-is-numeric-but-analyzer-boolean-context-uses-zero-falsiness-which-one-static-source-type-cannot-preserve}
     vary-meta {:status :static-adaptation
                :reason :source-function-preserves-all-six-clojurescript-arities-first-class-map-use-and-closed-edn-metadata-results-while-direct-calls-bind-the-receiver-once-and-contextually-specialize-custom-metadata-capable-receivers}
-    vec-lite {:status :blocked-static-typing
-              :reason :one-arity-result-depends-on-map-entry-vector-array-or-general-seqable-input-representation}
+    vec-lite {:status :static-adaptation
+              :reason :source-public-wrapper-preserves-cljs-seqable-to-vector-realization-through-the-existing-static-vec-boundary}
     coercive-= {:status :host-boundary
                 :reason :javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent}
     coercive-boolean {:status :host-boundary
