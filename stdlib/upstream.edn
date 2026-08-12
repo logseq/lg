@@ -237,10 +237,10 @@
             :reason :source-iwriter-protocol-method-with-the-upstream-noop-flush-result}
     -pr-writer {:status :static-adaptation
                 :reason :source-iprintwithwriter-protocol-method-dispatches-built-in-static-values-and-user-implementations-to-a-buffer-writer-with-nil-options}
-    -add-method {:status :blocked-static-typing
-                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    -remove-method {:status :blocked-static-typing
-                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -add-method {:status :static-adaptation
+                 :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
+    -remove-method {:status :static-adaptation
+                    :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
     -prefer-method {:status :blocked-static-typing
                     :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     -get-method {:status :static-adaptation
@@ -251,10 +251,10 @@
               :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     -dispatch-fn {:status :static-adaptation
                   :reason :runtime-multifn-boundary-provides-symbol-call-site-dispatch-function-introspection-as-a-non-callable-dynamic-handle}
-    -default-dispatch-val {:status :blocked-static-typing
-                           :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    -reset {:status :blocked-static-typing
-            :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -default-dispatch-val {:status :static-adaptation
+                           :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
+    -reset {:status :static-adaptation
+            :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
     -add-watch {:status :blocked-static-typing
                 :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
     -remove-watch {:status :blocked-static-typing
@@ -441,7 +441,7 @@
                :reason :compiler-owned-static-nominal-type-or-protocol-witness-elaboration-because-the-type-position-is-an-analyzer-symbol-not-a-first-class-source-value}
     satisfies? {:status :special-form
                 :reason :compiler-owned-static-protocol-witness-elaboration-because-the-protocol-position-is-an-analyzer-symbol-not-a-first-class-source-value}
-    type {:status :blocked-static-typing
+    type {:status :host-boundary
           :reason :runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design}
     array? {:status :static-adaptation
             :reason :polymorphic-source-function-and-inline-definition-specialize-the-upstream-javascript-array-test-to-lg-static-array-types}
@@ -1000,8 +1000,8 @@
            :reason :source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity}
     cloneable? {:status :static-adaptation
                 :reason :source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch}
-    default-dispatch-val {:status :blocked-static-typing
-                          :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    default-dispatch-val {:status :static-adaptation
+                          :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
     ifn? {:status :static-adaptation
           :reason :source-function-uses-a-strict-function-fallback-signature-while-inline-specialization-delegates-to-a-private-static-callable-type-predicate-covering-functions-ifn-deftypes-keywords-symbols-vectors-maps-and-sets-without-runtime-dynamic-dispatch}
     partitionv-all {:status :static-adaptation
@@ -1340,10 +1340,10 @@
                        :reason :source-function-preserves-empty-and-space-separated-readable-rendering-plus-the-trailing-newline-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
     ranged-iterator {:status :host-boundary
                      :reason :constructs-a-javascript-es6-iterator-over-a-sorted-collection-range}
-    remove-all-methods {:status :blocked-static-typing
-                        :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    remove-method {:status :blocked-static-typing
-                   :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    remove-all-methods {:status :static-adaptation
+                        :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
+    remove-method {:status :static-adaptation
+                   :reason :precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary}
     remove-tap {:status :blocked-static-typing
                 :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
     remove-watch {:status :static-adaptation

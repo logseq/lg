@@ -279,6 +279,7 @@ awk -F '\t' '
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/name" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/keyword" || $2 == "clojure.core/symbol") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/type" && $3 == "host-boundary" && $4 == "runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/list*" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-int" || $2 == "clojure.core/unchecked-long") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/unchecked-max" || $2 == "clojure.core/unchecked-min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
@@ -316,6 +317,8 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ensure-reduced" && $3 == 
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/force" && $3 == "source" && $4 == "source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ex-data" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/add-watch" || $2 == "clojure.core/remove-watch") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/default-dispatch-val" || $2 == "clojure.core/remove-method" || $2 == "clojure.core/remove-all-methods") && $3 == "source" && $4 == "precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary" {found++} END {exit found != 3}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/-add-method" || $2 == "clojure.core/-remove-method" || $2 == "clojure.core/-default-dispatch-val" || $2 == "clojure.core/-reset") && $3 == "source" && $4 == "runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary" {found++} END {exit found != 4}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/re-matches" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/re-seq" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/rand" && $3 == "source" && $4 == "source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -334,6 +337,25 @@ awk -F '\t' '$1 == "namespace" && ($2 == "cljs.core.async" || $2 == "cljs.core.a
 
 "$root/script/generate_clojure_surface_inventory.sh" \
   "$root" "$tmp/logseq" >"$tmp/inventory.tsv"
+
+awk -F '\t' '
+  FNR == NR && $1 == "definition" {required[$2] = $3 "\t" $4; next}
+  $1 == "definition" {seen[$2] = $3 "\t" $4}
+  END {
+    for (definition in required) {
+      if (!(definition in seen)) {
+        print "manifest definition missing from inventory: " definition > "/dev/stderr"
+        failed = 1
+      } else if (seen[definition] != required[definition]) {
+        print "manifest definition has mismatched inventory status: " definition > "/dev/stderr"
+        failed = 1
+      }
+    }
+    exit failed
+  }
+' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "cljs.test/assert-expr" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 
 awk -F '\t' '
   $1 == "namespace" &&
@@ -454,7 +476,7 @@ if awk -F '\t' '$1 == "compiler-call" && ($2 == "+" || $2 == "-" || $2 == "*" ||
 fi
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_add" || $2 == "__lg_subtract" || $2 == "__lg_multiply" || $2 == "__lg_divide" || $2 == "__lg_less" || $2 == "__lg_less-equal" || $2 == "__lg_greater" || $2 == "__lg_greater-equal" || $2 == "__lg_numeric-equal") && $3 == "typed-primitive" {found++} END {exit found != 9}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "instance?" || $2 == "satisfies?") && $3 == "special-form" && $4 == "compiler-owned-static-type-or-protocol-witness-elaboration" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "compiler-call" && $2 == "type" && $3 == "blocked-static-typing" && $4 == "runtime-class-inspection-conflicts-with-lg-closed-static-types" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "class" || $2 == "type") && $3 == "host-boundary" && $4 == "runtime-class-inspection-conflicts-with-lg-closed-static-types" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "binding" && $3 == "special-form" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-message" && $3 == "typed-primitive" && $4 == "static-exception-message-extraction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-primitive" && $4 == "static-optional-exception-cause-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
@@ -467,6 +489,8 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "re-matches" {found=1} END {exit fou
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-matches" && $3 == "typed-primitive" && $4 == "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "re-seq" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-seq" && $3 == "typed-primitive" && $4 == "documented-regex-sequence-dynamic-boundary-with-clojurescript-match-shape" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_multimethod-remove-method" || $2 == "__lg_multimethod-remove-all-methods") && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-method-table-mutation-boundary" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_multimethod-default-dispatch-val" && $3 == "typed-primitive" && $4 == "documented-runtime-multifn-dynamic-default-dispatch-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_swap!" && $3 == "typed-primitive" && $4 == "typed-contextual-reference-swap-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "add-watch" || $2 == "remove-watch") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_add-watch" && $3 == "typed-primitive" && $4 == "typed-keyword-reference-watch-registration-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"

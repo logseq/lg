@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 206; then
-  echo "compiler call dispatch changed: expected 206 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 209; then
+  echo "compiler call dispatch changed: expected 209 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -83,10 +83,6 @@ awk '
     blocked_reason["select-keys"] = "map-or-record-key-projection-requires-a-dependent-result-shape"
     blocked_reason["some"] = "nullable-first-truthy-result-needs-a-generic-witness-through-the-sequence-loop"
     blocked_reason["vals"] = "map-and-structural-record-value-projection-needs-a-closed-value-sum"
-    blocked["class"] = 1
-    blocked["type"] = 1
-    blocked_reason["class"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
-    blocked_reason["type"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
     split("clj->js current-time-millis enable-console-print! ex-info future-call pr-sequential-writer pr-str pr-writer print println prn raise requiring-resolve resolve uuid weak-clear! weak-deref weak-ref", xs)
     for (i in xs) host[xs[i]] = 1
     split("inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
@@ -104,6 +100,9 @@ awk '
     internal_abi["__lg_multimethod-methods"] = "documented-runtime-multifn-dynamic-method-table-introspection-boundary"
     internal_abi["__lg_multimethod-get-method"] = "documented-runtime-multifn-dynamic-method-handle-introspection-boundary"
     internal_abi["__lg_multimethod-dispatch-fn"] = "documented-runtime-multifn-dynamic-dispatch-function-handle-boundary"
+    internal_abi["__lg_multimethod-remove-method"] = "documented-runtime-multifn-dynamic-method-table-mutation-boundary"
+    internal_abi["__lg_multimethod-remove-all-methods"] = "documented-runtime-multifn-dynamic-method-table-mutation-boundary"
+    internal_abi["__lg_multimethod-default-dispatch-val"] = "documented-runtime-multifn-dynamic-default-dispatch-boundary"
     internal_abi["__lg_sort"] = "typed-stable-sequence-sort-primitive"
     internal_abi["__lg_sort-by"] = "typed-key-projection-and-stable-sequence-sort-primitive"
     internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"
@@ -230,6 +229,8 @@ awk '
     split("js/isNaN js/parseInt js/performance.now", xs)
     for (i in xs) host_reason[xs[i]] = "javascript-global-function-boundary"
     host_reason["raise"] = "host-exception-raising-boundary"
+    host_reason["class"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
+    host_reason["type"] = "runtime-class-inspection-conflicts-with-lg-closed-static-types"
     split("requiring-resolve resolve", xs)
     for (i in xs) host_reason[xs[i]] = "compiler-namespace-resolution-boundary"
     host_reason["weak-ref"] = "target-specific-weak-reference-allocation-boundary"
@@ -287,8 +288,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 131; then
-  echo "compiler form dispatch changed: expected 131 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 134; then
+  echo "compiler form dispatch changed: expected 134 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -515,6 +516,9 @@ awk -F '\t' '$1 == "namespace-ownership" {
 }' "$tmp/manifest-status"
 awk -F '\t' '$1 == "namespace" {
   print "namespace-status\t" $2 "\t" $3 "\t" $4
+}' "$tmp/manifest-status"
+awk -F '\t' '$1 == "definition" {
+  print
 }' "$tmp/manifest-status"
 
 core_ownership=$(awk -F '\t' '

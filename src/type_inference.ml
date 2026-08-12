@@ -609,6 +609,12 @@ let rec inferred_form_type params = function
       Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_multimethod-get-method"; _multifn; _dispatch ] ->
       Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_multimethod-remove-method"; _multifn; _dispatch ] ->
+      Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_multimethod-remove-all-methods"; _multifn ] ->
+      Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_multimethod-default-dispatch-val"; _multifn ] ->
+      Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
@@ -4862,6 +4868,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_multimethod-methods"; _multifn ] -> Ok params
     | FList [ FSymbol "__lg_multimethod-dispatch-fn"; _multifn ] -> Ok params
     | FList [ FSymbol "__lg_multimethod-get-method"; _multifn; _dispatch ] ->
+        Ok params
+    | FList [ FSymbol "__lg_multimethod-remove-method"; _multifn; _dispatch ] ->
+        Ok params
+    | FList [ FSymbol "__lg_multimethod-remove-all-methods"; _multifn ] ->
+        Ok params
+    | FList [ FSymbol "__lg_multimethod-default-dispatch-val"; _multifn ] ->
         Ok params
     | FList [ FSymbol "__lg_re-pattern"; arg ] ->
         let expected_ty =

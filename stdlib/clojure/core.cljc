@@ -3094,6 +3094,18 @@
   [multifn]
   (list '__lg_multimethod-dispatch-fn multifn))
 
+(defmacro remove-method
+  [multifn dispatch-value]
+  (list '__lg_multimethod-remove-method multifn dispatch-value))
+
+(defmacro remove-all-methods
+  [multifn]
+  (list '__lg_multimethod-remove-all-methods multifn))
+
+(defmacro default-dispatch-val
+  [multifn]
+  (list '__lg_multimethod-default-dispatch-val multifn))
+
 (defn re-pattern
   {:inline (fn [expression] (list '__lg_re-pattern expression))}
   [expression]

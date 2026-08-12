@@ -881,6 +881,37 @@ let test_source_multimethods_support_alias_and_multi_argument_dispatch () =
   compile_with_stdlib Lg.Target.Melange "app/multimethod_alias.cljc" source
   |> ignore
 
+let test_source_multimethods_expose_mutation_boundaries () =
+  let source =
+    {|
+(ns app.multimethod-remove
+  (:require [clojure.core :refer [defmulti defmethod methods remove-method
+                                  remove-all-methods default-dispatch-val]]))
+
+(defmulti render :kind :default :fallback)
+(defmethod render :a [m]
+  (str "A:" (:value m)))
+(defmethod render :fallback [m]
+  (str "F:" (:value m)))
+
+(default-dispatch-val render)
+(println (render {:kind :a :value "x"}))
+(remove-method render :a)
+(println (contains? (methods render) :a))
+(println (render {:kind :a :value "x"}))
+(remove-all-methods render)
+(println (contains? (methods render) :fallback))
+(println (nil? (render {:kind :b :value "y"})))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/multimethod_remove.cljc" source
+  in
+  assert_ocaml_runs "source_multimethods_expose_mutation_boundaries"
+    "A:x\nfalse\nF:x\nfalse\ntrue\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/multimethod_remove.cljc" source
+  |> ignore
+
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
     {|
@@ -44194,6 +44225,8 @@ let tests =
       test_source_multimethods_dispatch_through_limited_dynamic_boundary );
     ( "source multimethods support alias and multi argument dispatch",
       test_source_multimethods_support_alias_and_multi_argument_dispatch );
+    ( "source multimethods expose mutation boundaries",
+      test_source_multimethods_expose_mutation_boundaries );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",

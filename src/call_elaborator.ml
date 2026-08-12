@@ -9086,6 +9086,48 @@ let create ~compile_expr =
                        [ Semantic_ir.String id ] )))
               (resolve_multimethod_key scope env multifn_form)
         | _ -> Error.error "dispatch-fn expects one multimethod")
+    | "__lg_multimethod-remove-method" -> (
+        match arg_forms with
+        | [ multifn_form; dispatch_form ] -> (
+            match
+              ( resolve_multimethod_key scope env multifn_form,
+                Multimethod_dynamic_boundary.compile_form ~compile_expr scope env
+                  dispatch_form )
+            with
+            | Ok id, Ok dispatch ->
+                Ok
+                  (typed_ir (Types.dynamic_constraint TUnknown)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_multimethod.remove_method",
+                          [ Semantic_ir.String id; dispatch.semantic_expr ] )))
+            | (Error _ as error), _ | _, (Error _ as error) -> error)
+        | _ ->
+            Error.error "remove-method expects a multimethod and dispatch value")
+    | "__lg_multimethod-remove-all-methods" -> (
+        match arg_forms with
+        | [ multifn_form ] ->
+            Result.map
+              (fun id ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_multimethod.remove_all_methods",
+                       [ Semantic_ir.String id ] )))
+              (resolve_multimethod_key scope env multifn_form)
+        | _ -> Error.error "remove-all-methods expects one multimethod")
+    | "__lg_multimethod-default-dispatch-val" -> (
+        match arg_forms with
+        | [ multifn_form ] ->
+            Result.map
+              (fun id ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_multimethod.default_dispatch_val",
+                       [ Semantic_ir.String id ] )))
+              (resolve_multimethod_key scope env multifn_form)
+        | _ -> Error.error "default-dispatch-val expects one multimethod")
     | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =

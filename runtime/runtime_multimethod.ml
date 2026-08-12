@@ -67,6 +67,19 @@ let register_method id dispatch fn =
          (fun method_ -> not (Dynamic.equal method_.dispatch dispatch))
          multifn.methods
 
+let remove_method id dispatch =
+  let multifn = find_multifn id in
+  multifn.methods <-
+    List.filter
+      (fun method_ -> not (Dynamic.equal method_.dispatch dispatch))
+      multifn.methods;
+  Dynamic.opaque ("multimethod:" ^ id)
+
+let remove_all_methods id =
+  let multifn = find_multifn id in
+  multifn.methods <- [];
+  Dynamic.opaque ("multimethod:" ^ id)
+
 let find_method_entry multifn dispatch =
   match
     List.find_opt
@@ -103,3 +116,7 @@ let get_method id dispatch =
 let dispatch_fn id =
   ignore (find_multifn id);
   Dynamic.opaque ("multimethod-dispatch-fn:" ^ id)
+
+let default_dispatch_val id =
+  let multifn = find_multifn id in
+  multifn.default_dispatch
