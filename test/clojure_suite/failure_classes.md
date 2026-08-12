@@ -20,19 +20,19 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 53 |
-| compile failed | 423 |
+| compiled | 54 |
+| compile failed | 422 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 25 |
+| namespaces compiled on both native and Melange | 26 |
 | namespaces failed on both native and Melange | 210 |
 | native-only compiled namespaces | 0 |
-| Melange-only compiled namespaces | 3 |
+| Melange-only compiled namespaces | 2 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 25 | 213 |
+| native | 26 | 212 |
 | Melange | 28 | 210 |
 
 Namespaces currently compiling on both targets:
@@ -43,6 +43,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.associative-qmark`
 - `clojure.core-test.comment`
 - `clojure.core-test.fn-qmark`
+- `clojure.core-test.format`
 - `clojure.core-test.keyword`
 - `clojure.core-test.make-hierarchy`
 - `clojure.core-test.name`
@@ -69,7 +70,7 @@ Namespaces currently compiling on both targets:
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 240 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 123 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
-| `missing-core-api-macro-or-var` | 30 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
+| `missing-core-api-macro-or-var` | 29 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
@@ -78,13 +79,12 @@ Namespaces currently compiling on both targets:
 
 ## Platform skew
 
-- `clojure.core-test.format`: Melange compiles; native fails on missing `format`.
 - `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
 - `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
 
 ## Current interpretation
 
-The 423 compile failures are not 423 independent core defects. The current
+The 422 compile failures are not 422 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -131,6 +131,10 @@ in `scan_report.json` but still be blocked from smoke promotion.
   parameter and reuses that parameter at unrelated argument types. Supporting
   that shape requires a typed equality capability or overload representation,
   not a universal dynamic function.
+- `clojure.core/format` is present only on Native and currently implements the
+  unary string pass-through case covered by the upstream default suite. LG does
+  not implement Java `Formatter`; adding formatted arguments needs a separate
+  scoped design.
 
 ## Suggested repair order
 

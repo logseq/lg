@@ -1869,6 +1869,29 @@ let test_host_numeric_boundary_constants_are_static () =
   if not (string_contains_substring melange_output "1.7976931348623157e+308")
   then failwith "Number.MAX_VALUE should lower to a static float"
 
+let test_native_format_unary_passes_through_string () =
+  let source =
+    {|
+(ns app.native-format
+  (:require [clojure.core :refer [format println]]))
+
+(println (format "test"))
+(println (clojure.core/format "plain"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/native_format.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "native unary format must not use Runtime_dynamic";
+  assert_ocaml_runs "native_format_unary_passes_through_string" "test\nplain\n"
+    native_source;
+  compile_with_stdlib_result Lg.Target.Melange "test/melange_format.cljc"
+    source
+  |> expect_error_contains "cannot refer unknown symbol clojure.core/format"
+
 let test_nil_equality_accepts_annotated_options () =
   let source =
     {|
@@ -45940,6 +45963,8 @@ let tests =
       test_native_object_constructor_is_truthy_suite_sentinel );
     ( "host numeric boundary constants are static",
       test_host_numeric_boundary_constants_are_static );
+    ( "Native format unary passes through string",
+      test_native_format_unary_passes_through_string );
     ( "nil equality accepts annotated options",
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",

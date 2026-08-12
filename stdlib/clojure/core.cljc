@@ -5457,6 +5457,9 @@
   [& values]
   (__lg_render_display_values "" values))
 
+#?(:native
+   (defn format [^:string fmt] fmt))
+
 (defn pr-str
   {:inline (fn [& values]
              (list 'if '*print-readably*

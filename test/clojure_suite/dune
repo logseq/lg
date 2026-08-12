@@ -10,6 +10,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/format.cljc
   upstream/clojure/core_test/keyword.cljc
   upstream/clojure/core_test/make_hierarchy.cljc
   upstream/clojure/core_test/nan_qmark.cljc
@@ -46,6 +47,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/format.cljc}
    %{dep:upstream/clojure/core_test/keyword.cljc}
    %{dep:upstream/clojure/core_test/make_hierarchy.cljc}
    %{dep:upstream/clojure/core_test/nan_qmark.cljc}
@@ -106,6 +108,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/format.cljc
   upstream/clojure/core_test/keyword.cljc
   upstream/clojure/core_test/make_hierarchy.cljc
   upstream/clojure/core_test/nan_qmark.cljc
@@ -142,6 +145,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/format.cljc}
    %{dep:upstream/clojure/core_test/keyword.cljc}
    %{dep:upstream/clojure/core_test/make_hierarchy.cljc}
    %{dep:upstream/clojure/core_test/nan_qmark.cljc}

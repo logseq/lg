@@ -5,6 +5,7 @@
    [clojure.core-test.associative-qmark :as associative-qmark-test]
    [clojure.core-test.comment :as comment-test]
    [clojure.core-test.fn-qmark :as fn-qmark-test]
+   [clojure.core-test.format :as format-test]
    [clojure.core-test.keyword :as keyword-test]
    [clojure.core-test.make-hierarchy :as make-hierarchy-test]
    [clojure.core-test.nan-qmark :as nan-qmark-test]
