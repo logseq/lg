@@ -275,8 +275,8 @@
                  :reason :source-ichunk-protocol-preserves-arraychunk-drop-first-and-empty-chunk-errors-over-a-parameterized-static-arraychunk-type}
     -clone {:status :static-adaptation
             :reason :source-icloneable-method-uses-a-static-self-result-witness-with-fresh-nonempty-list-vector-sequence-and-hash-map-implementations-while-ocaml-empty-list-and-vector-singletons-retain-identity}
-    -invoke {:status :blocked-static-typing
-             :reason :upstream-ifn-exposes-zero-through-twenty-one-and-variadic-arities-not-representable-by-one-static-protocol-method}
+    -invoke {:status :typed-primitive
+             :reason :function-invocation-is-the-static-callable-abi-for-functions-overloads-keywords-symbols-collections-multifns-and-deftype-ifn-methods-with-arity-specific-elaboration-rather-than-a-source-protocol-method}
     -first {:status :static-adaptation
             :reason :source-iseq-protocol-uses-a-static-option-element-result-and-a-typed-seq-receiver-witness}
     -rest {:status :static-adaptation

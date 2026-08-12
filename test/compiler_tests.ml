@@ -12709,8 +12709,14 @@ let test_source_ifn_predicate_matches_static_callable_values () =
 
 let test_ifn_predicate_is_source_owned () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
+  let manifest = read_file "stdlib/upstream.edn" in
   if not (string_contains_substring core_source "(defn ifn?") then
     failwith "ifn? is missing from the source standard library";
+  if
+    not
+      (string_contains_substring manifest
+         "-invoke {:status :typed-primitive")
+  then failwith "-invoke must be audited as the typed callable ABI";
   List.iter
     (fun path ->
       let compiler_source = read_file path in
