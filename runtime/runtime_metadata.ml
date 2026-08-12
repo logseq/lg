@@ -40,6 +40,10 @@ let of_map convert_key convert_value values =
 
 let of_entries entries = Lg_edn_backend.Map (Array.of_list entries)
 
+let of_open_empty_map values =
+  if Runtime_map.count values = 0 then of_entries []
+  else invalid_arg "open map metadata conversion requires an empty map"
+
 let bool_value = function
   | Lg_edn_backend.Bool value -> value
   | _ -> invalid_arg "expected boolean metadata"

@@ -4977,10 +4977,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected_all expected_ty params args
     | FList (FSymbol "__lg_equal" :: args) ->
         let expected_ty =
+          let inferred_equality_type arg =
+            inferred_form_or_call_type ~lookup_function_ty params arg
+          in
           let concrete =
             args
             |> List.filter_map (fun arg ->
-                   match inferred_form_type params arg with
+                   match inferred_equality_type arg with
                    | TUnknown | TMeta _ | TVar _ -> None
                    | ty when Types.is_dynamic ty -> None
                    | ty -> Some ty)
@@ -4996,6 +4999,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               args
           in
           match concrete with
+          | types
+            when List.exists Edn_value_elaborator.is_value_type types ->
+              TOcaml "Lg_edn_backend.t"
           | [ ty ] -> ty
           | _ :: _ :: _
             when List.exists
@@ -5010,7 +5016,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | [] ->
               args
               |> List.find_map (fun arg ->
-                     match inferred_form_type params arg with
+                     match inferred_equality_type arg with
                      | (TMeta _ | TVar _) as ty -> Some ty
                      | _ -> None)
               |> Option.value ~default:(fresh_type_variable "equality")

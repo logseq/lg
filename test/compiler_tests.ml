@@ -802,6 +802,32 @@ let test_cljs_test_report_dispatches_custom_reporter_methods () =
   compile_with_stdlib Lg.Target.Melange "app/cljs_test_report.cljc" source
   |> ignore
 
+let test_make_hierarchy_equals_upstream_empty_shape () =
+  let source =
+    {|
+(ns app.hierarchy-equality
+  (:require [clojure.core :refer [= make-hierarchy println]]))
+(println (= {:parents {} :descendants {} :ancestors {}} (make-hierarchy)))
+(let [expected {:parents {} :descendants {} :ancestors {}}
+      actual (make-hierarchy)]
+  (println (= expected actual)))
+(let [expected {:parents {} :descendants {} :ancestors {}}
+      actual (make-hierarchy)]
+  (if (= expected actual)
+    (println true)
+    (println false)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/hierarchy_equality.cljc" source
+  in
+  assert_ocaml_runs "make_hierarchy_equals_upstream_empty_shape"
+    "true\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/hierarchy_equality.cljc"
+       source)
+
 let test_cljs_test_report_accepts_qualified_defmethod_target () =
   let source =
     {|
@@ -45637,6 +45663,8 @@ let tests =
       test_source_variadic_functions_work_as_unary_mapv_callbacks );
     ( "cljs.test report dispatches custom reporter methods",
       test_cljs_test_report_dispatches_custom_reporter_methods );
+    ( "make hierarchy equals upstream empty shape",
+      test_make_hierarchy_equals_upstream_empty_shape );
     ( "cljs.test report accepts qualified defmethod target",
       test_cljs_test_report_accepts_qualified_defmethod_target );
     ( "cljs.test do-report dispatches through source var",

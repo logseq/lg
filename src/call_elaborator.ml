@@ -1376,6 +1376,25 @@ let rec pack_metadata_expression ty expression =
       (Semantic_ir.Apply
          (Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name), [ expression ]))
   in
+  let empty_map_expression expression =
+    match Semantic_ir.unlocated expression with
+    | Semantic_ir.Ident
+        ( "Lg_runtime.Runtime_map.empty" | "Lg_runtime.Lg_map.empty"
+        | "M.empty" ) ->
+        true
+    | Semantic_ir.Apply (Semantic_ir.Ident "Lg_runtime.Runtime_map.empty_like", _)
+      ->
+        true
+    | _ -> false
+  in
+  let empty_metadata_map =
+    Semantic_ir.Apply
+      ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_entries",
+        [ Semantic_ir.List [] ] )
+  in
+  let open_map_type ty =
+    match ty with TUnknown | TMeta _ | TVar _ -> true | _ -> Types.is_dynamic ty
+  in
   match Types.constraint_value_type ty with
   | TNil ->
       Ok
@@ -1442,14 +1461,55 @@ let rec pack_metadata_expression ty expression =
                   Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" );
                 ( Semantic_ir.PConstructor
                     ("Some", Some (Semantic_ir.PVar value_name)),
-                  packed );
+                packed );
               ] ))
         (pack_metadata_expression element_ty (Semantic_ir.Ident value_name))
+  | TRecord fields | TNamed_record { fields; nominal = false; _ } ->
+      let source_name = "__lg_metadata_record_value" in
+      let source_expression, wrap =
+        match Semantic_ir.unlocated expression with
+        | Semantic_ir.Ident _ -> (expression, Fun.id)
+        | _ ->
+            ( Semantic_ir.Ident source_name,
+              fun converted ->
+                Semantic_ir.Let
+                  ([ (Semantic_ir.PVar source_name, expression) ], converted) )
+      in
+      let source = typed_ir ty source_expression in
+      let rec pack_entries entries = function
+        | [] ->
+            Ok
+              (wrap
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_entries",
+                      [ Semantic_ir.List (List.rev entries) ] )))
+        | (field : field) :: rest ->
+            let key =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_keyword",
+                  [ Semantic_ir.String field.keyword ] )
+            in
+            let value =
+              Structural_map.field_expr source field
+              |> pack_metadata_expression field.ty
+            in
+            Result.bind value (fun value ->
+                pack_entries (Semantic_ir.Tuple [ key; value ] :: entries) rest)
+      in
+      pack_entries [] fields
   | map_ty -> (
       match Types.dynamic_map_types map_ty with
       | Some (key_ty, value_ty) -> (
           match (metadata_mapper key_ty, metadata_mapper value_ty) with
-          | (Error _ as error), _ | _, (Error _ as error) -> error
+          | (Error _ as error), _ | _, (Error _ as error) ->
+              if empty_map_expression expression then Ok empty_metadata_map
+              else if open_map_type key_ty && open_map_type value_ty then
+                Ok
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_metadata.of_open_empty_map",
+                       [ expression ] ))
+              else error
           | Ok key_mapper, Ok value_mapper ->
               Ok
                 (Semantic_ir.Apply
@@ -3971,16 +4031,43 @@ let rec compile_record_iequiv_pair scope env left right =
   | None -> Ok None
 
 let compile_equality scope env args =
+  let rec pack_metadata_value value =
+    match value.record_values with
+    | Some values ->
+        pack_record_values_metadata values
+    | None -> pack_metadata_expression value.ty value.semantic_expr
+  and pack_record_values_metadata values =
+    let rec pack_entries entries = function
+      | [] ->
+          Ok
+            (Semantic_ir.Apply
+               ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_entries",
+                 [ Semantic_ir.List (List.rev entries) ] ))
+      | ((field : field), expression) :: rest ->
+          let key =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_keyword",
+                [ Semantic_ir.String field.keyword ] )
+          in
+          let value =
+            pack_metadata_value (typed_ir field.ty expression)
+          in
+          Result.bind value (fun value ->
+              pack_entries (Semantic_ir.Tuple [ key; value ] :: entries) rest)
+    in
+    pack_entries [] values
+  in
   let compile_pair left right =
     let fallback () = Core_compare.compile ~env "=" [ left; right ] in
     let metadata_pair metadata other =
-      match pack_metadata_expression other.ty other.semantic_expr with
+      match pack_metadata_value other with
       | Error _ -> fallback ()
       | Ok other ->
           Ok
             (typed_ir TBool
-               (Semantic_ir.Infix
-                  ("=", metadata.semantic_expr, other)))
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal",
+                    [ metadata.semantic_expr; other ] )))
     in
     let dynamic_pair dynamic other =
       match pack_dynamic_value env dynamic.ty other with
@@ -4001,11 +4088,9 @@ let compile_equality scope env args =
              (Semantic_ir.Apply
                 ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal",
                   [ left.semantic_expr; right.semantic_expr ] )))
-      else if Types.equal left.ty (TOcaml "Lg_edn_backend.t")
-         && not (Types.equal right.ty (TOcaml "Lg_edn_backend.t"))
+      else if is_edn_value_type left.ty && not (is_edn_value_type right.ty)
       then metadata_pair left right
-      else if Types.equal right.ty (TOcaml "Lg_edn_backend.t")
-              && not (Types.equal left.ty (TOcaml "Lg_edn_backend.t"))
+      else if is_edn_value_type right.ty && not (is_edn_value_type left.ty)
       then metadata_pair right left
       else if Types.is_dynamic left.ty && not (Types.is_dynamic right.ty) then
         dynamic_pair left right
