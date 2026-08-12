@@ -1750,6 +1750,31 @@ let test_nil_predicates_and_truthiness_use_options () =
     "true:false:false:true:false:true:true:false:true:false:false:true\n"
     ocaml_source
 
+let test_melange_js_undefined_uses_cljs_nil_semantics () =
+  let source =
+    {|
+(ns app.js-undefined
+  (:require [clojure.core :refer [nil? some? not str println]]))
+
+(println
+  (str (nil? js/undefined) ":"
+       (some? js/undefined) ":"
+       (not js/undefined)))
+|}
+  in
+  let melange_source =
+    compile_with_stdlib_result Lg.Target.Melange "test/js_undefined.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "js/undefined nil semantics must not use Runtime_dynamic";
+  if not (string_contains_substring melange_source "None") then
+    failwith "js/undefined should lower to the static nil representation";
+  compile_with_stdlib_result Lg.Target.Native "test/js_undefined_native.cljc"
+    source
+  |> expect_error_contains "unknown symbol js/undefined"
+
 let test_nil_equality_accepts_annotated_options () =
   let source =
     {|
@@ -45780,6 +45805,8 @@ let tests =
       test_not_uses_static_clojure_truthiness );
     ( "nil predicates and truthiness use options",
       test_nil_predicates_and_truthiness_use_options );
+    ( "Melange js undefined uses CLJS nil semantics",
+      test_melange_js_undefined_uses_cljs_nil_semantics );
     ( "nil equality accepts annotated options",
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",

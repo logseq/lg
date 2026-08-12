@@ -9,6 +9,7 @@
    [clojure.core-test.make-hierarchy :as make-hierarchy-test]
    [clojure.core-test.nan-qmark :as nan-qmark-test]
    [clojure.core-test.name :as name-test]
+   [clojure.core-test.nil-qmark :as nil-qmark-test]
    [clojure.core-test.or :as or-test]
    [clojure.core-test.pr-str :as pr-str-test]
    [clojure.core-test.print-str :as print-str-test]

@@ -20,20 +20,20 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 46 |
-| compile failed | 430 |
+| compiled | 48 |
+| compile failed | 428 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 20 |
-| namespaces failed on both native and Melange | 212 |
-| native-only compiled namespaces | 1 |
-| Melange-only compiled namespaces | 5 |
+| namespaces compiled on both native and Melange | 21 |
+| namespaces failed on both native and Melange | 211 |
+| native-only compiled namespaces | 0 |
+| Melange-only compiled namespaces | 6 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
 | native | 21 | 217 |
-| Melange | 25 | 213 |
+| Melange | 27 | 211 |
 
 Namespaces currently compiling on both targets:
 
@@ -47,6 +47,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.make-hierarchy`
 - `clojure.core-test.name`
 - `clojure.core-test.nan-qmark`
+- `clojure.core-test.nil-qmark`
 - `clojure.core-test.or`
 - `clojure.core-test.pr-str`
 - `clojure.core-test.print-str`
@@ -63,7 +64,7 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
-| `host-boundary-or-platform-specific` | 86 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. `#js` literals and nil splices now parse, so `not.cljc`, `some_qmark.cljc`, and `plus.cljc` expose their real host/numeric blockers. |
+| `host-boundary-or-platform-specific` | 84 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; other JS globals remain host-boundary. The large count comes from `number_range.cljc` reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
@@ -72,15 +73,15 @@ Namespaces currently compiling on both targets:
 ## Platform skew
 
 - `clojure.core-test.format`: Melange compiles; native fails on missing `format`.
-- `clojure.core-test.nil-qmark`: native compiles; Melange fails on `js/undefined`.
 - `clojure.core-test.not`: Melange compiles; native fails on `Object`.
 - `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
 - `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
+- `clojure.core-test.some-qmark`: Melange compiles; native fails on `Object`.
 - `clojure.core-test.with-out-str`: Melange compiles; native fails on `Unbound module System`.
 
 ## Current interpretation
 
-The 430 compile failures are not 430 independent core defects. The current
+The 428 compile failures are not 428 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests

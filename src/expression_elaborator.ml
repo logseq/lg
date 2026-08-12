@@ -91,6 +91,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol "nil" -> Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+  | FSymbol "js/undefined" when Env.target env = Target.Melange ->
+      Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
   | FSymbol "js/Error"
     when Env.target env = Target.Melange
          || Env.target env = Target.Js_of_ocaml ->
