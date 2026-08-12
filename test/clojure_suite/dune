@@ -5,8 +5,13 @@
   ../../test_runner/clojure/test.cljc
   ../../test_runner/clojure/test_native.cljc
   lg_portability.cljc
+  upstream/clojure/core_test/and.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/or.cljc
+  upstream/clojure/core_test/when.cljc
+  upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -19,8 +24,13 @@
    %{dep:../../test_runner/clojure/test.cljc}
    %{dep:../../test_runner/clojure/test_native.cljc}
    %{dep:lg_portability.cljc}
+   %{dep:upstream/clojure/core_test/and.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/or.cljc}
+   %{dep:upstream/clojure/core_test/when.cljc}
+   %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))
@@ -41,7 +51,7 @@
  (name clojure_test_suite_smoke_native)
  (modules clojure_test_suite_smoke_native)
  (flags
-  (:standard -w -27-32-37))
+  (:standard -w -26-27-32-37))
  (libraries
   lg.runtime
   lg.edn-backend.native
@@ -57,8 +67,13 @@
   ../../test_runner/clojure/test.cljc
   ../../test_runner/clojure/test_melange.cljc
   lg_portability.cljc
+  upstream/clojure/core_test/and.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/or.cljc
+  upstream/clojure/core_test/when.cljc
+  upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -71,8 +86,13 @@
    %{dep:../../test_runner/clojure/test.cljc}
    %{dep:../../test_runner/clojure/test_melange.cljc}
    %{dep:lg_portability.cljc}
+   %{dep:upstream/clojure/core_test/and.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/or.cljc}
+   %{dep:upstream/clojure/core_test/when.cljc}
+   %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))
@@ -96,7 +116,7 @@
  (modules clojure_test_suite_smoke_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -27-32-37)
+ (compile_flags -w -26-27-32-37)
  (libraries
   lg.edn-backend
   lg.edn-backend.melange
