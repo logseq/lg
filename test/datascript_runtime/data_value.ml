@@ -1372,16 +1372,20 @@ let compare_string_slice left left_start left_length right right_start
     right_length =
   let shared_length = min left_length right_length in
   let rec loop index =
-    if index = shared_length then Int.compare left_length right_length
+    if index = shared_length then left_length - right_length
     else
       let compared =
-        Char.compare
-          (String.unsafe_get left (left_start + index))
-          (String.unsafe_get right (right_start + index))
+        Char.code (String.unsafe_get left (left_start + index))
+        - Char.code (String.unsafe_get right (right_start + index))
       in
       if compared = 0 then loop (index + 1) else compared
   in
   loop 0
+
+let rec first_separator value index length =
+  if index = length then -1
+  else if String.unsafe_get value index = '/' then index
+  else first_separator value (index + 1) length
 
 let compare_identifier left right =
   if String.equal left right then 0
@@ -1389,20 +1393,16 @@ let compare_identifier left right =
     let left_offset = identifier_offset left in
     let right_offset = identifier_offset right in
     let left_separator =
-      String.index_from_opt left left_offset '/'
+      first_separator left left_offset (String.length left)
     in
     let right_separator =
-      String.index_from_opt right right_offset '/'
+      first_separator right right_offset (String.length right)
     in
     let left_namespace_length =
-      match left_separator with
-      | None -> 0
-      | Some separator -> separator - left_offset
+      if left_separator < 0 then 0 else left_separator - left_offset
     in
     let right_namespace_length =
-      match right_separator with
-      | None -> 0
-      | Some separator -> separator - right_offset
+      if right_separator < 0 then 0 else right_separator - right_offset
     in
     let namespace =
       compare_string_slice left left_offset left_namespace_length right
@@ -1411,14 +1411,10 @@ let compare_identifier left right =
     if namespace <> 0 then namespace
     else
       let left_name_start =
-        match left_separator with
-        | None -> left_offset
-        | Some separator -> separator + 1
+        if left_separator < 0 then left_offset else left_separator + 1
       in
       let right_name_start =
-        match right_separator with
-        | None -> right_offset
-        | Some separator -> separator + 1
+        if right_separator < 0 then right_offset else right_separator + 1
       in
       compare_string_slice left left_name_start
         (String.length left - left_name_start)

@@ -117,6 +117,13 @@ let test_keyword_payload_is_extracted_statically () =
   assert (Value.keyword_value (Value.Keyword ":user/name") = Some ":user/name");
   assert (Value.keyword_value (Value.String ":user/name") = None)
 
+let test_identifier_comparison_preserves_datascript_ordering () =
+  assert (Value.compare (Value.Keyword ":a") (Value.Keyword ":a") = 0);
+  assert (Value.compare (Value.Keyword ":a") (Value.Keyword ":a/b") < 0);
+  assert (Value.compare (Value.Keyword ":alpha/z") (Value.Keyword ":beta/a") < 0);
+  assert (Value.compare (Value.Keyword ":alpha/a") (Value.Keyword ":alpha/z") < 0);
+  assert (Value.compare (Value.Symbol "'alpha/a") (Value.Symbol "alpha/a") = 0)
+
 let test_keyword_maps_are_extracted_statically () =
   let expected =
     Lg_runtime.Lg_map.of_list
@@ -1159,6 +1166,7 @@ let () =
   test_static_vectors_convert_directly_to_closed_values ();
   test_tuple_items_are_extracted_without_dynamic_conversion ();
   test_keyword_payload_is_extracted_statically ();
+  test_identifier_comparison_preserves_datascript_ordering ();
   test_keyword_maps_are_extracted_statically ();
   test_boolean_payload_is_extracted_statically ();
   test_collection_items_preserve_collection_kind ();
