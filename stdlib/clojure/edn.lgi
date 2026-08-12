@@ -2,3 +2,6 @@
 
 (signature clojure.edn/read-string
   :fn<string;Lg_edn_backend.t>)
+
+(signature clojure.edn/read
+  :overload<fn<string;Lg_edn_backend.t>;fn<map<keyword;Lg_edn_backend.t>;string;Lg_edn_backend.t>>)

@@ -19,6 +19,18 @@ if grep -F '"read-string"' "$root/src/core_edn.ml" >/dev/null; then
   exit 1
 fi
 
+if grep -F '"read"' "$root/src/core_edn.ml" >/dev/null; then
+  echo "read is still exported by the compiler-owned EDN namespace" >&2
+  exit 1
+fi
+
+for file in stdlib/clojure/edn.cljc stdlib/cljs/reader.cljc; do
+  if ! grep -E '^\(defn read($|[[:space:]])' "$root/$file" >/dev/null; then
+    echo "$file does not source-define read" >&2
+    exit 1
+  fi
+done
+
 for name in register-tag-parser! deregister-tag-parser! \
   register-default-tag-parser! deregister-default-tag-parser! \
   parse-and-validate-timestamp; do
@@ -66,9 +78,9 @@ assert_status cljs.reader/parse-and-validate-timestamp source \
   source-port-preserves-upstream-validation-and-offset-control-flow-over-a-narrow-static-homogeneous-regex-capture-boundary
 assert_status cljs.reader/parse-timestamp host-boundary \
   returns-a-javascript-date-which-has-no-shared-native-source-representation
-assert_status cljs.reader/read blocked-static-typing \
-  pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain
-assert_status clojure.edn/read blocked-static-typing \
-  pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain
+assert_status cljs.reader/read source \
+  source-wrapper-supports-the-string-reader-path-and-closed-edn-options-map-eof-default-over-the-existing-typed-edn-reader-primitive-while-pushback-reader-objects-remain-outside-the-native-melange-source-boundary
+assert_status clojure.edn/read source \
+  source-wrapper-supports-the-string-reader-path-and-closed-edn-options-map-eof-default-over-the-existing-typed-edn-reader-primitive-while-pushback-reader-objects-remain-outside-the-native-melange-source-boundary
 
 exit "$failed"

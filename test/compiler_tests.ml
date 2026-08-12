@@ -5968,6 +5968,41 @@ let test_clojure_edn_read_string_behaves_on_native_and_melange () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/clojure_edn.cljc" source)
 
+let test_clojure_edn_and_cljs_reader_read_use_source_wrappers () =
+  let source =
+    {|
+(ns app.edn-read
+  (:require
+    [cljs.reader :as reader]
+    [clojure.edn :as edn]
+    [ocaml.Lg_runtime.Runtime_edn :as runtime-edn]))
+
+(def eof-value (reader/read-string ":done"))
+
+(println
+  (= "[1 2]"
+     (runtime-edn/write-string (reader/read "[1 2]"))))
+(println
+  (= "{:a 1}"
+     (runtime-edn/write-string (edn/read "{:a 1}"))))
+(println
+  (= ":done"
+     (runtime-edn/write-string (reader/read {:eof eof-value} ""))))
+(println
+  (= ":done"
+     (runtime-edn/write-string (edn/read {:eof eof-value} ""))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/edn_read.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "reader read wrappers must stay in the closed EDN domain";
+  assert_ocaml_runs "clojure_edn_and_cljs_reader_read_use_source_wrappers"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "test/edn_read.cljc" source)
+
 let test_external_overloaded_functions_require_a_static_wrapper () =
   let source =
     {|
@@ -45869,6 +45904,8 @@ let tests =
       test_lazily_persistent_vector_rejects_dynamic_object_arrays );
     ( "clojure.edn read-string behaves on Native and Melange",
       test_clojure_edn_read_string_behaves_on_native_and_melange );
+    ( "clojure.edn and cljs.reader read use source wrappers",
+      test_clojure_edn_and_cljs_reader_read_use_source_wrappers );
     ( "external overloaded functions require a static wrapper",
       test_external_overloaded_functions_require_a_static_wrapper );
     ( "cljs.reader registered tag parsers affect read-string",

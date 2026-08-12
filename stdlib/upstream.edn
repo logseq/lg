@@ -1434,8 +1434,8 @@
    :definitions
    {read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
-    read {:status :blocked-static-typing
-          :reason :pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain}}}
+    read {:status :static-adaptation
+          :reason :source-wrapper-supports-the-string-reader-path-and-closed-edn-options-map-eof-default-over-the-existing-typed-edn-reader-primitive-while-pushback-reader-objects-remain-outside-the-native-melange-source-boundary}}}
 
   cljs.reader
   {:source "src/main/cljs/cljs/reader.cljs"
@@ -1461,8 +1461,8 @@
                                   :reason :source-port-preserves-upstream-validation-and-offset-control-flow-over-a-narrow-static-homogeneous-regex-capture-boundary}
     parse-timestamp {:status :host-boundary
                      :reason :returns-a-javascript-date-which-has-no-shared-native-source-representation}
-    read {:status :blocked-static-typing
-          :reason :pushback-reader-overloads-and-heterogeneous-reader-default-eof-options-require-a-closed-reader-options-domain}}}
+    read {:status :static-adaptation
+          :reason :source-wrapper-supports-the-string-reader-path-and-closed-edn-options-map-eof-default-over-the-existing-typed-edn-reader-primitive-while-pushback-reader-objects-remain-outside-the-native-melange-source-boundary}}}
 
   cljs.math
   {:source "src/main/cljs/cljs/math.cljs"

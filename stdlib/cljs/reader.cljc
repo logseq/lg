@@ -81,6 +81,14 @@
 (defn read-string [source]
   (runtime/read-string source))
 
+(defn read
+  ([source]
+   (read-string source))
+  ([^:map<keyword;Lg_edn_backend.t> opts ^:string source]
+   (if (= source "")
+     (get opts :eof (read-string source))
+     (read-string source))))
+
 (defn register-tag-parser! [tag f]
   (runtime/register-tag-parser (str tag) f))
 
