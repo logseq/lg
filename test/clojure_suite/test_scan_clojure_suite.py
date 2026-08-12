@@ -27,7 +27,7 @@ def load_scanner():
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.scanner = load_scanner()
-        self.tmp = tempfile.TemporaryDirectory(prefix="lg-clojure-suite-test-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="lg-clojure-suite-test-", dir=ROOT / "_build")
         self.suite_dir = pathlib.Path(self.tmp.name)
 
     def tearDown(self) -> None:
@@ -68,6 +68,28 @@ class ScannerDependencyTests(unittest.TestCase):
         files = self.scanner.suite_dependency_files(self.suite_dir, not_eq)
 
         self.assertEqual([number_range, eq], files)
+
+    def test_lg_portability_exposes_remaining_suite_helpers(self) -> None:
+        test_file = self.write_suite_file(
+            "portability_helper_probe.cljc",
+            "(ns clojure.core-test.portability-helper-probe\n"
+            "  (:require [clojure.core-test.portability :refer [sleep] :as p]))\n\n"
+            "(def slept (sleep 0))\n"
+            "(def lazy-check (p/lazy-seq? (list 1 2)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.portability-helper-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
 
 
 if __name__ == "__main__":

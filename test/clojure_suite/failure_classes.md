@@ -61,12 +61,11 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 196 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. |
+| `static-typing-or-closed-domain-boundary` | 210 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after harness helpers were loaded because those tests now reach real LG static boundaries. |
 | `host-boundary-or-platform-specific` | 82 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
 | `suite-require-form-not-accepted` | 28 | Extend scan ingestion or namespace parsing for the suite's require form shape before treating these as stdlib failures. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
-| `missing-suite-support-namespace-or-helper` | 14 | Remaining harness helpers are `clojure.core-test.portability/sleep` and `p/lazy-seq?`. Unknown namespace failures for `number-range`, `eq`, and `every-qmark` are now eliminated by scanner dependency loading. |
 | `reader-conditional-support` | 5 | Fix reader conditional edge cases separately from core var behavior. |
 | `unsupported-form-or-arity` | 3 | Known examples: `fnil` default positions and `re-find` arity. These are small, targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
@@ -84,17 +83,16 @@ Namespaces currently compiling on both targets:
 The 433 compile failures are not 433 independent core defects. The current
 highest leverage blockers are:
 
-1. Remaining suite harness helpers: `sleep` and `p/lazy-seq?` block watch,
-   realized/lazy, concat, map, partition, and take tests before the actual
-   public var behavior is reached.
-2. Static typing versus upstream negative runtime tests: many upstream tests
+1. Static typing versus upstream negative runtime tests: many upstream tests
    intentionally call functions with bad argument types and expect `thrown?`.
    In LG, many of these should remain compile-time errors and need a separate
    static-error lane.
-3. Host and numeric boundaries exposed by `number_range`: `Long/MAX_VALUE`,
+2. Host and numeric boundaries exposed by `number_range`: `Long/MAX_VALUE`,
    `js/Number.MAX_SAFE_INTEGER`, bigint, bigdecimal, ratio, UUID, and char
    literal support must be scoped explicitly because they affect reader, type
    system, equality, ordering, arithmetic, printing, and EDN.
+3. Suite namespace reader compatibility: 28 namespaces use `(:require
+   clojure.core ...)`, which LG currently rejects before testing the var.
 4. Missing API/macro forms: these should be triaged public-var by public-var.
    Some are source-portable functions; others are compiler/host behavior.
 5. Host boundaries: JVM class identity and JS globals are not portable stdlib
@@ -104,8 +102,6 @@ highest leverage blockers are:
 ## Suggested repair order
 
 1. Fix suite ingestion/support first:
-   - load required `clojure.core-test.*` support namespaces;
-   - extend `lg_portability.cljc` only for test harness helpers;
    - handle accepted require form variants used by the suite.
 2. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.
 3. Add a static-error test lane for upstream `thrown?` cases that LG rejects at
