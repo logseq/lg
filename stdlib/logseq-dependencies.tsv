@@ -332,7 +332,7 @@ logseq-core-var-status	clojure.core/*	source-aggregate	406	precompiled-lg-source
 logseq-core-var-status	clojure.core/*command-line-args*	host-boundary	14	target-startup-host-injects-an-optional-process-argument-sequence
 logseq-core-var-status	clojure.core/*print-err-fn*	host-boundary	7	target-runtime-installs-a-mutable-variadic-javascript-error-output-callback
 logseq-core-var-status	clojure.core/*print-fn*	host-boundary	8	target-runtime-installs-a-mutable-variadic-javascript-string-output-callback
-logseq-core-var-status	clojure.core/*print-length*	blocked-static-typing	1	optional-print-limit-state-is-not-yet-threaded-through-every-static-collection-printer-witness
+logseq-core-var-status	clojure.core/*print-length*	source-aggregate	1	precompiled-lg-source
 logseq-core-var-status	clojure.core/*warn-on-infer*	special-form	1	compiler-intrinsic-mutates-file-scoped-analyzer-inference-warning-configuration-and-emits-no-runtime-var
 logseq-core-var-status	clojure.core/+	source-aggregate	402	precompiled-lg-source
 logseq-core-var-status	clojure.core/-	source-aggregate	472	precompiled-lg-source
@@ -454,7 +454,7 @@ logseq-core-var-status	clojure.core/find	source-aggregate	4	precompiled-lg-sourc
 logseq-core-var-status	clojure.core/find-ns	host-boundary	9	bootstrap-namespace-lookup-walks-javascript-global-objects-and-a-mutable-cache
 logseq-core-var-status	clojure.core/find-ns-obj	host-boundary	4	bootstrap-namespace-lookup-traverses-munged-javascript-global-object-properties
 logseq-core-var-status	clojure.core/first	source-aggregate	1989	precompiled-lg-source
-logseq-core-var-status	clojure.core/flatten	blocked-static-typing	15	arbitrarily-nested-sequential-input-can-produce-heterogeneous-leaf-types-without-a-closed-recursive-value-domain
+logseq-core-var-status	clojure.core/flatten	source-aggregate	15	precompiled-lg-source
 logseq-core-var-status	clojure.core/flush	source-aggregate	14	precompiled-lg-source
 logseq-core-var-status	clojure.core/fn?	source-aggregate	307	precompiled-lg-source
 logseq-core-var-status	clojure.core/fnil	source-aggregate	63	precompiled-lg-source
@@ -628,7 +628,7 @@ logseq-core-var-status	clojure.core/to-array	source-aggregate	31	precompiled-lg-
 logseq-core-var-status	clojure.core/transient	source-aggregate	24	precompiled-lg-source
 logseq-core-var-status	clojure.core/tree-seq	source-aggregate	10	precompiled-lg-source
 logseq-core-var-status	clojure.core/true?	source-aggregate	615	precompiled-lg-source
-logseq-core-var-status	clojure.core/type	blocked-static-typing	499	runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design
+logseq-core-var-status	clojure.core/type	host-boundary	499	runtime-class-inspection-conflicts-with-lg-closed-static-types-and-is-explicitly-excluded-by-the-language-design
 logseq-core-var-status	clojure.core/undefined?	host-boundary	1	tests-the-javascript-undefined-value
 logseq-core-var-status	clojure.core/unsigned-bit-shift-right	source-aggregate	4	precompiled-lg-source
 logseq-core-var-status	clojure.core/update	source-aggregate	454	precompiled-lg-source
