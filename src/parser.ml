@@ -95,6 +95,23 @@ let rec parse_one ~target = function
             (FList (List.map (fun child -> child.form) children))
             span,
           rest )
+  | { desc = Symbol "#js"; span = prefix_span } :: rest -> (
+      match parse_one ~target rest with
+      | Error _ -> error_at prefix_span "#js literal expects a map or vector"
+      | Ok (value, rest) -> (
+          match value.form with
+          | FMap _ | FVector _ ->
+              Ok
+                ( {
+                    value with
+                    span =
+                      {
+                        start_offset = prefix_span.start_offset;
+                        end_offset = value.span.end_offset;
+                      };
+                  },
+                  rest )
+          | _ -> error_at value.span "#js literal expects a map or vector"))
   | { desc = Symbol value; span } :: rest ->
       Ok (located (FSymbol value) span, rest)
   | { desc = Keyword value; span } :: rest ->

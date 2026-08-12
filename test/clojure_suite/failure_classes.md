@@ -20,20 +20,20 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 45 |
-| compile failed | 431 |
+| compiled | 46 |
+| compile failed | 430 |
 | namespaces scanned | 238 |
 | namespaces compiled on both native and Melange | 20 |
-| namespaces failed on both native and Melange | 213 |
+| namespaces failed on both native and Melange | 212 |
 | native-only compiled namespaces | 1 |
-| Melange-only compiled namespaces | 4 |
+| Melange-only compiled namespaces | 5 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
 | native | 21 | 217 |
-| Melange | 24 | 214 |
+| Melange | 25 | 213 |
 
 Namespaces currently compiling on both targets:
 
@@ -63,24 +63,25 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
-| `host-boundary-or-platform-specific` | 82 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
+| `host-boundary-or-platform-specific` | 85 | Keep JVM/JS class identity, `cljs.js`, `js/*`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. The large count comes from `number_range.cljc` now being loaded and reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. `#js` literals now parse, so `not.cljc` and `some_qmark.cljc` expose their real `Object`/`js/undefined` host-boundary blockers. |
 | `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
 | `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
-| `reader-conditional-support` | 5 | Fix reader conditional edge cases separately from core var behavior. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
+| `reader-conditional-support` | 1 | Fix reader conditional edge cases separately from core var behavior. |
 
 ## Platform skew
 
 - `clojure.core-test.format`: Melange compiles; native fails on missing `format`.
 - `clojure.core-test.nil-qmark`: native compiles; Melange fails on `js/undefined`.
+- `clojure.core-test.not`: Melange compiles; native fails on `Object`.
 - `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
 - `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
 - `clojure.core-test.with-out-str`: Melange compiles; native fails on `Unbound module System`.
 
 ## Current interpretation
 
-The 431 compile failures are not 431 independent core defects. The current
+The 430 compile failures are not 430 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
