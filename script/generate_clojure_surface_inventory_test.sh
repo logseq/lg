@@ -158,6 +158,20 @@ awk -F '\t' '$1 ~ /private/ {found=1} END {exit found}' "$tmp/upstream-vars.tsv"
 
 bb "$root/script/extract_stdlib_manifest_status.clj" \
   "$root/stdlib/upstream.edn" >"$tmp/manifest-status.tsv"
+if awk -F '\t' '$1 == "definition" && $3 == "deferred" {print; found=1} END {exit !found}' \
+  "$tmp/manifest-status.tsv" >"$tmp/deferred-definitions.tsv"; then
+  echo "stdlib manifest contains deferred public definitions:" >&2
+  cat "$tmp/deferred-definitions.tsv" >&2
+  exit 1
+fi
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/not-native" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  ($2 == "cljs.reader/*default-data-reader-fn*" ||
+   $2 == "cljs.reader/*tag-table*") &&
+  $3 == "host-boundary" && $4 != "" {found++}
+  END {exit found != 2}
+' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   $1 == "definition" &&
   ($2 == "cljs.test/function?" ||

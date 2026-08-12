@@ -28631,6 +28631,19 @@ let test_source_sequence_predicates_have_no_public_dispatch () =
       "src/expression_support.ml"; "src/expression_elaborator.ml";
     ]
 
+let test_source_not_native_matches_clojurescript () =
+  let source =
+    {|
+(ns app.not-native
+  (:require [cljs.core :as core :refer [not-native]]))
+(println (and (nil? not-native) (nil? core/not-native)))
+|}
+  in
+  assert_ocaml_runs "source_not_native" "true\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  ignore
+    (compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_thread_last_inferred_functions_pass_collections_to_take_while () =
   let source =
     {|
@@ -45794,6 +45807,8 @@ let tests =
     ("batched sequence functions work", test_batched_sequence_functions_work);
     ( "source sequence predicates have no public dispatch",
       test_source_sequence_predicates_have_no_public_dispatch );
+    ( "source not-native matches ClojureScript",
+      test_source_not_native_matches_clojurescript );
     ( "thread-last inferred functions pass collections to take-while",
       test_thread_last_inferred_functions_pass_collections_to_take_while );
     ( "sort accepts statically typed record fields",

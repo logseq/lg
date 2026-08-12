@@ -231,11 +231,11 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 721 source entries (68.15%), zero typed
-primitives, 49 special forms, 92 host boundaries, 92 static-typing blockers,
-58 out-of-scope entries, and 46 deferred entries. The deferred entries are
-public vars newly exposed by auditing `def`, `defonce`, and `defmulti`; they
-must be individually ported or assigned a concrete boundary before completion.
+macro surfaces. The current baseline is 722 source entries (68.24%), zero typed
+primitives, 57 special forms, 121 host boundaries, 100 static-typing blockers,
+58 out-of-scope entries, and zero deferred entries. Every public function,
+macro, protocol method, multimethod, and public value discovered in the pinned
+surface therefore has explicit ownership and evidence.
 Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
@@ -389,8 +389,9 @@ are special forms; JavaScript syntax and host-object macros are host boundaries;
 multimethod, per-object protocol extension, and dynamic root-rebinding macros
 carry concrete static blockers. These classifications do not count as source
 coverage.
-All remaining public `cljs.core` function surfaces are also explicitly
-classified. The non-source families are JavaScript iterators and prototype
+All remaining public `cljs.core` function and value surfaces are also explicitly
+classified. The source-owned `not-native` value preserves the upstream `nil`
+sentinel. The non-source families are JavaScript iterators and prototype
 inspection, chunked-sequence internals, multimethods, reference watches and
 validators, heterogeneous printing, sorted collections, bootstrap namespace
 objects, and analyzer helpers. Each individual var

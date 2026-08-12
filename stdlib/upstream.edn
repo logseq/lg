@@ -27,7 +27,95 @@
    :primitive-boundary true
    :interface "clojure/core.lgi"
    :definitions
-   {comment {:status :ported
+   {not-native {:status :ported
+                :reason :source-public-constant-preserves-the-upstream-nil-sentinel-value}
+    *1 {:status :host-boundary
+        :reason :repl-host-slot-stores-the-most-recent-result-across-arbitrary-unrelated-evaluation-result-types}
+    *2 {:status :host-boundary
+        :reason :repl-host-slot-stores-the-second-most-recent-result-across-arbitrary-unrelated-evaluation-result-types}
+    *3 {:status :host-boundary
+        :reason :repl-host-slot-stores-the-third-most-recent-result-across-arbitrary-unrelated-evaluation-result-types}
+    *e {:status :host-boundary
+        :reason :repl-host-slot-stores-the-most-recent-javascript-or-native-evaluation-exception}
+    *assert* {:status :special-form
+              :reason :compiler-intrinsic-controls-whether-the-assert-source-macro-emits-runtime-checks}
+    *clojurescript-version* {:status :host-boundary
+                            :reason :value-is-generated-by-the-clojurescript-build-and-is-not-defined-by-the-pinned-upstream-source-file}
+    *command-line-args* {:status :host-boundary
+                         :reason :target-startup-host-injects-an-optional-process-argument-sequence}
+    *eval* {:status :host-boundary
+            :reason :self-hosted-evaluator-callback-accepts-open-code-data-and-returns-arbitrary-host-evaluation-results}
+    *loaded-libs* {:status :host-boundary
+                   :reason :self-hosted-loader-maintains-a-mutable-global-set-of-javascript-loaded-library-symbols}
+    *main-cli-fn* {:status :host-boundary
+                   :reason :command-line-target-host-installs-and-invokes-the-application-entrypoint-callback}
+    *ns* {:status :host-boundary
+          :reason :bootstrap-runtime-binds-the-current-javascript-namespace-wrapper}
+    *out* {:status :special-form
+           :reason :compiler-owned-binding-and-with-out-str-forms-lower-the-output-binding-to-a-lexical-buffer-writer}
+    *flush-on-newline* {:status :blocked-static-typing
+                        :reason :public-dynamic-printer-option-is-not-yet-threaded-through-the-closed-buffer-printer-capability}
+    *print-newline* {:status :blocked-static-typing
+                     :reason :public-dynamic-printer-option-is-not-yet-threaded-through-the-closed-output-printer-capability}
+    *print-readably* {:status :blocked-static-typing
+                      :reason :public-dynamic-printer-option-is-not-yet-threaded-through-display-versus-readable-static-printer-witness-selection}
+    *print-meta* {:status :blocked-static-typing
+                  :reason :metadata-printing-requires-a-closed-metadata-domain-shared-by-every-printable-value-type}
+    *print-dup* {:status :blocked-static-typing
+                 :reason :duplicate-readable-printing-requires-type-preserving-constructor-output-across-the-complete-printable-domain}
+    *print-namespace-maps* {:status :blocked-static-typing
+                            :reason :namespace-map-lifting-requires-a-closed-keyword-or-symbol-key-domain-and-independent-map-value-types}
+    *print-length* {:status :blocked-static-typing
+                    :reason :optional-print-limit-state-is-not-yet-threaded-through-every-static-collection-printer-witness}
+    *print-level* {:status :blocked-static-typing
+                   :reason :optional-recursive-print-depth-state-is-not-yet-threaded-through-every-static-nested-value-printer-witness}
+    *print-fn-bodies* {:status :host-boundary
+                       :reason :javascript-function-source-body-printing-depends-on-generated-function-host-representation}
+    *print-fn* {:status :host-boundary
+                :reason :target-runtime-installs-a-mutable-variadic-javascript-string-output-callback}
+    *print-err-fn* {:status :host-boundary
+                    :reason :target-runtime-installs-a-mutable-variadic-javascript-error-output-callback}
+    *unchecked-arrays* {:status :special-form
+                        :reason :compiler-intrinsic-mutates-file-scoped-analyzer-array-checking-mode-and-emits-no-runtime-var}
+    *unchecked-if* {:status :special-form
+                    :reason :compiler-intrinsic-mutates-balanced-analyzer-conditional-checking-mode-and-emits-no-runtime-var}
+    *warn-on-infer* {:status :special-form
+                     :reason :compiler-intrinsic-mutates-file-scoped-analyzer-inference-warning-configuration-and-emits-no-runtime-var}
+    CHAR_MAP {:status :host-boundary
+              :reason :public-value-is-a-javascript-object-enum-used-by-the-clojurescript-munging-host-implementation}
+    DEMUNGE_MAP {:status :host-boundary
+                 :reason :public-value-is-a-javascript-object-enum-used-by-the-clojurescript-demunging-host-implementation}
+    DEMUNGE_PATTERN {:status :host-boundary
+                     :reason :lazily-initialized-javascript-regular-expression-cache-has-no-shared-native-public-representation}
+    INIT {:status :host-boundary
+          :reason :javascript-object-identity-sentinel-controls-es6-sequence-iterator-state}
+    START {:status :host-boundary
+           :reason :javascript-object-identity-sentinel-controls-transformer-iterator-state}
+    ITER_SYMBOL {:status :host-boundary
+                 :reason :value-is-the-javascript-symbol-iterator-property-or-legacy-host-string-fallback}
+    LongImpl {:status :host-boundary
+              :reason :selects-the-javascript-bigint-or-goog-long-constructor-implementation}
+    MODULE_INFOS {:status :host-boundary
+                  :reason :clojurescript-compiler-injects-generated-javascript-module-metadata}
+    MODULE_URIS {:status :host-boundary
+                 :reason :clojurescript-compiler-injects-generated-javascript-module-uri-metadata}
+    NS_CACHE {:status :host-boundary
+              :reason :bootstrap-namespace-introspection-uses-a-mutable-javascript-global-object-cache}
+    PROTOCOL_SENTINEL {:status :host-boundary
+                       :reason :javascript-object-identity-sentinel-marks-missing-protocol-lookup-values}
+    defn {:status :special-form
+          :reason :clojurescript-macro-bootstrap-var-expands-function-definitions-through-analyzer-def-and-fn-forms}
+    fast-path-protocols {:status :special-form
+                         :reason :clojurescript-macro-analyzer-table-assigns-generated-javascript-protocol-mask-partitions-and-bits}
+    fast-path-protocol-partitions-count {:status :special-form
+                                         :reason :clojurescript-macro-analyzer-constant-is-derived-from-the-generated-protocol-mask-table}
+    js-reserved {:status :host-boundary
+                 :reason :javascript-property-munging-reserved-word-table-is-part-of-the-host-name-encoding-boundary}
+    string-hash-cache {:status :host-boundary
+                       :reason :mutable-javascript-object-cache-stores-string-hash-results-by-host-property-name}
+    string-hash-cache-count {:status :host-boundary
+                             :reason :mutable-counter-is-owned-by-the-javascript-string-hash-cache-eviction-policy}
+    comment {:status :ported
              :reason :source-macro-preserves-the-upstream-ignored-body-and-nil-result}
     if-not {:status :static-adaptation
             :reason :source-macro-swaps-the-ordinary-if-branches-directly-so-upstream-two-and-three-argument-control-flow-retains-static-branch-narrowing}
@@ -1355,7 +1443,11 @@
    :primitive-boundary true
    :interface "cljs/reader.lgi"
    :definitions
-   {read-string {:status :static-adaptation
+   {*default-data-reader-fn* {:status :host-boundary
+                              :reason :public-dynamic-atom-is-backed-by-the-process-wide-typed-edn-reader-callback-registry-and-cannot-be-exposed-as-an-independent-source-atom-without-diverging-from-registration-functions}
+    *tag-table* {:status :host-boundary
+                 :reason :public-dynamic-atom-mixes-built-in-javascript-tag-readers-with-process-wide-mutable-typed-edn-callback-registration-and-has-no-shared-native-source-map-representation}
+    read-string {:status :static-adaptation
                  :reason :one-arity-source-wrapper-uses-the-typed-host-edn-reader-primitive-while-the-heterogeneous-options-map-arity-remains-a-documented-blocker}
     register-tag-parser! {:status :static-adaptation
                           :reason :source-wrapper-preserves-previous-parser-return-and-typed-closed-edn-callback-registration-with-an-explicit-symbol-to-runtime-string-key-adapter}

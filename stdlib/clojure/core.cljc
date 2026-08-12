@@ -27,6 +27,8 @@
             [ocaml.Lg_runtime.Runtime_uuid :as runtime-uuid]
             [ocaml.Lg_runtime.Runtime_weak :as runtime-weak]))
 
+(def not-native nil)
+
 (defprotocol INamed
   (-name [value])
   (-namespace [value]))
