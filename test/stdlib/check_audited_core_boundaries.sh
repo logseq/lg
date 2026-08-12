@@ -49,6 +49,7 @@ with-redefs	source	source-macro-expands-to-a-private-typed-var-root-rebinding-fo
 cljs.pprint/deftype	source	source-macro-preserves-the-upstream-defrecord-constructor-and-type-tag-predicate-expansion-while-field-types-remain-inferred-by-lg-static-record-use-instead-of-dynamic-fields
 cljs.test/assert-expr	source	source-macro-exposes-the-default-static-boolean-assertion-expansion-used-by-is-while-clojurescript-analyzer-time-user-defmethod-extension-remains-a-documented-macro-time-boundary
 cljs.test/update-current-env!	source	source-macro-preserves-current-test-environment-updates-for-supported-literal-paths-over-the-closed-test-env-record-while-rejecting-open-runtime-paths-instead-of-erasing-the-environment-to-dynamic
+persistent-array-map-seq	typed-primitive	lg-array-map-is-a-source-wrapper-over-the-static-map-primitive-and-its-seq-is-provided-by-typed-map-entry-iteration-instead-of-clojurescript-alternating-array-storage
 record?	source	source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch
 replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation
 remove-all-methods	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary

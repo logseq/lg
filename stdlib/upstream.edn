@@ -1298,8 +1298,8 @@
              :reason :constructs-the-clojurescript-lite-mode-javascript-object-backed-map}
     object-array {:status :static-adaptation
                   :reason :source-port-preserves-upstream-size-seqable-fill-and-seq-padding-arities-through-a-typed-object-array-source-protocol}
-    persistent-array-map-seq {:status :blocked-static-typing
-                              :reason :alternating-key-value-storage-needs-distinct-associated-key-and-value-types-in-one-sequence-result}
+    persistent-array-map-seq {:status :typed-primitive
+                              :reason :lg-array-map-is-a-source-wrapper-over-the-static-map-primitive-and-its-seq-is-provided-by-typed-map-entry-iteration-instead-of-clojurescript-alternating-array-storage}
     pr-seq-writer {:status :static-adaptation
                    :reason :source-function-preserves-upstream-first-value-and-space-separated-writer-order-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
     pr-sequential-writer {:status :static-adaptation
