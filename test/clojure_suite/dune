@@ -10,6 +10,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/keyword.cljc
   upstream/clojure/core_test/make_hierarchy.cljc
   upstream/clojure/core_test/nan_qmark.cljc
   upstream/clojure/core_test/name.cljc
@@ -20,6 +21,7 @@
   upstream/clojure/core_test/prn_str.cljc
   upstream/clojure/core_test/rand_int.cljc
   upstream/clojure/core_test/sequential_qmark.cljc
+  upstream/clojure/core_test/symbol.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
@@ -39,6 +41,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/keyword.cljc}
    %{dep:upstream/clojure/core_test/make_hierarchy.cljc}
    %{dep:upstream/clojure/core_test/nan_qmark.cljc}
    %{dep:upstream/clojure/core_test/name.cljc}
@@ -49,6 +52,7 @@
    %{dep:upstream/clojure/core_test/prn_str.cljc}
    %{dep:upstream/clojure/core_test/rand_int.cljc}
    %{dep:upstream/clojure/core_test/sequential_qmark.cljc}
+   %{dep:upstream/clojure/core_test/symbol.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}
@@ -92,6 +96,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/keyword.cljc
   upstream/clojure/core_test/make_hierarchy.cljc
   upstream/clojure/core_test/nan_qmark.cljc
   upstream/clojure/core_test/name.cljc
@@ -102,6 +107,7 @@
   upstream/clojure/core_test/prn_str.cljc
   upstream/clojure/core_test/rand_int.cljc
   upstream/clojure/core_test/sequential_qmark.cljc
+  upstream/clojure/core_test/symbol.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
@@ -121,6 +127,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/keyword.cljc}
    %{dep:upstream/clojure/core_test/make_hierarchy.cljc}
    %{dep:upstream/clojure/core_test/nan_qmark.cljc}
    %{dep:upstream/clojure/core_test/name.cljc}
@@ -131,6 +138,7 @@
    %{dep:upstream/clojure/core_test/prn_str.cljc}
    %{dep:upstream/clojure/core_test/rand_int.cljc}
    %{dep:upstream/clojure/core_test/sequential_qmark.cljc}
+   %{dep:upstream/clojure/core_test/symbol.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}

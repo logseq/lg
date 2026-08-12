@@ -50,6 +50,12 @@
 (defprotocol ^:private IIdentifierNamespaceCoercion
   (-coerce-identifier-namespace [value] :option<string>))
 
+(defprotocol ^:private INativeIdentifierNamespacePart
+  (-coerce-native-identifier-namespace [value] :option<string>))
+
+(defprotocol ^:private INativeIdentifierNamePart
+  (-coerce-native-identifier-name [value] :string))
+
 (defprotocol ^:private IMungeCoercion
   (-munge [value] :self))
 
@@ -85,9 +91,47 @@
   IDemungeCoercion
   (-demunge [value] (runtime-string/demunge value)))
 
+(defn- invalid-native-identifier-part [function-name]
+  (raise
+   (Invalid_argument
+    (str function-name " expects an optional string namespace and string name"))))
+
+#?(:default
+   (extend-type :string
+     INativeIdentifierNamespacePart
+     (-coerce-native-identifier-namespace [value] (Some value))
+     INativeIdentifierNamePart
+     (-coerce-native-identifier-name [value] value)))
+
 (extend-type nil
   IIdentifierNamespaceCoercion
   (-coerce-identifier-namespace [value] value))
+
+#?(:default
+   (extend-type nil
+     INativeIdentifierNamespacePart
+     (-coerce-native-identifier-namespace [value] None)
+     INativeIdentifierNamePart
+     (-coerce-native-identifier-name [value]
+       (invalid-native-identifier-part "identifier"))))
+
+#?(:default
+   (extend-type :symbol
+     INativeIdentifierNamespacePart
+     (-coerce-native-identifier-namespace [value]
+       (invalid-native-identifier-part "identifier"))
+     INativeIdentifierNamePart
+     (-coerce-native-identifier-name [value]
+       (invalid-native-identifier-part "identifier"))))
+
+#?(:default
+   (extend-type :keyword
+     INativeIdentifierNamespacePart
+     (-coerce-native-identifier-namespace [value]
+       (invalid-native-identifier-part "identifier"))
+     INativeIdentifierNamePart
+     (-coerce-native-identifier-name [value]
+       (invalid-native-identifier-part "identifier"))))
 
 (defn name [value]
   (INameCoercion/-coerce-name value))
@@ -95,10 +139,16 @@
 (defn- keyword-one [value]
   (IKeywordCoercion/-coerce-keyword value))
 
-(defn- keyword-two [namespace value]
-  (__lg_builtin-keyword
-   (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
-   (INameCoercion/-coerce-name value)))
+#?(:cljs
+   (defn- keyword-two [namespace value]
+     (__lg_builtin-keyword
+      (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+      (INameCoercion/-coerce-name value)))
+   :default
+   (defn- keyword-two [namespace value]
+     (__lg_builtin-keyword
+      (-coerce-native-identifier-namespace namespace)
+      (-coerce-native-identifier-name value))))
 
 (defn keyword
   {:inline (fn
@@ -116,10 +166,16 @@
 (defn- symbol-one [value]
   (ISymbolCoercion/-coerce-symbol value))
 
-(defn- symbol-two [namespace value]
-  (__lg_builtin-symbol
-   (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
-   (str value)))
+#?(:cljs
+   (defn- symbol-two [namespace value]
+     (__lg_builtin-symbol
+      (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+      (str value)))
+   :default
+   (defn- symbol-two [namespace value]
+     (__lg_builtin-symbol
+      (-coerce-native-identifier-namespace namespace)
+      (-coerce-native-identifier-name value))))
 
 (defn symbol
   {:inline

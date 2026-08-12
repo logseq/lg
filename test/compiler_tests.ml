@@ -27262,6 +27262,28 @@ let test_keyword_and_symbol_are_source_owned_static_protocols () =
 (def make-keyword keyword)
 (def make-symbol core/symbol)
 
+(def native-two-arg-identifiers-reject-non-strings?
+  #?(:cljs
+     true
+     :default
+     (and
+      (try
+        (keyword 'other/ns "item")
+        false
+        (catch (Invalid_argument _) true))
+      (try
+        (keyword "other" 'item)
+        false
+        (catch (Invalid_argument _) true))
+      (try
+        (symbol 'other/ns "item")
+        false
+        (catch (Invalid_argument _) true))
+      (try
+        (symbol "other" :item)
+        false
+        (catch (Invalid_argument _) true)))))
+
 (def invalid-keyword?
   (try
     (keyword true)
@@ -27278,11 +27300,14 @@ let test_keyword_and_symbol_are_source_owned_static_protocols () =
   (and (= :plain (make-keyword "plain"))
        (nil? (keyword nil))
        (= :db/item (keyword 'db/item))
-       (= :ns/item (make-keyword :other/ns 'other/item))
+       #?(:cljs (= :ns/item (make-keyword :other/ns 'other/item))
+          :default true)
        (= :root (keyword nil "root"))
        (= 'plain (make-symbol :plain))
-       (= 'ns/item (symbol :other/ns :other/item))
+       #?(:cljs (= 'ns/item (symbol :other/ns :other/item))
+          :default true)
        (= 'root (make-symbol nil "root"))
+       native-two-arg-identifiers-reject-non-strings?
        invalid-keyword?
        invalid-symbol?))
 |}
