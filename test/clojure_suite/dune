@@ -25,6 +25,7 @@
   upstream/clojure/core_test/symbol.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
+  upstream/clojure/core_test/with_out_str.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -57,6 +58,7 @@
    %{dep:upstream/clojure/core_test/symbol.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
+   %{dep:upstream/clojure/core_test/with_out_str.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))
@@ -113,6 +115,7 @@
   upstream/clojure/core_test/symbol.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
+  upstream/clojure/core_test/with_out_str.cljc
   smoke_runner.cljc
   ../../bin/lg_cli.exe)
  (action
@@ -145,6 +148,7 @@
    %{dep:upstream/clojure/core_test/symbol.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
+   %{dep:upstream/clojure/core_test/with_out_str.cljc}
    %{dep:smoke_runner.cljc}
    -o
    %{target})))

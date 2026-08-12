@@ -1676,6 +1676,25 @@ let test_print_and_println_match_clojure_output () =
     "abc\n\"value\" [1 2]\n\n"
     ocaml_source
 
+let test_with_out_str_captures_source_print_functions () =
+  let source =
+    {|
+(def captured
+  (with-out-str
+    (print "a")
+    (println "b")
+    (prn [:c])
+    (let [inner (with-out-str (println "inner"))]
+      (print inner))))
+
+(println (= "ab\n[:c]\ninner\n" captured))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "with_out_str_captures_source_print_functions" "true\n"
+    native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_core_api_nested_calls_maps_and_vectors () =
   let source =
     {|
@@ -45812,6 +45831,8 @@ let tests =
     ("println rejects unknown symbols", test_println_rejects_unknown_symbols);
     ( "print and println match Clojure output",
       test_print_and_println_match_clojure_output );
+    ( "with-out-str captures source print functions",
+      test_with_out_str_captures_source_print_functions );
     ( "core api supports nested calls, maps, and vectors",
       test_core_api_nested_calls_maps_and_vectors );
     ("core api supports if and vector ops", test_core_api_if_and_vector_ops);

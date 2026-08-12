@@ -20,6 +20,7 @@
    [clojure.core-test.symbol :as symbol-test]
    [clojure.core-test.when :as when-test]
    [clojure.core-test.when-not :as when-not-test]
+   [clojure.core-test.with-out-str :as with-out-str-test]
    [clojure.test :refer [run-tests]]))
 
 (run-tests)

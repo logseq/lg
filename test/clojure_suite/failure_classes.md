@@ -112,13 +112,6 @@ in `scan_report.json` but still be blocked from smoke promotion.
   parameter as `int array`; size-created `object-array` remains
   `option array` to preserve nil slots. Fixing this without dynamic requires a
   static array read/write capability or call-site specialization.
-- `clojure.core-test.with-out-str`: LG generation succeeds for Native and
-  Melange after the narrow Native `System/getProperty "line.separator"` and
-  string `.replace` support. Smoke promotion currently fails at runtime because
-  `with-out-str` binds `*out*` to a buffer but source `print`, `println`, and
-  `prn` still write to process stdout instead of the dynamically bound writer.
-  Fixing this requires making source print functions respect the typed
-  dynamically bindable `*out*` writer on both Native and Melange.
 
 ## Common API blockers that are not missing APIs
 

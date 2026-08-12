@@ -10239,10 +10239,18 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok [ arg ] when Types.equal arg.ty TString ->
-            Ok
-              (typed_ir TUnit
-                 (Semantic_ir.Apply
-                    (Semantic_ir.Ident "print_string", [ arg.semantic_expr ])))
+            let output =
+              match lookup_binding scope env "*out*" with
+              | Ok writer ->
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+                      [ Semantic_ir.Ident writer.ocaml_name; arg.semantic_expr ]
+                    )
+              | Error _ ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident "print_string", [ arg.semantic_expr ])
+            in
+            Ok (typed_ir TUnit output)
         | Ok [ _ ] -> Error.error "print output expects a string"
         | Ok _ -> Error.error "print output expects 1 argument")
     | "__lg_print_output_line" -> (
@@ -10251,16 +10259,33 @@ let create ~compile_expr =
         | Ok [ text; newline; flush_on_newline ]
           when Types.equal text.ty TString && Types.equal newline.ty TBool
                && Types.equal flush_on_newline.ty TBool ->
-            Ok
-              (typed_ir TUnit
-                 (Semantic_ir.Apply
+            let output =
+              match lookup_binding scope env "*out*" with
+              | Ok writer ->
+                  let write value =
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_print.write",
+                        [ Semantic_ir.Ident writer.ocaml_name; value ] )
+                  in
+                  Semantic_ir.Sequence
+                    [
+                      write text.semantic_expr;
+                      Semantic_ir.If
+                        ( newline.semantic_expr,
+                          write (Semantic_ir.String "\n"),
+                          Semantic_ir.Unit );
+                    ]
+              | Error _ ->
+                  Semantic_ir.Apply
                     ( Semantic_ir.Ident
                         "Lg_runtime.Runtime_print.output_line",
                       [
                         text.semantic_expr;
                         newline.semantic_expr;
                         flush_on_newline.semantic_expr;
-                      ] )))
+                      ] )
+            in
+            Ok (typed_ir TUnit output)
         | Ok (text :: _ :: _ :: _) when not (Types.equal text.ty TString) ->
             Error.error "print output line expects a string"
         | Ok [ _; newline; _ ] when not (Types.equal newline.ty TBool) ->
