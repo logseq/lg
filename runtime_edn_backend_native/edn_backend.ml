@@ -622,6 +622,53 @@ let add_json_small_int buffer value =
     in
     add_json_positive_int_digits buffer value)
 
+let common_small_int_tokens = Array.init 128 string_of_int
+
+let common_int4_attribute_tokens =
+  Array.init 128 (fun value -> "," ^ string_of_int value ^ ",")
+
+let common_int4_tx_tokens =
+  Array.init 128 (fun value -> "," ^ string_of_int value ^ "]")
+
+let small_int_token value =
+  if value >= 0 && value < Array.length common_small_int_tokens then
+    Array.unsafe_get common_small_int_tokens value
+  else string_of_int value
+
+let int4_attribute_token value =
+  if value >= 0 && value < Array.length common_int4_attribute_tokens then
+    Array.unsafe_get common_int4_attribute_tokens value
+  else "," ^ string_of_int value ^ ","
+
+let int4_tx_token value =
+  if value >= 0 && value < Array.length common_int4_tx_tokens then
+    Array.unsafe_get common_int4_tx_tokens value
+  else "," ^ string_of_int value ^ "]"
+
+let json_string_token value = Yojson.Safe.to_string (`String value)
+
+let cached_json_string_token string_tokens value =
+  match Hashtbl.find_opt string_tokens value with
+  | Some token -> token
+  | None ->
+      let token = json_string_token value in
+      Hashtbl.replace string_tokens value token;
+      token
+
+let json_int_token value =
+  let min_safe_json_integer = -9007199254740991L in
+  let max_safe_json_integer = 9007199254740991L in
+  if value >= min_safe_json_integer && value <= max_safe_json_integer then
+    Int64.to_string value
+  else json_string_token (Int64.to_string value)
+
+let json_float_token value =
+  match classify_float value with
+  | FP_nan -> json_string_token "NaN"
+  | FP_infinite when value > 0. -> json_string_token "Infinity"
+  | FP_infinite -> json_string_token "-Infinity"
+  | FP_normal | FP_subnormal | FP_zero -> Yojson.Safe.to_string (`Float value)
+
 let int4_array_length entities attributes values txs =
   let length = Array.length values in
   if
@@ -630,6 +677,35 @@ let int4_array_length entities attributes values txs =
     || Array.length txs <> length
   then invalid_arg "Int4_array columns must have equal lengths";
   length
+
+let rec compact_json_value string_tokens = function
+  | Nil -> Some "null"
+  | Bool true -> Some "true"
+  | Bool false -> Some "false"
+  | String value | Symbol value | Bigint value | Decimal value | Ratio value
+  | Regex value ->
+      Some (cached_json_string_token string_tokens value)
+  | Keyword value ->
+      Some (cached_json_string_token string_tokens (":" ^ value))
+  | Small_int value -> Some (small_int_token value)
+  | Int value -> Some (json_int_token value)
+  | Float value -> Some (json_float_token value)
+  | Vector values when Array.length values = 1 ->
+      compact_json_value string_tokens values.(0)
+      |> Option.map (fun value -> "[" ^ value ^ "]")
+  | Vector values when Array.length values = 2 -> (
+      match
+        ( compact_json_value string_tokens values.(0),
+          compact_json_value string_tokens values.(1) )
+      with
+      | Some first, Some second -> Some ("[" ^ first ^ "," ^ second ^ "]")
+      | _ -> None)
+  | Int_vector values when Array.length values = 2 ->
+      Some
+        ("[" ^ string_of_int values.(0) ^ "," ^ string_of_int values.(1) ^ "]")
+  | Char _ | List _ | Vector _ | Int4_vector _ | Int4_array _ | Int_vector _
+  | Map _ | Set _ | Tagged _ | Json_source _ ->
+      None
 
 let rec add_json_value buffer = function
   | Nil -> Buffer.add_string buffer "null"
@@ -646,32 +722,29 @@ let rec add_json_value buffer = function
   | List values | Vector values | Set values ->
       add_json_array buffer values
   | Int4_vector (first, second, third, fourth) ->
-      Buffer.add_char buffer '[';
-      add_json_small_int buffer first;
-      Buffer.add_char buffer ',';
-      add_json_small_int buffer second;
-      Buffer.add_char buffer ',';
-      add_json_value buffer third;
-      Buffer.add_char buffer ',';
-      add_json_small_int buffer fourth;
-      Buffer.add_char buffer ']'
-  | Int4_array (entities, attributes, values, txs) ->
-      let _ = int4_array_length entities attributes values txs in
-      Buffer.add_char buffer '[';
-      Array.iteri
-        (fun index value ->
-          if index > 0 then Buffer.add_char buffer ',';
+      (match compact_json_value (Hashtbl.create 8) third with
+      | Some third ->
           Buffer.add_char buffer '[';
-          add_json_small_int buffer entities.(index);
+          Buffer.add_string buffer (small_int_token first);
           Buffer.add_char buffer ',';
-          add_json_small_int buffer attributes.(index);
+          Buffer.add_string buffer (small_int_token second);
           Buffer.add_char buffer ',';
-          add_json_value buffer value;
+          Buffer.add_string buffer third;
           Buffer.add_char buffer ',';
-          add_json_small_int buffer txs.(index);
+          Buffer.add_string buffer (small_int_token fourth);
+          Buffer.add_char buffer ']'
+      | None ->
+          Buffer.add_char buffer '[';
+          add_json_small_int buffer first;
+          Buffer.add_char buffer ',';
+          add_json_small_int buffer second;
+          Buffer.add_char buffer ',';
+          add_json_value buffer third;
+          Buffer.add_char buffer ',';
+          add_json_small_int buffer fourth;
           Buffer.add_char buffer ']')
-        values;
-      Buffer.add_char buffer ']'
+  | Int4_array (entities, attributes, values, txs) ->
+      add_json_int4_array buffer entities attributes values txs
   | Int_vector values ->
       Buffer.add_char buffer '[';
       Array.iteri
@@ -688,6 +761,48 @@ let rec add_json_value buffer = function
       add_json_value buffer value;
       Buffer.add_char buffer '}'
   | Json_source source -> Buffer.add_string buffer source
+
+and add_json_int4_array buffer entities attributes values txs =
+  Buffer.add_char buffer '[';
+  let length = int4_array_length entities attributes values txs in
+  let string_tokens = Hashtbl.create 256 in
+  let previous_entity = ref 0 in
+  let previous_entity_prefix = ref "" in
+  let has_previous_entity = ref false in
+  for index = 0 to length - 1 do
+    let entity = Array.unsafe_get entities index in
+    let entity_prefix =
+      if !has_previous_entity && entity = !previous_entity then
+        !previous_entity_prefix
+      else
+        let entity_token = small_int_token entity in
+        let continued_prefix = ",[" ^ entity_token in
+        let entity_prefix =
+          if index > 0 then continued_prefix else "[" ^ entity_token
+        in
+        has_previous_entity := true;
+        previous_entity := entity;
+        previous_entity_prefix := continued_prefix;
+        entity_prefix
+    in
+    let value = Array.unsafe_get values index in
+    match compact_json_value string_tokens value with
+    | Some value ->
+        Buffer.add_string buffer entity_prefix;
+        Buffer.add_string buffer
+          (int4_attribute_token (Array.unsafe_get attributes index));
+        Buffer.add_string buffer value;
+        Buffer.add_string buffer (int4_tx_token (Array.unsafe_get txs index))
+    | None ->
+        if index > 0 then Buffer.add_char buffer ',';
+        add_json_value buffer
+          (Int4_vector
+             ( entity,
+               Array.unsafe_get attributes index,
+               value,
+               Array.unsafe_get txs index ))
+  done;
+  Buffer.add_char buffer ']'
 
 and add_json_array buffer values =
   Buffer.add_char buffer '[';

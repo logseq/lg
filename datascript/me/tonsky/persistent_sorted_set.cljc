@@ -171,11 +171,27 @@
         (arrays/acopy arr splice-to cut-to result values-end)
         result))))
 
+(defn cut-n-splice-one [arr cut-from cut-to splice-from splice-to value]
+  (let [left-length (- splice-from cut-from)
+        right-length (- cut-to splice-to)
+        value-end (inc left-length)
+        result-length (+ value-end right-length)]
+    (if (= 0 result-length)
+      (arrays/empty-array)
+      (let [result (Array.make result-length value)]
+        (arrays/acopy arr cut-from splice-from result 0)
+        (arrays/aset result left-length value)
+        (arrays/acopy arr splice-to cut-to result value-end)
+        result))))
+
 (defn splice [arr splice-from splice-to values]
   (cut-n-splice arr 0 (arrays/alength arr) splice-from splice-to values))
 
 (defn insert [arr idx values]
   (cut-n-splice arr 0 (arrays/alength arr) idx idx values))
+
+(defn insert-one [arr idx value]
+  (cut-n-splice-one arr 0 (arrays/alength arr) idx idx value))
 
 (defn merge-n-split [left right]
   (let [left-length (arrays/alength left)
@@ -600,18 +616,18 @@
               (arrays/array
                (new-leaf-address (arrays/aslice keys 0 middle) address)
                (new-leaf
-                (cut-n-splice
-                 keys middle keys-length idx-int idx-int (arrays/array key))))
+                (cut-n-splice-one
+                 keys middle keys-length idx-int idx-int key)))
               (arrays/array
                (new-leaf-address
-                (cut-n-splice
-                 keys 0 middle idx-int idx-int (arrays/array key))
+                (cut-n-splice-one
+                 keys 0 middle idx-int idx-int key)
                 address)
                (new-leaf (arrays/aslice keys middle keys-length)))))
           :else
           (arrays/array
            (new-leaf-address
-            (splice keys idx-int idx-int (arrays/array key)) address))))
+            (insert-one keys idx-int key) address))))
       (let [idx (binary-search-l cmp keys (- (arrays/alength keys) 2) key)
             idx-int #?(:melange (int idx) :default idx)
             child (node-child node idx-int storage)]

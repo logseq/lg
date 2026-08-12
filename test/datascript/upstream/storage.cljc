@@ -153,8 +153,8 @@
   :fn<datascript.db/Datom;serialized-datom>)
 
 (defn serializable-datom [datom]
-  (Datascript_runtime.Storage_value.serialized_datom
-   (.-e datom) (str (db/datom-attr datom)) (.-v datom) (.-tx datom)))
+  (Datascript_runtime.Storage_value.serialized_keyword_datom
+   (.-e datom) (db/datom-attr datom) (.-v datom) (.-tx datom)))
 
 (defn- restore-datom [datom]
   (db/datom

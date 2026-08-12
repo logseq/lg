@@ -41,6 +41,9 @@ type t =
   | Stored_tail of serialized_datom Rrbvec.t Rrbvec.t
 
 let serialized_datom e a v tx = { e; a; v; tx }
+let serialized_keyword_datom e (a : Lg_runtime.Runtime_keyword.t) v tx =
+  { e; a; v; tx }
+
 let serialized_node keys addresses = { keys; addresses }
 let serialized_index address shift count = { address; shift; count }
 let datom_e datom = datom.e

@@ -30,6 +30,8 @@ type attribute_indexes
 
 val create_attribute_indexes : string Rrbvec.t -> attribute_indexes
 val find_attribute_index : attribute_indexes -> string -> int
+val find_keyword_attribute_index :
+  attribute_indexes -> Lg_runtime.Runtime_keyword.t -> int
 
 val datom : int -> int -> t -> int -> t
 val datom_entity : t -> int
@@ -162,6 +164,8 @@ val prepared_schema_value : prepared -> t
 val prepared_schema_source : prepared -> string
 val prepared_attrs : prepared -> string Rrbvec.t
 val prepared_attrs_array : prepared -> string array
+val prepared_attrs_keyword_array :
+  prepared -> Lg_runtime.Runtime_keyword.t array
 val prepared_keywords : prepared -> string Rrbvec.t
 val prepared_datom_count : prepared -> int
 val prepared_aevt_array : prepared -> int array option

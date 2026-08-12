@@ -259,6 +259,37 @@ let data_value_of_edn_string source =
 let keyword_reference index =
   Lg_edn_backend.Int_vector [| 0; index |]
 
+let string_needs_edn_escape value =
+  let length = String.length value in
+  let rec check index =
+    if index = length then false
+    else
+      match String.unsafe_get value index with
+      | '"' | '\\' | '\n' | '\r' | '\t' | '\b' -> true
+      | value when Char.code value < 32 -> true
+      | _ -> check (index + 1)
+  in
+  check 0
+
+let simple_string_vector_source values =
+  let buffer = Buffer.create 64 in
+  let rec add index = function
+    | [] ->
+        Buffer.add_char buffer ']';
+        Some (Buffer.contents buffer)
+    | Data_value.String value :: rest ->
+        if string_needs_edn_escape value then None
+        else (
+          if index > 0 then Buffer.add_char buffer ' ';
+          Buffer.add_char buffer '"';
+          Buffer.add_string buffer value;
+          Buffer.add_char buffer '"';
+          add (index + 1) rest)
+    | _ :: _ -> None
+  in
+  Buffer.add_char buffer '[';
+  add 0 values
+
 let encode_non_keyword_with freeze value =
   match value with
   | Data_value.String value -> string value
@@ -277,7 +308,13 @@ let encode_non_keyword_with freeze value =
 let freeze_edn value =
   Lg_edn_backend.String (Lg_edn_backend.to_edn_string value)
 
-let encode_non_keyword value = encode_non_keyword_with freeze_edn value
+let encode_non_keyword value =
+  match value with
+  | Data_value.Vector values -> (
+      match simple_string_vector_source values with
+      | Some source -> vector [ int 1; string source ]
+      | None -> encode_non_keyword_with freeze_edn value)
+  | value -> encode_non_keyword_with freeze_edn value
 
 let decode_value_with thaw keywords value =
   match value with
@@ -340,7 +377,22 @@ let encode_value_with encoder freeze = function
       reference
   | value -> encode_non_keyword_with freeze value
 
-let encode_value encoder value = encode_value_with encoder freeze_edn value
+let encode_value encoder = function
+  | Data_value.String value -> Lg_edn_backend.String value
+  | Data_value.Keyword keyword ->
+      let reference =
+        match Lg_edn_backend.string_map_find encoder.keyword_references keyword with
+        | Some reference -> reference
+        | None ->
+          let index = encoder.keyword_count in
+          let reference = keyword_reference index in
+          Lg_edn_backend.string_map_set encoder.keyword_references keyword reference;
+          encoder.reversed_keywords <- keyword :: encoder.reversed_keywords;
+          encoder.keyword_count <- index + 1;
+          reference
+      in
+      reference
+  | value -> encode_non_keyword value
 
 let encoder_keywords encoder =
   encoder.reversed_keywords |> List.rev |> Rrbvec.of_list
@@ -388,6 +440,10 @@ let find_attribute_index indexes target =
       find (Array.length attributes - 1)
   | Large_attribute_indexes indexes ->
       Attribute_indexes.find_opt indexes target |> Option.value ~default:(-1)
+
+let find_keyword_attribute_index indexes (target : Lg_runtime.Runtime_keyword.t)
+    =
+  find_attribute_index indexes target
 
 let datom entity attribute value tx =
   Lg_edn_backend.Int4_vector (entity, attribute, value, tx)
@@ -739,6 +795,9 @@ let prepared_schema_value value = value.prepared_database_schema
 let prepared_schema_source value = string_value value.prepared_database_schema
 let prepared_attrs value = value.prepared_database_attrs
 let prepared_attrs_array value =
+  Rrbvec.to_array value.prepared_database_attrs
+
+let prepared_attrs_keyword_array value =
   Rrbvec.to_array value.prepared_database_attrs
 
 let prepared_keywords value = value.prepared_database_keywords

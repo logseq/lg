@@ -953,6 +953,28 @@ let test_serialization_uses_a_closed_typed_facade () =
       (Rrbvec.of_list [ ":user/name" ])
       encoded_keyword
     = Value.Keyword ":user/name");
+  let encoded_aliases =
+    Serialization_value.encode_non_keyword
+      (Value.Vector [ Value.String "A. C. Q. W."; Value.String "A. J. Finn" ])
+  in
+  assert (
+    encoded_aliases
+    = Lg_edn_backend.Vector
+        [|
+          Lg_edn_backend.Small_int 1;
+          Lg_edn_backend.String {|["A. C. Q. W." "A. J. Finn"]|};
+        |]);
+  let encoded_escaped_aliases =
+    Serialization_value.encode_non_keyword
+      (Value.Vector [ Value.String {|A "Q"|}; Value.String {|C\D|} ])
+  in
+  assert (
+    encoded_escaped_aliases
+    = Lg_edn_backend.Vector
+        [|
+          Lg_edn_backend.Small_int 1;
+          Lg_edn_backend.String {|["A \"Q\"" "C\\D"]|};
+        |]);
   let compact_datoms = Serialization_value.create_datom_array 2 in
   Serialization_value.set_datom compact_datoms 0 42 0 encoded_name 7;
   Serialization_value.set_datom compact_datoms 1 43 0 encoded_keyword 8;
@@ -1112,6 +1134,30 @@ let test_prepared_json_decodes_closed_value_categories () =
   | Value.Float value -> assert (Float.is_nan value)
   | _ -> assert false
 
+let test_prepared_json_direct_access_matches_prepared_datom () =
+  let source =
+    {|{"count":1,"tx0":536870912,"max-eid":42,"max-tx":7,"schema":"nil","attrs":[":user/value"],"keywords":[":user/name"],"eavt":[[42,0,[0,0],7]],"aevt":[0],"avet":[0],"branching-factor":32,"ref-type":"weak"}|}
+  in
+  let prepared =
+    source
+    |> Lg_runtime.Runtime_edn.read_json_source
+    |> Serialization_value.prepare
+  in
+  let datom = Serialization_value.prepared_datom prepared 0 in
+  let keywords = Serialization_value.prepared_keywords prepared in
+  assert (
+    Serialization_value.prepared_datom_entity_at prepared 0
+    = Serialization_value.prepared_datom_entity datom);
+  assert (
+    Serialization_value.prepared_datom_attribute_at prepared 0
+    = Serialization_value.prepared_datom_attribute datom);
+  assert (
+    Serialization_value.prepared_datom_tx_at prepared 0
+    = Serialization_value.prepared_datom_tx datom);
+  assert (
+    Serialization_value.decode_prepared_datom_value_at keywords prepared 0
+    = Serialization_value.decode_prepared_datom_value keywords datom)
+
 let test_prepared_json_accepts_value_whitespace () =
   assert (
     prepared_json_value {|[]|} " \n\t42 "
@@ -1173,6 +1219,7 @@ let () =
   test_entity_refs_are_extracted_from_closed_values ();
   test_serialized_json_prepares_concrete_database_fields ();
   test_prepared_json_decodes_closed_value_categories ();
+  test_prepared_json_direct_access_matches_prepared_datom ();
   test_prepared_json_accepts_value_whitespace ();
   test_prepared_json_rejects_invalid_closed_values ();
   test_serialization_reorders_arrays_without_changing_identity_order ();

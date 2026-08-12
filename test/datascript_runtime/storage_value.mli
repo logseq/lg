@@ -41,6 +41,8 @@ type t =
   | Stored_tail of serialized_datom Rrbvec.t Rrbvec.t
 
 val serialized_datom : int -> string -> Data_value.t -> int -> serialized_datom
+val serialized_keyword_datom :
+  int -> Lg_runtime.Runtime_keyword.t -> Data_value.t -> int -> serialized_datom
 val serialized_node : serialized_datom Rrbvec.t -> int Rrbvec.t option -> serialized_node
 val serialized_index : int -> int -> int -> serialized_index
 val datom_e : serialized_datom -> int
