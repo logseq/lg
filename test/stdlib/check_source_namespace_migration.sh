@@ -46,6 +46,11 @@ for namespace in cljs.spec.alpha clojure.spec.alpha; do
     echo "$namespace is missing its excluded project scope status" >&2
     exit 1
   fi
+  if ! sed -n "/^  $namespace$/,/^  [a-z]/p" "$root/stdlib/upstream.edn" \
+    | grep -F ':reason :spec-is-explicitly-excluded-from-the-lg-stdlib-port' >/dev/null; then
+    echo "$namespace is missing its explicit Spec exclusion reason" >&2
+    exit 1
+  fi
 done
 
 for namespace in cljs.core.async cljs.core.async.impl.channels clojure.core.async clojure.core.async.interop; do

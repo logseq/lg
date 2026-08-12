@@ -1121,7 +1121,7 @@ The unary `edit` arity used by Logseq is supported, while additional variadic
 callback arguments remain explicitly recorded as a dependent-`apply` blocker.
 All 35 observed Logseq qualified zipper calls now resolve through the aggregate
 source artifact. `cljs.spec.alpha` and `clojure.spec.alpha`
-are explicitly out of scope; their Logseq references remain visible in the
+are explicitly excluded from the LG stdlib port; their Logseq references remain visible in the
 inventory but do not count against migration completion. The independent
 `core.async` library is excluded as well, including the observed
 `cljs.core.async`, `cljs.core.async.impl.channels`, `clojure.core.async`, and

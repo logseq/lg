@@ -1638,7 +1638,7 @@
   cljs.spec.alpha
   {:source "src/main/cljs/cljs/spec/alpha.cljs"
    :status :out-of-scope
-   :reason :excluded-by-project-scope}
+   :reason :spec-is-explicitly-excluded-from-the-lg-stdlib-port}
 
   cljs.core.async
   {:source :independent-library
@@ -1820,7 +1820,7 @@
   clojure.spec.alpha
   {:source :jvm-only
    :status :out-of-scope
-   :reason :excluded-by-project-scope}
+   :reason :spec-is-explicitly-excluded-from-the-lg-stdlib-port}
 
   clojure.core.async
   {:source :independent-library
