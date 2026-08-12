@@ -795,6 +795,12 @@
   :bool)
 (signature clojure.core/*print-readably*
   :bool)
+(signature clojure.core/*print-meta*
+  :bool)
+(signature clojure.core/*print-dup*
+  :bool)
+(signature clojure.core/*print-namespace-maps*
+  :bool)
 (signature clojure.core/*print-length*
   :option<int>)
 (signature clojure.core/*print-level*

@@ -223,6 +223,24 @@ if ! grep -F '(def ^:dynamic *print-readably* true)' \
   exit 1
 fi
 
+if ! grep -F '(def ^:dynamic *print-meta* false)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/*print-meta* is not source-defined as a dynamic var" >&2
+  exit 1
+fi
+
+if ! grep -F '(def ^:dynamic *print-dup* false)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/*print-dup* is not source-defined as a dynamic var" >&2
+  exit 1
+fi
+
+if ! grep -F '(def ^:dynamic *print-namespace-maps* false)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/*print-namespace-maps* is not source-defined as a dynamic var" >&2
+  exit 1
+fi
+
 if ! grep -F '(def ^:dynamic *print-length* None)' \
   "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/*print-length* is not source-defined as a dynamic var" >&2
@@ -253,6 +271,21 @@ if ! grep -F '(signature clojure.core/*print-readably*' \
   "$root/stdlib/clojure/core.lgi" >/dev/null \
   || ! grep -F ':bool' "$root/stdlib/clojure/core.lgi" >/dev/null; then
   echo "clojure.core/*print-readably* is not declared with a bool signature" >&2
+  exit 1
+fi
+
+for name in '*print-meta*' '*print-dup*' '*print-namespace-maps*'; do
+  if ! grep -F "(signature clojure.core/$name" \
+    "$root/stdlib/clojure/core.lgi" >/dev/null \
+    || ! grep -F ':bool' "$root/stdlib/clojure/core.lgi" >/dev/null; then
+    echo "clojure.core/$name is not declared with a bool signature" >&2
+    exit 1
+  fi
+done
+
+if grep -F '*print-namespace-maps*' \
+  "$root/src/top_level_elaborator.ml" >/dev/null; then
+  echo "clojure.core/*print-namespace-maps* is still compiler-injected" >&2
   exit 1
 fi
 

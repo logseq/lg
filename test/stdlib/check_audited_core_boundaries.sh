@@ -25,6 +25,9 @@ cloneable?	source	source-function-and-inline-specialization-use-an-optional-stat
 chunked-seq?	source	source-function-and-inline-specialization-use-an-optional-static-ichunkedseq-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
 *exec-tap-fn*	source	source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler
 add-tap	source	source-function-preserves-upstream-nil-result-and-global-callback-registration-through-a-narrow-runtime-dynamic-boundary-for-open-tap-values
+*print-meta*	source	source-dynamic-var-preserves-the-upstream-boolean-metadata-printing-switch-as-a-static-bool-ref-while-metadata-rendering-remains-explicitly-unsupported
+*print-dup*	source	source-dynamic-var-preserves-the-upstream-boolean-duplicate-printing-switch-as-a-static-bool-ref-while-duplicate-constructor-rendering-remains-explicitly-unsupported
+*print-namespace-maps*	source	source-dynamic-var-preserves-the-upstream-boolean-namespace-map-lifting-switch-as-a-static-bool-ref-while-prefix-map-rendering-remains-explicitly-unsupported
 default-dispatch-val	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 delay?	source	source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values
 doseq	source	source-macro-preserves-clojurescript-binding-modifier-order-and-per-loop-while-termination-without-the-javascript-chunked-sequence-fast-path

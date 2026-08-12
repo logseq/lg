@@ -288,9 +288,10 @@ and both `newline` arities follow the pinned ClojureScript control flow. Built-i
 values and consumer extensions dispatch through static protocol witnesses, and
 writer callbacks remain first-class. The only compiler boundary is the private
 typed rendering operation used by built-in implementations. LG currently
-models `*flush-on-newline*`, `*print-newline*`, and `*print-readably*` as source
-dynamic vars with type `bool`, and models `*print-length*` and `*print-level*`
-as source dynamic vars with type `option<int>`.
+models `*flush-on-newline*`, `*print-newline*`, `*print-readably*`,
+`*print-meta*`, `*print-dup*`, and `*print-namespace-maps*` as source dynamic
+vars with type `bool`, and models `*print-length*` and `*print-level*` as
+source dynamic vars with type `option<int>`.
 `pr-str`, `pr-str*`, `pr`, `prn`, and `prn-str` select readable or display
 printer witnesses through `*print-readably*`, while `println` and `prn` use
 `*print-newline*` only for the trailing newline switch and `*flush-on-newline*`
@@ -301,6 +302,11 @@ options map without widening printer options to `Runtime_dynamic.t`.
 the same static readable printer witnesses. The custom more marker remains an
 explicit static adaptation instead of silently widening the options value to a
 dynamic map.
+The `*print-meta*`, `*print-dup*`, and `*print-namespace-maps*` switches are
+ordinary static Vars and no longer compiler-injected. Their downstream
+rendering behavior remains tracked separately by `print-meta?`, `print-map`,
+and `print-prefix-map`, because those require typed metadata and map-printer
+witnesses rather than another global Var hook.
 
 The numeric operator cluster is source-owned. `+`, `-`, `*`, `/`, `<`, `<=`,
 `>`, `>=`, and `==` preserve the pinned zero, unary, binary, and variadic

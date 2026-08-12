@@ -5500,6 +5500,38 @@ let test_print_namespace_maps_dynamic_var_is_portable () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_source_print_control_dynamic_vars_are_static () =
+  let source =
+    {|
+(ns app.source-print-control
+  (:require [cljs.core :as core
+             :refer [*print-meta* *print-dup* *print-namespace-maps* str]]))
+
+(println (str *print-meta* ":" *print-dup* ":" *print-namespace-maps*))
+(binding [*print-meta* true
+          *print-dup* true
+          *print-namespace-maps* true]
+  (println
+   (str core/*print-meta* ":"
+        core/*print-dup* ":"
+        core/*print-namespace-maps*))
+  (set! *print-meta* false)
+  (println (str *print-meta* ":" *print-dup* ":" *print-namespace-maps*)))
+(println (str *print-meta* ":" *print-dup* ":" *print-namespace-maps*))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/source_print_control.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "print control Vars must remain statically typed bool refs";
+  assert_ocaml_runs "source_print_control_dynamic_vars_are_static"
+    "false:false:false\ntrue:true:true\nfalse:true:true\nfalse:false:false\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/source_print_control.cljc"
+       source)
+
 let test_print_length_dynamic_var_limits_collections () =
   let source =
     {|
@@ -45268,6 +45300,8 @@ let tests =
       test_dynamic_var_type_hint_constrains_mutable_initializer );
     ( "print namespace maps dynamic var is portable",
       test_print_namespace_maps_dynamic_var_is_portable );
+    ( "source print control dynamic vars are static",
+      test_source_print_control_dynamic_vars_are_static );
     ( "print length dynamic var limits collections",
       test_print_length_dynamic_var_limits_collections );
     ( "print level dynamic var limits nested collections",

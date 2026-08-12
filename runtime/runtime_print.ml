@@ -7,8 +7,6 @@ let output_line text newline flush_on_newline =
     if flush_on_newline then flush stdout)
   else ()
 
-let print_namespace_maps = Runtime_reference.of_value false
-
 let render_strings separator print_length values =
   let rec append writer remaining = function
     | [] -> ()

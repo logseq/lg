@@ -3477,14 +3477,6 @@ let rec compile scope env next_type form =
   | FList [ FSymbol "namespace-scope"; FSymbol namespace_name ] ->
       let env = Require.add_source_core_bindings env namespace_name in
       let env =
-        Env.add
-          (Names.scoped_key namespace_name "*print-namespace-maps*")
-          (Types.binding ~dynamically_bindable:true
-             "Lg_runtime.Runtime_print.print_namespace_maps"
-             (TRef TBool))
-          env
-      in
-      let env =
         Env.add (Names.scoped_key namespace_name "read-string")
           Core_edn.read_string_binding env
       in

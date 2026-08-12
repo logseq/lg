@@ -59,12 +59,12 @@
                      :reason :source-dynamic-var-preserves-the-upstream-boolean-trailing-newline-output-switch-for-println-and-prn-through-the-static-output-primitive}
     *print-readably* {:status :static-adaptation
                       :reason :source-dynamic-var-preserves-the-upstream-boolean-readable-versus-display-printer-selection-for-pr-str-pr-str-star-pr-prn-and-prn-str-through-static-printer-witnesses}
-    *print-meta* {:status :blocked-static-typing
-                  :reason :metadata-printing-requires-a-closed-metadata-domain-shared-by-every-printable-value-type}
-    *print-dup* {:status :blocked-static-typing
-                 :reason :duplicate-readable-printing-requires-type-preserving-constructor-output-across-the-complete-printable-domain}
-    *print-namespace-maps* {:status :blocked-static-typing
-                            :reason :namespace-map-lifting-requires-a-closed-keyword-or-symbol-key-domain-and-independent-map-value-types}
+    *print-meta* {:status :static-adaptation
+                  :reason :source-dynamic-var-preserves-the-upstream-boolean-metadata-printing-switch-as-a-static-bool-ref-while-metadata-rendering-remains-explicitly-unsupported}
+    *print-dup* {:status :static-adaptation
+                 :reason :source-dynamic-var-preserves-the-upstream-boolean-duplicate-printing-switch-as-a-static-bool-ref-while-duplicate-constructor-rendering-remains-explicitly-unsupported}
+    *print-namespace-maps* {:status :static-adaptation
+                            :reason :source-dynamic-var-preserves-the-upstream-boolean-namespace-map-lifting-switch-as-a-static-bool-ref-while-prefix-map-rendering-remains-explicitly-unsupported}
     *print-length* {:status :static-adaptation
                     :reason :source-dynamic-var-preserves-the-upstream-nil-or-integer-print-limit-as-a-typed-option-int-ref-threaded-through-static-readable-printer-witnesses}
     *print-level* {:status :static-adaptation

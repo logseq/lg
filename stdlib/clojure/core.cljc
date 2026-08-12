@@ -5286,6 +5286,9 @@
 (def ^:dynamic *flush-on-newline* true)
 (def ^:dynamic *print-newline* true)
 (def ^:dynamic *print-readably* true)
+(def ^:dynamic *print-meta* false)
+(def ^:dynamic *print-dup* false)
+(def ^:dynamic *print-namespace-maps* false)
 (def ^:dynamic *print-length* None)
 (def ^:dynamic *print-level* None)
 
