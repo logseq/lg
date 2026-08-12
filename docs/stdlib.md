@@ -1352,10 +1352,15 @@ strings remain scalar values. Arbitrarily nested inputs whose leaves require a
 heterogeneous recursive value domain still need an explicit closed source
 variant before they can be represented statically.
 
-`memoize` remains an explicit blocker rather than a partial Logseq-facing port.
-A faithful first-class `memoize` must preserve every arity of its input function
-while using complete, potentially heterogeneous argument tuples as cache keys;
-LG cannot yet express that returned-function relationship statically.
+`memoize` is source-owned for direct calls through a private typed ABI covering
+zero through three fixed-arity functions. Unary calls use the argument as the
+cache key; binary and ternary calls use typed OCaml tuple keys; zero-arity calls
+store a single optional cached result. This keeps Logseq's ordinary
+`(memoize (fn ...))` shape available through `require`, `alias`, and `refer`
+without `Runtime_dynamic.t`. A faithful first-class variadic `memoize` function
+value still cannot be represented without erasing heterogeneous argument tuples,
+so that upstream gap is recorded as a static adaptation in
+`stdlib/upstream.edn`.
 
 `apply` is source-owned and available through automatic core refer, explicit
 `:refer`, `cljs.core` aliases, and qualified `clojure.core` calls. Its four

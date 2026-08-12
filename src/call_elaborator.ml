@@ -10149,6 +10149,67 @@ let create ~compile_expr =
                             [ flattened ]))
                 | Error _ -> Ok (typed_ir (TSeq item_ty) sequence)))
         | Ok _ -> Error.error "flatten expects 1 argument")
+    | "__lg_memoize" -> (
+        let runtime_helper arity =
+          "Lg_runtime.Runtime_memoize.memoize" ^ string_of_int arity
+        in
+        let memoized_function function_expr function_ty =
+          match function_ty with
+          | TFn (parameters, _return_ty) ->
+              let arity = List.length parameters in
+              if arity <= 3 then
+                Ok
+                  (Semantic_ir.Apply
+                     (Semantic_ir.Ident (runtime_helper arity), [ function_expr ]))
+              else
+                Error.error
+                  "memoize supports statically typed functions with 0 to 3 \
+                   fixed arguments"
+          | _ -> Error.error "memoize expects a function"
+        in
+        let combine_results results =
+          List.fold_right
+            (fun result combined ->
+              match (result, combined) with
+              | Error _ as error, _ -> error
+              | _, (Error _ as error) -> error
+              | Ok value, Ok values -> Ok (value :: values))
+            results (Ok [])
+        in
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ function_value ] -> (
+            match function_value.ty with
+            | TFn _ ->
+                Result.map
+                  (fun expression ->
+                    typed_ir function_value.ty expression)
+                  (memoized_function function_value.semantic_expr
+                     function_value.ty)
+            | TOverloaded_fn arities ->
+                let memoized_arities =
+                  arities
+                  |> List.mapi (fun index arity ->
+                         if Option.is_some arity.rest_param then
+                           Error.error
+                             "memoize does not support variadic function \
+                              arities"
+                         else
+                           let arity_ty =
+                             TFn (arity.fixed_params, arity.return_ty)
+                           in
+                           let target =
+                             overloaded_projection function_value.semantic_expr
+                               index
+                           in
+                           memoized_function target arity_ty)
+                in
+                Result.map
+                  (fun expressions ->
+                    typed_ir function_value.ty (Semantic_ir.Tuple expressions))
+                  (combine_results memoized_arities)
+            | _ -> Error.error "memoize expects a function")
+        | Ok _ -> Error.error "memoize expects 1 argument")
     | "__lg_reduce_transformed" -> (
         match arg_forms with
         | [ _reducer_form; _initial_form; _collection_form ] ->

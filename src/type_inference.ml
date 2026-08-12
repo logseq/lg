@@ -661,6 +661,8 @@ let rec inferred_form_type params = function
       | Some vector_ty -> vector_ty
       | None -> inferred_form_type params collection)
       |> flatten_result_type
+  | FList [ FSymbol "__lg_memoize"; function_form ] ->
+      inferred_form_type params function_form
   | FList [ FSymbol "ordering-compare"; _; _ ] -> TOcaml "int"
   | FList [ FSymbol "as-ordering"; FSymbol fn ] -> (
       match string_assoc_opt fn params with
@@ -4917,6 +4919,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_tap"; value ] -> infer_form params value
     | FList [ FSymbol "__lg_flatten"; collection ] ->
         infer_form params collection
+    | FList [ FSymbol "__lg_memoize"; function_form ] ->
+        infer_form params function_form
     | FList [ FSymbol "__lg_cljs-test-report"; reporter; event ] ->
         Result.bind (infer_expected TKeyword params reporter) (fun params ->
             match event with

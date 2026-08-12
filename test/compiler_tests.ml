@@ -29696,6 +29696,85 @@ let test_reference_metadata_reset_and_alter_are_source_owned () =
     (compile_with_stdlib Lg.Target.Melange "metadata/reference_cells.cljc"
        source)
 
+let test_source_memoize_caches_fixed_arity_calls () =
+  let source =
+    {|
+(ns test.source-memoize
+  (:require [cljs.core :as core :refer [memoize]]))
+
+(def zero-calls (atom 0))
+(def one-calls (atom 0))
+(def two-calls (atom 0))
+(def three-calls (atom 0))
+
+(def memo-zero
+  (memoize
+   (fn []
+     (swap! zero-calls inc)
+     42)))
+
+(def memo-one
+  (memoize
+   (fn [^:int value]
+     (swap! one-calls inc)
+     (+ value 10))))
+
+(def memo-two
+  (core/memoize
+   (fn [^:int value ^:string suffix]
+     (swap! two-calls inc)
+     (str value suffix))))
+
+(def memo-three
+  (memoize
+   (fn [^:int value ^:string suffix ^:bool flag]
+     (swap! three-calls inc)
+     (str value suffix flag))))
+
+(println
+  (str
+   (memo-zero) ":" (memo-zero) ":" (deref zero-calls) ":"
+   (memo-one 5) ":" (memo-one 5) ":" (memo-one 6) ":" (deref one-calls) ":"
+   (memo-two 7 "a") ":" (memo-two 7 "a") ":" (memo-two 8 "a") ":" (deref two-calls) ":"
+   (memo-three 9 "b" true) ":" (memo-three 9 "b" true) ":"
+   (memo-three 9 "b" false) ":" (deref three-calls)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_memoize.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "source memoize must not use Runtime_dynamic";
+  assert_ocaml_runs "source_memoize_caches_fixed_arity_calls"
+    "42:42:1:15:15:16:2:7a:7a:8a:2:9btrue:9btrue:9bfalse:2\n"
+    native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/source_memoize.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange source memoize must not use Runtime_dynamic"
+
+let test_source_memoize_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring source "(defmacro memoize") then
+    failwith "clojure.core/memoize is not source-owned";
+  let interface = read_file "stdlib/clojure/core.lgi" in
+  if not (string_contains_substring interface "clojure.core/memoize") then
+    failwith "clojure.core/memoize is missing from the source interface";
+  let upstream = read_file "stdlib/upstream.edn" in
+  if
+    string_contains_substring upstream
+      "memoize {:status :blocked-static-typing"
+  then failwith "clojure.core/memoize is still recorded as blocked";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "| \"memoize\"" then
+        failwith "memoize still has public-name compiler dispatch")
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml";
+    ]
+
 let test_source_vary_meta_matches_clojurescript_arities () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring core_source "(defn vary-meta") then
@@ -47042,6 +47121,9 @@ let tests =
       test_metadata_maps_decode_closed_edn_collections );
     ( "reference metadata reset and alter are source-owned",
       test_reference_metadata_reset_and_alter_are_source_owned );
+    ( "source memoize caches fixed arity calls",
+      test_source_memoize_caches_fixed_arity_calls );
+    ("source memoize is source-owned", test_source_memoize_is_source_owned);
     ( "source vary-meta matches ClojureScript arities",
       test_source_vary_meta_matches_clojurescript_arities );
     ( "generated ML preserves readable names and layout",

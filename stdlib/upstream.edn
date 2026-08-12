@@ -988,8 +988,8 @@
     vec {:status :static-adaptation
          :reason :typed-seqable-source-wrapper-realizes-elements-into-the-lg-rrb-vector-representation}
     comparator {:status :ported}
-    memoize {:status :blocked-static-typing
-             :reason :returned-function-must-preserve-the-input-functions-complete-arity-shape-and-cache-heterogeneous-argument-tuples}
+    memoize {:status :static-adaptation
+             :reason :source-macro-expands-direct-calls-to-a-private-typed-memoize-abi-for-zero-through-three-fixed-arity-functions-using-static-cache-keys-while-first-class-variadic-and-heterogeneous-argument-tuple-memoize-remains-unrepresentable}
     max-key {:status :static-adaptation
              :reason :upstream-multi-arity-and-variadic-reduction-control-flow-with-statically-integer-key-comparison}
     min-key {:status :static-adaptation

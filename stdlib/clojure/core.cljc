@@ -1820,6 +1820,9 @@
   ([f x y z args]
    (__lg_apply f x y z args)))
 
+(defmacro memoize [f]
+  (list '__lg_memoize f))
+
 (defn- map-seq [f coll]
   (lazy-seq
    (if coll

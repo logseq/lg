@@ -170,6 +170,8 @@
   :fn<unit>)
 (signature clojure.core/apply [value result storage]
   :overload<fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;value;seqable<value;storage>;result>>)
+(signature clojure.core/memoize [a b c result]
+  :overload<fn<fn<result>;fn<result>>;fn<fn<a;result>;fn<a;result>>;fn<fn<a;b;result>;fn<a;b;result>>;fn<fn<a;b;c;result>;fn<a;b;c;result>>>)
 
 (signature clojure.core/map-seq [input output]
   :fn<fn<input;output>;seq<input>;seq<output>>)
