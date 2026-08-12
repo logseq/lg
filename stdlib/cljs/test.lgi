@@ -37,6 +37,8 @@
   :fn<keyword;test-env>)
 (signature cljs.test/report
   :fn<map<keyword;keyword>;unit>)
+(signature cljs.test/do-report
+  :fn<map<keyword;keyword>;unit>)
 (signature cljs.test/testing-contexts-str
   :fn<string>)
 (signature cljs.test/testing-vars-str

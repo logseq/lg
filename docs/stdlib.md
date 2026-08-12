@@ -1100,7 +1100,7 @@ library. Its source implementation includes `empty-env`, the current
 environment lifecycle, report-counter updates, context rendering, `testing`,
 `is`, `are`, `try-expr`, `deftest`, `run-test`, `run-tests`, `ns?`,
 `use-fixtures`, `compose-fixtures`, `join-fixtures`, `successful?`, and
-`report`. The
+`report` and `do-report`. The
 environment is a closed record backed by a statically typed dynamic binding;
 `*current-env*` itself is inventoried as a source var rather than inheriting the
 namespace's remaining async/report blocker.
@@ -1109,8 +1109,11 @@ push/body/finally/pop order.
 This required general `try`/`finally` support, including finally-only forms and
 exception propagation, and generates readable `Fun.protect` code without
 `Runtime_dynamic`. The open reporter event payload is restricted to the
-`cljs.test/report` primitive boundary; reporter state, counters, and current
-environment remain statically typed. The open polymorphic formatter field is
+`cljs.test/report` primitive boundary, and `do-report` reuses that boundary as
+a source var. Shared Native/Melange `do-report` does not synthesize the
+JavaScript stack file/line enrichment performed by upstream `cljs.test`; that
+host-only normalization is recorded in `stdlib/upstream.edn`. Reporter state,
+counters, and current environment remain statically typed. The open polymorphic formatter field is
 still recorded as an `empty-env` adaptation in `stdlib/upstream.edn`. The remaining runner and
 assertion batch uses a homogeneous static synchronous-test registry in
 definition order. Boolean assertions retain single evaluation and pass, fail,

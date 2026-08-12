@@ -89,6 +89,14 @@
   [m]
   (__lg_cljs-test-report (:reporter (get-current-env)) m))
 
+(defn do-report
+  "Reports event `m` through the current `cljs.test` reporter.
+
+  LG keeps the shared Native/Melange implementation source-owned and delegates
+  the open reporter event map to the same narrow boundary as [[report]]."
+  [m]
+  (report m))
+
 (defmethod report [:cljs.test/default :pass] [_m]
   (inc-report-counter! :pass))
 

@@ -830,6 +830,33 @@ let test_cljs_test_report_accepts_qualified_defmethod_target () =
     "app/cljs_test_qualified_report.cljc" source
   |> ignore
 
+let test_cljs_test_do_report_dispatches_through_source_var () =
+  let source =
+    {|
+(ns app.cljs-test-do-report
+  (:require [cljs.test :as t :refer [do-report empty-env set-env!]]))
+
+(defmethod t/report [:app/custom :pass] [m]
+  (do
+    (println (:message m))
+    (t/inc-report-counter! :pass)
+    nil))
+
+(set-env! (empty-env :app/custom))
+(do-report {:type :pass :message :referred})
+(t/do-report {:type :pass :message :aliased})
+
+(println (get (:report-counters (t/get-current-env)) :pass 0))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/cljs_test_do_report.cljc" source
+  in
+  assert_ocaml_runs "cljs_test_do_report_dispatches_through_source_var"
+    ":referred\n:aliased\n2\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/cljs_test_do_report.cljc" source
+  |> ignore
+
 let test_source_multimethods_dispatch_through_limited_dynamic_boundary () =
   let source =
     {|
@@ -44739,6 +44766,8 @@ let tests =
       test_cljs_test_report_dispatches_custom_reporter_methods );
     ( "cljs.test report accepts qualified defmethod target",
       test_cljs_test_report_accepts_qualified_defmethod_target );
+    ( "cljs.test do-report dispatches through source var",
+      test_cljs_test_do_report_dispatches_through_source_var );
     ( "source multimethods dispatch through limited dynamic boundary",
       test_source_multimethods_dispatch_through_limited_dynamic_boundary );
     ( "source multimethods support alias and multi argument dispatch",

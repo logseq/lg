@@ -202,10 +202,15 @@ awk -F '\t' '
 awk -F '\t' '
   $1 == "definition" &&
   ($2 == "cljs.test/assert-expr" ||
-   $2 == "cljs.test/update-current-env!" ||
-   $2 == "cljs.test/do-report") &&
+   $2 == "cljs.test/update-current-env!") &&
   $3 == "blocked-static-typing" && $4 != "" {found++}
-  END {exit found != 3}
+  END {exit found != 2}
+' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  $2 == "cljs.test/do-report" &&
+  $3 == "source" && $4 != "" {found=1}
+  END {exit !found}
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   BEGIN {

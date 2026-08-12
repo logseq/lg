@@ -1629,8 +1629,8 @@
                    :reason :reads-javascript-error-stack-filename-and-line-number-properties-and-generated-source-maps}
     report {:status :static-adaptation
             :reason :source-function-dispatches-through-a-documented-cljs-test-report-event-dynamic-boundary-with-a-typed-current-environment-and-counter-state}
-    do-report {:status :blocked-static-typing
-               :reason :normalizes-open-fail-and-error-event-maps-from-javascript-stack-data-before-invoking-the-extensible-report-multimethod}
+    do-report {:status :static-adaptation
+               :reason :source-function-preserves-public-report-dispatch-through-the-documented-cljs-test-report-event-dynamic-boundary-while-javascript-stack-file-and-line-normalization-remains-a-host-boundary-on-the-shared-native-melange-stdlib}
     compose-fixtures {:status :ported}
     join-fixtures {:status :ported}
     successful? {:status :ported}}}
