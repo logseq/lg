@@ -77,6 +77,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (test/report {:type :pass})
 (spec/valid? string? "value")
 (re-find #"value" "fixture value")
+(re-matches #"fixture value" "fixture value")
 (ex-data (ex-info "fixture" {:code :fixture}))
 (add-watch (atom 0) ::fixture-watch (fn [_ _ _ _] nil))
 (zip/root nil)
@@ -311,6 +312,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/uuid?" && $3 == "source" 
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/delay?" && $3 == "source" && $4 == "source-public-function-matches-cljs-delay-instance-predicate-with-a-first-class-lazy-signature-and-inline-static-specialization-for-arbitrary-static-values" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/ensure-reduced" && $3 == "source" && $4 == "source-public-function-matches-cljs-conditional-reduced-wrapper-with-a-first-class-non-reduced-signature-and-inline-static-specialization-that-preserves-an-existing-parameterized-wrapper" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/force" && $3 == "source" && $4 == "source-public-function-matches-cljs-delay-force-with-a-first-class-lazy-signature-and-inline-static-specialization-that-preserves-non-delay-input-types" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "clojure.core/re-matches" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/rand" && $3 == "source" && $4 == "source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/to-array-2d" && $3 == "source" && $4 == "source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/keep-indexed" && $3 == "source" {found=1} END {exit !found}' "$tmp/manifest-status.tsv"
@@ -454,6 +456,8 @@ awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ex-cause" && $3 == "typed-prim
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-pattern" && $3 == "typed-primitive" && $4 == "validated-static-regex-construction-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "re-find" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-find" && $3 == "typed-primitive" && $4 == "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "re-matches" {found=1} END {exit found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_re-matches" && $3 == "typed-primitive" && $4 == "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_swap!" && $3 == "typed-primitive" && $4 == "typed-contextual-reference-swap-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ensure-reduced" && $3 == "typed-primitive" && $4 == "typed-conditional-parameterized-reduced-wrapper-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_force" && $3 == "typed-primitive" && $4 == "typed-lazy-force-or-static-identity-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
@@ -549,6 +553,7 @@ awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/report" && 
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/*current-env*" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-find" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/re-matches" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/ex-data" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-core-var-status" && $2 == "clojure.core/add-watch" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "spec-is-explicitly-excluded-from-the-lg-stdlib-port" {found=1} END {exit !found}' "$tmp/inventory.tsv"

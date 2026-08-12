@@ -568,7 +568,7 @@ logseq-core-var-status	clojure.core/rand-nth	source-aggregate	6	precompiled-lg-s
 logseq-core-var-status	clojure.core/random-uuid	source-aggregate	1264	precompiled-lg-source
 logseq-core-var-status	clojure.core/range	source-aggregate	181	precompiled-lg-source
 logseq-core-var-status	clojure.core/re-find	source-aggregate	290	precompiled-lg-source
-logseq-core-var-status	clojure.core/re-matches	blocked-static-typing	87	capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary
+logseq-core-var-status	clojure.core/re-matches	source-aggregate	87	precompiled-lg-source
 logseq-core-var-status	clojure.core/re-pattern	source-aggregate	31	precompiled-lg-source
 logseq-core-var-status	clojure.core/re-seq	blocked-static-typing	23	lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core
 logseq-core-var-status	clojure.core/reduce	source-aggregate	273	precompiled-lg-source

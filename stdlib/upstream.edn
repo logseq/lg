@@ -469,8 +469,8 @@
                 :reason :source-string-to-regex-function-and-inline-regex-identity-preserve-upstream-first-class-logseq-use-and-direct-call-overload-through-a-minimal-validated-static-regex-primitive}
     re-find {:status :static-adaptation
              :reason :source-function-exposes-first-class-no-capture-optional-string-use-while-direct-open-regex-match-results-remain-in-a-documented-internal-dynamic-boundary}
-    re-matches {:status :blocked-static-typing
-                :reason :capture-count-dependent-optional-string-or-heterogeneous-capture-vector-results-remain-in-the-existing-regex-match-runtime-boundary}
+    re-matches {:status :static-adaptation
+                :reason :source-function-exposes-first-class-no-capture-optional-string-use-while-direct-open-regex-match-results-remain-in-a-documented-internal-dynamic-boundary}
     re-seq {:status :blocked-static-typing
             :reason :lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core}
     ex-data {:status :blocked-static-typing

@@ -3083,6 +3083,11 @@
   [expression source]
   (__lg_re-find expression source))
 
+(defn re-matches
+  {:inline (fn [expression source] (list '__lg_re-matches expression source))}
+  [expression source]
+  (__lg_re-matches expression source))
+
 (defn +
   {:inline (fn [& values] (cons '__lg_add values))}
   ([] (__lg_add))

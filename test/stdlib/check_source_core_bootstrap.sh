@@ -147,6 +147,11 @@ if ! grep -F '(defn re-find' "$root/stdlib/clojure/core.cljc" >/dev/null; then
   exit 1
 fi
 
+if ! grep -F '(defn re-matches' "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/re-matches is not source-defined as a function" >&2
+  exit 1
+fi
+
 if ! grep -F '[clojure.core ' \
   "$root/stdlib/upstream.edn" >/dev/null; then
   echo "clojure.core is not first in aggregate stdlib order" >&2

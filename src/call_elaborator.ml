@@ -8753,7 +8753,7 @@ let create ~compile_expr =
               ("identical? arguments must have the same type, got "
              ^ Types.source_name left.ty ^ " and " ^ Types.source_name right.ty)
         | Ok _ -> Error.error "identical? expects 2 arguments")
-    | ("re-matches" | "__lg_re-find" | "__lg_re-matches") as
+    | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =
           match regex_operation with

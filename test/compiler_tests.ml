@@ -13227,11 +13227,36 @@ let test_re_matches_returns_clojure_match_values () =
        (pr-str (re-matches #"a+" "baaa"))))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/re_matches_values.cljc" source
+  in
   assert_ocaml_runs "re_matches_returns_clojure_match_values"
     "\"aaa\":[\"abc-42\" \"abc\" \"42\"]:nil\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (compile_with_stdlib Lg.Target.Melange "test/re_matches_values.cljc"
+       source)
+
+let test_source_re_matches_can_be_required_from_source_core () =
+  let source =
+    {|
+(ns source-re-matches-app
+  (:require [cljs.core :refer [re-matches]]))
+
+(println
+  (str (pr-str (re-matches #"a+" "aaa")) ":"
+       (pr-str (re-matches #"([a-z]+)-([0-9]+)" "abc-42")) ":"
+       (pr-str (re-matches #"a+" "baaa"))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_re_matches.cljc"
+      source
+  in
+  assert_ocaml_runs "source_re_matches"
+    "\"aaa\":[\"abc-42\" \"abc\" \"42\"]:nil\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_re_matches.cljc"
+       source)
 
 let test_re_find_returns_clojure_match_values () =
   let source =
@@ -44562,6 +44587,8 @@ let tests =
       test_datascript_schema_reads_regex_literals );
     ( "re-matches returns Clojure match values",
       test_re_matches_returns_clojure_match_values );
+    ( "source re-matches can be required from source core",
+      test_source_re_matches_can_be_required_from_source_core );
     ( "re-find returns Clojure match values",
       test_re_find_returns_clojure_match_values );
     ( "source re-find can be required from source core",
