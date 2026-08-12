@@ -9418,6 +9418,23 @@ let create ~compile_expr =
                     (Semantic_ir.Ident "print_string", [ arg.semantic_expr ])))
         | Ok [ _ ] -> Error.error "print output expects a string"
         | Ok _ -> Error.error "print output expects 1 argument")
+    | "__lg_print_output_line" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ text; newline ]
+          when Types.equal text.ty TString && Types.equal newline.ty TBool ->
+            Ok
+              (typed_ir TUnit
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident
+                        "Lg_runtime.Runtime_print.output_line",
+                      [ text.semantic_expr; newline.semantic_expr ] )))
+        | Ok [ text; _ ] when not (Types.equal text.ty TString) ->
+            Error.error "print output line expects a string"
+        | Ok [ _; newline ] when not (Types.equal newline.ty TBool) ->
+            Error.error "print output line expects a bool newline flag"
+        | Ok [ _; _ ] -> Error.error "print output line expects string and bool"
+        | Ok _ -> Error.error "print output line expects 2 arguments")
     | "__lg_list" -> compile_list scope env arg_forms
     | "__lg_list-star" -> compile_list_star scope env arg_forms
     | "list-of" -> compile_list_of arg_forms

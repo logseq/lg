@@ -5468,6 +5468,40 @@ let test_print_length_dynamic_var_limits_collections () =
 |}
   |> expect_error_contains "expects option<int>, got string"
 
+let test_print_newline_dynamic_var_controls_output_newline () =
+  let source =
+    {|
+(ns app.print-newline-config
+  (:require [clojure.core :as core
+             :refer [*print-newline* println prn]]))
+
+(println *print-newline*)
+(binding [*print-newline* false]
+  (println "left")
+  (core/prn "right")
+  (println *print-newline*))
+(println "after")
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "print-newline must remain statically typed";
+  assert_ocaml_runs "print_newline_dynamic_var_controls_output_newline"
+    "true\nleft\"right\"falseafter\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange print-newline must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-print-newline
+  (:require [clojure.core :refer [*print-newline*]]))
+(binding [*print-newline* 1] nil)
+|}
+  |> expect_error_contains "expects bool, got int"
+
 let test_with_open_binds_managed_values_portably () =
   let source =
     {|
@@ -44918,6 +44952,8 @@ let tests =
       test_print_namespace_maps_dynamic_var_is_portable );
     ( "print length dynamic var limits collections",
       test_print_length_dynamic_var_limits_collections );
+    ( "print newline dynamic var controls output newline",
+      test_print_newline_dynamic_var_controls_output_newline );
     ( "with-open binds managed values portably",
       test_with_open_binds_managed_values_portably );
     ( "Clojure collection protocol names dispatch statically",

@@ -5221,6 +5221,7 @@
   [value]
   (INamed/-namespace value))
 
+(def ^:dynamic *print-newline* true)
 (def ^:dynamic *print-length* None)
 
 (defn str
@@ -5268,19 +5269,23 @@
 
 (defn println
   {:inline (fn [& values]
-             (list '__lg_print_output
-                   (list '__lg_str (cons '__lg_print_str values) "\n")))}
+             (list '__lg_print_output_line
+                   (cons '__lg_print_str values)
+                   '*print-newline*))}
   [& values]
-  (__lg_print_output
-   (__lg_str (__lg_render_display_values " " values) "\n")))
+  (__lg_print_output_line
+   (__lg_render_display_values " " values)
+   *print-newline*))
 
 (defn prn
   {:inline (fn [& values]
-             (list '__lg_print_output
-                   (list '__lg_str (cons '__lg_pr_str values) "\n")))}
+             (list '__lg_print_output_line
+                   (cons '__lg_pr_str values)
+                   '*print-newline*))}
   [& values]
-  (__lg_print_output
-   (__lg_str (__lg_render_readable_values " " values) "\n")))
+  (__lg_print_output_line
+   (__lg_render_readable_values " " values)
+   *print-newline*))
 
 (defprotocol IPrintWithWriter
   (-pr-writer [value writer options]))

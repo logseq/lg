@@ -771,6 +771,8 @@
 (signature clojure.core/set-lite [value]
   :fn<seqable<value>;set<value>>)
 
+(signature clojure.core/*print-newline*
+  :bool)
 (signature clojure.core/*print-length*
   :option<int>)
 (signature clojure.core/str [value]

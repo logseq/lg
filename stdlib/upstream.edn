@@ -55,8 +55,8 @@
            :reason :compiler-owned-binding-and-with-out-str-forms-lower-the-output-binding-to-a-lexical-buffer-writer}
     *flush-on-newline* {:status :blocked-static-typing
                         :reason :public-dynamic-printer-option-is-not-yet-threaded-through-the-closed-buffer-printer-capability}
-    *print-newline* {:status :blocked-static-typing
-                     :reason :public-dynamic-printer-option-is-not-yet-threaded-through-the-closed-output-printer-capability}
+    *print-newline* {:status :static-adaptation
+                     :reason :source-dynamic-var-preserves-the-upstream-boolean-trailing-newline-output-switch-for-println-and-prn-through-the-static-output-primitive}
     *print-readably* {:status :blocked-static-typing
                       :reason :public-dynamic-printer-option-is-not-yet-threaded-through-display-versus-readable-static-printer-witness-selection}
     *print-meta* {:status :blocked-static-typing
@@ -1333,9 +1333,9 @@
     print {:status :static-adaptation
            :reason :source-function-and-inline-macro-preserve-space-separated-display-output-through-a-private-static-string-output-boundary}
     println {:status :static-adaptation
-             :reason :source-function-and-inline-macro-preserve-space-separated-display-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
+             :reason :source-function-and-inline-macro-preserve-space-separated-display-output-and-the-typed-print-newline-controlled-trailing-newline-through-a-private-static-string-output-boundary}
     prn {:status :static-adaptation
-         :reason :source-function-and-inline-macro-preserve-space-separated-readable-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
+         :reason :source-function-and-inline-macro-preserve-space-separated-readable-output-and-the-typed-print-newline-controlled-trailing-newline-through-a-private-static-string-output-boundary}
     prn-str-with-opts {:status :static-adaptation
                        :reason :source-function-preserves-empty-space-separated-and-typed-print-length-readable-rendering-plus-the-trailing-newline-for-a-homogeneous-static-seqable-while-other-open-clojurescript-printer-options-remain-explicitly-restricted}
     ranged-iterator {:status :host-boundary

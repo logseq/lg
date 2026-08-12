@@ -1,5 +1,9 @@
 let write writer text = Buffer.add_string writer text
 
+let output_line text newline =
+  print_string text;
+  if newline then print_string "\n" else ()
+
 let print_namespace_maps = Runtime_reference.of_value false
 
 let render_strings separator print_length values =
