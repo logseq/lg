@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 212; then
-  echo "compiler call dispatch changed: expected 212 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 213; then
+  echo "compiler call dispatch changed: expected 213 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -140,6 +140,7 @@ awk '
     internal_abi["__lg_pr"] = "typed-readable-values-to-bound-writer-or-standard-output-primitive"
     internal_abi["__lg_render_display_values"] = "typed-homogeneous-display-printer-witness-sequence-rendering-primitive"
     internal_abi["__lg_render_readable_values"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-primitive"
+    internal_abi["__lg_render_readable_values_with_opts"] = "typed-homogeneous-readable-printer-witness-sequence-rendering-with-print-length-options-primitive"
     internal_abi["__lg_pr-writer"] = "typed-readable-printer-witness-and-buffer-output-primitive"
     internal_abi["__lg_equal"] = "typed-static-generic-equality-primitive"
     internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"

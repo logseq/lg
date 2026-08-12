@@ -12,6 +12,39 @@ type t = {
     string -> Env.t -> Ast.form list -> (typed_expr list, Error.t) result;
 }
 
+let print_length_expr_of_binding (binding : binding) =
+  match binding.ty with
+  | TRef (TNullable TInt | TOcaml_app ("option", [ TInt ])) ->
+      Some
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+             [ Semantic_ir.Ident binding.ocaml_name ] ))
+  | _ -> None
+
+let core_print_length_expr env =
+  match
+    Option.bind
+      (Env.find_opt (Names.scoped_key "clojure.core" "*print-length*") env)
+      print_length_expr_of_binding
+  with
+  | Some expr -> Some expr
+  | None ->
+      Env.bindings_named "*print-length*" env
+      |> List.find_map print_length_expr_of_binding
+
+let print_length_expr scope env =
+  match
+    Option.bind
+      (Env.find_opt (Names.scoped_key scope "*print-length*") env)
+      print_length_expr_of_binding
+  with
+  | Some expr -> Some expr
+  | None -> core_print_length_expr env
+
+let print_length_expr_or_none scope env =
+  print_length_expr scope env
+  |> Option.value ~default:(Semantic_ir.Constructor ("None", None))
+
 let constrained_argument_counter = ref 0
 let function_adapter_counter = ref 0
 let row_argument_counter = ref 0
@@ -1693,6 +1726,7 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       let value =
         typed_ir witness_value_ty (Semantic_ir.Ident value_name)
       in
+      let readable_print_length = core_print_length_expr env in
       let display_witness =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
@@ -1701,7 +1735,8 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       let readable_witness =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
-            Codegen.stringify_expr_ir ~pr:true value )
+            Codegen.stringify_expr_ir ~pr:true ?print_length:readable_print_length
+              value )
       in
       Result.map
         (fun packed ->
@@ -4731,7 +4766,7 @@ let create ~compile_expr =
         | (Error _ as error), _ | _, (Error _ as error) -> error)
     | _ -> Error.error "cljs.test/report expects one report event"
   in
-  let rec stringify_value scope env ~pr value =
+  let rec stringify_value scope env ~pr ?print_length value =
     match value.ty with
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
         match Semantic_ir.unlocated value.semantic_expr with
@@ -4755,7 +4790,7 @@ let create ~compile_expr =
     | ty
       when Option.is_some (Types.protocol_constraint_info ty)
            || Option.is_some (Types.seqable_constraint_info ty) ->
-        stringify_value scope env ~pr
+        stringify_value scope env ~pr ?print_length
           (typed_ir (Types.constraint_value_type ty)
              (constrained_argument_value value))
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -4767,7 +4802,7 @@ let create ~compile_expr =
                 Semantic_ir.String "nil" );
               ( Semantic_ir.PConstructor
                   ("Some", Some (Semantic_ir.PVar value_name)),
-                stringify_value scope env ~pr
+                stringify_value scope env ~pr ?print_length
                   (typed_ir inner (Semantic_ir.Ident value_name)) );
             ] )
     | TNamed_record record -> (
@@ -4779,27 +4814,24 @@ let create ~compile_expr =
                 let mapper =
                   Semantic_ir.Fun
                     ( [ Semantic_ir.PVar item_name ],
-                      stringify_value scope env ~pr
+                      stringify_value scope env ~pr ?print_length
                         (typed_ir element_ty (Semantic_ir.Ident item_name)) )
                 in
                 Some
                   (Codegen.concat_expr
                      [
                        Semantic_ir.String "#{";
-                       Semantic_ir.Apply
-                         ( Semantic_ir.Ident "String.concat",
-                           [
-                             Semantic_ir.String " ";
-                             Semantic_ir.Apply
-                               ( Semantic_ir.Ident "List.map",
-                                 [
-                                   mapper;
-                                   Semantic_ir.Apply
-                                     ( Semantic_ir.Ident
-                                         "Lg_runtime.Runtime_seq.to_list",
-                                       [ semantic_expr ] );
-                                 ] );
-                           ] );
+                       Codegen.render_strings ?print_length
+                         (Semantic_ir.String " ")
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "List.map",
+                              [
+                                mapper;
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_seq.to_list",
+                                    [ semantic_expr ] );
+                              ] ));
                        Semantic_ir.String "}";
                      ])
             | Ok _ | Error _ -> None
@@ -4815,7 +4847,7 @@ let create ~compile_expr =
               Protocol.lookup_unique_method_impl env "-pr-writer" value.ty
         in
         match printer with
-        | None -> Codegen.stringify_expr_ir ~pr value
+        | None -> Codegen.stringify_expr_ir ~pr ?print_length value
         | Some printer ->
             let writer_name = "__lg_print_method_writer" in
             let receiver =
@@ -4844,7 +4876,7 @@ let create ~compile_expr =
                       Semantic_ir.Apply
                         (Semantic_ir.Ident printer.ocaml_name, arguments) );
                 ] )))
-    | _ -> Codegen.stringify_expr_ir ~pr value
+    | _ -> Codegen.stringify_expr_ir ~pr ?print_length value
   in
   let rec compile_ocaml_arguments scope env forms =
     let rec parse acc = function
@@ -5739,15 +5771,14 @@ let create ~compile_expr =
                       Result.bind (compile_expr scope env value_form)
                         (fun value ->
                           if
-                            Types.assignable ~policy:Host_boundary
-                              ~expected:value_ty ~actual:value.ty
+                            argument_compatible value_ty value.ty
                           then
-                            compile_bindings
-                              ( ( ocaml_name,
-                                  coerce_expression_to_type value_ty value.ty
-                                    value.semantic_expr )
-                                :: compiled )
-                              rest
+                            Result.bind
+                              (adapt_value_to_type env value_ty value)
+                              (fun value ->
+                                compile_bindings
+                                  ((ocaml_name, value) :: compiled)
+                                  rest)
                           else
                             Error.error
                               ("binding " ^ name ^ " expects "
@@ -8750,6 +8781,9 @@ let create ~compile_expr =
     | ("__lg_str" | "__lg_print_str" | "__lg_pr_str") as render_name -> (
         let readable = render_name = "__lg_pr_str" in
         let separator = if render_name = "__lg_str" then "" else " " in
+        let print_length =
+          if readable then print_length_expr scope env else None
+        in
         let printable_env =
           Env.with_expected_type
             (Some (Types.printable_constraint (Type_solver.fresh ())))
@@ -8777,14 +8811,22 @@ let create ~compile_expr =
                              "__lg_render_argument_" ^ string_of_int index
                            in
                            ( ( Semantic_ir.PVar name,
-                               stringify_value scope env ~pr:readable argument ),
+                               stringify_value scope env ~pr:readable
+                                 ?print_length argument ),
                              Semantic_ir.Ident name ))
                     |> List.split
                   in
                   let rendered =
-                    Semantic_ir.Apply
-                      ( Semantic_ir.Ident "String.concat",
-                        [ Semantic_ir.String separator; Semantic_ir.List values ] )
+                    if readable then
+                      Codegen.render_strings ?print_length
+                        (Semantic_ir.String separator) (Semantic_ir.List values)
+                    else
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "String.concat",
+                          [
+                            Semantic_ir.String separator;
+                            Semantic_ir.List values;
+                          ] )
                   in
                   List.fold_right
                     (fun binding body -> Semantic_ir.Let ([ binding ], body))
@@ -8803,11 +8845,22 @@ let create ~compile_expr =
                 let runtime_name =
                   if render_name = "__lg_render_display_values" then
                     "Lg_runtime.Runtime_print.render_display_values"
-                  else "Lg_runtime.Runtime_print.render_readable_values"
+                  else
+                    "Lg_runtime.Runtime_print.render_readable_values_with_length"
+                in
+                let args =
+                  if render_name = "__lg_render_display_values" then
+                    [ separator.semantic_expr; sequence ]
+                  else
+                    [
+                      separator.semantic_expr;
+                      print_length_expr_or_none scope env;
+                      sequence;
+                    ]
                 in
                 Ok
                   (typed_ir TString
-                     (apply runtime_name [ separator.semantic_expr; sequence ]))
+                     (apply runtime_name args))
             | Ok _ ->
                 Error.error
                   (render_name ^ " expects printable variadic values")
@@ -8815,6 +8868,74 @@ let create ~compile_expr =
                 Error.error (render_name ^ " expects a printable sequence"))
         | Ok [ _; _ ] -> Error.error (render_name ^ " expects a string separator")
         | Ok _ -> Error.error (render_name ^ " expects 2 arguments"))
+    | "__lg_render_readable_values_with_opts" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ separator; values; options ] when Types.equal separator.ty TString
+          -> (
+            match Collection_capability.to_seq_expr env values with
+            | Ok (element_ty, sequence)
+              when Option.is_some (Types.printable_constraint_info element_ty)
+              -> (
+                let current_print_length =
+                  print_length_expr_or_none scope env
+                in
+                let print_length_from_map map_expr =
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_option",
+                      [ map_expr; Semantic_ir.String ":print-length" ] )
+                in
+                let options_map_ty =
+                  TOcaml_app
+                    ("Lg_runtime.Runtime_map.t", [ TKeyword; TInt ])
+                in
+                let print_length =
+                  match options.ty with
+                  | TNil -> Ok current_print_length
+                  | ty when Types.equal ty options_map_ty ->
+                      Ok (print_length_from_map options.semantic_expr)
+                  | TOcaml_app ("option", [ inner ])
+                    when Types.equal inner options_map_ty ->
+                      let options_name = "__lg_print_options" in
+                      Ok
+                        (Semantic_ir.Match
+                           ( options.semantic_expr,
+                             [
+                               ( Semantic_ir.PConstructor ("None", None),
+                                 current_print_length );
+                               ( Semantic_ir.PConstructor
+                                   ( "Some",
+                                     Some (Semantic_ir.PVar options_name) ),
+                                 print_length_from_map
+                                   (Semantic_ir.Ident options_name) );
+                             ] ))
+                  | _ ->
+                      Error.error
+                        "__lg_render_readable_values_with_opts expects nil or {:print-length int} options"
+                in
+                Result.map
+                  (fun print_length ->
+                    typed_ir TString
+                      (apply
+                         "Lg_runtime.Runtime_print.render_readable_values_with_length"
+                         [
+                           separator.semantic_expr;
+                           print_length;
+                           sequence;
+                         ]))
+                  print_length)
+            | Ok _ ->
+                Error.error
+                  "__lg_render_readable_values_with_opts expects printable variadic values"
+            | Error _ ->
+                Error.error
+                  "__lg_render_readable_values_with_opts expects a printable sequence")
+        | Ok [ _; _; _ ] ->
+            Error.error
+              "__lg_render_readable_values_with_opts expects a string separator"
+        | Ok _ ->
+            Error.error
+              "__lg_render_readable_values_with_opts expects 3 arguments")
     | "__lg_with-meta" ->
         compile_metadata_call scope env name arg_forms
     | "__lg_nullable-value" -> (

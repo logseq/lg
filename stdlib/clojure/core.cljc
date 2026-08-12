@@ -5221,6 +5221,8 @@
   [value]
   (INamed/-namespace value))
 
+(def ^:dynamic *print-length* None)
+
 (defn str
   {:inline (fn [& values] (cons '__lg_str values))}
   [& values]
@@ -5338,8 +5340,8 @@
   (pr-sequential-writer writer pr-writer "" " " "" options objects))
 
 (defn pr-str-with-opts
-  [objects _options]
-  (__lg_render_readable_values " " objects))
+  [objects options]
+  (__lg_render_readable_values_with_opts " " objects options))
 
 (defn prn-str-with-opts
   [objects options]

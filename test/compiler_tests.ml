@@ -5429,6 +5429,45 @@ let test_print_namespace_maps_dynamic_var_is_portable () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_print_length_dynamic_var_limits_collections () =
+  let source =
+    {|
+(ns app.print-length-config
+  (:require [clojure.core :as core
+             :refer [*print-length* pr-str pr-str-with-opts]]))
+
+(println (nil? *print-length*))
+(println (pr-str [1 2 3 4]))
+(binding [*print-length* 2]
+  (println (pr-str [1 2 3 4]))
+  (println (core/pr-str (list 1 2 3)))
+  (println (pr-str 1 2 3)))
+(binding [*print-length* 0]
+  (println (pr-str [1 2]))
+  (println (pr-str 1 2)))
+(println (pr-str [1 2 3]))
+(println (pr-str-with-opts [1 2 3] {:print-length 2}))
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "print-length must remain statically typed";
+  assert_ocaml_runs "print_length_dynamic_var_limits_collections"
+    "true\n[1 2 3 4]\n[1 2 ...]\n(1 2 ...)\n1 2 ...\n...\n...\n[1 2 3]\n1 2 ...\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange print-length must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-print-length
+  (:require [clojure.core :refer [*print-length*]]))
+(binding [*print-length* "bad"] nil)
+|}
+  |> expect_error_contains "expects option<int>, got string"
+
 let test_with_open_binds_managed_values_portably () =
   let source =
     {|
@@ -28890,15 +28929,17 @@ let test_source_printing_options_cluster_matches_clojurescript () =
 (println (= "\"Ada\" \"Byron\"" (core/pr-str-with-opts ["Ada" "Byron"] nil)))
 (println (= "4 5" (render-through [4 5])))
 (println (= "\"Grace\"" (render-through ["Grace"])))
+(println (= "1 2 ..." (render [1 2 3 4] {:print-length 2})))
 (println (= "\n" (prn-str-with-opts [] nil)))
 (println (= "1 2\n" (core/prn-str-with-opts [1 2] nil)))
+(println (= "...\n" (prn-str-with-opts [1 2] {:print-length 0})))
 |}
   in
   let consumer = compile_string_from_stdlib source |> expect_ok in
   if string_contains_substring consumer "Runtime_dynamic" then
     failwith "printing options functions must remain statically typed";
   assert_ocaml_runs "source_printing_options_cluster"
-    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n"
     (compile_string_with_stdlib source |> expect_ok);
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
@@ -28906,7 +28947,7 @@ let test_source_printing_options_cluster_matches_clojurescript () =
   if string_contains_substring melange "Runtime_dynamic" then
     failwith "Melange printing options functions must remain statically typed";
   compile_string_from_stdlib "(pr-str-with-opts [1] true)"
-  |> expect_error_contains "nil";
+  |> expect_error_contains "incompatible";
   compile_string_from_stdlib "(pr-str-with-opts [1])"
   |> expect_error_contains "incompatible arguments";
   compile_string_from_stdlib "(prn-str-with-opts [1] nil nil)"
@@ -44875,6 +44916,8 @@ let tests =
       test_dynamic_var_type_hint_constrains_mutable_initializer );
     ( "print namespace maps dynamic var is portable",
       test_print_namespace_maps_dynamic_var_is_portable );
+    ( "print length dynamic var limits collections",
+      test_print_length_dynamic_var_limits_collections );
     ( "with-open binds managed values portably",
       test_with_open_binds_managed_values_portably );
     ( "Clojure collection protocol names dispatch statically",
