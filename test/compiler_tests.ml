@@ -39780,6 +39780,40 @@ let test_source_fnil_and_partial_match_clojurescript_arities () =
     (compile_with_stdlib Lg.Target.Melange "test/source_fnil_partial.cljc"
        source)
 
+let test_fnil_supports_variadic_function_defaults () =
+  let source =
+    {|
+(ns app.fnil-variadic
+  (:require [cljs.core :refer [= fnil into println]]))
+
+(defn collect [& values]
+  (into [] values))
+
+(def one (fnil collect 100))
+(def two (fnil collect 100 200))
+(def three (fnil collect 100 200 300))
+
+(println (= [100] (one nil)))
+(println (= [9] (one 9)))
+(println (= [100 2 3 4] (one nil 2 3 4)))
+(println (= [100 200] (two nil nil)))
+(println (= [7 200 9] (two 7 nil 9)))
+(println (= [100 200 300] (three nil nil nil)))
+(println (= [100 8 300 10] (three nil 8 nil 10)))
+|}
+  in
+  let expected = String.concat "" (List.init 7 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/fnil_variadic.cljc" source
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "fnil variadic defaults must preserve static function values";
+  assert_ocaml_runs "fnil_supports_variadic_function_defaults" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/fnil_variadic.cljc" source)
+
 let test_source_fnil_and_partial_reject_invalid_arities () =
   [ "(fnil)"; "(fnil (fn [value] value))"; "(partial)" ]
   |> List.iteri (fun index source ->
@@ -48759,6 +48793,8 @@ let tests =
       test_source_comp_matches_clojurescript_arities );
     ( "source fnil and partial match ClojureScript arities",
       test_source_fnil_and_partial_match_clojurescript_arities );
+    ( "fnil supports variadic function defaults",
+      test_fnil_supports_variadic_function_defaults );
     ( "source fnil and partial reject invalid arities",
       test_source_fnil_and_partial_reject_invalid_arities );
     ( "source predicate combinators match ClojureScript",

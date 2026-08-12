@@ -1121,8 +1121,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     arities
                     |> List.mapi (fun index arity -> (index, arity))
                     |> List.filter (fun (_, arity) ->
-                           Option.is_none arity.rest_param
-                           && List.length arity.fixed_params >= minimum_arity)
+                           match arity.rest_param with
+                           | None ->
+                               List.length arity.fixed_params >= minimum_arity
+                           | Some _ -> true)
                   in
                   (match selected_arities with
                   | [] ->
@@ -1132,7 +1134,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       let expected_default_type index =
                         selected_arities
                         |> List.filter_map (fun (_, arity) ->
-                               List.nth_opt arity.fixed_params index)
+                               match List.nth_opt arity.fixed_params index with
+                               | Some ty -> Some ty
+                               | None -> arity.rest_param)
                         |> function
                         | [] -> Ok None
                         | expected :: rest
@@ -1171,61 +1175,220 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             selected_arities
                             |> List.mapi (fun returned_index
                                               (source_index, arity) ->
-                                   let argument_names =
-                                     List.mapi
-                                       (fun index _ ->
-                                         "__lg_fnil_argument_"
-                                         ^ string_of_int returned_index ^ "_"
-                                         ^ string_of_int index)
-                                       arity.fixed_params
-                                   in
-                                   let returned_parameter_tys =
-                                     List.mapi
-                                       (fun index parameter_ty ->
-                                         if index < default_count then
-                                           TNullable parameter_ty
-                                         else parameter_ty)
-                                       arity.fixed_params
-                                   in
-                                   let selected_arguments =
-                                     List.mapi
-                                       (fun index name ->
-                                         if index < default_count then
-                                           let present_name = name ^ "_value" in
-                                           Semantic_ir.Match
-                                             ( Semantic_ir.Ident name,
-                                               [
-                                                 ( Semantic_ir.PConstructor
-                                                     ("None", None),
-                                                   Semantic_ir.Ident
-                                                     (List.nth default_names
-                                                        index) );
-                                                 ( Semantic_ir.PConstructor
-                                                     ( "Some",
-                                                       Some
-                                                         (Semantic_ir.PVar
-                                                            present_name) ),
-                                                   Semantic_ir.Ident
-                                                     present_name );
-                                               ] )
-                                         else Semantic_ir.Ident name)
-                                       argument_names
-                                   in
-                                   ( {
-                                       fixed_params = returned_parameter_tys;
-                                       rest_param = None;
-                                       return_ty = arity.return_ty;
-                                     },
-                                     Semantic_ir.Fun
-                                       ( List.map
-                                           (fun name -> Semantic_ir.PVar name)
-                                           argument_names,
-                                         Semantic_ir.Apply
-                                           ( overloaded_projection
-                                               (Semantic_ir.Ident function_name)
-                                               source_index,
-                                             selected_arguments ) ) ))
-                            |> List.split
+                                   match arity.rest_param with
+                                   | None ->
+                                       let argument_names =
+                                         List.mapi
+                                           (fun index _ ->
+                                             "__lg_fnil_argument_"
+                                             ^ string_of_int returned_index ^ "_"
+                                             ^ string_of_int index)
+                                           arity.fixed_params
+                                       in
+                                       let returned_parameter_tys =
+                                         List.mapi
+                                           (fun index parameter_ty ->
+                                             if index < default_count then
+                                               TNullable parameter_ty
+                                             else parameter_ty)
+                                           arity.fixed_params
+                                       in
+                                       let selected_arguments =
+                                         List.mapi
+                                           (fun index name ->
+                                             if index < default_count then
+                                               let present_name =
+                                                 name ^ "_value"
+                                               in
+                                               Semantic_ir.Match
+                                                 ( Semantic_ir.Ident name,
+                                                   [
+                                                     ( Semantic_ir.PConstructor
+                                                         ("None", None),
+                                                       Semantic_ir.Ident
+                                                         (List.nth
+                                                            default_names index)
+                                                     );
+                                                     ( Semantic_ir.PConstructor
+                                                         ( "Some",
+                                                           Some
+                                                             (Semantic_ir.PVar
+                                                                present_name) ),
+                                                       Semantic_ir.Ident
+                                                         present_name );
+                                                   ] )
+                                             else Semantic_ir.Ident name)
+                                           argument_names
+                                       in
+                                       [
+                                         ( {
+                                             fixed_params =
+                                               returned_parameter_tys;
+                                             rest_param = None;
+                                             return_ty = arity.return_ty;
+                                           },
+                                           Semantic_ir.Fun
+                                             ( List.map
+                                                 (fun name ->
+                                                   Semantic_ir.PVar name)
+                                                 argument_names,
+                                               Semantic_ir.Apply
+                                                 ( overloaded_projection
+                                                     (Semantic_ir.Ident
+                                                        function_name)
+                                                     source_index,
+                                                   selected_arguments ) ) );
+                                       ]
+                                   | Some rest_ty ->
+                                       let fixed_count =
+                                         List.length arity.fixed_params
+                                       in
+                                       let parameter_ty index =
+                                         match
+                                           List.nth_opt arity.fixed_params index
+                                         with
+                                         | Some ty -> ty
+                                         | None -> rest_ty
+                                       in
+                                       let build_variadic suffix fixed_count'
+                                           rest_param =
+                                         let fixed_param_tys =
+                                           List.init fixed_count' parameter_ty
+                                         in
+                                         let argument_names =
+                                           List.mapi
+                                             (fun index _ ->
+                                               "__lg_fnil_argument_"
+                                               ^ string_of_int returned_index
+                                               ^ "_" ^ suffix ^ "_"
+                                               ^ string_of_int index)
+                                             fixed_param_tys
+                                         in
+                                         let rest_name =
+                                           "__lg_fnil_argument_"
+                                           ^ string_of_int returned_index ^ "_"
+                                           ^ suffix ^ "_rest"
+                                         in
+                                         let returned_parameter_tys =
+                                           List.mapi
+                                             (fun index parameter_ty ->
+                                               if index < default_count then
+                                                 TNullable parameter_ty
+                                               else parameter_ty)
+                                             fixed_param_tys
+                                         in
+                                         let selected_arguments =
+                                           List.mapi
+                                             (fun index name ->
+                                               if index < default_count then
+                                                 let present_name =
+                                                   name ^ "_value"
+                                                 in
+                                                 Semantic_ir.Match
+                                                   ( Semantic_ir.Ident name,
+                                                     [
+                                                       ( Semantic_ir.PConstructor
+                                                           ("None", None),
+                                                         Semantic_ir.Ident
+                                                           (List.nth
+                                                              default_names
+                                                              index) );
+                                                       ( Semantic_ir.PConstructor
+                                                           ( "Some",
+                                                             Some
+                                                               (Semantic_ir.PVar
+                                                                  present_name)
+                                                           ),
+                                                         Semantic_ir.Ident
+                                                           present_name );
+                                                     ] )
+                                               else Semantic_ir.Ident name)
+                                             argument_names
+                                         in
+                                         let fixed_arguments =
+                                           selected_arguments
+                                           |> List.filteri (fun index _ ->
+                                                  index < fixed_count)
+                                         in
+                                         let rest_prefix =
+                                           selected_arguments
+                                           |> List.filteri (fun index _ ->
+                                                  index >= fixed_count)
+                                         in
+                                         let rest_sequence =
+                                           match (rest_prefix, rest_param) with
+                                           | [], None ->
+                                               Semantic_ir.Ident
+                                                 "Seq.empty"
+                                           | prefix, None ->
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_seq.of_list",
+                                                   [ Semantic_ir.List prefix ] )
+                                           | [], Some _ ->
+                                               Semantic_ir.Ident rest_name
+                                           | prefix, Some _ ->
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_seq.concat",
+                                                   [
+                                                     Semantic_ir.List
+                                                       [
+                                                         Semantic_ir.Apply
+                                                           ( Semantic_ir.Ident
+                                                               "Lg_runtime.Runtime_seq.of_list",
+                                                             [
+                                                               Semantic_ir.List
+                                                                 prefix;
+                                                             ] );
+                                                         Semantic_ir.Ident
+                                                           rest_name;
+                                                       ];
+                                                   ] )
+                                         in
+                                         let patterns =
+                                           List.map
+                                             (fun name ->
+                                               Semantic_ir.PVar name)
+                                             argument_names
+                                           @
+                                           match rest_param with
+                                           | None -> []
+                                           | Some _ ->
+                                               [ Semantic_ir.PVar rest_name ]
+                                         in
+                                         ( {
+                                             fixed_params =
+                                               returned_parameter_tys;
+                                             rest_param;
+                                             return_ty = arity.return_ty;
+                                           },
+                                           Semantic_ir.Fun
+                                             ( patterns,
+                                               Semantic_ir.Apply
+                                                 ( overloaded_projection
+                                                     (Semantic_ir.Ident
+                                                        function_name)
+                                                     source_index,
+                                                   fixed_arguments
+                                                   @ [ rest_sequence ] ) ) )
+                                       in
+                                       let variadic_fixed_count =
+                                         max fixed_count default_count
+                                       in
+                                       let variadic =
+                                         build_variadic "variadic"
+                                           variadic_fixed_count (Some rest_ty)
+                                       in
+                                       if default_count = 3 && fixed_count <= 2
+                                       then
+                                         [
+                                           build_variadic "fixed2"
+                                             (max fixed_count 2) None;
+                                           variadic;
+                                         ]
+                                       else [ variadic ])
+                            |> List.concat |> List.split
                           in
                           let bindings =
                             (Semantic_ir.PVar function_name, fn.semantic_expr)
