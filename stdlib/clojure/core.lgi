@@ -1,5 +1,9 @@
 (ns clojure.core)
 
+(type-variant trampoline-step [value]
+  (TrampolineCall :fn<trampoline-step<value>>)
+  (TrampolineDone :value))
+
 (signature clojure.core/tagged-literal-tag-value [form]
   :fn<TaggedLiteral<form>;symbol>)
 (signature clojure.core/tagged-literal-form-value [form]
@@ -170,6 +174,8 @@
   :fn<unit>)
 (signature clojure.core/apply [value result storage]
   :overload<fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;seqable<value;storage>;result>;fn<overload<fn<value;result>;fn<value;value;result>;fn<value;value;value;result>;variadic-fn<value;value;value;value;result>>;value;value;value;seqable<value;storage>;result>>)
+(signature clojure.core/trampoline [value]
+  :fn<fn<trampoline-step<value>>;value>)
 (signature clojure.core/memoize [a b c result]
   :overload<fn<fn<result>;fn<result>>;fn<fn<a;result>;fn<a;result>>;fn<fn<a;b;result>;fn<a;b;result>>;fn<fn<a;b;c;result>;fn<a;b;c;result>>>)
 

@@ -318,15 +318,19 @@ let rec type_mentions name = function
   | Types.TNil | Types.TUnknown | Types.TMeta _ | Types.TVar _ ->
       false
 
-let unused_type_warning_attribute location =
+let warning_attribute location flags =
   Ast_helper.Attr.mk ~loc:location
     (Location.mkloc "warning" location)
     (PStr
        [
          Ast_helper.Str.eval ~loc:location
            (Ast_helper.Exp.constant ~loc:location
-              (Ast_helper.Const.string ~loc:location "-34"));
+              (Ast_helper.Const.string ~loc:location flags));
        ])
+
+let unused_type_warning_attribute location = warning_attribute location "-34"
+
+let unused_constructor_warning_attribute location = warning_attribute location "-37"
 
 let record_type_definition type_name parameters fields location =
   let declaration_loc = declaration_location location in
@@ -397,6 +401,7 @@ let type_variant_definition type_name parameters constructors location =
   in
   let type_declaration =
     Ast_helper.Type.mk ~loc:declaration_loc ~params:(type_parameters parameters)
+      ~attrs:[ unused_constructor_warning_attribute declaration_loc ]
       ~kind:(Ptype_variant constructor_declarations)
       (named_loc type_name declaration_loc)
   in

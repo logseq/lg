@@ -1823,6 +1823,11 @@
   ([f x y z args]
    (__lg_apply f x y z args)))
 
+(defn trampoline [f]
+  (match (f)
+    (TrampolineCall next) (trampoline next)
+    (TrampolineDone value) value))
+
 (defmacro memoize [f]
   (list '__lg_memoize f))
 

@@ -62,7 +62,7 @@ spread	special-form	compiler-owned-apply-argument-splicing-helper-with-heterogen
 tap>	source	source-function-preserves-upstream-boolean-result-and-open-value-delivery-through-a-narrow-runtime-dynamic-boundary-with-static-call-site-conversion
 tagged-literal	source	source-parameterized-nominal-type-preserves-symbol-tags-statically-typed-payloads-literal-keyword-or-get-field-access-structural-equality-and-upstream-hash-composition-without-an-open-dynamic-value
 tagged-literal?	source	source-function-and-inline-specialization-use-an-optional-static-itaggedliteral-marker-witness-for-first-class-true-and-false-calls
-trampoline	blocked-static-typing	step-results-recursively-alternate-between-zero-arity-functions-and-final-values-and-the-second-arity-also-requires-variadic-apply
+trampoline	source	source-function-preserves-the-upstream-zero-arity-bounce-loop-through-an-explicit-trampoline-step-closed-sum-instead-of-runtime-fn-predicate-dispatch-while-the-upstream-variadic-arity-remains-covered-by-the-existing-typed-apply-abi
 to-array-2d	source	source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses
 unsafe-bit-and	source	source-function-exposes-the-static-integer-bitwise-and-result-while-javascript-zero-falsiness-remains-a-separate-host-boundary
 uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings

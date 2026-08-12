@@ -28582,6 +28582,51 @@ let test_unreduced_has_no_public_name_dispatch () =
       then failwith (name ^ " still has public-name compiler dispatch"))
     [ "unreduced" ]
 
+let test_source_trampoline_uses_typed_bounce_steps () =
+  let source =
+    {|
+(ns app.source-trampoline
+  (:require [cljs.core :as core :refer [trampoline]]))
+
+(defn countdown [n acc]
+  (if (= n 0)
+    (core/TrampolineDone acc)
+    (core/TrampolineCall (fn [] (countdown (dec n) (+ acc n))))))
+
+(def run trampoline)
+
+(println (str (trampoline (fn [] (countdown 5 0)))
+              ":"
+              (run (fn [] (countdown 3 10)))))
+|}
+  in
+  let native_consumer =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_trampoline.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source trampoline must use closed typed bounce steps";
+  assert_ocaml_runs "source_trampoline" "15:16\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_trampoline.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_trampoline.cljc" source)
+
+let test_trampoline_has_no_public_name_dispatch () =
+  let core_source =
+    read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
+  in
+  if not (string_contains_substring core_source "(defn trampoline") then
+    failwith "trampoline is not owned by the source standard library";
+  List.iter
+    (fun path ->
+      let source = read_file (Filename.concat (repo_root ()) path) in
+      if string_contains_substring source "| \"trampoline\"" then
+        failwith ("trampoline still has public-name dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_source_namespace_preserves_inamed_dispatch () =
   let source =
     {|
@@ -47400,6 +47445,10 @@ let tests =
       test_source_unreduced_matches_clojurescript );
     ( "unreduced has no public-name dispatch",
       test_unreduced_has_no_public_name_dispatch );
+    ( "source trampoline uses typed bounce steps",
+      test_source_trampoline_uses_typed_bounce_steps );
+    ( "trampoline has no public-name dispatch",
+      test_trampoline_has_no_public_name_dispatch );
     ( "source namespace preserves INamed dispatch",
       test_source_namespace_preserves_inamed_dispatch );
     ( "namespace has no public-name dispatch",
