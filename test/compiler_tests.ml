@@ -23883,6 +23883,8 @@ let test_source_static_predicate_family_matches_clojurescript () =
 (println (not (reversible? "value")))
 (println (not (reversible? #{})))
 (println (not (sorted? [])))
+(println (not (NaN? 0)))
+(println (NaN? ##NaN))
 (println (core/vector? []))
 (println (clojure.core/map? {}))
 
@@ -23911,7 +23913,7 @@ let test_source_static_predicate_family_matches_clojurescript () =
 (println (= 22 @evaluations))
 |}
   in
-  let expected = String.concat "" (List.init 32 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 34 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/source_static_predicates.cljc"
       source

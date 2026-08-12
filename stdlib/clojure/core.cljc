@@ -3754,7 +3754,9 @@
     (runtime-string/parse-decimal-float source)
     :else nil))
 
-(defn NaN? [value]
+(defn NaN?
+  {:inline (fn [value] (list '__lg_nan-predicate value))}
+  [value]
   (js/isNaN value))
 
 ;; ClojureScript numbers share one JavaScript representation. LG keeps int and

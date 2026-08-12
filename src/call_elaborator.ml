@@ -9176,6 +9176,44 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> Core_scalar.compile "namespace" args)
+    | "__lg_nan-predicate" -> (
+        match compile_args_for scope env arg_forms with
+        | Error _ as error -> error
+        | Ok [ value ] ->
+            let invalid_nan_argument =
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "invalid_arg",
+                  [ Semantic_ir.String "NaN? expects a number" ] )
+            in
+            let false_after_evaluation =
+              Semantic_ir.Sequence
+                [
+                  Core_boolean.evaluated_argument value;
+                  Semantic_ir.Bool false;
+                ]
+            in
+            let expression =
+              match Types.constraint_value_type value.ty with
+              | TFloat ->
+                  Semantic_ir.Apply
+                    (Semantic_ir.Ident "Float.is_nan", [ value.semantic_expr ])
+              | TInt | TOcaml "int" -> false_after_evaluation
+              | TNil -> (
+                  match Env.target env with
+                  | Target.Melange -> false_after_evaluation
+                  | Target.Native | Target.Js_of_ocaml -> invalid_nan_argument)
+              | TString -> (
+                  match Env.target env with
+                  | Target.Melange ->
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_number_melange.is_nan",
+                          [ value.semantic_expr ] )
+                  | Target.Native | Target.Js_of_ocaml -> invalid_nan_argument)
+              | _ -> invalid_nan_argument
+            in
+            Ok (typed_ir TBool expression)
+        | Ok _ -> Error.error "NaN? expects 1 arguments")
     | "__lg_namespace" -> (
         match arg_forms with
         | [ _ ] ->

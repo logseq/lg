@@ -855,7 +855,7 @@
     parse-double {:status :static-adaptation
                   :reason :source-port-preserves-upstream-nan-before-number-grammar-branching-through-boolean-typed-grammar-validators}
     NaN? {:status :static-adaptation
-          :reason :source-wrapper-preserves-upstream-javascript-number-nan-semantics-through-the-existing-typed-float-primitive}
+          :reason :source-inline-specializes-direct-int-float-nil-and-string-calls-through-a-target-aware-typed-primitive-preserving-native-clj-errors-and-melange-cljs-isnan-semantics-without-dynamic-dispatch}
     infinite? {:status :ported}
     flush {:status :ported
            :reason :source-zero-arity-stub-preserves-the-upstream-nil-result}

@@ -10,6 +10,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/nan_qmark.cljc
   upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/or.cljc
   upstream/clojure/core_test/rand_int.cljc
@@ -33,6 +34,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/nan_qmark.cljc}
    %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
    %{dep:upstream/clojure/core_test/rand_int.cljc}
@@ -80,6 +82,7 @@
   upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/nan_qmark.cljc
   upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/or.cljc
   upstream/clojure/core_test/rand_int.cljc
@@ -103,6 +106,7 @@
    %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/nan_qmark.cljc}
    %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
    %{dep:upstream/clojure/core_test/rand_int.cljc}

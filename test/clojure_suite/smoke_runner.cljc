@@ -5,6 +5,7 @@
    [clojure.core-test.associative-qmark :as associative-qmark-test]
    [clojure.core-test.comment :as comment-test]
    [clojure.core-test.fn-qmark :as fn-qmark-test]
+   [clojure.core-test.nan-qmark :as nan-qmark-test]
    [clojure.core-test.name :as name-test]
    [clojure.core-test.or :as or-test]
    [clojure.core-test.rand-int :as rand-int-test]
