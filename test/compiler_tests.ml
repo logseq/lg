@@ -11952,6 +11952,57 @@ let test_numeric_array_constructors_are_source_owned () =
         failwith (name ^ " is missing from the source standard library"))
     [ "int-array"; "long-array"; "double-array" ]
 
+let test_source_object_array_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-object-array
+  (:require [clojure.core :as core :refer [object-array]]))
+
+(def object-array-fn object-array)
+(def from-size (object-array-fn 3))
+(def from-vector (object-array ["a" "b"]))
+(def from-list (core/object-array (list 1 2 3)))
+(def from-array (clojure.core/object-array (array :x :y)))
+(def from-fill (object-array 3 "z"))
+(def from-seq-padding (object-array 4 (seq [7 8])))
+
+(aset from-size 1 "filled")
+
+(println (str (alength from-size) ":" (nil? (aget from-size 0)) ":"
+              (aget from-size 1) ":" (nil? (aget from-size 2))))
+(println (= ["a" "b"] (vec from-vector)))
+(println (= [1 2 3] (vec from-list)))
+(println (= [:x :y] (vec from-array)))
+(println (= ["z" "z" "z"] (vec from-fill)))
+(println (str (pr-str (vec from-seq-padding)) ":"
+              (nil? (aget from-seq-padding 2)) ":"
+              (nil? (aget from-seq-padding 3))))
+|}
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "object-array must remain statically typed";
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "source_object_array"
+    "3:true:filled:true\ntrue\ntrue\ntrue\ntrue\n[7 8 nil nil]:true:true\n"
+    native;
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange object-array must remain statically typed"
+
+let test_object_array_is_source_owned () =
+  let core_source = read_file "stdlib/clojure/core.cljc" in
+  if not (string_contains_substring core_source "(defn object-array") then
+    failwith "object-array is missing from the source standard library";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      if string_contains_substring compiler_source "\"object-array\"" then
+        failwith ("object-array still has public-name dispatch in " ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_source_clone_protocol_preserves_values_and_fresh_identity () =
   let source =
     {|
@@ -25809,6 +25860,27 @@ let test_source_array_functions_reject_invalid_static_arguments () =
     "test/source_make_array_rejects_bad_size.cljc"
     {|(def allocate make-array) (def invalid (allocate "1" 0))|}
   |> expect_error_contains "make-array size must be int"
+
+let test_array_write_accepts_optional_payload_values () =
+  let source =
+    {|
+(def values (make-array 2 nil))
+(aset values 0 "stored")
+(println (str (aget values 0) ":" (nil? (aget values 1))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/array_write_accepts_optional_payload_values.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "optional array writes must remain statically typed";
+  assert_ocaml_runs "array_write_accepts_optional_payload_values"
+    "stored:true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/array_write_accepts_optional_payload_values.cljc" source)
 
 let test_source_transient_family_preserves_clojurescript_behavior () =
   let source =
@@ -45019,6 +45091,9 @@ let tests =
       test_source_numeric_array_constructors_match_clojurescript );
     ( "numeric array constructors are source-owned",
       test_numeric_array_constructors_are_source_owned );
+    ( "source object-array matches ClojureScript",
+      test_source_object_array_matches_clojurescript );
+    ( "object-array is source-owned", test_object_array_is_source_owned );
     ( "source clone protocol preserves values and fresh identity",
       test_source_clone_protocol_preserves_values_and_fresh_identity );
     ( "clone protocol is source-owned", test_clone_protocol_is_source_owned );
@@ -47091,6 +47166,8 @@ let tests =
       test_source_array_and_reference_constructors_are_first_class );
     ( "source array functions reject invalid static arguments",
       test_source_array_functions_reject_invalid_static_arguments );
+    ( "array write accepts optional payload values",
+      test_array_write_accepts_optional_payload_values );
     ( "source transient family preserves ClojureScript behavior",
       test_source_transient_family_preserves_clojurescript_behavior );
     ( "source transient family rejects invalid static operations",

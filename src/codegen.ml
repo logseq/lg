@@ -55,6 +55,13 @@ let rec stringify_expr_ir ?(pr = false) expr =
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
            else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar "value" ],
+            stringify_expr_ir ~pr
+              (typed_ir
+                 (TOcaml_app ("option", [ inner ]))
+                 (Semantic_ir.Ident "value")) )
     | TOcaml "value" ->
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
@@ -82,7 +89,7 @@ let rec stringify_expr_ir ?(pr = false) expr =
         (if pr then "Lg_runtime.Runtime_dynamic.pr_str"
          else "Lg_runtime.Runtime_dynamic.str")
         [ expr.semantic_expr ]
-  | TNullable inner ->
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
       Semantic_ir.Match
         ( expr.semantic_expr,
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.String "nil");

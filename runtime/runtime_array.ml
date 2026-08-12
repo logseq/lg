@@ -26,6 +26,18 @@ let of_vector_padded size initial values =
 let of_array_padded size initial values =
   of_seq_padded size initial (Array.to_seq values)
 
+let of_seq_option_padded size values =
+  of_seq_padded size None (Seq.map Option.some values)
+
+let of_list_option_padded size values =
+  of_seq_option_padded size (List.to_seq values)
+
+let of_vector_option_padded size values =
+  of_seq_option_padded size (Rrbvec.to_seq values)
+
+let of_array_option_padded size values =
+  of_seq_option_padded size (Array.to_seq values)
+
 let copy_range source source_start source_end target target_start =
   Array.blit source source_start target target_start (source_end - source_start)
 

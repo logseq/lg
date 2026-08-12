@@ -20,7 +20,7 @@ done
 
 for name in \
   identity completing complement every-pred some-fn boolean truth_ not zero? pos? neg? abs byte float short unchecked-byte unchecked-char unchecked-short unchecked-float unchecked-double unchecked-int unchecked-long double int long reduced reset-vals! subs int-to-string-radix any? range shuffle inc dec bit-not ratio? decimal? realized? int-rotate-left imul m3-mix-K1 m3-mix-H1 m3-fmix m3-hash-int m3-hash-unencoded-chars hash-string* mix-collection-hash \
-  alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array array-from array-binary-search-left array-binary-search-right quot rem mod \
+  alength aclone acopy aslice aconcat array-to-seq array-to-rseq array-seq to-array into-array array-from array-binary-search-left array-binary-search-right object-array quot rem mod \
   unchecked-add unchecked-add-int unchecked-subtract unchecked-subtract-int \
   unchecked-multiply unchecked-multiply-int unchecked-divide-int unchecked-remainder-int \
   unchecked-inc unchecked-inc-int unchecked-dec unchecked-dec-int unchecked-negate unchecked-negate-int \

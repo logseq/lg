@@ -7253,6 +7253,13 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok [ size; initial ]
+          when Types.equal size.ty TInt && Types.equal initial.ty TNil ->
+            Ok
+              (typed_ir
+                 (TArray (TOcaml_app ("option", [ TUnknown ])))
+                 (apply "Array.make"
+                    [ size.semantic_expr; initial.semantic_expr ]))
+        | Ok [ size; initial ]
           when Types.equal size.ty TInt
                && not (Types.contains_dynamic initial.ty) ->
             Ok
@@ -7470,42 +7477,43 @@ let create ~compile_expr =
                              value;
                            ]))
                     (pack_dynamic_value env element_ty value)
-                else if
-                  not
-                              (Types.assignable ~policy:Host_boundary
-                                 ~expected:element_ty ~actual:value.ty)
-                then
-                            Error.error
-                              "OCaml array value must match element type"
-                else
-                  if name = "__lg_aset" then
+                else if not (argument_compatible element_ty value.ty) then
+                  Error.error "OCaml array value must match element type"
+                else if name = "__lg_aset" then
                     let value_name = "__lg_aset_value" in
-                    Ok
-                      (typed_ir value.ty
-                         (Semantic_ir.Let
-                            ( [
-                                ( Semantic_ir.PVar value_name,
-                                  value.semantic_expr );
-                              ],
-                              Semantic_ir.Sequence
-                                [
-                                  apply "Array.set"
-                                    [
-                                      array.semantic_expr;
-                                      index;
-                                      Semantic_ir.Ident value_name;
-                                    ];
-                                  Semantic_ir.Ident value_name;
-                                ] )))
-                  else
-                    Ok
-                      (typed_ir TUnit
-                         (apply "Array.unsafe_set"
-                            [
-                              array.semantic_expr;
-                              index;
-                              value.semantic_expr;
-                            ]))
+                    let bound_value =
+                      { value with semantic_expr = Semantic_ir.Ident value_name }
+                    in
+                    Result.map
+                      (fun stored_value ->
+                        typed_ir value.ty
+                          (Semantic_ir.Let
+                             ( [
+                                 ( Semantic_ir.PVar value_name,
+                                   value.semantic_expr );
+                               ],
+                               Semantic_ir.Sequence
+                                 [
+                                   apply "Array.set"
+                                     [
+                                       array.semantic_expr;
+                                       index;
+                                       stored_value;
+                                     ];
+                                   Semantic_ir.Ident value_name;
+                                 ] )))
+                      (pack_constrained_value env element_ty bound_value)
+                else
+                  Result.map
+                    (fun stored_value ->
+                      typed_ir TUnit
+                        (apply "Array.unsafe_set"
+                           [
+                             array.semantic_expr;
+                             index;
+                             stored_value;
+                           ]))
+                    (pack_constrained_value env element_ty value)
             | None ->
                 Error.error
                   ((if name = "__lg_aset" then "array write" else name)

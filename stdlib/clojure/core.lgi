@@ -120,6 +120,14 @@
   :fn<value;seqable<value;storage>;seq<value>>)
 (signature clojure.core/make-array [value]
   :fn<int;value;array<value>>)
+(signature clojure.core/object-array-from-sized-list [value]
+  :fn<int;list<value>;array<option<value>>>)
+(signature clojure.core/object-array-from-sized-vector [value]
+  :fn<int;vector<value>;array<option<value>>>)
+(signature clojure.core/object-array-from-sized-seq [value]
+  :fn<int;seq<value>;array<option<value>>>)
+(signature clojure.core/object-array-from-sized-array [value]
+  :fn<int;array<value>;array<option<value>>>)
 (signature clojure.core/aget [value index]
   :fn<array<value>;array-index<index>;value>)
 (signature clojure.core/aset [value index]

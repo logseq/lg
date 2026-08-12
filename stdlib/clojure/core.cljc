@@ -427,6 +427,12 @@
 (defprotocol ^:private IDoubleArrayInitial
   (-double-array-initial [initial size] :array<float>))
 
+(defprotocol ^:private IObjectArraySource
+  (-object-array-source [source]))
+
+(defprotocol ^:private IObjectArrayInitial
+  (-object-array-initial [initial size]))
+
 (defn- ^:array<int> int-array-from-sized-seq
   [^:int size ^:seq<int> values]
   (runtime-array/of-seq-padded size 0 values))
@@ -434,6 +440,22 @@
 (defn- ^:array<float> double-array-from-sized-seq
   [^:int size ^:seq<float> values]
   (runtime-array/of-seq-padded size 0.0 values))
+
+(defn- object-array-from-sized-list
+  [^:int size values]
+  (runtime-array/of-list-option-padded size values))
+
+(defn- object-array-from-sized-vector
+  [^:int size values]
+  (runtime-array/of-vector-option-padded size values))
+
+(defn- object-array-from-sized-seq
+  [^:int size values]
+  (runtime-array/of-seq-option-padded size values))
+
+(defn- object-array-from-sized-array
+  [^:int size values]
+  (runtime-array/of-array-option-padded size values))
 
 (extend-type :int
   IIntArraySource
@@ -451,7 +473,9 @@
   IIntArrayInitial
   (-int-array-initial [_ ^:int size] (make-array size 0))
   IDoubleArrayInitial
-  (-double-array-initial [_ ^:int size] (make-array size 0.0)))
+  (-double-array-initial [_ ^:int size] (make-array size 0.0))
+  IObjectArrayInitial
+  (-object-array-initial [_ ^:int size] (make-array size nil)))
 
 (extend-protocol IIntArraySource
   :list
@@ -501,6 +525,46 @@
   (-double-array-initial [values ^:int size]
     (runtime-array/of-array-padded size 0.0 values)))
 
+(extend-protocol IObjectArraySource
+  :int
+  (-object-array-source [^:int size] (make-array size nil))
+  :list
+  (-object-array-source [values] (runtime-array/of-list values))
+  :vector
+  (-object-array-source [values] (runtime-array/of-vector values))
+  :seq
+  (-object-array-source [values] (runtime-array/of-seq values))
+  :array
+  (-object-array-source [values] (runtime-array/copy values)))
+
+(extend-protocol IObjectArrayInitial
+  :list
+  (-object-array-initial [values ^:int size]
+    (object-array-from-sized-list size values))
+  :vector
+  (-object-array-initial [values ^:int size]
+    (object-array-from-sized-vector size values))
+  :seq
+  (-object-array-initial [values ^:int size]
+    (object-array-from-sized-seq size values))
+  :array
+  (-object-array-initial [values ^:int size]
+    (object-array-from-sized-array size values))
+  :string
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :keyword
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :symbol
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :int
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :float
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :bool
+  (-object-array-initial [value ^:int size] (make-array size value))
+  :char
+  (-object-array-initial [value ^:int size] (make-array size value)))
+
 (defn int-array
   ([size-or-seq]
    (-int-array-source size-or-seq))
@@ -518,6 +582,12 @@
    (-double-array-source size-or-seq))
   ([size initial-or-seq]
    (-double-array-initial initial-or-seq size)))
+
+(defn object-array
+  ([size-or-seq]
+   (-object-array-source size-or-seq))
+  ([size initial-or-seq]
+   (-object-array-initial initial-or-seq size)))
 
 (extend-protocol ICloneable
   :list

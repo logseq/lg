@@ -521,16 +521,18 @@ and neither capability uses dynamic packing.
 `array-index<T>` carries only a closed `T -> int` witness, preserving integer
 and floating array indexes without an open numeric value. Array allocation,
 reads, writes, and reference allocation remain private typed primitives.
-`int-array`, `long-array`, and `double-array` are source-owned with their pinned
-one- and two-argument control flow. Private source protocols distinguish size
-inputs from homogeneous list, vector, sequence, and array inputs, and distinguish
-scalar initial values from sequence initializers without dynamic dispatch. The
-small generic runtime helper only performs bounded array filling. Because OCaml
-arrays cannot contain JavaScript's uninitialized holes, size-only numeric arrays
-use the corresponding Clojure zero value; shorter sequence initializers leave
-the remaining cells at that same zero value. Sequence inputs retain their
-homogeneous static element type instead of being numerically coerced, matching
-the pinned ClojureScript behavior.
+`int-array`, `long-array`, `double-array`, and `object-array` are source-owned
+with their pinned one- and two-argument control flow. Private source protocols
+distinguish size inputs from homogeneous list, vector, sequence, and array
+inputs, and distinguish scalar initial values from sequence initializers without
+dynamic dispatch. The small generic runtime helper only performs bounded array
+filling. Because OCaml arrays cannot contain JavaScript's uninitialized holes,
+size-only numeric arrays use the corresponding Clojure zero value; shorter
+numeric sequence initializers leave the remaining cells at that same zero value.
+`object-array` uses nil for size-only allocation and for sequence padding, while
+scalar two-argument initialization fills the array with the scalar value.
+Sequence inputs retain their homogeneous static element type instead of being
+coerced, matching the pinned ClojureScript behavior.
 `ICloneable`, `-clone`, and `clone` are source-owned. The protocol's `:self`
 result keeps each receiver and clone in one static type. LG supplies fresh,
 equal list, vector, sequence, and hash-map implementations; the map clone shares
