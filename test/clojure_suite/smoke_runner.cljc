@@ -7,6 +7,7 @@
    [clojure.core-test.fn-qmark :as fn-qmark-test]
    [clojure.core-test.name :as name-test]
    [clojure.core-test.or :as or-test]
+   [clojure.core-test.rand-int :as rand-int-test]
    [clojure.core-test.sequential-qmark :as sequential-qmark-test]
    [clojure.core-test.when :as when-test]
    [clojure.core-test.when-not :as when-not-test]
