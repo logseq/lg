@@ -128,6 +128,12 @@
   :fn<value;ref<value>>)
 (signature clojure.core/volatile! [value]
   :fn<value;ref<value>>)
+(signature clojure.core/-notify-watches [value]
+  :fn<ref<value>;value;value;unit>)
+(signature clojure.core/-add-watch [value result]
+  :fn<ref<value>;keyword;fn<keyword;ref<value>;value;value;result>;ref<value>>)
+(signature clojure.core/-remove-watch [value]
+  :fn<ref<value>;keyword;ref<value>>)
 (signature clojure.core/add-watch [value result]
   :fn<ref<value>;keyword;fn<keyword;ref<value>;value;value;result>;ref<value>>)
 (signature clojure.core/remove-watch [value]

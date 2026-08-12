@@ -44,6 +44,7 @@ let atom_id = Protocol_id.create ~owner:[] ~name:"IAtom"
 let reset_id = Protocol_id.create ~owner:[] ~name:"IReset"
 let volatile_id = Protocol_id.create ~owner:[] ~name:"IVolatile"
 let swap_id = Protocol_id.create ~owner:[] ~name:"ISwap"
+let watchable_id = Protocol_id.create ~owner:[] ~name:"IWatchable"
 let comparable_id = Protocol_id.create ~owner:[] ~name:"IComparable"
 let lookup_id = Protocol_id.create ~owner:[] ~name:"ILookup"
 let collection_id = Protocol_id.create ~owner:[] ~name:"ICollection"
@@ -486,6 +487,7 @@ let declare_pending registry =
 
 let add_reference_protocols registry =
   let value = TVar "reference_value" in
+  let result = TVar "reference_watch_result" in
   let reference = TRef value in
   let lazy_value = TOcaml_app ("Lazy.t", [ value ]) in
   let reduced_value = Types.reduced value in
@@ -535,6 +537,21 @@ let add_reference_protocols registry =
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") swap_id
        "-swap!" "Lg_runtime.Runtime_slot.swap"
        (TFn ([ slot; TFn ([ value ], value) ], value))
+  |> add Receiver_id.Ref_receiver watchable_id "-notify-watches"
+       "Lg_runtime.Runtime_reference.notify_watches"
+       (TFn ([ reference; value; value ], TUnit))
+  |> add Receiver_id.Ref_receiver watchable_id "-add-watch"
+       "Lg_runtime.Runtime_reference.add_watch"
+       (TFn
+          ( [
+              reference;
+              TKeyword;
+              TFn ([ TKeyword; reference; value; value ], result);
+            ],
+            reference ))
+  |> add Receiver_id.Ref_receiver watchable_id "-remove-watch"
+       "Lg_runtime.Runtime_reference.remove_watch"
+       (TFn ([ reference; TKeyword ], reference))
 
 let declare_compare_and_set registry =
   let value = TVar "atom_value" in
@@ -566,6 +583,26 @@ let declare_swap registry =
     [
       signature (method_id swap_id "-swap!")
         [ TUnknown; TFn ([ value ], value) ] value;
+    ]
+    registry
+  |> add_or_fail
+
+let declare_watchable registry =
+  let value = TVar "watch_value" in
+  let result = TVar "watch_callback_result" in
+  Protocol_registry.declare watchable_id
+    [
+      signature (method_id watchable_id "-notify-watches")
+        [ TUnknown; value; value ] TUnit;
+      signature (method_id watchable_id "-add-watch")
+        [
+          TUnknown;
+          TKeyword;
+          TFn ([ TKeyword; TUnknown; value; value ], result);
+        ]
+        TUnknown;
+      signature (method_id watchable_id "-remove-watch")
+        [ TUnknown; TKeyword ] TUnknown;
     ]
     registry
   |> add_or_fail
@@ -900,6 +937,7 @@ let initial_registry =
   |> declare_protocol_predicate_family |> add_protocol_predicate_family
   |> declare_deref |> declare_pending
   |> declare_compare_and_set |> declare_reset |> declare_volatile |> declare_swap
+  |> declare_watchable
   |> add_reference_protocols
   |> declare_comparable_protocol
   |> declare_set_protocol |> add_static_set_protocol

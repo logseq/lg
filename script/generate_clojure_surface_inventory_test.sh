@@ -263,7 +263,7 @@ awk -F '\t' '$1 == "definition" && $2 == "clojure.core/conj" && $3 == "source" {
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/namespace" || $2 == "clojure.core/unreduced") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   BEGIN {
-    split("-as-transient -assoc -assoc! -assoc-n -assoc-n! -comparator -compare -compare-and-set! -conj -conj! -contains-key? -count -deref -disjoin -disjoin! -dissoc -dissoc! -drop -empty -entry-key -equiv -find -first -hash -key -kv-reduce -lookup -meta -next -nth -peek -persistent! -pop -pop! -realized? -reduce -reset! -rest -rseq -seq -sorted-seq -sorted-seq-from -swap! -val -vreset! -with-meta", names, " ")
+    split("-as-transient -add-watch -assoc -assoc! -assoc-n -assoc-n! -comparator -compare -compare-and-set! -conj -conj! -contains-key? -count -deref -disjoin -disjoin! -dissoc -dissoc! -drop -empty -entry-key -equiv -find -first -hash -key -kv-reduce -lookup -meta -next -notify-watches -nth -peek -persistent! -pop -pop! -realized? -reduce -remove-watch -reset! -rest -rseq -seq -sorted-seq -sorted-seq-from -swap! -val -vreset! -with-meta", names, " ")
     for (i in names) required["clojure.core/" names[i]] = 1
   }
   $1 == "definition" && ($2 in required) && $3 == "source" {found[$2] = 1}

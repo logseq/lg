@@ -255,12 +255,12 @@
                            :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
     -reset {:status :static-adaptation
             :reason :runtime-multifn-boundary-provides-compiler-registered-method-table-mutation-through-a-documented-dynamic-boundary}
-    -add-watch {:status :blocked-static-typing
-                :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
-    -remove-watch {:status :blocked-static-typing
-                   :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
-    -notify-watches {:status :blocked-static-typing
-                     :reason :watch-callback-registry-needs-heterogeneous-static-key-and-callback-storage-per-reference-value-type}
+    -add-watch {:status :static-adaptation
+                :reason :source-protocol-declaration-with-compiler-backed-static-reference-watch-implementations}
+    -remove-watch {:status :static-adaptation
+                   :reason :source-protocol-declaration-with-compiler-backed-static-reference-watch-implementations}
+    -notify-watches {:status :static-adaptation
+                     :reason :source-protocol-declaration-with-compiler-backed-static-reference-watch-implementations}
     -assoc! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -assoc-n! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -dissoc! {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}

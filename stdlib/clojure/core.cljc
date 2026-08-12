@@ -177,6 +177,11 @@
 (defprotocol IPending
   (-realized? [value] :bool))
 
+(defprotocol IWatchable
+  (-notify-watches [reference old-value new-value])
+  (-add-watch [reference key callback])
+  (-remove-watch [reference key]))
+
 (defprotocol IMeta
   (-meta [value]))
 
@@ -3445,13 +3450,27 @@
   [reference value]
   (IVolatile/-vreset! reference value))
 
+(defn -notify-watches
+  [reference old-value new-value]
+  (IWatchable/-notify-watches reference old-value new-value))
+
+(defn -add-watch
+  [reference key callback]
+  (IWatchable/-add-watch reference key callback))
+
+(defn -remove-watch
+  [reference key]
+  (IWatchable/-remove-watch reference key))
+
 (defn add-watch
   [reference key callback]
-  (__lg_add-watch reference key callback))
+  (-add-watch reference key callback)
+  reference)
 
 (defn remove-watch
   [reference key]
-  (__lg_remove-watch reference key))
+  (-remove-watch reference key)
+  reference)
 
 (defmacro vswap! [reference update-fn & args]
   `(IVolatile/-vreset!

@@ -251,8 +251,12 @@ times, `defmulti` 8 times, `dispatch-fn` 7 times, `methods` 5 times, and
 `get-method` once; those rows are now source-aggregate supported through the
 documented runtime multifn dynamic boundary.
 `add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
-source-aggregate owned through a typed reference watch registry with statically
-typed keyword keys. `re-find` appears 290 times,
+source-aggregate owned through `IWatchable/-add-watch` and
+`IWatchable/-remove-watch`. The underlying protocol methods, including
+`-notify-watches`, dispatch to a compiler-registered `Runtime_reference.t`
+implementation that keeps the watched value type parameterized and stores only
+keyword-keyed callbacks for that reference value type. `re-find` appears 290
+times,
 `ex-data` appears 210 times, `re-matches` appears 87 times, and `re-seq`
 appears 23 times; all four are
 now source-aggregate owned, with regex match shapes and exception data recorded
@@ -412,9 +416,9 @@ coverage.
 All remaining public `cljs.core` function and value surfaces are also explicitly
 classified. The source-owned `not-native` value preserves the upstream `nil`
 sentinel. The non-source families are JavaScript iterators and prototype
-inspection, chunked-sequence internals, multimethods, reference watches and
-validators, heterogeneous printing, sorted collections, bootstrap namespace
-objects, and analyzer helpers. Each individual var
+inspection, chunked-sequence internals, multimethods, validators,
+heterogeneous printing, sorted collections, bootstrap namespace objects, and
+analyzer helpers. Each individual var
 has its concrete reason in `stdlib/upstream.edn`; there is no unreviewed
 function queue hidden behind a generic deferred reason. Further source coverage
 therefore proceeds by implementing one of these missing static capabilities as

@@ -31984,6 +31984,91 @@ let test_source_reference_watches_match_clojurescript () =
     {|(add-watch (atom 1) :k (fn [_ _ _ new-value] (+ new-value "x")))|}
   |> expect_error_contains "int"
 
+let test_source_watchable_protocol_methods_match_clojurescript () =
+  let source =
+    {|
+(ns app.watchable-protocols
+  (:require [cljs.core :as core
+             :refer [-add-watch -remove-watch -notify-watches reset! swap!]]))
+
+(def add-through -add-watch)
+(def remove-through -remove-watch)
+(def notify-through -notify-watches)
+(def value (atom 1))
+(def events (atom []))
+
+(add-through
+  value
+  :counter
+  (fn [key reference old-value new-value]
+    (swap! events conj
+           (str (name key) ":" old-value "->" new-value ":" @reference))))
+
+(println (= value (core/-add-watch value :secondary
+  (fn [key reference old-value new-value]
+    (swap! events conj
+           (str (name key) ":" old-value "->" new-value ":" @reference))))))
+
+(-notify-watches value 1 2)
+(println (pr-str @events))
+(reset! value 3)
+(println (pr-str @events))
+(println (= value (remove-through value :counter)))
+(notify-through value 3 4)
+(println (pr-str @events))
+(core/-remove-watch value :secondary)
+(-notify-watches value 4 5)
+(println (pr-str @events))
+|}
+  in
+  let expected =
+    "true\n"
+    ^ "[counter:1->2:1 secondary:1->2:1]\n"
+    ^ "[counter:1->2:1 secondary:1->2:1 counter:1->3:3 \
+       secondary:1->3:3]\n"
+    ^ "true\n"
+    ^ "[counter:1->2:1 secondary:1->2:1 counter:1->3:3 \
+       secondary:1->3:3 secondary:3->4:3]\n"
+    ^ "[counter:1->2:1 secondary:1->2:1 counter:1->3:3 \
+       secondary:1->3:3 secondary:3->4:3]\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_watchable_protocols.cljc" source
+  in
+  assert_ocaml_runs "source_watchable_protocols" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_watchable_protocols.cljc" source);
+  let static_source =
+    {|
+(ns app.watchable-protocols-static
+  (:require [cljs.core :refer [-add-watch -remove-watch -notify-watches]]))
+
+(def value (atom 1))
+(def observed (atom 0))
+
+(-add-watch value :counter
+  (fn [_ reference old-value new-value]
+    (reset! observed (+ old-value new-value @reference))))
+(-notify-watches value 1 2)
+(-remove-watch value :counter)
+|}
+  in
+  let native_consumer = compile_string_from_stdlib static_source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "source watchable protocol must remain statically typed";
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange static_source
+    |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith "Melange watchable protocol must remain statically typed";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/bad_watchable_notify_value.cljc"
+    {|(-notify-watches (atom 1) 1 "bad")|}
+  |> expect_error_contains "int"
+
 let test_reference_protocol_family_has_no_public_name_dispatch () =
   let core_source =
     read_file (Filename.concat (repo_root ()) "stdlib/clojure/core.cljc")
@@ -32006,6 +32091,24 @@ let test_reference_protocol_family_has_no_public_name_dispatch () =
               (name ^ " still has public-name compiler dispatch in " ^ path))
         [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
     [ "deref"; "reset!"; "compare-and-set!" ]
+    ;
+  if not (string_contains_substring core_source "(defprotocol IWatchable") then
+    failwith "IWatchable must be owned by the source standard library";
+  List.iter
+    (fun name ->
+      if not (string_contains_substring core_source ("(" ^ name)) then
+        failwith (name ^ " is not owned by the source standard library");
+      List.iter
+        (fun path ->
+          let compiler_source =
+            read_file (Filename.concat (repo_root ()) path)
+          in
+          if string_contains_substring compiler_source ("\"" ^ name ^ "\"")
+          then
+            failwith
+              (name ^ " still has public-name compiler dispatch in " ^ path))
+        [ "src/call_elaborator.ml"; "src/type_inference.ml" ])
+    [ "-add-watch"; "-remove-watch"; "-notify-watches" ]
 
 let test_swap_is_source_owned_and_matches_clojurescript_arities () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
@@ -46552,6 +46655,8 @@ let tests =
       test_source_reference_protocol_family_matches_clojurescript );
     ( "source reference watches match ClojureScript",
       test_source_reference_watches_match_clojurescript );
+    ( "source watchable protocol methods match ClojureScript",
+      test_source_watchable_protocol_methods_match_clojurescript );
     ( "reference protocol family has no public-name dispatch",
       test_reference_protocol_family_has_no_public_name_dispatch );
     ( "swap! is source-owned and matches ClojureScript arities",

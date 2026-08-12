@@ -19,6 +19,9 @@ let notify reference old_value new_value =
       ignore (callback key reference old_value new_value))
     reference.watches
 
+let notify_watches reference old_value new_value =
+  notify reference old_value new_value
+
 let reset reference value =
   let old_value = reference.value in
   reference.value <- value;
