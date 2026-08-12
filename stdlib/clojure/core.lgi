@@ -779,6 +779,8 @@
   :bool)
 (signature clojure.core/*print-length*
   :option<int>)
+(signature clojure.core/*print-level*
+  :option<int>)
 (signature clojure.core/str [value]
   :variadic-fn<printable<value>;string>)
 (signature clojure.core/pr-str [value]

@@ -32,8 +32,33 @@ let render_strings ?print_length separator values =
       apply "Lg_runtime.Runtime_print.render_strings"
         [ separator; print_length; values ]
 
-let rec stringify_expr_ir ?(pr = false) ?print_length expr =
-  let scalar_mapper ty =
+let render_print_level ?print_level render_collection =
+  match print_level with
+  | None -> render_collection None
+  | Some print_level ->
+      let level_name = "__lg_print_level" in
+      Semantic_ir.Match
+        ( print_level,
+          [
+            (Semantic_ir.PConstructor ("None", None), render_collection None);
+            ( Semantic_ir.PConstructor
+                ("Some", Some (Semantic_ir.PVar level_name)),
+              Semantic_ir.If
+                ( Semantic_ir.Infix
+                    ("<=", Semantic_ir.Ident level_name, Semantic_ir.Int 0),
+                  Semantic_ir.String "#",
+                  render_collection
+                    (Some
+                       (Semantic_ir.Constructor
+                          ( "Some",
+                            Some
+                              (Semantic_ir.Infix
+                                 ( "-", Semantic_ir.Ident level_name,
+                                   Semantic_ir.Int 1 )) ))) ) );
+          ] )
+
+let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
+  let scalar_mapper ?print_level ty =
     match ty with
     | TInt | TOcaml "int" -> Semantic_ir.Ident "string_of_int"
     | TFloat ->
@@ -65,7 +90,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length expr =
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],
-            stringify_expr_ir ~pr ?print_length
+            stringify_expr_ir ~pr ?print_length ?print_level
               (typed_ir
                  (TOcaml_app ("option", [ inner ]))
                  (Semantic_ir.Ident "value")) )
@@ -73,6 +98,16 @@ let rec stringify_expr_ir ?(pr = false) ?print_length expr =
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
            else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+    | TList _ | TSeq _ | TVector _ | TSet _ ->
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar "value" ],
+            stringify_expr_ir ~pr ?print_length ?print_level
+              (typed_ir ty (Semantic_ir.Ident "value")) )
+    | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+        Semantic_ir.Fun
+          ( [ Semantic_ir.PVar "value" ],
+            stringify_expr_ir ~pr ?print_length ?print_level
+              (typed_ir ty (Semantic_ir.Ident "value")) )
     | _ -> Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
   in
   match expr.ty with
@@ -102,7 +137,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length expr =
           [ (Semantic_ir.PConstructor ("None", None), Semantic_ir.String "nil");
             ( Semantic_ir.PConstructor
                 ("Some", Some (Semantic_ir.PVar "value")),
-              stringify_expr_ir ~pr ?print_length
+              stringify_expr_ir ~pr ?print_length ?print_level
                 (typed_ir inner (Semantic_ir.Ident "value")) );
           ] )
   | TUnknown -> (
@@ -129,81 +164,98 @@ let rec stringify_expr_ir ?(pr = false) ?print_length expr =
          else "Lg_runtime.Runtime_dynamic.polymorphic_str")
         [ expr.semantic_expr ]
   | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
-      Semantic_ir.If
-        ( apply "Lg_runtime.Runtime_seq.is_empty" [ expr.semantic_expr ],
-          Semantic_ir.String "nil",
+      render_print_level ?print_level (fun child_print_level ->
+          Semantic_ir.If
+            ( apply "Lg_runtime.Runtime_seq.is_empty" [ expr.semantic_expr ],
+              Semantic_ir.String "nil",
+              wrap_expr "("
+                (render_strings ?print_length (Semantic_ir.String " ")
+                   (apply "List.map"
+                      [
+                        scalar_mapper ?print_level:child_print_level inner;
+                        apply "Lg_runtime.Runtime_seq.to_list"
+                          [ expr.semantic_expr ];
+                      ]))
+                ")" ))
+  | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
+      Semantic_ir.String "<value>"
+  | TList inner ->
+      render_print_level ?print_level (fun child_print_level ->
           wrap_expr "("
             (render_strings ?print_length (Semantic_ir.String " ")
                (apply "List.map"
                   [
-                    scalar_mapper inner;
+                    scalar_mapper ?print_level:child_print_level inner;
+                    expr.semantic_expr;
+                  ]))
+            ")")
+  | TSeq inner ->
+      render_print_level ?print_level (fun child_print_level ->
+          wrap_expr "("
+            (render_strings ?print_length (Semantic_ir.String " ")
+               (apply "List.map"
+                  [
+                    scalar_mapper ?print_level:child_print_level inner;
                     apply "Lg_runtime.Runtime_seq.to_list"
                       [ expr.semantic_expr ];
                   ]))
-            ")" )
-  | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
-      Semantic_ir.String "<value>"
-  | TList inner ->
-      wrap_expr "("
-        (render_strings ?print_length (Semantic_ir.String " ")
-           (apply "List.map" [ scalar_mapper inner; expr.semantic_expr ]))
-        ")"
-  | TSeq inner ->
-      wrap_expr "("
-        (render_strings ?print_length (Semantic_ir.String " ")
-           (apply "List.map"
-              [
-                scalar_mapper inner;
-                apply "Lg_runtime.Runtime_seq.to_list" [ expr.semantic_expr ];
-              ]))
-        ")"
+            ")")
   | TVector inner ->
-      wrap_expr "["
-        (render_strings ?print_length (Semantic_ir.String " ")
-           (apply "List.map"
-              [
-                scalar_mapper inner;
-                apply "Rrbvec.to_list" [ expr.semantic_expr ];
-              ]))
-        "]"
+      render_print_level ?print_level (fun child_print_level ->
+          wrap_expr "["
+            (render_strings ?print_length (Semantic_ir.String " ")
+               (apply "List.map"
+                  [
+                    scalar_mapper ?print_level:child_print_level inner;
+                    apply "Rrbvec.to_list" [ expr.semantic_expr ];
+                  ]))
+            "]")
   | TSet inner ->
-      let mapper =
-        Semantic_ir.Fun
-          ( [ Semantic_ir.PVar "value" ],
-            stringify_expr_ir ~pr ?print_length
-              (typed_ir inner (Semantic_ir.Ident "value")) )
-      in
-      let values =
-        match Types.set_module_name inner with
-        | Ok set_module -> apply (set_module ^ ".elements") [ expr.semantic_expr ]
-        | Error _ -> Semantic_ir.List []
-      in
-      wrap_expr "#{"
-        (render_strings ?print_length (Semantic_ir.String " ")
-           (apply "List.map" [ mapper; values ]))
-        "}"
+      render_print_level ?print_level (fun child_print_level ->
+          let mapper =
+            Semantic_ir.Fun
+              ( [ Semantic_ir.PVar "value" ],
+                stringify_expr_ir ~pr ?print_length
+                  ?print_level:child_print_level
+                  (typed_ir inner (Semantic_ir.Ident "value")) )
+          in
+          let values =
+            match Types.set_module_name inner with
+            | Ok set_module ->
+                apply (set_module ^ ".elements") [ expr.semantic_expr ]
+            | Error _ -> Semantic_ir.List []
+          in
+          wrap_expr "#{"
+            (render_strings ?print_length (Semantic_ir.String " ")
+               (apply "List.map" [ mapper; values ]))
+            "}")
   | TFn _ | TOverloaded_fn _ -> Semantic_ir.String "<function>"
   | (TRecord fields | TNamed_record { fields; _ }) ->
-      let field_part field expression =
-        concat_expr
-          [ Semantic_ir.String (field.keyword ^ " ");
-            stringify_expr_ir ~pr:true ?print_length
-              (typed_ir field.ty expression) ]
-      in
-      let parts =
-        match expr.record_values with
-        | Some values ->
-            values
-            |> List.map (fun ((field : field), expression) -> field_part field expression)
-        | None ->
-            fields
-            |> List.map (fun (field : field) ->
-                   field_part field (Structural_map.field_expr expr field))
-      in
-      wrap_expr "{"
-        (render_strings ?print_length (Semantic_ir.String ", ")
-           (Semantic_ir.List parts))
-        "}"
+      render_print_level ?print_level (fun child_print_level ->
+          let field_part field expression =
+            concat_expr
+              [
+                Semantic_ir.String (field.keyword ^ " ");
+                stringify_expr_ir ~pr:true ?print_length
+                  ?print_level:child_print_level
+                  (typed_ir field.ty expression);
+              ]
+          in
+          let parts =
+            match expr.record_values with
+            | Some values ->
+                values
+                |> List.map (fun ((field : field), expression) ->
+                       field_part field expression)
+            | None ->
+                fields
+                |> List.map (fun (field : field) ->
+                       field_part field (Structural_map.field_expr expr field))
+          in
+          wrap_expr "{"
+            (render_strings ?print_length (Semantic_ir.String ", ")
+               (Semantic_ir.List parts))
+            "}")
 
 let print_expr_ir expr =
   match expr.ty with

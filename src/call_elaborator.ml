@@ -45,6 +45,35 @@ let print_length_expr_or_none scope env =
   print_length_expr scope env
   |> Option.value ~default:(Semantic_ir.Constructor ("None", None))
 
+let print_level_expr_of_binding (binding : binding) =
+  match binding.ty with
+  | TRef (TNullable TInt | TOcaml_app ("option", [ TInt ])) ->
+      Some
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "Lg_runtime.Runtime_reference.deref",
+             [ Semantic_ir.Ident binding.ocaml_name ] ))
+  | _ -> None
+
+let core_print_level_expr env =
+  match
+    Option.bind
+      (Env.find_opt (Names.scoped_key "clojure.core" "*print-level*") env)
+      print_level_expr_of_binding
+  with
+  | Some expr -> Some expr
+  | None ->
+      Env.bindings_named "*print-level*" env
+      |> List.find_map print_level_expr_of_binding
+
+let print_level_expr scope env =
+  match
+    Option.bind
+      (Env.find_opt (Names.scoped_key scope "*print-level*") env)
+      print_level_expr_of_binding
+  with
+  | Some expr -> Some expr
+  | None -> core_print_level_expr env
+
 let constrained_argument_counter = ref 0
 let function_adapter_counter = ref 0
 let row_argument_counter = ref 0
@@ -1727,6 +1756,7 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         typed_ir witness_value_ty (Semantic_ir.Ident value_name)
       in
       let readable_print_length = core_print_length_expr env in
+      let readable_print_level = core_print_level_expr env in
       let display_witness =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
@@ -1736,6 +1766,7 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar value_name ],
             Codegen.stringify_expr_ir ~pr:true ?print_length:readable_print_length
+              ?print_level:readable_print_level
               value )
       in
       Result.map
@@ -4766,7 +4797,7 @@ let create ~compile_expr =
         | (Error _ as error), _ | _, (Error _ as error) -> error)
     | _ -> Error.error "cljs.test/report expects one report event"
   in
-  let rec stringify_value scope env ~pr ?print_length value =
+  let rec stringify_value scope env ~pr ?print_length ?print_level value =
     match value.ty with
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
         match Semantic_ir.unlocated value.semantic_expr with
@@ -4790,7 +4821,7 @@ let create ~compile_expr =
     | ty
       when Option.is_some (Types.protocol_constraint_info ty)
            || Option.is_some (Types.seqable_constraint_info ty) ->
-        stringify_value scope env ~pr ?print_length
+        stringify_value scope env ~pr ?print_length ?print_level
           (typed_ir (Types.constraint_value_type ty)
              (constrained_argument_value value))
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -4802,7 +4833,7 @@ let create ~compile_expr =
                 Semantic_ir.String "nil" );
               ( Semantic_ir.PConstructor
                   ("Some", Some (Semantic_ir.PVar value_name)),
-                stringify_value scope env ~pr ?print_length
+                stringify_value scope env ~pr ?print_length ?print_level
                   (typed_ir inner (Semantic_ir.Ident value_name)) );
             ] )
     | TNamed_record record -> (
@@ -4810,30 +4841,34 @@ let create ~compile_expr =
           if Protocol.type_satisfies env Core_protocols.set_id value.ty then
             match Collection_capability.seq_expr env value with
             | Ok { ty = TSeq element_ty; semantic_expr; _ } ->
-                let item_name = "__lg_print_set_item" in
-                let mapper =
-                  Semantic_ir.Fun
-                    ( [ Semantic_ir.PVar item_name ],
-                      stringify_value scope env ~pr ?print_length
-                        (typed_ir element_ty (Semantic_ir.Ident item_name)) )
-                in
                 Some
-                  (Codegen.concat_expr
-                     [
-                       Semantic_ir.String "#{";
-                       Codegen.render_strings ?print_length
-                         (Semantic_ir.String " ")
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident "List.map",
-                              [
-                                mapper;
-                                Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      "Lg_runtime.Runtime_seq.to_list",
-                                    [ semantic_expr ] );
-                              ] ));
-                       Semantic_ir.String "}";
-                     ])
+                  (Codegen.render_print_level ?print_level
+                     (fun child_print_level ->
+                       let item_name = "__lg_print_set_item" in
+                       let mapper =
+                         Semantic_ir.Fun
+                           ( [ Semantic_ir.PVar item_name ],
+                             stringify_value scope env ~pr ?print_length
+                               ?print_level:child_print_level
+                               (typed_ir element_ty
+                                  (Semantic_ir.Ident item_name)) )
+                       in
+                       Codegen.concat_expr
+                         [
+                           Semantic_ir.String "#{";
+                           Codegen.render_strings ?print_length
+                             (Semantic_ir.String " ")
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident "List.map",
+                                  [
+                                    mapper;
+                                    Semantic_ir.Apply
+                                      ( Semantic_ir.Ident
+                                          "Lg_runtime.Runtime_seq.to_list",
+                                        [ semantic_expr ] );
+                                  ] ));
+                           Semantic_ir.String "}";
+                         ]))
             | Ok _ | Error _ -> None
           else None
         in
@@ -4847,7 +4882,8 @@ let create ~compile_expr =
               Protocol.lookup_unique_method_impl env "-pr-writer" value.ty
         in
         match printer with
-        | None -> Codegen.stringify_expr_ir ~pr ?print_length value
+        | None ->
+            Codegen.stringify_expr_ir ~pr ?print_length ?print_level value
         | Some printer ->
             let writer_name = "__lg_print_method_writer" in
             let receiver =
@@ -4876,7 +4912,7 @@ let create ~compile_expr =
                       Semantic_ir.Apply
                         (Semantic_ir.Ident printer.ocaml_name, arguments) );
                 ] )))
-    | _ -> Codegen.stringify_expr_ir ~pr ?print_length value
+    | _ -> Codegen.stringify_expr_ir ~pr ?print_length ?print_level value
   in
   let rec compile_ocaml_arguments scope env forms =
     let rec parse acc = function
@@ -8784,6 +8820,9 @@ let create ~compile_expr =
         let print_length =
           if readable then print_length_expr scope env else None
         in
+        let print_level =
+          if readable then print_level_expr scope env else None
+        in
         let printable_env =
           Env.with_expected_type
             (Some (Types.printable_constraint (Type_solver.fresh ())))
@@ -8812,7 +8851,7 @@ let create ~compile_expr =
                            in
                            ( ( Semantic_ir.PVar name,
                                stringify_value scope env ~pr:readable
-                                 ?print_length argument ),
+                                 ?print_length ?print_level argument ),
                              Semantic_ir.Ident name ))
                     |> List.split
                   in
@@ -9360,13 +9399,14 @@ let create ~compile_expr =
         | Ok _ ->
             Error.error (public_operation ^ " expects a regex and string"))
     | "__lg_pprint" -> (
+        let print_level = print_level_expr scope env in
         match compile_args () with
         | Error _ as error -> error
         | Ok [ arg ] ->
             Ok
               (typed_ir TUnit
                  (apply "print_endline"
-                    [ stringify_value scope env ~pr:true arg ]))
+                    [ stringify_value scope env ~pr:true ?print_level arg ]))
         | Ok [ arg; writer ]
           when Types.equal writer.ty (TOcaml "Buffer.t")
                || (match writer.ty with
@@ -9380,7 +9420,8 @@ let create ~compile_expr =
                       Semantic_ir.Sequence
                         [ apply "Lg_runtime.Runtime_print.write"
                             [ Semantic_ir.Ident writer_name;
-                              stringify_value scope env ~pr:true arg;
+                              stringify_value scope env ~pr:true ?print_level
+                                arg;
                             ];
                           apply "Lg_runtime.Runtime_print.write"
                             [ Semantic_ir.Ident writer_name;
@@ -9390,6 +9431,7 @@ let create ~compile_expr =
         | Ok [ _; _ ] -> Error.error "pprint writer must be Buffer.t"
         | Ok _ -> Error.error "pprint expects 1 or 2 arguments")
     | "__lg_pr" -> (
+        let print_level = print_level_expr scope env in
         match compile_args () with
         | Error _ as error -> error
         | Ok args ->
@@ -9397,7 +9439,9 @@ let create ~compile_expr =
               apply "String.concat"
                 [ Semantic_ir.String " ";
                   Semantic_ir.List
-                    (List.map (stringify_value scope env ~pr:true) args);
+                    (List.map
+                       (stringify_value scope env ~pr:true ?print_level)
+                       args);
                 ]
             in
             let output =

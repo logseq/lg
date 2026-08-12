@@ -196,6 +196,12 @@ if ! grep -F '(def ^:dynamic *print-length* None)' \
   exit 1
 fi
 
+if ! grep -F '(def ^:dynamic *print-level* None)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/*print-level* is not source-defined as a dynamic var" >&2
+  exit 1
+fi
+
 if ! grep -F '(signature clojure.core/*flush-on-newline*' \
   "$root/stdlib/clojure/core.lgi" >/dev/null \
   || ! grep -F ':bool' "$root/stdlib/clojure/core.lgi" >/dev/null; then
@@ -221,6 +227,13 @@ if ! grep -F '(signature clojure.core/*print-length*' \
   "$root/stdlib/clojure/core.lgi" >/dev/null \
   || ! grep -F ':option<int>' "$root/stdlib/clojure/core.lgi" >/dev/null; then
   echo "clojure.core/*print-length* is not declared with an option<int> signature" >&2
+  exit 1
+fi
+
+if ! grep -F '(signature clojure.core/*print-level*' \
+  "$root/stdlib/clojure/core.lgi" >/dev/null \
+  || ! grep -F ':option<int>' "$root/stdlib/clojure/core.lgi" >/dev/null; then
+  echo "clojure.core/*print-level* is not declared with an option<int> signature" >&2
   exit 1
 fi
 

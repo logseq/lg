@@ -67,8 +67,8 @@
                             :reason :namespace-map-lifting-requires-a-closed-keyword-or-symbol-key-domain-and-independent-map-value-types}
     *print-length* {:status :static-adaptation
                     :reason :source-dynamic-var-preserves-the-upstream-nil-or-integer-print-limit-as-a-typed-option-int-ref-threaded-through-static-readable-printer-witnesses}
-    *print-level* {:status :blocked-static-typing
-                   :reason :optional-recursive-print-depth-state-is-not-yet-threaded-through-every-static-nested-value-printer-witness}
+    *print-level* {:status :static-adaptation
+                   :reason :source-dynamic-var-preserves-the-upstream-nil-or-integer-recursive-print-depth-limit-through-static-readable-printer-witnesses}
     *print-fn-bodies* {:status :host-boundary
                        :reason :javascript-function-source-body-printing-depends-on-generated-function-host-representation}
     *print-fn* {:status :host-boundary

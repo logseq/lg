@@ -5225,6 +5225,7 @@
 (def ^:dynamic *print-newline* true)
 (def ^:dynamic *print-readably* true)
 (def ^:dynamic *print-length* None)
+(def ^:dynamic *print-level* None)
 
 (defn str
   {:inline (fn [& values] (cons '__lg_str values))}

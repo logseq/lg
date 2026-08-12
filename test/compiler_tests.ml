@@ -5468,6 +5468,51 @@ let test_print_length_dynamic_var_limits_collections () =
 |}
   |> expect_error_contains "expects option<int>, got string"
 
+let test_print_level_dynamic_var_limits_nested_collections () =
+  let source =
+    {|
+(ns app.print-level-config
+  (:require [cljs.core :as core
+             :refer [*print-level* pr-str]]))
+
+(println (nil? *print-level*))
+(println (pr-str [[[1]] [[2]]] (list [[1]] [[2]]) 7))
+(binding [*print-level* 0]
+  (println (pr-str [[[1]] [[2]]] (list [[1]] [[2]]) 7)))
+(binding [*print-level* 1]
+  (println (core/pr-str [[[1]] [[2]]] (list [[1]] [[2]]) 7)))
+(binding [*print-level* 2]
+  (println (pr-str [[[1]] [[2]]] (list [[1]] [[2]]) 7)))
+(binding [*print-level* 3]
+  (println (pr-str [[[1]] [[2]]] (list [[1]] [[2]]) 7)))
+(println (pr-str [[[1]] [[2]]]))
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "print-level must remain statically typed";
+  assert_ocaml_runs "print_level_dynamic_var_limits_nested_collections"
+    "true\n\
+     [[[1]] [[2]]] ([[1]] [[2]]) 7\n\
+     # # 7\n\
+     [# #] (# #) 7\n\
+     [[#] [#]] ([#] [#]) 7\n\
+     [[[1]] [[2]]] ([[1]] [[2]]) 7\n\
+     [[[1]] [[2]]]\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange print-level must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-print-level
+  (:require [cljs.core :refer [*print-level*]]))
+(binding [*print-level* "bad"] nil)
+|}
+  |> expect_error_contains "expects option<int>, got string"
+
 let test_print_newline_dynamic_var_controls_output_newline () =
   let source =
     {|
@@ -45020,6 +45065,8 @@ let tests =
       test_print_namespace_maps_dynamic_var_is_portable );
     ( "print length dynamic var limits collections",
       test_print_length_dynamic_var_limits_collections );
+    ( "print level dynamic var limits nested collections",
+      test_print_level_dynamic_var_limits_nested_collections );
     ( "print newline dynamic var controls output newline",
       test_print_newline_dynamic_var_controls_output_newline );
     ( "print readably dynamic var controls printers",
