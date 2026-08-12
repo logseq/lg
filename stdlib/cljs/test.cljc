@@ -80,6 +80,63 @@
      (assoc counters name (inc (get counters name 0)))
      (:testing-contexts current))))
 
+(defmacro update-current-env!
+  "Updates a statically known path in the current test environment.
+
+  LG supports the upstream `cljs.test` paths used by the source test runner:
+  `[:report-counters k]`, `[:report-counters]`, `[:testing-vars]`,
+  `[:testing-contexts]`, and `[:reporter]`. The path must be a literal vector so
+  expansion preserves the closed [[test-env]] representation."
+  [keys function & args]
+  (let [current (gensym)
+        counters (gensym)]
+    (if (= keys [:report-counters])
+      `(let [~current (cljs.test/get-current-env)]
+         (cljs.test/set-env!
+          (cljs.test/test-env-value
+           (~function (:report-counters ~current) ~@args)
+           (:testing-vars ~current)
+           (:testing-contexts ~current)
+           (:reporter ~current))))
+      (if (= (first keys) :report-counters)
+        (do
+          (assert (= 2 (count keys))
+                  "update-current-env! expects [:report-counters k]")
+          `(let [~current (cljs.test/get-current-env)
+                 ~counters (:report-counters ~current)]
+             (cljs.test/set-env!
+              (cljs.test/test-env-value
+               (clojure.core/update ~counters ~(second keys) ~function ~@args)
+               (:testing-vars ~current)
+               (:testing-contexts ~current)
+               (:reporter ~current)))))
+        (if (= keys [:testing-vars])
+          `(let [~current (cljs.test/get-current-env)]
+             (cljs.test/set-env!
+              (cljs.test/test-env-value
+               (:report-counters ~current)
+               (~function (:testing-vars ~current) ~@args)
+               (:testing-contexts ~current)
+               (:reporter ~current))))
+          (if (= keys [:testing-contexts])
+            `(let [~current (cljs.test/get-current-env)]
+               (cljs.test/set-env!
+                (cljs.test/test-env-value
+                 (:report-counters ~current)
+                 (:testing-vars ~current)
+                 (~function (:testing-contexts ~current) ~@args)
+                 (:reporter ~current))))
+            (if (= keys [:reporter])
+              `(let [~current (cljs.test/get-current-env)]
+                 (cljs.test/set-env!
+                  (cljs.test/test-env-value
+                   (:report-counters ~current)
+                   (:testing-vars ~current)
+                   (:testing-contexts ~current)
+                   (~function (:reporter ~current) ~@args))))
+              (assert false
+                      "update-current-env! expects a supported literal test environment path"))))))))
+
 (defn report
   "Dispatches report event `m` through the current `cljs.test` reporter."
   {:inline (fn [m]

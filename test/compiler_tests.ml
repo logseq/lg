@@ -31656,6 +31656,60 @@ let test_source_cljs_test_environment_matches_clojurescript () =
 |}
   |> expect_error_contains "inc-report-counter!"
 
+let test_source_cljs_test_update_current_env_matches_static_paths () =
+  let source =
+    {|
+(ns app.cljs-test-update-current-env
+  (:require [cljs.test :as test
+             :refer [empty-env get-current-env set-env! update-current-env!]]))
+
+(set-env! (empty-env))
+(update-current-env! [:report-counters :pass] inc)
+(test/update-current-env! [:report-counters :test] + 3)
+(update-current-env! [:testing-contexts] conj "outer")
+(test/update-current-env! [:testing-vars] conj "var-a")
+(update-current-env! [:reporter] (fn [_] :app/custom-reporter))
+
+(def saved (get-current-env))
+
+(println
+  (and (= 1 (get (:report-counters saved) :pass 0))
+       (= 3 (get (:report-counters saved) :test 0))
+       (= (list "outer") (:testing-contexts saved))
+       (= (list "var-a") (:testing-vars saved))
+       (= :app/custom-reporter (:reporter saved))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_update_current_env.cljc" source
+  in
+  let native_consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_consumer "Runtime_dynamic" then
+    failwith "cljs.test/update-current-env! must remain statically typed";
+  assert_ocaml_runs "source_cljs_test_update_current_env" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_update_current_env.cljc" source);
+  let melange_consumer =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_consumer "Runtime_dynamic" then
+    failwith
+      "Melange cljs.test/update-current-env! must remain statically typed"
+
+let test_source_cljs_test_update_current_env_rejects_unknown_path () =
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_cljs_test_update_current_env_bad_path.cljc"
+    {|
+(ns app.cljs-test-update-current-env-error
+  (:require [cljs.test :refer [empty-env set-env! update-current-env!]]))
+(set-env! (empty-env))
+(update-current-env! [:unknown] identity)
+|}
+  |> expect_error_contains "update-current-env!"
+
 let test_cljs_test_environment_is_source_owned () =
   let root = repo_root () in
   let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
@@ -31692,6 +31746,7 @@ let test_cljs_test_environment_is_source_owned () =
       "clear-env!";
       "get-and-clear-env!";
       "inc-report-counter!";
+      "update-current-env!";
       "testing-contexts-str";
       "testing";
     ];
@@ -47517,6 +47572,10 @@ let tests =
       test_cljs_test_fixture_helpers_are_source_owned );
     ( "source cljs.test environment matches ClojureScript",
       test_source_cljs_test_environment_matches_clojurescript );
+    ( "source cljs.test update-current-env matches static paths",
+      test_source_cljs_test_update_current_env_matches_static_paths );
+    ( "source cljs.test update-current-env rejects unknown path",
+      test_source_cljs_test_update_current_env_rejects_unknown_path );
     ( "cljs.test environment is source-owned",
       test_cljs_test_environment_is_source_owned );
     ( "source cljs.test synchronous registry matches supported ClojureScript",

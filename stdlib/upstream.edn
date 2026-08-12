@@ -1617,8 +1617,8 @@
                  :reason :source-macro-exposes-the-default-static-boolean-assertion-expansion-used-by-is-while-clojurescript-analyzer-time-user-defmethod-extension-remains-a-documented-macro-time-boundary}
     run-all-tests {:status :host-boundary
                    :reason :macro-expansion-enumerates-the-clojurescript-analyzer-global-namespace-table-and-optionally-filters-symbols-with-host-regex-matches}
-    update-current-env! {:status :blocked-static-typing
-                         :reason :variadic-update-over-heterogeneous-dependent-test-environment-paths-cannot-share-one-static-key-value-and-callback-result-type}
+    update-current-env! {:status :static-adaptation
+                         :reason :source-macro-preserves-current-test-environment-updates-for-supported-literal-paths-over-the-closed-test-env-record-while-rejecting-open-runtime-paths-instead-of-erasing-the-environment-to-dynamic}
     js-line-and-column {:status :host-boundary
                         :reason :parses-javascript-stack-frame-text-with-javascript-parseint-and-nan-fallback-semantics}
     js-filename {:status :host-boundary
