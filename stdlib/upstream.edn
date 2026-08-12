@@ -1354,8 +1354,8 @@
              :reason :source-function-preserves-clojurescript-reverse-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     seq-iter {:status :host-boundary
               :reason :constructs-a-javascript-es6-iterator-over-a-clojurescript-sequence}
-    seq-to-map-for-destructuring {:status :blocked-static-typing
-                                  :reason :alternating-key-value-input-needs-distinct-associated-key-and-value-types-and-map-or-map-sequence-overload}
+    seq-to-map-for-destructuring {:status :special-form
+                                  :reason :compiler-owned-destructuring-helper-covered-by-static-map-and-sequential-binding-elaboration-with-closed-key-value-types-instead-of-a-first-class-heterogeneous-helper-function}
     set-print-err-fn! {:status :host-boundary
                        :reason :mutates-the-target-specific-global-error-print-callback}
     set-print-fn! {:status :host-boundary
