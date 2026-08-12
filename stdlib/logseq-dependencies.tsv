@@ -689,7 +689,7 @@ logseq-namespace-status	cljs.cache	source-aggregate	4	aggregate-stdlib
 logseq-namespace-status	cljs.core	source-core-alias	1	automatic-core-alias
 logseq-namespace-status	cljs.core.async	out-of-scope	5	core-async-is-an-independent-library-explicitly-excluded-from-the-lg-stdlib-port
 logseq-namespace-status	cljs.core.match	out-of-scope	3	core-match-is-an-independent-analyzer-macro-library-that-requires-a-separate-pinned-upstream-and-port
-logseq-namespace-status	cljs.pprint	blocked-static-typing	15	logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
+logseq-namespace-status	cljs.pprint	source-aggregate	15	aggregate-stdlib
 logseq-namespace-status	cljs.reader	source-aggregate	28	aggregate-stdlib
 logseq-namespace-status	cljs.spec.alpha	out-of-scope	4	spec-is-explicitly-excluded-from-the-lg-stdlib-port
 logseq-namespace-status	cljs.test	source-aggregate	287	aggregate-stdlib

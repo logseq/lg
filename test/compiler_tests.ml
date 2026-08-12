@@ -29086,10 +29086,17 @@ let test_source_cljs_pprint_prints_readable_values () =
 
 let test_cljs_pprint_is_source_owned () =
   let source = read_file "stdlib/cljs/pprint.cljc" in
+  let manifest = read_file "stdlib/upstream.edn" in
   if not (string_contains_substring source "(defn pprint") then
     failwith "cljs.pprint/pprint is missing from the source standard library";
   if not (Sys.file_exists "stdlib/cljs/pprint.lgi") then
     failwith "cljs.pprint must expose an .lgi sidecar";
+  if string_contains_substring manifest "cljs.pprint\n  {:source" then
+    if
+      string_contains_substring manifest
+        ("cljs.pprint\n  {:source \"src/main/cljs/cljs/pprint.cljs\"\n   :implementation \"cljs/pprint.cljc\"\n   :primitive-boundary true\n   :status "
+        ^ ":blocked-static-typing")
+    then failwith "cljs.pprint aggregate is still recorded as blocked";
   List.iter
     (fun path ->
       let compiler_source = read_file path in

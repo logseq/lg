@@ -3,7 +3,7 @@ set -eu
 
 root="$1"
 
-for namespace in clojure.data clojure.edn cljs.reader clojure.string clojure.walk clojure.zip; do
+for namespace in clojure.data clojure.edn cljs.reader cljs.pprint clojure.string clojure.walk clojure.zip; do
   if sed -n '/let is_core_namespace/,/let lookup_qualified_member/p' \
     "$root/src/core_namespaces.ml" | grep -F "\"$namespace\"" >/dev/null; then
     echo "$namespace is still compiler-owned" >&2
@@ -16,7 +16,7 @@ for namespace in clojure.data clojure.edn cljs.reader clojure.string clojure.wal
   fi
 done
 
-for namespace in cljs.test; do
+for namespace in cljs.pprint cljs.test; do
   if ! grep -F "  $namespace" "$root/stdlib/upstream.edn" >/dev/null; then
     echo "$namespace is missing a concrete Logseq migration classification" >&2
     exit 1

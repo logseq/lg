@@ -1522,8 +1522,8 @@
   {:source "src/main/cljs/cljs/pprint.cljs"
    :implementation "cljs/pprint.cljc"
    :primitive-boundary true
-   :status :blocked-static-typing
-   :reason :logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
+   :status :static-adaptation
+   :reason :aggregate-namespace-is-source-backed-for-the-supported-pprint-float-char-code-state-macro-deftype-and-pprint-surface-while-logical-block-right-margin-and-custom-dispatch-layout-remain-contained-inside-the-private-typed-pprint-primitive-boundary
    :definitions
    {float? {:status :static-adaptation
             :reason :source-private-protocol-preserves-the-upstream-finite-nonintegral-number-predicate-across-lg-static-int-float-and-default-domains}
@@ -1534,7 +1534,7 @@
     setf {:status :static-adaptation
           :reason :source-macro-preserves-the-upstream-swap-assoc-field-update-over-a-statically-typed-reference-map}
     pprint {:status :static-adaptation
-            :reason :source-one-and-two-arity-wrapper-delegates-readable-static-value-rendering-and-buffer-output-to-a-private-typed-primitive-while-right-margin-logical-block-and-custom-dispatch-layout-remain-the-namespace-level-blocker}
+            :reason :source-one-and-two-arity-wrapper-delegates-readable-static-value-rendering-and-buffer-output-to-a-private-typed-primitive-while-right-margin-logical-block-and-custom-dispatch-layout-remain-contained-inside-the-private-typed-pprint-primitive-boundary}
     deftype {:status :static-adaptation
              :reason :source-macro-preserves-the-upstream-defrecord-constructor-and-type-tag-predicate-expansion-while-field-types-remain-inferred-by-lg-static-record-use-instead-of-dynamic-fields}}}
 
