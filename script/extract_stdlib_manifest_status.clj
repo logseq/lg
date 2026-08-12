@@ -3,13 +3,21 @@
 (require '[clojure.edn :as edn]
          '[clojure.java.io :as io])
 
+(def ^:private known-statuses
+  #{:ported :static-adaptation :special-form :typed-primitive
+    :host-primitive :blocked-static-typing :host-boundary :out-of-scope
+    :deferred})
+
 (defn- classification [status]
+  (when (and status (not (contains? known-statuses status)))
+    (throw (ex-info (str "unknown manifest status: " status)
+                    {:status status})))
   (case status
     (:ported :static-adaptation) "source"
     :special-form "special-form"
     :typed-primitive "typed-primitive"
     :host-primitive "host-boundary"
-    (:blocked :blocked-static-typing) "blocked-static-typing"
+    :blocked-static-typing "blocked-static-typing"
     :host-boundary "host-boundary"
     :out-of-scope "out-of-scope"
     :deferred "deferred"

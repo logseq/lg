@@ -1430,7 +1430,7 @@
   {:source "src/main/cljs/cljs/pprint.cljs"
    :implementation "cljs/pprint.cljc"
    :primitive-boundary true
-   :status :blocked
+   :status :blocked-static-typing
    :reason :logical-block-right-margin-and-custom-dispatch-layout-require-a-closed-static-pretty-writer-domain
    :definitions
    {float? {:status :static-adaptation
@@ -1443,14 +1443,14 @@
           :reason :source-macro-preserves-the-upstream-swap-assoc-field-update-over-a-statically-typed-reference-map}
     pprint {:status :static-adaptation
             :reason :source-one-and-two-arity-wrapper-delegates-readable-static-value-rendering-and-buffer-output-to-a-private-typed-primitive-while-right-margin-logical-block-and-custom-dispatch-layout-remain-the-namespace-level-blocker}
-    deftype {:status :blocked
+    deftype {:status :blocked-static-typing
              :reason :upstream-macro-generates-generic-unannotated-defrecord-fields-and-nominal-constructor-predicate-semantics-not-representable-without-dynamic-fields-or-changing-the-public-record-api}}}
 
   cljs.test
   {:source "src/main/cljs/cljs/test.cljs"
    :implementation "cljs/test.cljc"
    :interface "cljs/test.lgi"
-   :status :blocked
+   :status :blocked-static-typing
    :reason :remaining-async-fixture-analyzer-wide-test-discovery-and-open-reporter-surface-requires-static-lifetime-and-closed-report-event-capabilities
    :definitions
    {*current-env* {:status :static-adaptation

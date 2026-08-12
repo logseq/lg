@@ -9,6 +9,27 @@ fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
+if grep -Eq ':status[[:space:]]+:blocked([[:space:]}]|$)' \
+  "$root/stdlib/upstream.edn"; then
+  echo "stdlib manifest must use the canonical blocked-static-typing status" >&2
+  exit 1
+fi
+
+cat >"$tmp/invalid-status.edn" <<'EOF'
+{:namespaces
+ {example.core
+  {:source "example.cljs"
+   :definitions
+   {missing-classification {:status :unknown-status
+                            :reason :test-only-invalid-status}}}}}
+EOF
+if bb "$root/script/extract_stdlib_manifest_status.clj" \
+  "$tmp/invalid-status.edn" >"$tmp/invalid-status.out" 2>"$tmp/invalid-status.err"; then
+  echo "manifest extractor silently accepted an unknown definition status" >&2
+  exit 1
+fi
+grep -F "unknown manifest status" "$tmp/invalid-status.err" >/dev/null
+
 mkdir -p "$tmp/logseq/src"
 cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (ns example
