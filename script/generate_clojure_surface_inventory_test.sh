@@ -203,10 +203,15 @@ awk -F '\t' '
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   $1 == "definition" &&
-  ($2 == "cljs.test/assert-expr" ||
-   $2 == "cljs.test/update-current-env!") &&
+  $2 == "cljs.test/update-current-env!" &&
   $3 == "blocked-static-typing" && $4 != "" {found++}
-  END {exit found != 2}
+  END {exit found != 1}
+' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  $2 == "cljs.test/assert-expr" &&
+  $3 == "source" && $4 != "" {found=1}
+  END {exit !found}
 ' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   $1 == "definition" &&
@@ -379,7 +384,7 @@ awk -F '\t' '
   }
 ' "$tmp/manifest-status.tsv" "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "definition" && $2 == "clojure.core/flatten" && $3 == "source" && $4 == "source-public-wrapper-preserves-cljs-flatten-for-statically-homogeneous-seqable-layers-through-a-private-typed-flatten-primitive-without-dynamic-erasure" {found=1} END {exit !found}' "$tmp/inventory.tsv"
-awk -F '\t' '$1 == "definition" && $2 == "cljs.test/assert-expr" && $3 == "blocked-static-typing" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "definition" && $2 == "cljs.test/assert-expr" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 
 awk -F '\t' '
   $1 == "namespace" &&

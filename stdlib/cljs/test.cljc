@@ -626,10 +626,15 @@
          (cljs.test/inc-report-counter! :error)
          false))))
 
+(defmacro assert-expr
+  "Expands the default `cljs.test/is` assertion for static boolean forms."
+  [msg form]
+  `(cljs.test/try-expr ~msg ~form))
+
 (defmacro is
   "Evaluates boolean `form`, records its outcome, and returns the result."
   ([form] `(cljs.test/is ~form nil))
-  ([form msg] `(cljs.test/try-expr ~msg ~form)))
+  ([form msg] `(cljs.test/assert-expr ~msg ~form)))
 
 (defmacro are
   "Checks each substitution of `argv` into `expr` with [[is]]."

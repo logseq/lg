@@ -1613,8 +1613,8 @@
                       :reason :clojurescript-macro-expansion-helper-generates-report-event-code-from-analyzer-forms-source-locations-and-arbitrary-predicate-arities}
     assert-any {:status :special-form
                 :reason :clojurescript-macro-expansion-helper-generates-open-report-event-code-from-analyzer-forms-and-source-location-metadata}
-    assert-expr {:status :blocked-static-typing
-                 :reason :analyzer-side-multimethod-dispatches-on-arbitrary-assertion-form-heads-and-must-remain-extensible-by-user-defined-defmethod-implementations}
+    assert-expr {:status :static-adaptation
+                 :reason :source-macro-exposes-the-default-static-boolean-assertion-expansion-used-by-is-while-clojurescript-analyzer-time-user-defmethod-extension-remains-a-documented-macro-time-boundary}
     run-all-tests {:status :host-boundary
                    :reason :macro-expansion-enumerates-the-clojurescript-analyzer-global-namespace-table-and-optionally-filters-symbols-with-host-regex-matches}
     update-current-env! {:status :blocked-static-typing

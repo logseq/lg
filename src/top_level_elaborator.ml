@@ -2128,10 +2128,7 @@ let rec compile scope env next_type form =
               next_type,
               Value_binding { pattern = Named method_name; expression } )
       | (Error _ as error), _ | _, (Error _ as error) -> error)
-  | FList
-      (FSymbol "defmethod"
-      :: FSymbol (("t/assert-expr" | "t/report") as method_name)
-      :: _) ->
+  | FList (FSymbol "defmethod" :: FSymbol ("t/report" as method_name) :: _) ->
       Ok
         ( scope,
           env,

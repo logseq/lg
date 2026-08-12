@@ -47,6 +47,7 @@ prefers	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 rand	source	source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization
 with-redefs	source	source-macro-expands-to-a-private-typed-var-root-rebinding-form-for-ordinary-monomorphic-source-functions-that-restores-values-after-body-or-exception-and-keeps-replacement-values-at-the-root-static-type
 cljs.pprint/deftype	source	source-macro-preserves-the-upstream-defrecord-constructor-and-type-tag-predicate-expansion-while-field-types-remain-inferred-by-lg-static-record-use-instead-of-dynamic-fields
+cljs.test/assert-expr	source	source-macro-exposes-the-default-static-boolean-assertion-expansion-used-by-is-while-clojurescript-analyzer-time-user-defmethod-extension-remains-a-documented-macro-time-boundary
 record?	source	source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch
 replace	source	source-port-preserves-the-upstream-transducer-arity-and-shape-dependent-vector-or-lazy-sequence-results-through-inline-static-protocol-dispatch-while-vector-metadata-remains-unavailable-on-the-current-static-vector-representation
 remove-all-methods	source	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary

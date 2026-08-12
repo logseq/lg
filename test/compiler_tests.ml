@@ -12239,7 +12239,11 @@ let test_uuid_wrapper_is_source_owned () =
               (public_dispatch ^ " still has public-name compiler dispatch in "
              ^ path))
         [ "| \"uuid\"" ])
-    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+    [
+      "src/call_elaborator.ml";
+      "src/type_inference.ml";
+      "src/top_level_elaborator.ml";
+    ]
 
 let test_source_numeric_array_constructors_match_clojurescript () =
   let source =
@@ -31763,6 +31767,52 @@ let test_source_cljs_test_sync_registry_matches_supported_clojurescript () =
     failwith
       "the Melange synchronous cljs.test registry must remain statically typed"
 
+let test_source_cljs_test_assert_expr_is_referable_macro_boundary () =
+  let source =
+    {|
+(ns app.cljs-test-assert-expr
+  (:require [cljs.test :as test
+             :refer [assert-expr empty-env get-current-env set-env!]]))
+
+(set-env! (empty-env))
+(assert-expr nil (= 1 1))
+(test/assert-expr nil (= 1 2))
+
+(def counters (:report-counters (get-current-env)))
+
+(println
+  (and (= 1 (get counters :pass 0))
+       (= 1 (get counters :fail 0))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_assert_expr.cljc" source
+  in
+  assert_ocaml_runs "source_cljs_test_assert_expr" "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_assert_expr.cljc" source)
+
+let test_cljs_test_assert_expr_is_source_owned () =
+  let root = repo_root () in
+  let source = read_file (Filename.concat root "stdlib/cljs/test.cljc") in
+  if not (string_contains_substring source "(defmacro assert-expr") then
+    failwith "cljs.test/assert-expr is not source-owned";
+  let upstream = read_file (Filename.concat root "stdlib/upstream.edn") in
+  if
+    string_contains_substring upstream
+      "assert-expr {:status :blocked-static-typing"
+  then failwith "cljs.test/assert-expr is still recorded as blocked";
+  List.iter
+    (fun path ->
+      let compiler_source = read_file (Filename.concat root path) in
+      if string_contains_substring compiler_source "\"assert-expr\"" then
+        failwith
+          ("cljs.test/assert-expr still has public-name compiler dispatch in "
+         ^ path))
+    [ "src/call_elaborator.ml"; "src/type_inference.ml" ]
+
 let test_source_cljs_test_sync_registry_rejects_invalid_forms () =
   compile_with_stdlib_result Lg.Target.Native
     "test/source_cljs_test_is_non_boolean.cljc"
@@ -47471,6 +47521,10 @@ let tests =
       test_cljs_test_environment_is_source_owned );
     ( "source cljs.test synchronous registry matches supported ClojureScript",
       test_source_cljs_test_sync_registry_matches_supported_clojurescript );
+    ( "source cljs.test assert-expr is referable macro boundary",
+      test_source_cljs_test_assert_expr_is_referable_macro_boundary );
+    ( "cljs.test assert-expr is source-owned",
+      test_cljs_test_assert_expr_is_source_owned );
     ( "source cljs.test synchronous registry rejects invalid forms",
       test_source_cljs_test_sync_registry_rejects_invalid_forms );
     ( "cljs.test synchronous registry is source-owned",
