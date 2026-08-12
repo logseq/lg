@@ -80,7 +80,7 @@ Namespaces currently compiling on both targets:
 
 ## Current interpretation
 
-The 433 compile failures are not 433 independent core defects. The current
+The 431 compile failures are not 431 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -96,6 +96,21 @@ highest leverage blockers are:
 4. Host boundaries: JVM class identity and JS globals are not portable stdlib
    source and should remain classified unless an LG-native representation is
    designed.
+
+## Promotion/typecheck failures
+
+The compile scan only verifies that LG can generate target OCaml/Melange source.
+Promotion into `@test/clojure_suite/clojure-test-suite-smoke` adds OCaml
+typechecking and runtime execution. A namespace can therefore be `compiled-both`
+in `scan_report.json` but still be blocked from smoke promotion.
+
+- `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
+  but smoke promotion typechecks the generated OCaml and fails on the upstream
+  helper that calls `(clone-test (int-array 3) ...)` and then
+  `(clone-test (object-array 3) ...)`. The helper's `aset` writes infer the
+  parameter as `int array`; size-created `object-array` remains
+  `option array` to preserve nil slots. Fixing this without dynamic requires a
+  static array read/write capability or call-site specialization.
 
 ## Suggested repair order
 

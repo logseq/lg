@@ -17,4 +17,10 @@
    :status :blocked-number-literals
    :first-error "unknown symbol 0N"
    :example "(str 0N)"
-   :reason "The upstream str test covers Clojure bigint, ratio, and bigdecimal literals that LG does not yet parse/model as source numeric domains."}]}
+   :reason "The upstream str test covers Clojure bigint, ratio, and bigdecimal literals that LG does not yet parse/model as source numeric domains."}
+  {:namespace clojure.core-test.aclone
+   :file "vendor/clojure-test-suite/test/clojure/core_test/aclone.cljc"
+   :status :promotion-typecheck-failed
+   :first-error "OCaml typecheck failed: object-array has type 'a option array but clone-test was inferred as int array"
+   :example "(clone-test (int-array 3) (int-array 0)) followed by (clone-test (object-array 3) (object-array 0))"
+   :reason "The LG compile scan emits OCaml for this namespace, but smoke promotion typechecks the generated code and exposes a source helper whose array parameter is monomorphized by aset writes. Supporting both int-array and nilable object-array without Runtime_dynamic requires a static array read/write capability or call-site specialization, not a name-dispatch workaround."}]}
