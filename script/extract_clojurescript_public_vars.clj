@@ -45,6 +45,10 @@
           kind (cond
                  (contains? #{"defn" "core/defn"} operator) "function"
                  (contains? #{"defmacro" "core/defmacro"} operator) "macro"
+                 (contains? #{"def" "core/def" "defonce" "core/defonce"}
+                            operator) "var"
+                 (contains? #{"defmulti" "core/defmulti"} operator)
+                 "multimethod"
                  :else nil)]
       (when (and kind
                  (symbol? definition-name)

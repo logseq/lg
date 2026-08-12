@@ -219,21 +219,24 @@ occurrences after alias resolution, so they are a prioritization signal rather
 than a reachability analysis.
 
 When a pinned ClojureScript checkout is supplied, the report also contains an
-`upstream-var` row for every public function, macro, and protocol method read from the reviewed
-core and namespace sources. The extractor evaluates both Clojure and
+`upstream-var` row for every public function, macro, var, multimethod, and
+protocol method read from the reviewed core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 985 function, macro, and protocol-method
-entries, including 753 entries in `cljs.core`. Public methods declared by
+pinned surface currently contains 1,058 public entries, including 790 entries
+in `cljs.core`. Public methods declared by
 `defprotocol` are inventoried independently instead of being hidden behind the
 protocol var. Each row is
 classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 710 source entries (72.08%), zero typed
-primitives, 46 special forms, 87 host boundaries, 91 static-typing blockers,
-51 out-of-scope entries, and zero deferred entries. Source coverage only counts
+macro surfaces. The current baseline is 721 source entries (68.15%), zero typed
+primitives, 49 special forms, 92 host boundaries, 92 static-typing blockers,
+58 out-of-scope entries, and 46 deferred entries. The deferred entries are
+public vars newly exposed by auditing `def`, `defonce`, and `defmulti`; they
+must be individually ported or assigned a concrete boundary before completion.
+Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
 

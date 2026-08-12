@@ -74,6 +74,7 @@ cat >"$tmp/logseq/src/example.cljs" <<'EOF'
 (test/run-test inventory-test)
 (test/run-tests 'example)
 (test/use-fixtures :each (fn [body] (body)))
+(test/report {:type :pass})
 (spec/valid? string? "value")
 (zip/root nil)
 (cljs.core/identity 1)
@@ -117,6 +118,10 @@ cat >"$tmp/clojurescript/core.cljs" <<'EOF'
   {:private true}
   [x]
   x)
+(def public-value 42)
+(def ^:private private-value 0)
+(defmulti public-multimethod identity)
+(defmulti ^:private private-multimethod identity)
 (defprotocol VisibleProtocol
   (visible-method [x])
   (attr-map-private-method
@@ -146,11 +151,40 @@ awk -F '\t' '$1 == "cljs.core/public-function" && $2 == "function" {found=1} END
 awk -F '\t' '$1 == "cljs.core/conditional-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 == "cljs.core/branch-defined-function" && $2 == "function" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 == "cljs.core/public-macro" && $2 == "macro" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 == "cljs.core/public-value" && $2 == "var" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
+awk -F '\t' '$1 == "cljs.core/public-multimethod" && $2 == "multimethod" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 == "cljs.core/visible-method" && $2 == "protocol-method" {found=1} END {exit !found}' "$tmp/upstream-vars.tsv"
 awk -F '\t' '$1 ~ /private/ {found=1} END {exit found}' "$tmp/upstream-vars.tsv"
 
 bb "$root/script/extract_stdlib_manifest_status.clj" \
   "$root/stdlib/upstream.edn" >"$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  ($2 == "cljs.test/function?" ||
+   $2 == "cljs.test/assert-predicate" ||
+   $2 == "cljs.test/assert-any") &&
+  $3 == "special-form" {found++}
+  END {exit found != 3}
+' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  ($2 == "cljs.test/js-line-and-column" ||
+   $2 == "cljs.test/js-filename" ||
+   $2 == "cljs.test/mapped-line-and-column" ||
+   $2 == "cljs.test/file-and-line" ||
+   $2 == "cljs.test/run-all-tests") &&
+  $3 == "host-boundary" {found++}
+  END {exit found != 5}
+' "$tmp/manifest-status.tsv"
+awk -F '\t' '
+  $1 == "definition" &&
+  ($2 == "cljs.test/assert-expr" ||
+   $2 == "cljs.test/update-current-env!" ||
+   $2 == "cljs.test/report" ||
+   $2 == "cljs.test/do-report") &&
+  $3 == "blocked-static-typing" && $4 != "" {found++}
+  END {exit found != 4}
+' "$tmp/manifest-status.tsv"
 awk -F '\t' '
   BEGIN {
     split(".. await copy-arguments declare defmethod defmulti defn- defonce defprotocol defrecord deftype es6-iterable exists? extend-protocol extend-type gen-apply-to gen-apply-to-simple goog-define implements? import import-macros js-arguments js-comment js-debugger js-delete js-fn? js-in js-inline-comment js-mod js-str letfn load-file* macroexpand macroexpand-1 memfn ns-imports ns-interns ns-publics ns-unmap refer-clojure refer-global require require-global require-macros simple-benchmark specify specify! str_ this-as time unchecked-get unchecked-set undefined? use use-macros with-redefs", names, " ")
@@ -492,6 +526,7 @@ awk -F '\t' '$1 == "namespace-var" && ($2 == "clojure.core/-chunked-first" || $2
 awk -F '\t' '$1 == "namespace-var" && $2 == "clojure.core/uuid" && $3 == "source" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/successful?" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/empty-env" || $2 == "cljs.test/testing") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/report" && $3 == "blocked-static-typing" && $4 == 1 && $5 == "runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && $2 == "cljs.test/*current-env*" && $3 == "source-aggregate" && $4 == 1 {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-qualified-var-status" && ($2 == "cljs.test/is" || $2 == "cljs.test/run-tests") && $3 == "source-aggregate" && $4 == 1 {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "logseq-namespace-status" && $2 == "cljs.spec.alpha" && $3 == "out-of-scope" && $4 == 1 && $5 == "excluded-by-project-scope" {found=1} END {exit !found}' "$tmp/inventory.tsv"

@@ -1515,6 +1515,30 @@
                   :reason :source-macro-registers-synchronous-once-and-each-function-or-map-fixtures-in-a-closed-static-variant-preserving-upstream-order-cleanup-and-cross-kind-type-validation-while-async-fixtures-remain-blocked}
     ns? {:status :static-adaptation
          :reason :source-function-distinguishes-the-static-symbol-and-string-domains-through-a-closed-protocol-instead-of-inspecting-arbitrary-code-data}
+    function? {:status :special-form
+               :reason :clojurescript-macro-expansion-helper-resolves-analyzer-symbols-and-fn-var-metadata-and-is-not-a-runtime-source-function}
+    assert-predicate {:status :special-form
+                      :reason :clojurescript-macro-expansion-helper-generates-report-event-code-from-analyzer-forms-source-locations-and-arbitrary-predicate-arities}
+    assert-any {:status :special-form
+                :reason :clojurescript-macro-expansion-helper-generates-open-report-event-code-from-analyzer-forms-and-source-location-metadata}
+    assert-expr {:status :blocked-static-typing
+                 :reason :analyzer-side-multimethod-dispatches-on-arbitrary-assertion-form-heads-and-must-remain-extensible-by-user-defined-defmethod-implementations}
+    run-all-tests {:status :host-boundary
+                   :reason :macro-expansion-enumerates-the-clojurescript-analyzer-global-namespace-table-and-optionally-filters-symbols-with-host-regex-matches}
+    update-current-env! {:status :blocked-static-typing
+                         :reason :variadic-update-over-heterogeneous-dependent-test-environment-paths-cannot-share-one-static-key-value-and-callback-result-type}
+    js-line-and-column {:status :host-boundary
+                        :reason :parses-javascript-stack-frame-text-with-javascript-parseint-and-nan-fallback-semantics}
+    js-filename {:status :host-boundary
+                 :reason :derives-generated-javascript-filenames-from-the-clojurescript-analyzer-output-directory}
+    mapped-line-and-column {:status :host-boundary
+                            :reason :reads-clojurescript-generated-javascript-source-map-segments-with-open-host-map-shapes}
+    file-and-line {:status :host-boundary
+                   :reason :reads-javascript-error-stack-filename-and-line-number-properties-and-generated-source-maps}
+    report {:status :blocked-static-typing
+            :reason :runtime-multimethod-must-remain-extensible-over-custom-reporter-and-open-report-event-dispatch-values-as-used-by-logseq-defmethod-reporters}
+    do-report {:status :blocked-static-typing
+               :reason :normalizes-open-fail-and-error-event-maps-from-javascript-stack-data-before-invoking-the-extensible-report-multimethod}
     compose-fixtures {:status :ported}
     join-fixtures {:status :ported}
     successful? {:status :ported}}}
