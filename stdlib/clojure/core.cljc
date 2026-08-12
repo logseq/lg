@@ -92,13 +92,26 @@
 (defn name [value]
   (INameCoercion/-coerce-name value))
 
+(defn- keyword-one [value]
+  (IKeywordCoercion/-coerce-keyword value))
+
+(defn- keyword-two [namespace value]
+  (__lg_builtin-keyword
+   (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
+   (INameCoercion/-coerce-name value)))
+
 (defn keyword
+  {:inline (fn
+             ([value]
+              (if (= value nil)
+                nil
+                (list 'keyword-one value)))
+             ([namespace value]
+              (list 'keyword-two namespace value)))}
   ([value]
-   (IKeywordCoercion/-coerce-keyword value))
+   (keyword-one value))
   ([namespace value]
-   (__lg_builtin-keyword
-    (IIdentifierNamespaceCoercion/-coerce-identifier-namespace namespace)
-    (INameCoercion/-coerce-name value))))
+   (keyword-two namespace value)))
 
 (defn symbol
   ([value]

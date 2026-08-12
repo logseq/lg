@@ -27213,6 +27213,7 @@ let test_keyword_and_symbol_are_source_owned_static_protocols () =
 
 (println
   (and (= :plain (make-keyword "plain"))
+       (nil? (keyword nil))
        (= :db/item (keyword 'db/item))
        (= :ns/item (make-keyword :other/ns 'other/item))
        (= :root (keyword nil "root"))
