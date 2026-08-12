@@ -7,9 +7,12 @@
   lg_portability.cljc
   upstream/clojure/core_test/and.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/or.cljc
+  upstream/clojure/core_test/sequential_qmark.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
@@ -26,9 +29,12 @@
    %{dep:lg_portability.cljc}
    %{dep:upstream/clojure/core_test/and.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
+   %{dep:upstream/clojure/core_test/sequential_qmark.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}
@@ -69,9 +75,12 @@
   lg_portability.cljc
   upstream/clojure/core_test/and.cljc
   upstream/clojure/core_test/any_qmark.cljc
+  upstream/clojure/core_test/associative_qmark.cljc
   upstream/clojure/core_test/comment.cljc
   upstream/clojure/core_test/fn_qmark.cljc
+  upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/or.cljc
+  upstream/clojure/core_test/sequential_qmark.cljc
   upstream/clojure/core_test/when.cljc
   upstream/clojure/core_test/when_not.cljc
   smoke_runner.cljc
@@ -88,9 +97,12 @@
    %{dep:lg_portability.cljc}
    %{dep:upstream/clojure/core_test/and.cljc}
    %{dep:upstream/clojure/core_test/any_qmark.cljc}
+   %{dep:upstream/clojure/core_test/associative_qmark.cljc}
    %{dep:upstream/clojure/core_test/comment.cljc}
    %{dep:upstream/clojure/core_test/fn_qmark.cljc}
+   %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
+   %{dep:upstream/clojure/core_test/sequential_qmark.cljc}
    %{dep:upstream/clojure/core_test/when.cljc}
    %{dep:upstream/clojure/core_test/when_not.cljc}
    %{dep:smoke_runner.cljc}
