@@ -16,6 +16,7 @@
   upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/nil_qmark.cljc
   upstream/clojure/core_test/not.cljc
+  upstream/clojure/core_test/number_range.cljc
   upstream/clojure/core_test/or.cljc
   upstream/clojure/core_test/pr_str.cljc
   upstream/clojure/core_test/print_str.cljc
@@ -51,6 +52,7 @@
    %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/nil_qmark.cljc}
    %{dep:upstream/clojure/core_test/not.cljc}
+   %{dep:upstream/clojure/core_test/number_range.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
    %{dep:upstream/clojure/core_test/pr_str.cljc}
    %{dep:upstream/clojure/core_test/print_str.cljc}
@@ -110,6 +112,7 @@
   upstream/clojure/core_test/name.cljc
   upstream/clojure/core_test/nil_qmark.cljc
   upstream/clojure/core_test/not.cljc
+  upstream/clojure/core_test/number_range.cljc
   upstream/clojure/core_test/or.cljc
   upstream/clojure/core_test/pr_str.cljc
   upstream/clojure/core_test/print_str.cljc
@@ -145,6 +148,7 @@
    %{dep:upstream/clojure/core_test/name.cljc}
    %{dep:upstream/clojure/core_test/nil_qmark.cljc}
    %{dep:upstream/clojure/core_test/not.cljc}
+   %{dep:upstream/clojure/core_test/number_range.cljc}
    %{dep:upstream/clojure/core_test/or.cljc}
    %{dep:upstream/clojure/core_test/pr_str.cljc}
    %{dep:upstream/clojure/core_test/print_str.cljc}

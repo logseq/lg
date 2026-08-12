@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 51 |
-| compile failed | 425 |
+| compiled | 53 |
+| compile failed | 423 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 24 |
-| namespaces failed on both native and Melange | 211 |
+| namespaces compiled on both native and Melange | 25 |
+| namespaces failed on both native and Melange | 210 |
 | native-only compiled namespaces | 0 |
 | Melange-only compiled namespaces | 3 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 24 | 214 |
-| Melange | 27 | 211 |
+| native | 25 | 213 |
+| Melange | 28 | 210 |
 
 Namespaces currently compiling on both targets:
 
@@ -49,6 +49,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.nan-qmark`
 - `clojure.core-test.nil-qmark`
 - `clojure.core-test.not`
+- `clojure.core-test.number-range`
 - `clojure.core-test.or`
 - `clojure.core-test.pr-str`
 - `clojure.core-test.print-str`
@@ -66,12 +67,14 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 232 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after namespace/parser harness blockers were cleared because those tests now reach real LG static boundaries. |
-| `host-boundary-or-platform-specific` | 81 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. Other JS/JVM globals remain host-boundary. The large count comes from `number_range.cljc` reaching `Long/MAX_VALUE` / `js/Number.MAX_SAFE_INTEGER`. |
-| `reader-or-numeric-literal` | 79 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. |
-| `missing-core-api-macro-or-var` | 24 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
+| `static-typing-or-closed-domain-boundary` | 242 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. The count increased after host constants were cleared because tests now reach deeper static boundaries. |
+| `reader-or-numeric-literal` | 121 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
+| `missing-core-api-macro-or-var` | 30 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `format`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
+| `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
+| `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
 | `unsupported-form-or-arity` | 7 | Known examples: `atom` option arity, `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
+| `other-compiler-error` | 1 | Inspect directly before changing compiler behavior. |
 
 ## Platform skew
 
@@ -81,17 +84,17 @@ Namespaces currently compiling on both targets:
 
 ## Current interpretation
 
-The 425 compile failures are not 425 independent core defects. The current
+The 423 compile failures are not 423 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
    intentionally call functions with bad argument types and expect `thrown?`.
    In LG, many of these should remain compile-time errors and need a separate
    static-error lane.
-2. Host and numeric boundaries exposed by `number_range`: `Long/MAX_VALUE`,
-   `js/Number.MAX_SAFE_INTEGER`, bigint, bigdecimal, ratio, UUID, and char
-   literal support must be scoped explicitly because they affect reader, type
-   system, equality, ordering, arithmetic, printing, and EDN.
+2. Numeric boundaries now exposed past `number_range`: bigint, bigdecimal,
+   ratio, UUID, and char literal support must be scoped explicitly because they
+   affect reader, type system, equality, ordering, arithmetic, printing, and
+   EDN.
 3. Missing API/macro forms: these should be triaged public-var by public-var.
    Some are source-portable functions; others are compiler/host behavior.
 4. Host boundaries: JVM class identity and JS globals are not portable stdlib

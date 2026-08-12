@@ -91,8 +91,36 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FBool value -> Ok (typed_ir TBool (Semantic_ir.Bool value))
   | FKeyword keyword -> Ok (typed_ir TKeyword (Semantic_ir.String keyword))
   | FSymbol "nil" -> Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+  | FSymbol "Long/MAX_VALUE" when Env.target env = Target.Native ->
+      Ok (typed_ir TInt (Semantic_ir.Ident "Stdlib.max_int"))
+  | FSymbol "Long/MIN_VALUE" when Env.target env = Target.Native ->
+      Ok (typed_ir TInt (Semantic_ir.Ident "Stdlib.min_int"))
+  | FSymbol "Double/MAX_VALUE" when Env.target env = Target.Native ->
+      Ok (typed_ir TFloat (Semantic_ir.Float "1.7976931348623157e+308"))
+  | FSymbol "Double/MIN_VALUE" when Env.target env = Target.Native ->
+      Ok (typed_ir TFloat (Semantic_ir.Float "4.9e-324"))
   | FSymbol "js/undefined" when Env.target env = Target.Melange ->
       Ok (typed_ir TNil (Semantic_ir.Constructor ("None", None)))
+  | FSymbol "js/Number.MAX_SAFE_INTEGER"
+    when Env.target env = Target.Melange ->
+      Ok
+        (typed_ir TInt
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident
+                  "Lg_runtime.Runtime_int_melange.of_float_unchecked",
+                [ Semantic_ir.Float "9007199254740991." ] )))
+  | FSymbol "js/Number.MIN_SAFE_INTEGER"
+    when Env.target env = Target.Melange ->
+      Ok
+        (typed_ir TInt
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident
+                  "Lg_runtime.Runtime_int_melange.of_float_unchecked",
+                [ Semantic_ir.Float "-9007199254740991." ] )))
+  | FSymbol "js/Number.MAX_VALUE" when Env.target env = Target.Melange ->
+      Ok (typed_ir TFloat (Semantic_ir.Float "1.7976931348623157e+308"))
+  | FSymbol "js/Number.MIN_VALUE" when Env.target env = Target.Melange ->
+      Ok (typed_ir TFloat (Semantic_ir.Float "4.9e-324"))
   | FSymbol "js/Error"
     when Env.target env = Target.Melange
          || Env.target env = Target.Js_of_ocaml ->

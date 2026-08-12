@@ -1820,6 +1820,55 @@ let test_native_object_constructor_is_truthy_suite_sentinel () =
     source
   |> expect_error_contains "unknown record type Object"
 
+let test_host_numeric_boundary_constants_are_static () =
+  let native_source =
+    {|
+(ns app.native-host-numbers
+  (:require [clojure.core :refer [< = pos? str println]]))
+
+(println
+  (str (= Long/MAX_VALUE Long/MAX_VALUE) ":"
+       (< Long/MIN_VALUE Long/MAX_VALUE) ":"
+       (pos? Double/MAX_VALUE) ":"
+       (pos? Double/MIN_VALUE)))
+|}
+  in
+  let native_output =
+    compile_with_stdlib_result Lg.Target.Native "test/native_host_numbers.cljc"
+      native_source
+    |> expect_ok
+  in
+  if string_contains_substring native_output "Runtime_dynamic" then
+    failwith "host numeric constants must not use Runtime_dynamic";
+  assert_ocaml_runs "native_host_numeric_boundary_constants"
+    "true:true:true:true\n" native_output;
+  let melange_source =
+    {|
+(ns app.melange-host-numbers
+  (:require [clojure.core :refer [< = pos? str println]]))
+
+(println
+  (str (= js/Number.MAX_SAFE_INTEGER js/Number.MAX_SAFE_INTEGER) ":"
+       (< js/Number.MIN_SAFE_INTEGER js/Number.MAX_SAFE_INTEGER) ":"
+       (pos? js/Number.MAX_VALUE) ":"
+       (pos? js/Number.MIN_VALUE)))
+|}
+  in
+  let melange_output =
+    compile_with_stdlib_result Lg.Target.Melange
+      "test/melange_host_numbers.cljc" melange_source
+    |> expect_ok
+  in
+  if string_contains_substring melange_output "Runtime_dynamic" then
+    failwith "host numeric constants must not use Runtime_dynamic";
+  if
+    not
+      (string_contains_substring melange_output
+         "Lg_runtime.Runtime_int_melange.of_float_unchecked 9007199254740991.")
+  then failwith "MAX_SAFE_INTEGER should lower to a static Melange integer";
+  if not (string_contains_substring melange_output "1.7976931348623157e+308")
+  then failwith "Number.MAX_VALUE should lower to a static float"
+
 let test_nil_equality_accepts_annotated_options () =
   let source =
     {|
@@ -45873,6 +45922,8 @@ let tests =
       test_melange_js_undefined_uses_cljs_nil_semantics );
     ( "Native Object constructor is truthy suite sentinel",
       test_native_object_constructor_is_truthy_suite_sentinel );
+    ( "host numeric boundary constants are static",
+      test_host_numeric_boundary_constants_are_static );
     ( "nil equality accepts annotated options",
       test_nil_equality_accepts_annotated_options );
     ( "if-some and when-some bind option payloads",
