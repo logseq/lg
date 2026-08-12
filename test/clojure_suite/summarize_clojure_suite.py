@@ -82,6 +82,8 @@ def classify(error: str) -> str:
         or "cljs.js" in message
         or re.search(r"\bjs/[A-Za-z]", message)
         or re.search(r"\b(?:Object|String|Long/MAX_VALUE)\b", message)
+        or "unknown record type Boolean" in message
+        or "unknown record type cljs.core.UUID" in message
         or "clojure.lang" in message
     ):
         return "host-boundary-or-platform-specific"
@@ -117,6 +119,7 @@ def classify(error: str) -> str:
         or "default must match collection element type" in lower
         or "has more fixed arguments than function parameters" in lower
         or "cannot infer" in lower
+        or "requires an explicit option element type" in lower
         or "nullable updater" in lower
         or "guard narrowing requires a statically typed value" in lower
     ):
@@ -128,7 +131,12 @@ def classify(error: str) -> str:
     if "defmulti currently supports" in lower:
         return "missing-core-api-macro-or-var"
 
-    if "unknown function" in lower or "unknown symbol" in lower or "cannot refer unknown symbol" in lower:
+    if (
+        "unknown function" in lower
+        or "unknown symbol" in lower
+        or "cannot refer unknown symbol" in lower
+        or "unknown protocol" in lower
+    ):
         return "missing-core-api-macro-or-var"
 
     if "unsupported" in lower or "arity" in lower or "args doesn't match" in lower:

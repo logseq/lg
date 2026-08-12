@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCANNER_PATH = ROOT / "test" / "clojure_suite" / "scan_clojure_suite.py"
+SUMMARY_PATH = ROOT / "test" / "clojure_suite" / "summarize_clojure_suite.py"
 
 
 def load_scanner():
@@ -22,6 +23,37 @@ def load_scanner():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load_summary():
+    spec = importlib.util.spec_from_file_location("summarize_clojure_suite", SUMMARY_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load summarize_clojure_suite.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class SummaryClassificationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.summary = load_summary()
+
+    def test_classifies_remaining_known_errors(self) -> None:
+        examples = {
+            "File \"<suite>/atom.cljc\", line <n>: lg: atom nil requires an explicit option element type, for example ^:ref<option<int>>":
+                "static-typing-or-closed-domain-boundary",
+            "File \"<suite>/atom.cljc\", line <n>: lg: unknown protocol cljs.core/IAtom":
+                "missing-core-api-macro-or-var",
+            "File \"<suite>/boolean_qmark.cljc\", line <n>: lg: unknown record type Boolean":
+                "host-boundary-or-platform-specific",
+            "File \"<suite>/parse_uuid.cljc\", line <n>: lg: unknown record type cljs.core.UUID":
+                "host-boundary-or-platform-specific",
+        }
+
+        for message, expected in examples.items():
+            with self.subTest(message=message):
+                self.assertEqual(expected, self.summary.classify(message))
 
 
 class ScannerDependencyTests(unittest.TestCase):
