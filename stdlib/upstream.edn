@@ -243,14 +243,14 @@
                     :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     -prefer-method {:status :blocked-static-typing
                     :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    -get-method {:status :blocked-static-typing
-                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    -methods {:status :blocked-static-typing
-              :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -get-method {:status :static-adaptation
+                 :reason :runtime-multifn-boundary-provides-symbol-call-site-method-introspection-through-a-documented-dynamic-method-table}
+    -methods {:status :static-adaptation
+              :reason :runtime-multifn-boundary-provides-symbol-call-site-method-map-introspection-through-a-documented-dynamic-method-table}
     -prefers {:status :blocked-static-typing
               :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
-    -dispatch-fn {:status :blocked-static-typing
-                  :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    -dispatch-fn {:status :static-adaptation
+                  :reason :runtime-multifn-boundary-provides-symbol-call-site-dispatch-function-introspection-as-a-non-callable-dynamic-handle}
     -default-dispatch-val {:status :blocked-static-typing
                            :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     -reset {:status :blocked-static-typing
@@ -1154,10 +1154,10 @@
                    :reason :performs-unchecked-javascript-property-mutation}
     undefined? {:status :host-boundary
                 :reason :tests-the-javascript-undefined-value}
-    defmethod {:status :blocked-static-typing
-               :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
-    defmulti {:status :blocked-static-typing
-              :reason :requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table}
+    defmethod {:status :static-adaptation
+               :reason :source-macro-and-compiler-top-level-registration-populate-a-documented-runtime-multifn-dynamic-method-table-with-static-method-bodies}
+    defmulti {:status :static-adaptation
+              :reason :source-macro-and-compiler-top-level-registration-create-a-callable-runtime-multifn-boundary-with-static-arity-and-dynamic-dispatch-values}
     implements? {:status :static-adaptation
                   :reason :source-macro-preserves-static-protocol-satisfaction-and-single-value-evaluation-by-expanding-to-satisfies-while-clojurescript-javascript-mask-layout-is-not-part-of-lg-runtime-representation}
     specify {:status :blocked-static-typing
@@ -1228,8 +1228,8 @@
           :reason :source-function-and-inline-specialization-preserve-upstream-transient-vector-tail-removal-through-a-private-typed-primitive}
     disj! {:status :static-adaptation
            :reason :source-overloads-and-inline-specialization-preserve-upstream-left-to-right-transient-set-removal-with-a-homogeneous-static-element-domain}
-    dispatch-fn {:status :blocked-static-typing
-                 :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    dispatch-fn {:status :static-adaptation
+                 :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
     double-array {:status :static-adaptation
                   :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
     dt->et {:status :special-form
@@ -1252,8 +1252,8 @@
              :reason :bootstrap-namespace-lookup-walks-javascript-global-objects-and-a-mutable-cache}
     find-ns-obj {:status :host-boundary
                  :reason :bootstrap-namespace-lookup-traverses-munged-javascript-global-object-properties}
-    get-method {:status :blocked-static-typing
-                :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    get-method {:status :static-adaptation
+                :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
     get-validator {:status :blocked-static-typing
                    :reason :lg-reference-cells-do-not-store-a-validator-callback-tied-to-their-value-type}
     int-array {:status :static-adaptation
@@ -1278,8 +1278,8 @@
                :reason :node-only-bootstrap-hook-loads-and-evaluates-a-javascript-file}
     long-array {:status :static-adaptation
                 :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
-    methods {:status :blocked-static-typing
-             :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
+    methods {:status :static-adaptation
+             :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
     missing-protocol {:status :host-boundary
                       :reason :constructs-a-javascript-error-from-google-closure-runtime-type-dispatch}
     mk-bound-fn {:status :static-adaptation

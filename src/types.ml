@@ -14,6 +14,7 @@ type binding = {
   constant_keyword : string option;
   false_non_nil_names : string list;
   dynamically_bindable : bool;
+  multimethod : bool;
   never_returns : bool;
 }
 
@@ -40,7 +41,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
     ?constant_keyword ?(false_non_nil_names = []) ?(dynamically_bindable = false)
-    ?(never_returns = false)
+    ?(multimethod = false) ?(never_returns = false)
     ocaml_name ty =
   {
     ocaml_name;
@@ -56,6 +57,7 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     constant_keyword;
     false_non_nil_names;
     dynamically_bindable;
+    multimethod;
     never_returns;
   }
 

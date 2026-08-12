@@ -3551,7 +3551,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (Semantic_ir.Apply
                    ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.contains",
                        [ target.semantic_expr; value ] )))
-              (pack_dynamic_scalar env value)
+              (Multimethod_dynamic_boundary.convert_typed_value value)
         | target_ty, _ -> (
             match Types.dynamic_map_types target_ty with
             | Some (key_ty, _)

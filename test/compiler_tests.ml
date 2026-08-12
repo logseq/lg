@@ -830,6 +830,57 @@ let test_cljs_test_report_accepts_qualified_defmethod_target () =
     "app/cljs_test_qualified_report.cljc" source
   |> ignore
 
+let test_source_multimethods_dispatch_through_limited_dynamic_boundary () =
+  let source =
+    {|
+(ns app.multimethod-basic
+  (:require [clojure.core :refer [defmulti defmethod methods get-method dispatch-fn]]))
+
+(defmulti render :kind)
+(defmethod render :a [m]
+  (str "A:" (:value m)))
+(defmethod render :default [m]
+  (str "D:" (:value m)))
+
+(println (render {:kind :a :value "x"}))
+(println (render {:kind :b :value "y"}))
+(println (contains? (methods render) :a))
+(println (nil? (get-method render :a)))
+(println (nil? (dispatch-fn render)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/multimethod_basic.cljc" source
+  in
+  assert_ocaml_runs "source_multimethods_dispatch_dynamic_boundary"
+    "A:x\nD:y\ntrue\nfalse\nfalse\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/multimethod_basic.cljc" source
+  |> ignore
+
+let test_source_multimethods_support_alias_and_multi_argument_dispatch () =
+  let source =
+    {|
+(ns app.multimethod-alias
+  (:require [clojure.core :as c :refer [defmulti defmethod]]))
+
+(defmulti command (fn [_state command-v] (:op command-v)))
+(defmethod command :insert [state command-v]
+  (str state ":" (:text command-v)))
+(defmethod command :default [_state command-v]
+  (str "unknown:" (:op command-v)))
+
+(println (command "doc" {:op :insert :text "x"}))
+(println (command "doc" {:op :delete :text "x"}))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/multimethod_alias.cljc" source
+  in
+  assert_ocaml_runs "source_multimethods_support_alias_multi_arg"
+    "doc:x\nunknown::delete\n" native;
+  compile_with_stdlib Lg.Target.Melange "app/multimethod_alias.cljc" source
+  |> ignore
+
 let test_record_field_names_do_not_expand_inline_core_macros () =
   let source =
     {|
@@ -44060,6 +44111,10 @@ let tests =
       test_cljs_test_report_dispatches_custom_reporter_methods );
     ( "cljs.test report accepts qualified defmethod target",
       test_cljs_test_report_accepts_qualified_defmethod_target );
+    ( "source multimethods dispatch through limited dynamic boundary",
+      test_source_multimethods_dispatch_through_limited_dynamic_boundary );
+    ( "source multimethods support alias and multi argument dispatch",
+      test_source_multimethods_support_alias_and_multi_argument_dispatch );
     ( "record field names do not expand inline core macros",
       test_record_field_names_do_not_expand_inline_core_macros );
     ( "records, assoc, and dissoc generate typed OCaml",

@@ -4687,6 +4687,20 @@ let create ~compile_expr =
     | "cljs.test/report" | "t/report" | "ct/report" -> true
     | _ -> false
   in
+  let resolve_multimethod_key scope env = function
+    | FSymbol name -> (
+        match String.split_on_char '/' name with
+        | [ alias; member ] ->
+            let owner =
+              Env.resolve_namespace_alias ~scope alias env
+              |> Option.value ~default:alias
+            in
+            Ok (owner ^ "/" ^ member)
+        | _ -> Ok (Names.scoped_key scope name))
+    | _ ->
+        Error.error
+          "multimethod introspection currently expects a multimethod symbol"
+  in
   let compile_cljs_test_report_call scope env arg_forms =
     match arg_forms with
     | [ event_form ] -> (
@@ -9032,6 +9046,46 @@ let create ~compile_expr =
                         ]))
             | (Error _ as error), _ | _, (Error _ as error) -> error)
         | _ -> Error.error "cljs.test/report expects one report event")
+    | "__lg_multimethod-methods" -> (
+        match arg_forms with
+        | [ multifn_form ] ->
+            Result.map
+              (fun id ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.methods",
+                       [ Semantic_ir.String id ] )))
+              (resolve_multimethod_key scope env multifn_form)
+        | _ -> Error.error "methods expects one multimethod")
+    | "__lg_multimethod-get-method" -> (
+        match arg_forms with
+        | [ multifn_form; dispatch_form ] -> (
+            match
+              ( resolve_multimethod_key scope env multifn_form,
+                Multimethod_dynamic_boundary.compile_form ~compile_expr scope env
+                  dispatch_form )
+            with
+            | Ok id, Ok dispatch ->
+                Ok
+                  (typed_ir (Types.dynamic_constraint TUnknown)
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_multimethod.get_method",
+                          [ Semantic_ir.String id; dispatch.semantic_expr ] )))
+            | (Error _ as error), _ | _, (Error _ as error) -> error)
+        | _ -> Error.error "get-method expects a multimethod and dispatch value")
+    | "__lg_multimethod-dispatch-fn" -> (
+        match arg_forms with
+        | [ multifn_form ] ->
+            Result.map
+              (fun id ->
+                typed_ir (Types.dynamic_constraint TUnknown)
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident
+                         "Lg_runtime.Runtime_multimethod.dispatch_fn",
+                       [ Semantic_ir.String id ] )))
+              (resolve_multimethod_key scope env multifn_form)
+        | _ -> Error.error "dispatch-fn expects one multimethod")
     | ("__lg_re-find" | "__lg_re-matches") as
       regex_operation -> (
         let public_operation =
@@ -10414,6 +10468,38 @@ let create ~compile_expr =
         compile_inferred_ocaml_call scope env name arg_forms
     | Ok fn -> (
         let fn = Types.instantiate_binding fn in
+        if fn.multimethod then
+          match fn.ty with
+          | TFn (parameter_tys, _) when List.length parameter_tys = List.length arg_forms -> (
+              let rec compile_args acc = function
+                | [] -> Ok (List.rev acc)
+                | form :: rest -> (
+                    match compile_expr scope env form with
+                    | Error _ as error -> error
+                    | Ok argument -> (
+                        match
+                          Multimethod_dynamic_boundary.convert_typed_value argument
+                        with
+                        | Error _ as error -> error
+                        | Ok dynamic ->
+                            compile_args (dynamic :: acc) rest))
+              in
+              match (resolve_multimethod_key scope env (FSymbol name), compile_args [] arg_forms) with
+              | Ok id, Ok args ->
+                  Ok
+                    (typed_ir (Types.dynamic_constraint TUnknown)
+                       (Semantic_ir.Apply
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_multimethod.invoke",
+                            [ Semantic_ir.String id; Semantic_ir.List args ] )))
+              | (Error _ as error), _ | _, (Error _ as error) -> error)
+          | TFn (parameter_tys, _) ->
+              Error.error
+                (name ^ " called with unsupported arity "
+               ^ string_of_int (List.length arg_forms) ^ "; expected "
+               ^ string_of_int (List.length parameter_tys))
+          | _ -> Error.error (name ^ " has an invalid multimethod binding")
+        else
         let contextual_parameter_tys =
           match fn.ty with
           | TFn (parameter_tys, _)

@@ -244,7 +244,10 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`defmethod` (162), `flatten` (15), and `memoize` (10).
+`flatten` (15), and `memoize` (10). `defmethod` appears 162 times, `defmulti`
+8 times, `dispatch-fn` 7 times, `methods` 5 times, and `get-method` once; those
+rows are now source-aggregate supported through the documented runtime multifn
+dynamic boundary.
 `add-watch` appears 36 times and `remove-watch` appears 14 times; both are now
 source-aggregate owned through a typed reference watch registry with statically
 typed keyword keys. `re-find` appears 290 times,
@@ -746,6 +749,17 @@ its existing exception-only data boundary.
 payload. Non-empty EDN-like literal maps passed to `ex-info` are built directly
 inside that payload boundary, so ordinary records and collections still do not
 gain a global dynamic conversion path.
+`defmulti` and `defmethod` are source-visible core macros backed by a documented
+runtime multifn boundary. The boundary stores dispatch values, method-table
+keys, and call arguments as `Runtime_dynamic.t` because ClojureScript
+multimethod dispatch is intentionally open; method bodies themselves are still
+compiled as ordinary LG static functions. `methods`, `get-method`, and
+`dispatch-fn` are source-visible call-site macros for symbol-based
+introspection. `methods` returns the dynamic method table map, while
+`get-method` and `dispatch-fn` return nil-or-handle dynamic values; these
+handles are introspection results, not a general dynamic function-call escape
+hatch. This boundary is separate from DataScript and ordinary collection
+representations.
 `js-obj` and `js->clj` are explicit JavaScript host boundaries: neither has a
 portable Native representation, and treating them as ordinary maps would lose
 JavaScript identity and interop semantics.

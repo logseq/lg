@@ -11,10 +11,25 @@ let next_cljs_test_report_method_name () =
   incr cljs_test_report_method_counter;
   "__lg_cljs_test_report_method_" ^ string_of_int !cljs_test_report_method_counter
 
+let multimethod_method_counter = ref 0
+
+let next_multimethod_method_name () =
+  incr multimethod_method_counter;
+  "__lg_multimethod_method_" ^ string_of_int !multimethod_method_counter
+
 let cljs_test_report_method_symbol scope = function
   | "report" -> String.equal scope "cljs.test"
   | "cljs.test/report" | "t/report" | "ct/report" -> true
   | _ -> false
+
+let resolve_multimethod_key scope env name =
+  match String.split_on_char '/' name with
+  | [ alias; member ] ->
+      let owner =
+        Env.resolve_namespace_alias ~scope alias env |> Option.value ~default:alias
+      in
+      owner ^ "/" ^ member
+  | _ -> Names.scoped_key scope name
 
 let compile_source_expr scope env form =
   let rec compile = function
@@ -301,6 +316,68 @@ let allocate_top_level_local_records env next_type body =
     allocate_function_local_records env next_type parts
   in
   (env, next_type, items, parts.body)
+
+let dynamic_ty = Types.dynamic_constraint TUnknown
+
+let list_nth list_name index =
+  Semantic_ir.Apply
+    ( Semantic_ir.Ident "List.nth",
+      [ Semantic_ir.Ident list_name; Semantic_ir.Int index ] )
+
+let dynamic_arg_names arity =
+  List.init arity (fun index -> "__lg_multimethod_arg_" ^ string_of_int index)
+
+let compile_multimethod_dispatch scope env dispatch_form =
+  let args_name = "__lg_multimethod_dispatch_args" in
+  match dispatch_form with
+  | FKeyword keyword ->
+      Ok
+        ( 1,
+          Semantic_ir.Fun
+            ( [ Semantic_ir.PVar args_name ],
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.get",
+                  [
+                    list_nth args_name 0;
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_multimethod.dynamic_keyword",
+                        [ Semantic_ir.String keyword ] );
+                  ] ) ) )
+  | FSymbol "identity" ->
+      Ok
+        ( 1,
+          Semantic_ir.Fun ([ Semantic_ir.PVar args_name ], list_nth args_name 0)
+        )
+  | FList (FSymbol "fn" :: (FVector params as params_form) :: body_forms) ->
+      let arity = List.length params in
+      let overrides = List.map (fun _ -> Some dynamic_ty) params in
+      Result.bind
+        (Expression_elaborator.compile_fn ~param_type_overrides:overrides scope
+           env params_form body_forms)
+        (fun dispatch ->
+          Ok
+            ( arity,
+              Semantic_ir.Fun
+                ( [ Semantic_ir.PVar args_name ],
+                  Semantic_ir.Apply
+                    ( dispatch.semantic_expr,
+                      List.init arity (list_nth args_name) ) ) ))
+  | _ ->
+      Error.error
+        "defmulti currently supports keyword, identity, and fn dispatch forms"
+
+let compile_multimethod_default scope env = function
+  | [] ->
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.dynamic_keyword",
+             [ Semantic_ir.String ":default" ] ))
+  | [ FKeyword ":default"; value ] ->
+      Result.map
+        (fun value -> value.Types.semantic_expr)
+        (Multimethod_dynamic_boundary.compile_form ~compile_expr scope env value)
+  | _ -> Error.error "defmulti options currently support only :default"
 
 let allocate_multi_arity_local_records env next_type
     (prepared : Expression_elaborator.prepared_multi_arity_fn) =
@@ -1854,6 +1931,53 @@ let rec compile scope env next_type form =
           in
           compile_methods env [] None interface_forms))
   | FList
+      (FSymbol "defmulti" :: FSymbol name :: dispatch_form :: option_forms) -> (
+      match
+        ( compile_multimethod_dispatch scope env dispatch_form,
+          compile_multimethod_default scope env option_forms )
+      with
+      | Ok (arity, dispatch_fn), Ok default_dispatch ->
+          let source_key = Names.scoped_key scope name in
+          let ocaml_name = Names.ocaml_binding_name scope name in
+          let dispatch_name = ocaml_name ^ "_dispatch_fn" in
+          let arg_names = dynamic_arg_names arity in
+          let invoke =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.invoke",
+                [
+                  Semantic_ir.String source_key;
+                  Semantic_ir.List
+                    (List.map (fun name -> Semantic_ir.Ident name) arg_names);
+                ] )
+          in
+          let expression =
+            Semantic_ir.Let
+              ( [ (Semantic_ir.PVar dispatch_name, dispatch_fn) ],
+                Semantic_ir.Sequence
+                  [
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.register",
+                        [
+                          Semantic_ir.String source_key;
+                          Semantic_ir.Ident dispatch_name;
+                          default_dispatch;
+                        ] );
+                    Semantic_ir.Fun
+                      ( List.map (fun name -> Semantic_ir.PVar name) arg_names,
+                        invoke );
+                  ] )
+          in
+          let binding =
+            Types.binding ~multimethod:true ocaml_name
+              (TFn (List.init arity (fun _ -> dynamic_ty), dynamic_ty))
+          in
+          Ok
+            ( scope,
+              Env.add source_key binding env,
+              next_type,
+              Value_binding { pattern = Named ocaml_name; expression } )
+      | (Error _ as error), _ | _, (Error _ as error) -> error)
+  | FList
       (FSymbol "defmethod"
       :: FSymbol "print-method"
       :: FSymbol type_name
@@ -1942,6 +2066,83 @@ let rec compile scope env next_type form =
           env,
           next_type,
           Comment ("test runner handles " ^ method_name) )
+  | FList
+      (FSymbol "defmethod"
+      :: FSymbol method_name
+      :: dispatch_form
+      :: (FVector params as params_form)
+      :: body_forms) -> (
+      let source_key = resolve_multimethod_key scope env method_name in
+      match Env.find_opt source_key env with
+      | None -> Error.error ("unknown multimethod " ^ method_name)
+      | Some binding -> (
+          match binding.ty with
+          | TFn (parameter_tys, _) ->
+              let arity = List.length parameter_tys in
+              if arity <> List.length params then
+                Error.error
+                  ("defmethod for " ^ method_name ^ " expects "
+                 ^ string_of_int arity ^ " parameters")
+              else
+                let overrides = List.map (fun _ -> Some dynamic_ty) params in
+                (match
+                   ( Multimethod_dynamic_boundary.compile_form ~compile_expr scope
+                       env dispatch_form,
+                     Expression_elaborator.compile_fn
+                       ~param_type_overrides:overrides scope env params_form
+                       body_forms )
+                 with
+                 | Ok dispatch, Ok implementation ->
+                     let return_ty =
+                       match implementation.ty with
+                       | TFn (_, return_ty) -> return_ty
+                       | ty -> ty
+                     in
+                     let method_name = next_multimethod_method_name () in
+                     let implementation_name = method_name ^ "_implementation" in
+                     let args_name = method_name ^ "_args" in
+                     let raw_call =
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident implementation_name,
+                           List.init arity (list_nth args_name) )
+                     in
+                     (match
+                        Multimethod_dynamic_boundary.convert_type return_ty raw_call
+                      with
+                      | Error _ as error -> error
+                      | Ok dynamic_call ->
+                          let callback =
+                            Semantic_ir.Fun
+                              ( [ Semantic_ir.PVar args_name ],
+                                dynamic_call )
+                          in
+                          let expression =
+                            Semantic_ir.Let
+                              ( [
+                                  ( Semantic_ir.PVar implementation_name,
+                                    implementation.semantic_expr );
+                                ],
+                                Semantic_ir.Sequence
+                                  [
+                                    Semantic_ir.Apply
+                                      ( Semantic_ir.Ident
+                                          "Lg_runtime.Runtime_multimethod.register_method",
+                                        [
+                                          Semantic_ir.String source_key;
+                                          dispatch.semantic_expr;
+                                          callback;
+                                        ] );
+                                    Semantic_ir.Unit;
+                                  ] )
+                          in
+                          Ok
+                            ( scope,
+                              env,
+                              next_type,
+                              Value_binding
+                                { pattern = Named method_name; expression } ))
+                 | (Error _ as error), _ | _, (Error _ as error) -> error)
+          | _ -> Error.error (method_name ^ " is not a multimethod")))
   | FList (FSymbol "defmethod" :: _) ->
       Error.error "defmethod currently supports print-method"
   | FList (FSymbol "recursive-definition-group" :: definitions) ->

@@ -3076,6 +3076,24 @@
 (defn ex-data [ex]
   (__lg_ex-data ex))
 
+(defmacro defmulti
+  [& _forms])
+
+(defmacro defmethod
+  [& _forms])
+
+(defmacro methods
+  [multifn]
+  (list '__lg_multimethod-methods multifn))
+
+(defmacro get-method
+  [multifn dispatch-value]
+  (list '__lg_multimethod-get-method multifn dispatch-value))
+
+(defmacro dispatch-fn
+  [multifn]
+  (list '__lg_multimethod-dispatch-fn multifn))
+
 (defn re-pattern
   {:inline (fn [expression] (list '__lg_re-pattern expression))}
   [expression]

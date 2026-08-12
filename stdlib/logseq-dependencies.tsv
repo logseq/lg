@@ -410,8 +410,8 @@ logseq-core-var-status	clojure.core/cycle	source-aggregate	1	precompiled-lg-sour
 logseq-core-var-status	clojure.core/dec	source-aggregate	200	precompiled-lg-source
 logseq-core-var-status	clojure.core/declare	special-form	112	compiler-owned-forward-binding-declaration
 logseq-core-var-status	clojure.core/defmacro	special-form	28	analyzer-owned-macro-definition-and-metadata-rewrite
-logseq-core-var-status	clojure.core/defmethod	blocked-static-typing	162	requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table
-logseq-core-var-status	clojure.core/defmulti	blocked-static-typing	8	requires-the-clojurescript-imultifn-runtime-domain-and-dynamic-dispatch-table
+logseq-core-var-status	clojure.core/defmethod	source-aggregate	162	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
+logseq-core-var-status	clojure.core/defmulti	source-aggregate	8	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 logseq-core-var-status	clojure.core/defn	special-form	4586	clojurescript-macro-bootstrap-var-expands-function-definitions-through-analyzer-def-and-fn-forms
 logseq-core-var-status	clojure.core/defn-	special-form	5971	compiler-owned-private-function-definition-syntax
 logseq-core-var-status	clojure.core/defonce	special-form	410	compiler-owned-single-initialization-definition-syntax
@@ -421,7 +421,7 @@ logseq-core-var-status	clojure.core/deftype	special-form	3	compiler-owned-static
 logseq-core-var-status	clojure.core/deref	source-aggregate	84	precompiled-lg-source
 logseq-core-var-status	clojure.core/derive	source-aggregate	3	precompiled-lg-source
 logseq-core-var-status	clojure.core/disj	source-aggregate	57	precompiled-lg-source
-logseq-core-var-status	clojure.core/dispatch-fn	blocked-static-typing	7	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/dispatch-fn	source-aggregate	7	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 logseq-core-var-status	clojure.core/dissoc	source-aggregate	429	precompiled-lg-source
 logseq-core-var-status	clojure.core/distinct	source-aggregate	221	precompiled-lg-source
 logseq-core-var-status	clojure.core/doall	source-aggregate	19	precompiled-lg-source
@@ -463,7 +463,7 @@ logseq-core-var-status	clojure.core/frequencies	source-aggregate	9	precompiled-l
 logseq-core-var-status	clojure.core/gensym	source-aggregate	1	precompiled-lg-source
 logseq-core-var-status	clojure.core/get	source-aggregate	1341	precompiled-lg-source
 logseq-core-var-status	clojure.core/get-in	source-aggregate	1845	precompiled-lg-source
-logseq-core-var-status	clojure.core/get-method	blocked-static-typing	1	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/get-method	source-aggregate	1	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 logseq-core-var-status	clojure.core/goog-define	host-boundary	12	emits-a-google-closure-compile-time-define
 logseq-core-var-status	clojure.core/group-by	source-aggregate	78	precompiled-lg-source
 logseq-core-var-status	clojure.core/hash	source-aggregate	10	precompiled-lg-source
@@ -517,7 +517,7 @@ logseq-core-var-status	clojure.core/memoize	blocked-static-typing	10	returned-fu
 logseq-core-var-status	clojure.core/merge	source-aggregate	515	precompiled-lg-source
 logseq-core-var-status	clojure.core/merge-with	source-aggregate	13	precompiled-lg-source
 logseq-core-var-status	clojure.core/meta	source-aggregate	118	precompiled-lg-source
-logseq-core-var-status	clojure.core/methods	blocked-static-typing	5	requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain
+logseq-core-var-status	clojure.core/methods	source-aggregate	5	precompiled-lg-source-macro-with-runtime-multifn-dynamic-boundary
 logseq-core-var-status	clojure.core/min	source-aggregate	131	precompiled-lg-source
 logseq-core-var-status	clojure.core/mod	source-aggregate	44	precompiled-lg-source
 logseq-core-var-status	clojure.core/munge	source-aggregate	3	precompiled-lg-source
