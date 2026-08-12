@@ -29526,6 +29526,54 @@ let test_metadata_maps_decode_closed_edn_collections () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_reference_metadata_reset_and_alter_are_source_owned () =
+  let source =
+    {|
+(ns metadata.reference-cells
+  (:require [cljs.core :as core
+             :refer [alter-meta! atom meta reset! reset-meta!]]))
+
+(def cell (atom 1))
+(defn metadata-entry
+  [^:keyword source ^:Lg_edn_backend.t previous ^:int extra]
+  (meta
+   (with-meta
+    {:placeholder 0}
+    {:source source :previous previous :extra extra})))
+(def reset-result (reset-meta! cell {:source :reset :value 1}))
+(def alter-result
+  (alter-meta!
+   cell
+   (fn [current source extra]
+     (metadata-entry source (:source current) extra))
+   :alter
+   2))
+(def qualified-result (core/reset-meta! cell {:source :qualified :value 3}))
+
+(println
+  (str (:source reset-result) ":"
+       (:value reset-result) ":"
+       (:source alter-result) ":"
+       (:previous alter-result) ":"
+       (:extra alter-result) ":"
+       (:source qualified-result) ":"
+       (:value (meta cell)) ":"
+       (reset! cell 9) ":"
+       (:source (meta cell))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "metadata/reference_cells.cljc" source
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "reference metadata must not cross Runtime_dynamic";
+  assert_ocaml_runs "reference_metadata_reset_and_alter_are_source_owned"
+    ":reset:1::alter::reset:2::qualified:3:9::qualified\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "metadata/reference_cells.cljc"
+       source)
+
 let test_source_vary_meta_matches_clojurescript_arities () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring core_source "(defn vary-meta") then
@@ -46836,6 +46884,8 @@ let tests =
       test_metadata_compilation_isolated_from_package_include_dirs );
     ( "metadata maps decode closed EDN collections",
       test_metadata_maps_decode_closed_edn_collections );
+    ( "reference metadata reset and alter are source-owned",
+      test_reference_metadata_reset_and_alter_are_source_owned );
     ( "source vary-meta matches ClojureScript arities",
       test_source_vary_meta_matches_clojurescript_arities );
     ( "generated ML preserves readable names and layout",

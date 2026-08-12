@@ -3557,6 +3557,31 @@
   (__lg_set-validator! reference validator)
   nil)
 
+(defn reset-meta!
+  {:inline (fn [reference metadata]
+             (list '__lg_reset-meta! reference metadata))}
+  [reference metadata]
+  (__lg_reset-meta! reference metadata))
+
+(defn- alter-meta-apply [update-fn metadata a b c d args]
+  (__lg_apply update-fn metadata a b c d args))
+
+(defn alter-meta!
+  ([reference update-fn]
+   (reset-meta! reference (update-fn (IMeta/-meta reference))))
+  ([reference update-fn a]
+   (reset-meta! reference (update-fn (IMeta/-meta reference) a)))
+  ([reference update-fn a b]
+   (reset-meta! reference (update-fn (IMeta/-meta reference) a b)))
+  ([reference update-fn a b c]
+   (reset-meta! reference (update-fn (IMeta/-meta reference) a b c)))
+  ([reference update-fn a b c d]
+   (reset-meta! reference (update-fn (IMeta/-meta reference) a b c d)))
+  ([reference update-fn a b c d & args]
+   (reset-meta!
+    reference
+    (alter-meta-apply update-fn (IMeta/-meta reference) a b c d args))))
+
 (defmacro vswap! [reference update-fn & args]
   `(IVolatile/-vreset!
     ~reference

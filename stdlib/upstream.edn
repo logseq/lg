@@ -1178,8 +1178,8 @@
              :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
     add-watch {:status :static-adaptation
                :reason :source-function-preserves-keyword-watch-callbacks-through-a-typed-reference-watch-registry}
-    alter-meta! {:status :blocked-static-typing
-                 :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map-or-a-statically-typed-metadata-update-capability}
+    alter-meta! {:status :static-adaptation
+                 :reason :source-function-preserves-clojurescript-reference-metadata-update-arities-through-a-typed-reference-metadata-primitive-over-closed-edn-metadata}
     array-chunk {:status :ported
                  :reason :source-function-preserves-all-three-upstream-arities-over-a-parameterized-array-backed-chunk-with-count-index-reduce-and-drop-first-protocols}
     array-iter {:status :host-boundary
@@ -1348,8 +1348,8 @@
                 :reason :global-tap-registry-must-store-callbacks-over-arbitrary-unrelated-static-value-types}
     remove-watch {:status :static-adaptation
                   :reason :source-function-removes-keyword-watch-callbacks-from-the-typed-reference-watch-registry}
-    reset-meta! {:status :blocked-static-typing
-                 :reason :lg-reference-cells-do-not-carry-a-mutable-metadata-map}
+    reset-meta! {:status :static-adaptation
+                 :reason :source-function-stores-closed-edn-metadata-on-typed-reference-cells-through-a-minimal-reference-metadata-primitive}
     rsubseq {:status :static-adaptation
              :reason :source-function-preserves-clojurescript-reverse-bounded-traversal-with-a-static-isorted-capability-and-non-null-empty-sequences}
     seq-iter {:status :host-boundary

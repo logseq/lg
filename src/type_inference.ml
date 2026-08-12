@@ -594,6 +594,8 @@ let rec inferred_form_type params = function
       inferred_form_type params reference
   | FList [ FSymbol "__lg_remove-watch"; reference; _key ] ->
       inferred_form_type params reference
+  | FList [ FSymbol "__lg_reset-meta!"; _reference; _metadata ] ->
+      TOcaml "Lg_edn_backend.t"
   | FList (FSymbol "delay" :: body_forms) -> (
       match List.rev body_forms with
       | result :: _ ->
@@ -1499,6 +1501,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         match expected_ty with
         | TRef value_ty -> infer_expected value_ty params value
         | _ -> infer_form params value)
+    | FList [ FSymbol "__lg_reset-meta!"; reference; metadata ] ->
+        Result.bind (infer_form params reference) (fun params ->
+            infer_form params metadata)
     | FList [ FSymbol "__lg_add-watch"; reference; key; callback ] -> (
         let value_ty =
           match inferred_form_type params reference with

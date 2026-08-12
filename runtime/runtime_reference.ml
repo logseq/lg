@@ -11,12 +11,21 @@ and 'value t = {
   mutable value : 'value;
   mutable watches : 'value watch list;
   mutable validator : 'value validator;
+  mutable metadata : Lg_edn_backend.t option;
 }
 and 'value validator = ('value -> bool) option
 
-let of_value value = { value; watches = []; validator = None }
+let of_value value = { value; watches = []; validator = None; metadata = None }
 
 let deref reference = reference.value
+
+let metadata reference =
+  Option.value reference.metadata ~default:Lg_edn_backend.Nil
+
+let reset_metadata reference metadata =
+  reference.metadata <-
+    (match metadata with Lg_edn_backend.Nil -> None | metadata -> Some metadata);
+  metadata
 
 let validate reference value =
   match reference.validator with

@@ -150,6 +150,12 @@
   :fn<ref<value>;option<fn<value;bool>>>)
 (signature clojure.core/set-validator! [value]
   :fn<ref<value>;option<fn<value;bool>>;nil>)
+(signature clojure.core/reset-meta! [value]
+  :fn<ref<value>;Lg_edn_backend.t;Lg_edn_backend.t>)
+(signature clojure.core/alter-meta! [value a b c d args]
+  :overload<fn<ref<value>;fn<Lg_edn_backend.t;Lg_edn_backend.t>;Lg_edn_backend.t>;fn<ref<value>;fn<Lg_edn_backend.t;a;Lg_edn_backend.t>;a;Lg_edn_backend.t>;fn<ref<value>;fn<Lg_edn_backend.t;a;b;Lg_edn_backend.t>;a;b;Lg_edn_backend.t>;fn<ref<value>;fn<Lg_edn_backend.t;a;b;c;Lg_edn_backend.t>;a;b;c;Lg_edn_backend.t>;fn<ref<value>;fn<Lg_edn_backend.t;a;b;c;d;Lg_edn_backend.t>;a;b;c;d;Lg_edn_backend.t>;variadic-fn<ref<value>;variadic-fn<Lg_edn_backend.t;a;b;c;d;args;Lg_edn_backend.t>;a;b;c;d;args;Lg_edn_backend.t>>)
+(signature clojure.core/alter-meta-apply [a b c d args]
+  :fn<variadic-fn<Lg_edn_backend.t;a;b;c;d;args;Lg_edn_backend.t>;Lg_edn_backend.t;a;b;c;d;seq<args>;Lg_edn_backend.t>)
 (signature clojure.core/subvec [value]
   :overload<fn<vector<value>;int;vector<value>>;fn<vector<value>;int;int;vector<value>>>)
 (signature clojure.core/array [value]

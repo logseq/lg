@@ -552,6 +552,9 @@ let add_reference_protocols registry =
   |> add Receiver_id.Ref_receiver watchable_id "-remove-watch"
        "Lg_runtime.Runtime_reference.remove_watch"
        (TFn ([ reference; TKeyword ], reference))
+  |> add Receiver_id.Ref_receiver meta_id "-meta"
+       "Lg_runtime.Runtime_reference.metadata"
+       (TFn ([ reference ], TOcaml "Lg_edn_backend.t"))
 
 let declare_compare_and_set registry =
   let value = TVar "atom_value" in

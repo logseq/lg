@@ -258,7 +258,13 @@ source-aggregate owned; the reference runtime stores an optional
 protocol methods, including `-notify-watches`, dispatch to a
 compiler-registered `Runtime_reference.t` implementation that keeps the
 watched value type parameterized and stores only keyword-keyed callbacks for
-that reference value type. `re-find` appears 290 times,
+that reference value type. `reset-meta!` and `alter-meta!` are now
+source-aggregate owned over the same typed reference cells. The runtime stores
+reference metadata as closed `Lg_edn_backend.t`; the only compiler ABI is the
+private `__lg_reset-meta!` primitive that packs statically representable EDN
+metadata and mutates the reference metadata field without `Runtime_dynamic.t`.
+`alter-meta!` preserves the upstream update arities when the updater returns a
+closed EDN metadata value. `re-find` appears 290 times,
 `ex-data` appears 210 times, `re-matches` appears 87 times, and `re-seq`
 appears 23 times; all four are
 now source-aggregate owned, with regex match shapes and exception data recorded
@@ -884,6 +890,13 @@ futures, and slots without dynamic packing. `get-validator` and
 `set-validator!` are source functions over a typed reference-validator
 primitive. The stored callback is `value -> bool`, clearing uses `nil`, and
 `reset!`/`swap!` validate before mutating or notifying watches.
+References also implement `IMeta/-meta`; `reset-meta!` writes closed
+`Lg_edn_backend.t` metadata and returns the stored metadata, while
+`alter-meta!` reads the current metadata once, invokes the update function with
+the pinned ClojureScript arity shape, and stores the returned closed metadata.
+Plain heterogeneous source maps are not silently erased into metadata through a
+dynamic conversion; callers that compute metadata in helpers should return the
+closed EDN metadata value explicitly.
 `compare-and-set!` preserves the upstream deref/equality/reset control flow and
 evaluates its arguments once.
 `swap!` preserves all pinned ClojureScript arities as a first-class source

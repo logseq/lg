@@ -5179,8 +5179,13 @@ let create ~compile_expr =
                       [ Semantic_ir.String keyword; target.semantic_expr ] )
                 in
                 let expected =
-                  Env.expected_type env
-                  |> Option.value ~default:(TOcaml "Lg_edn_backend.t")
+                  match Env.expected_type env with
+                  | Some expected
+                    when Option.is_some
+                           (Types.printable_constraint_info expected) ->
+                      TOcaml "Lg_edn_backend.t"
+                  | Some expected -> expected
+                  | None -> TOcaml "Lg_edn_backend.t"
                 in
                 (match optional_payload expected with
                 | Some _ ->
@@ -9023,7 +9028,7 @@ let create ~compile_expr =
         | Ok _ ->
             Error.error
               "__lg_render_readable_values_with_opts expects 3 arguments")
-    | "__lg_with-meta" ->
+    | "__lg_with-meta" | "__lg_reset-meta!" ->
         compile_metadata_call scope env name arg_forms
     | "__lg_nullable-value" -> (
         match compile_args () with
@@ -10242,6 +10247,30 @@ let create ~compile_expr =
           compile_entries [] entries
       | form -> compile_expr scope expression_env form
     in
+    let compile_reference_metadata_update reference_form metadata_form =
+      match
+        ( compile_expr scope expression_env reference_form,
+          compile_metadata_payload metadata_form )
+      with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok reference, Ok metadata -> (
+          match reference.ty with
+          | TRef _ -> (
+              match
+                pack_metadata_expression metadata.ty metadata.semantic_expr
+              with
+              | Error _ as error -> error
+              | Ok metadata ->
+                  Ok
+                    (typed_ir (TOcaml "Lg_edn_backend.t")
+                       (Semantic_ir.Apply
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_reference.reset_metadata",
+                            [ reference.semantic_expr; metadata ] ))))
+          | ty when Types.is_dynamic ty ->
+              Error.error "reset-meta! requires a statically typed reference"
+          | _ -> Error.error "reset-meta! expects a reference")
+    in
     match (name, arg_forms) with
     | "__lg_with-meta", [ value_form; metadata_form ] -> (
         match
@@ -10296,6 +10325,9 @@ let create ~compile_expr =
             Error.error
               "with-meta requires a statically typed map implementing IWithMeta")
     | "__lg_with-meta", _ -> Error.error "__lg_with-meta expects 2 arguments"
+    | "__lg_reset-meta!", [ reference_form; metadata_form ] ->
+        compile_reference_metadata_update reference_form metadata_form
+    | "__lg_reset-meta!", _ -> Error.error "__lg_reset-meta! expects 2 arguments"
     | _ -> assert false
   and compile_into scope env target_form source_form =
     let expression_env = Env.with_expected_type None env in
@@ -12595,6 +12627,8 @@ let create ~compile_expr =
                                         TFn (_, _) )
                                       when has_capability_constraint
                                              expected_return
+                                           || Types.equal expected_return
+                                                (TOcaml "Lg_edn_backend.t")
                                            || function_has_host_int_return_boundary
                                                 callback_expected_ty arg.ty ->
                                       adapt_value_to_type env
