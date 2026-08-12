@@ -14298,6 +14298,46 @@ let test_re_find_returns_clojure_match_values () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/re_find_values.cljc" source)
 
+let test_re_find_supports_stateful_matchers_on_native () =
+  let source =
+    {|
+(ns app.regex-matcher
+  (:require [cljs.core :refer [= nth pr-str println re-find re-matcher]]))
+
+(let [m (re-matcher #"(\d+),(\d+),(\d+)" "123,456,789")]
+  (println (pr-str (re-find m)))
+  (println (= "123,456,789" (nth m 0)))
+  (println (= "456" (nth m 2)))
+  (println (= "789" (nth m 3)))
+  (println (pr-str (nth m 10 :default))))
+
+(let [m (re-matcher #"\d+" "a1b22")]
+  (println (pr-str (re-find m)))
+  (println (pr-str (re-find m)))
+  (println (pr-str (re-find m))))
+
+(let [m (re-matcher #"\d+" "a1")]
+  (println (try
+             (nth m 0)
+             false
+             (catch (Invalid_argument _) true))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/re_find_matcher.cljc" source
+  in
+  assert_ocaml_runs "re_find_supports_stateful_matchers_on_native"
+    "[\"123,456,789\" \"123\" \"456\" \"789\"]\n\
+     true\n\
+     true\n\
+     true\n\
+     :default\n\
+     \"1\"\n\
+     \"22\"\n\
+     nil\n\
+     true\n"
+    native_source
+
 let test_source_re_find_can_be_required_from_source_core () =
   let source =
     {|
@@ -46713,6 +46753,8 @@ let tests =
       test_source_re_matches_can_be_required_from_source_core );
     ( "re-find returns Clojure match values",
       test_re_find_returns_clojure_match_values );
+    ( "re-find supports stateful matchers on native",
+      test_re_find_supports_stateful_matchers_on_native );
     ( "source re-find can be required from source core",
       test_source_re_find_can_be_required_from_source_core );
     ( "re-seq returns Clojure match values",

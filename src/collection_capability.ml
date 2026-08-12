@@ -856,6 +856,11 @@ let nth_expr env collection index =
         (typed_ir inner
            (apply "Lg_runtime.Runtime_transient.vector_nth"
               [ collection.semantic_expr; host_index ]))
+  | TOcaml "Lg_runtime.Runtime_string.regex_matcher" ->
+      Ok
+        (typed_ir (TNullable TString)
+           (apply "Lg_runtime.Runtime_string.regex_matcher_nth"
+              [ collection.semantic_expr; host_index ]))
   | _ ->
   let protocols = Compiler_environment.protocols env in
   match Core_protocols.find_indexed collection.ty protocols with

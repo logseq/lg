@@ -68,12 +68,12 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 240 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
+| `static-typing-or-closed-domain-boundary` | 241 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 123 | Decide numeric tower and reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, UUID tags, and non-ASCII char literals are visible blockers. The count increased after `number_range.cljc` started compiling and exposed downstream numeric tests. |
 | `missing-core-api-macro-or-var` | 29 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, and defmulti dispatch coverage. |
 | `host-boundary-or-platform-specific` | 12 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
-| `unsupported-form-or-arity` | 5 | Known examples: `fnil` default positions, native `re-find` arity, and test macro `are` argument shape. These are targeted compatibility tasks. |
+| `unsupported-form-or-arity` | 4 | Known examples: `fnil` default positions and test macro `are` argument shape. These are targeted compatibility tasks. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
 | `other-compiler-error` | 3 | Inspect directly before changing compiler behavior. |
 
@@ -132,6 +132,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `ref<option<T>>` payload type, and Melange is blocked earlier by the
   `cljs.core/IAtom` protocol alias. This should be fixed with typed option refs
   and protocol alias support, not by widening refs to dynamic.
+- `clojure.core/re-matcher` and Native `(re-find matcher)` now exist as a
+  narrow typed regex matcher boundary. Matcher `nth` can read the current
+  capture group and matcher `nth` with a heterogeneous default uses a regex-only
+  dynamic result. The upstream `nth.cljc` namespace now fails later on the
+  general `nth default must match collection element type` static rule, not on
+  `re-find` arity.
 - `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
   disjoint static source types without dynamic packing. The upstream
   `eq.cljc` helper still fails because it passes equality as a first-class

@@ -123,6 +123,27 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
   let pack_dynamic_scalar env value =
     pack_dynamic_value env (Types.dynamic_constraint value.ty) value
   in
+  let pack_regex_matcher_default env dynamic value =
+    let convert name =
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name),
+             [ value.semantic_expr ] ))
+    in
+    if Types.is_dynamic value.ty then Ok value.semantic_expr
+    else
+      match Types.constraint_value_type value.ty with
+      | TNil -> Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+      | TInt | TOcaml "int" -> convert "int"
+      | TFloat -> convert "float"
+      | TChar -> convert "char"
+      | TString -> convert "string"
+      | TRegex -> convert "regex"
+      | TSymbol -> convert "symbol"
+      | TKeyword -> convert "keyword"
+      | TBool -> convert "bool"
+      | _ -> pack_dynamic_value env dynamic value
+  in
   let inferred_field_type env keyword =
     let candidates =
       Env.fold
@@ -870,7 +891,35 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     (FList (FSymbol "IIndexed/-nth" :: arg_forms)))
       | Ok [ collection; index; default ] ->
           Result.bind (int_index index) (fun index ->
-            if match collection.ty with TSet _ -> true | _ -> false then
+            if
+              Types.equal collection.ty
+                (TOcaml "Lg_runtime.Runtime_string.regex_matcher")
+            then
+              let dynamic = Types.dynamic_constraint TUnknown in
+              Result.map
+                (fun default ->
+                  typed_ir dynamic
+                    (Semantic_ir.Match
+                       ( Semantic_ir.Apply
+                           ( Semantic_ir.Ident
+                               "Lg_runtime.Runtime_string.regex_matcher_nth_opt",
+                             [
+                               collection.semantic_expr;
+                               index.semantic_expr;
+                             ] ),
+                         [
+                           ( Semantic_ir.PConstructor
+                               ( "Some",
+                                 Some (Semantic_ir.PVar "__lg_regex_group") ),
+                             Semantic_ir.Apply
+                               ( Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_dynamic.regex_group",
+                                 [ Semantic_ir.Ident "__lg_regex_group" ] ) );
+                           ( Semantic_ir.PConstructor ("None", None),
+                             default );
+                         ] )))
+                (pack_regex_matcher_default env dynamic default)
+            else if match collection.ty with TSet _ -> true | _ -> false then
               compile_expr scope env
                 (FList (FSymbol "IIndexed/-nth" :: arg_forms))
             else

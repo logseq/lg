@@ -3328,10 +3328,19 @@
   [expression]
   (__lg_re-pattern expression))
 
+(defn re-matcher
+  {:inline (fn [expression source] (list '__lg_re-matcher expression source))}
+  [^:regex expression ^:string source]
+  (__lg_re-matcher expression source))
+
 (defn re-find
-  {:inline (fn [expression source] (list '__lg_re-find expression source))}
-  [expression source]
-  (__lg_re-find expression source))
+  {:inline (fn
+             ([matcher] (list '__lg_re-find matcher))
+             ([expression source] (list '__lg_re-find expression source)))}
+  ([^:Lg_runtime.Runtime_string.regex_matcher matcher]
+   (__lg_re-find matcher))
+  ([^:regex expression ^:string source]
+   (__lg_re-find expression source)))
 
 (defn re-matches
   {:inline (fn [expression source] (list '__lg_re-matches expression source))}

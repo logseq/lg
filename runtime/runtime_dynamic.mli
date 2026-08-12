@@ -81,6 +81,7 @@ val vec_value : t -> t
 val array : t array -> t
 val array_copy : t -> t
 val regex_match : string option list option -> t
+val regex_group : string option -> t
 val regex_match_sequence : string option list array -> t
 val seq : t Seq.t -> t
 val seq_cons : t -> t Seq.t -> t

@@ -656,6 +656,10 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_multimethod-prefers"; _multifn ] ->
       Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_re-pattern"; _ ] -> TRegex
+  | FList [ FSymbol "__lg_re-matcher"; _; _ ] ->
+      TOcaml "Lg_runtime.Runtime_string.regex_matcher"
+  | FList [ FSymbol "__lg_re-find"; _ ] ->
+      Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_flatten"; collection ] ->
       (match returned_vector_type params collection with
       | Some vector_ty -> vector_ty

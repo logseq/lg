@@ -229,6 +229,45 @@ let regex_find_group_vector expression source =
 let regex_matches_group_vector expression source =
   regex_matches_groups expression source |> Option.map Rrbvec.of_list
 
+type regex_matcher = {
+  matches : string option list array;
+  mutable current : int option;
+  mutable next : int;
+}
+
+let regex_matcher expression source =
+  let pattern, flags = regex_parts expression in
+  {
+    matches =
+      Lg_edn_backend.regex_all_groups_with_flags ~pattern ~flags source
+      |> Array.map regex_captures;
+    current = None;
+    next = 0;
+  }
+
+let regex_matcher_find_groups matcher =
+  if matcher.next >= Array.length matcher.matches then (
+    matcher.current <- None;
+    None)
+  else
+    let index = matcher.next in
+    matcher.next <- index + 1;
+    matcher.current <- Some index;
+    Some matcher.matches.(index)
+
+let regex_matcher_nth matcher index =
+  match matcher.current with
+  | None -> invalid_arg "nth requires a current regex match"
+  | Some current -> (
+      match List.nth_opt matcher.matches.(current) index with
+      | Some value -> value
+      | None -> invalid_arg "regex match group index is out of bounds")
+
+let regex_matcher_nth_opt matcher index =
+  match matcher.current with
+  | None -> None
+  | Some current -> List.nth_opt matcher.matches.(current) index
+
 let timestamp_pattern =
   regex
     "(\\d\\d\\d\\d)(?:-(\\d\\d)(?:-(\\d\\d)(?:[T](\\d\\d)(?::(\\d\\d)(?::(\\d\\d)(?:[.](\\d+))?)?)?)?)?)?(?:[Z]|([-+])(\\d\\d):(\\d\\d))?"

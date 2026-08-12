@@ -213,6 +213,8 @@ let regex_match = function
       |> List.map (function Some value -> string value | None -> nil)
       |> Rrbvec.of_list |> vector
 
+let regex_group = function None -> nil | Some value -> string value
+
 let regex_match_sequence matches =
   if Array.length matches = 0 then nil
   else
