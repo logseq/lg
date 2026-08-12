@@ -5,6 +5,12 @@ type schema =
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
   option
 
+type keyword_schema =
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
+  option
+
 val keyword_reference : int -> t
 val encode_non_keyword : Data_value.t -> t
 val encode_non_keyword_with : (t -> t) -> Data_value.t -> t
@@ -214,13 +220,13 @@ type database_reader_value
 
 val read_datom : string -> datom_reader_value
 val reader_datom_entity : datom_reader_value -> int
-val reader_datom_attribute : datom_reader_value -> string
+val reader_datom_attribute : datom_reader_value -> Lg_runtime.Runtime_keyword.t
 val reader_datom_value : datom_reader_value -> Data_value.t
 val reader_datom_transaction : datom_reader_value -> int
 val reader_datom_added : datom_reader_value -> bool
 
 val read_database : string -> database_reader_value
-val reader_database_schema : database_reader_value -> schema
+val reader_database_schema : database_reader_value -> keyword_schema
 val reader_database_datoms :
   database_reader_value -> datom_reader_value Rrbvec.t
 

@@ -5,6 +5,12 @@ type schema =
   (string, (string, Data_value.t) Lg_runtime.Lg_map.t) Lg_runtime.Lg_map.t
   option
 
+type keyword_schema =
+  ( Lg_runtime.Runtime_keyword.t,
+    (Lg_runtime.Runtime_keyword.t, Data_value.t) Lg_runtime.Lg_map.t )
+  Lg_runtime.Lg_map.t
+  option
+
 let common_small_int_values =
   Array.init 128 (fun value -> Lg_edn_backend.Small_int value)
 
@@ -1147,7 +1153,7 @@ type datom_reader_value = {
 }
 
 type database_reader_value = {
-  reader_schema : schema;
+  reader_schema : keyword_schema;
   reader_datoms : datom_reader_value Rrbvec.t;
 }
 

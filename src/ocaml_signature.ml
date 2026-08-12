@@ -77,6 +77,22 @@ let constructor_signature_cache =
 let type_manifest_cache =
   Domain.DLS.new_key (fun () -> Lookup_cache.create 32)
 
+let type_manifest_resolution_stack = Domain.DLS.new_key (fun () -> ref [])
+
+let string_contains_substring source substring =
+  let source_length = String.length source in
+  let substring_length = String.length substring in
+  let rec loop index =
+    if index + substring_length > source_length then false
+    else if String.sub source index substring_length = substring then true
+    else loop (index + 1)
+  in
+  substring_length = 0 || loop 0
+
+let exposes_internal_compilation_unit = function
+  | TOcaml name | TOcaml_app (name, _) -> string_contains_substring name "__"
+  | _ -> false
+
 let rec of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in
   function
@@ -111,7 +127,10 @@ let rec of_compiler_type =
       | "Rrbvec.t", [ inner ] -> TVector inner
       | "ref", [ inner ] -> TRef inner
       | "Lg_runtime.Runtime_reference.t", [ inner ] -> TRef inner
-      | name, [] -> TOcaml name
+      | name, [] -> (
+          match transparent_manifest_alias name with
+          | Some ty -> ty
+          | None -> TOcaml name)
       | name, arguments -> TOcaml_app (name, arguments))
   | Opaque -> TOcaml "value"
 
@@ -119,6 +138,41 @@ and function_parts compiler_type =
   match of_compiler_type compiler_type with
   | TFn (arguments, result) -> (arguments, result)
   | result -> ([], result)
+
+and transparent_manifest_alias name =
+  let stack = Domain.DLS.get type_manifest_resolution_stack in
+  if List.mem name !stack then None
+  else
+    let include_dirs = include_dirs () in
+    let cache = Domain.DLS.get type_manifest_cache in
+    let key = (include_dirs, name) in
+    match Lookup_cache.find_opt cache key with
+    | Some (Ok ty)
+      when (not (Types.equal ty (TOcaml name)))
+           && not (exposes_internal_compilation_unit ty) ->
+        Some ty
+    | Some _ -> None
+    | None -> (
+        stack := name :: !stack;
+        let manifest =
+          Fun.protect
+            ~finally:(fun () ->
+              stack := List.filter (fun current -> current <> name) !stack)
+            (fun () ->
+              match
+                Lg_compiler_support.Ocaml_value.lookup_type_manifest
+                  ~include_dirs name
+              with
+              | Error message -> Error.error message
+              | Ok compiler_type -> Ok (of_compiler_type compiler_type))
+        in
+        Lookup_cache.add cache key manifest;
+        match manifest with
+        | Ok ty
+          when (not (Types.equal ty (TOcaml name)))
+               && not (exposes_internal_compilation_unit ty) ->
+            Some ty
+        | Ok _ | Error _ -> None)
 
 let rec signature_of_compiler_type =
   let open Lg_compiler_support.Ocaml_value in

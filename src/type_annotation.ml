@@ -72,6 +72,32 @@ let validate_ocaml_type_application name args =
   | _, [] -> Error.error "OCaml type application expects at least one argument"
   | _ -> Ok ()
 
+let string_contains_substring source substring =
+  let source_length = String.length source in
+  let substring_length = String.length substring in
+  let rec loop index =
+    if index + substring_length > source_length then false
+    else if String.sub source index substring_length = substring then true
+    else loop (index + 1)
+  in
+  substring_length = 0 || loop 0
+
+let exposes_internal_compilation_unit = function
+  | TOcaml name | TOcaml_app (name, _) -> string_contains_substring name "__"
+  | _ -> false
+
+let transparent_ocaml_alias = function
+  | TOcaml name as ty
+    when String.contains name '.' && not (String.starts_with ~prefix:"__" name)
+    -> (
+      match Ocaml_signature.type_manifest name with
+      | Ok manifest
+        when (not (Types.equal manifest ty))
+             && not (exposes_internal_compilation_unit manifest) ->
+          manifest
+      | Ok _ | Error _ -> ty)
+  | ty -> ty
+
 let rec parse_ocaml_type source =
   let source = String.trim source in
   if source = "" then Error.error "empty OCaml type"
@@ -105,19 +131,18 @@ let rec parse_ocaml_type source =
                     (String.length source - separator - 1)
                   |> Names.sanitize_name
                 in
-                Ok (TOcaml (module_path ^ "." ^ type_name))
+                Ok (transparent_ocaml_alias (TOcaml (module_path ^ "." ^ type_name)))
               else Ok (TOcaml ("__lg_record:" ^ source))
           | _ ->
-                Ok
-                  (TOcaml
-                     (if
-                      String.contains source '.'
-                    then source
-                    else if
-                      String.length source > 0
-                      && Char.uppercase_ascii source.[0] = source.[0]
-                    then "__lg_record:" ^ source
-                    else Names.sanitize_name source)))
+                let name =
+                  if String.contains source '.' then source
+                  else if
+                    String.length source > 0
+                    && Char.uppercase_ascii source.[0] = source.[0]
+                  then "__lg_record:" ^ source
+                  else Names.sanitize_name source
+                in
+                Ok (transparent_ocaml_alias (TOcaml name)))
     | Some open_index ->
         let name = String.sub source 0 open_index |> String.trim in
         let inner =

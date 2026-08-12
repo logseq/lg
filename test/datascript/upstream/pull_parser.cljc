@@ -337,6 +337,9 @@
   [value]
   value)
 
+(signature datascript.pull-parser/attr-data
+  :fn<datascript.pull-parser/pull-attr;datascript.pull-parser/PullAttrData>)
+
 (defn attr-data [attr]
   (match attr
     (PullAttribute data) data

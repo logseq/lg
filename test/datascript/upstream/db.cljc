@@ -1651,12 +1651,15 @@
     (options-ref-type opts))
    (options-branching-factor opts)))
 
+(signature datascript.db/normalize-init-datom
+  :fn<datascript.db/ReverseSchema;datascript.db/Datom;datascript.db/Datom>)
+
 (defn  normalize-init-datom
   [ reverse-schema source]
   (if
-    (Lg_runtime.Core_set.String_set.mem
-     (datom-attr source)
-     (:ref-attrs reverse-schema))
+    (contains?
+     (:ref-attrs reverse-schema)
+     (datom-attr source))
     (match (.-v source)
       (Datascript_runtime.Data_value.Int eid)
       (datom-closed
@@ -1672,12 +1675,12 @@
   [indexed datoms]
   (let [length (arrays/alength datoms)
         indexed-count
-        (Lg_runtime.Core_set.String_set.cardinal indexed)]
+        (count indexed)]
     (if (or (= length 0) (= indexed-count 0))
       (arrays/empty-array)
       (let [single-indexed
             (if (= indexed-count 1)
-              (Some (Lg_runtime.Core_set.String_set.min_elt indexed))
+              (Some (first indexed))
               None)
             output
             (arrays/make-array
@@ -1691,9 +1694,9 @@
                (match single-indexed
                  (Some attr) (= (datom-attr datom) attr)
                  None
-                 (Lg_runtime.Core_set.String_set.mem
-                  (datom-attr datom)
-                  indexed))
+                 (contains?
+                  indexed
+                  (datom-attr datom)))
                 (do
                   (arrays/aset output target-index datom)
                   (recur
@@ -1717,7 +1720,7 @@
         indexed     (:indexed-attrs rschema)
         arr         datoms
         _           (if
-                      (Lg_runtime.Core_set.String_set.is_empty
+                      (empty?
                        (:ref-attrs rschema))
                       (Stdlib.ignore 0)
                       (loop [index 0]
@@ -3027,10 +3030,10 @@
 (defn with-datom [db datom]
   (validate-datom db datom)
   (let [attr (datom-attr datom)
-        indexing? (Lg_runtime.Core_set.String_set.mem
-                   attr
-                   (-attrs-by db :db/index))
-        schema? (Lg_runtime.Core_set.String_set.mem attr ds/schema-attr?)]
+        indexing? (contains?
+                   (-attrs-by db :db/index)
+                   attr)
+        schema? (contains? ds/schema-attr? attr)]
     (if (datom-added datom)
       (cond-> db
         true      (update :eavt set/conj datom cmp-datoms-eavt-quick)
@@ -4044,8 +4047,7 @@
        (Some (Datascript_runtime.Data_value.Ref eid))
        nil)))
    []
-   (Lg_runtime.Lg_set.String_set.elements
-    (-attrs-by db :db.type/ref))))
+   (-attrs-by db :db.type/ref)))
 
 (defn  data-values-description
   [ values]

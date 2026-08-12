@@ -855,7 +855,7 @@
              (missing-attr-state (.-visitor context) state attr))
             (Some datom)
             (let [comparison
-                  (String.compare
+                  (compare
                    (.-name data)
                    (.-a datom))]
               (cond

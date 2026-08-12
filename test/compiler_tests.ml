@@ -3686,6 +3686,85 @@ let test_closed_external_sum_values_use_explicit_constructors () =
          "Datascript_runtime.Data_value.Keyword")
   then failwith "closed sum values must retain their explicit constructors"
 
+let test_host_type_hints_do_not_become_runtime_metadata () =
+  let source =
+    {|
+(ns user)
+(require [ocaml.package/datascript.runtime])
+(defn ^:Datascript_runtime.Serialization_value.t encoded []
+  (Datascript_runtime.Serialization_value.encode_non_keyword
+   (Datascript_runtime.Data_value.String "Ada")))
+|}
+  in
+  compile_string_with_stdlib source |> expect_ok |> ignore
+
+let test_datascript_serialization_host_values_do_not_become_metadata () =
+  let source =
+    {|
+(ns user)
+(require [ocaml.package/datascript.runtime])
+
+(deftype Datom
+  [^int e
+   ^:keyword a
+   ^:Datascript_runtime.Data_value.t v
+   ^int tx
+   ^:mutable ^int idx])
+
+(type-variant codec
+  DefaultCodec
+  (CustomCodec :fn<Datascript_runtime.Serialization_value.t;Datascript_runtime.Serialization_value.t>))
+
+(def tx0 536870912)
+
+(defn serialize-datom!
+  [result encoder freeze-codec attrs-map idx datom]
+  (set! (.-idx datom) idx)
+  (let [entity    (.-e datom)
+        attribute (Datascript_runtime.Serialization_value.find_attribute_index
+                   attrs-map (str (.-a datom)))
+        value     (match freeze-codec
+                    (CustomCodec freeze-fn)
+                    (freeze-fn
+                     (Datascript_runtime.Serialization_value.encode_value
+                      encoder (.-v datom)))
+                    DefaultCodec
+                    (Datascript_runtime.Serialization_value.encode_value
+                     encoder (.-v datom)))
+        tx        (- (.-tx datom) tx0)]
+    (Datascript_runtime.Serialization_value.set_datom
+     result idx entity attribute value tx)))
+|}
+  in
+  compile_string_with_stdlib source |> expect_ok |> ignore
+
+let test_ocaml_manifest_alias_callbacks_are_transparent () =
+  let source =
+    {|
+(ns user)
+(require [ocaml.package/datascript.runtime])
+
+(defn ^:Datascript_runtime.Serialization_value.t freeze
+  [^:Datascript_runtime.Serialization_value.t value]
+  value)
+
+(type-variant codec
+  (CustomCodec :fn<Lg_edn_backend.t;Lg_edn_backend.t>))
+
+(def encoded
+  (match (CustomCodec freeze)
+    (CustomCodec freeze-fn)
+    (let [encoder (Datascript_runtime.Serialization_value.create_encoder)
+          value   (Datascript_runtime.Serialization_value.encode_value_with
+                   encoder
+                   freeze-fn
+                   (Datascript_runtime.Data_value.String "Ada"))
+          datoms  (Datascript_runtime.Serialization_value.create_datom_array 1)]
+      (Datascript_runtime.Serialization_value.set_datom datoms 0 1 2 value 3))))
+|}
+  in
+  compile_string_with_stdlib source |> expect_ok |> ignore
+
 let test_structural_values_cannot_cross_dynamic_boundaries () =
   let dynamic = Lg.Types.dynamic_constraint Lg.Types.TUnknown in
   let reject_assignability ty =
@@ -44376,6 +44455,12 @@ let tests =
       test_explicit_sum_constructors_keep_collections_static );
     ( "closed external sum values use explicit constructors",
       test_closed_external_sum_values_use_explicit_constructors );
+    ( "host type hints do not become runtime metadata",
+      test_host_type_hints_do_not_become_runtime_metadata );
+    ( "DataScript serialization host values do not become metadata",
+      test_datascript_serialization_host_values_do_not_become_metadata );
+    ( "OCaml manifest alias callbacks are transparent",
+      test_ocaml_manifest_alias_callbacks_are_transparent );
     ( "structural values cannot cross dynamic boundaries",
       test_structural_values_cannot_cross_dynamic_boundaries );
     ( "local record types are resolved in variant payloads",
