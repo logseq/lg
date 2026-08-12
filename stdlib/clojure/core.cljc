@@ -5167,8 +5167,16 @@
      (print-one value writer options)
      false)
    true
-   collection)
+  collection)
   (IWriter/-write writer end))
+
+(defn pr-str-with-opts
+  [objects _options]
+  (__lg_render_readable_values " " objects))
+
+(defn prn-str-with-opts
+  [objects _options]
+  (__lg_str (__lg_render_readable_values " " objects) "\n"))
 
 (defn write-all [writer & strings]
   (doseq [source strings]

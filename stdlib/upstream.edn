@@ -1222,8 +1222,8 @@
             :reason :source-function-and-inline-macro-preserve-zero-one-and-variadic-readable-rendering-with-per-argument-static-printer-witnesses}
     pr-str* {:status :static-adaptation
              :reason :source-wrapper-preserves-single-value-readable-rendering-through-a-private-static-printer-primitive}
-    pr-str-with-opts {:status :blocked-static-typing
-                      :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
+    pr-str-with-opts {:status :static-adaptation
+                      :reason :source-function-preserves-empty-and-space-separated-readable-rendering-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
     prefer-method {:status :blocked-static-typing
                    :reason :requires-the-clojurescript-imultifn-protocol-and-multimethod-runtime-domain}
     prefers {:status :blocked-static-typing
@@ -1248,8 +1248,8 @@
              :reason :source-function-and-inline-macro-preserve-space-separated-display-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
     prn {:status :static-adaptation
          :reason :source-function-and-inline-macro-preserve-space-separated-readable-output-and-the-trailing-newline-through-a-private-static-string-output-boundary}
-    prn-str-with-opts {:status :blocked-static-typing
-                       :reason :readable-printing-requires-heterogeneous-values-and-a-typed-printer-options-map}
+    prn-str-with-opts {:status :static-adaptation
+                       :reason :source-function-preserves-empty-and-space-separated-readable-rendering-plus-the-trailing-newline-for-a-homogeneous-static-seqable-while-the-open-clojurescript-printer-options-map-is-explicitly-restricted-to-nil}
     ranged-iterator {:status :host-boundary
                      :reason :constructs-a-javascript-es6-iterator-over-a-sorted-collection-range}
     remove-all-methods {:status :blocked-static-typing

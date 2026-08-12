@@ -28394,6 +28394,66 @@ let test_source_writer_printing_cluster_is_source_owned () =
       "src/expression_support.ml";
     ]
 
+let test_source_printing_options_cluster_matches_clojurescript () =
+  let source =
+    {|
+(ns app.source-printing-options
+  (:require [cljs.core :as core
+             :refer [pr-str-with-opts prn-str-with-opts]]))
+
+(def render pr-str-with-opts)
+(println (= "" (render [] nil)))
+(println (= "1 2 3" (render [1 2 3] nil)))
+(println (= "\"Ada\" \"Byron\"" (core/pr-str-with-opts ["Ada" "Byron"] nil)))
+(println (= "\n" (prn-str-with-opts [] nil)))
+(println (= "1 2\n" (core/prn-str-with-opts [1 2] nil)))
+|}
+  in
+  let consumer = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer "Runtime_dynamic" then
+    failwith "printing options functions must remain statically typed";
+  assert_ocaml_runs "source_printing_options_cluster"
+    "true\ntrue\ntrue\ntrue\ntrue\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange printing options functions must remain statically typed";
+  compile_string_from_stdlib "(pr-str-with-opts [1] true)"
+  |> expect_error_contains "nil";
+  compile_string_from_stdlib "(pr-str-with-opts [1])"
+  |> expect_error_contains "incompatible arguments";
+  compile_string_from_stdlib "(prn-str-with-opts [1] nil nil)"
+  |> expect_error_contains "incompatible arguments"
+
+let test_source_printing_options_cluster_is_source_owned () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  List.iter
+    (fun declaration ->
+      if not (string_contains_substring source declaration) then
+        failwith (declaration ^ " is missing from the source standard library"))
+    [ "(defn pr-str-with-opts"; "(defn prn-str-with-opts" ];
+  List.iter
+    (fun path ->
+      let compiler_source = read_file path in
+      List.iter
+        (fun name ->
+          if string_contains_substring compiler_source ("| \"" ^ name ^ "\"")
+          then failwith (name ^ " still has public-name compiler dispatch"))
+        [ "pr-str-with-opts"; "prn-str-with-opts" ])
+    [ "src/call_elaborator.ml"; "src/type_inference.ml";
+      "src/expression_support.ml";
+    ];
+  let upstream = read_file "stdlib/upstream.edn" in
+  List.iter
+    (fun entry ->
+      if not (string_contains_substring upstream entry) then
+        failwith (entry ^ " is not classified as a static source adaptation"))
+    [ "pr-str-with-opts {:status :static-adaptation";
+      "prn-str-with-opts {:status :static-adaptation";
+    ]
+
 let test_cljs_cache_lru_matches_logseq_usage () =
   let source =
     {|
@@ -45682,6 +45742,10 @@ let tests =
       test_source_writer_printing_cluster_matches_clojurescript );
     ( "source writer printing cluster is source-owned",
       test_source_writer_printing_cluster_is_source_owned );
+    ( "source printing options cluster matches ClojureScript",
+      test_source_printing_options_cluster_matches_clojurescript );
+    ( "source printing options cluster is source-owned",
+      test_source_printing_options_cluster_is_source_owned );
     ( "cljs.cache LRU matches Logseq usage",
       test_cljs_cache_lru_matches_logseq_usage );
     ( "cljs.cache TTL matches upstream expiry and seed",

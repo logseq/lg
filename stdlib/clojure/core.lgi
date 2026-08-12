@@ -751,6 +751,10 @@
   :variadic-fn<printable<value>;string>)
 (signature clojure.core/pr-str* [value]
   :fn<printable<value>;string>)
+(signature clojure.core/pr-str-with-opts [value storage]
+  :fn<seqable<printable<value>;storage>;nil;string>)
+(signature clojure.core/prn-str-with-opts [value storage]
+  :fn<seqable<printable<value>;storage>;nil;string>)
 (signature clojure.core/print-str [value]
   :variadic-fn<printable<value>;string>)
 (signature clojure.core/println-str [value]
