@@ -6771,17 +6771,93 @@ let create ~compile_expr =
                               (Semantic_ir.Ident "raise", [ arg.semantic_expr ])))
         | Ok _ -> Error.error "raise expects 1 arguments")
     | "ex-info" ->
-        let compile_ex_info message data cause =
+        let dynamic_runtime_call name args =
+          Semantic_ir.Apply
+            (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), args)
+        in
+        let rec compile_exception_data_literal = function
+          | FSymbol "nil" ->
+              Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+          | FBool value ->
+              Ok (dynamic_runtime_call "bool" [ Semantic_ir.Bool value ])
+          | FInt value ->
+              Ok (dynamic_runtime_call "int" [ Semantic_ir.Int value ])
+          | FFloat value ->
+              Ok (dynamic_runtime_call "float" [ Semantic_ir.Float value ])
+          | FChar value ->
+              Ok (dynamic_runtime_call "char" [ Semantic_ir.Char value ])
+          | FString value ->
+              Ok (dynamic_runtime_call "string" [ Semantic_ir.String value ])
+          | FRegex value ->
+              Ok (dynamic_runtime_call "regex" [ Semantic_ir.String value ])
+          | FKeyword value ->
+              Ok (dynamic_runtime_call "keyword" [ Semantic_ir.String value ])
+          | FList [ FSymbol ("quote" | "clojure.core/quote"); FSymbol value ] ->
+              Ok (dynamic_runtime_call "symbol" [ Semantic_ir.String value ])
+          | FVector values ->
+              let rec loop acc = function
+                  | [] ->
+                    Ok
+                      (dynamic_runtime_call "vector"
+                         [
+                           Semantic_ir.Apply
+                             ( Semantic_ir.Ident "Rrbvec.of_list",
+                               [ Semantic_ir.List (List.rev acc) ] );
+                         ])
+                | value :: rest ->
+                    Result.bind
+                      (compile_exception_data_literal value)
+                      (fun value -> loop (value :: acc) rest)
+              in
+              loop [] values
+          | FMap entries ->
+              let compile_entry (key, value) =
+                Result.bind
+                  (compile_exception_data_literal key)
+                  (fun key ->
+                    Result.map
+                      (fun value -> Semantic_ir.Tuple [ key; value ])
+                      (compile_exception_data_literal value))
+              in
+              let rec loop acc = function
+                | [] ->
+                    Ok
+                      (dynamic_runtime_call "map"
+                         [ Semantic_ir.List (List.rev acc) ])
+                | entry :: rest ->
+                    Result.bind (compile_entry entry) (fun entry ->
+                        loop (entry :: acc) rest)
+              in
+              loop [] entries
+          | form -> (
+              match compile_expr scope env form with
+              | Ok value when Types.is_dynamic value.ty -> Ok value.semantic_expr
+              | Ok value -> (
+                  match pack_plain_dynamic_value value with
+                  | Some packed -> Ok packed
+                  | None ->
+                      Error.error
+                        ("ex-info data literal cannot contain "
+                       ^ Types.source_name value.ty
+                       ^ "; use EDN-like literal values or a value that is \
+                          already in the exception data boundary"))
+              | Error _ as error -> error)
+        in
+        let compile_ex_info message data_form data cause =
           let packed_data =
-            match arg_forms with
-            | [ _message; FMap [] ] | [ _message; FMap []; _ ] ->
-                (* The empty map is constructed directly inside ex-info's
-                   documented open runtime field. No static collection
-                   crosses the dynamic boundary. *)
-                Ok
-                  (Semantic_ir.Apply
-                     ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.map",
-                       [ Semantic_ir.List [] ] ))
+            match data_form with
+            | FMap _ ->
+                (* The data argument is the only open payload field on
+                   Exception_info. Literal EDN-like maps are constructed
+                   directly inside this documented boundary instead of allowing
+                   records or ordinary collections to cross dynamic function
+                   boundaries globally. *)
+                (match compile_exception_data_literal data_form with
+                | Ok _ as packed -> packed
+                | Error _ ->
+                    pack_dynamic_value env
+                      (Types.dynamic_constraint TUnknown)
+                      data)
             | _ ->
                 pack_dynamic_value env
                   (Types.dynamic_constraint TUnknown)
@@ -6809,9 +6885,15 @@ let create ~compile_expr =
             Error.error "ex-info message must be a string"
         | Ok [ _; _; cause ] when not (Types.equal cause.ty (TOcaml "exn")) ->
             Error.error "ex-info cause must be an exception"
-        | Ok [ message; data ] -> compile_ex_info message data None
+        | Ok [ message; data ] -> (
+            match arg_forms with
+            | [ _; data_form ] -> compile_ex_info message data_form data None
+            | _ -> Error.error "ex-info expects 2 or 3 arguments")
         | Ok [ message; data; cause ] ->
-            compile_ex_info message data (Some cause)
+            (match arg_forms with
+            | [ _; data_form; _ ] ->
+                compile_ex_info message data_form data (Some cause)
+            | _ -> Error.error "ex-info expects 2 or 3 arguments")
         | Ok _ -> Error.error "ex-info expects 2 or 3 arguments")
     | "throw" -> (
         match compile_args () with
@@ -7779,6 +7861,15 @@ let create ~compile_expr =
                  (apply "Lg_runtime.Runtime_exception.cause" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ex-cause expects an exception"
         | Ok _ -> Error.error "ex-cause expects 1 arguments")
+    | "__lg_ex-data" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ { ty = TOcaml "exn"; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir (Types.dynamic_constraint TUnknown)
+                 (apply "Lg_runtime.Runtime_exception.data" [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "ex-data expects an exception"
+        | Ok _ -> Error.error "ex-data expects 1 arguments")
     | "__lg_re-pattern" -> (
         match compile_args () with
         | Error _ as error -> error

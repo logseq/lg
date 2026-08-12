@@ -473,8 +473,8 @@
                 :reason :source-function-exposes-first-class-no-capture-optional-string-use-while-direct-open-regex-match-results-remain-in-a-documented-internal-dynamic-boundary}
     re-seq {:status :blocked-static-typing
             :reason :lazy-successive-match-results-require-a-closed-string-or-capture-vector-domain-with-optional-capture-elements-not-yet-exposed-by-core}
-    ex-data {:status :blocked-static-typing
-             :reason :exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type}
+    ex-data {:status :static-adaptation
+             :reason :source-function-exposes-the-upstream-exception-info-data-through-a-documented-exception-only-dynamic-payload-boundary}
     js-obj {:status :host-boundary
             :reason :javascript-object-construction-has-no-portable-native-ocaml-representation-and-cannot-be-modeled-as-a-static-clojure-map-without-changing-identity-and-interop-semantics}
     js->clj {:status :host-boundary

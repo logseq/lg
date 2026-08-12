@@ -244,12 +244,13 @@ percentage.
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest `blocked-static-typing` core rows are `type` (499), `with-redefs` (427),
-`ex-data` (210), `defmethod` (162), `add-watch` (36), `re-seq` (23),
-`flatten` (15), `remove-watch` (14), and `memoize` (10). `re-find` appears 290
-times and `re-matches` appears 87 times; both are now source-aggregate owned,
-with their open match shape documented as a regex dynamic boundary rather than
-a blocker. These rows are the priority order for removing the remaining static
-blockers unless a lower-count item unlocks several higher-count ones.
+`defmethod` (162), `add-watch` (36), `re-seq` (23), `flatten` (15),
+`remove-watch` (14), and `memoize` (10). `re-find` appears 290 times,
+`ex-data` appears 210 times, and `re-matches` appears 87 times; all three are
+now source-aggregate owned, with regex match shapes and exception data recorded
+as documented narrow dynamic boundaries rather than blockers. These rows are
+the priority order for removing the remaining static blockers unless a
+lower-count item unlocks several higher-count ones.
 
 The printing entry-point cluster is source-owned. `str`, `pr-str`, `pr-str*`,
 `print-str`, `println-str`, `prn-str`, `pr`, `print`, `println`, and `prn` retain
@@ -739,8 +740,10 @@ the first-class vector instance returns an optional vector.
 `Exception_info` stores that closed optional cause directly, and `ex-info`
 supports the pinned upstream two- and three-argument arities without widening
 its existing exception-only data boundary.
-`ex-data` remains blocked because its upstream result is an open heterogeneous
-map currently stored in the documented exception-only dynamic payload.
+`ex-data` is source-owned and returns the documented exception-only open data
+payload. Non-empty EDN-like literal maps passed to `ex-info` are built directly
+inside that payload boundary, so ordinary records and collections still do not
+gain a global dynamic conversion path.
 `js-obj` and `js->clj` are explicit JavaScript host boundaries: neither has a
 portable Native representation, and treating them as ordinary maps would lose
 JavaScript identity and interop semantics.

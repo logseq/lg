@@ -3073,6 +3073,9 @@
 (defn ex-cause [ex]
   (__lg_ex-cause ex))
 
+(defn ex-data [ex]
+  (__lg_ex-data ex))
+
 (defn re-pattern
   {:inline (fn [expression] (list '__lg_re-pattern expression))}
   [expression]

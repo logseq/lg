@@ -440,7 +440,7 @@ logseq-core-var-status	clojure.core/even?	source-aggregate	3	precompiled-lg-sour
 logseq-core-var-status	clojure.core/every-pred	source-aggregate	1	precompiled-lg-source
 logseq-core-var-status	clojure.core/every?	source-aggregate	243	precompiled-lg-source
 logseq-core-var-status	clojure.core/ex-cause	source-aggregate	6	precompiled-lg-source
-logseq-core-var-status	clojure.core/ex-data	blocked-static-typing	210	exception-info-data-is-an-open-heterogeneous-map-and-the-existing-runtime-dynamic-payload-cannot-be-exposed-as-a-public-source-type
+logseq-core-var-status	clojure.core/ex-data	source-aggregate	210	precompiled-lg-source
 logseq-core-var-status	clojure.core/ex-info	host-boundary	859	two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary
 logseq-core-var-status	clojure.core/ex-message	source-aggregate	85	precompiled-lg-source
 logseq-core-var-status	clojure.core/exists?	host-boundary	71	tests-javascript-global-name-existence

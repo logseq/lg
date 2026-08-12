@@ -23992,6 +23992,37 @@ let test_source_ex_cause_matches_clojurescript () =
     "(def result (ex-cause (Failure \"a\") (Failure \"b\")))"
   |> expect_error_contains "called with incompatible arguments"
 
+let test_source_ex_data_matches_clojurescript () =
+  let source =
+    {|
+(ns source-ex-data-app
+  (:require [cljs.core :as core :refer [ex-data]]))
+
+(def data-of ex-data)
+(def error (ex-info "boom" {:code :fixture, :message "bad", :count 2}))
+(println (pr-str (data-of error)))
+(println (pr-str (core/ex-data error)))
+(println (pr-str (clojure.core/ex-data (Failure "plain"))))
+|}
+  in
+  let expected =
+    "{:code :fixture, :message \"bad\", :count 2}\n"
+    ^ "{:code :fixture, :message \"bad\", :count 2}\n" ^ "nil\n"
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_ex_data.cljc" source
+  in
+  assert_ocaml_runs "source_ex_data" expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/source_ex_data.cljc"
+       source);
+  compile_with_stdlib_result Lg.Target.Native "test/ex_data_zero.cljc"
+    "(def result (ex-data))"
+  |> expect_error_contains "called with incompatible arguments";
+  compile_with_stdlib_result Lg.Target.Native "test/ex_data_two.cljc"
+    "(def result (ex-data (Failure \"a\") (Failure \"b\")))"
+  |> expect_error_contains "called with incompatible arguments"
+
 let test_ex_info_supports_clojurescript_cause_arity () =
   let source =
     {|
@@ -45603,6 +45634,8 @@ let tests =
       test_source_ex_message_matches_clojurescript );
     ( "source ex-cause matches ClojureScript",
       test_source_ex_cause_matches_clojurescript );
+    ( "source ex-data matches ClojureScript",
+      test_source_ex_data_matches_clojurescript );
     ( "ex-info supports ClojureScript cause arity",
       test_ex_info_supports_clojurescript_cause_arity );
     ( "source numeric coercions match ClojureScript",
