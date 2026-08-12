@@ -280,14 +280,15 @@ and both `newline` arities follow the pinned ClojureScript control flow. Built-i
 values and consumer extensions dispatch through static protocol witnesses, and
 writer callbacks remain first-class. The only compiler boundary is the private
 typed rendering operation used by built-in implementations. LG currently
-models `*print-newline*` as a source dynamic var with type `bool` and
-`*print-length*` as a source dynamic var with type `option<int>`. `println` and
-`prn` preserve object output while using `*print-newline*` only for the trailing
-newline switch. `binding` and `pr-str-with-opts`/`prn-str-with-opts` support the
-typed `{:print-length n}` options map without widening printer options to
-`Runtime_dynamic.t`. Print-level and the custom more marker remain explicit
-static adaptations instead of silently widening the options value to a dynamic
-map.
+models `*print-newline*` and `*print-readably*` as source dynamic vars with type
+`bool` and `*print-length*` as a source dynamic var with type `option<int>`.
+`pr-str`, `pr-str*`, `pr`, `prn`, and `prn-str` select readable or display
+printer witnesses through `*print-readably*`, while `println` and `prn` use
+`*print-newline*` only for the trailing newline switch. `binding` and
+`pr-str-with-opts`/`prn-str-with-opts` support the typed `{:print-length n}`
+options map without widening printer options to `Runtime_dynamic.t`. Print-level
+and the custom more marker remain explicit static adaptations instead of
+silently widening the options value to a dynamic map.
 
 The numeric operator cluster is source-owned. `+`, `-`, `*`, `/`, `<`, `<=`,
 `>`, `>=`, and `==` preserve the pinned zero, unary, binary, and variadic

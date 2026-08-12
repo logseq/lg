@@ -178,6 +178,12 @@ if ! grep -F '(def ^:dynamic *print-newline* true)' \
   exit 1
 fi
 
+if ! grep -F '(def ^:dynamic *print-readably* true)' \
+  "$root/stdlib/clojure/core.cljc" >/dev/null; then
+  echo "clojure.core/*print-readably* is not source-defined as a dynamic var" >&2
+  exit 1
+fi
+
 if ! grep -F '(def ^:dynamic *print-length* None)' \
   "$root/stdlib/clojure/core.cljc" >/dev/null; then
   echo "clojure.core/*print-length* is not source-defined as a dynamic var" >&2
@@ -188,6 +194,13 @@ if ! grep -F '(signature clojure.core/*print-newline*' \
   "$root/stdlib/clojure/core.lgi" >/dev/null \
   || ! grep -F ':bool' "$root/stdlib/clojure/core.lgi" >/dev/null; then
   echo "clojure.core/*print-newline* is not declared with a bool signature" >&2
+  exit 1
+fi
+
+if ! grep -F '(signature clojure.core/*print-readably*' \
+  "$root/stdlib/clojure/core.lgi" >/dev/null \
+  || ! grep -F ':bool' "$root/stdlib/clojure/core.lgi" >/dev/null; then
+  echo "clojure.core/*print-readably* is not declared with a bool signature" >&2
   exit 1
 fi
 

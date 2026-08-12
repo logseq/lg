@@ -4335,7 +4335,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         params name
                   | Ok params, _ -> Ok params)
                 (Ok params) values value_types)
-    | FList (FSymbol ("__lg_pr_str" | "__lg_pr") :: values) ->
+    | FList (FSymbol ("__lg_pr_str" | "__lg_pr" | "__lg_print_values") :: values) ->
         List.fold_left
           (fun result value ->
             Result.bind result (fun params ->

@@ -5222,6 +5222,7 @@
   (INamed/-namespace value))
 
 (def ^:dynamic *print-newline* true)
+(def ^:dynamic *print-readably* true)
 (def ^:dynamic *print-length* None)
 
 (defn str
@@ -5230,14 +5231,24 @@
   (__lg_render_display_values "" values))
 
 (defn pr-str
-  {:inline (fn [& values] (cons '__lg_pr_str values))}
+  {:inline (fn [& values]
+             (list 'if '*print-readably*
+                   (cons '__lg_pr_str values)
+                   (cons '__lg_print_str values)))}
   [& values]
-  (__lg_render_readable_values " " values))
+  (if *print-readably*
+    (__lg_render_readable_values " " values)
+    (__lg_render_display_values " " values)))
 
 (defn pr-str*
-  {:inline (fn [value] (list '__lg_pr_str value))}
+  {:inline (fn [value]
+             (list 'if '*print-readably*
+                   (list '__lg_pr_str value)
+                   (list '__lg_print_str value)))}
   [value]
-  (__lg_pr_str value))
+  (if *print-readably*
+    (__lg_pr_str value)
+    (__lg_print_str value)))
 
 (defn print-str
   {:inline (fn [& values] (cons '__lg_print_str values))}
@@ -5252,14 +5263,28 @@
 
 (defn prn-str
   {:inline (fn [& values]
-             (list '__lg_str (cons '__lg_pr_str values) "\n"))}
+             (list '__lg_str
+                   (list 'if '*print-readably*
+                         (cons '__lg_pr_str values)
+                         (cons '__lg_print_str values))
+                   "\n"))}
   [& values]
-  (__lg_str (__lg_render_readable_values " " values) "\n"))
+  (__lg_str
+   (if *print-readably*
+     (__lg_render_readable_values " " values)
+     (__lg_render_display_values " " values))
+   "\n"))
 
 (defn pr
-  {:inline (fn [& values] (cons '__lg_pr values))}
+  {:inline (fn [& values]
+             (list 'if '*print-readably*
+                   (cons '__lg_pr values)
+                   (cons '__lg_print_values values)))}
   [& values]
-  (__lg_print_output (__lg_render_readable_values " " values)))
+  (__lg_print_output
+   (if *print-readably*
+     (__lg_render_readable_values " " values)
+     (__lg_render_display_values " " values))))
 
 (defn print
   {:inline (fn [& values]
@@ -5280,11 +5305,15 @@
 (defn prn
   {:inline (fn [& values]
              (list '__lg_print_output_line
-                   (cons '__lg_pr_str values)
+                   (list 'if '*print-readably*
+                         (cons '__lg_pr_str values)
+                         (cons '__lg_print_str values))
                    '*print-newline*))}
   [& values]
   (__lg_print_output_line
-   (__lg_render_readable_values " " values)
+   (if *print-readably*
+     (__lg_render_readable_values " " values)
+     (__lg_render_display_values " " values))
    *print-newline*))
 
 (defprotocol IPrintWithWriter

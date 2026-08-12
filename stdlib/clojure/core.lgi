@@ -773,6 +773,8 @@
 
 (signature clojure.core/*print-newline*
   :bool)
+(signature clojure.core/*print-readably*
+  :bool)
 (signature clojure.core/*print-length*
   :option<int>)
 (signature clojure.core/str [value]

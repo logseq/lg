@@ -5502,6 +5502,41 @@ let test_print_newline_dynamic_var_controls_output_newline () =
 |}
   |> expect_error_contains "expects bool, got int"
 
+let test_print_readably_dynamic_var_controls_printers () =
+  let source =
+    {|
+(ns app.print-readably-config
+  (:require [clojure.core :as core
+             :refer [*print-readably* println pr-str prn]]))
+
+(println (pr-str "abc"))
+(binding [*print-readably* false]
+  (println (pr-str "abc"))
+  (println (core/pr-str* "xyz"))
+  (core/prn "done")
+  (println *print-readably*))
+(println (pr-str "after"))
+|}
+  in
+  let native_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "print-readably must remain statically typed";
+  assert_ocaml_runs "print_readably_dynamic_var_controls_printers"
+    "\"abc\"\nabc\nxyz\ndone\nfalse\n\"after\"\n"
+    (compile_string_with_stdlib source |> expect_ok);
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange print-readably must remain statically typed";
+  compile_string_from_stdlib
+    {|
+(ns app.bad-print-readably
+  (:require [clojure.core :refer [*print-readably*]]))
+(binding [*print-readably* 1] nil)
+|}
+  |> expect_error_contains "expects bool, got int"
+
 let test_with_open_binds_managed_values_portably () =
   let source =
     {|
@@ -44954,6 +44989,8 @@ let tests =
       test_print_length_dynamic_var_limits_collections );
     ( "print newline dynamic var controls output newline",
       test_print_newline_dynamic_var_controls_output_newline );
+    ( "print readably dynamic var controls printers",
+      test_print_readably_dynamic_var_controls_printers );
     ( "with-open binds managed values portably",
       test_with_open_binds_managed_values_portably );
     ( "Clojure collection protocol names dispatch statically",
