@@ -1202,8 +1202,8 @@
                 :reason :source-function-preserves-upstream-ichunkednext-more-sequence-result-through-the-closed-chunked-cons-accessor}
     chunk-rest {:status :static-adaptation
                 :reason :source-function-preserves-upstream-ichunkedseq-more-sequence-result-through-the-closed-chunked-cons-accessor}
-    chunked-seq {:status :blocked-static-typing
-                 :reason :upstream-chunkedseq-arities-require-persistent-vector-trie-node-array-for-and-offset-traversal-capabilities-not-yet-exposed-to-source}
+    chunked-seq {:status :typed-primitive
+                 :reason :vector-trie-node-array-chunk-construction-is-an-internal-clojurescript-persistent-vector-representation-boundary-while-public-lg-chunk-apis-use-source-array-chunk-and-chunk-cons}
     chunked-seq? {:status :static-adaptation
                   :reason :source-function-and-inline-specialization-use-an-optional-static-ichunkedseq-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch}
     create-ns {:status :host-boundary

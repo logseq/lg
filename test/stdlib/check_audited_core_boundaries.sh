@@ -27,6 +27,7 @@ done <<'EOF'
 clone	source	source-function-dispatches-through-icloneable-and-preserves-equal-values-with-fresh-nonempty-list-vector-sequence-and-hash-map-identity-while-ocaml-empty-list-and-vector-singletons-retain-identity
 cloneable?	source	source-function-and-inline-specialization-use-an-optional-static-icloneable-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
 chunked-seq?	source	source-function-and-inline-specialization-use-an-optional-static-ichunkedseq-witness-so-first-class-true-and-false-calls-require-no-open-value-or-dynamic-dispatch
+chunked-seq	typed-primitive	vector-trie-node-array-chunk-construction-is-an-internal-clojurescript-persistent-vector-representation-boundary-while-public-lg-chunk-apis-use-source-array-chunk-and-chunk-cons
 *exec-tap-fn*	source	source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler
 add-tap	source	source-function-preserves-upstream-nil-result-and-global-callback-registration-through-a-narrow-runtime-dynamic-boundary-for-open-tap-values
 *print-meta*	source	source-dynamic-var-preserves-the-upstream-boolean-metadata-printing-switch-as-a-static-bool-ref-while-metadata-rendering-remains-explicitly-unsupported
