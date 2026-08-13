@@ -1906,34 +1906,55 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (apply "Lg_runtime.Runtime_dynamic.find"
                      [ target.semantic_expr; packed_key ]))
               (pack_dynamic_value env target.ty key)
-          else
-            match Types.dynamic_map_types target.ty with
-          | Some (key_ty, value_ty)
-            when Types.assignable ~policy:Host_boundary ~expected:key_ty
-                   ~actual:key.ty ->
-              Ok
-                (typed_ir
-                   (TOcaml_app ("option", [ TTuple [ key_ty; value_ty ] ]))
-                   (apply
-                      (runtime_map_operation
-                         (runtime_map_key_type key_ty key.ty)
-                         "find")
-                      [ target.semantic_expr; key.semantic_expr ]))
-          | None
-            when Types.equal target.ty TUnknown
-               || match target.ty with TVar _ -> true | _ -> false ->
-              Ok
-                (typed_ir
+          else if Types.equal target.ty TNil then
+            Ok
+              (typed_ir
                  (TOcaml_app ("option", [ TTuple [ key.ty; TUnknown ] ]))
-                   (apply "Lg_runtime.Runtime_map.find"
-                      [ target.semantic_expr; key.semantic_expr ]))
-          | Some _ ->
-              Error.error
-                ("find expects a map and key, got " ^ Types.source_name target.ty
-               ^ " and " ^ Types.source_name key.ty)
-          | None ->
-              compile_expr scope env
-                (FList (FSymbol "IFind/-find" :: arg_forms)))
+                 (Semantic_ir.Ident "None"))
+          else
+            match (target.ty, key.ty) with
+            | TVector value_ty, TInt ->
+                Ok
+                  (typed_ir
+                     (TOcaml_app ("option", [ TTuple [ TInt; value_ty ] ]))
+                     (apply "Lg_runtime.Runtime_vector.find_entry"
+                        [ target.semantic_expr; key.semantic_expr ]))
+            | TVector value_ty, TNil ->
+                Ok
+                  (typed_ir
+                     (TOcaml_app
+                        ("option", [ TTuple [ key.ty; value_ty ] ]))
+                     (Semantic_ir.Ident "None"))
+            | _ -> (
+            match Types.dynamic_map_types target.ty with
+            | Some (key_ty, value_ty)
+              when Types.assignable ~policy:Host_boundary ~expected:key_ty
+                     ~actual:key.ty ->
+                Ok
+                  (typed_ir
+                     (TOcaml_app ("option", [ TTuple [ key_ty; value_ty ] ]))
+                     (apply
+                        (runtime_map_operation
+                           (runtime_map_key_type key_ty key.ty)
+                           "find")
+                        [ target.semantic_expr; key.semantic_expr ]))
+            | None
+              when Types.equal target.ty TUnknown
+                 || match target.ty with TVar _ -> true | _ -> false ->
+                Ok
+                  (typed_ir
+                     (TOcaml_app
+                        ("option", [ TTuple [ key.ty; TUnknown ] ]))
+                     (apply "Lg_runtime.Runtime_map.find"
+                        [ target.semantic_expr; key.semantic_expr ]))
+            | Some _ ->
+                Error.error
+                  ("find expects a map and key, got "
+                 ^ Types.source_name target.ty ^ " and "
+                 ^ Types.source_name key.ty)
+            | None ->
+                compile_expr scope env
+                  (FList (FSymbol "IFind/-find" :: arg_forms))))
       | Ok _ -> Error.error "find expects 2 arguments"
     and compile_assoc scope env arg_forms =
       match arg_forms with

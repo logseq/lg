@@ -220,7 +220,7 @@
     -conj {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -contains-key? {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -assoc {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
-    -find {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
+    -find {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-map-and-vector-receiver-implementations}
     -dissoc {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -kv-reduce {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -meta {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
@@ -370,7 +370,7 @@
     rseq {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
-          :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-while-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
+          :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-supports-vector-index-lookup-and-returns-static-none-for-nil-receivers-or-nil-vector-keys-while-other-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
     equiv-map {:status :static-adaptation
                :reason :source-port-preserves-count-check-entry-order-and-first-mismatch-short-circuiting-while-typed-ifind-options-replace-the-upstream-private-never-equiv-sentinel-and-records-remain-a-distinct-static-domain}
     ifind? {:status :static-adaptation

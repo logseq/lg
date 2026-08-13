@@ -1300,12 +1300,20 @@ let test_hash_map_protocol_methods_dispatch_statically () =
 (def retagged (-with-meta values metadata-value))
 (def ^:string metadata-source (:source (-meta retagged)))
 (def looked-up (if-let [value (-lookup associated :b)] value 0))
+(def missing-nil (find nil :missing))
+(def vector-hit (find [10 20] 1))
+(def vector-miss (find [10 20] 3))
+(def vector-nil-key (find [] nil))
 (println
   (str
     (-contains-key? associated :b) ":"
     looked-up ":"
     (-lookup values :missing 9) ":"
     (lookup-or values :missing 10) ":"
+    (nil? missing-nil) ":"
+    (= [1 20] vector-hit) ":"
+    (nil? vector-miss) ":"
+    (nil? vector-nil-key) ":"
     (nil? (-find associated :b)) ":"
     (count (-dissoc associated :a)) ":"
     (:c conjoined) ":"
@@ -1319,7 +1327,8 @@ let test_hash_map_protocol_methods_dispatch_statically () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   assert_ocaml_runs "hash_map_protocol_methods_dispatch_statically"
-    "true:2:9:10:false:1:3:3:protocol\n" ocaml_source
+    "true:2:9:10:true:true:true:true:false:1:3:3:protocol\n"
+    ocaml_source
 
 let test_hash_map_is_callable_as_lookup_function () =
   let source =

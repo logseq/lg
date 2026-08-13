@@ -815,18 +815,22 @@ let declare_vector_protocol registry =
 let add_vector_associative_protocols registry =
   let element = TVar "vector_element" in
   let vector = TVector element in
-  let add method_name ocaml_name ty registry =
-    let binding = Types.binding ~protocol_id:associative_id ocaml_name ty in
-    Protocol_registry.add_implementation associative_id
-      (method_id associative_id method_name)
+  let add protocol_id method_name ocaml_name ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
       Receiver_id.Vector_receiver binding registry
     |> add_or_fail
   in
   registry
-  |> add "-contains-key?" "Lg_runtime.Runtime_vector.contains_index"
+  |> add associative_id "-contains-key?" "Lg_runtime.Runtime_vector.contains_index"
        (TFn ([ vector; TInt ], TBool))
-  |> add "-assoc" "Lg_runtime.Runtime_vector.assoc"
+  |> add associative_id "-assoc" "Lg_runtime.Runtime_vector.assoc"
        (TFn ([ vector; TInt; element ], vector))
+  |> add find_id "-find" "Lg_runtime.Runtime_vector.find_entry"
+       (TFn
+          ( [ vector; TInt ],
+            TOcaml_app ("option", [ TTuple [ TInt; element ] ]) ))
 
 let add_vector_kv_reduce_protocol registry =
   let element = TVar "vector_kv_element" in
