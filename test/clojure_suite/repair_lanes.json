@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/drop.cljc\", line <n>: lg: drop called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.drop",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/drop.cljc\", line <n>: lg: drop called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.drop",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/drop_last.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.drop-last",

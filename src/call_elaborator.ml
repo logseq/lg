@@ -9480,6 +9480,49 @@ let create ~compile_expr =
                 (typed_ir TBool
                    equal)
             else
+            let args =
+              if operator = "=" then
+                let concrete_value_types =
+                  args
+                  |> List.filter_map (fun arg ->
+                         let ty = Types.constraint_value_type arg.ty in
+                         if
+                           Types.is_dynamic ty
+                           ||
+                           match ty with
+                           | TUnknown | TMeta _ | TVar _ -> true
+                           | _ -> false
+                         then
+                           None
+                         else Some ty)
+                  |> List.fold_left
+                       (fun unique ty ->
+                         if List.exists (Types.same_shape ty) unique then
+                           unique
+                         else ty :: unique)
+                       []
+                in
+                match concrete_value_types with
+                | [ anchor_ty ] ->
+                    List.map
+                      (fun arg ->
+                        match Types.capability_constraint_value arg.ty with
+                        | Some value_ty
+                          when (not (Types.is_dynamic arg.ty))
+                               && (Type_solver.is_open value_ty
+                                  || Types.same_shape value_ty anchor_ty) ->
+                            {
+                              arg with
+                              ty =
+                                if Type_solver.is_open value_ty then anchor_ty
+                                else value_ty;
+                              semantic_expr = constrained_argument_value arg;
+                            }
+                        | Some _ | None -> arg)
+                      args
+                | [] | _ :: _ :: _ -> args
+              else args
+            in
             let concrete_args =
               List.filter
                 (fun arg ->

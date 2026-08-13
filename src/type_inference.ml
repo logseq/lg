@@ -5011,6 +5011,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let expected_ty =
           let inferred_equality_type arg =
             inferred_form_or_call_type ~lookup_function_ty params arg
+            |> Types.constraint_value_type
           in
           let concrete =
             args
@@ -5021,7 +5022,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    | ty -> Some ty)
             |> List.fold_left
                  (fun unique ty ->
-                   if List.exists (Types.equal ty) unique then unique
+                   if List.exists (Types.same_shape ty) unique then unique
                    else ty :: unique)
                  []
           in

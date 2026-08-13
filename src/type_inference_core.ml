@@ -119,6 +119,13 @@ let rec refine_type existing inferred =
            (Types.hashable_constraint_info existing |> Option.get)
            (Types.hashable_constraint_info inferred |> Option.get))
   | existing, inferred
+    when Option.is_some (Types.printable_constraint_info existing)
+         && Option.is_some (Types.printable_constraint_info inferred) ->
+      Types.printable_constraint
+        (refine_type
+           (Types.printable_constraint_info existing |> Option.get)
+           (Types.printable_constraint_info inferred |> Option.get))
+  | existing, inferred
     when Option.is_some (Types.comparable_constraint_info existing)
          && Option.is_some (Types.comparable_constraint_info inferred) ->
       Types.comparable_constraint
@@ -156,6 +163,17 @@ and refine_nonmatching_type existing inferred =
         (refine_type
            (Types.hashable_constraint_info existing |> Option.get)
            inferred)
+  | existing, inferred
+    when Option.is_some (Types.printable_constraint_info existing) ->
+      Types.printable_constraint
+        (refine_type
+           (Types.printable_constraint_info existing |> Option.get)
+           inferred)
+  | existing, inferred
+    when Option.is_some (Types.printable_constraint_info inferred) ->
+      Types.printable_constraint
+        (refine_type existing
+           (Types.printable_constraint_info inferred |> Option.get))
   | existing, inferred
     when Option.is_some (Types.comparable_constraint_info existing) ->
       Types.comparable_constraint

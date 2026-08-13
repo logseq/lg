@@ -222,9 +222,9 @@
 (signature clojure.core/take [input storage accumulator]
   :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;seqable<input;storage>;seq<input>>>)
 (signature clojure.core/drop-seq [input storage]
-  :fn<int;seqable<input;storage>;seq<input>>)
+  :fn<int;optional-seqable<input;storage>;seq<input>>)
 (signature clojure.core/drop [input storage accumulator]
-  :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;seqable<input;storage>;seq<input>>>)
+  :overload<fn<int;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<int;optional-seqable<input;storage>;seq<input>>>)
 (signature clojure.core/take-while-seq [input predicate-result]
   :fn<fn<input;truthy<predicate-result>>;seq<input>;seq<input>>)
 (signature clojure.core/take-while [input storage accumulator predicate-result]
