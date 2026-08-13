@@ -23055,6 +23055,20 @@ let test_update_supports_extra_arguments () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_supports_extra_arguments" "Ada:37\n" ocaml_source
 
+let test_melange_update_ignores_extra_arguments_for_unary_updaters () =
+  let source =
+    {|
+(ns app.melange-update-extra-args
+  (:require [clojure.core :refer [= inc println update]]))
+(println (= (update {:k 1} :k inc 1 2 3 4) {:k 2}))
+|}
+  in
+  Lg.Compiler.compile_string ~target:Lg.Target.Native source
+  |> expect_error "update function argument count mismatch";
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "app/melange_update_extra_args.cljc" source)
+
 let test_update_missing_key_supports_nullable_core_updaters () =
   let source =
     {|
@@ -48005,6 +48019,8 @@ let tests =
       test_merge_rejects_incompatible_overlapping_fields );
     ("update rejects type changes", test_update_rejects_type_changes);
     ("update supports extra arguments", test_update_supports_extra_arguments);
+    ( "melange update ignores extra arguments for unary updaters",
+      test_melange_update_ignores_extra_arguments_for_unary_updaters );
     ( "update missing key supports nullable core updaters",
       test_update_missing_key_supports_nullable_core_updaters );
     ( "update supports static IFn updaters",

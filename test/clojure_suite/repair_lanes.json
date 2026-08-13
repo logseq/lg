@@ -3000,22 +3000,6 @@
     "target": "native"
   },
   {
-    "class": "other-compiler-error",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: update function argument count mismatch",
-    "lane": "inspect-unclassified",
-    "namespace": "clojure.core-test.update",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: update expects a map",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.update",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/val.cljc\", line <n>: lg: first expects a seqable value",
     "lane": "audit-as-static-error",

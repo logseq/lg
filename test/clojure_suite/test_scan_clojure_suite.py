@@ -294,6 +294,28 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_portability_thrown_skips_static_error_bodies(self) -> None:
+        test_file = self.write_suite_file(
+            "portability_thrown_probe.cljc",
+            "(ns clojure.core-test.portability-thrown-probe\n"
+            "  (:require [clojure.core-test.portability :as p]))\n\n"
+            "(def invalid-update-is-expected\n"
+            "  (p/thrown? (update [1 2 3] :k identity)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.portability-thrown-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_when_var_exists_skips_unsupported_vars(self) -> None:
         test_file = self.write_suite_file(
             "unsupported_var_probe.cljc",

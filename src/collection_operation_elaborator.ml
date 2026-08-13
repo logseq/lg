@@ -2759,6 +2759,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       let instantiate ty = Types.instantiate_type ~templates ~actuals ty in
       (List.map instantiate param_tys, instantiate return_ty)
     in
+    let update_call_signature param_tys return_ty extra_args =
+      let call_extra_args =
+        if
+          Env.target env = Target.Melange
+          && extra_args <> []
+          && List.length param_tys = 1
+        then []
+        else extra_args
+      in
+      if List.length param_tys = List.length call_extra_args + 1 then
+        let param_tys, return_ty =
+          instantiate_updater param_tys return_ty call_extra_args
+        in
+        Some (param_tys, return_ty, call_extra_args)
+      else None
+    in
     let rec prepare_updater_arguments prepared expected arguments =
       match (expected, arguments) with
       | [], [] -> Ok (List.rev prepared)
@@ -2784,11 +2800,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               ("update map key must be " ^ Types.source_name resolved_key_ty)
           else
             match fn.ty with
-            | TFn (parameter_tys, return_ty)
-              when List.length parameter_tys = List.length extra_args + 1 ->
-                let parameter_tys, return_ty =
-                  instantiate_updater parameter_tys return_ty extra_args
-                in
+          | TFn (parameter_tys, return_ty) -> (
+              match
+                update_call_signature parameter_tys return_ty extra_args
+              with
+              | Some (parameter_tys, return_ty, extra_args) ->
                 let key_expression =
                   coerce_expression_to_type resolved_key_ty key.ty
                     key.semantic_expr
@@ -2873,7 +2889,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 coerce_expression_to_type resolved_value_ty
                                   return_ty value;
                               ])))
-            | TFn _ -> Error.error "update function argument count mismatch"
+              | None -> Error.error "update function argument count mismatch")
             | _ -> Error.error "update expects a function")
     in
     let compile_extension target fields keyword fn extra_args =
@@ -2890,11 +2906,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  ])
           in
           match fn.ty with
-          | TFn (parameter_tys, return_ty)
-            when List.length parameter_tys = List.length extra_args + 1 ->
-              let parameter_tys, return_ty =
-                instantiate_updater parameter_tys return_ty extra_args
-              in
+          | TFn (parameter_tys, return_ty) -> (
+              match
+                update_call_signature parameter_tys return_ty extra_args
+              with
+              | Some (parameter_tys, return_ty, extra_args) ->
               Result.bind
                 (prepare_updater_arguments [] parameter_tys
                    (old_value :: extra_args))
@@ -2911,6 +2927,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       with
                       | Some target -> Ok target
                       | None -> assert false))
+              | None -> Error.error "update function argument count mismatch")
           | _ -> Error.error "update expects a function")
     in
     let compile_missing_homogeneous_field target fields keyword fn_form fn
@@ -2921,11 +2938,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | _ -> false
       in
       match fn.ty with
-      | TFn (parameter_tys, return_ty)
-        when List.length parameter_tys = List.length extra_args + 1 ->
-          let parameter_tys, return_ty =
-            instantiate_updater parameter_tys return_ty extra_args
-          in
+      | TFn (parameter_tys, return_ty) -> (
+          match update_call_signature parameter_tys return_ty extra_args with
+          | Some (parameter_tys, return_ty, extra_args) ->
           let first_parameter_ty = List.hd parameter_tys in
           let accepts_missing =
             match first_parameter_ty with
@@ -2958,7 +2973,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     (Semantic_ir.Apply (fn.semantic_expr, arguments))
                 in
                 Structural_map.assoc target fields keyword result)
-      | TFn _ -> Error.error "update function argument count mismatch"
+          | None -> Error.error "update function argument count mismatch")
       | _ -> Error.error "update expects a function"
     in
     let static_ifn_nil_updater = function
@@ -3050,11 +3065,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       compile_extension target fields keyword fn extra_args
                   | Some field -> (
                       match fn.ty with
-                      | TFn (param_tys, ret)
-                      when List.length param_tys = List.length extra_args + 1 ->
-                        let param_tys, ret =
-                          instantiate_updater param_tys ret extra_args
-                        in
+                      | TFn (param_tys, ret) -> (
+                        match update_call_signature param_tys ret extra_args with
+                        | Some (param_tys, ret, extra_args) ->
                         let param_tys, ret =
                           match param_tys with
                           | value_param :: _ ->
@@ -3194,8 +3207,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               Result.bind stored (fun stored ->
                                   Structural_map.update_value target fields
                                     keyword field.ty stored))
-                    | TFn _ ->
-                        Error.error "update function argument count mismatch"
+                        | None ->
+                            Error.error "update function argument count mismatch")
                       | _ -> Error.error "update expects a function"))
             | target_ty
               when Option.is_some (Types.dynamic_map_types target_ty) ->
@@ -3268,11 +3281,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               match (target.ty, index.ty) with
               | TVector inner, TInt -> (
                   match fn.ty with
-                  | TFn (param_tys, ret)
-                  when List.length param_tys = List.length extra_args + 1 ->
-                    let param_tys, ret =
-                      instantiate_updater param_tys ret extra_args
-                    in
+                  | TFn (param_tys, ret) -> (
+                    match update_call_signature param_tys ret extra_args with
+                    | Some (param_tys, ret, extra_args) ->
                     if
                       Types.assignable ~policy:Host_boundary
                         ~expected:(List.hd param_tys) ~actual:inner
@@ -3503,10 +3514,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       Error.error
                         "update function arguments do not match vector element \
                          and extra arguments"
-                  | TFn _ ->
-                      Error.error
-                      "update function arguments do not match vector element \
-                       and extra arguments"
+                    | None ->
+                        Error.error
+                          "update function arguments do not match vector element \
+                           and extra arguments")
                   | _ -> Error.error "update expects a function")
               | TVector _, _ -> Error.error "update vector index must be int"
             | target_ty, _
