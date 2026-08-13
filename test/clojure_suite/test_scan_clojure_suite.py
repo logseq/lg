@@ -707,6 +707,68 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_heterogeneous_case_suite_body(self) -> None:
+        test_file = self.write_suite_file(
+            "case_skip_probe.cljc",
+            "(ns clojure.core-test.case-skip-probe\n"
+            "  (:require [clojure.core-test.portability\n"
+            "             #?(:cljs :refer-macros :default :refer)\n"
+            "             [when-var-exists]]))\n\n"
+            "(when-var-exists case\n"
+            "  (defn hetero-case [x]\n"
+            "    (case x\n"
+            "      :kw :keyword\n"
+            "      \"text\" :string\n"
+            "      1 :integer\n"
+            "      :default)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.case-skip-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_static_case_remains_available(self) -> None:
+        test_file = self.write_suite_file(
+            "static_case_probe.cljc",
+            "(ns clojure.core-test.static-case-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(defn choose-keyword [x]\n"
+            "  (case x\n"
+            "    :a :alpha\n"
+            "    :b :beta\n"
+            "    :other))\n"
+            "(defn choose-int [x]\n"
+            "  (case x\n"
+            "    (1 2) :small\n"
+            "    3 :three\n"
+            "    :other))\n"
+            "(deftest static-case-compiles\n"
+            "  (is (= :alpha (choose-keyword :a)))\n"
+            "  (is (= :small (choose-int 2))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.static-case-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_static_dynamic_binding_remains_available(self) -> None:
         test_file = self.write_suite_file(
             "static_binding_probe.cljc",

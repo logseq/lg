@@ -8,6 +8,9 @@
       ;; LG supports statically typed binding, but this upstream suite asserts
       ;; heterogeneous dynamic Var rebinding that LG intentionally rejects.
       (= var-sym 'binding)
+      ;; LG supports statically typed case targets. This upstream suite asserts
+      ;; Clojure's heterogeneous case constants in one dynamic dispatch table.
+      (= var-sym 'case)
       (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
       (= var-sym 'denominator)
