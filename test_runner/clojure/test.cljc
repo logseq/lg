@@ -130,6 +130,9 @@
 (macro-helper-defn compare-open-domain-suite-are? [expression]
   (= expression '(pred (compare (first args) (second args)))))
 
+(macro-helper-defn constantly-open-domain-suite-are? [expression]
+  (= expression '(= v ((constantly v)))))
+
 (macro-helper-defn portability-thrown-form? [form]
   (and (seq? form)
        (or (= 'p/thrown? (first form))
@@ -295,7 +298,8 @@
   (if (or (unsupported-suite-are-arguments? arguments)
           (host-boolean-constructor-suite-are? expression)
           (butlast-suite-are? expression)
-          (compare-open-domain-suite-are? expression))
+          (compare-open-domain-suite-are? expression)
+          (constantly-open-domain-suite-are? expression))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 

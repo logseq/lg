@@ -64,22 +64,6 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/constantly.cljc\", line <n>: lg: unknown symbol \\return",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.constantly",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/constantly.cljc\", line <n>: lg: unknown symbol 111/7",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.constantly",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "lg: map literal requires an even number of forms",
     "lane": "audit-as-static-error",

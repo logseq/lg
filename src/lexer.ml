@@ -122,6 +122,9 @@ let char_of_atom atom =
   | "\\newline" -> Some '\n'
   | "\\space" -> Some ' '
   | "\\tab" -> Some '\t'
+  | "\\backspace" -> Some '\b'
+  | "\\formfeed" -> Some '\012'
+  | "\\return" -> Some '\r'
   | atom when String.length atom = 2 && atom.[0] = '\\' -> Some atom.[1]
   | atom when String.length atom > 1 && atom.[0] = '\\' -> (
       let source = String.sub atom 1 (String.length atom - 1) in

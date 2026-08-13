@@ -577,6 +577,33 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_named_char_literals_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "named_char_literals_probe.cljc",
+            "(ns clojure.core-test.named-char-literals-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest named-char-literals-compile\n"
+            "  (is (= \\newline \\newline))\n"
+            "  (is (= \\space \\space))\n"
+            "  (is (= \\tab \\tab))\n"
+            "  (is (= \\return \\return))\n"
+            "  (is (= \\backspace \\backspace))\n"
+            "  (is (= \\formfeed \\formfeed)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.named-char-literals-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_char_compare_compiles(self) -> None:
         test_file = self.write_suite_file(
             "char_compare_probe.cljc",
@@ -618,6 +645,33 @@ class ScannerDependencyTests(unittest.TestCase):
                 test_file,
                 [],
                 "clojure.core-test.compare-open-domain-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_constantly_open_domain_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "constantly_open_domain_probe.cljc",
+            "(ns clojure.core-test.constantly-open-domain-probe\n"
+            "  (:require [clojure.test :refer [are deftest is]]))\n\n"
+            "(deftest constantly-open-domain-suite-rows-are-skipped\n"
+            "  (are [v] (= v ((constantly v)))\n"
+            "    \\return\n"
+            "    #{:a :b \"c\"})\n"
+            "  (let [the-fn (constantly :foo)]\n"
+            "    (is (= :foo (the-fn)))\n"
+            "    (is (= :foo (the-fn 1 2 3)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.constantly-open-domain-probe",
                 target,
             )
             if result.status != "compiled":
