@@ -45,6 +45,6 @@ let of_type = function
       Some (Host_receiver "Lg_runtime.Runtime_map.t")
   | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
   | TNamed_record record -> Some (Record_receiver record.type_id)
-  | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TFn _
-  | TOverloaded_fn _ | TRecord _ ->
+  | TFn _ | TOverloaded_fn _ -> Some (Host_receiver "fn")
+  | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TRecord _ ->
       None

@@ -430,7 +430,9 @@ Three-argument `nth` returns a typed default for out-of-range list and vector in
 
 `subvec` returns an `Rrbvec.t` persistent vector slice.
 
-`empty` returns a same-typed empty list, vector, set, or string.
+`empty` returns a same-typed empty list, vector, or set. Values that do not
+have an empty collection shape, including strings and scalar values, return
+`nil`.
 
 `into` transfers elements between typed list, vector, and set collections when
 the element types match.

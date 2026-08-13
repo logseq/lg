@@ -40921,7 +40921,7 @@ let test_empty_core_api () =
 (def ys (empty (list 1 2)))
 (def zs (empty (hash-set 1 2)))
 (def s (empty "Ada"))
-(println (str (empty? xs) ":" (empty? ys) ":" (empty? zs) ":" (= s "")))
+(println (str (empty? xs) ":" (empty? ys) ":" (empty? zs) ":" (nil? s)))
 (defn map-preserving [^:fn<int;int> f ^:vector<int> values]
   (reduce (fn [result value] (conj result (f value)))
           (empty values)
@@ -41109,10 +41109,24 @@ let test_protocol_witness_packs_closed_variant_receivers () =
     (Lg.Compiler.compile_chunk ~target:Lg.Target.Melange state consumer
     |> expect_ok)
 
-let test_empty_rejects_unsupported_values () =
-  compile_with_stdlib_result Lg.Target.Native "test/empty_unsupported.cljc"
-    {|(def x (empty 1))|}
-  |> expect_error_contains "no protocol implementation"
+let test_empty_returns_nil_for_non_emptyable_values () =
+  let source =
+    {|
+(println
+  (str
+    (nil? (empty 1)) ":"
+    (nil? (empty \space)) ":"
+    (nil? (empty :a)) ":"
+    (nil? (empty nil)) ":"
+    (nil? (empty map))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "empty_returns_nil_for_non_emptyable_values"
+    "true:true:true:true:true\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_into_core_api () =
   let source =
@@ -49087,7 +49101,8 @@ let tests =
       test_zero_arity_generic_fast_collections_support_upstream_operations );
     ( "protocol witness packs closed variant receivers",
       test_protocol_witness_packs_closed_variant_receivers );
-    ("empty rejects unsupported values", test_empty_rejects_unsupported_values);
+    ( "empty returns nil for non-emptyable values",
+      test_empty_returns_nil_for_non_emptyable_values );
     ("into core api works", test_into_core_api);
     ("into supports typed map targets", test_into_supports_typed_map_targets);
     ( "into accepts inferred seqable parameters",

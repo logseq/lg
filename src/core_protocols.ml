@@ -194,18 +194,26 @@ let declare_indexed registry =
 let declare_emptyable registry =
   let receiver = TVar "emptyable_receiver" in
   Protocol_registry.declare emptyable_id
-    [ signature empty_method_id [ receiver ] receiver ]
+    [ signature empty_method_id [ receiver ] TUnknown ]
     registry
   |> add_or_fail
 
-let add_emptyable receiver ocaml_name collection_ty registry =
+let add_emptyable_with_return receiver ocaml_name collection_ty return_ty
+    registry =
   let binding =
     Types.binding ~protocol_id:emptyable_id ocaml_name
-      (TFn ([ collection_ty ], collection_ty))
+      (TFn ([ collection_ty ], return_ty))
   in
   Protocol_registry.add_implementation emptyable_id empty_method_id receiver
     binding registry
   |> add_or_fail
+
+let add_emptyable receiver ocaml_name collection_ty registry =
+  add_emptyable_with_return receiver ocaml_name collection_ty collection_ty
+    registry
+
+let add_emptyable_nil receiver ocaml_name collection_ty registry =
+  add_emptyable_with_return receiver ocaml_name collection_ty TNil registry
 
 let declare_stack registry =
   Protocol_registry.declare stack_id
@@ -934,8 +942,28 @@ let initial_registry =
   |> add_emptyable Receiver_id.Vector_receiver
        "Lg_runtime.Runtime_collection.empty_vector"
        (TVector (TVar "empty_element"))
-  |> add_emptyable Receiver_id.String_receiver
-       "Lg_runtime.Runtime_collection.empty_string" TString
+  |> add_emptyable_nil Receiver_id.Nil_receiver
+       "Lg_runtime.Runtime_collection.empty_nil" TNil
+  |> add_emptyable_nil Receiver_id.String_receiver
+       "Lg_runtime.Runtime_collection.empty_string_nil" TString
+  |> add_emptyable_nil Receiver_id.Int_receiver
+       "Lg_runtime.Runtime_collection.empty_int_nil" TInt
+  |> add_emptyable_nil Receiver_id.Float_receiver
+       "Lg_runtime.Runtime_collection.empty_float_nil" TFloat
+  |> add_emptyable_nil Receiver_id.Char_receiver
+       "Lg_runtime.Runtime_collection.empty_char_nil" TChar
+  |> add_emptyable_nil Receiver_id.Keyword_receiver
+       "Lg_runtime.Runtime_collection.empty_keyword_nil" TKeyword
+  |> add_emptyable_nil Receiver_id.Symbol_receiver
+       "Lg_runtime.Runtime_collection.empty_symbol_nil" TSymbol
+  |> add_emptyable_nil Receiver_id.Bool_receiver
+       "Lg_runtime.Runtime_collection.empty_bool_nil" TBool
+  |> add_emptyable_nil Receiver_id.Unit_receiver
+       "Lg_runtime.Runtime_collection.empty_unit_nil" TUnit
+  |> add_emptyable_nil (Receiver_id.Host_receiver "unit")
+       "Lg_runtime.Runtime_collection.empty_host_unit_nil" (TOcaml "unit")
+  |> add_emptyable_nil (Receiver_id.Host_receiver "fn")
+       "Lg_runtime.Runtime_collection.empty_fn_nil" TUnknown
   |> add_emptyable Receiver_id.Set_receiver
        "Lg_runtime.Runtime_collection.empty_poly_set"
        (TSet (TVar "empty_element"))
