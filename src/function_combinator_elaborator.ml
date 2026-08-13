@@ -573,8 +573,29 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     spread_forms @ [ FSymbol "nil" ]
                 | _ -> spread_forms
               in
-              compile_expr scope env
-                (FList (fn_form :: (fixed_forms @ spread_forms)))
+              (match (fixed_forms, spread_forms, fn_form) with
+              | [], [ key ], (FMap _ | FList (FSymbol "__lg_hash-map" :: _))
+              | [], [ key ], FVector _ ->
+                  compile_expr scope env
+                    (FList [ FSymbol "get"; fn_form; key ])
+              | [], [ candidate ], FKeyword _ -> (
+                  match compile_expr scope env candidate with
+                  | Ok { ty = TSet _; _ } ->
+                      compile_expr scope env
+                        (FList
+                           [
+                             FSymbol "if";
+                             FList
+                               [ FSymbol "contains?"; candidate; fn_form ];
+                             fn_form;
+                             FSymbol "nil";
+                           ])
+                  | Ok _ | Error _ ->
+                      compile_expr scope env
+                        (FList (fn_form :: (fixed_forms @ spread_forms))))
+              | _ ->
+                  compile_expr scope env
+                    (FList (fn_form :: (fixed_forms @ spread_forms))))
           | Some (fixed_forms, collection_form) -> (
               match
                 ( compile_args_for scope env fixed_forms,

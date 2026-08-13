@@ -1,18 +1,18 @@
 [
   {
-    "class": "other-compiler-error",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: __lg_callable_expression_1 is not callable",
-    "lane": "inspect-unclassified",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.apply",
-    "static_subclass": null,
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "melange"
   },
   {
-    "class": "other-compiler-error",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: __lg_callable_expression_1 is not callable",
-    "lane": "inspect-unclassified",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.apply",
-    "static_subclass": null,
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {
