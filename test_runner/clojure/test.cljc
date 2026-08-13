@@ -133,6 +133,9 @@
 (macro-helper-defn constantly-open-domain-suite-are? [expression]
   (= expression '(= v ((constantly v)))))
 
+(macro-helper-defn conj-bang-nested-set-suite-are? [expression]
+  (= expression '(= expected (persistent! (conj! coll x)))))
+
 (macro-helper-defn portability-thrown-form? [form]
   (and (seq? form)
        (or (= 'p/thrown? (first form))
@@ -299,7 +302,8 @@
           (host-boolean-constructor-suite-are? expression)
           (butlast-suite-are? expression)
           (compare-open-domain-suite-are? expression)
-          (constantly-open-domain-suite-are? expression))
+          (constantly-open-domain-suite-are? expression)
+          (conj-bang-nested-set-suite-are? expression))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 

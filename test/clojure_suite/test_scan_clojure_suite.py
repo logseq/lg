@@ -679,6 +679,29 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_are_skips_conj_bang_nested_set_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_bang_nested_set_probe.cljc",
+            "(ns clojure.core-test.conj-bang-nested-set-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest conj-bang-nested-set-suite-rows-are-skipped\n"
+            "  (are [expected coll x] (= expected (persistent! (conj! coll x)))\n"
+            "    #{1 #{2}} (transient #{1}) #{2}))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-bang-nested-set-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_wide_unicode_char_suite_blocks(self) -> None:
         test_file = self.write_suite_file(
             "wide_unicode_char_probe.cljc",

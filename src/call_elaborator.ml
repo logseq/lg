@@ -5531,7 +5531,84 @@ let create ~compile_expr =
         match compile_expr scope env collection_form with
         | Error _ as error -> error
         | Ok collection ->
+            let transient_map_entries = function
+              | FSymbol "nil" | FMap [] -> Some []
+              | FMap entries -> Some entries
+              | FList [ FSymbol "tuple"; key; value ]
+              | FList [ FSymbol "__lg_vector"; key; value ]
+              | FVector [ key; value ] ->
+                  Some [ (key, value) ]
+              | _ -> None
+            in
+            let add_transient_map_entry collection key_type value_type key_form
+                value_form =
+              match
+                ( compile_expr scope env key_form,
+                  compile_expr scope env value_form )
+              with
+              | (Error _ as error), _ -> error
+              | _, (Error _ as error) -> error
+              | Ok key, Ok value ->
+                  let key_type =
+                    if Types.equal key_type TUnknown then key.ty else key_type
+                  in
+                  let value_type =
+                    if Types.equal value_type TUnknown then value.ty
+                    else value_type
+                  in
+                  let adapt expected actual =
+                    if
+                      Types.is_dynamic expected
+                      && not (Types.is_dynamic actual.ty)
+                    then pack_dynamic_value env expected actual
+                    else if Types.same_shape expected actual.ty then
+                      Ok actual.semantic_expr
+                    else Error.error "incompatible transient map entry"
+                  in
+                  (match (adapt key_type key, adapt value_type value) with
+                  | Error _, _ | _, Error _ ->
+                      Error.error
+                        ("conj! map entry types must match transient map: \
+                          expected "
+                       ^ Types.source_name key_type ^ " and "
+                        ^ Types.source_name value_type ^ ", got "
+                       ^ Types.source_name key.ty ^ " and "
+                        ^ Types.source_name value.ty)
+                  | Ok key, Ok value ->
+                      let assoc =
+                        if Types.is_dynamic key_type then
+                          "Lg_runtime.Runtime_transient.map_assoc_dynamic"
+                        else "Lg_runtime.Runtime_transient.map_assoc"
+                      in
+                      Ok
+                        (typed_ir
+                           (TOcaml_app
+                              ( "Lg_runtime.Runtime_transient.map",
+                                [ key_type; value_type ] ))
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident assoc,
+                                [ collection.semantic_expr; key; value ] ))))
+            in
+            let add_transient_map_entries collection key_type value_type entries
+                =
+              List.fold_left
+                (fun result (key_form, value_form) ->
+                  match result with
+                  | Error _ as error -> error
+                  | Ok collection ->
+                      add_transient_map_entry collection key_type value_type
+                        key_form value_form)
+                (Ok collection) entries
+            in
             let add_value collection value_form =
+              match (collection.ty, transient_map_entries value_form) with
+              | ( TOcaml_app
+                    ( "Lg_runtime.Runtime_transient.map",
+                      [ key_type; value_type ] ),
+                  Some entries ) ->
+                  add_transient_map_entries collection key_type value_type
+                    entries
+              | _ -> (
               match compile_expr scope env value_form with
               | Error _ as error -> error
               | Ok value when Types.is_dynamic collection.ty ->
@@ -5614,6 +5691,7 @@ let create ~compile_expr =
                       Error.error
                         ("conj! expects a transient set or vector, got "
                        ^ source_name collection.ty))
+              )
             in
             List.fold_left
               (fun result value_form ->

@@ -27305,6 +27305,37 @@ let test_source_transient_family_preserves_clojurescript_behavior () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_transient_family.cljc" source)
 
+let test_source_conj_bang_supports_transient_maps () =
+  let source =
+    {|
+(def values
+  (persistent!
+   (conj! (transient {})
+          nil
+          {}
+          {:a 1}
+          [:b 2]
+          {:a 3 :c 4})))
+
+(println
+  (str (= 3 (:a values)) ":"
+       (= 2 (:b values)) ":"
+       (= 4 (:c values))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_conj_bang_transient_maps.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "transient map conj! must remain statically typed";
+  assert_ocaml_runs "source_conj_bang_supports_transient_maps"
+    "true:true:true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_conj_bang_transient_maps.cljc" source)
+
 let test_source_transient_family_rejects_invalid_static_operations () =
   compile_with_stdlib_result Lg.Target.Native
     "test/source_transient_rejects_list.cljc"
@@ -49340,6 +49371,8 @@ let tests =
       test_array_write_accepts_optional_payload_values );
     ( "source transient family preserves ClojureScript behavior",
       test_source_transient_family_preserves_clojurescript_behavior );
+    ( "source conj! supports transient maps",
+      test_source_conj_bang_supports_transient_maps );
     ( "source transient family rejects invalid static operations",
       test_source_transient_family_rejects_invalid_static_operations );
     ( "source map access update family matches ClojureScript",
