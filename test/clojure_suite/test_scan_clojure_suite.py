@@ -457,6 +457,54 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_are_skips_host_boolean_constructor_suite(self) -> None:
+        test_file = self.write_suite_file(
+            "host_boolean_constructor_probe.cljc",
+            "(ns clojure.core-test.host-boolean-constructor-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest host-boolean-constructor-suite-is-skipped\n"
+            "  (are [expected x] (= expected (boolean? x))\n"
+            "    true true\n"
+            "    #?@(:cljs [true (js/Boolean true)]\n"
+            "        :clj [true (new Boolean \"true\")])))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.host-boolean-constructor-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_static_boolean_predicate_remains_available(self) -> None:
+        test_file = self.write_suite_file(
+            "static_boolean_predicate_probe.cljc",
+            "(ns clojure.core-test.static-boolean-predicate-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest static-boolean-predicate-compiles\n"
+            "  (is (boolean? true))\n"
+            "  (is (not (boolean? 1))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.static-boolean-predicate-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_static_incompatible_atom_suite_block(self) -> None:
         test_file = self.write_suite_file(
             "atom_nil_probe.cljc",

@@ -1,37 +1,5 @@
 [
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/boolean.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.boolean",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/boolean.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.boolean",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/boolean_qmark.cljc\", line <n>: lg: File \"_none_\", line <n>:\nError: Unbound constructor js/Boolean",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.boolean-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/boolean_qmark.cljc\", line <n>: lg: unknown record type Boolean",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.boolean-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/butlast.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",

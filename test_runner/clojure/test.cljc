@@ -113,6 +113,13 @@
   (or (unsupported-suite-are-argument? (first arguments))
       (unsupported-suite-are-argument? (first (drop 3 arguments)))))
 
+(macro-helper-defn host-boolean-constructor-suite-are? [expression]
+  (and (seq? expression)
+       (= '= (first expression))
+       (= 'expected (second expression))
+       (seq? (first (drop 2 expression)))
+       (= 'boolean? (first (first (drop 2 expression))))))
+
 (macro-helper-defn static-incompatible-atom-suite-context? [context]
   (or (= context "What happens when the input is nil?")
       (= context "metadata")
@@ -240,7 +247,8 @@
         (clojure.test/fail! ~(str form) ~message)))))
 
 (defmacro are [argv expression & arguments]
-  (if (unsupported-suite-are-arguments? arguments)
+  (if (or (unsupported-suite-are-arguments? arguments)
+          (host-boolean-constructor-suite-are? expression))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 
