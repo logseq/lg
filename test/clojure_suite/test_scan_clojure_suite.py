@@ -1559,6 +1559,32 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_parents_closed_edn_set_contains_keyword(self) -> None:
+        test_file = self.write_suite_file(
+            "parents_contains_edn_set_probe.cljc",
+            "(ns clojure.core-test.parents-contains-edn-set-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(defprotocol TestParentsProtocol)\n"
+            "(defrecord TestParentsRecord [] TestParentsProtocol)\n\n"
+            "(deftest parents-edn-set-contains-keyword-compiles\n"
+            "  (derive TestParentsRecord :record)\n"
+            "  (is (contains? (parents TestParentsRecord) :record))\n"
+            "  (underive TestParentsRecord :record))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.parents-contains-edn-set-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

@@ -195,3 +195,29 @@ let rec equal left right =
           Array.length left = Array.length right
           && Array.for_all2 equal left right
       | _ -> false)
+
+let rec contains collection key =
+  let open Lg_edn_backend in
+  match collection with
+  | Nil -> false
+  | Set values -> Array.exists (equal key) values
+  | Map entries -> Array.exists (fun (entry_key, _) -> equal key entry_key) entries
+  | List values | Vector values -> (
+      match key with
+      | Small_int index -> index >= 0 && index < Array.length values
+      | Int index ->
+          index >= 0L && index < Int64.of_int (Array.length values)
+      | _ -> false)
+  | Int4_vector _ | Int_vector _ | Int4_array _ -> (
+      match sequence_values collection with
+      | Some values -> (
+          match key with
+          | Small_int index -> index >= 0 && index < Array.length values
+          | Int index ->
+              index >= 0L && index < Int64.of_int (Array.length values)
+          | _ -> false)
+      | None -> false)
+  | Json_source source -> contains (of_json_string source) key
+  | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Small_int _ | Int _
+  | Bigint _ | Float _ | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
+      false

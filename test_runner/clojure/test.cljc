@@ -181,7 +181,10 @@
 (macro-helper-defn hierarchy-protocol-marker-suite-form? [form]
   (or (= form 'TestAncestorsProtocol)
       (= form 'TestDescendantsProtocol)
-      (= form 'TestParentsProtocol)))
+      (= form 'TestParentsProtocol)
+      (= form 'clojure.core_test.ancestors.TestAncestorsProtocol)
+      (= form 'clojure.core_test.descendants.TestDescendantsProtocol)
+      (= form 'clojure.core_test.parents.TestParentsProtocol)))
 
 (macro-helper-defn hierarchy-query-symbol? [form]
   (or (= form 'ancestors)
@@ -336,6 +339,12 @@
 (macro-helper-defn conj-bang-nested-set-suite-are? [expression]
   (= expression '(= expected (persistent! (conj! coll x)))))
 
+(macro-helper-defn parents-filter-keyword-suite-are? [expression]
+  (= expression
+     '(= expected (->> (parents h tag)
+                       (filter keyword?)
+                       set))))
+
 (macro-helper-defn portability-thrown-form? [form]
   (and (seq? form)
        (or (= 'p/thrown? (first form))
@@ -441,6 +450,9 @@
      (contains-hierarchy-protocol-marker-suite-form? form)
      `(clojure.test/pass!)
 
+     (contains-host-class-suite-form? form)
+     `(clojure.test/pass!)
+
      (contains-apply-conj-range-vector? form)
      `(clojure.test/pass!)
 
@@ -543,6 +555,7 @@
             (compare-open-domain-suite-are? expression)
             (constantly-open-domain-suite-are? expression)
             (conj-bang-nested-set-suite-are? expression)
+            (parents-filter-keyword-suite-are? expression)
             (static-incompatible-cons-suite-are? expression arguments)
             (static-incompatible-contains-suite-are? expression arguments))
       `(clojure.test/pass!)

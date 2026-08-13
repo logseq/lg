@@ -1185,22 +1185,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parents.cljc\", line <n>: lg: heterogeneous vector has element types Lg_edn_backend.t | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.parents",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parents.cljc\", line <n>: lg: heterogeneous vector has element types Lg_edn_backend.t | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.parents",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/parse_boolean.cljc\", line <n>: lg: parse-boolean called with incompatible arguments: expected (string), got (nil)",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.parse-boolean",

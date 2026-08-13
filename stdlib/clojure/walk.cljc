@@ -6,14 +6,22 @@
 (ns clojure.walk
   (:require [ocaml.Lg_runtime.Runtime_walk :as runtime]))
 
-(defn walk [inner outer form]
+(defn walk
+  [^:fn<Lg_edn_backend.t;Lg_edn_backend.t> inner
+   ^:fn<Lg_edn_backend.t;Lg_edn_backend.t> outer
+   ^:Lg_edn_backend.t form]
   (outer (runtime/walk inner form)))
 
-(defn postwalk [f form]
-  (walk (fn [value] (postwalk f value)) f form))
+(defn postwalk
+  [^:fn<Lg_edn_backend.t;Lg_edn_backend.t> f ^:Lg_edn_backend.t form]
+  (walk (fn [^:Lg_edn_backend.t value] (postwalk f value)) f form))
 
-(defn prewalk [f form]
-  (walk (fn [value] (prewalk f value)) identity (f form)))
+(defn prewalk
+  [^:fn<Lg_edn_backend.t;Lg_edn_backend.t> f ^:Lg_edn_backend.t form]
+  (walk
+   (fn [^:Lg_edn_backend.t value] (prewalk f value))
+   (fn [^:Lg_edn_backend.t value] value)
+   (f form)))
 
 (defn keywordize-keys [m]
   (postwalk (fn [value] (runtime/keywordize-map-keys value)) m))

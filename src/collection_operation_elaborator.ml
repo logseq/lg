@@ -144,6 +144,57 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | TBool -> convert "bool"
       | _ -> pack_dynamic_value env dynamic value
   in
+  let rec pack_closed_edn_value value =
+    let expression = value.semantic_expr in
+    let convert name =
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name),
+             [ expression ] ))
+    in
+    match Types.constraint_value_type value.ty with
+    | TOcaml "Lg_edn_backend.t" -> Ok expression
+    | TNil ->
+        Ok
+          (Semantic_ir.Sequence
+             [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+    | TBool -> convert "of_bool"
+    | TInt | TOcaml "int" -> convert "of_int"
+    | TFloat -> convert "of_float"
+    | TChar -> convert "of_char"
+    | TString -> convert "of_string"
+    | TSymbol -> convert "of_symbol"
+    | TKeyword -> convert "of_keyword"
+    | TRegex -> convert "of_regex"
+    | TVector inner ->
+        let value_name = "__lg_contains_edn_vector_value" in
+        let item = typed_ir inner (Semantic_ir.Ident value_name) in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_vector",
+                [
+                  Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], packed);
+                  expression;
+                ] ))
+          (pack_closed_edn_value item)
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        let value_name = "__lg_contains_edn_optional_value" in
+        let item = typed_ir inner (Semantic_ir.Ident value_name) in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Match
+              ( expression,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar value_name)),
+                    packed );
+                ] ))
+          (pack_closed_edn_value item)
+    | _ -> Error.error "contains? EDN key must be closed EDN-compatible"
+  in
   let inferred_field_type env keyword =
     let candidates =
       Env.fold
@@ -4044,6 +4095,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           apply "String.length" [ target.semantic_expr ] ) )))
         | TString, _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
         | (TList _ | TSeq _), _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
+        | TOcaml "Lg_edn_backend.t", _ ->
+            Result.map
+              (fun value ->
+                typed_ir TBool
+                  (Semantic_ir.Apply
+                     ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.contains",
+                       [ target.semantic_expr; value ] )))
+              (pack_closed_edn_value value)
         | (TInt | TFloat | TBool | TChar | TKeyword | TSymbol), _ ->
             Ok (typed_ir TBool (Semantic_ir.Bool false))
         | TMap_keys, TKeyword ->
