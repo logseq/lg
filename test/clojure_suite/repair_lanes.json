@@ -1,38 +1,6 @@
 [
   {
     "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/char.cljc\", line <n>: lg: unknown symbol \\\u00a1",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.char",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/char.cljc\", line <n>: lg: unknown symbol \\\u00a1",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.char",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/char_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.char-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/char_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.char-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/coll_qmark.cljc\", line <n>: lg: unknown symbol 1N",
     "lane": "design-reader-and-numeric-tower",
     "namespace": "clojure.core-test.coll-qmark",

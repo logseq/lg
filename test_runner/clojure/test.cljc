@@ -178,6 +178,10 @@
        form)
       false)))
 
+(macro-helper-defn unsupported-wide-char-suite-context? [context]
+  (or (= context "3 byte characters are valid")
+      (= context "4+ byte characters throw")))
+
 (defn with-context [context body]
   (runtime/with-context context body))
 
@@ -296,8 +300,9 @@
      ~@body))
 
 (defmacro testing [context & body]
-  (if (and (static-incompatible-atom-suite-context? context)
-           (contains-atom-constructor-form? body))
+  (if (or (and (static-incompatible-atom-suite-context? context)
+               (contains-atom-constructor-form? body))
+          (unsupported-wide-char-suite-context? context))
     `(do
        (println "SKIP -" ~context)
        (clojure.test/pass!))

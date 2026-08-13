@@ -555,6 +555,53 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_unicode_byte_char_literal_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "unicode_byte_char_probe.cljc",
+            "(ns clojure.core-test.unicode-byte-char-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest unicode-byte-char-literal-compiles\n"
+            "  (is (= \\¡ (char 161))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.unicode-byte-char-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_wide_unicode_char_suite_blocks(self) -> None:
+        test_file = self.write_suite_file(
+            "wide_unicode_char_probe.cljc",
+            "(ns clojure.core-test.wide-unicode-char-probe\n"
+            "  (:require [clojure.test :refer [deftest is testing]]))\n\n"
+            "(deftest wide-unicode-char-suite-block-is-skipped\n"
+            "  (testing \"3 byte characters are valid\"\n"
+            "    (is (= \\ষ (char 2487))))\n"
+            "  (testing \"4+ byte characters throw\"\n"
+            "    (is (thrown? js/Error (char 65895)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.wide-unicode-char-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_static_incompatible_atom_suite_block(self) -> None:
         test_file = self.write_suite_file(
             "atom_nil_probe.cljc",

@@ -75,11 +75,59 @@ let read_atom source start =
   let finish = loop start in
   (String.sub source start (finish - start), finish)
 
-let char_of_atom = function
+let utf8_scalar_of_string source =
+  let length = String.length source in
+  let byte index = Char.code source.[index] in
+  if length = 1 then Some (byte 0)
+  else if length = 2 then
+    let b0 = byte 0 and b1 = byte 1 in
+    if b0 land 0xE0 = 0xC0 && b0 >= 0xC2 && b1 land 0xC0 = 0x80 then
+      Some (((b0 land 0x1F) lsl 6) lor (b1 land 0x3F))
+    else None
+  else if length = 3 then
+    let b0 = byte 0 and b1 = byte 1 and b2 = byte 2 in
+    if
+      b0 land 0xF0 = 0xE0
+      && (b0 <> 0xE0 || b1 >= 0xA0)
+      && (b0 <> 0xED || b1 < 0xA0)
+      && b1 land 0xC0 = 0x80
+      && b2 land 0xC0 = 0x80
+    then
+      Some
+        (((b0 land 0x0F) lsl 12)
+        lor ((b1 land 0x3F) lsl 6)
+        lor (b2 land 0x3F))
+    else None
+  else if length = 4 then
+    let b0 = byte 0 and b1 = byte 1 and b2 = byte 2 and b3 = byte 3 in
+    if
+      b0 land 0xF8 = 0xF0
+      && b0 <= 0xF4
+      && (b0 <> 0xF0 || b1 >= 0x90)
+      && (b0 <> 0xF4 || b1 < 0x90)
+      && b1 land 0xC0 = 0x80
+      && b2 land 0xC0 = 0x80
+      && b3 land 0xC0 = 0x80
+    then
+      Some
+        (((b0 land 0x07) lsl 18)
+        lor ((b1 land 0x3F) lsl 12)
+        lor ((b2 land 0x3F) lsl 6)
+        lor (b3 land 0x3F))
+    else None
+  else None
+
+let char_of_atom atom =
+  match atom with
   | "\\newline" -> Some '\n'
   | "\\space" -> Some ' '
   | "\\tab" -> Some '\t'
   | atom when String.length atom = 2 && atom.[0] = '\\' -> Some atom.[1]
+  | atom when String.length atom > 1 && atom.[0] = '\\' -> (
+      let source = String.sub atom 1 (String.length atom - 1) in
+      match utf8_scalar_of_string source with
+      | Some scalar when scalar <= 255 -> Some (Char.chr scalar)
+      | _ -> None)
   | _ -> None
 
 let looks_like_float atom =
