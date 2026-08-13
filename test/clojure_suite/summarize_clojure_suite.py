@@ -85,6 +85,8 @@ def classify(error: str) -> str:
         or "unknown record type Boolean" in message
         or "unknown record type cljs.core.UUID" in message
         or "clojure.lang" in message
+        or "unknown function definterface" in message
+        or ("remove_watch.cljc" in message and "unknown function def" in message)
     ):
         return "host-boundary-or-platform-specific"
 
