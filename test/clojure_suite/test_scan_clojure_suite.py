@@ -105,6 +105,8 @@ class SummaryClassificationTests(unittest.TestCase):
                 "transient-collection-boundary",
             "File \"<suite>/case.cljc\", line <n>: lg: match pattern type must match target":
                 "form-or-declaration-static-gap",
+            "File \"<suite>/parents.cljc\", line <n>: lg: unknown symbol TestParentsRecord":
+                "form-or-declaration-static-gap",
         }
 
         for message, expected in examples.items():

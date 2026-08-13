@@ -485,6 +485,7 @@ let dynamic_map key value =
 let record_extension_keyword = ":__lg/extmap"
 let record_metadata_key = "\000lg-record-metadata"
 let record_extension_type = dynamic_map TKeyword (dynamic_constraint TUnknown)
+let record_identity_keyword = ":__lg/identity"
 
 let dynamic_map_types = function
   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) ->
@@ -1321,6 +1322,12 @@ let make_record_extension_field ?(ty = record_extension_type) () =
 let is_record_extension_field field =
   field.keyword = record_extension_keyword
 
+let make_record_identity_field () =
+  make_field record_identity_keyword (TOcaml_app ("ref", [ TUnit ]))
+
+let is_record_identity_field field =
+  field.keyword = record_identity_keyword
+
 let is_static_record_source_field field =
   is_record_extension_field field
   && Option.is_none (dynamic_map_types field.ty)
@@ -1329,7 +1336,11 @@ let find_record_extension_field fields =
   List.find_opt is_record_extension_field fields
 
 let record_constructor_fields fields =
-  List.filter (fun field -> not (is_record_extension_field field)) fields
+  List.filter
+    (fun field ->
+      (not (is_record_extension_field field))
+      && not (is_record_identity_field field))
+    fields
 
 type type_substitutions = Type_solver.substitutions
 

@@ -213,6 +213,13 @@ in `scan_report.json` but still be blocked from smoke promotion.
   expression-position `def` are classified as host-boundary rather than
   source-portable missing core APIs. `definterface` is JVM interface syntax,
   and the `remove-watch` branch exercises Clojure Var-object watch semantics.
+- Empty-field `deftype` now compiles as a static nominal record with a hidden
+  identity field, so repeated zero-argument constructors preserve distinct
+  instance identity without changing source constructor arity. This moves the
+  hierarchy suites past the previous empty-field form blocker. `parents.cljc`
+  and `descendants.cljc` now fail later because the suite uses source type names
+  such as `TestParentsRecord` as first-class hierarchy tags; LG does not yet
+  model type names as portable source values.
 - `clojure.core/var?` now compiles as a source inline predicate for direct
   `#'x` and `(var x)` syntax and is declared in `core.lgi`, so it works through
   explicit refer and automatic core refer. This promotes `var_qmark.cljc` on

@@ -1473,62 +1473,64 @@ let rec compile scope env next_type form =
         | _ -> Error.error "deftype fields must be symbols"
       in
       Result.bind (field_specs [] None false raw_fields) (fun fields ->
-          if fields = [] then Error.error "deftype expects at least one field"
-          else
-            let signature_fields =
-              Signature_overlay.find_record (Names.scoped_key scope name)
-                (Env.signatures env)
-            in
-            let signature_field_type field_name =
-              Option.bind signature_fields (fun fields ->
-                  fields
-                  |> List.find_opt (fun (field : Types.field) ->
-                         field.keyword = ":" ^ field_name)
-                  |> Option.map (fun (field : Types.field) -> field.ty))
-            in
-            let resolve_field_type field_name metadata =
-              match signature_field_type field_name with
-              | Some ty -> Ok ty
-              | None -> (
-                  match metadata with
-                  | None -> Ok (Type_solver.fresh ())
-                  | Some annotation ->
-                      Result.map
-                        (Function_elaborator.infer_named_record scope env)
-                        (Type_annotation.of_param_annotation annotation))
-            in
-            let rec build_definitions definitions = function
-              | [] -> Ok (List.rev definitions)
-              | (field_name, metadata, mutable_field) :: rest ->
-                  Result.bind
-                    (resolve_field_type field_name metadata)
-                    (fun inferred_type ->
-                      let definition =
-                        ( type_parameters_of_type inferred_type,
-                          Types.make_field ~mutable_:mutable_field
-                            (":" ^ field_name) inferred_type )
-                      in
-                      build_definitions (definition :: definitions) rest)
-            in
-            Result.bind (build_definitions [] fields) (fun definitions ->
-                let record_fields = List.map snd definitions in
-                let generalized_types =
-                  record_fields
-                  |> List.map (fun (field : Types.field) -> field.ty)
-                  |> generalize_types
-                in
-                let record_fields =
-                  List.map2
-                    (fun (field : Types.field) ty -> { field with ty })
-                    record_fields generalized_types
-                in
-                let type_parameters =
-                  generalized_types
-                  |> List.concat_map type_parameters_of_type
-                in
-                compile_type_record_fields
-                  ?location:(Source_context.find name_form)
-                  scope env next_type name type_parameters record_fields))
+          let signature_fields =
+            Signature_overlay.find_record (Names.scoped_key scope name)
+              (Env.signatures env)
+          in
+          let signature_field_type field_name =
+            Option.bind signature_fields (fun fields ->
+                fields
+                |> List.find_opt (fun (field : Types.field) ->
+                       field.keyword = ":" ^ field_name)
+                |> Option.map (fun (field : Types.field) -> field.ty))
+          in
+          let resolve_field_type field_name metadata =
+            match signature_field_type field_name with
+            | Some ty -> Ok ty
+            | None -> (
+                match metadata with
+                | None -> Ok (Type_solver.fresh ())
+                | Some annotation ->
+                    Result.map
+                      (Function_elaborator.infer_named_record scope env)
+                      (Type_annotation.of_param_annotation annotation))
+          in
+          let rec build_definitions definitions = function
+            | [] -> Ok (List.rev definitions)
+            | (field_name, metadata, mutable_field) :: rest ->
+                Result.bind
+                  (resolve_field_type field_name metadata)
+                  (fun inferred_type ->
+                    let definition =
+                      ( type_parameters_of_type inferred_type,
+                        Types.make_field ~mutable_:mutable_field
+                          (":" ^ field_name) inferred_type )
+                    in
+                    build_definitions (definition :: definitions) rest)
+          in
+          Result.bind (build_definitions [] fields) (fun definitions ->
+              let record_fields =
+                match definitions with
+                | [] -> [ Types.make_record_identity_field () ]
+                | _ -> List.map snd definitions
+              in
+              let generalized_types =
+                record_fields
+                |> List.map (fun (field : Types.field) -> field.ty)
+                |> generalize_types
+              in
+              let record_fields =
+                List.map2
+                  (fun (field : Types.field) ty -> { field with ty })
+                  record_fields generalized_types
+              in
+              let type_parameters =
+                generalized_types |> List.concat_map type_parameters_of_type
+              in
+              compile_type_record_fields
+                ?location:(Source_context.find name_form)
+                ~allow_empty:true scope env next_type name type_parameters
+                record_fields))
   | FList
       (FSymbol
          ( "deftype-methods"

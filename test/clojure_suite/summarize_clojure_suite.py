@@ -127,6 +127,7 @@ def classify(error: str) -> str:
         or "requires an explicit option element type" in lower
         or "nullable updater" in lower
         or "guard narrowing requires a statically typed value" in lower
+        or re.search(r"unknown symbol Test[A-Za-z0-9]*(?:Record|Type)", message)
     ):
         return "static-typing-or-closed-domain-boundary"
 
@@ -206,6 +207,7 @@ def classify_static_boundary(error: str) -> str:
         or "cannot infer" in lower
         or "requires an explicit option element type" in lower
         or "match pattern type must match target" in lower
+        or re.search(r"unknown symbol Test[A-Za-z0-9]*(?:Record|Type)", message)
     ):
         return "form-or-declaration-static-gap"
 

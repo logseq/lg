@@ -19784,6 +19784,27 @@ let test_static_deftype_preserves_identity_predicate () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_empty_field_deftype_constructs_static_nominal_values () =
+  let source =
+    {|
+(defprotocol IMarker
+  (marker [value] :keyword))
+(deftype Marker []
+  IMarker
+  (marker [_] :ok))
+(def first-marker (Marker.))
+(def second-marker (Marker.))
+(println (marker first-marker))
+(println (__lg_identical-predicate first-marker first-marker))
+(println (__lg_identical-predicate first-marker second-marker))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "empty_field_deftype_constructs_static_nominal_values"
+    ":ok\ntrue\nfalse\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_identity_predicate_uses_constrained_receiver_values () =
   let source =
     {|
@@ -47546,6 +47567,8 @@ let tests =
       test_static_deftype_values_do_not_gain_map_semantics );
     ( "static deftype preserves identity predicate",
       test_static_deftype_preserves_identity_predicate );
+    ( "empty-field deftype constructs static nominal values",
+      test_empty_field_deftype_constructs_static_nominal_values );
     ( "identity predicate uses constrained receiver values",
       test_identity_predicate_uses_constrained_receiver_values );
     ( "static protocol lookup uses the constrained value type",

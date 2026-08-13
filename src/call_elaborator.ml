@@ -7133,6 +7133,21 @@ let create ~compile_expr =
                                  "Lg_runtime.Runtime_map.empty") );
                         ]
                 in
+                let values =
+                  match
+                    List.find_opt Types.is_record_identity_field record.fields
+                  with
+                  | None -> values
+                  | Some field ->
+                      values
+                      @ [
+                          ( field,
+                            typed_ir field.ty
+                              (Semantic_ir.Apply
+                                 (Semantic_ir.Ident "ref", [ Semantic_ir.Unit ]))
+                          );
+                        ]
+                in
                 let expression =
                   if values = [] then Semantic_ir.Unit
                   else
