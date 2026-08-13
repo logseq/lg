@@ -745,8 +745,31 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (typed_ir collection.ty
                    (Semantic_ir.Cons
                       (value.semantic_expr, collection.semantic_expr)))
-            | TList inner ->
-                heterogeneous_collection_type_error "list" [ inner; value.ty ]
+            | TList inner when Edn_value_elaborator.is_value_type inner ->
+                Result.map
+                  (fun packed ->
+                    typed_ir collection.ty
+                      (Semantic_ir.Cons
+                         (packed, collection.semantic_expr)))
+                  (Edn_value_elaborator.pack_expression value.ty
+                     value.semantic_expr)
+            | TList inner -> (
+                match
+                  ( Edn_value_elaborator.mapper inner,
+                    Edn_value_elaborator.pack_expression value.ty
+                      value.semantic_expr )
+                with
+                | Ok pack_existing, Ok packed ->
+                    Ok
+                      (typed_ir (TList Edn_value_elaborator.value_ty)
+                         (Semantic_ir.Cons
+                            ( packed,
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Ident "List.map",
+                                  [ pack_existing; collection.semantic_expr ] ) )))
+                | Error _, _ | _, Error _ ->
+                    heterogeneous_collection_type_error "list"
+                      [ inner; value.ty ])
             | TSeq (TUnknown | TMeta _ | TVar _) ->
                 Ok
                   (typed_ir (TSeq value.ty)
@@ -798,6 +821,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                      (Semantic_ir.Apply
                         ( Semantic_ir.Ident "Rrbvec.push_back",
                           [ collection.semantic_expr; value ] )))
+            | TVector inner when Edn_value_elaborator.is_value_type inner ->
+                Result.map
+                  (fun packed ->
+                    typed_ir collection.ty
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident "Rrbvec.push_back",
+                           [ collection.semantic_expr; packed ] )))
+                  (Edn_value_elaborator.pack_expression value.ty
+                     value.semantic_expr)
             | TVector
                 ((TNullable target_inner
                  | TOcaml_app ("option", [ target_inner ])) as inner)
@@ -846,9 +878,26 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                             optionalized;
                             Semantic_ir.Constructor ("None", None);
                           ] )))
-            | TVector inner ->
-                heterogeneous_collection_type_error "vector"
-                  [ inner; value.ty ]
+            | TVector inner -> (
+                match
+                  ( Edn_value_elaborator.mapper inner,
+                    Edn_value_elaborator.pack_expression value.ty
+                      value.semantic_expr )
+                with
+                | Ok pack_existing, Ok packed ->
+                    Ok
+                      (typed_ir (TVector Edn_value_elaborator.value_ty)
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Rrbvec.push_back",
+                              [
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident "Rrbvec.map",
+                                    [ pack_existing; collection.semantic_expr ] );
+                                packed;
+                              ] )))
+                | Error _, _ | _, Error _ ->
+                    heterogeneous_collection_type_error "vector"
+                      [ inner; value.ty ])
             | TSet (TUnknown | TMeta _ | TVar _) ->
                 let value_ty = value.ty in
                 Result.bind (set_module_name env value_ty) (fun set_module ->

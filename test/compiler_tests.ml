@@ -3694,6 +3694,26 @@ let test_clojure_data_collections_use_closed_edn_elements () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_conj_packs_values_into_closed_edn_collections () =
+  let source =
+    {|
+(def listed (conj (list {:a 1} {:b 2}) 3))
+(def vectored (conj (vector {:a 1} {:b 2}) 3))
+(def promoted-list (conj (list "a" "b") ["c" "d"]))
+(def promoted-vector (conj ["a" "b"] ["c" "d"]))
+(println (pr-str listed))
+(println (pr-str vectored))
+(println (pr-str promoted-list))
+(println (pr-str promoted-vector))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "conj_packs_values_into_closed_edn_collections"
+    "(3 {:a 1} {:b 2})\n[{:a 1} {:b 2} 3]\n([\"c\" \"d\"] \"a\" \"b\")\n[\"a\" \"b\" [\"c\" \"d\"]]\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_heterogeneous_sets_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string {|(def value #{:tag 1})|} |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value #{1 2.0})|} |> expect_ok |> ignore;
@@ -47401,6 +47421,8 @@ let tests =
       test_heterogeneous_lists_use_closed_edn_or_require_a_sum );
     ( "Clojure data collections use closed EDN elements",
       test_clojure_data_collections_use_closed_edn_elements );
+    ( "conj packs values into closed EDN collections",
+      test_conj_packs_values_into_closed_edn_collections );
     ( "heterogeneous sets use closed EDN or require a sum",
       test_heterogeneous_sets_use_closed_edn_or_require_a_sum );
     ( "heterogeneous computed maps require declared sum types",
