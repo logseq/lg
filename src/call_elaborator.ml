@@ -12296,6 +12296,23 @@ let create ~compile_expr =
                                     (pack_dynamic_value env dynamic_ty default)))))))
     in
     match arg_forms with
+    | [ target; FSymbol "nil" ] -> compile_expr scope env target
+    | [ target; FSymbol "nil"; default ] ->
+        Result.bind (compile_expr scope env target) (fun target ->
+            Result.map
+              (fun default ->
+                let target_name = "__lg_get_in_nil_path_target" in
+                let default_name = "__lg_get_in_nil_path_default" in
+                typed_ir target.ty
+                  (Semantic_ir.Let
+                     ( [ (Semantic_ir.PVar target_name, target.semantic_expr) ],
+                       Semantic_ir.Let
+                         ( [
+                             ( Semantic_ir.PVar default_name,
+                               default.semantic_expr );
+                           ],
+                           Semantic_ir.Ident target_name ) )))
+              (compile_expr scope env default))
     | [ target; FVector keys ] ->
         compile_expr scope env (Core_form_expansion.get_in target keys None)
     | [ target; FVector keys; default ] ->

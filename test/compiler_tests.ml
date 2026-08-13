@@ -27482,6 +27482,37 @@ let test_source_map_access_update_family_matches_clojurescript () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_map_access_update_family.cljc" source)
 
+let test_source_get_in_treats_nil_path_as_empty () =
+  let source =
+    {|
+(ns test.source-get-in-nil-path
+  (:require [clojure.core :refer [= get-in println]]))
+
+(println
+  (and (= nil (get-in nil nil))
+       (= nil (get-in nil nil "not found"))
+       (= {:answer 42} (get-in {:answer 42} nil))
+       (= {:answer 42} (get-in {:answer 42} nil "not found"))))
+(println
+  (= {:answer 42}
+     (get-in (do (println "target") {:answer 42})
+             nil
+             (do (println "default") "not found"))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_get_in_nil_path.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "get-in with a nil path must remain statically typed";
+  assert_ocaml_runs "source_get_in_treats_nil_path_as_empty"
+    "true\ntarget\ndefault\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_get_in_nil_path.cljc" source)
+
 let test_source_map_access_update_family_rejects_invalid_inputs () =
   compile_with_stdlib_result Lg.Target.Native
     "test/source_get_rejects_bad_array_index.cljc"
@@ -49772,6 +49803,8 @@ let tests =
       test_source_transient_family_rejects_invalid_static_operations );
     ( "source map access update family matches ClojureScript",
       test_source_map_access_update_family_matches_clojurescript );
+    ( "source get-in treats nil path as empty",
+      test_source_get_in_treats_nil_path_as_empty );
     ( "source map access update family rejects invalid inputs",
       test_source_map_access_update_family_rejects_invalid_inputs );
     ( "source fundamental sequence family matches ClojureScript",

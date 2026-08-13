@@ -174,6 +174,11 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `ex-data` payloads in one collection. That should be handled as a closed
   watch-event/ex-data domain or a documented narrow ex-data dynamic boundary,
   not by weakening ordinary record storage to dynamic.
+- `clojure.core/get-in` now treats a literal `nil` path as an empty path on
+  Native and Melange for both public arities, returning the target without
+  entering `Runtime_dynamic`. The upstream namespace now advances to computed
+  paths over several incompatible nested record/map/vector shapes; that
+  remaining fixture needs an explicit closed domain rather than record packing.
 - `clojure.core/ex-info` data literal maps now accept local statically typed
   scalar values through the documented exception-only `exception-data<T>`
   capability. First-class `every?` now adapts to helper-accumulated overloads,

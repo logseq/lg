@@ -177,7 +177,7 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/get_in.cljc\", line <n>: lg: nil cannot cross a dynamic boundary; give it a concrete option payload type; got nil",
+    "error": "File \"<suite>/get_in.cljc\", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records; got record<{:a:int}>",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.get-in",
     "static_subclass": "dynamic-boundary-needs-closed-domain",
@@ -185,7 +185,7 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/get_in.cljc\", line <n>: lg: nil cannot cross a dynamic boundary; give it a concrete option payload type; got nil",
+    "error": "File \"<suite>/get_in.cljc\", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records; got record<{:a:int}>",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.get-in",
     "static_subclass": "dynamic-boundary-needs-closed-domain",
