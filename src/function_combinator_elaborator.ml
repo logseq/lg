@@ -520,6 +520,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         ("apply expects a seqable value, got "
                         ^ Types.source_name collection.ty)
                   | Ok (inner, list_expr) -> (
+                      let empty_string_rest =
+                        Types.equal collection.ty TString
+                        &&
+                        match
+                          Semantic_ir.unlocated collection.semantic_expr
+                        with
+                        | Semantic_ir.String "" -> true
+                        | _ -> false
+                      in
+                      let inner, list_expr =
+                        match (empty_string_rest, fn_form, fixed_args) with
+                        | true, FSymbol "+", _ -> (TInt, Semantic_ir.List [])
+                        | true, _, first :: _ ->
+                            (first.ty, Semantic_ir.List [])
+                        | _ -> (inner, list_expr)
+                      in
                       match fn_form with
                       | FSymbol "str" ->
                           let value_name = "__lg_apply_str_value" in
@@ -576,6 +592,56 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   Semantic_ir.Int 0;
                                   values;
                                 ]))
+                    | FSymbol ("conj" | "clojure.core/conj" | "cljs.core/conj")
+                      -> (
+                        match fixed_args with
+                        | [ target ] -> (
+                            let target_element_ty =
+                              match target.ty with
+                              | TVector element_ty -> Some element_ty
+                              | _ -> None
+                            in
+                            match target_element_ty with
+                            | Some element_ty ->
+                                let resolved_element_ty =
+                                  match element_ty with
+                                  | TUnknown | TMeta _ | TVar _ -> inner
+                                  | _ -> element_ty
+                                in
+                                let item_name = "__lg_apply_conj_item" in
+                                let item =
+                                  typed_ir inner
+                                    (Semantic_ir.Ident item_name)
+                                in
+                                Result.map
+                                  (fun item_expr ->
+                                    typed_ir (TVector resolved_element_ty)
+                                      (apply "List.fold_left"
+                                         [
+                                           Semantic_ir.Fun
+                                             ( [
+                                                 Semantic_ir.PVar
+                                                   "__lg_apply_conj_vector";
+                                                 Semantic_ir.PVar item_name;
+                                               ],
+                                               apply "Rrbvec.push_back"
+                                                 [
+                                                   Semantic_ir.Ident
+                                                     "__lg_apply_conj_vector";
+                                                   item_expr;
+                                                 ] );
+                                           target.semantic_expr;
+                                           list_expr;
+                                         ]))
+                                  (adapt_value_to_type env resolved_element_ty
+                                     item)
+                            | None ->
+                                Error.error
+                                  "apply conj expects a vector target")
+                        | _ ->
+                            Error.error
+                              "apply conj expects one fixed collection \
+                               argument")
                     | FSymbol "__lg_pr" -> (
                         match lookup_binding scope env "*out*" with
                         | writer ->

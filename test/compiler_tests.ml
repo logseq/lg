@@ -25220,6 +25220,25 @@ let test_big_numeric_conversions_compile_to_supported_numeric_types () =
     (compile_with_stdlib Lg.Target.Melange
        "app/big_numeric_conversions.cljc" source)
 
+let test_apply_string_rest_cases_compile_statically () =
+  let source =
+    {|
+(ns app.apply-string-rest
+  (:require [clojure.core :refer [= apply conj println]]))
+(println (= 0 (apply + "")))
+(println (= 1 (apply + 1 "")))
+(println (= [\a \b \c] (apply conj [] "abc")))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/apply_string_rest.cljc"
+      source
+  in
+  assert_ocaml_runs "apply_string_rest" "true\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "app/apply_string_rest.cljc" source)
+
 let test_source_scalar_predicates_are_statically_first_class () =
   let source =
     {|
@@ -40981,14 +41000,16 @@ let test_sets_support_primitive_lists_and_vectors () =
 (def list-values (hash-set (list 1 2) (list 1 2)))
 (def vector-values (hash-set [1 2] [1 2]))
 (def more-vectors (conj vector-values [2 3]))
+(def edn-vectors (hash-set [:a 1] [:a 1] [:b 2]))
 (println (str (count list-values) ":" (contains? list-values (list 1 2)) ":"
               (count more-vectors) ":" (contains? more-vectors [2 3]) ":"
-              (pr-str list-values) ":" (pr-str more-vectors)))
+              (pr-str list-values) ":" (pr-str more-vectors) ":"
+              (count edn-vectors)))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "sets_support_primitive_lists_and_vectors"
-    "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}\n" ocaml_source
+    "1:true:2:true:#{(1 2)}:#{[1 2] [2 3]}:2\n" ocaml_source
 
 let test_sets_support_nested_composite_elements () =
   let source =
@@ -48313,6 +48334,8 @@ let tests =
       test_numeric_suffix_literals_compile_to_supported_numeric_types );
     ( "big numeric conversions compile to supported numeric types",
       test_big_numeric_conversions_compile_to_supported_numeric_types );
+    ( "apply string rest cases compile statically",
+      test_apply_string_rest_cases_compile_statically );
     ( "source scalar predicates are statically first-class",
       test_source_scalar_predicates_are_statically_first_class );
     ( "source conditional wrappers match ClojureScript",
