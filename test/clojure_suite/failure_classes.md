@@ -96,11 +96,11 @@ Static typing subclasses:
 | subclass | failures | handling |
 | --- | ---: | --- |
 | `negative-runtime-test-is-static-error` | 125 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. In LG these should usually remain compile-time errors and move to a static-error audit lane, not be fixed with dynamic widening. |
-| `heterogeneous-collection-needs-closed-domain` | 64 | Add explicit closed domains only where the heterogeneous shape is part of a supported API such as ex-data/watch events/EDN; do not erase ordinary collections to dynamic. |
+| `heterogeneous-collection-needs-closed-domain` | 68 | Add explicit closed domains only where the heterogeneous shape is part of a supported API such as ex-data/watch events/EDN; do not erase ordinary collections to dynamic. |
 | `first-class-polymorphic-or-hof` | 16 | Direct calls often work, but the suite passes polymorphic vars such as `=`, `every?`, `some`, or heterogeneously typed functions as first-class values. This needs typed capability dictionaries or explicit overload packaging, not a universal function dynamic. |
 | `transient-collection-boundary` | 12 | Current transient support is partial. Fix with precise transient map/set/vector domains and source-compatible operation arities. |
 | `dynamic-boundary-needs-closed-domain` | 8 | Failures such as watch events and ex-data cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
-| `form-or-declaration-static-gap` | 8 | Includes forms such as empty-field `deftype`, match-pattern typing, and `(atom nil)` option inference. These need source/type-system work, not stdlib public-name dispatch. |
+| `form-or-declaration-static-gap` | 4 | Includes forms such as match-pattern typing and `(atom nil)` option inference. These need source/type-system work, not stdlib public-name dispatch. |
 | `typed-protocol-or-capability-gap` | 8 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup; `hash-set` now supports nil, char, empty list, vector, nested set, and promotes to smoke coverage on both targets. |
 
 Repair lanes are also emitted to
@@ -111,8 +111,8 @@ namespace/target:
 | --- | ---: | --- |
 | `design-reader-and-numeric-tower` | 136 | Bigint, bigdecimal, ratio, large integer, named char, and tagged literal behavior must be designed across reader, types, arithmetic, equality, printing, and EDN before implementation. |
 | `audit-as-static-error` | 125 | Upstream negative runtime tests that LG intentionally rejects at compile time; keep these in the static-error lane unless a concrete source-compatible static API is missing. |
-| `design-closed-domain-or-narrow-runtime-boundary` | 72 | Heterogeneous values and open event/error payloads need explicit closed domains or a documented minimal dynamic boundary such as regex match/ex-data/watch payloads. |
-| `implement-static-language-capability` | 44 | Real LG language/runtime capability gaps: first-class polymorphic operations, typed transient domains, option inference, match/type-name forms, comparators, and nullable updaters. |
+| `design-closed-domain-or-narrow-runtime-boundary` | 76 | Heterogeneous values and open event/error payloads need explicit closed domains or a documented minimal dynamic boundary such as regex match/ex-data/watch payloads. |
+| `implement-static-language-capability` | 40 | Real LG language/runtime capability gaps: first-class polymorphic operations, typed transient domains, option inference, match forms, comparators, and nullable updaters. |
 | `document-or-gate-host-boundary` | 20 | JVM/JS class identity, Java interop, and platform-only globals must stay documented/gated unless LG introduces a deliberate portable representation. |
 
 ## Platform skew
@@ -228,11 +228,13 @@ in `scan_report.json` but still be blocked from smoke promotion.
   and the `remove-watch` branch exercises Clojure Var-object watch semantics.
 - Empty-field `deftype` now compiles as a static nominal record with a hidden
   identity field, so repeated zero-argument constructors preserve distinct
-  instance identity without changing source constructor arity. This moves the
-  hierarchy suites past the previous empty-field form blocker. `parents.cljc`
-  and `descendants.cljc` now fail later because the suite uses source type names
-  such as `TestParentsRecord` as first-class hierarchy tags; LG does not yet
-  model type names as portable source values.
+  instance identity without changing source constructor arity. Source-defined
+  `deftype`/`defrecord` names now also compile as portable EDN symbol hierarchy
+  tags such as `clojure.core-test.parents/TestParentsRecord`, without modeling
+  JVM or JS class objects. `parents.cljc` and `descendants.cljc` now fail later
+  on mixed EDN named-value vectors such as `[TestParentsRecord ::record]`,
+  which need a closed EDN literal/domain promotion rather than a type-name
+  symbol fix.
 - `clojure.core/var?` now compiles as a source inline predicate for direct
   `#'x` and `(var x)` syntax and is declared in `core.lgi`, so it works through
   explicit refer and automatic core refer. This promotes `var_qmark.cljc` on

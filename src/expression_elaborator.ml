@@ -48,6 +48,30 @@ let rec contains_source_macro scope env = function
   | FFloat _ | FChar _ | FBool _ ->
       false
 
+let source_type_tag_symbol scope env type_name =
+  let source_symbol =
+    match String.rindex_opt type_name '/' with
+    | Some index ->
+        let owner = String.sub type_name 0 index in
+        let local_name =
+          String.sub type_name (index + 1)
+            (String.length type_name - index - 1)
+        in
+        let owner =
+          Env.resolve_namespace_alias ~scope owner env
+          |> Option.value ~default:owner
+        in
+        owner ^ "/" ^ local_name
+    | None -> scope ^ "/" ^ type_name
+  in
+  match Resolver.lookup_record_type scope env type_name with
+  | Ok _ ->
+      Some
+        (typed_ir (TOcaml "Lg_edn_backend.t")
+           (Semantic_ir.Constructor
+              ("Lg_edn_backend.Symbol", Some (Semantic_ir.String source_symbol))))
+  | Error _ -> None
+
 let rec compile_expr scope (env : Env.t) form =
   match compile_expr_unlocated scope env form with
   | Error error ->
@@ -162,9 +186,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
           match untyped_first_class_function_error name with
           | Some message -> Error.error message
           | None -> (
-              match lookup_function scope env name with
-              | Ok function_ -> Ok function_
-              | Error _ -> Error.error ("unknown symbol " ^ name))))
+              match source_type_tag_symbol scope env name with
+              | Some expression -> Ok expression
+              | None -> (
+                  match lookup_function scope env name with
+                  | Ok function_ -> Ok function_
+                  | Error _ -> Error.error ("unknown symbol " ^ name)))))
   | FCoreSymbol core_symbol ->
       lookup_function scope env (Ast.core_symbol_qualified_name core_symbol)
   | FVector forms -> compile_vector scope env forms

@@ -19805,6 +19805,27 @@ let test_empty_field_deftype_constructs_static_nominal_values () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_source_deftype_names_work_as_hierarchy_tags () =
+  let source =
+    {|
+(ns app.hierarchy-tags
+  (:require [clojure.core :refer [= derive descendants hash-set isa?
+                                  make-hierarchy parents println]]))
+(deftype Marker [])
+(def hierarchy (derive (make-hierarchy) Marker :app/type))
+(println (isa? hierarchy Marker :app/type))
+(println (= (hash-set :app/type) (parents hierarchy Marker)))
+(println (= (hash-set Marker) (descendants hierarchy :app/type)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/hierarchy_tags.cljc" source
+  in
+  assert_ocaml_runs "source_deftype_names_work_as_hierarchy_tags"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/hierarchy_tags.cljc" source)
+
 let test_identity_predicate_uses_constrained_receiver_values () =
   let source =
     {|
@@ -47569,6 +47590,8 @@ let tests =
       test_static_deftype_preserves_identity_predicate );
     ( "empty-field deftype constructs static nominal values",
       test_empty_field_deftype_constructs_static_nominal_values );
+    ( "source deftype names work as hierarchy tags",
+      test_source_deftype_names_work_as_hierarchy_tags );
     ( "identity predicate uses constrained receiver values",
       test_identity_predicate_uses_constrained_receiver_values );
     ( "static protocol lookup uses the constrained value type",
