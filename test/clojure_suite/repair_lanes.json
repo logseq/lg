@@ -3001,18 +3001,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: = arguments must have the same type: record<{:k:nullable<int>}>, record<{:k:nil}>",
+    "error": "File \"<suite>/update.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.update",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "dynamic-boundary-needs-closed-domain",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: = arguments must have the same type: record<{:k:nullable<int>}>, record<{:k:nil}>",
+    "error": "File \"<suite>/update.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.update",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "dynamic-boundary-needs-closed-domain",
     "target": "native"
   },
   {

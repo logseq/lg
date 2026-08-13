@@ -23099,6 +23099,26 @@ let test_update_supports_static_ifn_updaters () =
     "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
   ignore (compile_with_stdlib Lg.Target.Melange "app/update_ifn.cljc" source)
 
+let test_record_equality_allows_nil_and_nullable_fields () =
+  let source =
+    {|
+(ns app.record-equality-nil
+  (:require [clojure.core :refer [= println update]]))
+(println (= (update {:k 5} :k :missing) {:k nil}))
+(println (= {:k nil} (update {:k 5} :k :missing)))
+(println (= (update {:k 5} :k identity) {:k nil}))
+(println (= {:k nil} (update {:k 5} :k identity)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/record_equality_nil.cljc" source
+  in
+  assert_ocaml_runs "record_equality_allows_nil_and_nullable_fields"
+    "true\ntrue\nfalse\nfalse\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/record_equality_nil.cljc"
+       source)
+
 let test_keyword_let_bindings_preserve_static_map_access () =
   let source =
     {|
@@ -47950,6 +47970,8 @@ let tests =
       test_update_missing_key_supports_nullable_core_updaters );
     ( "update supports static IFn updaters",
       test_update_supports_static_ifn_updaters );
+    ( "record equality allows nil and nullable fields",
+      test_record_equality_allows_nil_and_nullable_fields );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",

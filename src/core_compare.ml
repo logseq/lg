@@ -51,6 +51,66 @@ let disjoint_static_equality left_ty right_ty =
   | Some left, Some right -> left <> right
   | _ -> false
 
+let nullable_equality_compatible left_ty right_ty =
+  match (left_ty, right_ty) with
+  | TNil, (TNullable _ | TOcaml_app ("option", [ _ ]))
+  | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil ->
+      true
+  | (TNullable inner | TOcaml_app ("option", [ inner ])), actual
+  | actual, (TNullable inner | TOcaml_app ("option", [ inner ])) ->
+      Types.assignable ~policy:Host_boundary ~expected:inner ~actual
+  | _ -> false
+
+let structural_record_fields_for_equality = function
+  | TRecord fields -> Some fields
+  | TNamed_record { fields; nominal = false; _ } -> Some fields
+  | _ -> None
+
+let matching_record_fields left_fields right_fields =
+  if List.length left_fields <> List.length right_fields then None
+  else
+    let rec loop pairs = function
+      | [] -> Some (List.rev pairs)
+      | (left_field : field) :: rest -> (
+          match
+            List.find_opt
+              (fun (right_field : field) ->
+                right_field.keyword = left_field.keyword)
+              right_fields
+          with
+          | Some right_field -> loop ((left_field, right_field) :: pairs) rest
+          | None -> None)
+    in
+    loop [] left_fields
+
+let rec equality_type_compatible left_ty right_ty =
+  let directly_compatible =
+    Types.is_dynamic left_ty
+    || Types.is_dynamic right_ty
+    || Types.same_shape left_ty right_ty
+    || (Types.is_numeric left_ty && Types.is_numeric right_ty)
+    || disjoint_static_equality left_ty right_ty
+    || nullable_equality_compatible left_ty right_ty
+    || Types.assignable ~policy:Host_boundary ~expected:left_ty ~actual:right_ty
+    || Types.defer_to_ocaml ~expected:left_ty ~actual:right_ty
+    || (sequential_type left_ty && sequential_type right_ty)
+  in
+  if directly_compatible then true
+  else
+    match
+      ( structural_record_fields_for_equality left_ty,
+        structural_record_fields_for_equality right_ty )
+    with
+    | Some left_fields, Some right_fields -> (
+        match matching_record_fields left_fields right_fields with
+        | Some pairs ->
+            List.for_all
+              (fun ((left_field : field), (right_field : field)) ->
+                equality_type_compatible left_field.ty right_field.ty)
+              pairs
+        | None -> false)
+    | _ -> false
+
 let rec equality_expr ?env left right =
   let resolve value =
     match env with
@@ -258,6 +318,28 @@ let rec equality_expr ?env left right =
             ( Semantic_ir.Ident (set_module ^ ".equal"),
               [ left.semantic_expr; right.semantic_expr ] )
       | Error _ -> Semantic_ir.Bool false)
+  | (TRecord left_fields | TNamed_record { fields = left_fields; _ }),
+    (TRecord right_fields | TNamed_record { fields = right_fields; _ }) -> (
+      match matching_record_fields left_fields right_fields with
+      | Some pairs ->
+          let parts =
+            pairs
+            |> List.map
+                 (fun ((left_field : field), (right_field : field)) ->
+                   let left_field_value =
+                     typed_ir left_field.ty
+                       (Structural_map.field_expr left left_field)
+                   in
+                   let right_field_value =
+                     typed_ir right_field.ty
+                       (Structural_map.field_expr right right_field)
+                   in
+                   equality_expr ?env left_field_value right_field_value)
+          in
+          and_expressions parts
+      | None ->
+          Semantic_ir.Sequence
+            [ left.semantic_expr; right.semantic_expr; Semantic_ir.Bool false ])
   | (TRecord fields | TNamed_record { fields; _ }), _ ->
       let parts =
         fields
@@ -345,22 +427,7 @@ let compile ?env name args =
       if name = "=" || name = "not=" then
         if
           List.for_all
-            (fun arg ->
-              Types.is_dynamic first.ty
-              || Types.is_dynamic arg.ty
-              || Types.same_shape first.ty arg.ty
-              || (Types.is_numeric first.ty && Types.is_numeric arg.ty)
-              || disjoint_static_equality first.ty arg.ty
-              || (match (first.ty, arg.ty) with
-                 | TNil, TNullable _ | TNullable _, TNil -> true
-                 | TNullable inner, ty | ty, TNullable inner ->
-                     Types.assignable ~policy:Host_boundary ~expected:inner
-                       ~actual:ty
-                 | _ -> false)
-              || Types.assignable ~policy:Host_boundary ~expected:first.ty
-                   ~actual:arg.ty
-              || Types.defer_to_ocaml ~expected:first.ty ~actual:arg.ty
-              || (sequential_type first.ty && sequential_type arg.ty))
+            (fun arg -> equality_type_compatible first.ty arg.ty)
             args
         then
           let equal_expr =
