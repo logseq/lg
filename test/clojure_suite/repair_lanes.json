@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.binding",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.binding",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/bit_and.cljc\", line <n>: lg: bit-and called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.bit-and",

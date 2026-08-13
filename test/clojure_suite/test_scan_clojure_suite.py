@@ -512,6 +512,54 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_heterogeneous_binding_suite_body(self) -> None:
+        test_file = self.write_suite_file(
+            "binding_skip_probe.cljc",
+            "(ns clojure.core-test.binding-skip-probe\n"
+            "  (:require [clojure.core-test.portability\n"
+            "             #?(:cljs :refer-macros :default :refer)\n"
+            "             [when-var-exists]]))\n\n"
+            "(when-var-exists binding\n"
+            "  (def ^:dynamic *x* :unset)\n"
+            "  (def impossible-binding (binding [*x* nil] *x*)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.binding-skip-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_static_dynamic_binding_remains_available(self) -> None:
+        test_file = self.write_suite_file(
+            "static_binding_probe.cljc",
+            "(ns clojure.core-test.static-binding-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(def ^:dynamic *x* :unset)\n"
+            "(deftest static-dynamic-binding-compiles\n"
+            "  (is (= :set (binding [*x* :set] *x*))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.static-binding-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_async_macro_is_available_to_suite(self) -> None:
         test_file = self.write_suite_file(
             "async_macro_probe.cljc",

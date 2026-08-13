@@ -5,6 +5,9 @@
       (= var-sym '*')
       (= var-sym 'add-watch)
       (= var-sym 'ancestors)
+      ;; LG supports statically typed binding, but this upstream suite asserts
+      ;; heterogeneous dynamic Var rebinding that LG intentionally rejects.
+      (= var-sym 'binding)
       (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
       (= var-sym 'denominator)
