@@ -1,21 +1,5 @@
 [
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/doseq.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.doseq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/doseq.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.doseq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/double.cljc\", line <n>: lg: unknown symbol 1N",
     "lane": "design-reader-and-numeric-tower",
