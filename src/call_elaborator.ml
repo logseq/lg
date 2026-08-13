@@ -3106,6 +3106,32 @@ let rec function_needs_representation_adapter expected actual =
           expected_arities actual_arities
     | _ -> false
 
+let stored_overloaded_arity_type (arity : fn_arity) =
+  TFn
+    ( arity.fixed_params
+      @ Option.fold ~none:[] ~some:(fun rest -> [ TSeq rest ])
+          arity.rest_param,
+      arity.return_ty )
+
+let matching_overloaded_arity expected actual_arities =
+  actual_arities
+  |> List.mapi (fun index actual -> (index, actual))
+  |> List.find_opt (fun (_, (actual : fn_arity)) ->
+         List.length actual.fixed_params
+         = List.length expected.fixed_params
+         && Option.is_some actual.rest_param
+            = Option.is_some expected.rest_param)
+
+let overloaded_function_needs_adapter expected_arities actual_arities =
+  if List.length expected_arities <> List.length actual_arities then true
+  else
+    List.exists2
+      (fun expected actual ->
+        function_needs_representation_adapter
+          (stored_overloaded_arity_type expected)
+          (stored_overloaded_arity_type actual))
+      expected_arities actual_arities
+
 let function_has_host_int_return_boundary expected actual =
   match (expected, actual) with
   | TFn (_, expected_return), TFn (_, actual_return) ->
@@ -3311,8 +3337,12 @@ let rec adapt_value_to_type env expected actual =
   else if
     match (expected, actual.ty) with
     | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
-        List.length expected_arities = List.length actual_arities
-        && function_needs_representation_adapter expected actual.ty
+        List.for_all
+          (fun expected ->
+            Option.is_some
+              (matching_overloaded_arity expected actual_arities))
+          expected_arities
+        && overloaded_function_needs_adapter expected_arities actual_arities
     | _ -> false
   then
     let expected_arities, actual_arities =
@@ -3321,42 +3351,40 @@ let rec adapt_value_to_type env expected actual =
           (expected_arities, actual_arities)
       | _ -> assert false
     in
-    let stored_function_type (arity : fn_arity) =
-      TFn
-        ( arity.fixed_params
-          @ Option.fold ~none:[] ~some:(fun rest -> [ TSeq rest ])
-              arity.rest_param,
-          arity.return_ty )
-    in
     let source_name = "__lg_overloaded_function_adapter" in
     let source =
       match Semantic_ir.unlocated actual.semantic_expr with
       | Semantic_ir.Ident _ -> actual.semantic_expr
       | _ -> Semantic_ir.Ident source_name
     in
-    let rec adapt_arities index adapted expected actual =
-      match (expected, actual) with
-      | [], [] -> Ok (witness_storage (List.rev adapted))
-      | expected :: expected_rest, actual :: actual_rest ->
-          let selected =
-            typed_ir (stored_function_type actual)
-              (witness_method source index)
-          in
-          Result.bind
-            (adapt_value_to_type env (stored_function_type expected) selected)
-            (fun adapted_arity ->
-              adapt_arities (index + 1) (adapted_arity :: adapted)
-                expected_rest actual_rest)
-      | _ -> Error.error "internal overloaded function adapter mismatch"
+    let rec adapt_arities adapted = function
+      | [] -> Ok (witness_storage (List.rev adapted))
+      | expected :: expected_rest -> (
+          match matching_overloaded_arity expected actual_arities with
+          | None ->
+              Error.error
+                "internal overloaded function adapter mismatch"
+          | Some (actual_index, actual_arity) ->
+              let selected =
+                typed_ir
+                  (stored_overloaded_arity_type actual_arity)
+                  (witness_method source actual_index)
+              in
+              Result.bind
+                (adapt_value_to_type env
+                   (stored_overloaded_arity_type expected)
+                   selected)
+                (fun adapted_arity ->
+                  adapt_arities (adapted_arity :: adapted) expected_rest))
     in
     Result.map
       (fun adapted ->
         match Semantic_ir.unlocated actual.semantic_expr with
         | Semantic_ir.Ident _ -> adapted
-        | _ ->
-            Semantic_ir.Let
+      | _ ->
+          Semantic_ir.Let
               ([ (Semantic_ir.PVar source_name, actual.semantic_expr) ], adapted))
-      (adapt_arities 0 [] expected_arities actual_arities)
+      (adapt_arities [] expected_arities)
   else if function_needs_type_adapter expected actual.ty then
     match (expected, actual.ty) with
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
@@ -10098,6 +10126,12 @@ let create ~compile_expr =
         Error.error
           "runtime class inspection is not supported; match a closed sum type"
     | "__lg_identical-predicate" -> (
+        let identity_argument_type ty =
+          match Types.constraint_value_type ty with
+          | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+              TOcaml_app ("option", [ inner ])
+          | ty -> ty
+        in
         match compile_args () with
         | Error _ as error -> error
         | Ok [ left; right ]
@@ -10117,8 +10151,8 @@ let create ~compile_expr =
                           [ left; right ] ))))
         | Ok [ left; right ]
           when Types.equal
-                 (Types.constraint_value_type left.ty)
-                 (Types.constraint_value_type right.ty) ->
+                 (identity_argument_type left.ty)
+                 (identity_argument_type right.ty) ->
             Ok
               (typed_ir TBool
                  (Semantic_ir.Infix

@@ -2262,9 +2262,18 @@
            (retf (rf result) input))
           (rf result input)))))))
 
-(defn transduce
+(defn- conj-reducer-step [result input]
+  (__lg_conj result input))
+
+(defn- conj-reducer []
+  (fn
+    ([] [])
+    ([result] result)
+    ([result input] (conj-reducer-step result input))))
+
+(defn- transduce*
   ([xform f coll]
-   (transduce xform f (f) coll))
+   (transduce* xform f (f) coll))
   ([xform f init coll]
    (let [reducing-function
          (fn
@@ -2275,6 +2284,22 @@
          transformed (xform reducing-function)
          result (__lg_reduce_transformed transformed init coll)]
      (__lg_complete_transformed transformed result))))
+
+(defn transduce
+  {:inline
+   (fn
+     ([xform f coll]
+      (if (or (= f 'conj)
+              (= f 'clojure.core/conj)
+              (= f 'cljs.core/conj))
+        (list 'transduce* xform (list 'conj-reducer) [] coll)
+        (list 'transduce* xform f coll)))
+     ([xform f init coll]
+      (list 'transduce* xform f init coll)))}
+  ([xform f coll]
+   (transduce* xform f coll))
+  ([xform f init coll]
+   (transduce* xform f init coll)))
 
 (defn into
   {:inline (fn [& args]
@@ -4974,22 +4999,49 @@
   (map (fn [values] (nth values 0))
        (partition-by (fn [value] value) coll)))
 
-(defn distinct [coll]
-  (let [remaining (seq coll)]
-    (if remaining
-      (let [item (nth remaining 0)]
-        (loop [seen (hash-set item)
-               result (list item)
-               remaining (next remaining)]
-          (if remaining
-            (let [item (nth remaining 0)]
-              (if (contains? seen item)
-                (recur seen result (next remaining))
-                (recur (__lg_conj seen item)
-                       (__lg_conj result item)
-                       (next remaining))))
-            (reverse result))))
-      (list))))
+(defn- distinct-seq [seen remaining]
+  (lazy-seq
+   (if remaining
+     (let [item (nth remaining 0)]
+       (if (contains? seen item)
+         (distinct-seq seen (next remaining))
+         (cons item
+               (distinct-seq (__lg_conj seen item)
+                             (next remaining)))))
+     nil)))
+
+(defn- distinct-transducer-step [seen rf result input]
+  (match @seen
+    None
+    (do
+      (vreset! seen (Some (hash-set input)))
+      (rf result input))
+    (Some seen-set)
+    (if (contains? seen-set input)
+      (runtime-reduced/continue result)
+      (do
+        (vreset! seen (Some (__lg_conj seen-set input)))
+        (rf result input)))))
+
+(defn- distinct-transducer [rf]
+  (let [seen (volatile! nil)]
+    (fn
+      ([] (rf))
+      ([result] (rf result))
+      ([result input]
+       (distinct-transducer-step seen rf result input)))))
+
+(defn distinct
+  ([]
+   (fn [rf] (distinct-transducer rf)))
+  ([coll]
+   (let [remaining (seq coll)]
+     (if remaining
+       (let [item (nth remaining 0)]
+         (cons item
+               (distinct-seq (hash-set item)
+                             (next remaining))))
+       (lazy-seq nil)))))
 
 (defn distinct?
   ([_x]

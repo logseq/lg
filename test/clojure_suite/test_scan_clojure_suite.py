@@ -1739,6 +1739,144 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_metadata_map_vector_merges_as_static_map(self) -> None:
+        test_file = self.write_suite_file(
+            "distinct_metadata_map_vector_probe.cljc",
+            "(ns clojure.core-test.distinct-metadata-map-vector-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(def dupes-with-meta [{:k :v} ^:whatever {:k :v}])\n\n"
+            "(deftest metadata-map-vector-compiles\n"
+            "  (is (= [{:k :v}] (distinct dupes-with-meta))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.distinct-metadata-map-vector-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_identical_accepts_matching_nullable_and_option_maps(self) -> None:
+        test_file = self.write_suite_file(
+            "distinct_identical_optional_map_probe.cljc",
+            "(ns clojure.core-test.distinct-identical-optional-map-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(def dupes-with-meta [{:k :v} ^:whatever {:k :v}])\n\n"
+            "(deftest identical-optional-map-compiles\n"
+            "  (is (not (identical? (first dupes-with-meta)\n"
+            "                       (second dupes-with-meta)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.distinct-identical-optional-map-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_distinct_zero_arity_transducer_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "distinct_zero_arity_transducer_probe.cljc",
+            "(ns clojure.core-test.distinct-zero-arity-transducer-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest distinct-transducer-compiles\n"
+            "  (is (= [1 2] (transduce (distinct) conj [1 1 2]))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.distinct-zero-arity-transducer-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_transduce_distinct_accepts_nil_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "transduce_distinct_nil_probe.cljc",
+            "(ns clojure.core-test.transduce-distinct-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest transduce-nil-collection-compiles\n"
+            "  (is (= [] (transduce (distinct) conj nil))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.transduce-distinct-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_distinct_one_arity_returns_pending_lazy_seq(self) -> None:
+        test_file = self.write_suite_file(
+            "distinct_lazy_seq_probe.cljc",
+            "(ns clojure.core-test.distinct-lazy-seq-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(def lots-o-dupes [1 1 2])\n\n"
+            "(deftest distinct-lazy-seq-compiles\n"
+            "  (let [s (distinct lots-o-dupes)]\n"
+            "    (is (not (realized? s)))\n"
+            "    (is (= [1 2] s))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.distinct-lazy-seq-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_distinct_accepts_nil_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "distinct_nil_probe.cljc",
+            "(ns clojure.core-test.distinct-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest distinct-nil-compiles\n"
+            "  (is (= '() (distinct nil))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.distinct-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

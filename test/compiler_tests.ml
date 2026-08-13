@@ -41577,6 +41577,27 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
     (compile_with_stdlib Lg.Target.Melange "test/eduction_transducers.cljc"
        source)
 
+let test_distinct_transducer_conj_runtime_behavior () =
+  let source =
+    {|
+(ns test.distinct-transducer)
+
+(println
+  (str (= [1 2] (distinct [1 1 2])) ":"
+       (= [] (transduce (distinct) conj nil)) ":"
+       (= [1 2] (transduce (distinct) conj [1 1 2]))))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/distinct_transducer_conj.cljc" source
+  in
+  assert_ocaml_runs "distinct_transducer_conj_runtime_behavior"
+    "true:true:true\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/distinct_transducer_conj.cljc" source)
+
 let test_eduction_is_source_owned () =
   let source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring source "(defmacro eduction") then
@@ -49516,6 +49537,8 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ( "distinct transducer conj runtime behavior",
+      test_distinct_transducer_conj_runtime_behavior );
     ("Eduction is source-owned", test_eduction_is_source_owned);
     ( "Eduction rejects missing collection",
       test_eduction_rejects_missing_collection );

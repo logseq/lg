@@ -697,8 +697,161 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   [ Semantic_ir.List values ] )))
                     | Error _ -> heterogeneous_error ()
                   in
+                  let homogeneous_map_vector ~fallback_to_edn () =
+                    let record_map_storage_fields fields =
+                      fields
+                      |> List.filter (fun (field : field) ->
+                             (not (Types.is_record_extension_field field))
+                             && not (Types.is_record_identity_field field))
+                    in
+                    let record_map_value_type fields =
+                      let storage_fields = record_map_storage_fields fields in
+                      match storage_fields with
+                      | [] -> None
+                      | (first : field) :: rest ->
+                          List.fold_left
+                            (fun merged (field : field) ->
+                              Option.bind merged (fun ty ->
+                                  merge_branch_types ty field.ty))
+                            (Some first.ty) rest
+                    in
+                    let candidate_type expression =
+                      match Types.dynamic_map_types expression.ty with
+                      | Some (key_ty, value_ty) -> Some (key_ty, value_ty)
+                      | None -> (
+                          match expression.ty with
+                          | TRecord fields -> (
+                              match record_map_value_type fields with
+                              | Some value_ty -> Some (TKeyword, value_ty)
+                              | None -> None)
+                          | TNamed_record { fields; nominal = false; _ } -> (
+                              match record_map_value_type fields with
+                              | Some value_ty -> Some (TKeyword, value_ty)
+                              | None -> None)
+                          | _ -> None)
+                    in
+                    let merge_pair left right =
+                      match (left, right) with
+                      | Some (left_key, left_value), Some (right_key, right_value) ->
+                          Option.bind
+                            (merge_branch_types left_key right_key)
+                            (fun key_ty ->
+                              Option.map
+                                (fun value_ty -> (key_ty, value_ty))
+                                (merge_branch_types left_value right_value))
+                      | _ -> None
+                    in
+                    let common =
+                      match expressions with
+                      | [] -> None
+                      | first :: rest ->
+                          List.fold_left
+                            (fun common expression ->
+                              merge_pair common (candidate_type expression))
+                            (candidate_type first) rest
+                    in
+                    let has_runtime_map =
+                      List.exists
+                        (fun expression ->
+                          Option.is_some
+                            (Types.dynamic_map_types expression.ty))
+                        expressions
+                    in
+                    let has_record_map =
+                      List.exists
+                        (fun expression ->
+                          match expression.ty with
+                          | TRecord fields
+                          | TNamed_record { fields; nominal = false; _ } ->
+                              Option.is_some (record_map_value_type fields)
+                          | _ -> false)
+                        expressions
+                    in
+                    match common with
+                    | Some (TKeyword, value_ty)
+                      when has_runtime_map && has_record_map ->
+                        let map_ty = Types.dynamic_map TKeyword value_ty in
+                        let adapt_record expression fields =
+                          let source_name = "__lg_vector_record_map_value" in
+                          let storage_fields =
+                            record_map_storage_fields fields
+                          in
+                          let source =
+                            {
+                              expression with
+                              semantic_expr = Semantic_ir.Ident source_name;
+                            }
+                          in
+                          let rec assoc_fields map = function
+                            | [] -> map
+                            | (field : field) :: rest ->
+                                let value =
+                                  Structural_map.field_expr source field
+                                  |> fun value ->
+                                  coerce_expression_to_type value_ty field.ty
+                                    value
+                                in
+                                assoc_fields
+                                  (Semantic_ir.Apply
+                                     ( Semantic_ir.Ident
+                                         "Lg_runtime.Runtime_map.assoc",
+                                       [
+                                         map;
+                                         Semantic_ir.String field.keyword;
+                                         value;
+                                       ] ))
+                                  rest
+                          in
+                          Semantic_ir.Let
+                            ( [
+                                ( Semantic_ir.PVar source_name,
+                                  expression.semantic_expr );
+                              ],
+                              assoc_fields
+                                (Semantic_ir.Ident
+                                   "Lg_runtime.Runtime_map.empty")
+                                storage_fields )
+                        in
+                        let adapt_expression expression =
+                          match expression.ty with
+                          | ty when Types.equal ty map_ty ->
+                              Ok expression.semantic_expr
+                          | TRecord fields
+                          | TNamed_record { fields; nominal = false; _ } -> (
+                              match record_map_value_type fields with
+                              | Some actual_value
+                                when Types.equal actual_value value_ty ->
+                                  Ok (adapt_record expression fields)
+                              | _ ->
+                                  Error.error
+                                    "not a homogeneous static map")
+                          | ty -> (
+                              match Types.dynamic_map_types ty with
+                              | Some (key_ty, actual_value)
+                                when Types.equal key_ty TKeyword
+                                     && Types.equal actual_value value_ty ->
+                                  Ok expression.semantic_expr
+                              | _ -> Error.error "not a homogeneous static map")
+                        in
+                        let rec adapt values = function
+                          | [] -> Ok (List.rev values)
+                          | expression :: rest ->
+                              Result.bind (adapt_expression expression)
+                                (fun value -> adapt (value :: values) rest)
+                        in
+                        Result.map
+                          (fun values ->
+                            typed_ir (TVector map_ty)
+                              (Semantic_ir.Apply
+                                 ( Semantic_ir.Ident "Rrbvec.of_list",
+                                   [ Semantic_ir.List values ] )))
+                          (adapt [] expressions)
+                    | Some _ | None ->
+                        if fallback_to_edn then edn_vector ()
+                        else heterogeneous_error ()
+                  in
                   match element_ty with
-                  | None -> edn_vector ()
+                  | None -> homogeneous_map_vector ~fallback_to_edn:true ()
                   | Some element_ty when Types.is_dynamic element_ty ->
                       heterogeneous_error ()
                   | Some
@@ -783,7 +936,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                     true
                                 | _ -> false)
                               expressions) ->
-                      heterogeneous_error ()
+                      homogeneous_map_vector ~fallback_to_edn:false ()
                   | Some element_ty ->
                       let rec adapt values = function
                         | [] -> Ok (List.rev values)
