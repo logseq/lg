@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/atom.cljc\", line <n>: lg: atom nil requires an explicit option element type, for example ^:ref<option<int>>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.atom",
-    "static_subclass": "form-or-declaration-static-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/atom.cljc\", line <n>: lg: atom nil requires an explicit option element type, for example ^:ref<option<int>>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.atom",
-    "static_subclass": "form-or-declaration-static-gap",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.binding",

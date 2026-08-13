@@ -385,6 +385,57 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_static_incompatible_atom_suite_block(self) -> None:
+        test_file = self.write_suite_file(
+            "atom_nil_probe.cljc",
+            "(ns clojure.core-test.atom-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is testing]]))\n\n"
+            "(deftest atom-nil-suite-block-is-skipped\n"
+            "  (testing \"What happens when the input is nil?\"\n"
+            "    (let [nil-atm (atom nil)\n"
+            "          nil-atm2 (atom nil nil nil)\n"
+            "          nil-atm3 (apply atom (take 11 (repeat nil)))]\n"
+            "      (is (every? nil? (map deref [nil-atm nil-atm2 nil-atm3]))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.atom-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_keeps_static_atom_suite_blocks(self) -> None:
+        test_file = self.write_suite_file(
+            "typed_atom_probe.cljc",
+            "(ns clojure.core-test.typed-atom-probe\n"
+            "  (:require [clojure.test :refer [deftest is testing]]))\n\n"
+            "(deftest typed-atom-block-is-compiled\n"
+            "  (testing \"typed atom\"\n"
+            "    (let [counter (atom 0)]\n"
+            "      (is (= 1 (swap! counter inc)))\n"
+            "      (is (= 1 @counter)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.typed-atom-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_when_var_exists_skips_unsupported_vars(self) -> None:
         test_file = self.write_suite_file(
             "unsupported_var_probe.cljc",
