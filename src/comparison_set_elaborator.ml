@@ -29,8 +29,8 @@ let compile_args_for compile_expr scope env arg_forms =
 let create ~compile_expr =
   let compile_args_for = compile_args_for compile_expr in
   let rec comparable_type = function
-    | TInt | TFloat | TString | TSymbol | TKeyword | TBool | TUnknown | TMeta _ | TVar _
-      ->
+    | ( TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnknown
+      | TMeta _ | TVar _ ) ->
         true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         comparable_type inner

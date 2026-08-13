@@ -1,37 +1,5 @@
 [
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/coll_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.coll-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/coll_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.coll-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/compare.cljc\", line <n>: lg: unknown symbol -100N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.compare",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/compare.cljc\", line <n>: lg: unknown symbol -100N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.compare",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/concat.cljc\", line <n>: lg: heterogeneous sequence has element types int | keyword; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",

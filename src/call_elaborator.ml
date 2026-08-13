@@ -1180,7 +1180,8 @@ let compile_static_compare_capability env left right =
     | Some _ -> Error.error "IComparable/-compare has an invalid signature"
     | None ->
         let rec comparable_type = function
-          | TInt | TFloat | TString | TSymbol | TKeyword | TBool -> true
+          | TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool ->
+              true
           | TNullable inner | TOcaml_app ("option", [ inner ]) ->
               comparable_type inner
           | _ -> false

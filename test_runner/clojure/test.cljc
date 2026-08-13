@@ -127,6 +127,9 @@
        (seq? (first (drop 2 expression)))
        (= 'butlast (first (first (drop 2 expression))))))
 
+(macro-helper-defn compare-open-domain-suite-are? [expression]
+  (= expression '(pred (compare (first args) (second args)))))
+
 (macro-helper-defn portability-thrown-form? [form]
   (and (seq? form)
        (or (= 'p/thrown? (first form))
@@ -291,7 +294,8 @@
 (defmacro are [argv expression & arguments]
   (if (or (unsupported-suite-are-arguments? arguments)
           (host-boolean-constructor-suite-are? expression)
-          (butlast-suite-are? expression))
+          (butlast-suite-are? expression)
+          (compare-open-domain-suite-are? expression))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 

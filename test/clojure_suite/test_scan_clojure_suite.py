@@ -577,6 +577,54 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_char_compare_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "char_compare_probe.cljc",
+            "(ns clojure.core-test.char-compare-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest char-compare-compiles\n"
+            "  (is (= -1 (compare \\a \\b))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.char-compare-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_compare_suite_open_domain_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "compare_open_domain_probe.cljc",
+            "(ns clojure.core-test.compare-open-domain-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest compare-open-domain-suite-rows-are-skipped\n"
+            "  (are [pred args] (pred (compare (first args) (second args)))\n"
+            "    neg?  [0 10]\n"
+            "    pos?  [0 -100N]\n"
+            "    pos?  [1 nil]\n"
+            "    neg?  [[] [1 2]]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.compare-open-domain-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_wide_unicode_char_suite_blocks(self) -> None:
         test_file = self.write_suite_file(
             "wide_unicode_char_probe.cljc",
