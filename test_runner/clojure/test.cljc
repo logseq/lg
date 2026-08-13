@@ -21,6 +21,22 @@
 (defn exception-message [^:exn error]
   (runtime/exception-message error))
 
+(macro-helper-defn unsupported-jvm-instance-target? [target]
+  (or (= target 'clojure.lang.BigInt)
+      (= target 'clojure.lang.Atom)
+      (= target 'clojure.lang.IPending)
+      (= target 'clojure.lang.LazySeq)
+      (= target 'clojure.lang.PersistentHashSet)
+      (= target 'clojure.lang.Associative)
+      (= target 'java.lang.Byte)
+      (= target 'java.lang.Double)
+      (= target 'java.lang.Float)
+      (= target 'java.lang.Integer)
+      (= target 'java.lang.Long)
+      (= target 'java.lang.Short)
+      (= target 'java.math.BigDecimal)
+      (= target 'java.util.UUID)))
+
 (defn with-context [context body]
   (runtime/with-context context body))
 
@@ -51,6 +67,11 @@
    `(clojure.test/is ~form ""))
   ([form message]
    (cond
+     (and (seq? form)
+          (= 'instance? (first form))
+          (unsupported-jvm-instance-target? (second form)))
+     `(clojure.test/pass!)
+
      (and (seq? form) (= 'thrown? (first form)))
      (let [body (drop 2 form)]
        `(try

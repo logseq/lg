@@ -2972,6 +2972,16 @@
   [^:int x]
   (__lg_double x))
 
+(defn bigdec
+  {:inline (fn [x] (list '__lg_bigdec x))}
+  [^:float x]
+  (__lg_bigdec x))
+
+(defn bigint
+  {:inline (fn [x] (list '__lg_bigint x))}
+  [^:int x]
+  (__lg_bigint x))
+
 (defn int
   {:inline (fn [x] (list '__lg_int x))}
   [^:int x]
@@ -3471,6 +3481,12 @@
 (defn dec [x]
   (- x 1))
 
+(defn inc' [x]
+  (inc x))
+
+(defn dec' [x]
+  (dec x))
+
 (defn- bit-and-two [x y]
   (runtime-int/bit-and x y))
 
@@ -3908,9 +3924,10 @@
   (runtime-static-value/consume x)
   false)
 
-(defn decimal? [x]
-  (runtime-static-value/consume x)
-  false)
+(defn decimal?
+  {:inline (fn [x] (list '__lg_decimal-predicate x))}
+  [x]
+  (__lg_decimal-predicate x))
 
 (defn realized?
   {:inline (fn [value] (list 'IPending/-realized? value))}

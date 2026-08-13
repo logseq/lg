@@ -316,6 +316,28 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_jvm_instance_assertions(self) -> None:
+        test_file = self.write_suite_file(
+            "jvm_instance_probe.cljc",
+            "(ns clojure.core-test.jvm-instance-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest jvm-instance-assertion-is-skipped\n"
+            "  (is (instance? clojure.lang.BigInt 1)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.jvm-instance-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_when_var_exists_skips_unsupported_vars(self) -> None:
         test_file = self.write_suite_file(
             "unsupported_var_probe.cljc",

@@ -80,38 +80,6 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/bigdec.cljc\", line <n>: lg: unknown symbol 1M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.bigdec",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/bigdec.cljc\", line <n>: lg: unknown symbol 1M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.bigdec",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/bigint.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.bigint",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/bigint.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.bigint",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
     "lane": "audit-as-static-error",

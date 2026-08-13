@@ -25177,20 +25177,48 @@ let test_numeric_suffix_literals_compile_to_supported_numeric_types () =
   let source =
     {|
 (ns app.numeric-suffixes
-  (:require [clojure.core :refer [= abs println zero?]]))
+  (:require [clojure.core :refer [= abs bigdec decimal? println zero?]]))
 (println (= 123.456 (abs -123.456M)))
 (println (= 123 (abs -123N)))
 (println (= 0.2 (abs -1/5)))
+(println (decimal? (bigdec 123456789012345678901234567890N)))
+(println (decimal? 123456789012345678901234567890M))
 #?(:cljs (println (zero? (abs nil))) :default nil)
 |}
   in
   let native_source =
     compile_with_stdlib Lg.Target.Native "app/numeric_suffixes.cljc" source
   in
-  assert_ocaml_runs "numeric_suffix_literals" "true\ntrue\ntrue\n" native_source;
+  assert_ocaml_runs "numeric_suffix_literals" "true\ntrue\ntrue\ntrue\ntrue\n"
+    native_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange "app/numeric_suffixes.cljc"
        source)
+
+let test_big_numeric_conversions_compile_to_supported_numeric_types () =
+  let source =
+    {|
+(ns app.big-numeric-conversions
+  (:require [clojure.core :refer [= bigdec bigint dec' decimal? inc' println]]))
+(println (= 1.0 (bigdec 1)))
+(println (= 0.5 (bigdec "0.5")))
+(println (= 10000000000.0 (bigdec "1e10")))
+(println (= 1 (bigint 1.9)))
+(println (= -1 (bigint "-1")))
+(println (decimal? (bigdec 1)))
+(println (= 2 (inc' 1)))
+(println (= 0 (dec' 1)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/big_numeric_conversions.cljc"
+      source
+  in
+  assert_ocaml_runs "big_numeric_conversions"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "app/big_numeric_conversions.cljc" source)
 
 let test_source_scalar_predicates_are_statically_first_class () =
   let source =
@@ -48283,6 +48311,8 @@ let tests =
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "numeric suffix literals compile to supported numeric types",
       test_numeric_suffix_literals_compile_to_supported_numeric_types );
+    ( "big numeric conversions compile to supported numeric types",
+      test_big_numeric_conversions_compile_to_supported_numeric_types );
     ( "source scalar predicates are statically first-class",
       test_source_scalar_predicates_are_statically_first_class );
     ( "source conditional wrappers match ClojureScript",

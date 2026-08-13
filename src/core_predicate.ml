@@ -22,6 +22,7 @@ let compile name args =
       in
       match name with
       | "__lg_rational-predicate" -> static_bool (Types.equal arg.ty TInt)
+      | "__lg_decimal-predicate" -> static_bool (Types.equal arg.ty TFloat)
       | "__lg_float-predicate" | "__lg_double-predicate" ->
           static_bool (Types.equal arg.ty TFloat)
       | "__lg_symbol-predicate"

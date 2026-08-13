@@ -155,7 +155,10 @@ let tokenize source =
                 | Some integer -> (
                     match int_of_string_opt integer with
                     | Some value -> Ok (Int value)
-                    | None -> Ok (Symbol atom))
+                    | None -> (
+                        match float_of_string_opt integer with
+                        | Some value -> Ok (Float (string_of_float value))
+                        | None -> Ok (Symbol atom)))
                 | None -> (
                 match strip_numeric_suffix 'M' atom with
                 | Some decimal when looks_like_float decimal -> (
@@ -165,7 +168,10 @@ let tokenize source =
                 | Some decimal -> (
                     match int_of_string_opt decimal with
                     | Some value -> Ok (Int value)
-                    | None -> Ok (Symbol atom))
+                    | None -> (
+                        match float_of_string_opt decimal with
+                        | Some value -> Ok (Float (string_of_float value))
+                        | None -> Ok (Symbol atom)))
                 | None -> (
                 match ratio_float_literal atom with
                 | Some value -> Ok (Float value)

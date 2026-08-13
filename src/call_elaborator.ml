@@ -8837,6 +8837,46 @@ let create ~compile_expr =
         | Ok [ ({ ty = TFloat; _ } as value) ] -> Ok value
         | Ok [ _ ] -> Error.error "double expects a numeric value"
         | Ok _ -> Error.error "double expects 1 argument")
+    | "__lg_bigdec" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ { ty = TInt; semantic_expr; _ } ] ->
+            Ok (typed_ir TFloat (apply "float_of_int" [ semantic_expr ]))
+        | Ok [ { ty = TFloat; semantic_expr; _ } ] ->
+            let value_name = "__lg_bigdec_float" in
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Let
+                    ( [ (Semantic_ir.PVar value_name, semantic_expr) ],
+                      Semantic_ir.If
+                        ( apply "Float.is_finite"
+                            [ Semantic_ir.Ident value_name ],
+                          Semantic_ir.Ident value_name,
+                          apply "invalid_arg"
+                            [
+                              Semantic_ir.String
+                                "bigdec expects a finite numeric value";
+                            ] ) )))
+        | Ok [ { ty = TString; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TFloat
+                 (apply "Lg_runtime.Runtime_string.parse_decimal_float"
+                    [ semantic_expr ]))
+        | Ok [ _ ] -> Error.error "bigdec expects a numeric value"
+        | Ok _ -> Error.error "bigdec expects 1 argument")
+    | "__lg_bigint" -> (
+        match compile_args () with
+        | Error _ as err -> err
+        | Ok [ ({ ty = TInt; _ } as value) ] -> Ok value
+        | Ok [ { ty = TFloat; semantic_expr; _ } ] ->
+            Ok (typed_ir TInt (apply "int_of_float" [ semantic_expr ]))
+        | Ok [ { ty = TString; semantic_expr; _ } ] ->
+            Ok
+              (typed_ir TInt
+                 (apply "Lg_runtime.Runtime_string.parse_int_radix"
+                    [ semantic_expr; Semantic_ir.Int 10 ]))
+        | Ok [ _ ] -> Error.error "bigint expects a numeric value"
+        | Ok _ -> Error.error "bigint expects 1 argument")
     | "__lg_ex-message" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -9552,8 +9592,9 @@ let create ~compile_expr =
           (resolve_name
           ^ " cannot be used without a closed result type; define a closed sum \
              type containing the supported Vars")
-    | "__lg_rational-predicate" | "__lg_float-predicate"
-    | "__lg_double-predicate" | "__lg_symbol-predicate"
+    | "__lg_rational-predicate" | "__lg_decimal-predicate"
+    | "__lg_float-predicate" | "__lg_double-predicate"
+    | "__lg_symbol-predicate"
     | "__lg_char-predicate" | "__lg_regex-predicate" -> (
         match compile_args () with
         | Error _ as err -> err

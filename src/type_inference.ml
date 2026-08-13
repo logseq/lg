@@ -556,6 +556,8 @@ let rec numeric_form_type params = function
       else if List.exists (Types.equal TInt) types then TInt
       else TUnknown
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
+  | FList [ FSymbol "__lg_bigdec"; _ ] -> TFloat
+  | FList [ FSymbol "__lg_bigint"; _ ] -> TInt
   | _ -> TUnknown
 
 let rec inferred_form_type params = function
@@ -3592,6 +3594,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                "__lg_keyword-predicate";
                "__lg_string-predicate";
                "__lg_int-predicate";
+               "__lg_decimal-predicate";
                "__lg_number-predicate";
                "__lg_array-predicate";
                "__lg_array-value-predicate";
@@ -4930,6 +4933,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected
           (if Types.equal arg_ty TFloat then TFloat else TInt)
           params arg
+    | FList [ FSymbol "__lg_bigdec"; arg ]
+    | FList [ FSymbol "__lg_bigint"; arg ] ->
+        infer_form params arg
     | FList [ FSymbol "__lg_ex-message"; arg ] ->
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-cause"; arg ] ->
@@ -4985,8 +4991,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           else TInt
         in
         infer_expected expected_ty params arg
-    | FList
-        [ FSymbol ("__lg_int" | "__lg_long" | "__lg_double"); arg ] ->
+    | FList [ FSymbol ("__lg_int" | "__lg_long" | "__lg_double"); arg ] ->
         infer_form params arg
     | FList
         (FSymbol
