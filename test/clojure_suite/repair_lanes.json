@@ -329,18 +329,10 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/nth.cljc\", line <n>: lg: nth default must match collection element type",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/nth.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got keyword",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.nth",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/nth.cljc\", line <n>: lg: nth default must match collection element type",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.nth",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {

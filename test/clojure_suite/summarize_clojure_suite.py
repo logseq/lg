@@ -283,6 +283,12 @@ def classify_result_static_boundary(result: Result) -> str:
     ):
         return "suite-polymorphic-fixture-is-static-error"
     if (
+        result.namespace == "clojure.core-test.nth"
+        and result.target == "native"
+        and "static values cannot cross a dynamic boundary" in result.error
+    ):
+        return "suite-polymorphic-fixture-is-static-error"
+    if (
         result.namespace in {"clojure.core-test.max", "clojure.core-test.min"}
         and "expected int arguments for " in result.error
     ):

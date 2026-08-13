@@ -1097,7 +1097,48 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (FList (FSymbol "IIndexed/-nth" :: arg_forms))
               | Ok (inner, sequence) ->
                   if not (Types.equal inner default.ty) then
-                    Error.error "nth default must match collection element type"
+                    if
+                      Type_solver.is_open inner
+                      && Edn_value_elaborator.is_provably_empty_collection
+                           collection.ty collection.semantic_expr
+                    then
+                      Result.map
+                        (fun packed_default ->
+                          typed_ir Edn_value_elaborator.value_ty
+                            (Semantic_ir.Sequence
+                               [
+                                 collection.semantic_expr;
+                                 index.semantic_expr;
+                                 packed_default;
+                               ]))
+                        (Edn_value_elaborator.pack_expression default.ty
+                           default.semantic_expr)
+                    else
+                    (match
+                       ( Edn_value_elaborator.mapper inner,
+                         Edn_value_elaborator.pack_expression default.ty
+                           default.semantic_expr )
+                     with
+                    | Ok pack_element, Ok packed_default ->
+                        Ok
+                          (typed_ir Edn_value_elaborator.value_ty
+                             (Semantic_ir.Match
+                                ( apply "Lg_runtime.Runtime_seq.nth_opt"
+                                    [ index.semantic_expr; sequence ],
+                                  [
+                                    ( Semantic_ir.PConstructor
+                                        ( "Some",
+                                          Some (Semantic_ir.PVar "value") ),
+                                      Semantic_ir.Apply
+                                        ( pack_element,
+                                          [ Semantic_ir.Ident "value" ] ) );
+                                    ( Semantic_ir.PConstructor ("None", None),
+                                      packed_default );
+                                  ] )))
+                    | Error _, _ | _, Error _ ->
+                        Error.error
+                          "nth default must match collection element type or \
+                           be closed EDN data")
                   else
                     Ok
                       (typed_ir inner

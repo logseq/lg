@@ -43066,9 +43066,20 @@ let test_nth_supports_default_values () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nth_supports_default_values" "99:88\n" ocaml_source
 
-let test_nth_rejects_default_type_mismatch () =
-  compile_string_with_stdlib {|(def x (nth [1 2] 5 "missing"))|}
-  |> expect_error "nth default must match collection element type"
+let test_nth_promotes_heterogeneous_defaults_to_closed_edn () =
+  let source =
+    {|
+(println (pr-str (nth [1 2] 0 :missing)))
+(println (pr-str (nth [1 2] 5 :missing)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nth_promotes_heterogeneous_defaults_to_closed_edn"
+    "1\n:missing\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  compile_string_with_stdlib {|(def x (nth [1 2] 5 (fn [x] x)))|}
+  |> expect_error_contains "nth default must match collection element type"
 
 let test_typed_empty_lists () =
   let source =
@@ -50299,7 +50310,8 @@ let tests =
     ( "keyword type annotations for empty collections work",
       test_keyword_type_annotations_for_empty_collections );
     ("nth supports default values", test_nth_supports_default_values);
-    ("nth rejects default type mismatch", test_nth_rejects_default_type_mismatch);
+    ( "nth promotes heterogeneous defaults to closed EDN",
+      test_nth_promotes_heterogeneous_defaults_to_closed_edn );
     ("typed empty lists work", test_typed_empty_lists);
     ( "syntax convergence: empty lists infer type from branch context",
       test_empty_lists_infer_type_from_branch_context );

@@ -350,6 +350,24 @@ class SummaryClassificationTests(unittest.TestCase):
             lane["static_subclass"],
         )
 
+    def test_native_nth_are_fixture_is_a_static_error_audit(self) -> None:
+        result = self.summary.Result(
+            namespace="clojure.core-test.nth",
+            file="vendor/clojure-test-suite/test/clojure/core_test/nth.cljc",
+            target="native",
+            status="compile-failed",
+            elapsed_ms=7,
+            error="lg: static values cannot cross a dynamic boundary; got keyword",
+        )
+
+        lane = self.summary.repair_lanes([result])[0]
+
+        self.assertEqual("audit-as-static-error", lane["lane"])
+        self.assertEqual(
+            "suite-polymorphic-fixture-is-static-error",
+            lane["static_subclass"],
+        )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:

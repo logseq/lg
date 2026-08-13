@@ -51,6 +51,16 @@ let empty_map_expression expression =
       true
   | _ -> false
 
+let is_provably_empty_collection ty expression =
+  match Types.constraint_value_type ty with
+  | TNil -> true
+  | TList _ -> empty_list_expression expression
+  | TVector _ -> empty_vector_expression expression
+  | TSet _ -> empty_set_expression expression
+  | map_ty when Option.is_some (Types.dynamic_map_types map_ty) ->
+      empty_map_expression expression
+  | _ -> false
+
 let rec is_packable ty =
   match Types.constraint_value_type ty with
   | TOcaml "Lg_edn_backend.t" -> true

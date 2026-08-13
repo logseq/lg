@@ -174,6 +174,12 @@
     "target": "melange"
   },
   {
+    "error": "File \"<suite>/nth.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got keyword",
+    "namespace": "clojure.core-test.nth",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
+  },
+  {
     "error": "File \"<suite>/nthnext.cljc\", line <n>: lg: nthnext called with incompatible arguments: expected (seqable<inference-variable>, int), got (nil, nil)",
     "namespace": "clojure.core-test.nthnext",
     "static_subclass": "negative-runtime-test-is-static-error",
