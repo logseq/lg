@@ -12695,7 +12695,25 @@ let test_numeric_array_constructors_are_source_owned () =
     (fun name ->
       if not (string_contains_substring core_source ("(defn " ^ name)) then
         failwith (name ^ " is missing from the source standard library"))
-    [ "int-array"; "long-array"; "double-array" ]
+    [ "int-array"; "long-array"; "double-array"; "float-array" ]
+
+let test_source_float_array_constructor_uses_static_float_array () =
+  let source =
+    {|
+(ns app.source-float-array
+  (:require [clojure.core :refer [float-array alength aget pos? println str]]))
+
+(def values (float-array [1.25 2.5]))
+(println (str (alength values) ":" (aget values 0) ":" (pos? (aget values 1))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/source_float_array.cljc" source
+  in
+  assert_ocaml_runs "source_float_array_constructor" "2:1.25:true\n"
+    native_source;
+  compile_with_stdlib Lg.Target.Melange "test/source_float_array.cljc" source
+  |> ignore
 
 let test_source_object_array_matches_clojurescript () =
   let source =
@@ -41441,6 +41459,47 @@ let test_source_complement_not_every_parameter_is_statically_overloaded () =
   compile_with_stdlib Lg.Target.Melange "test/complement_not_every.cljc" source
   |> ignore
 
+let test_source_some_accepts_double_array_numeric_predicates () =
+  let source =
+    {|
+(ns app.some-double-array-predicates)
+
+(println (str (some pos? (double-array [-1.0 1.0])) ":"
+              (some neg? (double-array [1.0 -1.0])) ":"
+              (some zero? (double-array [1.0 0.0])) ":"
+              (nil? (some pos? (double-array [-2.0 -1.0])))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/some_double_array_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "some double-array predicates must remain statically typed";
+  assert_ocaml_runs "source_some_accepts_double_array_numeric_predicates"
+    "true:true:true:true\n" native_source;
+  compile_with_stdlib Lg.Target.Melange
+    "test/some_double_array_predicates.cljc" source
+  |> ignore
+
+let test_source_some_accepts_optional_map_predicates () =
+  let source =
+    {|
+(ns app.some-optional-map-predicates)
+
+(println (some {2 "two" 3 "three"} [nil 3 2]))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/some_optional_map_predicates.cljc" source
+  in
+  assert_ocaml_runs "source_some_accepts_optional_map_predicates" "three\n"
+    native_source;
+  compile_with_stdlib Lg.Target.Melange
+    "test/some_optional_map_predicates.cljc" source
+  |> ignore
+
 let test_empty_core_api () =
   let source =
     {|
@@ -47383,6 +47442,8 @@ let tests =
       test_source_numeric_array_constructors_match_clojurescript );
     ( "numeric array constructors are source-owned",
       test_numeric_array_constructors_are_source_owned );
+    ( "source float-array constructor uses static float array",
+      test_source_float_array_constructor_uses_static_float_array );
     ( "source object-array matches ClojureScript",
       test_source_object_array_matches_clojurescript );
     ( "object-array is source-owned", test_object_array_is_source_owned );
@@ -49686,6 +49747,10 @@ let tests =
       test_source_first_class_every_parameter_is_statically_overloaded );
     ( "source complement not-every? parameter is statically overloaded",
       test_source_complement_not_every_parameter_is_statically_overloaded );
+    ( "source some accepts double-array numeric predicates",
+      test_source_some_accepts_double_array_numeric_predicates );
+    ( "source some accepts optional map predicates",
+      test_source_some_accepts_optional_map_predicates );
     ("empty core api works", test_empty_core_api);
     ( "zero arity generic vector constructor specializes in function",
       test_zero_arity_generic_vector_constructor_specializes_in_function );

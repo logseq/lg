@@ -677,6 +677,12 @@
   ([size initial-or-seq]
    (-double-array-initial initial-or-seq size)))
 
+(defn float-array
+  ([size-or-seq]
+   (-double-array-source size-or-seq))
+  ([size initial-or-seq]
+   (-double-array-initial initial-or-seq size)))
+
 (defn object-array
   ([size-or-seq]
    (-object-array-source size-or-seq))

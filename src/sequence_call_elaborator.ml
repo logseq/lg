@@ -395,6 +395,41 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
        | TRecord _ | TNamed_record _ -> true
        | _ -> false
   in
+  let optional_payload_type = function
+    | TNullable payload | TOcaml_app ("option", [ payload ]) -> Some payload
+    | _ -> None
+  in
+  let adapt_optional_map_callable element_ty callable =
+    match (optional_payload_type element_ty, Types.dynamic_map_types callable.ty) with
+    | Some payload_ty, Some (key_ty, value_ty)
+      when Types.assignable ~policy:Host_boundary ~expected:key_ty
+             ~actual:payload_ty ->
+        let callable_name = "__lg_optional_map_callable" in
+        let item_name = "__lg_optional_map_item" in
+        let key_name = "__lg_optional_map_key" in
+        let map_expr = Semantic_ir.Ident callable_name in
+        let lookup =
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_option",
+              [ map_expr; Semantic_ir.Ident key_name ] )
+        in
+        Ok
+          (typed_ir (TFn ([ element_ty ], TNullable value_ty))
+             (Semantic_ir.Let
+                ( [ (Semantic_ir.PVar callable_name, callable.semantic_expr) ],
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar item_name ],
+                      Semantic_ir.Match
+                        ( Semantic_ir.Ident item_name,
+                          [
+                            ( Semantic_ir.PConstructor ("None", None),
+                              Semantic_ir.Constructor ("None", None) );
+                            ( Semantic_ir.PConstructor
+                                ("Some", Some (Semantic_ir.PVar key_name)),
+                              lookup );
+                          ] ) ) )))
+    | _ -> Ok callable
+  in
   let compile_function_arg_for_collection scope env element_ty form =
     let element_ty =
       Collection_capability.resolve_callback_record env element_ty
@@ -474,6 +509,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
             compile_deferred_call ()
         | Ok function_ when is_callable_map_type function_.ty ->
             compile_deferred_call ()
+        | Ok _
+          when has_source_name name "zero?"
+               || has_source_name name "pos?"
+               || has_source_name name "neg?" ->
+            compile_deferred_call ()
         | Ok { ty = TOverloaded_fn arities; _ }
           when List.exists
                  (fun arity ->
@@ -495,6 +535,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         | Error _ -> compile_deferred_call ())
     | form ->
         Result.bind (compile_function_arg scope env form) (fun callable ->
+            Result.bind (adapt_optional_map_callable element_ty callable)
+              (fun callable ->
             let callable_map = is_callable_map_type callable.ty in
             if not callable_map then Ok callable
             else
@@ -521,7 +563,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                              body.semantic_expr ) )))
                 (compile_expr scope function_env
                    (FList
-                      [ FSymbol callable_name; FSymbol item_name ])))
+                      [ FSymbol callable_name; FSymbol item_name ]))))
   in
   let compile_function_arg_for_collections scope env element_tys = function
     | (FSymbol name as form) ->
