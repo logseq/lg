@@ -12075,6 +12075,30 @@ let create ~compile_expr =
     | Ok target, Ok source -> (
         match Core_sequence_transform.compile "__lg_into" [ target; source ] with
         | Ok result -> adapt_result result
+        | Error _
+          when (match target.ty with
+               | TNamed_record { nominal = true; _ } -> true
+               | _ -> false)
+               && Protocol.type_satisfies env Core_protocols.collection_id
+                    target.ty ->
+            compile_expr scope env
+              (FList
+                 [
+                   FSymbol "__lg_reduce";
+                   FList
+                     [
+                       FSymbol "fn";
+                       FVector [ FSymbol "result"; FSymbol "item" ];
+                       FList
+                         [
+                           FSymbol "ICollection/-conj";
+                           FSymbol "result";
+                           FSymbol "item";
+                         ];
+                     ];
+                   target_form;
+                   source_form;
+                 ])
         | Error _ -> (
             match Collection_capability.to_seq_expr env source with
             | Error _ -> Error.error "into source must be a collection"

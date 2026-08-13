@@ -42070,6 +42070,57 @@ let test_into_supports_typed_map_targets () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/into_typed_maps.cljc" source)
 
+let test_into_roundtrips_closed_edn_map_sequences () =
+  let source =
+    {|
+(def input (hash-map "a" 1 [:b] "two" \c nil))
+(def copied (into (hash-map) (seq input)))
+(def overwritten
+  (into (hash-map "a" 0 :seed true) (seq input)))
+(def unchanged (into copied (seq (hash-map))))
+(def expected-overwritten
+  (hash-map "a" 1 [:b] "two" \c nil :seed true))
+(println
+  (str (= input copied) ":"
+       (= input unchanged) ":"
+       (= expected-overwritten overwritten)))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/into_closed_edn_maps.cljc" source
+  in
+  assert_ocaml_runs "into_roundtrips_closed_edn_map_sequences"
+    "true:true:true\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/into_closed_edn_maps.cljc"
+       source)
+
+let test_into_uses_source_collection_protocols () =
+  let source =
+    {|
+(def input (hash-map :b 2 :a 1))
+(def copied (into (sorted-map) (seq input)))
+(def overwritten
+  (into (sorted-map :a 0 :seed 3) (seq input)))
+(println
+  (str (= 2 (count copied)) ":"
+       (= 1 (get copied :a)) ":"
+       (= 2 (get copied :b)) ":"
+       (= 3 (count overwritten)) ":"
+       (= 1 (get overwritten :a)) ":"
+       (= 3 (get overwritten :seed))))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/into_source_collection_protocols.cljc" source
+  in
+  assert_ocaml_runs "into_uses_source_collection_protocols"
+    "true:true:true:true:true:true\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/into_source_collection_protocols.cljc" source)
+
 let test_into_accepts_inferred_seqable_parameters () =
   let source =
     {|
@@ -50255,6 +50306,10 @@ let tests =
       test_empty_returns_nil_for_non_emptyable_values );
     ("into core api works", test_into_core_api);
     ("into supports typed map targets", test_into_supports_typed_map_targets);
+    ( "into roundtrips closed EDN map sequences",
+      test_into_roundtrips_closed_edn_map_sequences );
+    ( "into uses source collection protocols",
+      test_into_uses_source_collection_protocols );
     ( "into accepts inferred seqable parameters",
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",

@@ -229,12 +229,29 @@ let into target source =
           let target_key, target_value =
             Option.get (Types.dynamic_map_types target_ty)
           in
+          let unresolved = function
+            | TUnknown | TMeta _ | TVar _ -> true
+            | _ -> false
+          in
           (match source_inner with
           | TTuple [ source_key; source_value ]
-            when Types.equal target_key source_key
-                 && Types.equal target_value source_value ->
+            when (unresolved target_key || unresolved source_key
+                 || Types.equal target_key source_key)
+                 && (unresolved target_value
+                    || unresolved source_value
+                    || Types.equal target_value source_value) ->
+              let result_key =
+                if unresolved target_key && not (unresolved source_key) then
+                  source_key
+                else target_key
+              in
+              let result_value =
+                if unresolved target_value && not (unresolved source_value) then
+                  source_value
+                else target_value
+              in
               Ok
-                (typed_ir target.ty
+                (typed_ir (Types.dynamic_map result_key result_value)
                    (apply "List.fold_left"
                       [
                         Semantic_ir.Fun
@@ -253,7 +270,9 @@ let into target source =
                       ]))
           | TTuple [ _; _ ] ->
               Error.error
-                "into source entry types must match target map types"
+                ("into source entry types " ^ Types.source_name source_inner
+               ^ " must match target map types "
+               ^ Types.source_name target.ty)
           | _ ->
               Error.error
                 "into map target expects key-value tuple entries")
