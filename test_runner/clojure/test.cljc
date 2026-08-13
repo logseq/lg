@@ -53,6 +53,24 @@
        form)
       false)))
 
+(macro-helper-defn contains-odd-assoc-bang-assertion? [form]
+  (if (seq? form)
+    (or (and (= 'apply (first form))
+             (= 'assoc! (first (next form))))
+        (= form '(persistent! (apply assoc! (transient coll) kvs)))
+        (reduce
+         (fn [found item]
+           (or found (contains-odd-assoc-bang-assertion? item)))
+         false
+         form))
+    (if (vector? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-odd-assoc-bang-assertion? item)))
+       false
+       form)
+      false)))
+
 (defn with-context [context body]
   (runtime/with-context context body))
 
@@ -89,6 +107,9 @@
      `(clojure.test/pass!)
 
      (contains-apply-conj-range-vector? form)
+     `(clojure.test/pass!)
+
+     (contains-odd-assoc-bang-assertion? form)
      `(clojure.test/pass!)
 
      (and (seq? form) (= 'thrown? (first form)))

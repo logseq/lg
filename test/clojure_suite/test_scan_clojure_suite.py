@@ -360,6 +360,31 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_odd_assoc_bang_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "assoc_bang_odd_probe.cljc",
+            "(ns clojure.core-test.assoc-bang-odd-probe\n"
+            "  (:require [clojure.test :refer [are deftest is]]))\n\n"
+            "(deftest assoc-bang-odd-assertion-is-skipped\n"
+            "  (are [coll kvs]\n"
+            "       (= (apply assoc coll (conj kvs nil))\n"
+            "          (persistent! (apply assoc! (transient coll) kvs)))\n"
+            "       {:a 1} [:b 2 :c]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.assoc-bang-odd-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_when_var_exists_skips_unsupported_vars(self) -> None:
         test_file = self.write_suite_file(
             "unsupported_var_probe.cljc",

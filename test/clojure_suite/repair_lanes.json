@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.assoc-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.assoc-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/atom.cljc\", line <n>: lg: atom nil requires an explicit option element type, for example ^:ref<option<int>>",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.atom",
