@@ -85,6 +85,20 @@ let char_of_atom = function
 let looks_like_float atom =
   String.contains atom '.' || String.contains atom 'e' || String.contains atom 'E'
 
+let strip_numeric_suffix suffix atom =
+  if String.length atom > 1 && atom.[String.length atom - 1] = suffix then
+    Some (String.sub atom 0 (String.length atom - 1))
+  else None
+
+let ratio_float_literal atom =
+  match String.split_on_char '/' atom with
+  | [ numerator; denominator ] -> (
+      match (int_of_string_opt numerator, int_of_string_opt denominator) with
+      | Some numerator, Some denominator when denominator <> 0 ->
+          Some (string_of_float (float_of_int numerator /. float_of_int denominator))
+      | _ -> None)
+  | _ -> None
+
 let tokenize source =
   let token desc start_offset end_offset =
     { desc; span = { start_offset; end_offset } }
@@ -137,13 +151,32 @@ let tokenize source =
             | ("##Inf" | "##-Inf" | "##NaN"), _ -> Ok (Float atom)
             | _, Some value -> Ok (Int value)
             | _ -> (
+                match strip_numeric_suffix 'N' atom with
+                | Some integer -> (
+                    match int_of_string_opt integer with
+                    | Some value -> Ok (Int value)
+                    | None -> Ok (Symbol atom))
+                | None -> (
+                match strip_numeric_suffix 'M' atom with
+                | Some decimal when looks_like_float decimal -> (
+                    match float_of_string_opt decimal with
+                    | Some _ -> Ok (Float decimal)
+                    | None -> Ok (Symbol atom))
+                | Some decimal -> (
+                    match int_of_string_opt decimal with
+                    | Some value -> Ok (Int value)
+                    | None -> Ok (Symbol atom))
+                | None -> (
+                match ratio_float_literal atom with
+                | Some value -> Ok (Float value)
+                | None -> (
                 match char_of_atom atom with
                 | Some value -> Ok (Char value)
                 | None when looks_like_float atom -> (
                     match float_of_string_opt atom with
                     | Some _ -> Ok (Float atom)
                     | None -> Ok (Symbol atom))
-                | None -> Ok (Symbol atom))
+                | None -> Ok (Symbol atom)))))
           in
           (match token_result with
           | Error _ as err -> err

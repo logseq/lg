@@ -25173,6 +25173,25 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
     "(def result (identical? 1 1 1))"
   |> expect_error_contains "unsupported macro arity 3"
 
+let test_numeric_suffix_literals_compile_to_supported_numeric_types () =
+  let source =
+    {|
+(ns app.numeric-suffixes
+  (:require [clojure.core :refer [= abs println zero?]]))
+(println (= 123.456 (abs -123.456M)))
+(println (= 123 (abs -123N)))
+(println (= 0.2 (abs -1/5)))
+#?(:cljs (println (zero? (abs nil))) :default nil)
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/numeric_suffixes.cljc" source
+  in
+  assert_ocaml_runs "numeric_suffix_literals" "true\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/numeric_suffixes.cljc"
+       source)
+
 let test_source_scalar_predicates_are_statically_first_class () =
   let source =
     {|
@@ -48262,6 +48281,8 @@ let tests =
       test_protocol_predicate_family_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
       test_source_primitive_predicates_and_abs_match_clojurescript );
+    ( "numeric suffix literals compile to supported numeric types",
+      test_numeric_suffix_literals_compile_to_supported_numeric_types );
     ( "source scalar predicates are statically first-class",
       test_source_scalar_predicates_are_statically_first_class );
     ( "source conditional wrappers match ClojureScript",

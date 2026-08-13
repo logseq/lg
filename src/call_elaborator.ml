@@ -9609,6 +9609,8 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok [ arg ] -> (
             match arg.ty with
+            | TNil when Env.target env = Target.Melange ->
+                Ok (typed_ir TInt (Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Int 0 ]))
             | TInt | TOcaml "int" ->
                 Ok
                   (typed_ir arg.ty

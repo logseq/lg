@@ -1,21 +1,5 @@
 [
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/abs.cljc\", line <n>: lg: unknown symbol 123.456M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.abs",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/abs.cljc\", line <n>: lg: unknown symbol 123.456M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.abs",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/add_watch.cljc\", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records; got record<{:key:keyword,:ref:ref<param/g924>,:old:dynamic<any>,:new:dynamic<any>,:tester:keyword}>",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
