@@ -934,6 +934,30 @@ let test_source_multimethods_support_alias_and_multi_argument_dispatch () =
   compile_with_stdlib Lg.Target.Melange "app/multimethod_alias.cljc" source
   |> ignore
 
+let test_source_multimethods_support_first_dispatch () =
+  let source =
+    {|
+(ns app.multimethod-first-dispatch
+  (:require [clojure.core :refer [defmulti defmethod]]))
+
+(defmulti route first)
+(defmethod route :a [_command] "A")
+(defmethod route :default [_command] "D")
+
+(println (route [:a :insert]))
+(println (route [:b :delete]))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "app/multimethod_first_dispatch.cljc"
+      source
+  in
+  assert_ocaml_runs "source_multimethods_support_first_dispatch" "A\nD\n"
+    native;
+  compile_with_stdlib Lg.Target.Melange "app/multimethod_first_dispatch.cljc"
+    source
+  |> ignore
+
 let test_source_multimethods_expose_mutation_boundaries () =
   let source =
     {|
@@ -46064,6 +46088,8 @@ let tests =
       test_source_multimethods_dispatch_through_limited_dynamic_boundary );
     ( "source multimethods support alias and multi argument dispatch",
       test_source_multimethods_support_alias_and_multi_argument_dispatch );
+    ( "source multimethods support first dispatch",
+      test_source_multimethods_support_first_dispatch );
     ( "source multimethods expose mutation boundaries",
       test_source_multimethods_expose_mutation_boundaries );
     ( "source multimethods support preferences",

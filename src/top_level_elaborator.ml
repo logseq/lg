@@ -349,6 +349,14 @@ let compile_multimethod_dispatch scope env dispatch_form =
         ( 1,
           Semantic_ir.Fun ([ Semantic_ir.PVar args_name ], list_nth args_name 0)
         )
+  | FSymbol "first" ->
+      Ok
+        ( 1,
+          Semantic_ir.Fun
+            ( [ Semantic_ir.PVar args_name ],
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.first_value",
+                  [ list_nth args_name 0 ] ) ) )
   | FList (FSymbol "fn" :: (FVector params as params_form) :: body_forms) ->
       let arity = List.length params in
       let overrides = List.map (fun _ -> Some dynamic_ty) params in
