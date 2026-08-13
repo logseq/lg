@@ -1,6 +1,22 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/conj.cljc\", line <n>: lg: heterogeneous list has element types Lg_edn_backend.t | int; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "namespace": "clojure.core-test.conj",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "target": "melange"
+  },
+  {
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/conj.cljc\", line <n>: lg: heterogeneous list has element types Lg_edn_backend.t | int; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "namespace": "clojure.core-test.conj",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "target": "native"
+  },
+  {
+    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.eq",
@@ -13,38 +29,6 @@
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.eq",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/even_qmark.cljc\", line <n>: lg: unknown symbol 123N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.even-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/even_qmark.cljc\", line <n>: lg: unknown symbol 123N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.even-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/false_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.false-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/false_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.false-qmark",
-    "static_subclass": null,
     "target": "native"
   },
   {
@@ -65,98 +49,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: no protocol implementation for IFind/-find and record<{:a:int,:b:int,:c:seq<int>}>",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.find",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: no protocol implementation for IFind/-find and record<{:a:int,:b:int,:c:seq<int>}>",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.find",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/first.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.first",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/first.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.first",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/float.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.float",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/float.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.float",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/float_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.float-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/float_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.float-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/fnext.cljc\", line <n>: lg: fnext called with incompatible arguments: expected (seqable<inference-variable>), got (record<{:a:keyword}>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.fnext",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/fnext.cljc\", line <n>: lg: fnext called with incompatible arguments: expected (seqable<inference-variable>), got (record<{:a:keyword}>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.fnext",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/fnil.cljc\", line <n>: lg: heterogeneous vector has element types int | symbol; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.fnil",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/fnil.cljc\", line <n>: lg: heterogeneous vector has element types int | symbol; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.fnil",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -192,38 +96,6 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/gt.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.gt",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/gt.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.gt",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/gt_eq.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.gt-eq",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/gt_eq.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.gt-eq",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/hash_map.cljc\", line <n>: lg: heterogeneous map keys have types char | string | vector<keyword>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
@@ -240,19 +112,19 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.ident-qmark",
-    "static_subclass": null,
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/hash_set.cljc\", line <n>: lg: sets require a generated comparator for list<Lg_edn_backend.t>",
+    "lane": "implement-static-language-capability",
+    "namespace": "clojure.core-test.hash-set",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.ident-qmark",
-    "static_subclass": null,
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/hash_set.cljc\", line <n>: lg: sets require a generated comparator for list<Lg_edn_backend.t>",
+    "lane": "implement-static-language-capability",
+    "namespace": "clojure.core-test.hash-set",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -284,70 +156,6 @@
     "error": "File \"<suite>/identity.cljc\", line <n>: lg: unknown symbol #inst",
     "lane": "design-reader-and-numeric-tower",
     "namespace": "clojure.core-test.identity",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/inc.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.inc",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/inc.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.inc",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/int.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.int",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/int.cljc\", line <n>: lg: Java interop is not supported; use static LG types and functions (java.lang.Integer)",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.int",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.int-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.int-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/integer_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.integer-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/integer_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.integer-qmark",
     "static_subclass": null,
     "target": "native"
   },
@@ -401,22 +209,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/key.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.key",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/key.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.key",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/keys.cljc\", line <n>: lg: keys expects a map",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.keys",
@@ -428,38 +220,6 @@
     "error": "File \"<suite>/keys.cljc\", line <n>: lg: keys expects a map",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.keys",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.keyword-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.keyword-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/last.cljc\", line <n>: lg: last called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.last",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/last.cljc\", line <n>: lg: last called with incompatible arguments: expected (seqable<inference-variable>), got (char)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.last",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
@@ -496,72 +256,16 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/list_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.list-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/list_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.list-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/long.cljc\", line <n>: lg: unknown symbol -9223372036854775808",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/long.cljc\", line <n>: lg: long expects a numeric value",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.long",
-    "static_subclass": null,
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/long.cljc\", line <n>: lg: Java interop is not supported; use static LG types and functions (java.lang.Long)",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.long",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/lt.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.lt",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/lt.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.lt",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/lt_eq.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.lt-eq",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/lt_eq.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.lt-eq",
-    "static_subclass": null,
-    "target": "native"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/map.cljc\", line <n>: lg: map-one called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, record<{:k:keyword}>)",
+    "error": "File \"<suite>/map.cljc\", line <n>: lg: map expects a function",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.map",
     "static_subclass": "negative-runtime-test-is-static-error",
@@ -569,26 +273,10 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/map.cljc\", line <n>: lg: map-one called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, record<{:k:keyword}>)",
+    "error": "File \"<suite>/map.cljc\", line <n>: lg: map expects a function",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.map",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/map_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.map-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/map_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.map-qmark",
-    "static_subclass": null,
     "target": "native"
   },
   {
@@ -608,19 +296,19 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/max.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/max.cljc\", line <n>: lg: expected int arguments for max",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.max",
-    "static_subclass": null,
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/max.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/max.cljc\", line <n>: lg: expected int arguments for max",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.max",
-    "static_subclass": null,
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -640,132 +328,60 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/min.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/min.cljc\", line <n>: lg: expected int arguments for min",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.min",
-    "static_subclass": null,
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/min.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/min.cljc\", line <n>: lg: expected int arguments for min",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.min",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/min_key.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.min-key",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/min_key.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.min-key",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/minus.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.minus",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/minus.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.minus",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/mod.cljc\", line <n>: lg: unknown symbol 3N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.mod",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/mod.cljc\", line <n>: lg: unknown symbol 3N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.mod",
-    "static_subclass": null,
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/namespace.cljc\", line <n>: lg: no protocol implementation for clojure.core/INamed/-namespace and nil",
+    "error": "File \"<suite>/min_key.cljc\", line <n>: lg: =-or-NaN? called with incompatible arguments: expected (inference-variable, inference-variable), got (float, int)",
     "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.namespace",
+    "namespace": "clojure.core-test.min-key",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/namespace.cljc\", line <n>: lg: no protocol implementation for clojure.core/INamed/-namespace and nil",
+    "error": "File \"<suite>/min_key.cljc\", line <n>: lg: =-or-NaN? called with incompatible arguments: expected (inference-variable, inference-variable), got (float, int)",
     "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.namespace",
+    "namespace": "clojure.core-test.min-key",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/neg_int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.neg-int-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/neg_int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.neg-int-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/neg_qmark.cljc\", line <n>: lg: unknown symbol -1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.neg-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/neg_qmark.cljc\", line <n>: lg: unknown symbol -1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.neg-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/next.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.next",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "error": "File \"<suite>/mod.cljc\", line <n>: lg: mod called with incompatible arguments: expected (int, int), got (int, float)",
+    "lane": "audit-as-static-error",
+    "namespace": "clojure.core-test.mod",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/next.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.next",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "error": "File \"<suite>/mod.cljc\", line <n>: lg: mod called with incompatible arguments: expected (int, int), got (int, float)",
+    "lane": "audit-as-static-error",
+    "namespace": "clojure.core-test.mod",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
+  },
+  {
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/neg_qmark.cljc\", line <n>: lg: expected int arguments for neg?",
+    "lane": "audit-as-static-error",
+    "namespace": "clojure.core-test.neg-qmark",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
@@ -785,35 +401,11 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/nnext.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.nnext",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/nnext.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.nnext",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/not_empty.cljc\", line <n>: lg: seq expects a seqable value",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.not-empty",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/not_empty.cljc\", line <n>: lg: seq expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.not-empty",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
@@ -870,14 +462,6 @@
     "namespace": "clojure.core-test.nthrest",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/nthrest.cljc\", line <n>: lg: nthrest called with incompatible arguments: expected (seqable<inference-variable>, int), got (seq<int>, nil)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.nthrest",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
   },
   {
     "class": "host-boundary-or-platform-specific",
@@ -885,86 +469,6 @@
     "lane": "document-or-gate-host-boundary",
     "namespace": "clojure.core-test.num",
     "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/number_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.number-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/number_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.number-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/odd_qmark.cljc\", line <n>: lg: unknown symbol 123N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.odd-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/odd_qmark.cljc\", line <n>: lg: unknown symbol 123N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.odd-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_boolean.cljc\", line <n>: lg: parse-boolean called with incompatible arguments: expected (string), got (nil)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-boolean",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_boolean.cljc\", line <n>: lg: parse-boolean called with incompatible arguments: expected (string), got (nil)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-boolean",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_double.cljc\", line <n>: lg: parse-double called with incompatible arguments: expected (string), got (list<any>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-double",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_double.cljc\", line <n>: lg: parse-double called with incompatible arguments: expected (string), got (list<any>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-double",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_long.cljc\", line <n>: lg: parse-long called with incompatible arguments: expected (string), got (list<any>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-long",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/parse_long.cljc\", line <n>: lg: parse-long called with incompatible arguments: expected (string), got (list<any>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.parse-long",
-    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {
@@ -976,59 +480,19 @@
     "target": "melange"
   },
   {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/parse_uuid.cljc\", line <n>: lg: Java interop is not supported; use static LG types and functions (java.util.UUID)",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.parse-uuid",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/partition.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.partition",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/partition.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.partition",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/peek.cljc\", line <n>: lg: no protocol implementation for IStack/-peek and set<int>",
+    "error": "File \"<suite>/partition.cljc\", line <n>: lg: partition called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
     "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.peek",
+    "namespace": "clojure.core-test.partition",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/peek.cljc\", line <n>: lg: no protocol implementation for IStack/-peek and set<int>",
+    "error": "File \"<suite>/partition.cljc\", line <n>: lg: partition called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
     "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.peek",
+    "namespace": "clojure.core-test.partition",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/plus.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.plus",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/plus.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.plus",
-    "static_subclass": null,
     "target": "native"
   },
   {
@@ -1064,99 +528,27 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/pos_int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.pos-int-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/pos_int_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.pos-int-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/pos_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/pos_qmark.cljc\", line <n>: lg: expected int arguments for pos?",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.pos-qmark",
-    "static_subclass": null,
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/pos_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.pos-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-ident-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-ident-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-keyword-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-keyword-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-symbol-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/qualified_symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.qualified-symbol-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/quot.cljc\", line <n>: lg: unknown symbol 3N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/quot.cljc\", line <n>: lg: quot called with incompatible arguments: expected (int, int), got (int, float)",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.quot",
-    "static_subclass": null,
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/quot.cljc\", line <n>: lg: unknown symbol 1/2",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/quot.cljc\", line <n>: lg: quot called with incompatible arguments: expected (int, int), got (float, float)",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.quot",
-    "static_subclass": null,
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {
@@ -1177,22 +569,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/rand_nth.cljc\", line <n>: lg: rand-nth called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.rand-nth",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/rand_nth.cljc\", line <n>: lg: rand-nth called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.rand-nth",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/random_uuid.cljc\", line <n>: lg: get key type int is not supported for string",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.random-uuid",
@@ -1208,51 +584,19 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/ratio_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.ratio-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/ratio_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.ratio-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/rational_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.rational-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/rational_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.rational-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/realized_qmark.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and nil",
-    "lane": "audit-as-static-error",
+    "class": "host-boundary-or-platform-specific",
+    "error": "File \"<suite>/realized_qmark.cljc\", line <n>: lg: unknown function future",
+    "lane": "document-or-gate-host-boundary",
     "namespace": "clojure.core-test.realized-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
+    "static_subclass": null,
     "target": "melange"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/realized_qmark.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and nil",
-    "lane": "audit-as-static-error",
+    "class": "host-boundary-or-platform-specific",
+    "error": "File \"<suite>/realized_qmark.cljc\", line <n>: lg: unknown function future",
+    "lane": "document-or-gate-host-boundary",
     "namespace": "clojure.core-test.realized-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
+    "static_subclass": null,
     "target": "native"
   },
   {
@@ -1272,19 +616,19 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/rem.cljc\", line <n>: lg: unknown symbol 3N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/rem.cljc\", line <n>: lg: rem called with incompatible arguments: expected (int, int), got (int, float)",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.rem",
-    "static_subclass": null,
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/rem.cljc\", line <n>: lg: unknown symbol 3N",
-    "lane": "design-reader-and-numeric-tower",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/rem.cljc\", line <n>: lg: rem called with incompatible arguments: expected (int, int), got (int, float)",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.rem",
-    "static_subclass": null,
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {
@@ -1345,22 +689,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/rest.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.rest",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/rest.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.rest",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/reverse.cljc\", line <n>: lg: heterogeneous list has element types int | vector<int>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.reverse",
@@ -1373,22 +701,6 @@
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.reverse",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/reversible_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.reversible-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/reversible_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.reversible-qmark",
-    "static_subclass": null,
     "target": "native"
   },
   {
@@ -1409,38 +721,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/run_bang.cljc\", line <n>: lg: run! called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(int) -> int>, bool)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.run-bang",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/run_bang.cljc\", line <n>: lg: run! called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(int) -> int>, bool)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.run-bang",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/second.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.second",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/second.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.second",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/select_keys.cljc\", line <n>: lg: select-keys expects a map",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.select-keys",
@@ -1456,179 +736,35 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seq.cljc\", line <n>: lg: unknown symbol 440M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seq",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seq.cljc\", line <n>: lg: unknown symbol 440M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seq",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seq_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seq-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seq_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seq-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seqable_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seqable-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/seqable_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.seqable-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/set.cljc\", line <n>: lg: heterogeneous set has element types int | keyword | string; define a sum type containing these types",
+    "error": "File \"<suite>/seq.cljc\", line <n>: lg: heterogeneous map values have types int | record<{:b:string}>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.set",
+    "namespace": "clojure.core-test.seq",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/set.cljc\", line <n>: lg: heterogeneous set has element types int | keyword | string; define a sum type containing these types",
+    "error": "File \"<suite>/seq.cljc\", line <n>: lg: heterogeneous map values have types int | record<{:b:string}>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.set",
+    "namespace": "clojure.core-test.seq",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/set_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.set-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/set_qmark.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.set-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/short.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.short",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/short.cljc\", line <n>: lg: Java interop is not supported; use static LG types and functions (java.lang.Short)",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.short",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/shuffle.cljc\", line <n>: lg: shuffle called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.shuffle",
-    "static_subclass": "negative-runtime-test-is-static-error",
+    "error": "File \"<suite>/set.cljc\", line <n>: lg: sets require a generated comparator for tuple<keyword,int>",
+    "lane": "implement-static-language-capability",
+    "namespace": "clojure.core-test.set",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/shuffle.cljc\", line <n>: lg: shuffle called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.shuffle",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-ident-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_ident_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-ident-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-keyword-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_keyword_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-keyword-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-symbol-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/simple_symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.simple-symbol-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/slash.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.slash",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/slash.cljc\", line <n>: lg: unknown symbol 2N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.slash",
-    "static_subclass": null,
+    "error": "File \"<suite>/set.cljc\", line <n>: lg: sets require a generated comparator for tuple<keyword,int>",
+    "lane": "implement-static-language-capability",
+    "namespace": "clojure.core-test.set",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -1645,22 +781,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.some-fn",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/sort.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.sort",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/sort.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.sort",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {
@@ -1709,54 +829,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.special-symbol-qmark",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/star.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.star",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/star.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.star",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/str.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.str",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/str.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.str",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/string_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.string-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/string_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.string-qmark",
-    "static_subclass": null,
     "target": "native"
   },
   {
@@ -1769,14 +841,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/subs.cljc\", line <n>: lg: subs called with incompatible arguments: expected (string, int, int), got (nil, int, int); incompatible positions: 1",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.subs",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/subvec.cljc\", line <n>: lg: subvec indexes must be int",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.subvec",
@@ -1792,22 +856,6 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.symbol-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/symbol_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.symbol-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/take.cljc\", line <n>: lg: take called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
     "lane": "audit-as-static-error",
@@ -1820,22 +868,6 @@
     "error": "File \"<suite>/take.cljc\", line <n>: lg: take called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.take",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/take_last.cljc\", line <n>: lg: take-last called with incompatible arguments: expected (int, seqable<inference-variable>), got (nil, seq<int>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.take-last",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/take_last.cljc\", line <n>: lg: take-last called with incompatible arguments: expected (int, seqable<inference-variable>), got (nil, seq<int>)",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.take-last",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
@@ -1857,18 +889,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/take_while.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/take_while.cljc\", line <n>: lg: take-while called with incompatible arguments: expected (fn<(int) -> truthy<bool>>, seqable<int>), got (fn<(int) -> bool>, nil); incompatible positions: 2",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.take-while",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/take_while.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/take_while.cljc\", line <n>: lg: take-while called with incompatible arguments: expected (fn<(int) -> truthy<bool>>, seqable<int>), got (fn<(int) -> bool>, nil); incompatible positions: 2",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.take-while",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {
@@ -1904,54 +936,6 @@
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/true_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.true-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/true_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.true-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/underive.cljc\", line <n>: lg: underive called with incompatible arguments: expected (Lg_edn_backend.t, Lg_edn_backend.t, Lg_edn_backend.t), got (Lg_runtime.Runtime_map.t<any,any>, keyword, keyword); incompatible positions: 1",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.underive",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/underive.cljc\", line <n>: lg: underive called with incompatible arguments: expected (Lg_edn_backend.t, Lg_edn_backend.t, Lg_edn_backend.t), got (Lg_runtime.Runtime_map.t<any,any>, keyword, keyword); incompatible positions: 1",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.underive",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/val.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.val",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/val.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.val",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/vals.cljc\", line <n>: lg: vals expects a map, got nil",
     "lane": "audit-as-static-error",
@@ -1969,18 +953,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vec.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/vec.cljc\", line <n>: lg: sets require a generated comparator for vector<vector<Lg_edn_backend.t>>",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.vec",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vec.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/vec.cljc\", line <n>: lg: sets require a generated comparator for vector<vector<Lg_edn_backend.t>>",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.vec",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -2001,22 +985,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vector_qmark.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.vector-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vector_qmark.cljc\", line <n>: lg: first expects a seqable value",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.vector-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/when_first.cljc\", line <n>: lg: cons expects a value and seqable collection, got any",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.when-first",
@@ -2033,7 +1001,7 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<int>, nullable<seq<int>>",
+    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<Lg_edn_backend.t>, nullable<seq<int>>",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.when-let",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
@@ -2041,7 +1009,7 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<int>, nullable<seq<int>>",
+    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<Lg_edn_backend.t>, nullable<seq<int>>",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.when-let",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
@@ -2049,7 +1017,7 @@
   },
   {
     "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/with_precision.cljc\", line <n>: lg: unknown symbol 2M",
+    "error": "File \"<suite>/with_precision.cljc\", line <n>: lg: unknown function with-precision",
     "lane": "design-reader-and-numeric-tower",
     "namespace": "clojure.core-test.with-precision",
     "static_subclass": null,
@@ -2057,42 +1025,18 @@
   },
   {
     "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/with_precision.cljc\", line <n>: lg: unknown symbol 2M",
+    "error": "File \"<suite>/with_precision.cljc\", line <n>: lg: unknown function with-precision",
     "lane": "design-reader-and-numeric-tower",
     "namespace": "clojure.core-test.with-precision",
     "static_subclass": null,
     "target": "native"
   },
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/zero_qmark.cljc\", line <n>: lg: unknown symbol 0.0M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.zero-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/zero_qmark.cljc\", line <n>: lg: unknown symbol 0.0M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.zero-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/zipmap.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.zipmap",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "error": "File \"<suite>/zero_qmark.cljc\", line <n>: lg: expected int arguments for zero?",
+    "lane": "audit-as-static-error",
+    "namespace": "clojure.core-test.zero-qmark",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/zipmap.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.zipmap",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
   }
 ]

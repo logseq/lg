@@ -9163,6 +9163,30 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok args -> (
+            let args =
+              if
+                Env.target env = Target.Melange
+                && List.exists (fun arg -> Types.equal arg.ty TNil) args
+              then
+                let use_float =
+                  name = "__lg_divide"
+                  || List.exists (fun arg -> Types.equal arg.ty TFloat) args
+                in
+                List.map
+                  (fun arg ->
+                    if Types.equal arg.ty TNil then
+                      if use_float then
+                        typed_ir TFloat
+                          (Semantic_ir.Sequence
+                             [ arg.semantic_expr; Semantic_ir.Float "0." ])
+                      else
+                        typed_ir TInt
+                          (Semantic_ir.Sequence
+                             [ arg.semantic_expr; Semantic_ir.Int 0 ])
+                    else arg)
+                  args
+              else args
+            in
             if Result.is_ok (Core_int.expect_int_args operator args) then
               Core_int.compile_operator operator args
             else if Core_float.expect_float_args args then
@@ -9907,7 +9931,8 @@ let create ~compile_expr =
               (typed_ir TFloat
                  (Semantic_ir.Infix
                     ("-.", arg.semantic_expr, Semantic_ir.Float "1.")))
-        | Ok [ arg ] when Types.equal arg.ty TNil ->
+        | Ok [ arg ]
+          when Types.equal arg.ty TNil && Env.target env = Target.Melange ->
             Ok (typed_ir TInt (Semantic_ir.Int (-1)))
         | Ok [ _ ] -> Error.error "dec expects a numeric value"
         | Ok _ -> Error.error "dec expects 1 arguments")
@@ -10080,6 +10105,12 @@ let create ~compile_expr =
                  (apply
                     ("Lg_runtime.Runtime_dynamic." ^ function_name)
                     [ arg.semantic_expr ]))
+        | Ok [ arg ]
+          when Types.equal arg.ty TNil && Env.target env = Target.Melange ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Sequence
+                    [ arg.semantic_expr; Semantic_ir.Bool false ]))
         | Ok [ arg ] ->
             let operator =
               match predicate with

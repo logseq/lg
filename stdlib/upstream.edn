@@ -173,13 +173,13 @@
               :reason :source-two-and-three-arity-function-preserves-global-mutation-explicit-persistence-missing-edge-identity-and-upstream-full-closure-rebuild-through-a-closed-edn-runtime-algorithm}
     identity {:status :ported}
     + {:status :static-adaptation
-       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-addition-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-addition-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
     - {:status :static-adaptation
-       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-negation-and-left-to-right-subtraction-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-negation-and-left-to-right-subtraction-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
     * {:status :static-adaptation
-       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-multiplication-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+       :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-multiplication-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
     / {:status :static-adaptation
-       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
+       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-floating-coercion}
     < {:status :static-adaptation
        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls-and-target-aware-melange-nil-numeric-coercion}
     <= {:status :static-adaptation
@@ -390,11 +390,11 @@
     reduceable? {:status :static-adaptation
                  :reason :source-function-preserves-clojurescript-ireduce-satisfaction-through-the-canonical-static-reducible-protocol-with-built-in-map-and-collection-implementations}
     zero? {:status :static-adaptation
-           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-numeric-zero-predicate}
+           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-numeric-zero-predicate}
     pos? {:status :static-adaptation
-          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-positive-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-positive-number-predicate}
     neg? {:status :static-adaptation
-          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-or-float-calls-through-an-internal-static-negative-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-negative-number-predicate}
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
     max {:status :static-adaptation
@@ -706,7 +706,7 @@
     array {:status :static-adaptation
            :reason :source-variadic-constructor-and-inline-specialization-preserve-homogeneous-array-construction-through-a-private-typed-array-boundary}
     inc {:status :static-adaptation
-         :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
+         :reason :source-port-and-inline-specialization-preserve-the-upstream-add-one-body-for-static-int-float-and-clojurescript-only-melange-nil-to-zero-coercion}
     dec {:status :static-adaptation
          :reason :source-inline-uses-a-private-typed-primitive-to-preserve-int-float-and-clojurescript-nil-subtract-one-behavior-without-a-general-dynamic-number-boundary}
     bit-not {:status :static-adaptation

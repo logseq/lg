@@ -3525,7 +3525,9 @@
   ([x y] (__lg_numeric-equal x y))
   ([x y & more] (numeric-equal-chain x y more)))
 
-(defn inc [x]
+(defn inc
+  {:inline (fn [x] (list '__lg_add x 1))}
+  [x]
   (+ x 1))
 
 (defn dec

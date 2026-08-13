@@ -230,6 +230,37 @@ def classify_static_boundary(error: str) -> str:
     return "other-static-boundary"
 
 
+def classify_result(result: Result) -> str:
+    """Classify failures whose meaning depends on the suite namespace."""
+
+    if (
+        result.namespace
+        in {
+            "clojure.core-test.zero-qmark",
+            "clojure.core-test.pos-qmark",
+            "clojure.core-test.neg-qmark",
+        }
+        and "expected int arguments for " in result.error
+    ):
+        return "static-typing-or-closed-domain-boundary"
+    if (
+        result.namespace in {"clojure.core-test.max", "clojure.core-test.min"}
+        and "expected int arguments for " in result.error
+    ):
+        return "static-typing-or-closed-domain-boundary"
+    if (
+        result.namespace == "clojure.core-test.realized-qmark"
+        and "unknown function future" in result.error
+    ):
+        return "host-boundary-or-platform-specific"
+    if (
+        result.namespace == "clojure.core-test.with-precision"
+        and "unknown function with-precision" in result.error
+    ):
+        return "reader-or-numeric-literal"
+    return classify(result.error)
+
+
 def classify_result_static_boundary(result: Result) -> str:
     """Classify static failures that require suite-file context."""
 
@@ -238,10 +269,18 @@ def classify_result_static_boundary(result: Result) -> str:
         "clojure.core-test.juxt": "juxt functions must accept the same argument type",
         "clojure.core-test.portability": "int? guard narrowing requires a statically typed value",
         "clojure.core-test.transient": "cannot infer :x as printable<inference-variable> because it is already int",
+        "clojure.core-test.zero-qmark": "expected int arguments for zero?",
+        "clojure.core-test.pos-qmark": "expected int arguments for pos?",
+        "clojure.core-test.neg-qmark": "expected int arguments for neg?",
     }
     expected_error = suite_fixture_errors.get(result.namespace)
     if expected_error is not None and expected_error in result.error:
         return "suite-polymorphic-fixture-is-static-error"
+    if (
+        result.namespace in {"clojure.core-test.max", "clojure.core-test.min"}
+        and "expected int arguments for " in result.error
+    ):
+        return "typed-protocol-or-capability-gap"
     return subclass
 
 
@@ -269,7 +308,7 @@ def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
     for result in results:
         if result.status == "compiled":
             continue
-        if classify(result.error) != "static-typing-or-closed-domain-boundary":
+        if classify_result(result) != "static-typing-or-closed-domain-boundary":
             continue
         static_subclass = classify_result_static_boundary(result)
         if static_subclass not in {
@@ -334,7 +373,7 @@ def repair_lanes(results: Iterable[Result]) -> list[dict[str, str | None]]:
     for result in results:
         if result.status == "compiled":
             continue
-        failure_class = classify(result.error)
+        failure_class = classify_result(result)
         static_subclass = (
             classify_result_static_boundary(result)
             if failure_class == "static-typing-or-closed-domain-boundary"
@@ -386,11 +425,11 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
         outcome_counts[namespace_outcome(native_status, melange_status)] += 1
 
     failures = [result for result in results if result.status != "compiled"]
-    class_counts = collections.Counter(classify(result.error) for result in failures)
+    class_counts = collections.Counter(classify_result(result) for result in failures)
     static_subclass_counts = collections.Counter(
         classify_result_static_boundary(result)
         for result in failures
-        if classify(result.error) == "static-typing-or-closed-domain-boundary"
+        if classify_result(result) == "static-typing-or-closed-domain-boundary"
     )
     repair_lane_counts = collections.Counter(
         entry["lane"] for entry in repair_lanes(failures)

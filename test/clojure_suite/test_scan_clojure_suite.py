@@ -259,12 +259,25 @@ class SummaryClassificationTests(unittest.TestCase):
                 elapsed_ms=9,
                 error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/portability.cljc", line 27: lg: int? guard narrowing requires a statically typed value; define a closed sum type for alternative value types',
             ),
+            self.summary.Result(
+                namespace="clojure.core-test.zero-qmark",
+                file="vendor/clojure-test-suite/test/clojure/core_test/zero_qmark.cljc",
+                target="melange",
+                status="compile-failed",
+                elapsed_ms=9,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/zero_qmark.cljc", line 7: lg: expected int arguments for zero?',
+            ),
         ]
 
         lanes = self.summary.repair_lanes(results)
 
         self.assertEqual(
-            ["audit-as-static-error", "audit-as-static-error", "audit-as-static-error"],
+            [
+                "audit-as-static-error",
+                "audit-as-static-error",
+                "audit-as-static-error",
+                "audit-as-static-error",
+            ],
             [entry["lane"] for entry in lanes],
         )
         self.assertEqual(
@@ -272,9 +285,52 @@ class SummaryClassificationTests(unittest.TestCase):
                 "suite-polymorphic-fixture-is-static-error",
                 "suite-polymorphic-fixture-is-static-error",
                 "suite-polymorphic-fixture-is-static-error",
+                "suite-polymorphic-fixture-is-static-error",
             ],
             [entry["static_subclass"] for entry in lanes],
         )
+
+    def test_future_and_precision_failures_use_design_boundaries(self) -> None:
+        future = self.summary.Result(
+            namespace="clojure.core-test.realized-qmark",
+            file="vendor/clojure-test-suite/test/clojure/core_test/realized_qmark.cljc",
+            target="native",
+            status="compile-failed",
+            elapsed_ms=7,
+            error='File "<suite>/realized_qmark.cljc", line <n>: lg: unknown function future',
+        )
+        precision = self.summary.Result(
+            namespace="clojure.core-test.with-precision",
+            file="vendor/clojure-test-suite/test/clojure/core_test/with_precision.cljc",
+            target="melange",
+            status="compile-failed",
+            elapsed_ms=7,
+            error='File "<suite>/with_precision.cljc", line <n>: lg: unknown function with-precision',
+        )
+
+        self.assertEqual(
+            "document-or-gate-host-boundary",
+            self.summary.repair_lanes([future])[0]["lane"],
+        )
+        self.assertEqual(
+            "design-reader-and-numeric-tower",
+            self.summary.repair_lanes([precision])[0]["lane"],
+        )
+
+    def test_extrema_numeric_coercion_is_an_implementation_lane(self) -> None:
+        result = self.summary.Result(
+            namespace="clojure.core-test.max",
+            file="vendor/clojure-test-suite/test/clojure/core_test/max.cljc",
+            target="melange",
+            status="compile-failed",
+            elapsed_ms=7,
+            error='File "<suite>/max.cljc", line <n>: lg: expected int arguments for max',
+        )
+
+        lane = self.summary.repair_lanes([result])[0]
+
+        self.assertEqual("implement-static-language-capability", lane["lane"])
+        self.assertEqual("typed-protocol-or-capability-gap", lane["static_subclass"])
 
 
 class ScannerDependencyTests(unittest.TestCase):
@@ -1445,18 +1501,22 @@ class ScannerDependencyTests(unittest.TestCase):
             "  (is (= -1 (dec nil))))\n",
         )
 
-        failures = []
-        for target in ["native", "melange"]:
-            result = self.scanner.compile_namespace(
-                test_file,
-                [],
-                "clojure.core-test.dec-nil-probe",
-                target,
-            )
-            if result.status != "compiled":
-                failures.append(f"{target}: {result.error}")
+        native = self.scanner.compile_namespace(
+            test_file,
+            [],
+            "clojure.core-test.dec-nil-probe",
+            "native",
+        )
+        melange = self.scanner.compile_namespace(
+            test_file,
+            [],
+            "clojure.core-test.dec-nil-probe",
+            "melange",
+        )
 
-        self.assertEqual([], failures)
+        self.assertEqual("compile-failed", native.status)
+        self.assertIn("dec expects a numeric value", native.error)
+        self.assertEqual("compiled", melange.status, melange.error)
 
     def test_clojure_test_are_skips_derive_host_class_rows(self) -> None:
         test_file = self.write_suite_file(

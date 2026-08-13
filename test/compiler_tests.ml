@@ -25893,6 +25893,59 @@ let test_source_numeric_coercions_match_clojurescript () =
       |> expect_error_contains "expects a numeric value")
     [ "unchecked-int"; "unchecked-long" ]
 
+let test_melange_nil_numeric_coercion_matches_clojurescript () =
+  let source =
+    {|
+(ns test.melange-nil-numeric
+  (:require [clojure.core :refer [= * + - / dec inc neg? pos? println zero?]]))
+
+(println
+  (and (= 1 (+ nil 1))
+       (= 1 (+ 1 nil))
+       (= 1.5 (+ nil 1.5))
+       (= -1 (- nil 1))
+       (= 1 (- 1 nil))
+       (= -1.5 (- nil 1.5))
+       (= 0 (* nil 7))
+       (= 0.0 (* 7.0 nil))
+       (= 0 (/ nil 2))
+       (= ##Inf (/ 1 nil))
+       (= 1 (inc nil))
+       (= -1 (dec nil))
+       (not (zero? nil))
+       (not (pos? nil))
+       (not (neg? nil))))
+|}
+  in
+  let generated =
+    compile_with_stdlib_result Lg.Target.Melange
+      "test/melange_nil_numeric.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring generated "Runtime_dynamic" then
+    failwith "Melange nil numeric coercion must remain statically typed";
+  List.iter
+    (fun expression ->
+      match
+        compile_with_stdlib_result Lg.Target.Native
+          "test/native_nil_numeric_rejected.cljc" expression
+      with
+      | Error _ -> ()
+      | Ok generated ->
+          failwith
+            ("Native must reject nil numeric coercion, got:\n" ^ generated))
+    [
+      "(+ nil 1)";
+      "(- nil 1)";
+      "(* nil 1)";
+      "(/ nil 1)";
+      "(inc nil)";
+      "(dec nil)";
+      "(zero? nil)";
+      "(pos? nil)";
+      "(neg? nil)";
+    ]
+
 let test_source_unchecked_extrema_macros_match_clojurescript () =
   let source =
     {|
@@ -48839,6 +48892,8 @@ let tests =
       test_ex_info_supports_clojurescript_cause_arity );
     ( "source numeric coercions match ClojureScript",
       test_source_numeric_coercions_match_clojurescript );
+    ( "Melange nil numeric coercion matches ClojureScript",
+      test_melange_nil_numeric_coercion_matches_clojurescript );
     ( "source unchecked extrema macros match ClojureScript",
       test_source_unchecked_extrema_macros_match_clojurescript );
     ( "source HAMT bit macros match ClojureScript",
