@@ -390,6 +390,30 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_host_class_ancestors_suite_body(self) -> None:
+        test_file = self.write_suite_file(
+            "ancestors_skip_probe.cljc",
+            "(ns clojure.core-test.ancestors-skip-probe\n"
+            "  (:require [clojure.core-test.portability\n"
+            "             #?(:cljs :refer-macros :default :refer)\n"
+            "             [when-var-exists]]))\n\n"
+            "(when-var-exists ancestors\n"
+            "  (def impossible-ancestors Object))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.ancestors-skip-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_async_macro_is_available_to_suite(self) -> None:
         test_file = self.write_suite_file(
             "async_macro_probe.cljc",

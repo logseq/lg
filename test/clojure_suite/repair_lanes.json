@@ -1,21 +1,5 @@
 [
   {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/ancestors.cljc\", line <n>: lg: unknown symbol js/Object",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.ancestors",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/ancestors.cljc\", line <n>: lg: unknown symbol Object",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.ancestors",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/apply.cljc\", line <n>: lg: apply argument type mismatch: expected int, got char",
     "lane": "audit-as-static-error",

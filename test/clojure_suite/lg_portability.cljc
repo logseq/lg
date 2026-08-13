@@ -4,6 +4,7 @@
   (or (= var-sym '+')
       (= var-sym '*')
       (= var-sym 'add-watch)
+      (= var-sym 'ancestors)
       (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
       (= var-sym 'denominator)
