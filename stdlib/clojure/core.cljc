@@ -1313,6 +1313,9 @@
   ISeqable
   (-seq [mapping]
     (tree-map-seq mapping true))
+  IReversible
+  (-rseq [mapping]
+    (tree-map-seq mapping false))
   ICollection
   (-conj [mapping entry]
     (tree-map-assoc mapping (key entry) (val entry)))

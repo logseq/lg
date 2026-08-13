@@ -238,6 +238,11 @@ let rec to_seq_expr env collection =
   else
   match collection.ty with
   | TNil -> Ok (TUnknown, Semantic_ir.Ident "Seq.empty")
+  | TChar when Compiler_environment.target env = Target.Melange ->
+      Ok
+        ( TChar,
+          apply "List.to_seq"
+            [ Semantic_ir.List [ collection.semantic_expr ] ] )
   | (TRecord _ | TNamed_record { nominal = false; _ }) -> (
       match collection.record_values with
       | Some values -> record_values_to_seq values

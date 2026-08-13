@@ -32898,9 +32898,21 @@ let test_rseq_dispatches_to_reversible_protocol () =
   assert_ocaml_runs "rseq_dispatches_to_reversible_protocol" "[3 2 1]\n"
     ocaml_source;
   ignore
-    (compile_with_stdlib Lg.Target.Melange "test/rseq_protocol.cljc" source);
+    (compile_with_stdlib Lg.Target.Melange "test/rseq_protocol.cljc" source)
+
+let test_rseq_supports_source_sorted_maps () =
+  let source =
+    {|
+(let [entries (rseq (sorted-map :a 0 :b 1 :c 2))]
+  (println (str (key (first entries)) ":" (val (first entries)) ":"
+                (key (first (rest (rest entries)))))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "rseq_supports_source_sorted_maps"
+    ":c:2::a\n" native;
   ignore
-    (compile_with_stdlib Lg.Target.Js_of_ocaml "test/rseq_protocol.cljc" source)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_source_cljs_test_fixture_helpers_match_clojurescript () =
   let source =
@@ -41655,6 +41667,11 @@ let test_reverse_accepts_sets_like_clojurescript () =
   assert_ocaml_runs "reverse_accepts_sets_like_clojurescript" "true\n"
     ocaml_source
 
+let test_reverse_accepts_melange_chars_like_clojurescript () =
+  let source = {|(println (pr-str (reverse \a)))|} in
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/reverse_char.cljc" source)
+
 let test_sequence_boolean_predicates () =
   let source =
     {|
@@ -49538,6 +49555,8 @@ let tests =
       test_optional_record_fields_keep_precise_types );
     ( "rseq dispatches to reversible protocol",
       test_rseq_dispatches_to_reversible_protocol );
+    ( "rseq supports source sorted maps",
+      test_rseq_supports_source_sorted_maps );
     ( "source cljs.test fixture helpers match ClojureScript",
       test_source_cljs_test_fixture_helpers_match_clojurescript );
     ( "cljs.test fixture helpers are source-owned",
@@ -50183,6 +50202,8 @@ let tests =
     ("reverse core api works", test_reverse_core_api);
     ( "reverse accepts sets like ClojureScript",
       test_reverse_accepts_sets_like_clojurescript );
+    ( "reverse accepts Melange chars like ClojureScript",
+      test_reverse_accepts_melange_chars_like_clojurescript );
     ("sequence boolean predicates work", test_sequence_boolean_predicates);
     ( "sequence boolean predicates accept truthy results",
       test_sequence_boolean_predicates_accept_truthy_results );
