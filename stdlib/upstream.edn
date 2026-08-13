@@ -456,7 +456,7 @@
     boolean? {:status :static-adaptation
               :reason :source-function-provides-a-first-class-boolean-predicate-while-its-inline-definition-preserves-upstream-true-or-false-control-flow-and-single-evaluation}
     empty? {:status :static-adaptation
-            :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-uses-the-upstream-seq-fallback-for-all-supported-static-seqables}
+            :reason :polymorphic-vector-source-function-preserves-first-class-use-while-its-inline-definition-uses-a-minimal-typed-empty-predicate-primitive-to-preserve-the-upstream-nil-counted-then-seq-control-flow-and-melange-char-string-boundary-without-dynamic-erasure}
     not-empty {:status :static-adaptation
                :reason :polymorphic-vector-source-function-returns-an-optional-vector-while-its-inline-definition-preserves-the-upstream-seq-guard-and-each-direct-call-input-collection-type}
     ex-message {:status :static-adaptation

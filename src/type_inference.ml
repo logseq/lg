@@ -633,6 +633,8 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_ex-cause"; _ ] -> TNullable (TOcaml "exn")
   | FList [ FSymbol "__lg_ex-data"; _ ] -> Types.dynamic_constraint TUnknown
   | FList [ FSymbol "__lg_exec-tap-fn"; _ ] -> TBool
+  | FList [ FSymbol predicate; _ ] when has_source_name predicate "__lg_empty-predicate" ->
+      TBool
   | FList [ FSymbol "__lg_add-tap"; _ ] -> TUnit
   | FList [ FSymbol "__lg_remove-tap"; _ ] -> TUnit
   | FList [ FSymbol "__lg_tap"; _ ] -> TBool
@@ -2009,6 +2011,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         | condition -> infer_truthy params condition))
                   (Ok params) (List.rev reversed_prefix)))
     | FSymbol name -> constrain_truthy_symbol params name
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_empty-predicate" ->
+        infer_form params value
     | FList (FSymbol name :: args) when string_mem_assoc name params ->
         let parameter_types = List.map (inferred_form_type params) args in
         constrain_symbol (TFn (parameter_types, TBool)) params name
@@ -3586,6 +3591,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | (FList
         (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) as form) ->
         infer_truthy params form
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_empty-predicate" ->
+        infer_form params value
     | FList [ FSymbol predicate; FSymbol value ]
       when has_source_name predicate "__lg_symbol-predicate" ->
         constrain_symbol_predicate params value

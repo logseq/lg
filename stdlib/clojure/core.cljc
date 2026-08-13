@@ -1578,7 +1578,7 @@
      (if (test 1 0)
        (let [entries
              (ISorted/-sorted-seq-from sorted-collection key true)]
-         (if (empty? entries)
+         (if (not (seq entries))
            entries
            (if (include (nth entries 0)) entries (next entries))))
        (take-while include
@@ -1588,7 +1588,7 @@
     ^:fn<int;int;bool> end-test end-key]
    (let [entries
          (ISorted/-sorted-seq-from sorted-collection start-key true)]
-     (if (empty? entries)
+     (if (not (seq entries))
        entries
        (let [include-start
              (mk-bound-fn sorted-collection start-test start-key)
@@ -1604,7 +1604,7 @@
      (if (test -1 0)
        (let [entries
              (ISorted/-sorted-seq-from sorted-collection key false)]
-         (if (empty? entries)
+         (if (not (seq entries))
            entries
            (if (include (nth entries 0)) entries (next entries))))
        (take-while include
@@ -1614,7 +1614,7 @@
     ^:fn<int;int;bool> end-test end-key]
    (let [entries
          (ISorted/-sorted-seq-from sorted-collection end-key false)]
-     (if (empty? entries)
+     (if (not (seq entries))
        entries
        (let [include-end
              (mk-bound-fn sorted-collection end-test end-key)
@@ -3225,9 +3225,7 @@
 
 (defn empty?
   {:inline
-   (fn [coll]
-     (let [value (gensym)]
-       (list 'let [value coll] (list 'not (list 'seq value)))))}
+   (fn [coll] (list '__lg_empty-predicate coll))}
   [coll]
   (not (seq coll)))
 

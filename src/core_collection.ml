@@ -12,6 +12,8 @@ let two_args name args =
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
+let evaluated_argument arg = Semantic_ir.evaluate_for_effect arg.semantic_expr
+
 let count env collection =
   if
     Option.is_some (Types.dynamic_map_types collection.ty)
@@ -79,6 +81,27 @@ let pop collection =
 let rest env collection = Collection_capability.rest_expr env collection
 
 let seq env collection = Collection_capability.seq_expr env collection
+
+let empty_predicate env collection =
+  let evaluated = evaluated_argument collection in
+  let static_bool value =
+    typed_ir TBool (Semantic_ir.Sequence [ evaluated; Semantic_ir.Bool value ])
+  in
+  match collection.ty with
+  | TNil -> Ok (static_bool true)
+  | TChar when Compiler_environment.target env = Target.Melange ->
+      Ok (static_bool false)
+  | TRecord fields | TNamed_record { fields; _ } ->
+      Ok (static_bool (fields = []))
+  | _ when Collection_capability.is_counted env collection ->
+      Collection_capability.count_expr env collection
+      |> Result.map (fun count ->
+             typed_ir TBool (Semantic_ir.Infix ("=", count, Semantic_ir.Int 0)))
+  | _ ->
+      Collection_capability.seq_expr env collection
+      |> Result.map (fun sequence ->
+             typed_ir TBool
+               (Semantic_ir.Prefix ("not", sequence.semantic_expr)))
 
 let empty env collection =
   let seqable_value =
@@ -197,7 +220,8 @@ let take_drop env name count collection =
 
 let compile env name args =
   match name with
-  | "__lg_count" | "__lg_first" | "peek" | "pop" | "__lg_rest" | "__lg_seq" | "empty" -> (
+  | "__lg_count" | "__lg_first" | "peek" | "pop" | "__lg_rest" | "__lg_seq"
+  | "__lg_empty-predicate" | "empty" -> (
       match one_arg name args with
       | Error _ as err -> err
       | Ok collection -> (
@@ -208,6 +232,7 @@ let compile env name args =
           | "pop" -> pop collection
           | "__lg_rest" -> rest env collection
           | "__lg_seq" -> seq env collection
+          | "__lg_empty-predicate" -> empty_predicate env collection
           | "empty" -> empty env collection
           | _ -> assert false))
   | "take" | "drop" -> (

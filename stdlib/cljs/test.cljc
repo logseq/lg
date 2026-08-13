@@ -551,7 +551,7 @@
 
 (defn- run-block-then [actions finished]
   (let [remaining (seq actions)]
-    (if (empty? remaining)
+    (if (not remaining)
       (finished)
       (match (first remaining)
         (Some (SynchronousTest run))

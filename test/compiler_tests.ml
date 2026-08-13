@@ -24398,6 +24398,16 @@ let test_source_collection_and_scalar_predicates_match_clojurescript () =
     {|(def result (empty? 1))|}
   |> expect_error_contains "seq expects a seqable value"
 
+let test_melange_empty_predicate_treats_chars_as_non_empty_strings () =
+  let source = {|(println (empty? \space))|} in
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/melange_empty_char.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange empty? char support must preserve static values";
+  if not (string_contains_substring melange_source "false") then
+    failwith "Melange empty? char support should compile to false"
+
 let test_source_not_empty_preserves_concrete_collections () =
   let source =
     {|
@@ -48369,6 +48379,8 @@ let tests =
       test_source_some_and_boolean_predicates_preserve_static_contracts );
     ( "source collection and scalar predicates match ClojureScript",
       test_source_collection_and_scalar_predicates_match_clojurescript );
+    ( "Melange empty? treats chars as non-empty strings",
+      test_melange_empty_predicate_treats_chars_as_non_empty_strings );
     ( "source not-empty preserves concrete collections",
       test_source_not_empty_preserves_concrete_collections );
     ( "source static predicate family matches ClojureScript",

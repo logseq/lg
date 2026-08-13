@@ -10718,6 +10718,10 @@ let create ~compile_expr =
     | "__lg_vals" -> compile_vals scope env arg_forms
     | "__lg_hash-map" | "__lg_array-map" ->
         compile_hash_map scope env arg_forms
+    | name
+      when String.equal name "__lg_empty-predicate"
+           || String.ends_with ~suffix:"/__lg_empty-predicate" name ->
+        compile_collection_call scope env "__lg_empty-predicate" arg_forms
     | "__lg_rest" | "__lg_seq" ->
         compile_collection_call scope env name arg_forms
     | "__lg_into" -> (
