@@ -81,11 +81,11 @@ Namespaces currently compiling on both targets:
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 246 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 134 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
-| `host-boundary-or-platform-specific` | 17 | Keep JVM/JS class identity, `cljs.js`, Java interop, JVM `definterface`, Clojure Var-object mutation forms, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
+| `host-boundary-or-platform-specific` | 19 | Keep JVM/JS class identity, `cljs.js`, Java interop, JVM `:import`, JVM `definterface`, Clojure Var-object mutation forms, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
 | `missing-core-api-macro-or-var` | 0 | The current scan has no remaining failures in this class. New entries should be inspected before adding compiler-owned public-name dispatch. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
-| `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
+| `unsupported-namespace-form` | 0 | The current scan has no remaining failures in this class. JVM `:import` is classified as a host/platform boundary for native/Melange rather than stdlib source migration work. |
 | `other-compiler-error` | 0 | The current scan has no unclassified compiler errors; new entries in this class should be inspected before changing compiler behavior. |
 
 ## Platform skew
@@ -97,7 +97,7 @@ Namespaces currently compiling on both targets:
 
 ## Current interpretation
 
-The 407 compile failures are not 407 independent core defects. The current
+The 399 compile failures are not 399 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -109,9 +109,7 @@ highest leverage blockers are:
    affect reader, type system, equality, ordering, arithmetic, printing, and
    EDN. UUID string reader literals are supported, but Java/CLJS UUID class and
    record identity remain separate host/representation boundaries.
-3. Missing API/macro forms: these should be triaged public-var by public-var.
-   Some are source-portable functions; others are compiler/host behavior.
-4. Host boundaries: JVM class identity and JS globals are not portable stdlib
+3. Host boundaries: JVM class identity, JVM `:import`, and JS globals are not portable stdlib
    source and should remain classified unless an LG-native representation is
    designed.
 

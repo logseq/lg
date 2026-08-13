@@ -53,6 +53,8 @@ class SummaryClassificationTests(unittest.TestCase):
                 "host-boundary-or-platform-specific",
             "File \"<suite>/remove_watch.cljc\", line <n>: lg: unknown function def":
                 "host-boundary-or-platform-specific",
+            "File \"<suite>/reduce.cljc\", line <n>: lg: lg namespaces do not support :import":
+                "host-boundary-or-platform-specific",
         }
 
         for message, expected in examples.items():

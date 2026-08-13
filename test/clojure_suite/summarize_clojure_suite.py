@@ -85,6 +85,7 @@ def classify(error: str) -> str:
         or "unknown record type Boolean" in message
         or "unknown record type cljs.core.UUID" in message
         or "clojure.lang" in message
+        or "lg namespaces do not support :import" in lower
         or "unknown function definterface" in message
         or ("remove_watch.cljc" in message and "unknown function def" in message)
     ):
@@ -128,9 +129,6 @@ def classify(error: str) -> str:
         or "guard narrowing requires a statically typed value" in lower
     ):
         return "static-typing-or-closed-domain-boundary"
-
-    if "lg namespaces do not support :import" in lower:
-        return "unsupported-namespace-form"
 
     if "defmulti currently supports" in lower:
         return "missing-core-api-macro-or-var"
