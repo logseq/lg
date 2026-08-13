@@ -70,8 +70,8 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 244 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
-| `reader-or-numeric-literal` | 128 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
-| `missing-core-api-macro-or-var` | 23 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, `cljs.core/IAtom`, and defmulti dispatch coverage. |
+| `reader-or-numeric-literal` | 130 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
+| `missing-core-api-macro-or-var` | 21 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, `cljs.core/IAtom`, and defmulti dispatch coverage. |
 | `host-boundary-or-platform-specific` | 15 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
@@ -151,6 +151,11 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `fnil.cljc` namespace now fails later because the test stores int defaults and
   the symbol `'not-nil` in the same result vector; that is a heterogeneous
   collection typing issue, not an unsupported `fnil` arity.
+- Runtime source-level syntax-quoted constants now compile as quoted data,
+  clearing the false `syntax-quote` missing-core blocker in
+  `constantly.cljc`. That namespace now fails later on real reader/numeric
+  boundaries: Native reaches the ratio literal `111/7`, while Melange reaches
+  the named character literal `\return`.
 - `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
   disjoint static source types without dynamic packing. The upstream
   `eq.cljc` helper still fails because it passes equality as a first-class

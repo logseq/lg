@@ -257,6 +257,9 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_call scope env (type_name ^ ".") args
   | FList [ FSymbol "quote"; value ] -> compile_quoted scope env value
   | FList (FSymbol "quote" :: _) -> Error.error "quote expects one form"
+  | FList [ FSymbol "syntax-quote"; value ] -> compile_quoted scope env value
+  | FList (FSymbol "syntax-quote" :: _) ->
+      Error.error "syntax-quote expects one form"
   | FList [ FSymbol "#uuid"; FString source ] ->
       Ok
         (typed_ir (TOcaml "Lg_runtime.Runtime_uuid.t")

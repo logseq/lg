@@ -32515,6 +32515,33 @@ let test_source_cljs_test_are_accepts_parse_uuid_suite_shape () =
     (compile_with_stdlib Lg.Target.Melange
        "test/source_cljs_test_are_parse_uuid_shape.cljc" source)
 
+let test_source_cljs_test_are_accepts_syntax_quoted_constants () =
+  let source =
+    {|
+(ns app.cljs-test-are-syntax-quote-constants
+  (:require [cljs.core :refer [= constantly get println]]
+            [cljs.test :refer [are deftest run-tests]]))
+
+(deftest constants
+  (are [v] (= v ((constantly v)))
+       `sym
+       "abc"
+       :keyword))
+
+(def counters (:report-counters (run-tests 'app.cljs-test-are-syntax-quote-constants)))
+(println (= 3 (get counters :pass 0)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_cljs_test_are_syntax_quote_constants.cljc" source
+  in
+  assert_ocaml_runs "source_cljs_test_are_syntax_quote_constants" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_cljs_test_are_syntax_quote_constants.cljc" source)
+
 let test_source_cljs_test_sync_registry_rejects_invalid_forms () =
   compile_with_stdlib_result Lg.Target.Native
     "test/source_cljs_test_is_non_boolean.cljc"
@@ -48308,6 +48335,8 @@ let tests =
       test_cljs_test_assert_expr_is_source_owned );
     ( "source cljs.test are accepts parse-uuid suite shape",
       test_source_cljs_test_are_accepts_parse_uuid_suite_shape );
+    ( "source cljs.test are accepts syntax-quoted constants",
+      test_source_cljs_test_are_accepts_syntax_quoted_constants );
     ( "source cljs.test synchronous registry rejects invalid forms",
       test_source_cljs_test_sync_registry_rejects_invalid_forms );
     ( "cljs.test synchronous registry is source-owned",
