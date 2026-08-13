@@ -1704,6 +1704,75 @@ let row_arg_expr row_type_name expected_ty arg =
   | _ -> arg.semantic_expr
 
 let coerce_set_element element_ty value =
+  let rec coerce_closed expected actual expression =
+    let metadata name argument =
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name),
+          [ argument ] )
+    in
+    match (expected, actual) with
+    | expected, actual when Types.equal expected actual -> Ok expression
+    | TOcaml "Lg_edn_backend.t", TNil ->
+        Ok
+          (Semantic_ir.Sequence
+             [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+    | TOcaml "Lg_edn_backend.t", TBool -> Ok (metadata "of_bool" expression)
+    | TOcaml "Lg_edn_backend.t", (TInt | TOcaml "int") ->
+        Ok (metadata "of_int" expression)
+    | TOcaml "Lg_edn_backend.t", TFloat -> Ok (metadata "of_float" expression)
+    | TOcaml "Lg_edn_backend.t", TChar -> Ok (metadata "of_char" expression)
+    | TOcaml "Lg_edn_backend.t", TString -> Ok (metadata "of_string" expression)
+    | TOcaml "Lg_edn_backend.t", TSymbol -> Ok (metadata "of_symbol" expression)
+    | TOcaml "Lg_edn_backend.t", TKeyword ->
+        Ok (metadata "of_keyword" expression)
+    | TOcaml "Lg_edn_backend.t", TRegex -> Ok (metadata "of_regex" expression)
+    | TVector expected_item, TTuple actual_items ->
+        let names =
+          List.mapi
+            (fun index _ -> "__lg_set_tuple_item_" ^ string_of_int index)
+            actual_items
+        in
+        let pattern_names = names in
+        let rec coerce_tuple_items acc types names =
+          match (types, names) with
+          | [], [] ->
+              Ok
+                (Semantic_ir.Let
+                   ( [
+                       ( Semantic_ir.PTuple
+                           (List.map
+                              (fun name -> Semantic_ir.PVar name)
+                              pattern_names),
+                         expression );
+                     ],
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Rrbvec.of_list",
+                         [ Semantic_ir.List (List.rev acc) ] ) ))
+          | actual_item :: rest, name :: rest_names ->
+              Result.bind
+                (coerce_closed expected_item actual_item
+                   (Semantic_ir.Ident name))
+                (fun item ->
+                  coerce_tuple_items (item :: acc) rest rest_names)
+          | _ -> assert false
+        in
+        coerce_tuple_items [] actual_items names
+    | TVector expected_item, TVector actual_item ->
+        let item_name = "__lg_set_vector_item" in
+        Result.map
+          (fun item ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Rrbvec.map",
+                [
+                  Semantic_ir.Fun ([ Semantic_ir.PVar item_name ], item);
+                  expression;
+                ] ))
+          (coerce_closed expected_item actual_item (Semantic_ir.Ident item_name))
+    | _ ->
+        Error.error
+          ("set value type must match element type: expected "
+         ^ Types.source_name expected ^ ", got " ^ Types.source_name actual)
+  in
   match element_ty with
   | TNamed_record expected -> (
       match value.ty with
@@ -1737,12 +1806,7 @@ let coerce_set_element element_ty value =
            ^ Types.source_name element_ty ^ ", got "
             ^ Types.source_name value.ty))
   | _ ->
-      if Types.equal element_ty value.ty then Ok value.semantic_expr
-      else
-        Error.error
-          ("set value type must match element type: expected "
-         ^ Types.source_name element_ty ^ ", got "
-          ^ Types.source_name value.ty)
+      coerce_closed element_ty value.ty value.semantic_expr
 
 let constrain_record_function_argument_expr fn element_ty =
   let rec constrain_pattern type_name = function

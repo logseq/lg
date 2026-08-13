@@ -1042,6 +1042,20 @@ and overloaded_storage_type = function
       in
       TTuple [ TFn (params, arity.return_ty); overloaded_storage_type rest ]
 
+and closed_generated_set_element = function
+  | TInt | TFloat | TChar | TString | TRegex | TSymbol | TKeyword | TBool
+  | TUnit | TNil | TOcaml "int" | TOcaml "Lg_edn_backend.t" ->
+      true
+  | TNullable inner | TList inner | TVector inner | TArray inner
+  | TOcaml_app ("option", [ inner ]) ->
+      closed_generated_set_element inner
+  | TTuple items -> List.for_all closed_generated_set_element items
+  | _ -> false
+
+and generated_set_module_name ty =
+  "Lg_static_set_"
+  ^ String.sub (Digest.to_hex (Digest.string (source_name ty))) 0 16
+
 and set_module_name = function
   | TUnknown | TMeta _ | TVar _ -> Ok "Lg_runtime.Runtime_poly_set"
   | TNil -> Ok "Lg_runtime.Runtime_poly_set"
@@ -1056,6 +1070,8 @@ and set_module_name = function
   | TList (TString | TSymbol | TKeyword) -> Ok "Lg_runtime.Core_set.String_list_set"
   | TList TBool -> Ok "Lg_runtime.Core_set.Bool_list_set"
   | TList (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TList inner as ty when closed_generated_set_element inner ->
+      Ok (generated_set_module_name ty)
   | TVector TInt -> Ok "Lg_runtime.Core_set.Int_vector_set"
   | TVector TFloat -> Ok "Lg_runtime.Core_set.Float_vector_set"
   | TVector TChar -> Ok "Lg_runtime.Core_set.Char_vector_set"
@@ -1079,7 +1095,11 @@ and set_module_name = function
   | TVector (TVector (TString | TSymbol | TKeyword)) ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TVector (TVector (TRecord _)) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TVector inner as ty when closed_generated_set_element inner ->
+      Ok (generated_set_module_name ty)
   | TList (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
+  | TTuple items as ty when List.for_all closed_generated_set_element items ->
+      Ok (generated_set_module_name ty)
   | TRecord fields when is_homogeneous_record fields ->
       Ok "Lg_runtime.Runtime_map_set"
   | TRecord _ -> Ok "Lg_runtime.Runtime_poly_set"

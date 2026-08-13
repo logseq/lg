@@ -1330,6 +1330,38 @@ let test_hash_map_protocol_methods_dispatch_statically () =
     "true:2:9:10:true:true:true:true:false:1:3:3:protocol\n"
     ocaml_source
 
+let test_find_projects_structural_records_statically () =
+  let source =
+    {|
+(def receiver-runs (atom 0))
+(def selected-runs (atom 0))
+(def unselected-runs (atom 0))
+(def hit
+  (find
+    (do
+      (swap! receiver-runs inc)
+      {:a (do (swap! selected-runs inc) 1)
+       :b (do (swap! unselected-runs inc) "two")
+       :c (range)})
+    :a))
+(def miss (find {:a 1 :b "two"} :missing))
+(println
+  (str
+    (= [:a 1] hit) ":"
+    (nil? miss) ":"
+    @receiver-runs ":"
+    @selected-runs ":"
+    @unselected-runs))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "structural record find must remain statically typed";
+  assert_ocaml_runs "find_projects_structural_records_statically"
+    "true:true:1:1:1\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_hash_map_is_callable_as_lookup_function () =
   let source =
     {|
@@ -41344,6 +41376,43 @@ let test_sets_support_nested_composite_elements () =
   assert_ocaml_runs "sets_support_nested_composite_elements" "2:true\n"
     ocaml_source
 
+let test_sets_generate_comparators_for_closed_composite_elements () =
+  let source =
+    {|
+(def edn-lists (hash-set (list :a 1) (list :a 1) (list :b 2)))
+(def entries (set [[:a 1] [:b 2] [:a 1]]))
+(def nested
+  (hash-set
+    [[:a 1] [:b 2]]
+    [[:a 1] [:b 2]]
+    [[:b 2] [:a 1]]))
+(def mapping {:a 1 :b 2})
+(println
+  (str
+    (count edn-lists) ":"
+    (contains? edn-lists (list :a 1)) ":"
+    (count entries) ":"
+    (contains? entries [:b 2]) ":"
+    (count nested) ":"
+    (contains? nested [[:b 2] [:a 1]]) ":"
+    (contains? nested (vec mapping))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed composite set comparators must remain statically typed";
+  assert_ocaml_runs "sets_generate_composite_comparators"
+    "2:true:2:true:2:true:true\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_set_accepts_a_char_as_a_singleton_on_melange () =
+  let source = {|(def chars (set \space))|} in
+  compile_string_with_stdlib source
+  |> expect_error "set expects a seqable value";
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_set_positional_sequence_helpers () =
   let source =
     {|
@@ -47098,6 +47167,8 @@ let tests =
       test_hash_map_satisfies_collection_protocols );
     ( "hash-map protocol methods dispatch statically",
       test_hash_map_protocol_methods_dispatch_statically );
+    ( "find projects structural records statically",
+      test_find_projects_structural_records_statically );
     ( "hash-map is callable as lookup function",
       test_hash_map_is_callable_as_lookup_function );
     ( "hash-map duplicate fields use the last value",
@@ -50004,6 +50075,10 @@ let tests =
       test_sets_support_primitive_lists_and_vectors );
     ( "sets support nested composite elements",
       test_sets_support_nested_composite_elements );
+    ( "sets generate comparators for closed composite elements",
+      test_sets_generate_comparators_for_closed_composite_elements );
+    ( "set accepts a char as a singleton on Melange",
+      test_set_accepts_a_char_as_a_singleton_on_melange );
     ( "set positional sequence helpers work",
       test_set_positional_sequence_helpers );
     ( "set positional sequence helpers reject non-collections",

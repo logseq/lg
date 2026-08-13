@@ -49,18 +49,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/find.cljc\", line <n>: lg: no protocol implementation for IFind/-find and record<{:a:int,:b:int,:c:seq<int>}>",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous map keys have types int | keyword | string; define a sum type containing these types",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.find",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/find.cljc\", line <n>: lg: no protocol implementation for IFind/-find and record<{:a:int,:b:int,:c:seq<int>}>",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous map keys have types int | keyword | string; define a sum type containing these types",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.find",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {
@@ -109,22 +109,6 @@
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.hash-map",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/hash_set.cljc\", line <n>: lg: sets require a generated comparator for list<Lg_edn_backend.t>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.hash-set",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/hash_set.cljc\", line <n>: lg: sets require a generated comparator for list<Lg_edn_backend.t>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.hash-set",
-    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
@@ -721,22 +705,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/set.cljc\", line <n>: lg: sets require a generated comparator for tuple<keyword,int>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.set",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/set.cljc\", line <n>: lg: sets require a generated comparator for tuple<keyword,int>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.set",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/some_fn.cljc\", line <n>: lg: __lg_callable_expression_9 called with incompatible arguments: expected (int, int), got (int, string); incompatible positions: 2",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.some-fn",
@@ -917,22 +885,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.vals",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vec.cljc\", line <n>: lg: sets require a generated comparator for vector<vector<Lg_edn_backend.t>>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.vec",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vec.cljc\", line <n>: lg: sets require a generated comparator for vector<vector<Lg_edn_backend.t>>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.vec",
-    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {

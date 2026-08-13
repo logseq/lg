@@ -1366,6 +1366,8 @@ let missing_root_set_definitions requested_sets items =
         | Types.TNullable (Types.TNamed_record _)
         | Types.TOcaml_app ("option", [ Types.TNamed_record _ ]) ->
             set_module_definition module_name element_ty :: definitions
+        | _ when String.starts_with ~prefix:"Lg_static_set_" module_name ->
+            set_module_definition module_name element_ty :: definitions
         | _ -> definitions)
     requested_sets []
 

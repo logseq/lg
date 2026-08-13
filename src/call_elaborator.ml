@@ -1547,6 +1547,35 @@ let rec pack_metadata_expression ty expression =
             ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_vector",
               [ mapper; expression ] ))
         (metadata_mapper element_ty)
+  | TTuple element_types ->
+      let names =
+        List.mapi
+          (fun index _ -> "__lg_metadata_tuple_value_" ^ string_of_int index)
+          element_types
+      in
+      let pattern_names = names in
+      let rec pack_values packed types names =
+        match (types, names) with
+        | [], [] ->
+            Ok
+              (Semantic_ir.Let
+                 ( [
+                     ( Semantic_ir.PTuple
+                         (List.map
+                            (fun name -> Semantic_ir.PVar name)
+                            pattern_names),
+                       expression );
+                   ],
+                   Semantic_ir.Constructor
+                     ( "Lg_edn_backend.Vector",
+                       Some (Semantic_ir.Array (List.rev packed)) ) ))
+        | element_ty :: rest_types, name :: rest_names ->
+            Result.bind
+              (pack_metadata_expression element_ty (Semantic_ir.Ident name))
+              (fun value -> pack_values (value :: packed) rest_types rest_names)
+        | _ -> assert false
+      in
+      pack_values [] element_types names
   | TArray element_ty | TOcaml_app ("array", [ element_ty ]) ->
       Result.map
         (fun mapper ->
@@ -4366,6 +4395,18 @@ let compile_equality scope env args =
   in
   let compile_pair left right =
     let fallback () = Core_compare.compile ~env "=" [ left; right ] in
+    let tuple_sequential_pair () =
+      match
+        ( pack_metadata_value left,
+          pack_metadata_value right )
+      with
+      | Ok left, Ok right ->
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Apply
+                  (Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal", [ left; right ])))
+      | Error _, _ | _, Error _ -> fallback ()
+    in
     let metadata_pair metadata other =
       match pack_metadata_value other with
       | Error _ -> fallback ()
@@ -4388,6 +4429,25 @@ let compile_equality scope env args =
     in
     let result =
       if
+        (let tuple_or_nullable_tuple = function
+           | TTuple _
+           | TNullable (TTuple _)
+           | TOcaml_app ("option", [ TTuple _ ]) ->
+               true
+           | _ -> false
+         in
+         match (left.ty, right.ty) with
+         | left_ty, right_ty
+           when tuple_or_nullable_tuple left_ty
+                && Core_compare.sequential_type right_ty ->
+             true
+         | left_ty, right_ty
+           when Core_compare.sequential_type left_ty
+                && tuple_or_nullable_tuple right_ty ->
+             true
+         | _ -> false)
+      then tuple_sequential_pair ()
+      else if
         is_edn_value_type left.ty && is_edn_value_type right.ty
       then
         Ok
@@ -12265,6 +12325,15 @@ let create ~compile_expr =
   and compile_set scope env arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as error -> error
+    | Ok [ collection ]
+      when Env.target env = Target.Melange && Types.equal collection.ty TChar ->
+        Result.map
+          (fun set_module ->
+            typed_ir (TSet TChar)
+              (Semantic_ir.Apply
+                 ( Semantic_ir.Ident (set_module ^ ".singleton"),
+                   [ collection.semantic_expr ] )))
+          (Types.set_module_name TChar)
     | Ok [ collection ] -> (
         match Collection_capability.to_seq_expr env collection with
         | Error _ -> Error.error "set expects a seqable value"

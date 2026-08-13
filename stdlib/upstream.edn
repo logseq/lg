@@ -370,7 +370,7 @@
     rseq {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
     find {:status :static-adaptation
-          :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-supports-vector-index-lookup-and-returns-static-none-for-nil-receivers-or-nil-vector-keys-while-other-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
+          :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-supports-vector-index-lookup-and-compile-time-keyword-projection-from-heterogeneous-structural-records-and-returns-static-none-for-missing-record-fields-nil-receivers-or-nil-vector-keys-while-other-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
     equiv-map {:status :static-adaptation
                :reason :source-port-preserves-count-check-entry-order-and-first-mismatch-short-circuiting-while-typed-ifind-options-replace-the-upstream-private-never-equiv-sentinel-and-records-remain-a-distinct-static-domain}
     ifind? {:status :static-adaptation

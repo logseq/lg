@@ -332,6 +332,24 @@ class SummaryClassificationTests(unittest.TestCase):
         self.assertEqual("implement-static-language-capability", lane["lane"])
         self.assertEqual("typed-protocol-or-capability-gap", lane["static_subclass"])
 
+    def test_find_mixed_key_fixture_is_a_static_error_audit(self) -> None:
+        result = self.summary.Result(
+            namespace="clojure.core-test.find",
+            file="vendor/clojure-test-suite/test/clojure/core_test/find.cljc",
+            target="native",
+            status="compile-failed",
+            elapsed_ms=7,
+            error='File "<suite>/find.cljc", line <n>: lg: heterogeneous map keys have types int | keyword | string; define a sum type containing these types',
+        )
+
+        lane = self.summary.repair_lanes([result])[0]
+
+        self.assertEqual("audit-as-static-error", lane["lane"])
+        self.assertEqual(
+            "suite-polymorphic-fixture-is-static-error",
+            lane["static_subclass"],
+        )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:

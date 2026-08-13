@@ -98,6 +98,8 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
         Semantic_ir.Ident
           (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
            else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+    | TOcaml "Lg_edn_backend.t" ->
+        Semantic_ir.Ident "Lg_runtime.Runtime_edn.write_string"
     | TList _ | TSeq _ | TVector _ | TSet _ ->
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],

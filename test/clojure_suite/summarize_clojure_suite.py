@@ -277,6 +277,12 @@ def classify_result_static_boundary(result: Result) -> str:
     if expected_error is not None and expected_error in result.error:
         return "suite-polymorphic-fixture-is-static-error"
     if (
+        result.namespace == "clojure.core-test.find"
+        and "heterogeneous map keys have types int | keyword | string"
+        in result.error
+    ):
+        return "suite-polymorphic-fixture-is-static-error"
+    if (
         result.namespace in {"clojure.core-test.max", "clojure.core-test.min"}
         and "expected int arguments for " in result.error
     ):

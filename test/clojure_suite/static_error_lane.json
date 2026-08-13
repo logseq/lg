@@ -12,6 +12,18 @@
     "target": "native"
   },
   {
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous map keys have types int | keyword | string; define a sum type containing these types",
+    "namespace": "clojure.core-test.find",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/find.cljc\", line <n>: lg: heterogeneous map keys have types int | keyword | string; define a sum type containing these types",
+    "namespace": "clojure.core-test.find",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
+  },
+  {
     "error": "File \"<suite>/get.cljc\", line <n>: lg: get key type nil is not supported for nil",
     "namespace": "clojure.core-test.get",
     "static_subclass": "negative-runtime-test-is-static-error",

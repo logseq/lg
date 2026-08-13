@@ -1996,9 +1996,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        ^ " is not supported for " ^ source_name target.ty)))))
       | _ -> Error.error "get expects 2 or 3 arguments"
     and compile_find scope env arg_forms =
-      match compile_args_for scope env arg_forms with
-      | Error _ as err -> err
-      | Ok [ target; key ] -> (
+      let arg_forms =
+        match arg_forms with
+        | [ target; key ] -> [ target; resolve_keyword_alias scope env key ]
+        | forms -> forms
+      in
+      match (arg_forms, compile_args_for scope env arg_forms) with
+      | _, (Error _ as err) -> err
+      | [ _; FKeyword keyword ], Ok [ target; key ]
+        when (match target.ty with
+             | TRecord _
+             | TNamed_record { nominal = false; _ } -> true
+             | _ -> false) -> (
+          let target = unwrap_protocol_value target in
+          match target.ty with
+          | TRecord fields
+          | TNamed_record { fields; nominal = false; _ } ->
+              let target_name = "__lg_find_record" in
+              let key_name = "__lg_find_key" in
+              let result_ty, result =
+                match find_field keyword fields with
+                | Some field ->
+                    let projected_target =
+                      {
+                        target with
+                        semantic_expr = Semantic_ir.Ident target_name;
+                        record_values = None;
+                      }
+                    in
+                    ( TOcaml_app
+                        ("option", [ TTuple [ TKeyword; field.ty ] ]),
+                      Semantic_ir.Constructor
+                        ( "Some",
+                          Some
+                            (Semantic_ir.Tuple
+                               [
+                                 Semantic_ir.Ident key_name;
+                                 Structural_map.field_expr projected_target field;
+                               ]) ) )
+                | None ->
+                    ( TOcaml_app
+                        ("option", [ TTuple [ TKeyword; TUnknown ] ]),
+                      Semantic_ir.Constructor ("None", None) )
+              in
+              Ok
+                (typed_ir result_ty
+                   (Semantic_ir.Let
+                      ( [
+                          ( Semantic_ir.PVar target_name,
+                            target.semantic_expr );
+                          (Semantic_ir.PVar key_name, key.semantic_expr);
+                        ],
+                        result )))
+          | _ -> assert false)
+      | _, Ok [ target; key ] -> (
           if Types.is_dynamic target.ty then
             Result.map
               (fun packed_key ->
@@ -2012,7 +2063,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             Ok
               (typed_ir
                  (TOcaml_app ("option", [ TTuple [ key.ty; TUnknown ] ]))
-                 (Semantic_ir.Ident "None"))
+                 (Semantic_ir.Constructor ("None", None)))
           else
             match (target.ty, key.ty) with
             | TVector value_ty, TInt ->
@@ -2026,7 +2077,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   (typed_ir
                      (TOcaml_app
                         ("option", [ TTuple [ key.ty; value_ty ] ]))
-                     (Semantic_ir.Ident "None"))
+                     (Semantic_ir.Constructor ("None", None)))
             | _ -> (
             match Types.dynamic_map_types target.ty with
             | Some (key_ty, value_ty)
@@ -2057,7 +2108,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | None ->
                 compile_expr scope env
                   (FList (FSymbol "IFind/-find" :: arg_forms))))
-      | Ok _ -> Error.error "find expects 2 arguments"
+      | _, Ok _ -> Error.error "find expects 2 arguments"
     and compile_assoc scope env arg_forms =
       match arg_forms with
     | target_form :: pair_forms -> (
