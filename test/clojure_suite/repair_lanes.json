@@ -1,18 +1,18 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.eq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.eq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {
@@ -281,18 +281,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.not-eq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.not-eq",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {

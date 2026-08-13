@@ -29576,6 +29576,45 @@ let test_sorted_map_preserves_clojurescript_order_and_persistence () =
     failwith
       "sorted-map dissoc must port ClojureScript red-black deletion instead of rebuilding"
 
+let test_sorted_collections_normalize_boolean_predicate_comparators () =
+  let source =
+    {|
+(def ascending-map (sorted-map-by < 3 :c 1 :a 2 :b))
+(def descending-map (sorted-map-by > 3 :c 1 :a 2 :b))
+(def ascending-set (sorted-set-by < 3 1 2))
+(def descending-set (sorted-set-by > 3 1 2))
+(def integer-map
+  (sorted-map-by (fn [left right] (stdlib/compare right left))
+                 1 :a 3 :c 2 :b))
+(println
+  (str (pr-str (keys ascending-map)) ":"
+       (pr-str (keys descending-map)) ":"
+       (pr-str (seq ascending-set)) ":"
+       (pr-str (seq descending-set)) ":"
+       (pr-str (keys integer-map)) ":"
+       (= ascending-map descending-map) ":"
+       (= ascending-set descending-set) ":"
+       (= (hash-map 1 :a 2 :b 3 :c) ascending-map) ":"
+       (= ascending-map (hash-map 1 :a 2 :b 3 :c)) ":"
+       (= #{1 2 3} ascending-set) ":"
+       (= ascending-set #{1 2 3})))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/sorted_predicate_comparators.cljc" source
+  in
+  assert_ocaml_runs "sorted_collections_normalize_boolean_predicate_comparators"
+    "(1 2 3):(3 2 1):(1 2 3):(3 2 1):(3 2 1):true:true:true:true:true:true\n"
+    native;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/sorted_predicate_comparators.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/sorted_invalid_comparator.cljc"
+    {|(def invalid (sorted-map-by (fn [_left _right] "bad") 1 :one))|}
+  |> expect_error_contains "sorted comparator must return int or bool"
+
 let test_sorted_set_preserves_clojurescript_order_and_persistence () =
   let source =
     {|
@@ -49633,6 +49672,8 @@ let tests =
       test_rseq_dispatches_to_reversible_protocol );
     ( "rseq supports source sorted maps",
       test_rseq_supports_source_sorted_maps );
+    ( "sorted collections normalize boolean predicate comparators",
+      test_sorted_collections_normalize_boolean_predicate_comparators );
     ( "source cljs.test fixture helpers match ClojureScript",
       test_source_cljs_test_fixture_helpers_match_clojurescript );
     ( "cljs.test fixture helpers are source-owned",

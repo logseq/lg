@@ -1,5 +1,17 @@
 [
   {
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "namespace": "clojure.core-test.eq",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "namespace": "clojure.core-test.eq",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
+  },
+  {
     "error": "File \"<suite>/ffirst.cljc\", line <n>: lg: ffirst called with incompatible arguments: expected (seqable<seqable<inference-variable>>), got (Lg_runtime.Runtime_map.t<any,any>)",
     "namespace": "clojure.core-test.ffirst",
     "static_subclass": "negative-runtime-test-is-static-error",
@@ -172,6 +184,18 @@
     "namespace": "clojure.core-test.not-empty",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "namespace": "clojure.core-test.not-eq",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (fn<(any) -> truthy<any>>, vector<any>, vector<any>, list<any>, record<{}>), got (list<any>, vector<inference-variable>, vector<inference-variable>, list<any>, Lg_runtime.Runtime_map.t<any,any>); incompatible positions: 1",
+    "namespace": "clojure.core-test.not-eq",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
   },
   {
     "error": "File \"<suite>/nth.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got keyword",

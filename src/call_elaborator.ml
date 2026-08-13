@@ -4478,15 +4478,98 @@ let compile_equality scope env args =
     in
     result
   in
+  let compile_collection_pair left right =
+    let satisfies protocol value =
+      Protocol.type_satisfies env protocol value.ty
+    in
+    let sequence value = Collection_capability.to_seq_expr env value in
+    if
+      satisfies Core_protocols.map_id left
+      && satisfies Core_protocols.map_id right
+    then
+      match (sequence left, sequence right) with
+      | ( Ok (TTuple [ left_key; left_value ], left_entries),
+          Ok (TTuple [ right_key; right_value ], right_entries) )
+        when Types.same_shape left_key right_key
+             && Types.same_shape left_value right_value ->
+          let as_runtime_map value entries =
+            match Types.dynamic_map_types value.ty with
+            | Some (key_ty, value_ty)
+              when Types.same_shape key_ty left_key
+                   && Types.same_shape value_ty left_value ->
+                value.semantic_expr
+            | Some _ | None ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_map.of_list",
+                    [
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.to_list",
+                          [ entries ] );
+                    ] )
+          in
+          Some
+            (Ok
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Lg_runtime.Runtime_map.equiv",
+                    [
+                      as_runtime_map left left_entries;
+                      as_runtime_map right right_entries;
+                    ] )))
+      | Ok (TTuple [ _; _ ], _), Ok (TTuple [ _; _ ], _) ->
+          Some
+            (Ok
+               (Semantic_ir.Sequence
+                  [
+                    left.semantic_expr;
+                    right.semantic_expr;
+                    Semantic_ir.Bool false;
+                  ]))
+      | _ -> None
+    else if
+      satisfies Core_protocols.set_id left
+      && satisfies Core_protocols.set_id right
+    then
+      match (sequence left, sequence right) with
+      | Ok (left_element, left_values), Ok (right_element, right_values)
+        when Types.same_shape left_element right_element ->
+          Some
+            (Result.map
+               (fun set_module ->
+                 let of_sequence values =
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident (set_module ^ ".of_seq"),
+                       [ values ] )
+                 in
+                 Semantic_ir.Apply
+                   ( Semantic_ir.Ident (set_module ^ ".equal"),
+                     [ of_sequence left_values; of_sequence right_values ] ))
+               (Types.set_module_name left_element))
+      | Ok _, Ok _ ->
+          Some
+            (Ok
+               (Semantic_ir.Sequence
+                  [
+                    left.semantic_expr;
+                    right.semantic_expr;
+                    Semantic_ir.Bool false;
+                  ]))
+      | _ -> None
+    else None
+  in
   let rec pairs expressions = function
     | left :: ((right :: _) as rest) ->
-        Result.bind (compile_record_iequiv_pair scope env left right)
-          (function
-            | Some expression -> pairs (expression :: expressions) rest
-            | None ->
-                Result.bind (compile_pair left right)
-                  (fun expression ->
-                    pairs (expression.semantic_expr :: expressions) rest))
+        (match compile_collection_pair left right with
+        | Some result ->
+            Result.bind result (fun expression ->
+                pairs (expression :: expressions) rest)
+        | None ->
+            Result.bind (compile_record_iequiv_pair scope env left right)
+              (function
+                | Some expression -> pairs (expression :: expressions) rest
+                | None ->
+                    Result.bind (compile_pair left right)
+                      (fun expression ->
+                        pairs (expression.semantic_expr :: expressions) rest)))
     | _ -> Ok (List.rev expressions)
   in
   match args with
@@ -11444,6 +11527,80 @@ let create ~compile_expr =
             Result.map (fun expression -> typed_ir TInt expression)
               (compile_static_compare_capability env left right)
         | Ok _ -> Error.error "compare expects 2 arguments")
+    | "__lg_fn-to-comparator" -> (
+        match arg_forms with
+        | [ comparator_form ] -> (
+            match compile_function_arg scope env comparator_form with
+            | Error _ as error -> error
+            | Ok comparator ->
+                let selected =
+                  match comparator.ty with
+                  | TFn ([ left_ty; right_ty ], return_ty) ->
+                      Some
+                        ( comparator.semantic_expr,
+                          left_ty,
+                          right_ty,
+                          return_ty )
+                  | TOverloaded_fn arities -> (
+                      match select_overloaded_arity arities 2 with
+                      | Some (arity_index, arity) -> (
+                          match arity.fixed_params with
+                          | [ left_ty; right_ty ] ->
+                              Some
+                                ( overloaded_projection
+                                    comparator.semantic_expr arity_index,
+                                  left_ty,
+                                  right_ty,
+                                  arity.return_ty )
+                          | _ -> None)
+                      | None -> None)
+                  | _ -> None
+                in
+                (match selected with
+                | Some (comparator, left_ty, right_ty, TInt) ->
+                    Ok (typed_ir (TFn ([ left_ty; right_ty ], TInt)) comparator)
+                | Some (comparator, left_ty, right_ty, TBool) ->
+                    let comparator_name = "__lg_normalized_comparator" in
+                    let left_name = "__lg_comparator_left" in
+                    let right_name = "__lg_comparator_right" in
+                    let call left right =
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident comparator_name,
+                          [ Semantic_ir.Ident left; Semantic_ir.Ident right ] )
+                    in
+                    let result_name = "__lg_comparator_result" in
+                    let body =
+                      Semantic_ir.Let
+                        ( [
+                            ( Semantic_ir.PVar result_name,
+                              call left_name right_name );
+                          ],
+                          Semantic_ir.If
+                            ( Semantic_ir.Ident result_name,
+                              Semantic_ir.Int (-1),
+                              Semantic_ir.If
+                                ( call right_name left_name,
+                                  Semantic_ir.Int 1,
+                                  Semantic_ir.Int 0 ) ) )
+                    in
+                    Ok
+                      (typed_ir (TFn ([ left_ty; right_ty ], TInt))
+                         (Semantic_ir.Let
+                            ( [ (Semantic_ir.PVar comparator_name, comparator) ],
+                              Semantic_ir.Fun
+                                ( [
+                                    Semantic_ir.PVar left_name;
+                                    Semantic_ir.PVar right_name;
+                                  ],
+                                  body ) )))
+                | Some (_, _, _, return_ty) ->
+                    Error.error
+                      ("sorted comparator must return int or bool, got "
+                     ^ Types.source_name return_ty)
+                | None ->
+                    Error.error
+                      "sorted comparator must be a binary function"))
+        | _ -> Error.error "sorted comparator normalization expects 1 argument")
     | "ordering-compare" -> (
         match compile_compare scope env arg_forms with
         | Error _ as error -> error

@@ -106,8 +106,8 @@ Static typing subclasses:
 | subclass | failures | handling |
 | --- | ---: | --- |
 | `negative-runtime-test-is-static-error` | 67 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
-| `suite-polymorphic-fixture-is-static-error` | 11 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, and Native `nth.cljc` sharing one helper across collections and regex matchers. Supported monomorphic/direct calls have focused coverage. |
-| `heterogeneous-collection-needs-closed-domain` | 6 | Add explicit closed domains only where the heterogeneous shape is part of a supported API; do not erase ordinary collections to dynamic. |
+| `suite-polymorphic-fixture-is-static-error` | 15 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
+| `heterogeneous-collection-needs-closed-domain` | 2 | Add explicit closed domains only where the heterogeneous shape is part of a supported API; do not erase ordinary collections to dynamic. |
 | `first-class-polymorphic-or-hof` | 0 | No remaining compile failure is assigned to the implementation lane. The `juxt.cljc` whole-file fixture intentionally combines functions with incompatible static argument domains and is audited separately; supported monomorphic `juxt` arities remain covered on Native and Melange. |
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
 | `dynamic-boundary-needs-closed-domain` | 2 | Failures such as watch events cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
@@ -121,8 +121,8 @@ namespace/target:
 | lane | failures | interpretation |
 | --- | ---: | --- |
 | `design-reader-and-numeric-tower` | 4 | Tagged instant literals and BigDecimal precision/rounding require deliberate source and runtime types. |
-| `audit-as-static-error` | 78 | Upstream negative runtime tests and whole-suite heterogeneous/polymorphic fixtures that LG intentionally rejects at compile time. |
-| `design-closed-domain-or-narrow-runtime-boundary` | 8 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
+| `audit-as-static-error` | 82 | Upstream negative runtime tests and whole-suite heterogeneous/polymorphic fixtures that LG intentionally rejects at compile time. |
+| `design-closed-domain-or-narrow-runtime-boundary` | 4 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
 | `implement-static-language-capability` | 0 | The current scan has no remaining positive implementation failures. Closed tuple/list/nested-vector element types receive deterministic generated `Set.Make` modules without dynamic storage. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
 | `implement-form-or-reader-support` | 0 | Current repair lanes have no remaining failures in this lane. New compiler/analyzer form gaps must be implemented as static forms rather than source-portable function dispatch. |
@@ -202,6 +202,17 @@ nominal collections such as `persistent-tree-map` use their `ICollection/-conj`
 implementation through a typed fold. Built-in collection mismatches retain
 their existing compile-time errors; no dynamic storage or collection type-name
 dispatch was added.
+
+`clojure.core-test.eq` and `clojure.core-test.not-eq` now advance past sorted
+collection construction. `sorted-map-by` and `sorted-set-by` preserve the
+pinned ClojureScript `fn->comparator` call order through a private static
+return-type-directed primitive: integer comparators remain unchanged and
+boolean predicates use the upstream forward-then-reverse three-way result.
+Sorted map and set equality is based on their typed collection contents rather
+than comparator or tree representation, including equality with hash maps and
+hash sets. The remaining whole-namespace failure is the suite's single `eq`
+parameter being reused across incompatible function, sequential, and map
+domains; it is recorded in the intentional static-error lane.
 
 ## Promotion/typecheck failures
 

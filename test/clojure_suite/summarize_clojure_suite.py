@@ -289,6 +289,12 @@ def classify_result_static_boundary(result: Result) -> str:
     ):
         return "suite-polymorphic-fixture-is-static-error"
     if (
+        result.namespace
+        in {"clojure.core-test.eq", "clojure.core-test.not-eq"}
+        and "eq called with incompatible arguments" in result.error
+    ):
+        return "suite-polymorphic-fixture-is-static-error"
+    if (
         result.namespace in {"clojure.core-test.max", "clojure.core-test.min"}
         and "expected int arguments for " in result.error
     ):

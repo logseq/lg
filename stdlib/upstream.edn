@@ -1363,9 +1363,9 @@
     set-validator! {:status :static-adaptation
                     :reason :source-function-installs-or-clears-a-validator-callback-tied-to-the-reference-value-type}
     sorted-map-by {:status :static-adaptation
-                   :reason :source-persistent-red-black-tree-carries-a-static-key-comparator-returning-int-while-clojurescript-also-normalizes-boolean-predicate-comparators}
+                   :reason :source-persistent-red-black-tree-carries-a-static-key-comparator-returning-int-and-an-internal-return-type-directed-primitive-preserves-the-pinned-clojurescript-fn-to-comparator-control-flow-for-int-comparators-and-boolean-predicates}
     sorted-set-by {:status :static-adaptation
-                   :reason :source-persistent-tree-set-reuses-the-red-black-tree-map-and-carries-a-static-element-comparator-returning-int}
+                   :reason :source-persistent-tree-set-reuses-the-red-black-tree-map-and-the-same-static-comparator-normalization-as-sorted-map-by}
     string-iter {:status :host-boundary
                  :reason :constructs-a-javascript-es6-iterator-over-utf16-string-code-points}
     string-print {:status :static-adaptation

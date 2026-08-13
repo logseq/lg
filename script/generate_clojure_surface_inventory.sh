@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 227; then
-  echo "compiler call dispatch changed: expected 227 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 237; then
+  echo "compiler call dispatch changed: expected 237 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -93,6 +93,7 @@ awk '
     internal_abi["__lg_ex-cause"] = "static-optional-exception-cause-primitive"
     internal_abi["__lg_ex-data"] = "documented-exception-info-data-dynamic-boundary"
     internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
+    internal_abi["__lg_re-matcher"] = "documented-stateful-regex-matcher-host-boundary-with-static-matcher-type"
     internal_abi["__lg_re-find"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-matches"] = "documented-regex-match-dynamic-boundary-with-static-optional-result-specialization"
     internal_abi["__lg_re-seq"] = "documented-regex-sequence-dynamic-boundary-with-clojurescript-match-shape"
@@ -170,6 +171,7 @@ awk '
     internal_abi["__lg_array"] = "typed-homogeneous-array-construction-primitive"
     internal_abi["__lg_hash"] = "typed-hashable-capability-primitive"
     internal_abi["__lg_compare"] = "typed-single-domain-comparable-capability-primitive"
+    internal_abi["__lg_fn-to-comparator"] = "typed-return-directed-int-comparator-or-boolean-predicate-normalization-primitive"
     internal_abi["__lg_make-array"] = "typed-homogeneous-array-allocation-primitive"
     internal_abi["__lg_aget"] = "typed-array-index-capability-read-primitive"
     internal_abi["__lg_aset"] = "typed-array-index-capability-write-primitive"
@@ -184,6 +186,11 @@ awk '
     internal_abi["__lg_weak-deref"] = "typed-weak-reference-read-primitive"
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
     internal_abi["__lg_abs"] = "typed-static-numeric-absolute-value-primitive"
+    internal_abi["__lg_dec"] = "typed-static-numeric-decrement-primitive"
+    internal_abi["__lg_bigint"] = "typed-integer-reader-and-conversion-primitive"
+    internal_abi["__lg_bigdec"] = "typed-floating-decimal-reader-and-conversion-primitive-pending-arbitrary-precision-decimal-type"
+    internal_abi["__lg_nan-predicate"] = "typed-floating-point-nan-predicate-primitive"
+    internal_abi["__lg_decimal-predicate"] = "typed-current-decimal-representation-predicate-primitive"
     internal_abi["__lg_array-map"] = "typed-alternating-key-value-array-map-construction-primitive"
     internal_abi["__lg_hash-map"] = "typed-alternating-key-value-hash-map-construction-primitive"
     internal_abi["__lg_hash-set"] = "typed-homogeneous-hash-set-construction-primitive"
@@ -238,6 +245,9 @@ awk '
     host_reason["."] = "host-member-invocation-syntax-boundary"
     split(".compareTo .containsKey .entryAt .equals .getBytes .getClass .getName .getTime .map .toByteArray .toString .valAt .write", xs)
     for (i in xs) host_reason[xs[i]] = "explicit-host-method-interop-boundary"
+    host_reason[".replace"] = "explicit-host-string-replacement-method-boundary"
+    host_reason["Object."] = "native-host-object-constructor-boundary"
+    host_reason["System/getProperty"] = "native-host-system-property-read-boundary"
     host_reason["__deftype-field-set!"] = "mutable-host-field-assignment-boundary"
     host_reason["clj->js"] = "recursive-static-value-to-javascript-host-conversion-boundary"
     host_reason["current-time-millis"] = "target-specific-system-clock-boundary"
@@ -306,8 +316,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 144; then
-  echo "compiler form dispatch changed: expected 144 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 149; then
+  echo "compiler form dispatch changed: expected 149 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -325,6 +335,8 @@ awk -F '\t' '
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
     form_reason["new"] = "typed-host-constructor-application-elaboration"
+    form_reason["#uuid"] = "compiler-owned-tagged-uuid-reader-literal-elaboration"
+    form_reason["letfn"] = "compiler-owned-recursive-local-function-binding-elaboration"
   }
   FNR == NR {
     if ($1 == "compiler-call") {

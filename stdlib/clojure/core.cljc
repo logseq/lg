@@ -1310,6 +1310,16 @@
       mapping)))
 
 (extend-type persistent-tree-map
+  IEquiv
+  (-equiv [mapping other]
+    (if (= (:size mapping) (:size other))
+      (every?
+       (fn [entry]
+         (match (tree-map-get other (key entry))
+           (Some other-value) (= other-value (val entry))
+           None false))
+       (tree-map-seq mapping true))
+      false))
   ISeqable
   (-seq [mapping]
     (tree-map-seq mapping true))
@@ -1403,6 +1413,8 @@
   {:inline
    (fn [comparator & keyvals]
      (let [comparator-name (gensym)
+           normalized-comparator
+           (list '__lg_fn-to-comparator comparator)
            metadata (list 'meta {})
            expression
            (if (nil? keyvals)
@@ -1423,11 +1435,12 @@
                                 (list 'tree-map-assoc expression
                                       (first remaining)
                                       (first remaining-tail))))))))))]
-       (list 'let [comparator-name comparator] expression))) }
+       (list 'let [comparator-name normalized-comparator] expression))) }
   ([comparator]
-   (tree-map-empty comparator (meta {})))
+   (tree-map-empty (__lg_fn-to-comparator comparator) (meta {})))
   ([comparator k1 v1]
-   (tree-map-singleton comparator (meta {}) k1 v1))
+   (tree-map-singleton
+    (__lg_fn-to-comparator comparator) (meta {}) k1 v1))
   ([comparator k1 v1 k2 v2]
    (tree-map-assoc (sorted-map-by comparator k1 v1) k2 v2))
   ([comparator k1 v1 k2 v2 k3 v3]
@@ -1474,6 +1487,17 @@
     None None))
 
 (extend-type persistent-tree-set
+  IEquiv
+  (-equiv [set other]
+    (if (= (tree-map-size (:mapping set))
+           (tree-map-size (:mapping other)))
+      (every?
+       (fn [value]
+         (match (tree-set-get other value)
+           (Some _) true
+           None false))
+       (tree-set-values set true))
+      false))
   ISeqable
   (-seq [set]
     (tree-set-values set true))
@@ -1549,9 +1573,11 @@
   {:inline
    (fn [comparator & values]
      (let [comparator-name (gensym)
+           normalized-comparator
+           (list '__lg_fn-to-comparator comparator)
            metadata (list 'meta {})]
        (list
-        'let [comparator-name comparator]
+        'let [comparator-name normalized-comparator]
         (if (nil? values)
           (list 'tree-set-empty comparator-name metadata)
           (loop [expression
@@ -1563,9 +1589,10 @@
               (recur (list 'tree-set-conj expression (first remaining))
                      (next remaining))))))))}
   ([comparator]
-   (tree-set-empty comparator (meta {})))
+   (tree-set-empty (__lg_fn-to-comparator comparator) (meta {})))
   ([comparator v1]
-   (tree-set-singleton comparator (meta {}) v1))
+   (tree-set-singleton
+    (__lg_fn-to-comparator comparator) (meta {}) v1))
   ([comparator v1 v2]
    (tree-set-conj (sorted-set-by comparator v1) v2))
   ([comparator v1 v2 v3]
