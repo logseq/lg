@@ -23055,6 +23055,30 @@ let test_update_supports_extra_arguments () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_supports_extra_arguments" "Ada:37\n" ocaml_source
 
+let test_update_missing_key_supports_nullable_core_updaters () =
+  let source =
+    {|
+(ns app.update-missing
+  (:require [clojure.core :refer [= get identity nil? println update]]))
+(def with-nil (update {:a 5} :k identity))
+(def with-true (update {} :k nil?))
+(def nil-with-nil (update nil :k identity))
+(def nil-with-true (update nil :k nil?))
+(println (nil? (get with-nil :k)))
+(println (= 5 (:a with-nil)))
+(println (:k with-true))
+(println (nil? (get nil-with-nil :k)))
+(println (:k nil-with-true))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/update_missing.cljc" source
+  in
+  assert_ocaml_runs "update_missing_key_supports_nullable_core_updaters"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/update_missing.cljc" source)
+
 let test_keyword_let_bindings_preserve_static_map_access () =
   let source =
     {|
@@ -47902,6 +47926,8 @@ let tests =
       test_merge_rejects_incompatible_overlapping_fields );
     ("update rejects type changes", test_update_rejects_type_changes);
     ("update supports extra arguments", test_update_supports_extra_arguments);
+    ( "update missing key supports nullable core updaters",
+      test_update_missing_key_supports_nullable_core_updaters );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",

@@ -101,6 +101,8 @@ class SummaryClassificationTests(unittest.TestCase):
                 "negative-runtime-test-is-static-error",
             "File \"<suite>/drop_last.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and seq<int>":
                 "typed-protocol-or-capability-gap",
+            "File \"<suite>/update.cljc\", line <n>: lg: update expects a function":
+                "typed-protocol-or-capability-gap",
             "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs":
                 "transient-collection-boundary",
             "File \"<suite>/case.cljc\", line <n>: lg: match pattern type must match target":

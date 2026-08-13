@@ -356,7 +356,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     | FList _ -> compile_contextual_call ()
     | _ -> compile_function_arg scope env form
   in
-    let compile_deftype_method scope env record method_name args =
+  let core_function_symbol scope env name member =
+    match
+      ( lookup_binding scope env name,
+        lookup_binding scope env ("clojure.core/" ^ member) )
+    with
+    | Ok binding, Ok core_binding -> binding.ocaml_name = core_binding.ocaml_name
+    | _ -> false
+  in
+  let compile_deftype_method scope env record method_name args =
     match
       lookup_deftype_method scope env record method_name (List.length args)
     with
@@ -2893,7 +2901,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       | None -> assert false))
           | _ -> Error.error "update expects a function")
     in
-    let compile_missing_homogeneous_field target fields keyword fn extra_args =
+    let compile_missing_homogeneous_field target fields keyword fn_form fn
+        extra_args =
+      let core_unary_updater member =
+        match (fn_form, extra_args) with
+        | FSymbol name, [] -> core_function_symbol scope env name member
+        | _ -> false
+      in
       match fn.ty with
       | TFn (parameter_tys, return_ty)
         when List.length parameter_tys = List.length extra_args + 1 ->
@@ -2907,7 +2921,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | _ -> false
           in
           if not accepts_missing then
-            Error.error "update of a missing key requires a nullable updater"
+            if core_unary_updater "identity" then
+              let result =
+                typed_ir TNil (Semantic_ir.Constructor ("None", None))
+              in
+              Structural_map.assoc target fields keyword result
+            else if core_unary_updater "nil?" then
+              Structural_map.assoc target fields keyword
+                (typed_ir TBool (Semantic_ir.Bool true))
+            else
+              Error.error
+                "update of a missing key requires a nullable updater"
           else
             let old_value =
               typed_ir first_parameter_ty
@@ -2976,15 +3000,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | _ -> None
             in
               match target.ty with
+              | TNil ->
+                  let empty = Structural_map.record_expr [] [] in
+                  compile_missing_homogeneous_field empty [] keyword fn_form fn
+                    extra_args
               | TRecord fields | TNamed_record { fields; _ } -> (
                   match find_field keyword fields with
                   | None
                     when (match target.ty with
                          | TRecord fields ->
                              Types.is_homogeneous_record fields
-                         | _ -> false) ->
-                      compile_missing_homogeneous_field target fields keyword fn
-                        extra_args
+                      | _ -> false) ->
+                      compile_missing_homogeneous_field target fields keyword
+                        fn_form fn extra_args
                   | None ->
                       compile_extension target fields keyword fn extra_args
                   | Some field -> (

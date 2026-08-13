@@ -198,6 +198,7 @@ def classify_static_boundary(error: str) -> str:
         or "sets require" in lower
         or "requires a statically typed" in lower
         or "nullable updater" in lower
+        or "update expects a function" in lower
         or "guard narrowing requires" in lower
     ):
         return "typed-protocol-or-capability-gap"
