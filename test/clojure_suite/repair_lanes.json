@@ -1,37 +1,5 @@
 [
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/dec.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.dec",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/dec.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.dec",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/decimal_qmark.cljc\", line <n>: lg: unknown symbol 0.0M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.decimal-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/decimal_qmark.cljc\", line <n>: lg: unknown symbol 0.0M",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.decimal-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "host-boundary-or-platform-specific",
     "error": "File \"<suite>/derive.cljc\", line <n>: lg: unknown symbol js/String",
     "lane": "document-or-gate-host-boundary",

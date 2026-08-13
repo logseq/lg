@@ -1285,6 +1285,52 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_dec_float_calls_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "dec_float_probe.cljc",
+            "(ns clojure.core-test.dec-float-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest dec-float-compiles\n"
+            "  (are [in expected] (= (dec in) expected)\n"
+            "    7.4 6.4\n"
+            "    ##Inf ##Inf))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dec-float-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_dec_nil_compiles_for_clojurescript_semantics(self) -> None:
+        test_file = self.write_suite_file(
+            "dec_nil_probe.cljc",
+            "(ns clojure.core-test.dec-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest dec-nil-compiles\n"
+            "  (is (= -1 (dec nil))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dec-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

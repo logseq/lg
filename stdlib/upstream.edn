@@ -708,7 +708,7 @@
     inc {:status :static-adaptation
          :reason :source-port-preserves-the-upstream-add-one-body-for-the-current-static-integer-numeric-domain}
     dec {:status :static-adaptation
-         :reason :source-port-preserves-the-upstream-subtract-one-body-for-the-current-static-integer-numeric-domain}
+         :reason :source-inline-uses-a-private-typed-primitive-to-preserve-int-float-and-clojurescript-nil-subtract-one-behavior-without-a-general-dynamic-number-boundary}
     bit-not {:status :static-adaptation
              :reason :source-port-expresses-the-current-static-integer-complement-as-xor-with-negative-one}
     int-rotate-left {:status :static-adaptation

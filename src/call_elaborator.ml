@@ -9532,6 +9532,23 @@ let create ~compile_expr =
                   Core_compare.compile ~env
                     (if operator = "==" then "=" else operator)
                     args))
+    | "__lg_dec" -> (
+        match compile_args_for scope (Env.with_expected_type None env) arg_forms with
+        | Error _ as err -> err
+        | Ok [ arg ] when Types.equal arg.ty TInt ->
+            Ok
+              (typed_ir TInt
+                 (Semantic_ir.Infix
+                    ("-", arg.semantic_expr, Semantic_ir.Int 1)))
+        | Ok [ arg ] when Types.equal arg.ty TFloat ->
+            Ok
+              (typed_ir TFloat
+                 (Semantic_ir.Infix
+                    ("-.", arg.semantic_expr, Semantic_ir.Float "1.")))
+        | Ok [ arg ] when Types.equal arg.ty TNil ->
+            Ok (typed_ir TInt (Semantic_ir.Int (-1)))
+        | Ok [ _ ] -> Error.error "dec expects a numeric value"
+        | Ok _ -> Error.error "dec expects 1 arguments")
               | "__lg_nil-predicate" | "__lg_true-predicate"
               | "__lg_false-predicate" | "__lg_int-predicate"
               | "__lg_number-predicate" | "__lg_string-predicate"

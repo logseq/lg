@@ -3478,7 +3478,9 @@
 (defn inc [x]
   (+ x 1))
 
-(defn dec [x]
+(defn dec
+  {:inline (fn [x] (list '__lg_dec x))}
+  [x]
   (- x 1))
 
 (defn inc' [x]
