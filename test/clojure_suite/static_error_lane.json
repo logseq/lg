@@ -1,0 +1,716 @@
+[
+  {
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: apply argument type mismatch: expected int, got char",
+    "namespace": "clojure.core-test.apply",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: apply argument type mismatch: expected int, got char",
+    "namespace": "clojure.core-test.apply",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/assoc.cljc\", line <n>: lg: assoc expects a map or vector, got nil",
+    "namespace": "clojure.core-test.assoc",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/assoc.cljc\", line <n>: lg: assoc expects a map or vector, got nil",
+    "namespace": "clojure.core-test.assoc",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
+    "namespace": "clojure.core-test.binding",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/binding.cljc\", line <n>: lg: binding *x* expects keyword, got nil",
+    "namespace": "clojure.core-test.binding",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_and.cljc\", line <n>: lg: bit-and called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-and",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_and.cljc\", line <n>: lg: bit-and called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-and",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_and_not.cljc\", line <n>: lg: bit-and-not called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-and-not",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_and_not.cljc\", line <n>: lg: bit-and-not called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-and-not",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_clear.cljc\", line <n>: lg: bit-clear called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-clear",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_clear.cljc\", line <n>: lg: bit-clear called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-clear",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_flip.cljc\", line <n>: lg: bit-flip called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-flip",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_flip.cljc\", line <n>: lg: bit-flip called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-flip",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_not.cljc\", line <n>: lg: bit-not called with incompatible arguments: expected (int), got (nil)",
+    "namespace": "clojure.core-test.bit-not",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_not.cljc\", line <n>: lg: bit-not called with incompatible arguments: expected (int), got (nil)",
+    "namespace": "clojure.core-test.bit-not",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_or.cljc\", line <n>: lg: bit-or called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-or",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_or.cljc\", line <n>: lg: bit-or called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-or",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_set.cljc\", line <n>: lg: bit-set called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-set",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_set.cljc\", line <n>: lg: bit-set called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-set",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_shift_left.cljc\", line <n>: lg: bit-shift-left called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-shift-left",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_shift_left.cljc\", line <n>: lg: bit-shift-left called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-shift-left",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_shift_right.cljc\", line <n>: lg: bit-shift-right called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-shift-right",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_shift_right.cljc\", line <n>: lg: bit-shift-right called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-shift-right",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_test.cljc\", line <n>: lg: bit-test called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-test",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_test.cljc\", line <n>: lg: bit-test called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.bit-test",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/bit_xor.cljc\", line <n>: lg: bit-xor called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-xor",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/bit_xor.cljc\", line <n>: lg: bit-xor called with incompatible arguments: expected (int, int), got (nil, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.bit-xor",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/conj.cljc\", line <n>: lg: conj expects a list, vector, set, or sequence, got nil",
+    "namespace": "clojure.core-test.conj",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/conj.cljc\", line <n>: lg: conj expects a list, vector, set, or sequence, got nil",
+    "namespace": "clojure.core-test.conj",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "lg: map literal requires an even number of forms",
+    "namespace": "clojure.core-test.contains-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "lg: map literal requires an even number of forms",
+    "namespace": "clojure.core-test.contains-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/count.cljc\", line <n>: lg: count expects a counted or seqable value, got int",
+    "namespace": "clojure.core-test.count",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/count.cljc\", line <n>: lg: count expects a counted or seqable value, got int",
+    "namespace": "clojure.core-test.count",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/drop.cljc\", line <n>: lg: drop called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.drop",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/drop.cljc\", line <n>: lg: drop called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.drop",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/ffirst.cljc\", line <n>: lg: ffirst called with incompatible arguments: expected (seqable<seqable<inference-variable>>), got (Lg_runtime.Runtime_map.t<any,any>)",
+    "namespace": "clojure.core-test.ffirst",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/ffirst.cljc\", line <n>: lg: ffirst called with incompatible arguments: expected (seqable<seqable<inference-variable>>), got (Lg_runtime.Runtime_map.t<any,any>)",
+    "namespace": "clojure.core-test.ffirst",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/fnext.cljc\", line <n>: lg: fnext called with incompatible arguments: expected (seqable<inference-variable>), got (record<{:a:keyword}>)",
+    "namespace": "clojure.core-test.fnext",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/fnext.cljc\", line <n>: lg: fnext called with incompatible arguments: expected (seqable<inference-variable>), got (record<{:a:keyword}>)",
+    "namespace": "clojure.core-test.fnext",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/get.cljc\", line <n>: lg: get key type nil is not supported for nil",
+    "namespace": "clojure.core-test.get",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/get.cljc\", line <n>: lg: get key type nil is not supported for nil",
+    "namespace": "clojure.core-test.get",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/interpose.cljc\", line <n>: lg: interpose called with incompatible arguments: expected (inference-variable, seqable<inference-variable>), got (string)",
+    "namespace": "clojure.core-test.interpose",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/interpose.cljc\", line <n>: lg: interpose called with incompatible arguments: expected (inference-variable, seqable<inference-variable>), got (string)",
+    "namespace": "clojure.core-test.interpose",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/key.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.key",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/key.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.key",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/keys.cljc\", line <n>: lg: keys expects a map",
+    "namespace": "clojure.core-test.keys",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/keys.cljc\", line <n>: lg: keys expects a map",
+    "namespace": "clojure.core-test.keys",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/last.cljc\", line <n>: lg: last called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
+    "namespace": "clojure.core-test.last",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/last.cljc\", line <n>: lg: last called with incompatible arguments: expected (seqable<inference-variable>), got (char)",
+    "namespace": "clojure.core-test.last",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/lazy_seq.cljc\", line <n>: lg: cons expects a value and seqable collection, got int",
+    "namespace": "clojure.core-test.lazy-seq",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/lazy_seq.cljc\", line <n>: lg: cons expects a value and seqable collection, got int",
+    "namespace": "clojure.core-test.lazy-seq",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/map.cljc\", line <n>: lg: map-one called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, record<{:k:keyword}>)",
+    "namespace": "clojure.core-test.map",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/map.cljc\", line <n>: lg: map-one called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, record<{:k:keyword}>)",
+    "namespace": "clojure.core-test.map",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/mapcat.cljc\", line <n>: lg: mapcat called with incompatible arguments: expected (fn<(seqable<inference-variable>) -> seqable<inference-variable>>, seqable<seqable<inference-variable>>), got (fn<(inference-variable) -> inference-variable>, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.mapcat",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/mapcat.cljc\", line <n>: lg: mapcat called with incompatible arguments: expected (fn<(seqable<inference-variable>) -> seqable<inference-variable>>, seqable<seqable<inference-variable>>), got (fn<(inference-variable) -> inference-variable>, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.mapcat",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/merge.cljc\", line <n>: lg: merge expects at least 1 map",
+    "namespace": "clojure.core-test.merge",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/merge.cljc\", line <n>: lg: merge expects at least 1 map",
+    "namespace": "clojure.core-test.merge",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/nfirst.cljc\", line <n>: lg: nfirst called with incompatible arguments: expected (seqable<seqable<inference-variable>>), got (Lg_runtime.Runtime_map.t<any,any>)",
+    "namespace": "clojure.core-test.nfirst",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/nfirst.cljc\", line <n>: lg: nfirst called with incompatible arguments: expected (seqable<seqable<inference-variable>>), got (Lg_runtime.Runtime_map.t<any,any>)",
+    "namespace": "clojure.core-test.nfirst",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/not_empty.cljc\", line <n>: lg: seq expects a seqable value",
+    "namespace": "clojure.core-test.not-empty",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/not_empty.cljc\", line <n>: lg: seq expects a seqable value",
+    "namespace": "clojure.core-test.not-empty",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/nthnext.cljc\", line <n>: lg: nthnext called with incompatible arguments: expected (seqable<inference-variable>, int), got (nil, nil)",
+    "namespace": "clojure.core-test.nthnext",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/nthnext.cljc\", line <n>: lg: nthnext called with incompatible arguments: expected (seqable<inference-variable>, int), got (nil, nil)",
+    "namespace": "clojure.core-test.nthnext",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/nthrest.cljc\", line <n>: lg: nthrest called with incompatible arguments: expected (seqable<inference-variable>, int), got (seq<int>, nil)",
+    "namespace": "clojure.core-test.nthrest",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/nthrest.cljc\", line <n>: lg: nthrest called with incompatible arguments: expected (seqable<inference-variable>, int), got (seq<int>, nil)",
+    "namespace": "clojure.core-test.nthrest",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/parse_boolean.cljc\", line <n>: lg: parse-boolean called with incompatible arguments: expected (string), got (nil)",
+    "namespace": "clojure.core-test.parse-boolean",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/parse_boolean.cljc\", line <n>: lg: parse-boolean called with incompatible arguments: expected (string), got (nil)",
+    "namespace": "clojure.core-test.parse-boolean",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/parse_double.cljc\", line <n>: lg: parse-double called with incompatible arguments: expected (string), got (list<any>)",
+    "namespace": "clojure.core-test.parse-double",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/parse_double.cljc\", line <n>: lg: parse-double called with incompatible arguments: expected (string), got (list<any>)",
+    "namespace": "clojure.core-test.parse-double",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/parse_long.cljc\", line <n>: lg: parse-long called with incompatible arguments: expected (string), got (list<any>)",
+    "namespace": "clojure.core-test.parse-long",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/parse_long.cljc\", line <n>: lg: parse-long called with incompatible arguments: expected (string), got (list<any>)",
+    "namespace": "clojure.core-test.parse-long",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/rand.cljc\", line <n>: lg: every? called with incompatible arguments: expected (fn<(inference-variable) -> truthy<inference-variable>>, seqable<inference-variable>), got (fn<(int) -> bool>, seq<float>)",
+    "namespace": "clojure.core-test.rand",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/rand.cljc\", line <n>: lg: every? called with incompatible arguments: expected (fn<(inference-variable) -> truthy<inference-variable>>, seqable<inference-variable>), got (fn<(int) -> bool>, seq<float>)",
+    "namespace": "clojure.core-test.rand",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/rand_nth.cljc\", line <n>: lg: rand-nth called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
+    "namespace": "clojure.core-test.rand-nth",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/rand_nth.cljc\", line <n>: lg: rand-nth called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
+    "namespace": "clojure.core-test.rand-nth",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/random_uuid.cljc\", line <n>: lg: get key type int is not supported for string",
+    "namespace": "clojure.core-test.random-uuid",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/random_uuid.cljc\", line <n>: lg: get key type int is not supported for string",
+    "namespace": "clojure.core-test.random-uuid",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/repeat.cljc\", line <n>: lg: repeat called with incompatible arguments: expected (int, keyword), got (float, keyword); incompatible positions: 1",
+    "namespace": "clojure.core-test.repeat",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/repeat.cljc\", line <n>: lg: repeat called with incompatible arguments: expected (int, keyword), got (float, keyword); incompatible positions: 1",
+    "namespace": "clojure.core-test.repeat",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/repeatedly.cljc\", line <n>: lg: repeatedly called with incompatible arguments: expected (fn<() -> inference-variable>), got (fn<(inference-variable) -> inference-variable>); incompatible positions: 1",
+    "namespace": "clojure.core-test.repeatedly",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/repeatedly.cljc\", line <n>: lg: repeatedly called with incompatible arguments: expected (fn<() -> inference-variable>), got (fn<(inference-variable) -> inference-variable>); incompatible positions: 1",
+    "namespace": "clojure.core-test.repeatedly",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/run_bang.cljc\", line <n>: lg: run! called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(int) -> int>, bool)",
+    "namespace": "clojure.core-test.run-bang",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/run_bang.cljc\", line <n>: lg: run! called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(int) -> int>, bool)",
+    "namespace": "clojure.core-test.run-bang",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/select_keys.cljc\", line <n>: lg: select-keys expects a map",
+    "namespace": "clojure.core-test.select-keys",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/select_keys.cljc\", line <n>: lg: select-keys expects a map",
+    "namespace": "clojure.core-test.select-keys",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/shuffle.cljc\", line <n>: lg: shuffle called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
+    "namespace": "clojure.core-test.shuffle",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/shuffle.cljc\", line <n>: lg: shuffle called with incompatible arguments: expected (seqable<inference-variable>), got (int)",
+    "namespace": "clojure.core-test.shuffle",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/some_fn.cljc\", line <n>: lg: __lg_callable_expression_9 called with incompatible arguments: expected (int, int), got (int, string); incompatible positions: 2",
+    "namespace": "clojure.core-test.some-fn",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/some_fn.cljc\", line <n>: lg: __lg_callable_expression_9 called with incompatible arguments: expected (int, int), got (int, string); incompatible positions: 2",
+    "namespace": "clojure.core-test.some-fn",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/sort_by.cljc\", line <n>: lg: sort-by called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.sort-by",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/sort_by.cljc\", line <n>: lg: sort-by called with incompatible arguments: expected (fn<(inference-variable) -> inference-variable>, seqable<inference-variable>), got (fn<(inference-variable) -> inference-variable>, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.sort-by",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/sorted_qmark.cljc\", line <n>: lg: tree-map-empty called with incompatible arguments: expected (fn<(inference-variable, inference-variable) -> int>, Lg_edn_backend.t), got (fn<(int) -> bool; (int, int) -> bool; (int, int, & int) -> bool>, Lg_edn_backend.t)",
+    "namespace": "clojure.core-test.sorted-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/sorted_qmark.cljc\", line <n>: lg: tree-map-empty called with incompatible arguments: expected (fn<(inference-variable, inference-variable) -> int>, Lg_edn_backend.t), got (fn<(int) -> bool; (int, int) -> bool; (int, int, & int) -> bool>, Lg_edn_backend.t)",
+    "namespace": "clojure.core-test.sorted-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/special_symbol_qmark.cljc\", line <n>: lg: special-symbol? called with incompatible arguments: expected (symbol), got (string)",
+    "namespace": "clojure.core-test.special-symbol-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/special_symbol_qmark.cljc\", line <n>: lg: special-symbol? called with incompatible arguments: expected (symbol), got (string)",
+    "namespace": "clojure.core-test.special-symbol-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/subs.cljc\", line <n>: lg: subs called with incompatible arguments: expected (string, int), got (char, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.subs",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/subs.cljc\", line <n>: lg: subs called with incompatible arguments: expected (string, int, int), got (nil, int, int); incompatible positions: 1",
+    "namespace": "clojure.core-test.subs",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/subvec.cljc\", line <n>: lg: subvec indexes must be int",
+    "namespace": "clojure.core-test.subvec",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/subvec.cljc\", line <n>: lg: subvec indexes must be int",
+    "namespace": "clojure.core-test.subvec",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/take.cljc\", line <n>: lg: take called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.take",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/take.cljc\", line <n>: lg: take called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.take",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/take_last.cljc\", line <n>: lg: take-last called with incompatible arguments: expected (int, seqable<inference-variable>), got (nil, seq<int>)",
+    "namespace": "clojure.core-test.take-last",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/take_last.cljc\", line <n>: lg: take-last called with incompatible arguments: expected (int, seqable<inference-variable>), got (nil, seq<int>)",
+    "namespace": "clojure.core-test.take-last",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/take_nth.cljc\", line <n>: lg: take-nth called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.take-nth",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/take_nth.cljc\", line <n>: lg: take-nth called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
+    "namespace": "clojure.core-test.take-nth",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/taps.cljc\", line <n>: lg: swap! expects a reference or ISwap as its first argument",
+    "namespace": "clojure.core-test.taps",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/underive.cljc\", line <n>: lg: underive called with incompatible arguments: expected (Lg_edn_backend.t, Lg_edn_backend.t, Lg_edn_backend.t), got (Lg_runtime.Runtime_map.t<any,any>, keyword, keyword); incompatible positions: 1",
+    "namespace": "clojure.core-test.underive",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/underive.cljc\", line <n>: lg: underive called with incompatible arguments: expected (Lg_edn_backend.t, Lg_edn_backend.t, Lg_edn_backend.t), got (Lg_runtime.Runtime_map.t<any,any>, keyword, keyword); incompatible positions: 1",
+    "namespace": "clojure.core-test.underive",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/unsigned_bit_shift_right.cljc\", line <n>: lg: unsigned-bit-shift-right called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.unsigned-bit-shift-right",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/unsigned_bit_shift_right.cljc\", line <n>: lg: unsigned-bit-shift-right called with incompatible arguments: expected (int, int), got (nil, int)",
+    "namespace": "clojure.core-test.unsigned-bit-shift-right",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/val.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.val",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/val.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.val",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/vals.cljc\", line <n>: lg: vals expects a map, got nil",
+    "namespace": "clojure.core-test.vals",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/vals.cljc\", line <n>: lg: vals expects a map, got nil",
+    "namespace": "clojure.core-test.vals",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/vector_qmark.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.vector-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/vector_qmark.cljc\", line <n>: lg: first expects a seqable value",
+    "namespace": "clojure.core-test.vector-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/when_first.cljc\", line <n>: lg: cons expects a value and seqable collection, got any",
+    "namespace": "clojure.core-test.when-first",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/when_first.cljc\", line <n>: lg: cons expects a value and seqable collection, got any",
+    "namespace": "clojure.core-test.when-first",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  }
+]

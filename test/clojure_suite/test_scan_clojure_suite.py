@@ -105,6 +105,48 @@ class SummaryClassificationTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(expected, self.summary.classify_static_boundary(message))
 
+    def test_builds_machine_readable_static_error_lane(self) -> None:
+        results = [
+            self.summary.Result(
+                namespace="clojure.core-test.apply",
+                file="vendor/clojure-test-suite/test/clojure/core_test/apply.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=7,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/apply.cljc", line 10: lg: apply argument type mismatch: expected int, got char',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.hash-set",
+                file="vendor/clojure-test-suite/test/clojure/core_test/hash_set.cljc",
+                target="native",
+                status="compiled",
+                elapsed_ms=5,
+                error="",
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.bigint",
+                file="vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=6,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc", line 4: lg: unknown symbol 1N',
+            ),
+        ]
+
+        lane = self.summary.static_error_lane(results)
+
+        self.assertEqual(
+            [
+                {
+                    "namespace": "clojure.core-test.apply",
+                    "target": "native",
+                    "static_subclass": "negative-runtime-test-is-static-error",
+                    "error": 'File "<suite>/apply.cljc", line <n>: lg: apply argument type mismatch: expected int, got char',
+                }
+            ],
+            lane,
+        )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:

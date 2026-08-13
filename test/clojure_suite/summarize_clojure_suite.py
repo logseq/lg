@@ -234,6 +234,40 @@ def namespace_outcome(native_status: str, melange_status: str) -> str:
     return "failed-both"
 
 
+def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
+    """Return failures that are expected static errors for negative suite tests."""
+
+    lane = []
+    for result in results:
+        if result.status == "compiled":
+            continue
+        if classify(result.error) != "static-typing-or-closed-domain-boundary":
+            continue
+        static_subclass = classify_static_boundary(result.error)
+        if static_subclass != "negative-runtime-test-is-static-error":
+            continue
+        lane.append(
+            {
+                "namespace": result.namespace,
+                "target": result.target,
+                "static_subclass": static_subclass,
+                "error": normalize_error(result.error),
+            }
+        )
+    return sorted(
+        lane,
+        key=lambda entry: (entry["namespace"], entry["target"], entry["error"]),
+    )
+
+
+def write_static_error_report(results: Iterable[Result], path: pathlib.Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(static_error_lane(results), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
     status_counts = collections.Counter(result.status for result in results)
     target_counts: dict[str, collections.Counter[str]] = collections.defaultdict(collections.Counter)
@@ -334,9 +368,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=pathlib.Path, default=DEFAULT_REPORT)
     parser.add_argument("--upstream-commit")
+    parser.add_argument(
+        "--static-error-report",
+        type=pathlib.Path,
+        help="write normalized negative-runtime static errors as JSON",
+    )
     args = parser.parse_args()
 
     results = load_results(args.report)
+    if args.static_error_report is not None:
+        write_static_error_report(results, args.static_error_report)
     print_markdown(results, args.upstream_commit)
     return 0
 
