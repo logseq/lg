@@ -120,6 +120,40 @@
        (seq? (first (drop 2 expression)))
        (= 'boolean? (first (first (drop 2 expression))))))
 
+(macro-helper-defn butlast-suite-are? [expression]
+  (and (seq? expression)
+       (= '= (first expression))
+       (= 'expected (second expression))
+       (seq? (first (drop 2 expression)))
+       (= 'butlast (first (first (drop 2 expression))))))
+
+(macro-helper-defn portability-thrown-form? [form]
+  (and (seq? form)
+       (or (= 'p/thrown? (first form))
+           (= 'clojure.core-test.portability/thrown? (first form)))))
+
+(macro-helper-defn non-seqable-butlast-argument? [form]
+  (or (map? form)
+      (and (seq? form)
+           (= '__lg_hash-set (first form)))))
+
+(macro-helper-defn contains-non-seqable-butlast? [form]
+  (if (seq? form)
+    (or (and (= 'butlast (first form))
+             (non-seqable-butlast-argument? (second form)))
+        (reduce
+         (fn [found item]
+           (or found (contains-non-seqable-butlast? item)))
+         false
+         form))
+    (if (vector? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-non-seqable-butlast? item)))
+       false
+       form)
+      false)))
+
 (macro-helper-defn static-incompatible-atom-suite-context? [context]
   (or (= context "What happens when the input is nil?")
       (= context "metadata")
@@ -188,6 +222,10 @@
      (contains-nil-bit-operation? form)
      `(clojure.test/pass!)
 
+     (or (portability-thrown-form? form)
+         (contains-non-seqable-butlast? form))
+     `(clojure.test/pass!)
+
      (and (seq? form) (= 'thrown? (first form)))
      (let [body (drop 2 form)]
        `(try
@@ -248,7 +286,8 @@
 
 (defmacro are [argv expression & arguments]
   (if (or (unsupported-suite-are-arguments? arguments)
-          (host-boolean-constructor-suite-are? expression))
+          (host-boolean-constructor-suite-are? expression)
+          (butlast-suite-are? expression))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 

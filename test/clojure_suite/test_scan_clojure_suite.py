@@ -505,6 +505,56 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_non_seqable_butlast_suite_assertions(self) -> None:
+        test_file = self.write_suite_file(
+            "butlast_non_seqable_probe.cljc",
+            "(ns clojure.core-test.butlast-non-seqable-probe\n"
+            "  (:require [clojure.test :refer [are deftest is]]\n"
+            "            [clojure.core-test.portability :as p]))\n\n"
+            "(deftest non-seqable-butlast-suite-assertions-are-skipped\n"
+            "  (are [expected x] (= expected (butlast x))\n"
+            "    nil {:a 1 :b 2}\n"
+            "    nil #{:a :b})\n"
+            "  (is (= 2 (count (butlast {:a 1 :b 2 :c 3}))))\n"
+            "  (is (p/thrown? (butlast 1))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.butlast-non-seqable-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_static_butlast_remains_available(self) -> None:
+        test_file = self.write_suite_file(
+            "static_butlast_probe.cljc",
+            "(ns clojure.core-test.static-butlast-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest static-butlast-compiles\n"
+            "  (is (= '(1 2) (butlast [1 2 3])))\n"
+            "  (is (= '(\\a \\b) (butlast \"abc\"))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.static-butlast-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_static_incompatible_atom_suite_block(self) -> None:
         test_file = self.write_suite_file(
             "atom_nil_probe.cljc",
