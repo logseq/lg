@@ -1,38 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/disj.cljc\", line <n>: lg: heterogeneous set has element types int | vector<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.disj",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/disj.cljc\", line <n>: lg: heterogeneous set has element types int | vector<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.disj",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/disj_bang.cljc\", line <n>: lg: heterogeneous set has element types int | vector<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.disj-bang",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/disj_bang.cljc\", line <n>: lg: heterogeneous set has element types int | vector<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.disj-bang",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/dissoc.cljc\", line <n>: lg: nil cannot cross a dynamic boundary; give it a concrete option payload type; got nil",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.dissoc",
