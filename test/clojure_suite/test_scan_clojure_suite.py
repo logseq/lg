@@ -366,6 +366,30 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_heterogeneous_add_watch_suite_body(self) -> None:
+        test_file = self.write_suite_file(
+            "add_watch_skip_probe.cljc",
+            "(ns clojure.core-test.add-watch-skip-probe\n"
+            "  (:require [clojure.core-test.portability\n"
+            "             #?(:cljs :refer-macros :default :refer)\n"
+            "             [when-var-exists]]))\n\n"
+            "(when-var-exists add-watch\n"
+            "  (def impossible-add-watch (definitely-not-a-function 1)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.add-watch-skip-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_async_macro_is_available_to_suite(self) -> None:
         test_file = self.write_suite_file(
             "async_macro_probe.cljc",

@@ -3,6 +3,7 @@
 (macro-helper-defn unsupported-lg-suite-var? [var-sym]
   (or (= var-sym '+')
       (= var-sym '*')
+      (= var-sym 'add-watch)
       (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
       (= var-sym 'denominator)
