@@ -349,6 +349,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
     | _ -> None
   in
+  let rec edn_packable_static_type ty =
+    match Types.constraint_value_type ty with
+    | TOcaml "Lg_edn_backend.t" -> true
+    | TNil | TBool | TInt | TFloat | TChar | TString | TSymbol | TKeyword
+    | TRegex ->
+        true
+    | TOcaml "int" -> true
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        edn_packable_static_type inner
+    | TVector inner -> edn_packable_static_type inner
+    | _ -> false
+  in
   let rec pack_edn_expression ty expression =
     let convert name =
       Ok
@@ -761,6 +773,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 | TNullable inner, actual ->
                                     Types.assignable ~policy:Host_boundary
                                       ~expected:inner ~actual
+                                | TOcaml "Lg_edn_backend.t", actual ->
+                                    edn_packable_static_type actual
+                                | TVector (TOcaml "Lg_edn_backend.t"), TVector actual ->
+                                    edn_packable_static_type actual
                                 | TVector _, TVector _
                                   when Type_solver.is_open element_ty
                                        || Type_solver.is_open expression.ty ->

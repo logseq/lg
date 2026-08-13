@@ -1,37 +1,5 @@
 [
   {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/derive.cljc\", line <n>: lg: unknown symbol js/String",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.derive",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/derive.cljc\", line <n>: lg: unknown symbol String",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.derive",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/descendants.cljc\", line <n>: lg: heterogeneous vector has element types Lg_edn_backend.t | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.descendants",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/descendants.cljc\", line <n>: lg: heterogeneous vector has element types Lg_edn_backend.t | keyword; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.descendants",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/disj.cljc\", line <n>: lg: heterogeneous set has element types int | vector<int>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",

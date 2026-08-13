@@ -421,14 +421,30 @@ let overloaded_arity_parameters (arity : fn_arity) argument_count =
 
 let is_edn_value_type = Edn_value_elaborator.is_value_type
 
-let edn_compatible_static_type = function
+let rec edn_compatible_static_type = function
+  | TUnknown | TMeta _ | TVar _ -> true
   | TNil | TBool | TString | TChar | TSymbol | TKeyword | TInt | TFloat
   | TRegex ->
       true
   | TOcaml "int" | TOcaml "int64" | TOcaml "float" | TOcaml "string"
   | TOcaml "bool" ->
       true
-  | _ -> false
+  | TList element | TSeq element | TVector element | TArray element
+  | TOcaml_app ("array", [ element ])
+  | TSet element ->
+      edn_compatible_static_type element
+  | TNullable element | TOcaml_app ("option", [ element ]) ->
+      edn_compatible_static_type element
+  | TRecord fields | TNamed_record { fields; nominal = false; _ } ->
+      List.for_all
+        (fun (field : field) -> edn_compatible_static_type field.ty)
+        fields
+  | ty -> (
+      match Types.dynamic_map_types ty with
+      | Some (key_ty, value_ty) ->
+          edn_compatible_static_type key_ty
+          && edn_compatible_static_type value_ty
+      | None -> false)
 
 let rec argument_compatible expected actual =
   if Types.is_dynamic expected then true

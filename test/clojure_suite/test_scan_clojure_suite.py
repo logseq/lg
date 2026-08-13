@@ -1331,6 +1331,234 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_are_skips_derive_host_class_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "derive_host_class_probe.cljc",
+            "(ns clojure.core-test.derive-host-class-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]))\n\n"
+            "(deftest derive-host-class-suite-rows-are-skipped\n"
+            "  (testing \"derive tag parent\"\n"
+            "    (are [tag parent]\n"
+            "         (let [success (and (nil? (derive tag parent))\n"
+            "                            (isa? tag parent))]\n"
+            "           (underive tag parent)\n"
+            "           success)\n"
+            "      ::rect ::shape\n"
+            "      String ::object)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.derive-host-class-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_derive_h_host_class_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "derive_h_host_class_probe.cljc",
+            "(ns clojure.core-test.derive-h-host-class-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest derive-h-host-class-suite-rows-are-skipped\n"
+            "  (are [expected h tag parent] (= expected (derive h tag parent))\n"
+            "    {:ancestors {::rect #{::shape}}\n"
+            "     :descendants {::shape #{::rect}}\n"
+            "     :parents {::rect #{::shape}}} (make-hierarchy) ::rect ::shape\n"
+            "    {:ancestors {String #{::object}}\n"
+            "     :descendants {::object #{String}}\n"
+            "     :parents {String #{::object}}} (make-hierarchy) String ::object))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.derive-h-host-class-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_source_hierarchy_map_literals_can_call_derive(self) -> None:
+        test_file = self.write_suite_file(
+            "derive_source_hierarchy_probe.cljc",
+            "(ns clojure.core-test.derive-source-hierarchy-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest source-hierarchy-map-literal-derive-compiles\n"
+            "  (are [expected h tag parent] (= expected (derive h tag parent))\n"
+            "    {:ancestors {:rect #{:shape}}\n"
+            "     :descendants {:shape #{:rect}}\n"
+            "     :parents {:rect #{:shape}}}\n"
+            "    {:parents {} :descendants {} :ancestors {}}\n"
+            "    :rect\n"
+            "    :shape))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.derive-source-hierarchy-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_descendants_hierarchy_vectors_pack_static_tags_as_closed_edn(self) -> None:
+        test_file = self.write_suite_file(
+            "descendants_hierarchy_vector_probe.cljc",
+            "(ns clojure.core-test.descendants-hierarchy-vector-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(defprotocol TestDescendantsProtocol)\n"
+            "(defrecord TestDescendantsRecord [] TestDescendantsProtocol)\n\n"
+            "(def global-hierarchy [[TestDescendantsRecord :record]\n"
+            "                       [:t :p-1]\n"
+            "                       [:p-1 'ns/p-0]\n"
+            "                       ['ns/p-0 :root]])\n\n"
+            "(deftest descendants-hierarchy-vector-compiles\n"
+            "  (is (some? (first global-hierarchy))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.descendants-hierarchy-vector-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_heterogeneous_vectors_with_functions_still_require_static_sum(self) -> None:
+        test_file = self.write_suite_file(
+            "heterogeneous_function_vector_probe.cljc",
+            "(ns clojure.core-test.heterogeneous-function-vector-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest heterogeneous-function-vector-is-rejected\n"
+            "  (is (some? [inc :tag])))\n",
+        )
+
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.heterogeneous-function-vector-probe",
+                target,
+            )
+            self.assertEqual("compile-failed", result.status)
+            self.assertIn("heterogeneous vector", result.error or "")
+
+    def test_keyword_symbol_sets_pack_as_closed_edn(self) -> None:
+        test_file = self.write_suite_file(
+            "keyword_symbol_set_probe.cljc",
+            "(ns clojure.core-test.keyword-symbol-set-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest keyword-symbol-set-compiles\n"
+            "  (is (some? #{:child 'ns/parent})))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.keyword-symbol-set-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_function_use_fixtures_compile_for_clojure_suite(self) -> None:
+        test_file = self.write_suite_file(
+            "function_fixture_probe.cljc",
+            "(ns clojure.core-test.function-fixture-probe\n"
+            "  (:require [clojure.test :refer [deftest is use-fixtures]]))\n\n"
+            "(defn around [tests]\n"
+            "  (tests))\n\n"
+            "(use-fixtures :once around)\n\n"
+            "(deftest function-fixture-compiles\n"
+            "  (is true))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.function-fixture-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_hierarchy_protocol_marker_assertions_are_skipped(self) -> None:
+        test_file = self.write_suite_file(
+            "hierarchy_protocol_marker_probe.cljc",
+            "(ns clojure.core-test.hierarchy-protocol-marker-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(defprotocol TestDescendantsProtocol)\n\n"
+            "(deftest hierarchy-protocol-marker-suite-row-is-skipped\n"
+            "  (is (nil? (descendants TestDescendantsProtocol))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.hierarchy-protocol-marker-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_descendants_invalid_empty_collections_pack_as_closed_edn(self) -> None:
+        test_file = self.write_suite_file(
+            "descendants_empty_collection_probe.cljc",
+            "(ns clojure.core-test.descendants-empty-collection-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest descendants-empty-collection-invalid-tags-compile\n"
+            "  (are [invalid] (nil? (descendants invalid invalid))\n"
+            "    []\n"
+            "    {}\n"
+            "    #{}\n"
+            "    '()))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.descendants-empty-collection-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

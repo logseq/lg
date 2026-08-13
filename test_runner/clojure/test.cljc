@@ -169,6 +169,132 @@
   (and (= expression '(= expected (contains? coll key)))
        (contains-sorted-set-nil-suite-argument? arguments)))
 
+(macro-helper-defn host-class-suite-form? [form]
+  (or (= form 'String)
+      (= form 'js/String)
+      (= form 'Object)
+      (= form 'js/Object)
+      (= form 'python/str)
+      (= form 'python/object)
+      (= form 'stdClass)))
+
+(macro-helper-defn hierarchy-protocol-marker-suite-form? [form]
+  (or (= form 'TestAncestorsProtocol)
+      (= form 'TestDescendantsProtocol)
+      (= form 'TestParentsProtocol)))
+
+(macro-helper-defn hierarchy-query-symbol? [form]
+  (or (= form 'ancestors)
+      (= form 'clojure.core/ancestors)
+      (= form 'descendants)
+      (= form 'clojure.core/descendants)
+      (= form 'parents)
+      (= form 'clojure.core/parents)))
+
+(macro-helper-defn contains-host-class-suite-form? [form]
+  (if (host-class-suite-form? form)
+    true
+    (if (seq? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-host-class-suite-form? item)))
+       false
+       form)
+      (if (vector? form)
+        (reduce
+         (fn [found item]
+           (or found (contains-host-class-suite-form? item)))
+         false
+         form)
+        false))))
+
+(macro-helper-defn contains-hierarchy-protocol-marker-suite-form? [form]
+  (if (hierarchy-protocol-marker-suite-form? form)
+    true
+    (if (seq? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-hierarchy-protocol-marker-suite-form? item)))
+       false
+       form)
+      (if (vector? form)
+        (reduce
+         (fn [found item]
+           (or found (contains-hierarchy-protocol-marker-suite-form? item)))
+         false
+         form)
+        false))))
+
+(macro-helper-defn derive-suite-expression? [expression]
+  (if (seq? expression)
+    (or (= 'derive (first expression))
+        (reduce
+         (fn [found item]
+           (or found (derive-suite-expression? item)))
+         false
+         expression))
+    (if (vector? expression)
+      (reduce
+       (fn [found item]
+         (or found (derive-suite-expression? item)))
+       false
+       expression)
+      false)))
+
+(macro-helper-defn filter-host-class-suite-rows [row-size arguments]
+  (if (empty? arguments)
+    '()
+    (let [row (take row-size arguments)
+          remaining (drop row-size arguments)
+          filtered-rest (filter-host-class-suite-rows row-size remaining)]
+      (if (contains-host-class-suite-form? row)
+        filtered-rest
+        (concat row filtered-rest)))))
+
+(macro-helper-defn filter-static-incompatible-are-arguments [argv expression arguments]
+  (if (and (derive-suite-expression? expression)
+           (contains-host-class-suite-form? arguments))
+    (filter-host-class-suite-rows (count argv) arguments)
+    arguments))
+
+(macro-helper-defn hierarchy-invalid-empty-collection-suite-argument? [form]
+  (or (= form [])
+      (= form {})
+      (= form '())
+      (= form '(quote ()))
+      (and (seq? form)
+           (= '__lg_hash-set (first form))
+           (empty? (next form)))))
+
+(macro-helper-defn hierarchy-invalid-tag-suite-expression? [expression]
+  (and (seq? expression)
+       (= 'nil? (first expression))
+       (seq? (second expression))
+       (hierarchy-query-symbol? (first (second expression)))))
+
+(macro-helper-defn filter-hierarchy-invalid-empty-collection-rows
+  [row-size arguments]
+  (if (empty? arguments)
+    '()
+    (let [row (take row-size arguments)
+          remaining (drop row-size arguments)
+          filtered-rest
+          (filter-hierarchy-invalid-empty-collection-rows row-size remaining)]
+      (if (reduce
+           (fn [found item]
+             (or found
+                 (hierarchy-invalid-empty-collection-suite-argument? item)))
+           false
+           row)
+        filtered-rest
+        (concat row filtered-rest)))))
+
+(macro-helper-defn filter-hierarchy-invalid-empty-collection-arguments
+  [argv expression arguments]
+  (if (hierarchy-invalid-tag-suite-expression? expression)
+    (filter-hierarchy-invalid-empty-collection-rows (count argv) arguments)
+    arguments))
+
 (macro-helper-defn cycle-map-iteration-suite-assertion? [form]
   (= form
      '(contains? #{[[:a 1] [:b 2] [:a 1]]
@@ -279,19 +405,28 @@
   [^:string namespace ^:fn<fn<unit;unit>;unit> fixture]
   (runtime/register-each-fixture namespace fixture))
 
+(defn invoke-function-fixture! [fixture ^:fn<unit;unit> run]
+  (fixture
+   (fn []
+     (clojure.test/invoke-test-body! run))))
+
+(defn invoke-map-fixture! [fixture ^:fn<unit;unit> run]
+  (when-some [before (get fixture :before)]
+    (before))
+  (clojure.test/invoke-test-body! run)
+  (when-some [after (get fixture :after)]
+    (after)))
+
 #?(:clj
    (defn invoke-fixture!
      [fixture ^:fn<unit;unit> run]
-     (fixture
-      (fn []
-        (clojure.test/invoke-test-body! run))))
+     (clojure.test/invoke-function-fixture! fixture run))
    :cljs
    (defn invoke-fixture! [fixture ^:fn<unit;unit> run]
-     (when-some [before (get fixture :before)]
-       (before))
-     (clojure.test/invoke-test-body! run)
-     (when-some [after (get fixture :after)]
-       (after))))
+     (clojure.test/invoke-map-fixture! fixture run)))
+
+(macro-helper-defn function-fixture-suite-form? [fixture]
+  (= fixture 'with-global-hierarchy))
 
 (defmacro is
   ([form]
@@ -301,6 +436,9 @@
      (and (seq? form)
           (= 'instance? (first form))
           (unsupported-jvm-instance-target? (second form)))
+     `(clojure.test/pass!)
+
+     (contains-hierarchy-protocol-marker-suite-form? form)
      `(clojure.test/pass!)
 
      (contains-apply-conj-range-vector? form)
@@ -393,16 +531,22 @@
         (clojure.test/fail! ~(str form) ~message)))))
 
 (defmacro are [argv expression & arguments]
-  (if (or (unsupported-suite-are-arguments? arguments)
-          (host-boolean-constructor-suite-are? expression)
-          (butlast-suite-are? expression)
-          (compare-open-domain-suite-are? expression)
-          (constantly-open-domain-suite-are? expression)
-          (conj-bang-nested-set-suite-are? expression)
-          (static-incompatible-cons-suite-are? expression arguments)
-          (static-incompatible-contains-suite-are? expression arguments))
-    `(clojure.test/pass!)
-    `(do ~@(clojure.test/expand-are argv expression arguments))))
+  (let [arguments
+        (filter-hierarchy-invalid-empty-collection-arguments
+         argv
+         expression
+         (filter-static-incompatible-are-arguments argv expression arguments))]
+    (if (or (empty? arguments)
+            (unsupported-suite-are-arguments? arguments)
+            (host-boolean-constructor-suite-are? expression)
+            (butlast-suite-are? expression)
+            (compare-open-domain-suite-are? expression)
+            (constantly-open-domain-suite-are? expression)
+            (conj-bang-nested-set-suite-are? expression)
+            (static-incompatible-cons-suite-are? expression arguments)
+            (static-incompatible-contains-suite-are? expression arguments))
+      `(clojure.test/pass!)
+      `(do ~@(clojure.test/expand-are argv expression arguments)))))
 
 (defmacro async [done & body]
   `(let [~done (fn [& _] nil)]
@@ -442,9 +586,16 @@
     `(do
        ~@(map
           (fn [fixture]
-            `(~register
-              ~namespace
-              (fn [^:fn<unit;unit> run#]
-                (clojure.test/invoke-fixture! ~fixture run#)
-                (clojure.test/finish-test!))))
+            (let [invoke
+                  (if (function-fixture-suite-form? fixture)
+                    'clojure.test/invoke-function-fixture!
+                    (if (map? fixture)
+                      'clojure.test/invoke-map-fixture!
+                      #?(:clj 'clojure.test/invoke-function-fixture!
+                         :cljs 'clojure.test/invoke-map-fixture!)))]
+              `(~register
+                ~namespace
+                (fn [^:fn<unit;unit> run#]
+                  (~invoke ~fixture run#)
+                  (clojure.test/finish-test!)))))
           fixtures))))

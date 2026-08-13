@@ -40,6 +40,66 @@ let create ~compile_expr =
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
     | _ -> None
   in
+  let rec edn_packable_static_type ty =
+    match Types.constraint_value_type ty with
+    | TOcaml "Lg_edn_backend.t" -> true
+    | TNil | TBool | TInt | TFloat | TChar | TString | TSymbol | TKeyword
+    | TRegex ->
+        true
+    | TOcaml "int" -> true
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        edn_packable_static_type inner
+    | TVector inner -> edn_packable_static_type inner
+    | _ -> false
+  in
+  let rec pack_edn_expression ty expression =
+    let convert name =
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name),
+             [ expression ] ))
+    in
+    match Types.constraint_value_type ty with
+    | TOcaml "Lg_edn_backend.t" -> Ok expression
+    | TNil ->
+        Ok
+          (Semantic_ir.Sequence
+             [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+    | TBool -> convert "of_bool"
+    | TInt | TOcaml "int" -> convert "of_int"
+    | TFloat -> convert "of_float"
+    | TChar -> convert "of_char"
+    | TString -> convert "of_string"
+    | TSymbol -> convert "of_symbol"
+    | TKeyword -> convert "of_keyword"
+    | TRegex -> convert "of_regex"
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        let value_name = "__lg_set_edn_optional_value" in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Match
+              ( expression,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar value_name)),
+                    packed );
+                ] ))
+          (pack_edn_expression inner (Semantic_ir.Ident value_name))
+    | TVector inner ->
+        let value_name = "__lg_set_edn_vector_value" in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_vector",
+                [
+                  Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], packed);
+                  expression;
+                ] ))
+          (pack_edn_expression inner (Semantic_ir.Ident value_name))
+    | _ -> Error.error "value cannot be represented as closed EDN metadata"
+  in
   let non_concrete_compare_error () =
     Error.error
       "compare expects one concrete comparable type; define a closed sum type \
@@ -130,36 +190,47 @@ let create ~compile_expr =
           | Error _ as err -> err
           | Ok [] -> Error.error "hash-set expects elements"
           | Ok exprs ->
-              Result.bind
-                (merge_collection_value_types "set" exprs)
-                (fun element_ty ->
-                  Result.bind (set_module_name env element_ty)
-                    (fun set_module ->
-                      let rec coerce_values acc = function
-                        | [] -> Ok (List.rev acc)
-                        | value :: rest ->
-                            let coerced =
-                              if Types.equal element_ty value.ty then
-                                Ok value.semantic_expr
-                              else
-                                match element_ty with
-                                | TNullable _
-                                | TOcaml_app ("option", [ _ ]) ->
-                                    Ok
-                                      (coerce_expression_to_type element_ty
-                                         value.ty value.semantic_expr)
-                                | _ -> coerce_set_element element_ty value
-                            in
-                            Result.bind coerced (fun value ->
-                                coerce_values (value :: acc) rest)
-                      in
-                      coerce_values [] exprs
-                      |> Result.map (fun values ->
-                             typed_ir (TSet element_ty)
-                               (Semantic_ir.Apply
-                                  ( Semantic_ir.Ident
-                                      (set_module ^ ".of_list"),
-                                    [ Semantic_ir.List values ] ))))))
+              let compile_values element_ty coerce_value =
+                Result.bind (set_module_name env element_ty)
+                  (fun set_module ->
+                    let rec coerce_values acc = function
+                      | [] -> Ok (List.rev acc)
+                      | value :: rest ->
+                          Result.bind (coerce_value value) (fun value ->
+                              coerce_values (value :: acc) rest)
+                    in
+                    coerce_values [] exprs
+                    |> Result.map (fun values ->
+                           typed_ir (TSet element_ty)
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident (set_module ^ ".of_list"),
+                                  [ Semantic_ir.List values ] ))))
+              in
+              let compile_edn_set () =
+                compile_values (TOcaml "Lg_edn_backend.t")
+                  (fun value ->
+                    pack_edn_expression value.ty value.semantic_expr)
+              in
+              (match merge_collection_value_types "set" exprs with
+              | Ok element_ty ->
+                  compile_values element_ty (fun value ->
+                      if Types.equal element_ty value.ty then
+                        Ok value.semantic_expr
+                      else
+                        match element_ty with
+                        | TNullable _
+                        | TOcaml_app ("option", [ _ ]) ->
+                            Ok
+                              (coerce_expression_to_type element_ty value.ty
+                                 value.semantic_expr)
+                        | _ -> coerce_set_element element_ty value)
+              | Error _ as error ->
+                  if
+                    List.for_all
+                      (fun value -> edn_packable_static_type value.ty)
+                      exprs
+                  then compile_edn_set ()
+                  else error))
     and compile_set_of env arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (
