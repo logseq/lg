@@ -849,22 +849,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: every-fn called with incompatible arguments: expected (set<keyword>, set<int>), got (fn<(int) -> bool>, vector<int>)",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.not-every-qmark",
-    "static_subclass": "first-class-polymorphic-or-hof",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: every-fn called with incompatible arguments: expected (set<keyword>, set<int>), got (fn<(int) -> bool>, vector<int>)",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.not-every-qmark",
-    "static_subclass": "first-class-polymorphic-or-hof",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/nth.cljc\", line <n>: lg: nth default must match collection element type",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.nth",

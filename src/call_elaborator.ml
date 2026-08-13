@@ -3259,30 +3259,52 @@ let overloaded_function_needs_adapter expected_arities actual_arities =
           (stored_overloaded_arity_type actual))
       expected_arities actual_arities
 
-let is_every_function_value expression =
+type every_like_function = Every | Not_every
+
+let every_like_function_value expression =
   match Semantic_ir.unlocated expression with
   | Semantic_ir.Ident name ->
-      String.equal name "clojure_core_every_"
-      || String.ends_with ~suffix:".clojure_core_every_" name
-  | _ -> false
+      if
+        String.equal name "clojure_core_every_"
+        || String.ends_with ~suffix:".clojure_core_every_" name
+      then Some Every
+      else if
+        String.equal name "clojure_core_not_every_"
+        || String.ends_with ~suffix:".clojure_core_not_every_" name
+      then Some Not_every
+      else None
+  | _ -> None
 
 let adapt_every_special_arity env expected actual =
   match (expected, actual.ty) with
   | TFn ([ predicate_ty; collection_ty ], return_ty), actual_ty
     when every_function_type actual_ty
-         && is_every_function_value actual.semantic_expr
+         && Option.is_some (every_like_function_value actual.semantic_expr)
          && argument_compatible return_ty TBool ->
+      let every_like =
+        every_like_function_value actual.semantic_expr |> Option.get
+      in
+      let empty_result =
+        match every_like with
+        | Every -> Semantic_ir.Bool true
+        | Not_every -> Semantic_ir.Bool false
+      in
+      let public_name =
+        match every_like with Every -> "every?" | Not_every -> "not-every?"
+      in
       let predicate_name = "__lg_every_ignored_predicate" in
       let collection_name = "__lg_every_empty_collection" in
       let invalid_predicate =
         Semantic_ir.Apply
           ( Semantic_ir.Ident "invalid_arg",
-            [ Semantic_ir.String "every? predicate is not callable" ] )
+            [ Semantic_ir.String (public_name ^ " predicate is not callable") ]
+          )
       in
       let invalid_collection =
         Semantic_ir.Apply
           ( Semantic_ir.Ident "invalid_arg",
-            [ Semantic_ir.String "every? collection is not seqable" ] )
+            [ Semantic_ir.String (public_name ^ " collection is not seqable") ]
+          )
       in
       let function_ body =
         Semantic_ir.Fun
@@ -3293,7 +3315,7 @@ let adapt_every_special_arity env expected actual =
             body )
       in
       (match collection_ty with
-      | TNil -> Ok (function_ (Semantic_ir.Bool true))
+      | TNil -> Ok (function_ empty_result)
       | TUnknown | TMeta _ | TVar _ -> Ok (function_ invalid_collection)
       | _ when non_callable_every_predicate_type predicate_ty ->
           let collection =
@@ -3306,7 +3328,7 @@ let adapt_every_special_arity env expected actual =
                    ( first.semantic_expr,
                      [
                        ( Semantic_ir.PConstructor ("None", None),
-                         Semantic_ir.Bool true );
+                         empty_result );
                        ( Semantic_ir.PConstructor
                            ("Some", Some Semantic_ir.PAny),
                          invalid_predicate );
@@ -12325,6 +12347,62 @@ let create ~compile_expr =
       | form -> compile_expr scope env form
     in
     Result.bind compiled adapt_set_callable
+  and compile_static_complement scope env arg_forms =
+    match arg_forms with
+    | [ function_form ] ->
+        Result.bind (compile_function_arg scope env function_form) (fun fn ->
+            match fn.ty with
+            | TFn (parameter_tys, return_ty) ->
+                let is_core_not_every =
+                  match function_form with
+                  | FSymbol function_name -> (
+                      String.equal function_name "not-every?"
+                      || String.equal function_name "clojure.core/not-every?"
+                      ||
+                      match lookup_binding scope env function_name with
+                      | Ok binding ->
+                          String.equal binding.ocaml_name
+                            "clojure_core_not_every_"
+                      | Error _ -> false)
+                  | _ -> false
+                in
+                if is_core_not_every then
+                  Ok
+                    (typed_ir (TFn (parameter_tys, TBool))
+                       (Semantic_ir.Ident "clojure_core_every_"))
+                else
+                let function_name = "__lg_complement_function" in
+                let parameter_names =
+                  List.mapi
+                    (fun index _ ->
+                      "__lg_complement_arg_" ^ string_of_int index)
+                    parameter_tys
+                in
+                let parameters =
+                  List.map2 constrained_identifier_pattern parameter_names
+                    parameter_tys
+                in
+                let arguments =
+                  List.map2
+                    (fun name ty -> constrained_identifier_expression name ty)
+                    parameter_names parameter_tys
+                in
+                let call =
+                  Semantic_ir.Apply (Semantic_ir.Ident function_name, arguments)
+                in
+                let body =
+                  Semantic_ir.If
+                    ( Expression_support.truthiness_expression return_ty call,
+                      Semantic_ir.Bool false,
+                      Semantic_ir.Bool true )
+                in
+                Ok
+                  (typed_ir (TFn (parameter_tys, TBool))
+                     (Semantic_ir.Let
+                        ( [ (Semantic_ir.PVar function_name, fn.semantic_expr) ],
+                          Semantic_ir.Fun (parameters, body) )))
+            | _ -> Error.error "complement expects a statically typed function")
+    | _ -> Error.error "complement expects 1 argument"
   and overloaded_projection expression index =
     let rec descend expression remaining =
       if remaining = 0 then
@@ -12486,6 +12564,13 @@ let create ~compile_expr =
                ^ string_of_int (List.length arg_forms) ^ "; expected "
                ^ string_of_int (List.length parameter_tys))
           | _ -> Error.error (name ^ " has an invalid multimethod binding")
+        else
+        if
+          String.equal name "complement"
+          || String.equal name "clojure.core/complement"
+          || String.equal fn.ocaml_name "clojure_core_complement_"
+        then
+          compile_static_complement scope env arg_forms
         else
         let contextual_parameter_tys =
           match fn.ty with
