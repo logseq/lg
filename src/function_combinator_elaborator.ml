@@ -486,7 +486,76 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         in
         Some compiled
   in
-    let compile_apply scope env arg_forms =
+  let pack_apply_record_entry_value ty expression =
+    let convert name =
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name),
+             [ expression ] ))
+    in
+    match Types.constraint_value_type ty with
+    | TOcaml "Lg_edn_backend.t" -> Ok expression
+    | TNil ->
+        Ok
+          (Semantic_ir.Sequence
+             [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+    | TBool -> convert "of_bool"
+    | TInt | TOcaml "int" -> convert "of_int"
+    | TFloat -> convert "of_float"
+    | TChar -> convert "of_char"
+    | TString -> convert "of_string"
+    | TSymbol -> convert "of_symbol"
+    | TKeyword -> convert "of_keyword"
+    | TRegex -> convert "of_regex"
+    | ty ->
+        Error.error
+          ("apply conj over a static map cannot pack "
+         ^ Types.source_name ty ^ " as an EDN map entry value")
+  in
+  let compile_apply_conj_static_record target fields record_expr =
+    let edn_ty = TOcaml "Lg_edn_backend.t" in
+    let entry_ty = TVector edn_ty in
+    let set_ty = TSet entry_ty in
+    let target_expr =
+      match target.ty with
+      | TSet (TUnknown | TMeta _ | TVar _)
+      | TSet (TVector (TUnknown | TMeta _ | TVar _)) ->
+          target.semantic_expr
+      | TSet actual when Types.equal actual entry_ty -> target.semantic_expr
+      | _ -> Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty"
+    in
+    let record = typed_ir (TRecord fields) record_expr in
+    let rec build_entries acc = function
+      | [] -> Ok (List.rev acc)
+      | (field : field) :: rest ->
+          let key =
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_keyword",
+                [ Semantic_ir.String field.keyword ] )
+          in
+          let value = Structural_map.field_expr record field in
+          Result.bind
+            (pack_apply_record_entry_value field.ty value)
+            (fun value ->
+              let entry =
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Rrbvec.of_list",
+                    [ Semantic_ir.List [ key; value ] ] )
+              in
+              build_entries (entry :: acc) rest)
+    in
+    Result.map
+      (fun entries ->
+        typed_ir set_ty
+          (List.fold_left
+             (fun set entry ->
+               Semantic_ir.Apply
+                 ( Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.add",
+                   [ entry; set ] ))
+             target_expr entries))
+      (build_entries [] fields)
+  in
+  let compile_apply scope env arg_forms =
       let rec split_last acc = function
         | [] -> None
         | [ last ] -> Some (List.rev acc, last)
@@ -514,6 +583,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | (Error _ as err), _ -> err
               | _, (Error _ as err) -> err
               | Ok fixed_args, Ok collection -> (
+                  match (fn_form, fixed_args, collection.ty) with
+                  | ( FSymbol
+                        ("conj" | "clojure.core/conj" | "cljs.core/conj"),
+                      [ target ],
+                      TRecord fields ) ->
+                      compile_apply_conj_static_record target fields
+                        collection.semantic_expr
+                  | _ -> (
                   match collection_to_list_expr env collection with
                   | Error _ ->
                       Error.error
@@ -833,7 +910,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 "apply requires a statically typed function; \
                                  define a closed sum type for multiple function \
                                  shapes"
-                          | _ -> Error.error "apply expects a function"))))))
+                          | _ -> Error.error "apply expects a function")))))))
       | _ -> Error.error "apply expects function and collection"
     and compile_static_comp scope env arg_forms =
       match arg_forms with

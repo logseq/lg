@@ -1,18 +1,18 @@
 [
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: apply expects a seqable value, got record<{:a:int,:b:int}>",
-    "lane": "audit-as-static-error",
+    "class": "other-compiler-error",
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: __lg_callable_expression_1 is not callable",
+    "lane": "inspect-unclassified",
     "namespace": "clojure.core-test.apply",
-    "static_subclass": "negative-runtime-test-is-static-error",
+    "static_subclass": null,
     "target": "melange"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: apply expects a seqable value, got record<{:a:int,:b:int}>",
-    "lane": "audit-as-static-error",
+    "class": "other-compiler-error",
+    "error": "File \"<suite>/apply.cljc\", line <n>: lg: __lg_callable_expression_1 is not callable",
+    "lane": "inspect-unclassified",
     "namespace": "clojure.core-test.apply",
-    "static_subclass": "negative-runtime-test-is-static-error",
+    "static_subclass": null,
     "target": "native"
   },
   {

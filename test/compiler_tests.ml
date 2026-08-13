@@ -25228,13 +25228,15 @@ let test_apply_string_rest_cases_compile_statically () =
 (println (= 0 (apply + "")))
 (println (= 1 (apply + 1 "")))
 (println (= [\a \b \c] (apply conj [] "abc")))
+(println (= #{[:a 1] [:b 2]} (apply conj #{} {:a 1 :b 2})))
 |}
   in
   let native_source =
     compile_with_stdlib Lg.Target.Native "app/apply_string_rest.cljc"
       source
   in
-  assert_ocaml_runs "apply_string_rest" "true\ntrue\ntrue\n" native_source;
+  assert_ocaml_runs "apply_string_rest" "true\ntrue\ntrue\ntrue\n"
+    native_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "app/apply_string_rest.cljc" source)
