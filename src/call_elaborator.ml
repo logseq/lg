@@ -11209,6 +11209,7 @@ let create ~compile_expr =
     | "__lg_nth" -> compile_nth scope env arg_forms
     | "__lg_get" -> compile_get scope env arg_forms
     | "__lg_find" -> compile_find scope env arg_forms
+    | "__lg_get-in-step" -> compile_get_in_step scope env arg_forms
     | "__lg_get-in" -> compile_get_in scope env arg_forms
     | "__lg_assoc" -> compile_assoc scope env arg_forms
     | "__lg_assoc-in" -> compile_assoc_in scope env arg_forms
@@ -12620,7 +12621,139 @@ let create ~compile_expr =
     | Ok (_ :: _ :: _) -> compile_static_conj scope env arg_forms
     | Ok _ -> Error.error "conj expects collection and values"
 
+  and compile_get_in_step scope env arg_forms =
+    let rec supports_lookup ty =
+      match ty with
+      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+          supports_lookup inner
+      | TVector _ | TRecord _ | TNamed_record _ -> true
+      | TUnknown | TMeta _ | TVar _ -> true
+      | ty when Types.is_dynamic ty -> true
+      | ty when Option.is_some (Types.dynamic_map_types ty) -> true
+      | ty -> Protocol.type_satisfies env Core_protocols.lookup_id ty
+    in
+    match arg_forms with
+    | (target_form :: key_form :: _ as forms)
+      when List.length forms = 2 || List.length forms = 3 ->
+        Result.bind
+          (compile_expr scope (Env.with_expected_type None env) target_form)
+          (fun target ->
+            if Types.equal target.ty (TOcaml "Lg_edn_backend.t") then
+              Result.bind (compile_expr scope env key_form) (fun key ->
+                  Result.bind
+                    (Edn_value_elaborator.pack_expression key.ty
+                       key.semantic_expr)
+                    (fun key ->
+                      let found =
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.get",
+                            [ target.semantic_expr; key ] )
+                      in
+                      let result missing =
+                        typed_ir (TOcaml "Lg_edn_backend.t")
+                          (Semantic_ir.Match
+                             ( found,
+                               [
+                                 ( Semantic_ir.PConstructor
+                                     ( "Some",
+                                       Some
+                                         (Semantic_ir.PVar
+                                            "__lg_get_in_edn_value") ),
+                                   Semantic_ir.Ident
+                                     "__lg_get_in_edn_value" );
+                                 ( Semantic_ir.PConstructor ("None", None),
+                                   missing );
+                               ] ))
+                      in
+                      match forms with
+                      | [ _; _ ] ->
+                          Ok
+                            (result
+                               (Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_metadata.nil"))
+                      | [ _; _; default_form ] ->
+                          Result.bind (compile_expr scope env default_form)
+                            (fun default ->
+                              Result.map
+                                result
+                                (Edn_value_elaborator.pack_expression default.ty
+                                   default.semantic_expr))
+                      | _ -> assert false))
+            else if supports_lookup target.ty then
+              compile_static_get scope env forms
+            else
+              Result.bind (compile_expr scope env key_form) (fun key ->
+                  let evaluated result =
+                    {
+                      result with
+                      semantic_expr =
+                        Semantic_ir.Sequence
+                          [
+                            target.semantic_expr;
+                            key.semantic_expr;
+                            result.semantic_expr;
+                          ];
+                    }
+                  in
+                  match forms with
+                  | [ _; _ ] ->
+                      Result.map evaluated
+                        (compile_expr scope env (FSymbol "nil"))
+                  | [ _; _; default_form ] ->
+                      Result.map evaluated
+                        (compile_expr scope env default_form)
+                  | _ -> assert false))
+    | _ -> Error.error "get-in lookup step expects target, key, and optional default"
+
   and compile_get_in scope env arg_forms =
+    let rec is_statically_empty_path expression =
+      match Semantic_ir.unlocated expression with
+      | Semantic_ir.SharedValue (_, value) -> is_statically_empty_path value
+      | Semantic_ir.List []
+      | Semantic_ir.Array []
+      | Semantic_ir.Ident "Rrbvec.empty"
+      | Semantic_ir.String "" ->
+          true
+      | Semantic_ir.Sequence expressions -> (
+          match List.rev expressions with
+          | value :: _ -> is_statically_empty_path value
+          | [] -> false)
+      | Semantic_ir.Let (_, body)
+      | Semantic_ir.EvaluateOnce (_, _, body) ->
+          is_statically_empty_path body
+      | _ -> false
+    in
+    let compile_statically_empty_path target_form path_form default_form =
+      Result.bind (compile_expr scope env target_form) (fun target ->
+          Result.bind (compile_expr scope env path_form) (fun path ->
+              if not (is_statically_empty_path path.semantic_expr) then Ok None
+              else
+                let target_name = "__lg_get_in_empty_path_target" in
+                let path_name = "__lg_get_in_empty_path" in
+                let result default =
+                  typed_ir target.ty
+                    (Semantic_ir.Let
+                       ( [
+                           ( Semantic_ir.PVar target_name,
+                             target.semantic_expr );
+                           (Semantic_ir.PVar path_name, path.semantic_expr);
+                         ]
+                         @ default,
+                         Semantic_ir.Ident target_name ))
+                in
+                match default_form with
+                | None -> Ok (Some (result []))
+                | Some default_form ->
+                    Result.map
+                      (fun default ->
+                        Some
+                          (result
+                             [
+                               ( Semantic_ir.PVar "__lg_get_in_empty_path_default",
+                                 default.semantic_expr );
+                             ]))
+                      (compile_expr scope env default_form)))
+    in
     let compile_dynamic_get_in target_form path_form default_form =
       let dynamic_ty = Types.dynamic_constraint TUnknown in
       Result.bind (compile_expr scope env target_form) (fun target ->
@@ -12700,9 +12833,16 @@ let create ~compile_expr =
     | [ target; FVector keys; default ] ->
         compile_expr scope env
           (Core_form_expansion.get_in target keys (Some default))
-    | [ target; path ] -> compile_dynamic_get_in target path None
+    | [ target; path ] ->
+        Result.bind (compile_statically_empty_path target path None) (function
+          | Some result -> Ok result
+          | None -> compile_dynamic_get_in target path None)
     | [ target; path; default ] ->
-        compile_dynamic_get_in target path (Some default)
+        Result.bind
+          (compile_statically_empty_path target path (Some default))
+          (function
+            | Some result -> Ok result
+            | None -> compile_dynamic_get_in target path (Some default))
     | _ -> Error.error "get-in expects target, path, and optional default"
   and compile_assoc_in scope env arg_forms =
     match arg_forms with

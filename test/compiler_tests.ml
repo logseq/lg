@@ -27704,12 +27704,21 @@ let test_source_get_in_treats_nil_path_as_empty () =
   (and (= nil (get-in nil nil))
        (= nil (get-in nil nil "not found"))
        (= {:answer 42} (get-in {:answer 42} nil))
-       (= {:answer 42} (get-in {:answer 42} nil "not found"))))
+       (= {:answer 42} (get-in {:answer 42} nil "not found"))
+       (= {:answer 42} (get-in {:answer 42} '()))
+       (= {:answer 42} (get-in {:answer 42} '() "not found"))
+       (= {:answer 42} (get-in {:answer 42} (list)))
+       (= {:answer 42} (get-in {:answer 42} (list) "not found"))))
 (println
   (= {:answer 42}
      (get-in (do (println "target") {:answer 42})
              nil
              (do (println "default") "not found"))))
+(println
+  (= {:answer 42}
+     (get-in (do (println "quoted-target") {:answer 42})
+             (do (println "quoted-path") '())
+             (do (println "quoted-default") "not found"))))
 |}
   in
   let native_source =
@@ -27718,12 +27727,91 @@ let test_source_get_in_treats_nil_path_as_empty () =
     |> expect_ok
   in
   if string_contains_substring native_source "Runtime_dynamic" then
-    failwith "get-in with a nil path must remain statically typed";
+    failwith "get-in with a statically empty path must remain statically typed";
   assert_ocaml_runs "source_get_in_treats_nil_path_as_empty"
-    "true\ntarget\ndefault\ntrue\n" native_source;
+    "true\ntarget\ndefault\ntrue\nquoted-target\nquoted-path\nquoted-default\ntrue\n"
+    native_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "test/source_get_in_nil_path.cljc" source)
+
+let test_source_get_in_stops_at_non_associative_values () =
+  let source =
+    {|
+(ns test.source-get-in-non-associative
+  (:require [clojure.core :refer [= get-in println]]))
+
+(println
+  (and (= nil (get-in {:a {:b {:c :value}}} [:a :b :c :missing]))
+       (= :fallback
+          (get-in {:a {:b {:c :value}}}
+                  [:a :b :c :missing]
+                  :fallback))
+       (= 4 (get-in [[0 1 2] [3 4 5]] [1 1]))))
+(println
+  (= :fallback
+     (get-in (do (println "target") {:a :value})
+             [(do (println "first-key") :a)
+              (do (println "second-key") :missing)]
+             (do (println "default") :fallback))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_get_in_non_associative.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "statically known get-in paths must not use Runtime_dynamic";
+  assert_ocaml_runs "source_get_in_stops_at_non_associative_values"
+    "true\ntarget\nfirst-key\nsecond-key\ndefault\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_get_in_non_associative.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native
+    "test/direct_get_still_rejects_non_associative.cljc"
+    {|(get :value :missing)|}
+  |> expect_error_contains "get expects a map"
+
+let test_source_get_in_accepts_closed_edn_nested_collections () =
+  let source =
+    {|
+(ns test.source-get-in-closed-edn
+  (:require [clojure.core :refer [= get-in println range]]))
+
+(println
+  (and (= 4
+          (get-in [[0 1 2]
+                   [3 4 (range)]
+                   [6 7 8]]
+                  [1 1]))
+       (= 9
+          (get-in [[0 1 2]
+                   [3 4 5]
+                   [6 7 (range)]]
+                  [2 3]
+                  9))
+       (= "x"
+          (get-in {:id 1
+                   :matrix [[0 1 2]
+                            [3 4 {:var "x"}]
+                            [6 7 8]]}
+                  [:matrix 1 2 :var]
+                  "y"))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/source_get_in_closed_edn.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed nested Clojure data must not use Runtime_dynamic";
+  assert_ocaml_runs "source_get_in_accepts_closed_edn_nested_collections"
+    "true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_get_in_closed_edn.cljc" source)
 
 let test_source_map_access_update_family_rejects_invalid_inputs () =
   compile_with_stdlib_result Lg.Target.Native
@@ -50198,6 +50286,10 @@ let tests =
       test_source_map_access_update_family_matches_clojurescript );
     ( "source get-in treats nil path as empty",
       test_source_get_in_treats_nil_path_as_empty );
+    ( "source get-in stops at non-associative values",
+      test_source_get_in_stops_at_non_associative_values );
+    ( "source get-in accepts closed EDN nested collections",
+      test_source_get_in_accepts_closed_edn_nested_collections );
     ( "source map access update family rejects invalid inputs",
       test_source_map_access_update_family_rejects_invalid_inputs );
     ( "source fundamental sequence family matches ClojureScript",

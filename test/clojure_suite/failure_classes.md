@@ -22,11 +22,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 377 |
-| compile failed | 99 |
+| compiled | 379 |
+| compile failed | 97 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 183 |
-| namespaces failed on both native and Melange | 44 |
+| namespaces compiled on both native and Melange | 184 |
+| namespaces failed on both native and Melange | 43 |
 | native-only compiled namespaces | 8 |
 | Melange-only compiled namespaces | 3 |
 
@@ -34,8 +34,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 191 | 47 |
-| Melange | 186 | 52 |
+| native | 192 | 46 |
+| Melange | 187 | 51 |
 
 The summarizer emits the authoritative current list of all 173 namespaces.
 The list below records the earlier 46-namespace milestone and is retained only
@@ -92,7 +92,7 @@ as migration history:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 86 | Split into intentional LG static errors and closed-domain boundaries. Do not weaken ordinary values or collections to dynamic. |
+| `static-typing-or-closed-domain-boundary` | 84 | Split into intentional LG static errors and closed-domain boundaries. Do not weaken ordinary values or collections to dynamic. |
 | `reader-or-numeric-literal` | 4 | Remaining blockers are tagged `#inst` literals and real `with-precision` BigDecimal semantics. Arbitrary precision remains a separate numeric-tower design. |
 | `host-boundary-or-platform-specific` | 9 | Keep JVM/JS class identity, Java interop, target globals, Var mutation, and true asynchronous `future` behavior gated unless LG introduces deliberate portable static representations. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
@@ -122,7 +122,7 @@ namespace/target:
 | --- | ---: | --- |
 | `design-reader-and-numeric-tower` | 4 | Tagged instant literals and BigDecimal precision/rounding require deliberate source and runtime types. |
 | `audit-as-static-error` | 82 | Upstream negative runtime tests and whole-suite heterogeneous/polymorphic fixtures that LG intentionally rejects at compile time. |
-| `design-closed-domain-or-narrow-runtime-boundary` | 4 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
+| `design-closed-domain-or-narrow-runtime-boundary` | 2 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
 | `implement-static-language-capability` | 0 | The current scan has no remaining positive implementation failures. Closed tuple/list/nested-vector element types receive deterministic generated `Set.Make` modules without dynamic storage. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
 | `implement-form-or-reader-support` | 0 | Current repair lanes have no remaining failures in this lane. New compiler/analyzer form gaps must be implemented as static forms rather than source-portable function dispatch. |
@@ -136,7 +136,7 @@ namespace/target:
 
 ## Current interpretation
 
-The 101 compile failures are not 101 independent core defects. The current
+The 97 compile failures are not 97 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -238,11 +238,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `ex-data` payloads in one collection. That should be handled as a closed
   watch-event/ex-data domain or a documented narrow ex-data dynamic boundary,
   not by weakening ordinary record storage to dynamic.
-- `clojure.core/get-in` now treats a literal `nil` path as an empty path on
-  Native and Melange for both public arities, returning the target without
-  entering `Runtime_dynamic`. The upstream namespace now advances to computed
-  paths over several incompatible nested record/map/vector shapes; that
-  remaining fixture needs an explicit closed domain rather than record packing.
+- `clojure.core/get-in` now compiles the upstream namespace on Native and
+  Melange. Literal `nil`, quoted and constructed empty paths return the target
+  without entering `Runtime_dynamic`; static vector paths preserve left-to-right
+  argument evaluation, short-circuit non-associative intermediate values, and
+  traverse recursively closed EDN map/vector data through a typed closed-sum
+  lookup boundary.
 - `clojure.core/ex-info` data literal maps now accept local statically typed
   scalar values through the documented exception-only `exception-data<T>`
   capability. First-class `every?` now adapts to helper-accumulated overloads,

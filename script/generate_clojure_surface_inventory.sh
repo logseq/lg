@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 237; then
-  echo "compiler call dispatch changed: expected 237 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 238; then
+  echo "compiler call dispatch changed: expected 238 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -199,6 +199,7 @@ awk '
     internal_abi["__lg_vector"] = "typed-homogeneous-vector-construction-primitive"
     internal_abi["__lg_assoc-in"] = "typed-dependent-nested-association-primitive"
     internal_abi["__lg_get-in"] = "typed-dependent-nested-lookup-primitive"
+    internal_abi["__lg_get-in-step"] = "typed-nested-lookup-step-with-closed-edn-and-non-associative-short-circuiting"
     internal_abi["__lg_update-in"] = "typed-dependent-nested-update-primitive"
     internal_abi["__lg_select-keys"] = "typed-dependent-map-key-projection-primitive"
     internal_abi["__lg_vals"] = "typed-map-value-projection-primitive"

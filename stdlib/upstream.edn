@@ -666,7 +666,7 @@
     get {:status :static-adaptation
          :reason :source-overloads-delegate-to-clojurescript-ilookup-while-inline-specialization-preserves-dependent-record-map-vector-array-string-and-default-result-types-through-a-private-static-lookup-primitive}
     get-in {:status :static-adaptation
-            :reason :source-overloads-preserve-upstream-nested-left-to-right-lookup-default-short-circuiting-and-nil-as-empty-path-through-the-private-static-lookup-primitive-while-computed-heterogeneous-paths-require-an-explicit-closed-domain}
+            :reason :source-overloads-preserve-upstream-left-to-right-argument-evaluation-nested-lookup-default-short-circuiting-nil-and-statically-empty-paths-non-associative-intermediate-values-and-recursively-closed-edn-map-vector-data-through-private-static-lookup-steps-while-open-computed-heterogeneous-paths-require-an-explicit-closed-domain}
     assoc-in {:status :static-adaptation
               :reason :source-port-preserves-upstream-recursive-nested-association-through-homogeneous-static-map-paths-and-private-shape-preserving-association}
     update {:status :static-adaptation

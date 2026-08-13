@@ -881,7 +881,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                     true
                                 | _ -> false)
                               expressions) ->
-                      homogeneous_map_vector ~fallback_to_edn:false ()
+                      if
+                        List.for_all
+                          (fun expression ->
+                            edn_packable_static_type expression.ty)
+                          expressions
+                      then edn_vector ()
+                      else homogeneous_map_vector ~fallback_to_edn:false ()
                   | Some element_ty ->
                       let rec adapt values = function
                         | [] -> Ok (List.rev values)
@@ -994,18 +1000,70 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           Result.bind
             (Structural_map.validate_unique_keywords keyword_pairs)
             (fun () ->
-              let fields =
-                pairs
-                |> List.map (fun (keyword, _form, value) ->
-                       make_map_field keyword value.ty)
+              let value_ty =
+                match keyword_pairs with
+                | [] -> None
+                | (_, first) :: rest ->
+                    List.fold_left
+                      (fun merged (_, value) ->
+                        Option.bind merged (fun ty ->
+                            merge_branch_types ty value.ty))
+                      (Some first.ty) rest
               in
-              let values =
-                List.map2
-                  (fun field (_keyword, _form, value) ->
-                    (field, value.semantic_expr))
-                  fields pairs
+              let rec contains_closed_edn ty =
+                match Types.constraint_value_type ty with
+                | TOcaml "Lg_edn_backend.t" -> true
+                | TNullable inner | TList inner | TSeq inner | TVector inner
+                | TArray inner | TSet inner
+                | TOcaml_app ("option", [ inner ]) ->
+                    contains_closed_edn inner
+                | _ -> false
               in
-              Ok (Structural_map.record_expr fields values))
+              if
+                Option.is_none value_ty
+                && List.exists
+                     (fun (_, value) -> contains_closed_edn value.ty)
+                     keyword_pairs
+                && List.for_all
+                     (fun (_, value) -> edn_packable_static_type value.ty)
+                     keyword_pairs
+              then
+                let rec pack entries = function
+                  | [] ->
+                      Ok
+                        (typed_ir (TOcaml "Lg_edn_backend.t")
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_metadata.of_entries",
+                                [ Semantic_ir.List (List.rev entries) ] )))
+                  | (keyword, value) :: rest ->
+                      Result.bind
+                        (pack_edn_expression value.ty value.semantic_expr)
+                        (fun packed ->
+                          let key =
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_metadata.of_keyword",
+                                [ Semantic_ir.String keyword ] )
+                          in
+                          pack
+                            (Semantic_ir.Tuple [ key; packed ] :: entries)
+                            rest)
+                in
+                pack [] keyword_pairs
+              else
+                let fields =
+                  pairs
+                  |> List.map (fun (keyword, _form, value) ->
+                         make_map_field keyword value.ty)
+                in
+                let values =
+                  List.map2
+                    (fun field (_keyword, _form, value) ->
+                      (field, value.semantic_expr))
+                    fields pairs
+                in
+                Ok (Structural_map.record_expr fields values))
       | pair :: rest -> (
           match compile_pair pair with
           | Ok pair -> loop (pair :: acc) rest

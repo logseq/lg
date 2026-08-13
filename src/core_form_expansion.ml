@@ -2,19 +2,44 @@ open Ast
 
 let core_call symbol arguments = FList (FCoreSymbol symbol :: arguments)
 
-let get_in target keys default =
-  let rec expand target = function
+let get_in target keys default_form =
+  let target_name = "__lg_get_in_target" in
+  let key_bindings =
+    List.mapi
+      (fun index key ->
+        match key with
+        | FKeyword _ | FInt _ | FFloat _ | FString _ | FChar _ | FBool _ ->
+            ([], key)
+        | _ ->
+            let name = "__lg_get_in_key_" ^ string_of_int index in
+            ([ FSymbol name; key ], FSymbol name))
+      keys
+  in
+  let default_name = "__lg_get_in_default" in
+  let rec expand default target = function
     | [] -> target
     | key :: rest ->
         let get =
           match (rest, default) with
           | [], Some default ->
-              core_call Core_get [ target; key; default ]
-          | _ -> core_call Core_get [ target; key ]
+              FList [ FSymbol "__lg_get-in-step"; target; key; default ]
+          | _ -> FList [ FSymbol "__lg_get-in-step"; target; key ]
         in
-        expand get rest
+        expand default get rest
   in
-  expand target keys
+  let bindings =
+    [ FSymbol target_name; target ]
+    @ List.concat_map fst key_bindings
+    @
+    match default_form with
+    | Some default -> [ FSymbol default_name; default ]
+    | None -> []
+  in
+  let default = Option.map (fun _ -> FSymbol default_name) default_form in
+  let body =
+    expand default (FSymbol target_name) (List.map snd key_bindings)
+  in
+  FList [ FSymbol "let"; FVector bindings; body ]
 
 let assoc_in target keys value =
   let rec expand depth target keys =

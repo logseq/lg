@@ -221,3 +221,37 @@ let rec contains collection key =
   | Bool _ | String _ | Char _ | Symbol _ | Keyword _ | Small_int _ | Int _
   | Bigint _ | Float _ | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
       false
+
+let rec get collection key =
+  let open Lg_edn_backend in
+  let index = function
+    | Small_int value -> Some value
+    | Int value when value >= 0L && value <= Int64.of_int max_int ->
+        Some (Int64.to_int value)
+    | _ -> None
+  in
+  let array_value values =
+    match index key with
+    | Some index when index >= 0 && index < Array.length values ->
+        Some values.(index)
+    | Some _ | None -> None
+  in
+  match collection with
+  | Nil -> None
+  | Map entries ->
+      Array.find_map
+        (fun (entry_key, value) -> if equal entry_key key then Some value else None)
+        entries
+  | Set values -> Array.find_opt (fun value -> equal value key) values
+  | List values | Vector values -> array_value values
+  | Int4_vector _ | Int_vector _ | Int4_array _ ->
+      Option.bind (sequence_values collection) array_value
+  | String value -> (
+      match index key with
+      | Some index when index >= 0 && index < String.length value ->
+          Some (Char (Uchar.of_char value.[index]))
+      | Some _ | None -> None)
+  | Json_source source -> get (of_json_string source) key
+  | Bool _ | Char _ | Symbol _ | Keyword _ | Small_int _ | Int _ | Bigint _
+  | Float _ | Decimal _ | Ratio _ | Regex _ | Tagged _ ->
+      None
