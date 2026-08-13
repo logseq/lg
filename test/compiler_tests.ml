@@ -41967,13 +41967,31 @@ let test_typed_empty_sets () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "typed_empty_sets" "true:3:true:false:#{1 3}\n" ocaml_source
 
-let test_sets_reject_nil_elements () =
+let test_sets_support_nil_elements () =
+  let source =
+    {|
+(def literal (hash-set nil))
+(def converted (set [nil nil]))
+(println
+  (str
+    (= #{nil} literal) ":"
+    (= literal converted) ":"
+    (contains? literal nil) ":"
+    (= #{\space} (hash-set \space)) ":"
+    (= #{\a \b \c} (set "abc")) ":"
+    (= #{'()} (hash-set '()))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sets_support_nil_elements"
+    "true:true:true:true:true:true\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_set_of_rejects_nil_element_annotation () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
-  |> expect_error "unknown set element type :nil";
-  Lg.Compiler.compile_string {|(def values (__lg_hash-set nil))|}
-  |> expect_error "sets require a generated comparator for nil";
-  Lg.Compiler.compile_string {|(def values (__lg_set [nil]))|}
-  |> expect_error "sets require a generated comparator for nil"
+  |> expect_error "unknown set element type :nil"
 
 let test_set_of_rejects_types_without_comparators () =
   Lg.Compiler.compile_string {|(def xs (set-of :record))|}
@@ -49152,7 +49170,9 @@ let tests =
     ( "into rejects element type mismatch",
       test_into_rejects_element_type_mismatch );
     ("typed empty sets work", test_typed_empty_sets);
-    ("sets reject nil elements", test_sets_reject_nil_elements);
+    ("sets support nil elements", test_sets_support_nil_elements);
+    ( "set-of rejects nil element annotation",
+      test_set_of_rejects_nil_element_annotation );
     ( "set-of rejects types without comparators",
       test_set_of_rejects_types_without_comparators );
     ( "set-of preserves supported host comparator aliases",

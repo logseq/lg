@@ -517,9 +517,8 @@ Use `(set-of :int)`, `(set-of :string)`, `(set-of :symbol)`, `(set-of :keyword)`
 Sets compile to persistent OCaml `Set.Make` instances and support `hash-set`,
 `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, `every?`, `not-any?`, `not-every?`,
 `map`, `filter`, and `reduce`. Built-in comparators cover scalar values,
-scalar lists and vectors, nested integer vectors, and named structural map
-records. `nil` is an option value, but option sets remain unsupported until
-they have a generated comparator.
+scalar lists and vectors, nested integer vectors, nil/nullable values, and
+named structural map records.
 
 `conj` accepts one or more same-typed values after a list, vector, or set.
 
@@ -690,8 +689,8 @@ sequence transforms, and complex destructuring.
 `hash-set`, `sorted-set`, `set-of`, `conj`, `disj`, `contains?`, set equality,
 set sequence conversion, and set printing now use persistent OCaml `Set.Make`
 instances. Primitive static element types use built-in runtime comparators.
-Lists and persistent vectors of the supported scalar element types also use
-dedicated persistent `Set.Make` instances.
+Nil/nullable values, lists, and persistent vectors of the supported scalar
+element types also use persistent set instances.
 
 Each named structural map record emits a sibling `Set.Make` comparator module,
 and same-shaped records are explicitly projected at set mutation and membership

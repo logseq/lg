@@ -532,9 +532,9 @@
     array-map {:status :static-adaptation
                :reason :source-keyval-loop-preserves-the-supported-clojurescript-constructor-semantics-while-the-static-runtime-uses-the-default-persistent-hash-map-representation}
     hash-set {:status :static-adaptation
-              :reason :source-variadic-constructor-reduces-through-conj-while-an-inline-internal-static-primitive-retains-the-element-type-and-persistent-set-representation}
+              :reason :source-variadic-constructor-reduces-through-conj-while-an-inline-internal-static-primitive-retains-the-element-type-including-nil-char-and-empty-list-edge-values-and-persistent-set-representation}
     set {:status :static-adaptation
-         :reason :source-constructor-reduces-the-input-sequence-through-conj-while-an-inline-internal-static-primitive-retains-the-seqable-witness-and-element-type}
+         :reason :source-constructor-reduces-the-input-sequence-through-conj-while-an-inline-internal-static-primitive-retains-the-seqable-witness-and-element-type-including-nil-and-char}
     set-lite {:status :static-adaptation
               :reason :source-constructor-preserves-upstream-deduplication-and-metadata-free-result-semantics-using-lg-default-static-persistent-sets-because-lite-runtime-class-identity-is-not-source-observable}
     reduced {:status :static-adaptation

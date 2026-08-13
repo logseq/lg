@@ -1023,16 +1023,21 @@ and overloaded_storage_type = function
 
 and set_module_name = function
   | TUnknown | TMeta _ | TVar _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TNil -> Ok "Lg_runtime.Runtime_poly_set"
   | TInt -> Ok "Lg_runtime.Core_set.Int_set"
   | TFloat -> Ok "Lg_runtime.Core_set.Float_set"
+  | TChar -> Ok "Lg_runtime.Core_set.Char_set"
   | TString | TSymbol | TKeyword -> Ok "Lg_runtime.Core_set.String_set"
   | TBool -> Ok "Lg_runtime.Core_set.Bool_set"
   | TList TInt -> Ok "Lg_runtime.Core_set.Int_list_set"
   | TList TFloat -> Ok "Lg_runtime.Core_set.Float_list_set"
+  | TList TChar -> Ok "Lg_runtime.Core_set.Char_list_set"
   | TList (TString | TSymbol | TKeyword) -> Ok "Lg_runtime.Core_set.String_list_set"
   | TList TBool -> Ok "Lg_runtime.Core_set.Bool_list_set"
+  | TList (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector TInt -> Ok "Lg_runtime.Core_set.Int_vector_set"
   | TVector TFloat -> Ok "Lg_runtime.Core_set.Float_vector_set"
+  | TVector TChar -> Ok "Lg_runtime.Core_set.Char_vector_set"
   | TVector (TString | TSymbol | TKeyword) ->
       Ok "Lg_runtime.Core_set.String_vector_set"
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"

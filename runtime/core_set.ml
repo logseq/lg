@@ -1,5 +1,6 @@
 module Int_set = Set.Make (Int)
 module Float_set = Set.Make (Float)
+module Char_set = Set.Make (Char)
 module String_set = Set.Make (String)
 
 module Bool_order = struct
@@ -18,6 +19,12 @@ end)
 
 module Float_list_set = Set.Make (struct
   type t = float list
+
+  let compare = Stdlib.compare
+end)
+
+module Char_list_set = Set.Make (struct
+  type t = char list
 
   let compare = Stdlib.compare
 end)
@@ -42,6 +49,12 @@ end)
 
 module Float_vector_set = Set.Make (struct
   type t = float Rrbvec.t
+
+  let compare = Stdlib.compare
+end)
+
+module Char_vector_set = Set.Make (struct
+  type t = char Rrbvec.t
 
   let compare = Stdlib.compare
 end)
