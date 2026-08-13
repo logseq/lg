@@ -1783,6 +1783,29 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_drop_last_accepts_nil_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "drop_last_nil_probe.cljc",
+            "(ns clojure.core-test.drop-last-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest drop-last-nil-collection-compiles\n"
+            "  (is (= [] (drop-last nil)))\n"
+            "  (is (= [] (drop-last 1 nil))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.drop-last-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_metadata_map_vector_merges_as_static_map(self) -> None:
         test_file = self.write_suite_file(
             "distinct_metadata_map_vector_probe.cljc",

@@ -698,8 +698,8 @@
 (signature clojure.core/take-last [value]
   :fn<int;seqable<value>;seq<value>>)
 
-(signature clojure.core/drop-last [value]
-  :overload<fn<seqable<value>;seq<value>>;fn<int;seqable<value>;seq<value>>>)
+(signature clojure.core/drop-last [value storage]
+  :overload<fn<optional-seqable<value;storage>;seq<value>>;fn<int;optional-seqable<value;storage>;seq<value>>>)
 
 (signature clojure.core/reverse [value]
   :fn<seqable<value>;list<value>>)
