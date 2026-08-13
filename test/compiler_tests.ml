@@ -41388,7 +41388,11 @@ let test_source_first_class_every_parameter_is_statically_overloaded () =
   (if (every-fn odd? [1 3 5])
     (if (every-fn even? (hash-set 2 4 6))
       (if (every-fn (hash-set :a :b :c) [:a :b :c])
-        true
+        (if (every-fn "not-a-fn" [])
+          (if (every-fn "not-a-fn" nil)
+            true
+            false)
+          false)
         false)
       false)
     false))

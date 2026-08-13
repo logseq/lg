@@ -426,6 +426,19 @@ let overloaded_arity_parameters (arity : fn_arity) argument_count =
           (arity.fixed_params
       @ List.init (argument_count - fixed_count) (fun _ -> rest_ty))
 
+let every_function_type = function
+  | TFn ([ TFn ([ _ ], truthy); seqable ], TBool)
+    when Option.is_some (Types.truthy_constraint_info truthy)
+         && Option.is_some (Types.seqable_constraint_info seqable) ->
+      true
+  | _ -> false
+
+let non_callable_every_predicate_type = function
+  | TFn _ | TOverloaded_fn _ | TSet _ | TKeyword | TSymbol -> false
+  | ty when Option.is_some (Types.dynamic_map_types ty) -> false
+  | TRecord _ | TNamed_record _ -> false
+  | _ -> true
+
 let is_edn_value_type = Edn_value_elaborator.is_value_type
 
 let rec edn_compatible_static_type = function
@@ -612,8 +625,21 @@ let rec argument_compatible expected actual =
           | ( TFn (expected_params, expected_return),
               TFn (actual_params, actual_return) )
             when List.length expected_params = List.length actual_params ->
-              List.for_all2 parameter_compatible expected_params actual_params
-              && argument_compatible expected_return actual_return
+              (List.for_all2 parameter_compatible expected_params actual_params
+              && argument_compatible expected_return actual_return)
+              ||
+              (every_function_type actual_fn
+              &&
+              match (expected_params, actual_params) with
+              | [ _predicate_ty; collection_ty ], [ _; _ ]
+                when Types.equal collection_ty TNil
+                     || (match collection_ty with
+                        | TUnknown | TMeta _ | TVar _ -> true
+                        | _ -> false)
+                     || Option.is_some
+                          (static_seqable_element_type collection_ty) ->
+                  argument_compatible expected_return TBool
+              | _ -> false)
           | _ -> argument_compatible expected_fn actual_fn
         in
         List.for_all
@@ -3233,6 +3259,62 @@ let overloaded_function_needs_adapter expected_arities actual_arities =
           (stored_overloaded_arity_type actual))
       expected_arities actual_arities
 
+let is_every_function_value expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Ident name ->
+      String.equal name "clojure_core_every_"
+      || String.ends_with ~suffix:".clojure_core_every_" name
+  | _ -> false
+
+let adapt_every_special_arity env expected actual =
+  match (expected, actual.ty) with
+  | TFn ([ predicate_ty; collection_ty ], return_ty), actual_ty
+    when every_function_type actual_ty
+         && is_every_function_value actual.semantic_expr
+         && argument_compatible return_ty TBool ->
+      let predicate_name = "__lg_every_ignored_predicate" in
+      let collection_name = "__lg_every_empty_collection" in
+      let invalid_predicate =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "invalid_arg",
+            [ Semantic_ir.String "every? predicate is not callable" ] )
+      in
+      let invalid_collection =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "invalid_arg",
+            [ Semantic_ir.String "every? collection is not seqable" ] )
+      in
+      let function_ body =
+        Semantic_ir.Fun
+          ( [
+              Semantic_ir.PVar predicate_name;
+              constrained_identifier_pattern collection_name collection_ty;
+            ],
+            body )
+      in
+      (match collection_ty with
+      | TNil -> Ok (function_ (Semantic_ir.Bool true))
+      | TUnknown | TMeta _ | TVar _ -> Ok (function_ invalid_collection)
+      | _ when non_callable_every_predicate_type predicate_ty ->
+          let collection =
+            typed_ir collection_ty (Semantic_ir.Ident collection_name)
+          in
+          Result.map
+            (fun first ->
+              function_
+                (Semantic_ir.Match
+                   ( first.semantic_expr,
+                     [
+                       ( Semantic_ir.PConstructor ("None", None),
+                         Semantic_ir.Bool true );
+                       ( Semantic_ir.PConstructor
+                           ("Some", Some Semantic_ir.PAny),
+                         invalid_predicate );
+                     ] )))
+            (Collection_capability.first_expr env collection)
+      | _ -> Error.error "not a special every? arity")
+  | _ -> Error.error "not a non-callable every? empty-collection adapter"
+
 let function_has_host_int_return_boundary expected actual =
   match (expected, actual) with
   | TFn (_, expected_return), TFn (_, actual_return) ->
@@ -3522,11 +3604,13 @@ let rec adapt_value_to_type env expected actual =
       | [] -> Ok (witness_storage (List.rev adapted))
       | expected :: rest ->
           let selected = typed_ir actual.ty source in
-          Result.bind
-            (adapt_value_to_type env
-               (stored_overloaded_arity_type expected)
-               selected)
-            (fun adapted_arity ->
+          let expected_ty = stored_overloaded_arity_type expected in
+          let adapted_result =
+            match adapt_every_special_arity env expected_ty selected with
+            | Ok adapted_arity -> Ok adapted_arity
+            | Error _ -> adapt_value_to_type env expected_ty selected
+          in
+          Result.bind adapted_result (fun adapted_arity ->
               adapt_arities (adapted_arity :: adapted) rest)
     in
     Result.map

@@ -750,7 +750,7 @@
            :reason :non-integer-input-is-rejected-statically}
     odd? {:status :ported}
     every? {:status :static-adaptation
-            :reason :uses-static-sequence-truthiness-and-indexed-access-after-the-upstream-nonempty-check}
+            :reason :uses-static-sequence-truthiness-and-indexed-access-after-the-upstream-nonempty-check-and-first-class-overload-adapters-preserve-empty-collection-behavior-for-non-callable-predicates-without-dynamic-erasure}
     ffirst {:status :ported}
     fnext {:status :ported}
     nfirst {:status :static-adaptation
