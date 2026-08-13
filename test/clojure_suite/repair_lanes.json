@@ -736,22 +736,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<Lg_edn_backend.t>, nullable<seq<int>>",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.when-let",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/when_let.cljc\", line <n>: lg: = arguments must have the same type: list<Lg_edn_backend.t>, nullable<seq<int>>",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.when-let",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/with_precision.cljc\", line <n>: lg: unknown function with-precision",
     "lane": "design-reader-and-numeric-tower",

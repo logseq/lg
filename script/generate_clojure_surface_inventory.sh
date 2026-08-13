@@ -317,8 +317,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 149; then
-  echo "compiler form dispatch changed: expected 149 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 150; then
+  echo "compiler form dispatch changed: expected 150 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -335,6 +335,7 @@ awk -F '\t' '
     form_reason["__lg_when-some"] = "private-source-static-non-nil-binding-expansion"
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
+    form_reason["__lg_defer_seq"] = "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive"
     form_reason["new"] = "typed-host-constructor-application-elaboration"
     form_reason["#uuid"] = "compiler-owned-tagged-uuid-reader-literal-elaboration"
     form_reason["letfn"] = "compiler-owned-recursive-local-function-binding-elaboration"

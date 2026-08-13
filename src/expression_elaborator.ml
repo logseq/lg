@@ -1935,15 +1935,49 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                         (spec.source_name, ty))
                       specs self_param_tys
                   in
+                  let self_call = function
+                    | FList (FSymbol name :: arguments) ->
+                        (name = source_name
+                        || name = Names.scoped_key scope source_name)
+                        && List.length arguments = List.length specs
+                    | _ -> false
+                  in
+                  let rec recursive_sequence_result = function
+                    | FList [ FSymbol "__lg_cons"; value; tail ]
+                      when self_call tail ->
+                        let element_ty =
+                          Type_inference.inferred_form_type params value
+                        in
+                        if Types.equal element_ty TUnknown then None
+                        else Some (TSeq element_ty)
+                    | FList
+                        [
+                          FSymbol "__lg_defer_seq";
+                          FList
+                            (FSymbol "fn" :: FVector [] :: thunk_body_forms);
+                        ]
+                    | FList (FSymbol ("do" | "let" | "let*") :: thunk_body_forms)
+                      -> (
+                        match List.rev thunk_body_forms with
+                        | result :: _ -> recursive_sequence_result result
+                        | [] -> None)
+                    | _ -> None
+                  in
                   let returned_vector =
                     match List.rev body_forms with
                     | result :: _ ->
                         Type_inference.returned_vector_type params result
                     | [] -> None
                   in
-                  match returned_vector with
-                  | Some _ as vector_ty -> vector_ty
-                  | None ->
+                  let returned_sequence =
+                    match List.rev body_forms with
+                    | result :: _ -> recursive_sequence_result result
+                    | [] -> None
+                  in
+                  match (returned_sequence, returned_vector) with
+                  | Some _ as sequence_ty, _ -> sequence_ty
+                  | None, (Some _ as vector_ty) -> vector_ty
+                  | None, None ->
                       List.combine specs self_param_tys
                       |> List.find_map
                            (fun ((spec : Destructure.param_spec), ty) ->
@@ -2247,88 +2281,39 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
           | _ -> Ok function_))
 
 and compile_named_fn scope env name params body_forms =
-  match Destructure.parse_param_specs params with
-  | Error _ as error -> error
-  | Ok specs ->
-      let variadic =
-        match params with
-        | FVector forms ->
-            let rec split fixed = function
-              | [] -> None
-              | FSymbol "&" :: [ FSymbol _ ] -> Some (List.length fixed)
-              | form :: rest -> split (form :: fixed) rest
-            in
-            split [] forms
-        | _ -> None
-      in
-      let parameter_tys =
-        List.map
-          (fun (spec : Destructure.param_spec) ->
-            Option.value spec.explicit_ty ~default:TUnknown)
-          specs
-      in
-      let ocaml_name =
-        "__lg_named_fn_" ^ Names.sanitize_name name
-      in
-      let self_binding =
-        match variadic with
-        | Some rest_index ->
-            let rec take count values =
-              if count = 0 then []
-              else
-                match values with
-                | value :: rest -> value :: take (count - 1) rest
-                | [] -> []
-            in
-            Types.binding ~overload_targets:[ ocaml_name ] ocaml_name
-              (TOverloaded_fn
-                 [
-                   {
-                     fixed_params = take rest_index parameter_tys;
-                     rest_param = Some TUnknown;
-                     return_ty = TUnknown;
-                   };
-                 ])
-        | None ->
-            Types.binding ocaml_name (TFn (parameter_tys, TUnknown))
-      in
-      let body_env =
-        Env.add (Names.scoped_key scope name) self_binding env
-      in
-      Result.bind (compile_fn scope body_env params body_forms) (fun function_ ->
-          match Semantic_ir.unlocated function_.semantic_expr with
-          | Semantic_ir.Fun (patterns, body) ->
-              Ok
-                {
-                  function_ with
-                  semantic_expr =
-                    Semantic_ir.annotate function_.ty
-                      (Semantic_ir.LetRecIn
-                         ( ocaml_name,
-                           patterns,
-                           body,
-                           Semantic_ir.Ident ocaml_name ));
-                }
-          | Semantic_ir.Tuple
-              [
-                Semantic_ir.Fun (patterns, body);
-                Semantic_ir.Unit;
-              ] ->
-              Ok
-                {
-                  function_ with
-                  semantic_expr =
-                    Semantic_ir.annotate function_.ty
-                      (Semantic_ir.LetRecIn
-                         ( ocaml_name,
-                           patterns,
-                           body,
-                           Semantic_ir.Tuple
-                             [
-                               Semantic_ir.Ident ocaml_name; Semantic_ir.Unit;
-                             ] ));
-                }
-          | _ -> Error.error "named fn requires a function body")
+  let ocaml_name = "__lg_named_fn_" ^ Names.sanitize_name name in
+  Result.bind
+    (prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms)
+    (fun parts ->
+      let function_ = fn_code parts in
+      match Semantic_ir.unlocated function_.semantic_expr with
+      | Semantic_ir.Fun (patterns, body) ->
+          Ok
+            {
+              function_ with
+              semantic_expr =
+                Semantic_ir.annotate function_.ty
+                  (Semantic_ir.LetRecIn
+                     ( ocaml_name,
+                       patterns,
+                       body,
+                       Semantic_ir.Ident ocaml_name ));
+            }
+      | Semantic_ir.Tuple
+          [ Semantic_ir.Fun (patterns, body); Semantic_ir.Unit ] ->
+          Ok
+            {
+              function_ with
+              semantic_expr =
+                Semantic_ir.annotate function_.ty
+                  (Semantic_ir.LetRecIn
+                     ( ocaml_name,
+                       patterns,
+                       body,
+                       Semantic_ir.Tuple
+                         [ Semantic_ir.Ident ocaml_name; Semantic_ir.Unit ] ));
+            }
+      | _ -> Error.error "named fn requires a function body")
 
 and compile_call scope env name arg_forms =
   (Lazy.force context).calls.compile_call scope env name arg_forms

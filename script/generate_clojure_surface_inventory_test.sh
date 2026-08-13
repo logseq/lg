@@ -599,6 +599,7 @@ awk -F '\t' '
 ' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_fn-to-comparator" && $3 == "typed-primitive" && $4 == "typed-return-directed-int-comparator-or-boolean-predicate-normalization-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_get-in-step" && $3 == "typed-primitive" && $4 == "typed-nested-lookup-step-with-closed-edn-and-non-associative-short-circuiting" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && $2 == "__lg_defer_seq" && $3 == "typed-primitive" && $4 == "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "Buffer.t" {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.data" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "namespace" && $2 == "clojure.string" && $3 == "source-with-primitive-boundary" {found=1} END {exit !found}' "$tmp/inventory.tsv"

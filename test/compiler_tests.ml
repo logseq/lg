@@ -6232,6 +6232,27 @@ let test_named_fn_is_locally_recursive () =
 |}
   |> expect_error "unknown symbol private-name"
 
+let test_named_fn_infers_recursive_lazy_sequence_result () =
+  let source =
+    {|
+(def calls (atom 0))
+(def values
+  ((fn repeat-ones []
+     (lazy-seq
+       (swap! calls inc)
+       (cons 1 (repeat-ones))))))
+(println (= '(1 1 1 1 1) (take 5 values)))
+(println (= 5 @calls))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "recursive lazy sequence inference must remain static";
+  assert_ocaml_runs "named_fn_infers_recursive_lazy_sequence_result"
+    "true\ntrue\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_letfn_supports_single_local_recursive_function () =
   let source =
     {|
@@ -26685,6 +26706,11 @@ let test_source_binding_control_macros_match_clojurescript () =
 (println (= 7 (if-let [value (do (swap! evaluations inc) 7)] value 0)))
 (println (= 1 @evaluations))
 (println (= 8 (when-let [value 8] value)))
+(println (= [0 1 2] (when-let [value [0 1 2]] value)))
+(println (= [] (when-let [value []] value)))
+(println (= '(0 1 2 3 4) (when-let [value (range 5)] value)))
+(println (= '(1 2) (when-let [value '(1 2)] value)))
+(println (nil? (when-let [value false] value)))
 (println (= false (when-some [value false] value)))
 (println (nil? (when-let [value nil] value)))
 (println (nil? (when-some [value nil] value)))
@@ -26696,7 +26722,7 @@ let test_source_binding_control_macros_match_clojurescript () =
 (println (= 2 @empty-evaluations))
 |}
   in
-  let expected = String.concat "" (List.init 13 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 18 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native
       "test/source_binding_control_macros.cljc" source
@@ -47874,6 +47900,8 @@ let tests =
     ( "callback return records are materialized",
       test_callback_return_records_are_materialized );
     ("named fn is locally recursive", test_named_fn_is_locally_recursive);
+    ( "named fn infers recursive lazy sequence result",
+      test_named_fn_infers_recursive_lazy_sequence_result );
     ( "letfn supports single local recursive function",
       test_letfn_supports_single_local_recursive_function );
     ( "letfn reports unsupported mutual recursion",

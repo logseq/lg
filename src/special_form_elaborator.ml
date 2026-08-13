@@ -1148,6 +1148,28 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     match option_expression with
     | Error _ as err -> err
     | Ok option_expr
+      when require_truthy
+           &&
+           match Types.constraint_value_type option_expr.ty with
+           | TNil | TBool | TNullable _ | TOcaml "option"
+           | TOcaml_app ("option", [ _ ]) | TUnknown | TMeta _ | TVar _ ->
+               false
+           | ty when Types.is_dynamic ty -> false
+           | _ -> true ->
+        Result.map
+          (fun some_expr ->
+            {
+              some_expr with
+              semantic_expr =
+                Semantic_ir.Let
+                  ( [
+                      ( Semantic_ir.PVar payload_name,
+                        option_expr.semantic_expr );
+                    ],
+                    some_expr.semantic_expr );
+            })
+          (compile_some_branch option_expr.ty)
+    | Ok option_expr
       when Option.is_some (Types.next_seq_element option_expr.ty) -> (
         let element_ty = Option.get (Types.next_seq_element option_expr.ty) in
         let payload_ty = TSeq element_ty in
