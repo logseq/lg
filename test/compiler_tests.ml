@@ -42720,6 +42720,22 @@ let test_random_sample_accepts_nil_collections_from_saved_state () =
        ~filename:"test/random_sample_nil_collection.cljc" melange_state source
      |> expect_ok)
 
+let test_random_sample_accepts_nil_probability_on_melange () =
+  let source =
+    {|
+(ns app.random-sample-nil-probability
+  (:require [cljs.core :refer [= println random-sample seq]]))
+
+(println (= nil (seq (random-sample nil [1 2 3]))))
+|}
+  in
+  let state = cacheable_stdlib_state Lg.Target.Melange in
+  ignore
+    (Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+       ~target:Lg.Target.Melange
+       ~filename:"test/random_sample_nil_probability.cljc" state source
+     |> expect_ok)
+
 let test_set_of_rejects_nil_element_annotation () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
   |> expect_error "unknown set element type :nil"
@@ -49964,6 +49980,8 @@ let tests =
       test_random_sample_accepts_integer_probabilities );
     ( "random-sample accepts nil collections from saved state",
       test_random_sample_accepts_nil_collections_from_saved_state );
+    ( "random-sample accepts nil probability on melange",
+      test_random_sample_accepts_nil_probability_on_melange );
     ( "set-of rejects nil element annotation",
       test_set_of_rejects_nil_element_annotation );
     ( "set-of rejects types without comparators",

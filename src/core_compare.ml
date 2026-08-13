@@ -419,6 +419,23 @@ let dynamic_numeric_pairwise_expressions name args =
   in
   loop [] args
 
+let melange_nil_numeric_args env args =
+  match env with
+  | Some env when Compiler_environment.target env = Target.Melange ->
+      let has_nil = List.exists (fun arg -> Types.equal arg.ty TNil) args in
+      let has_numeric = List.exists (fun arg -> Types.is_numeric arg.ty) args in
+      if has_nil && has_numeric then
+        Some
+          (List.map
+             (fun arg ->
+               if Types.equal arg.ty TNil then
+                 typed_ir TFloat
+                   (Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Float "0." ])
+               else arg)
+             args)
+      else None
+  | Some _ | None -> None
+
 let compile ?env name args =
   match args with
   | [] | [ _ ] ->
@@ -486,6 +503,20 @@ let compile ?env name args =
                  (and_expressions
                     (pairwise_expressions name
                        (List.map Core_float.widen_to_float args))))
+        | Some _ -> (
+            match melange_nil_numeric_args env args with
+            | Some args
+              when List.for_all
+                     (fun arg -> Core_float.accepts_mixed_numeric arg.ty)
+                     args ->
+                Ok
+                  (typed_ir TBool
+                     (and_expressions
+                        (pairwise_expressions name
+                           (List.map Core_float.widen_to_float args))))
+            | Some _ | None ->
+                Error.error
+                  (name ^ " numeric arguments must all have the same type"))
         | _ ->
             Error.error
               (name ^ " numeric arguments must all have the same type"))

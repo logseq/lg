@@ -181,7 +181,7 @@
     / {:status :static-adaptation
        :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-and-direct-int-float-or-mixed-numeric-widening}
     < {:status :static-adaptation
-       :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
+       :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls-and-target-aware-melange-nil-numeric-coercion}
     <= {:status :static-adaptation
         :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-or-mixed-numeric-calls}
     > {:status :static-adaptation
@@ -1007,7 +1007,7 @@
     partitionv-all {:status :static-adaptation
                     :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
     random-sample {:status :static-adaptation
-                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary-while-the-static-signature-accepts-integer-probability-literals-and-nil-collections-as-optional-seqables}
+                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary-while-the-static-signature-accepts-integer-probability-literals-nil-collections-as-optional-seqables-and-the-cljs-only-nil-probability-case-through-melange-nil-numeric-coercion}
     record? {:status :static-adaptation
              :reason :source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch}
     replace {:status :static-adaptation

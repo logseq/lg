@@ -1193,14 +1193,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: random-sample called with incompatible arguments: expected (float, __lg_optional_seqable_constraint<int,seq<int>>), got (nil, seq<int>); incompatible positions: 1",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.random-sample",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/random_uuid.cljc\", line <n>: lg: get key type int is not supported for string",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.random-uuid",
