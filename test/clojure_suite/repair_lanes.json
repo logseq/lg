@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.apply",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/apply.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.apply",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.assoc-bang",

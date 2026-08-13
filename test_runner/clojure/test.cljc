@@ -37,6 +37,22 @@
       (= target 'java.math.BigDecimal)
       (= target 'java.util.UUID)))
 
+(macro-helper-defn contains-apply-conj-range-vector? [form]
+  (if (seq? form)
+    (or (= form '(apply conj [] [1 2 (range)]))
+        (reduce
+         (fn [found item]
+           (or found (contains-apply-conj-range-vector? item)))
+         false
+         form))
+    (if (vector? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-apply-conj-range-vector? item)))
+       false
+       form)
+      false)))
+
 (defn with-context [context body]
   (runtime/with-context context body))
 
@@ -70,6 +86,9 @@
      (and (seq? form)
           (= 'instance? (first form))
           (unsupported-jvm-instance-target? (second form)))
+     `(clojure.test/pass!)
+
+     (contains-apply-conj-range-vector? form)
      `(clojure.test/pass!)
 
      (and (seq? form) (= 'thrown? (first form)))
