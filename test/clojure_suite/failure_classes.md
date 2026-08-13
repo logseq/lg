@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 77 |
-| compile failed | 399 |
+| compiled | 79 |
+| compile failed | 397 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 37 |
-| namespaces failed on both native and Melange | 198 |
+| namespaces compiled on both native and Melange | 38 |
+| namespaces failed on both native and Melange | 197 |
 | native-only compiled namespaces | 1 |
 | Melange-only compiled namespaces | 2 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 38 | 200 |
-| Melange | 39 | 199 |
+| native | 39 | 199 |
+| Melange | 40 | 198 |
 
 Namespaces currently compiling on both targets:
 
@@ -47,6 +47,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.denominator`
 - `clojure.core-test.fn-qmark`
 - `clojure.core-test.format`
+- `clojure.core-test.hash-set`
 - `clojure.core-test.ifn-qmark`
 - `clojure.core-test.intern`
 - `clojure.core-test.keyword`
@@ -79,7 +80,7 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 244 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
+| `static-typing-or-closed-domain-boundary` | 242 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 136 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
 | `host-boundary-or-platform-specific` | 19 | Keep JVM/JS class identity, `cljs.js`, Java interop, JVM `:import`, JVM `definterface`, Clojure Var-object mutation forms, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
@@ -93,10 +94,10 @@ Static typing subclasses:
 | subclass | failures | handling |
 | --- | ---: | --- |
 | `negative-runtime-test-is-static-error` | 119 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. In LG these should usually remain compile-time errors and move to a static-error audit lane, not be fixed with dynamic widening. |
-| `heterogeneous-collection-needs-closed-domain` | 56 | Add explicit closed domains only where the heterogeneous shape is part of a supported API such as ex-data/watch events/EDN; do not erase ordinary collections to dynamic. |
-| `typed-protocol-or-capability-gap` | 27 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup. |
+| `heterogeneous-collection-needs-closed-domain` | 64 | Add explicit closed domains only where the heterogeneous shape is part of a supported API such as ex-data/watch events/EDN; do not erase ordinary collections to dynamic. |
 | `first-class-polymorphic-or-hof` | 16 | Direct calls often work, but the suite passes polymorphic vars such as `=`, `every?`, `some`, or heterogeneously typed functions as first-class values. This needs typed capability dictionaries or explicit overload packaging, not a universal function dynamic. |
-| `transient-collection-boundary` | 10 | Current transient support is partial. Fix with precise transient map/set/vector domains and source-compatible operation arities. |
+| `typed-protocol-or-capability-gap` | 15 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup; `hash-set` now supports nil, char, empty list, vector, nested set, and promotes to smoke coverage on both targets. |
+| `transient-collection-boundary` | 12 | Current transient support is partial. Fix with precise transient map/set/vector domains and source-compatible operation arities. |
 | `dynamic-boundary-needs-closed-domain` | 8 | Failures such as watch events and ex-data cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
 | `form-or-declaration-static-gap` | 8 | Includes forms such as empty-field `deftype`, match-pattern typing, and `(atom nil)` option inference. These need source/type-system work, not stdlib public-name dispatch. |
 
@@ -109,7 +110,7 @@ Static typing subclasses:
 
 ## Current interpretation
 
-The 399 compile failures are not 399 independent core defects. The current
+The 397 compile failures are not 397 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
