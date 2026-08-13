@@ -230,6 +230,21 @@ def classify_static_boundary(error: str) -> str:
     return "other-static-boundary"
 
 
+def classify_result_static_boundary(result: Result) -> str:
+    """Classify static failures that require suite-file context."""
+
+    subclass = classify_static_boundary(result.error)
+    suite_fixture_errors = {
+        "clojure.core-test.juxt": "juxt functions must accept the same argument type",
+        "clojure.core-test.portability": "int? guard narrowing requires a statically typed value",
+        "clojure.core-test.transient": "cannot infer :x as printable<inference-variable> because it is already int",
+    }
+    expected_error = suite_fixture_errors.get(result.namespace)
+    if expected_error is not None and expected_error in result.error:
+        return "suite-polymorphic-fixture-is-static-error"
+    return subclass
+
+
 def grouped_by_namespace(results: Iterable[Result]) -> dict[str, dict[str, Result]]:
     grouped: dict[str, dict[str, Result]] = collections.defaultdict(dict)
     for result in results:
@@ -256,8 +271,11 @@ def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
             continue
         if classify(result.error) != "static-typing-or-closed-domain-boundary":
             continue
-        static_subclass = classify_static_boundary(result.error)
-        if static_subclass != "negative-runtime-test-is-static-error":
+        static_subclass = classify_result_static_boundary(result)
+        if static_subclass not in {
+            "negative-runtime-test-is-static-error",
+            "suite-polymorphic-fixture-is-static-error",
+        }:
             continue
         lane.append(
             {
@@ -274,7 +292,10 @@ def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
 
 
 def repair_lane_for(failure_class: str, static_subclass: str | None) -> str:
-    if static_subclass == "negative-runtime-test-is-static-error":
+    if static_subclass in {
+        "negative-runtime-test-is-static-error",
+        "suite-polymorphic-fixture-is-static-error",
+    }:
         return "audit-as-static-error"
     if static_subclass in {
         "dynamic-boundary-needs-closed-domain",
@@ -315,7 +336,7 @@ def repair_lanes(results: Iterable[Result]) -> list[dict[str, str | None]]:
             continue
         failure_class = classify(result.error)
         static_subclass = (
-            classify_static_boundary(result.error)
+            classify_result_static_boundary(result)
             if failure_class == "static-typing-or-closed-domain-boundary"
             else None
         )
@@ -367,7 +388,7 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
     failures = [result for result in results if result.status != "compiled"]
     class_counts = collections.Counter(classify(result.error) for result in failures)
     static_subclass_counts = collections.Counter(
-        classify_static_boundary(result.error)
+        classify_result_static_boundary(result)
         for result in failures
         if classify(result.error) == "static-typing-or-closed-domain-boundary"
     )

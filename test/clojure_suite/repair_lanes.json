@@ -386,17 +386,17 @@
   {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/juxt.cljc\", line <n>: lg: juxt functions must accept the same argument type",
-    "lane": "implement-static-language-capability",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.juxt",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/juxt.cljc\", line <n>: lg: juxt functions must accept the same argument type",
-    "lane": "implement-static-language-capability",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.juxt",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {
@@ -1058,9 +1058,9 @@
   {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/portability.cljc\", line <n>: lg: int? guard narrowing requires a statically typed value; define a closed sum type for alternative value types",
-    "lane": "implement-static-language-capability",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.portability",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {
@@ -1890,17 +1890,17 @@
   {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/transient.cljc\", line <n>: lg: cannot infer :x as printable<inference-variable> because it is already int",
-    "lane": "implement-static-language-capability",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.transient",
-    "static_subclass": "transient-collection-boundary",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/transient.cljc\", line <n>: lg: cannot infer :x as printable<inference-variable> because it is already int",
-    "lane": "implement-static-language-capability",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.transient",
-    "static_subclass": "transient-collection-boundary",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
     "target": "native"
   },
   {

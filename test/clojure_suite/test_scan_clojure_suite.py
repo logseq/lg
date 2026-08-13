@@ -233,6 +233,49 @@ class SummaryClassificationTests(unittest.TestCase):
             lanes,
         )
 
+    def test_suite_wide_polymorphic_fixtures_are_static_error_audits(self) -> None:
+        results = [
+            self.summary.Result(
+                namespace="clojure.core-test.juxt",
+                file="vendor/clojure-test-suite/test/clojure/core_test/juxt.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=7,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/juxt.cljc", line 8: lg: juxt functions must accept the same argument type',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.transient",
+                file="vendor/clojure-test-suite/test/clojure/core_test/transient.cljc",
+                target="melange",
+                status="compile-failed",
+                elapsed_ms=8,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/transient.cljc", line 12: lg: cannot infer :x as printable<inference-variable> because it is already int',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.portability",
+                file="vendor/clojure-test-suite/test/clojure/core_test/portability.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=9,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/portability.cljc", line 27: lg: int? guard narrowing requires a statically typed value; define a closed sum type for alternative value types',
+            ),
+        ]
+
+        lanes = self.summary.repair_lanes(results)
+
+        self.assertEqual(
+            ["audit-as-static-error", "audit-as-static-error", "audit-as-static-error"],
+            [entry["lane"] for entry in lanes],
+        )
+        self.assertEqual(
+            [
+                "suite-polymorphic-fixture-is-static-error",
+                "suite-polymorphic-fixture-is-static-error",
+                "suite-polymorphic-fixture-is-static-error",
+            ],
+            [entry["static_subclass"] for entry in lanes],
+        )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:

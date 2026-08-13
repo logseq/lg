@@ -264,6 +264,18 @@
     "target": "native"
   },
   {
+    "error": "File \"<suite>/juxt.cljc\", line <n>: lg: juxt functions must accept the same argument type",
+    "namespace": "clojure.core-test.juxt",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/juxt.cljc\", line <n>: lg: juxt functions must accept the same argument type",
+    "namespace": "clojure.core-test.juxt",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
+  },
+  {
     "error": "File \"<suite>/key.cljc\", line <n>: lg: first expects a seqable value",
     "namespace": "clojure.core-test.key",
     "static_subclass": "negative-runtime-test-is-static-error",
@@ -444,6 +456,12 @@
     "target": "native"
   },
   {
+    "error": "File \"<suite>/portability.cljc\", line <n>: lg: int? guard narrowing requires a statically typed value; define a closed sum type for alternative value types",
+    "namespace": "clojure.core-test.portability",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
+  },
+  {
     "error": "File \"<suite>/peek.cljc\", line <n>: lg: no protocol implementation for IStack/-peek and set<int>",
     "namespace": "clojure.core-test.peek",
     "static_subclass": "negative-runtime-test-is-static-error",
@@ -500,6 +518,18 @@
   {
     "error": "File \"<suite>/realized_qmark.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and nil",
     "namespace": "clojure.core-test.realized-qmark",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "native"
+  },
+  {
+    "error": "File \"<suite>/remove.cljc\", line <n>: lg: complement expects a statically typed function",
+    "namespace": "clojure.core-test.remove",
+    "static_subclass": "negative-runtime-test-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/remove.cljc\", line <n>: lg: complement expects a statically typed function",
+    "namespace": "clojure.core-test.remove",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
@@ -676,6 +706,18 @@
     "namespace": "clojure.core-test.taps",
     "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/transient.cljc\", line <n>: lg: cannot infer :x as printable<inference-variable> because it is already int",
+    "namespace": "clojure.core-test.transient",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "melange"
+  },
+  {
+    "error": "File \"<suite>/transient.cljc\", line <n>: lg: cannot infer :x as printable<inference-variable> because it is already int",
+    "namespace": "clojure.core-test.transient",
+    "static_subclass": "suite-polymorphic-fixture-is-static-error",
+    "target": "native"
   },
   {
     "error": "File \"<suite>/underive.cljc\", line <n>: lg: underive called with incompatible arguments: expected (Lg_edn_backend.t, Lg_edn_backend.t, Lg_edn_backend.t), got (Lg_runtime.Runtime_map.t<any,any>, keyword, keyword); incompatible positions: 1",
