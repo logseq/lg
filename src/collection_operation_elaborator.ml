@@ -2902,7 +2902,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | _ -> Error.error "update expects a function")
     in
     let compile_missing_homogeneous_field target fields keyword fn_form fn
-        extra_args =
+        extra_args ~static_ifn_nil =
       let core_unary_updater member =
         match (fn_form, extra_args) with
         | FSymbol name, [] -> core_function_symbol scope env name member
@@ -2921,7 +2921,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | _ -> false
           in
           if not accepts_missing then
-            if core_unary_updater "identity" then
+            if static_ifn_nil || core_unary_updater "identity" then
               let result =
                 typed_ir TNil (Semantic_ir.Constructor ("None", None))
               in
@@ -2949,8 +2949,29 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       | TFn _ -> Error.error "update function argument count mismatch"
       | _ -> Error.error "update expects a function"
     in
+    let static_ifn_nil_updater = function
+      | FKeyword _, []
+      | FMap [], []
+      | FList [ FSymbol "__lg_hash-map" ], []
+      | FList [ FSymbol "__lg_hash-set" ], [] ->
+          true
+      | _ -> false
+    in
       match arg_forms with
       | target_form :: FKeyword keyword :: fn_form :: extra_forms -> (
+          let static_ifn_nil =
+            static_ifn_nil_updater (fn_form, extra_forms)
+          in
+          let fn_form =
+            if static_ifn_nil then
+              FList
+                [
+                  FSymbol "fn";
+                  FVector [ FSymbol "__lg_update_static_ifn_arg" ];
+                  FSymbol "nil";
+                ]
+            else fn_form
+          in
           let with_context context = function
             | Ok _ as result -> result
             | Error (error : Error.t) ->
@@ -3003,7 +3024,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | TNil ->
                   let empty = Structural_map.record_expr [] [] in
                   compile_missing_homogeneous_field empty [] keyword fn_form fn
-                    extra_args
+                    extra_args ~static_ifn_nil
               | TRecord fields | TNamed_record { fields; _ } -> (
                   match find_field keyword fields with
                   | None
@@ -3012,7 +3033,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                              Types.is_homogeneous_record fields
                       | _ -> false) ->
                       compile_missing_homogeneous_field target fields keyword
-                        fn_form fn extra_args
+                        fn_form fn extra_args ~static_ifn_nil
                   | None ->
                       compile_extension target fields keyword fn extra_args
                   | Some field -> (
@@ -3044,7 +3065,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           (not (Types.is_dynamic field.ty))
                           && not (Types.equal ret field.ty)
                         in
-                        if type_change then
+                        if type_change && Types.equal ret TNil then
+                          Structural_map.update_value_as target fields keyword
+                            (TNullable field.ty)
+                            (Semantic_ir.Constructor ("None", None))
+                        else if type_change then
                           Error.error
                             (Printf.sprintf
                                "cannot update %s as %s because it is already %s"

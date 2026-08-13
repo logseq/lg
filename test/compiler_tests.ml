@@ -23079,6 +23079,26 @@ let test_update_missing_key_supports_nullable_core_updaters () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "app/update_missing.cljc" source)
 
+let test_update_supports_static_ifn_updaters () =
+  let source =
+    {|
+(ns app.update-ifn
+  (:require [clojure.core :refer [get nil? println update]]))
+(println (nil? (get (update {:k 5} :k :missing) :k)))
+(println (nil? (get (update {:k 5} :k #{}) :k)))
+(println (nil? (get (update {:k 5} :k {}) :k)))
+(println (nil? (get (update nil :k :missing) :k)))
+(println (nil? (get (update nil :k #{}) :k)))
+(println (nil? (get (update nil :k {}) :k)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/update_ifn.cljc" source
+  in
+  assert_ocaml_runs "update_supports_static_ifn_updaters"
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/update_ifn.cljc" source)
+
 let test_keyword_let_bindings_preserve_static_map_access () =
   let source =
     {|
@@ -47928,6 +47948,8 @@ let tests =
     ("update supports extra arguments", test_update_supports_extra_arguments);
     ( "update missing key supports nullable core updaters",
       test_update_missing_key_supports_nullable_core_updaters );
+    ( "update supports static IFn updaters",
+      test_update_supports_static_ifn_updaters );
     ( "keyword let bindings preserve static map access",
       test_keyword_let_bindings_preserve_static_map_access );
     ( "assoc updates statically typed map record fields",

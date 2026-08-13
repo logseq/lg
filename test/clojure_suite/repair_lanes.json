@@ -3001,18 +3001,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: update expects a function",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/update.cljc\", line <n>: lg: = arguments must have the same type: record<{:k:nullable<int>}>, record<{:k:nil}>",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.update",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/update.cljc\", line <n>: lg: update expects a function",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/update.cljc\", line <n>: lg: = arguments must have the same type: record<{:k:nullable<int>}>, record<{:k:nil}>",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.update",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {
