@@ -1806,6 +1806,99 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_sequence_transducer_accepts_edn_vector_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "sequence_transducer_edn_vector_probe.cljc",
+            "(ns clojure.core-test.sequence-transducer-edn-vector-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest sequence-transducer-edn-vector-compiles\n"
+            "  (let [xf (drop-while keyword?)]\n"
+            "    (is (= [1 2 3] (sequence xf [:a :b :c 1 2 3])))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.sequence-transducer-edn-vector-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_sequence_transducer_accepts_edn_list_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "sequence_transducer_edn_list_probe.cljc",
+            "(ns clojure.core-test.sequence-transducer-edn-list-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest sequence-transducer-edn-list-compiles\n"
+            "  (let [xf (drop-while keyword?)]\n"
+            "    (is (= [1 2 3] (sequence xf (list :a :b :c 1 2 3))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.sequence-transducer-edn-list-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_sequence_transducer_accepts_sorted_map_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "sequence_transducer_sorted_map_probe.cljc",
+            "(ns clojure.core-test.sequence-transducer-sorted-map-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest sequence-transducer-sorted-map-compiles\n"
+            "  (let [xf (drop-while #(not= (first %) :c))]\n"
+            "    (is (= [[:c 3] [:d 4]]\n"
+            "           (sequence xf (sorted-map :a 1 :b 2 :c 3 :d 4))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.sequence-transducer-sorted-map-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_drop_while_accepts_nil_collection(self) -> None:
+        test_file = self.write_suite_file(
+            "drop_while_nil_probe.cljc",
+            "(ns clojure.core-test.drop-while-nil-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest drop-while-nil-collection-compiles\n"
+            "  (is (= [] (drop-while (constantly false) nil)))\n"
+            "  (is (= [] (into [] (drop-while (constantly false)) nil))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.drop-while-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_metadata_map_vector_merges_as_static_map(self) -> None:
         test_file = self.write_suite_file(
             "distinct_metadata_map_vector_probe.cljc",

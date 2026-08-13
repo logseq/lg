@@ -388,9 +388,18 @@ let heterogeneous_collection_error collection values =
   heterogeneous_collection_type_error collection
     (List.map (fun value -> value.ty) values)
 
+let edn_scalar_collection_type = function
+  | TNil | TBool | TInt | TOcaml "int" | TChar | TString | TRegex | TSymbol
+  | TKeyword | TOcaml "Lg_edn_backend.t" ->
+      true
+  | _ -> false
+
 let merge_collection_types collection types =
   match types with
   | [] -> Ok TUnknown
+  | types
+    when collection = "list" && List.for_all edn_scalar_collection_type types ->
+      Ok (TOcaml "Lg_edn_backend.t")
   | first :: rest ->
       let merged =
         List.fold_left
@@ -511,6 +520,31 @@ let pack_plain_dynamic_value value =
 
 let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
   match (target_ty, source_ty) with
+  | TOcaml "Lg_edn_backend.t", TOcaml "Lg_edn_backend.t" -> expression
+  | TOcaml "Lg_edn_backend.t", TNil ->
+      Semantic_ir.Sequence
+        [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ]
+  | TOcaml "Lg_edn_backend.t", TBool ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_bool", [ expression ])
+  | TOcaml "Lg_edn_backend.t", (TInt | TOcaml "int") ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_int", [ expression ])
+  | TOcaml "Lg_edn_backend.t", TChar ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_char", [ expression ])
+  | TOcaml "Lg_edn_backend.t", TString ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_string", [ expression ])
+  | TOcaml "Lg_edn_backend.t", TRegex ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_regex", [ expression ])
+  | TOcaml "Lg_edn_backend.t", TSymbol ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_symbol", [ expression ])
+  | TOcaml "Lg_edn_backend.t", TKeyword ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_keyword", [ expression ])
   | target_ty, source_ty when protocol_has_value target_ty source_ty ->
       let rec unwrap ty expression =
         let unwrap_stored value_ty =

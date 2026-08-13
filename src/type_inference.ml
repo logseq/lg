@@ -1730,8 +1730,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           [
             FSymbol "__lg_first";
             FSymbol collection;
-          ] ->
-        constrain_seqable expected_ty params collection
+          ] -> (
+        match string_assoc_opt collection params with
+        | Some (TUnknown | TMeta _ | TVar _) -> Ok params
+        | Some _ | None -> constrain_seqable expected_ty params collection)
     | FList [ FSymbol "__lg_first"; collection ] ->
         infer_sequence_form expected_ty params collection
     | FList [ FSymbol field_access; FSymbol name ]

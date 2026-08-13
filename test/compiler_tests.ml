@@ -3632,8 +3632,7 @@ let test_heterogeneous_vectors_require_a_declared_sum_type () =
 
 let test_heterogeneous_lists_require_a_declared_sum_type () =
   Lg.Compiler.compile_string {|(def value (__lg_list :tag 1))|}
-  |> expect_error_contains
-       "heterogeneous list has element types int | keyword; define a sum type";
+  |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value (__lg_list 1 2.0))|}
   |> expect_error_contains
        "heterogeneous list has element types float | int; define a sum type"

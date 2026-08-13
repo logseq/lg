@@ -12538,10 +12538,25 @@ let create ~compile_expr =
                                       with
                                     | Ok substitutions ->
                                         Ok
-                                          (Type_solver.unify substitutions
-                                             template actual
-                                          |> Result.value
-                                               ~default:substitutions)
+                                          (match
+                                             ( Types.seqable_constraint_info
+                                                 (Type_solver.apply
+                                                    substitutions template),
+                                               Types.seqable_constraint_info
+                                                 actual )
+                                           with
+                                           | Some _, None ->
+                                               Type_solver.unify substitutions
+                                                 (Types.constraint_value_type
+                                                    template)
+                                                 actual
+                                               |> Result.value
+                                                    ~default:substitutions
+                                           | _ ->
+                                               Type_solver.unify substitutions
+                                                 template actual
+                                               |> Result.value
+                                                    ~default:substitutions)
                                     | Error _
                                       when Option.is_some
                                              (Types.seqable_constraint_info
@@ -13051,7 +13066,10 @@ let create ~compile_expr =
                           Types.seqable_constraint_info actual,
                           Collection_capability.element_type_of_ty env actual )
                       with
-                      | ( Some (`Required, expected_element, expected_value),
+                      | ( Some
+                            ( ( `Required | `Optional | `Optional_sequential ),
+                              expected_element,
+                              expected_value ),
                           None,
                           Some actual_element ) ->
                           (match

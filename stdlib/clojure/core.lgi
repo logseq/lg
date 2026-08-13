@@ -230,9 +230,9 @@
 (signature clojure.core/take-while [input storage accumulator predicate-result]
   :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
 (signature clojure.core/drop-while-seq [input storage predicate-result]
-  :fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>)
+  :fn<fn<input;truthy<predicate-result>>;optional-seqable<input;storage>;seq<input>>)
 (signature clojure.core/drop-while [input storage accumulator predicate-result]
-  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;seqable<input;storage>;seq<input>>>)
+  :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;optional-seqable<input;storage>;seq<input>>>)
 (signature clojure.core/map-indexed-from [input output]
   :fn<fn<int;input;output>;int;seq<input>;seq<output>>)
 (signature clojure.core/map-indexed [input output storage accumulator]
@@ -365,7 +365,8 @@
 (signature clojure.core/int? :fn<int;bool>)
 (signature clojure.core/number? :fn<int;bool>)
 (signature clojure.core/string? :fn<string;bool>)
-(signature clojure.core/keyword? :fn<keyword;bool>)
+(signature clojure.core/keyword? [value]
+  :fn<value;bool>)
 (signature clojure.core/symbol? :fn<symbol;bool>)
 (signature clojure.core/var? [value]
   :fn<value;bool>)
