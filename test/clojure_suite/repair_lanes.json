@@ -1,22 +1,6 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/dissoc.cljc\", line <n>: lg: nil cannot cross a dynamic boundary; give it a concrete option payload type; got nil",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.dissoc",
-    "static_subclass": "dynamic-boundary-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/dissoc.cljc\", line <n>: lg: nil cannot cross a dynamic boundary; give it a concrete option payload type; got nil",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.dissoc",
-    "static_subclass": "dynamic-boundary-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/distinct.cljc\", line <n>: lg: heterogeneous vector has element types Lg_runtime.Runtime_map.t<keyword,keyword> | record<{:k:keyword}>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.distinct",

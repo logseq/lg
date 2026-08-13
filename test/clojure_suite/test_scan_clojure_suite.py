@@ -1585,6 +1585,160 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_apply_dissoc_accepts_nil_keys(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_nil_key_probe.cljc",
+            "(ns clojure.core-test.dissoc-nil-key-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest apply-dissoc-nil-keys-compile\n"
+            "  (are [expected m keys] (= expected (apply dissoc m keys))\n"
+            "    {} {} [nil]\n"
+            "    {} {nil nil} [nil]\n"
+            "    {} {nil nil} [nil nil]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-nil-key-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_apply_dissoc_unknown_record_key_is_static_noop(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_unknown_record_key_probe.cljc",
+            "(ns clojure.core-test.dissoc-unknown-record-key-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(defrecord TestDissocRecord [a b c])\n\n"
+            "(deftest apply-dissoc-unknown-record-key-compiles\n"
+            "  (let [r (TestDissocRecord. 1 2 nil)]\n"
+            "    (is (= r (apply dissoc r [:d])))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-unknown-record-key-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_apply_dissoc_record_suite_rows_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_record_suite_rows_probe.cljc",
+            "(ns clojure.core-test.dissoc-record-suite-rows-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(defrecord TestDissocRecord [a b c])\n\n"
+            "(deftest apply-dissoc-record-suite-rows-compile\n"
+            "  (let [r (TestDissocRecord. 1 2 nil)]\n"
+            "    (are [expected keys] (= expected (apply dissoc r keys))\n"
+            "      {:b 2 :c nil} [:a]\n"
+            "      {:b 2 :c nil} [:a :d]\n"
+            "      {} [:a :b :c]\n"
+            "      r [:d])))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-record-suite-rows-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_dissoc_meta_preservation_row_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_meta_preservation_probe.cljc",
+            "(ns clojure.core-test.dissoc-meta-preservation-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest dissoc-meta-preservation-compiles\n"
+            "  (let [test-meta {:me \"ta\"}\n"
+            "        with-test-meta #(with-meta % test-meta)\n"
+            "        with-test-meta? #(= test-meta (meta %))]\n"
+            "    (is (with-test-meta? (dissoc (with-test-meta {:a 1 :b 2}) :a)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-meta-preservation-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_apply_dissoc_non_nil_suite_rows_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_non_nil_suite_rows_probe.cljc",
+            "(ns clojure.core-test.dissoc-non-nil-suite-rows-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]))\n\n"
+            "(deftest apply-dissoc-non-nil-suite-rows-compile\n"
+            "  (testing \"non-nil\"\n"
+            "    (are [expected m keys] (= expected (apply dissoc m keys))\n"
+            "      {} {} []\n"
+            "      {:a 1} {:a 1} []\n"
+            "      {} {:a 1} [:a]\n"
+            "      {} {:a 1} [:a :a]\n"
+            "      {} {:a 1 :b 2} [:a :b]\n"
+            "      {:b 2} {:a 1 :b 2} [:a]\n"
+            "      {:b 2} {:a 1 :b 2} [:a :c])))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-non-nil-suite-rows-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_dissoc_sorted_map_row_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "dissoc_sorted_map_probe.cljc",
+            "(ns clojure.core-test.dissoc-sorted-map-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest dissoc-sorted-map-compiles\n"
+            "  (is (sorted? (dissoc (sorted-map :a 1 :b 2) :a))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.dissoc-sorted-map-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

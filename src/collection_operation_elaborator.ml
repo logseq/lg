@@ -90,7 +90,8 @@ let runtime_map_operation key_ty operation =
   else ""
 
 let runtime_map_key_type declared actual =
-  if
+  if Types.equal actual TNil then TNil
+  else if
     Types.is_dynamic declared || Types.is_dynamic actual
     || Types.equal declared TUnknown
   then
@@ -2652,7 +2653,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target -> (
               match target.ty with
               | TNamed_record { nominal = true; _ }
-                when List.exists (function FKeyword _ -> false | _ -> true) key_forms ->
+                when Protocol.type_satisfies env Core_protocols.map_id target.ty ->
                   let form =
                     List.fold_left
                       (fun current key ->
