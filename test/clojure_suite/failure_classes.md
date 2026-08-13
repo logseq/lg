@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 73 |
-| compile failed | 403 |
+| compiled | 77 |
+| compile failed | 399 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 35 |
-| namespaces failed on both native and Melange | 200 |
+| namespaces compiled on both native and Melange | 37 |
+| namespaces failed on both native and Melange | 198 |
 | native-only compiled namespaces | 1 |
 | Melange-only compiled namespaces | 2 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 36 | 202 |
-| Melange | 37 | 201 |
+| native | 38 | 200 |
+| Melange | 39 | 199 |
 
 Namespaces currently compiling on both targets:
 
@@ -58,6 +58,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.number-range`
 - `clojure.core-test.numerator`
 - `clojure.core-test.or`
+- `clojure.core-test.plus-squote`
 - `clojure.core-test.pr-str`
 - `clojure.core-test.print-str`
 - `clojure.core-test.println-str`
@@ -66,6 +67,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.rationalize`
 - `clojure.core-test.sequential-qmark`
 - `clojure.core-test.some-qmark`
+- `clojure.core-test.star-squote`
 - `clojure.core-test.symbol`
 - `clojure.core-test.uuid-qmark`
 - `clojure.core-test.var-qmark`
@@ -78,9 +80,9 @@ Namespaces currently compiling on both targets:
 | class | failures | handling |
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 246 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
-| `reader-or-numeric-literal` | 130 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
+| `reader-or-numeric-literal` | 134 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
 | `host-boundary-or-platform-specific` | 17 | Keep JVM/JS class identity, `cljs.js`, Java interop, JVM `definterface`, Clojure Var-object mutation forms, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
-| `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
+| `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
 | `missing-core-api-macro-or-var` | 0 | The current scan has no remaining failures in this class. New entries should be inspected before adding compiler-owned public-name dispatch. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
@@ -206,6 +208,11 @@ in `scan_report.json` but still be blocked from smoke promotion.
   object: current `#'x` compilation resolves to the referenced static value for
   call/deref compatibility, so bound Var-object identity remains outside this
   narrow predicate surface.
+- `clojure.core-test.portability/big-int?` is available as a suite helper and
+  `+'`/`*'` bodies are gated as unsupported numeric-tower tests. This removes
+  the remaining suite-helper failure class and promotes `plus_squote.cljc` and
+  `star_squote.cljc` on both Native and Melange. Ordinary `plus.cljc` and
+  `star.cljc` now fail later on bigint reader literals such as `1N`.
 
 ## Suggested repair order
 

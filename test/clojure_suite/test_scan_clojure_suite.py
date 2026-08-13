@@ -124,8 +124,9 @@ class ScannerDependencyTests(unittest.TestCase):
         test_file = self.write_suite_file(
             "portability_helper_probe.cljc",
             "(ns clojure.core-test.portability-helper-probe\n"
-            "  (:require [clojure.core-test.portability :refer [sleep] :as p]))\n\n"
+            "  (:require [clojure.core-test.portability :refer [big-int? sleep] :as p]))\n\n"
             "(def slept (sleep 0))\n"
+            "(def big-int-check (big-int? 1))\n"
             "(def lazy-check (p/lazy-seq? (list 1 2)))\n",
         )
 
@@ -150,7 +151,11 @@ class ScannerDependencyTests(unittest.TestCase):
             "             #?(:cljs :refer-macros :default :refer)\n"
             "             [when-var-exists]]))\n\n"
             "(when-var-exists missing-lg-suite-var\n"
-            "  (def impossible (definitely-not-a-function 1)))\n",
+            "  (def impossible (definitely-not-a-function 1)))\n"
+            "(when-var-exists +'\n"
+            "  (def impossible-plus-squote (definitely-not-a-function 1)))\n"
+            "(when-var-exists *'\n"
+            "  (def impossible-star-squote (definitely-not-a-function 1)))\n",
         )
 
         failures = []

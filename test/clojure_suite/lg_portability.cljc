@@ -1,7 +1,9 @@
 (ns clojure.core-test.portability)
 
 (macro-helper-defn unsupported-lg-suite-var? [var-sym]
-  (or (= var-sym 'bound-fn)
+  (or (= var-sym '+')
+      (= var-sym '*')
+      (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
       (= var-sym 'denominator)
       (= var-sym 'eval)
@@ -36,6 +38,9 @@
 
 (defn sleep [_ms]
   nil)
+
+(defn big-int? [_x]
+  false)
 
 (defn lazy-seq? [_x]
   true)
