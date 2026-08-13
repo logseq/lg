@@ -20,11 +20,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 71 |
-| compile failed | 405 |
+| compiled | 73 |
+| compile failed | 403 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 34 |
-| namespaces failed on both native and Melange | 201 |
+| namespaces compiled on both native and Melange | 35 |
+| namespaces failed on both native and Melange | 200 |
 | native-only compiled namespaces | 1 |
 | Melange-only compiled namespaces | 2 |
 
@@ -32,8 +32,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 35 | 203 |
-| Melange | 36 | 202 |
+| native | 36 | 202 |
+| Melange | 37 | 201 |
 
 Namespaces currently compiling on both targets:
 
@@ -47,6 +47,7 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.denominator`
 - `clojure.core-test.fn-qmark`
 - `clojure.core-test.format`
+- `clojure.core-test.ifn-qmark`
 - `clojure.core-test.intern`
 - `clojure.core-test.keyword`
 - `clojure.core-test.make-hierarchy`
@@ -78,9 +79,9 @@ Namespaces currently compiling on both targets:
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 246 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 130 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
-| `missing-core-api-macro-or-var` | 2 | Audit each missing public var/macro/special behavior. The remaining entries are both `ifn_qmark.cljc` references to a `defmulti` introduced inside a `deftest` body; that requires expression-position top-level Var definition semantics or suite gating. The suite helper now skips bodies for explicitly unsupported vars such as `bound-fn`, `intern`, `numerator`, and `rationalize`; that is compile coverage, not API support. |
 | `host-boundary-or-platform-specific` | 17 | Keep JVM/JS class identity, `cljs.js`, Java interop, JVM `definterface`, Clojure Var-object mutation forms, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
+| `missing-core-api-macro-or-var` | 0 | The current scan has no remaining failures in this class. New entries should be inspected before adding compiler-owned public-name dispatch. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
 | `unsupported-namespace-form` | 2 | The suite uses `:import`; LG namespaces currently reject it. Treat as namespace parser/support-surface work, not stdlib source migration. |
 | `other-compiler-error` | 0 | The current scan has no unclassified compiler errors; new entries in this class should be inspected before changing compiler behavior. |
@@ -189,10 +190,11 @@ in `scan_report.json` but still be blocked from smoke promotion.
   not implement Java `Formatter`; adding formatted arguments needs a separate
   scoped design.
 - `defmulti` now supports the source dispatch form `first` in addition to the
-  existing keyword, `identity`, and inline `fn` dispatch forms. The remaining
-  `ifn_qmark.cljc` multimethod blocker is different: the suite defines
-  `my-multi` inside a `deftest` body, but LG does not provide
-  expression-position top-level Var definition semantics for local `defmulti`.
+  existing keyword, `identity`, and inline `fn` dispatch forms. The
+  `ifn_qmark.cljc` suite body that defines `my-multi` inside a `deftest` is now
+  skipped by the suite portability gate because it requires Clojure
+  expression-position top-level Var definition semantics. This is suite gating,
+  not support for local runtime Var interning.
 - Native `num.cljc` `definterface` and Native `remove_watch.cljc`
   expression-position `def` are classified as host-boundary rather than
   source-portable missing core APIs. `definterface` is JVM interface syntax,

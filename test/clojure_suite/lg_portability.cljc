@@ -11,8 +11,26 @@
       (= var-sym 'rationalize)
       (= var-sym 'missing-lg-suite-var)))
 
+(macro-helper-defn contains-defmulti-form? [form]
+  (if (seq? form)
+    (or (= 'defmulti (first form))
+        (reduce
+         (fn [found item]
+           (or found (contains-defmulti-form? item)))
+         false
+         form))
+    (if (vector? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-defmulti-form? item)))
+       false
+       form)
+      false)))
+
 (defmacro when-var-exists [var-sym & body]
-  (if (unsupported-lg-suite-var? var-sym)
+  (if (or (unsupported-lg-suite-var? var-sym)
+          (and (= var-sym 'defmulti)
+               (contains-defmulti-form? body)))
     `(println "SKIP -" '~var-sym)
     `(do ~@body)))
 
