@@ -93,6 +93,12 @@ class SummaryClassificationTests(unittest.TestCase):
                 "heterogeneous-collection-needs-closed-domain",
             "File \"<suite>/apply.cljc\", line <n>: lg: apply argument type mismatch: expected int, got char":
                 "negative-runtime-test-is-static-error",
+            "File \"<suite>/namespace.cljc\", line <n>: lg: no protocol implementation for clojure.core/INamed/-namespace and nil":
+                "negative-runtime-test-is-static-error",
+            "File \"<suite>/realized_qmark.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and nil":
+                "negative-runtime-test-is-static-error",
+            "File \"<suite>/peek.cljc\", line <n>: lg: no protocol implementation for IStack/-peek and set<int>":
+                "negative-runtime-test-is-static-error",
             "File \"<suite>/drop_last.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and seq<int>":
                 "typed-protocol-or-capability-gap",
             "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs":

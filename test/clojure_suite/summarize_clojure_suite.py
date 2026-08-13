@@ -187,6 +187,12 @@ def classify_static_boundary(error: str) -> str:
 
     if (
         "no protocol implementation" in lower
+        and (" and nil" in lower or "istack/-peek" in lower)
+    ):
+        return "negative-runtime-test-is-static-error"
+
+    if (
+        "no protocol implementation" in lower
         or "requires a generated comparator" in lower
         or "sets require" in lower
         or "requires a statically typed" in lower

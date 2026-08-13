@@ -94,13 +94,13 @@ Static typing subclasses:
 
 | subclass | failures | handling |
 | --- | ---: | --- |
-| `negative-runtime-test-is-static-error` | 119 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. In LG these should usually remain compile-time errors and move to a static-error audit lane, not be fixed with dynamic widening. |
+| `negative-runtime-test-is-static-error` | 125 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. In LG these should usually remain compile-time errors and move to a static-error audit lane, not be fixed with dynamic widening. |
 | `heterogeneous-collection-needs-closed-domain` | 64 | Add explicit closed domains only where the heterogeneous shape is part of a supported API such as ex-data/watch events/EDN; do not erase ordinary collections to dynamic. |
 | `first-class-polymorphic-or-hof` | 16 | Direct calls often work, but the suite passes polymorphic vars such as `=`, `every?`, `some`, or heterogeneously typed functions as first-class values. This needs typed capability dictionaries or explicit overload packaging, not a universal function dynamic. |
-| `typed-protocol-or-capability-gap` | 14 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup; `hash-set` now supports nil, char, empty list, vector, nested set, and promotes to smoke coverage on both targets. |
 | `transient-collection-boundary` | 12 | Current transient support is partial. Fix with precise transient map/set/vector domains and source-compatible operation arities. |
 | `dynamic-boundary-needs-closed-domain` | 8 | Failures such as watch events and ex-data cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
 | `form-or-declaration-static-gap` | 8 | Includes forms such as empty-field `deftype`, match-pattern typing, and `(atom nil)` option inference. These need source/type-system work, not stdlib public-name dispatch. |
+| `typed-protocol-or-capability-gap` | 8 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup; `hash-set` now supports nil, char, empty list, vector, nested set, and promotes to smoke coverage on both targets. |
 
 ## Platform skew
 
