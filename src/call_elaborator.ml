@@ -4395,6 +4395,12 @@ let compile_equality scope env args =
   in
   let compile_pair left right =
     let fallback () = Core_compare.compile ~env "=" [ left; right ] in
+    let sequential_edn_elements = function
+      | TList element_ty | TSeq element_ty | TVector element_ty
+      | TArray element_ty ->
+          is_edn_value_type element_ty
+      | _ -> false
+    in
     let tuple_sequential_pair () =
       match
         ( pack_metadata_value left,
@@ -4446,6 +4452,11 @@ let compile_equality scope env args =
                 && tuple_or_nullable_tuple right_ty ->
              true
          | _ -> false)
+      then tuple_sequential_pair ()
+      else if
+        Core_compare.sequential_type left.ty
+        && Core_compare.sequential_type right.ty
+        && (sequential_edn_elements left.ty || sequential_edn_elements right.ty)
       then tuple_sequential_pair ()
       else if
         is_edn_value_type left.ty && is_edn_value_type right.ty

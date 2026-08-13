@@ -542,16 +542,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               let rec loop acc = function
                 | [] ->
                     let values = List.rev acc in
-                    Result.map
-                      (fun element_ty ->
-                        typed_ir (TList element_ty)
-                          (Semantic_ir.List
-                             (List.map
-                                (fun value ->
-                                  coerce_expression_to_type element_ty value.ty
-                                    value.semantic_expr)
-                                values)))
-                      (merge_collection_value_types "list" values)
+                    (match merge_collection_value_types "list" values with
+                    | Ok element_ty ->
+                        Ok
+                          (typed_ir (TList element_ty)
+                             (Semantic_ir.List
+                                (List.map
+                                   (fun value ->
+                                     coerce_expression_to_type element_ty
+                                       value.ty value.semantic_expr)
+                                   values)))
+                    | Error _ as error ->
+                        let rec pack packed = function
+                          | [] ->
+                              Ok
+                                (typed_ir
+                                   (TList Edn_value_elaborator.value_ty)
+                                   (Semantic_ir.List (List.rev packed)))
+                          | value :: rest ->
+                              Result.bind
+                                (Edn_value_elaborator.pack_expression value.ty
+                                   value.semantic_expr)
+                                (fun packed_value ->
+                                  pack (packed_value :: packed) rest)
+                        in
+                        (match pack [] values with
+                        | Ok _ as packed -> packed
+                        | Error _ -> error))
                 | form :: rest -> (
                     match compile_expr scope env form with
                     | Error _ as err -> err

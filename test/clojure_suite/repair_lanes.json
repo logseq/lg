@@ -225,22 +225,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/list.cljc\", line <n>: lg: heterogeneous list has element types record<{:a:int}> | record<{:b:int}>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.list",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/list.cljc\", line <n>: lg: heterogeneous list has element types record<{:a:int}> | record<{:b:int}>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.list",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/long.cljc\", line <n>: lg: long expects a numeric value",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.long",
@@ -445,22 +429,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.partition",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/pop.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.pop",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/pop.cljc\", line <n>: lg: heterogeneous vector has element types int | seq<int>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.pop",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {
@@ -885,22 +853,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.vals",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vector.cljc\", line <n>: lg: heterogeneous vector has element types record<{:a:int}> | record<{:b:int}>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.vector",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/vector.cljc\", line <n>: lg: heterogeneous vector has element types record<{:a:int}> | record<{:b:int}>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.vector",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {

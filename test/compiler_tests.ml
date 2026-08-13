@@ -1688,15 +1688,20 @@ let test_record_collection_callbacks_disambiguate_field_types () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_heterogeneous_record_vectors_require_a_declared_sum_type () =
-  Lg.Compiler.compile_string
+let test_heterogeneous_structural_record_vectors_use_closed_edn () =
+  let source =
     {|
 (def integer-value {:value 1})
 (def string-value {:value "one"})
 (def values [integer-value string-value])
+(println (pr-str values))
 |}
-  |> expect_error_contains
-       "record<{:value:int}> | record<{:value:string}>; define a sum type"
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "heterogeneous_structural_record_vectors_use_closed_edn"
+    "[{:value 1} {:value \"one\"}]\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_declared_and_anonymous_record_vectors_require_sum_type () =
   Lg.Compiler.compile_string
@@ -2261,8 +2266,7 @@ let test_seq_instance_validation_rejects_heterogeneous_storage () =
   in
   compile_string_with_stdlib source
   |> expect_error_contains
-       "heterogeneous vector has element types record<{:not-a-datom:bool}> | \
-        vector<keyword>; define a sum type containing these types"
+       "Lg_edn_backend.t Seq.t"
 
 let test_condp_selects_first_match_and_evaluates_target_once () =
   let source =
@@ -3657,25 +3661,44 @@ let test_external_closed_types_use_static_comparison_witnesses () =
   assert_ocaml_runs "external_closed_types_use_static_comparison_witnesses"
     "true\n" ocaml
 
-let test_heterogeneous_vectors_require_a_declared_sum_type () =
-  Lg.Compiler.compile_string {|(def value [:tag 1])|}
-  |> expect_error_contains
-       "heterogeneous vector has element types int | keyword; define a sum type"
+let test_heterogeneous_vectors_use_closed_edn_or_require_a_sum () =
+  Lg.Compiler.compile_string {|(def value [:tag 1])|} |> expect_ok |> ignore;
+  Lg.Compiler.compile_string {|(def value [(fn [x] x) 1])|}
+  |> expect_error_contains "define a sum type"
 
-let test_heterogeneous_lists_require_a_declared_sum_type () =
+let test_heterogeneous_lists_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string {|(def value (__lg_list :tag 1))|}
   |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value (__lg_list 1 2.0))|}
-  |> expect_error_contains
-       "heterogeneous list has element types float | int; define a sum type"
+  |> expect_ok |> ignore;
+  Lg.Compiler.compile_string {|(def value (__lg_list (fn [x] x) 1))|}
+  |> expect_error_contains "define a sum type"
 
-let test_heterogeneous_sets_require_a_declared_sum_type () =
-  Lg.Compiler.compile_string {|(def value #{:tag 1})|}
-  |> expect_error_contains
-       "heterogeneous set has element types int | keyword; define a sum type";
-  Lg.Compiler.compile_string {|(def value #{1 2.0})|}
-  |> expect_error_contains
-       "heterogeneous set has element types float | int; define a sum type"
+let test_clojure_data_collections_use_closed_edn_elements () =
+  let source =
+    {|
+(def listed (list {:a 1} {:b 2}))
+(def vectored (vector {:a 1} {:b 2}))
+(def all-data (list 1 :a "b" \c true nil '() [] #{} {}))
+(println (pr-str listed))
+(println (pr-str vectored))
+(println (pr-str all-data))
+(println (= listed '({:a 1} {:b 2})))
+(println (= vectored [{:a 1} {:b 2}]))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "clojure_data_collections_use_closed_edn_elements"
+    "({:a 1} {:b 2})\n[{:a 1} {:b 2}]\n(1 :a \"b\" \\c true nil () [] #{} {})\ntrue\ntrue\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_heterogeneous_sets_use_closed_edn_or_require_a_sum () =
+  Lg.Compiler.compile_string {|(def value #{:tag 1})|} |> expect_ok |> ignore;
+  Lg.Compiler.compile_string {|(def value #{1 2.0})|} |> expect_ok |> ignore;
+  Lg.Compiler.compile_string {|(def value #{(fn [x] x) 1})|}
+  |> expect_error_contains "define a sum type"
 
 let test_heterogeneous_computed_maps_require_declared_sum_types () =
   Lg.Compiler.compile_string
@@ -13962,7 +13985,7 @@ let test_nested_heterogeneous_vector_elements_require_a_sum () =
     {|
 (def actual (mapv :name [{:name "Ivan"} {}]))
 |}
-  |> expect_error_contains "define a sum type"
+  |> expect_error_contains "not a homogeneous static map"
 
 let test_destructured_row_parameter_stays_structural () =
   let source =
@@ -21259,9 +21282,9 @@ let test_if_some_heterogeneous_vectors_require_sum_elements () =
 |}
   in
   compile_string_with_stdlib source
-  |> expect_error_contains "heterogeneous vector";
+  |> expect_error_contains "Lg_edn_backend.t option Rrbvec.t";
   compile_string_with_stdlib ~target:Lg.Target.Melange source
-  |> expect_error_contains "define a sum type"
+  |> expect_error_contains "Lg_edn_backend.t option Rrbvec.t"
 
 let test_conditional_heterogeneous_vectors_require_sum_elements () =
   let source =
@@ -21313,10 +21336,10 @@ let test_conditional_heterogeneous_vectors_require_sum_elements () =
   in
   compile_string_with_stdlib source
   |> expect_error_contains
-       "define a closed sum type containing the supported records";
+       "ex-info data literal cannot contain symbol-predicate";
   compile_string_with_stdlib ~target:Lg.Target.Melange source
   |> expect_error_contains
-       "define a closed sum type containing the supported records"
+       "ex-info data literal cannot contain symbol-predicate"
 
 let test_nullable_sequence_branches_do_not_gain_nested_options () =
   let source =
@@ -29214,7 +29237,7 @@ let test_untyped_heterogeneous_record_fields_are_rejected () =
   in
   compile_with_stdlib_result Lg.Target.Native
     "test/untyped_heterogeneous_record_fields.cljc" source
-  |> expect_error_contains "define a sum type containing these types"
+  |> expect_error_contains "host values cannot cross a dynamic boundary"
 
 let test_callable_set_parameters_remain_sets_for_conj () =
   let source =
@@ -42781,7 +42804,7 @@ let test_concat_rejects_nested_heterogeneous_vectors () =
 |}
   in
   compile_string_from_stdlib source
-  |> expect_error_contains "define a sum type"
+  |> expect_error_contains "Lg_edn_backend.t Rrbvec.t Seq.t"
 
 let test_contains_infers_generic_membership_for_variable_keys () =
   let source =
@@ -47202,8 +47225,8 @@ let tests =
       test_same_named_record_argument_is_not_projected );
     ( "record collection callbacks disambiguate field types",
       test_record_collection_callbacks_disambiguate_field_types );
-    ( "heterogeneous record vectors require a declared sum type",
-      test_heterogeneous_record_vectors_require_a_declared_sum_type );
+    ( "heterogeneous structural record vectors use closed EDN",
+      test_heterogeneous_structural_record_vectors_use_closed_edn );
     ( "declared and anonymous record vectors require a sum type",
       test_declared_and_anonymous_record_vectors_require_sum_type );
     ("println outputs record values", test_println_outputs_record_values);
@@ -47372,12 +47395,14 @@ let tests =
       test_external_closed_types_use_static_equality_and_hash_witnesses );
     ( "external closed types use static comparison witnesses",
       test_external_closed_types_use_static_comparison_witnesses );
-    ( "heterogeneous vectors require a declared sum type",
-      test_heterogeneous_vectors_require_a_declared_sum_type );
-    ( "heterogeneous lists require a declared sum type",
-      test_heterogeneous_lists_require_a_declared_sum_type );
-    ( "heterogeneous sets require a declared sum type",
-      test_heterogeneous_sets_require_a_declared_sum_type );
+    ( "heterogeneous vectors use closed EDN or require a sum",
+      test_heterogeneous_vectors_use_closed_edn_or_require_a_sum );
+    ( "heterogeneous lists use closed EDN or require a sum",
+      test_heterogeneous_lists_use_closed_edn_or_require_a_sum );
+    ( "Clojure data collections use closed EDN elements",
+      test_clojure_data_collections_use_closed_edn_elements );
+    ( "heterogeneous sets use closed EDN or require a sum",
+      test_heterogeneous_sets_use_closed_edn_or_require_a_sum );
     ( "heterogeneous computed maps require declared sum types",
       test_heterogeneous_computed_maps_require_declared_sum_types );
     ( "vector updates require sum elements",
