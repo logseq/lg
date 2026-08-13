@@ -115,6 +115,14 @@ class SummaryClassificationTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(expected, self.summary.classify_static_boundary(message))
 
+    def test_classifies_letfn_as_form_support_gap(self) -> None:
+        self.assertEqual(
+            "unsupported-form-or-arity",
+            self.summary.classify(
+                'File "<suite>/every_qmark.cljc", line <n>: lg: unknown function letfn'
+            ),
+        )
+
     def test_builds_machine_readable_static_error_lane(self) -> None:
         results = [
             self.summary.Result(

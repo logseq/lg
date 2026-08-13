@@ -475,6 +475,9 @@ let function_types_unify left right =
   Result.is_ok (Type_solver.unify Type_solver.empty left right)
   || edn_function_call_compatible left right
 
+let should_accumulate_overloaded_function_call existing_ty expected_ty =
+  not (Types.equal existing_ty expected_ty)
+
 let same_fixed_arity left right =
   List.length left.fixed_params = List.length right.fixed_params
   && Option.is_none left.rest_param && Option.is_none right.rest_param
@@ -501,7 +504,7 @@ let overload_incompatible_function_call existing_ty expected_ty =
   | _ -> None
 
 let can_accumulate_overloaded_function_parameter name =
-  String.equal name "eq"
+  String.equal name "eq" || String.equal name "every-fn"
 
 let rec constrain_symbol expected_ty params name =
   match string_assoc_opt name params with
@@ -556,7 +559,8 @@ and constrain_monomorphic_symbol expected_ty params name existing_ty =
       overload_incompatible_function_call existing_ty expected_ty
     else None
   with
-  | Some overloaded when not (function_types_unify existing_ty expected_ty) ->
+  | Some overloaded
+    when should_accumulate_overloaded_function_call existing_ty expected_ty ->
       Ok (replace_param name overloaded params)
   | _ ->
       let substitutions =

@@ -32,19 +32,19 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: every-fn called with incompatible arguments: expected (set<keyword>, set<int>), got (fn<(int) -> bool>, vector<int>)",
-    "lane": "implement-static-language-capability",
+    "class": "unsupported-form-or-arity",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: unknown function letfn",
+    "lane": "implement-form-or-reader-support",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": null,
     "target": "melange"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: every-fn called with incompatible arguments: expected (set<keyword>, set<int>), got (fn<(int) -> bool>, vector<int>)",
-    "lane": "implement-static-language-capability",
+    "class": "unsupported-form-or-arity",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: unknown function letfn",
+    "lane": "implement-form-or-reader-support",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": null,
     "target": "native"
   },
   {

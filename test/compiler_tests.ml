@@ -41324,6 +41324,33 @@ let test_sequence_boolean_predicates_accept_truthy_results () =
   assert_ocaml_runs "sequence_boolean_predicates_accept_truthy_results" "true\n"
     ocaml_source
 
+let test_source_first_class_every_parameter_is_statically_overloaded () =
+  let source =
+    {|
+(ns app.first-class-every-parameter)
+
+(defn every-suite [every-fn]
+  (if (every-fn odd? [1 3 5])
+    (if (every-fn even? (hash-set 2 4 6))
+      (if (every-fn (hash-set :a :b :c) [:a :b :c])
+        true
+        false)
+      false)
+    false))
+
+(println (every-suite every?))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/first_class_every.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class every? parameter must remain statically overloaded";
+  assert_ocaml_runs "source_first_class_every_parameter" "true\n"
+    native_source;
+  compile_with_stdlib Lg.Target.Melange "test/first_class_every.cljc" source
+  |> ignore
+
 let test_empty_core_api () =
   let source =
     {|
@@ -49559,6 +49586,8 @@ let tests =
     ("sequence boolean predicates work", test_sequence_boolean_predicates);
     ( "sequence boolean predicates accept truthy results",
       test_sequence_boolean_predicates_accept_truthy_results );
+    ( "source first-class every? parameter is statically overloaded",
+      test_source_first_class_every_parameter_is_statically_overloaded );
     ("empty core api works", test_empty_core_api);
     ( "zero arity generic vector constructor specializes in function",
       test_zero_arity_generic_vector_constructor_specializes_in_function );

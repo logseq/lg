@@ -80,6 +80,13 @@ let row_argument_counter = ref 0
 let array_literal_counter = ref 0
 let atom_options_counter = ref 0
 
+let static_seqable_element_type ty =
+  match Types.constraint_value_type ty with
+  | TList element_ty | TVector element_ty | TSet element_ty | TSeq element_ty
+  | TArray element_ty ->
+      Some element_ty
+  | value_ty -> Types.seqable_constraint_element value_ty
+
 let array_element_needs_binding expression =
   match Semantic_ir.unlocated expression with
   | Int _ | Int64 _ | Float _ | String _ | Char _ | Bool _ | Unit | Ident _ ->
@@ -568,6 +575,48 @@ let rec argument_compatible expected actual =
                 argument_compatible expected_fn
                   (TFn (actual_params, arity.return_ty)))
           arities
+    | TOverloaded_fn expected_arities, (TFn _ as actual_fn) ->
+        let function_type (arity : fn_arity) =
+          let parameters =
+            match arity.rest_param with
+            | None -> arity.fixed_params
+            | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
+          in
+          TFn (parameters, arity.return_ty)
+        in
+        let parameter_compatible expected actual =
+          argument_compatible expected actual
+          || Result.is_ok (Type_solver.unify Type_solver.empty actual expected)
+          || Result.is_ok (Type_solver.unify Type_solver.empty expected actual)
+          ||
+          (match (expected, actual) with
+          | TSet expected_element, TFn ([ actual_element ], actual_return) ->
+              argument_compatible actual_element expected_element
+              && (Types.equal actual_return TBool
+                 || Option.is_some (Types.truthy_constraint_info actual_return)
+                 || Option.is_some (optional_payload actual_return))
+          | _ -> false)
+          ||
+          match
+            ( static_seqable_element_type expected,
+              Types.seqable_constraint_info actual )
+          with
+          | Some expected_element, Some (_, actual_element, _) ->
+              argument_compatible actual_element expected_element
+          | _ -> false
+        in
+        let generic_function_compatible expected_fn =
+          match (expected_fn, actual_fn) with
+          | ( TFn (expected_params, expected_return),
+              TFn (actual_params, actual_return) )
+            when List.length expected_params = List.length actual_params ->
+              List.for_all2 parameter_compatible expected_params actual_params
+              && argument_compatible expected_return actual_return
+          | _ -> argument_compatible expected_fn actual_fn
+        in
+        List.for_all
+          (fun expected -> generic_function_compatible (function_type expected))
+          expected_arities
     | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
         let function_type (arity : fn_arity) =
           let parameters =
@@ -3201,6 +3250,13 @@ let rec adapt_value_to_type env expected actual =
   else if Types.equal expected TInt && Types.equal actual.ty (TOcaml "int") then
     Ok actual.semantic_expr
   else if
+    match (expected, actual.ty) with
+    | TFn ([ _ ], _), TSet _ -> true
+    | _ -> false
+  then
+    Result.bind (adapt_set_callable actual) (fun callable ->
+        adapt_value_to_type env expected callable)
+  else if
     match (expected, Types.dynamic_map_types actual.ty) with
     | TFn ([ _ ], _), Some _ -> true
     | _ -> false
@@ -3394,6 +3450,41 @@ let rec adapt_value_to_type env expected actual =
           Semantic_ir.Let
               ([ (Semantic_ir.PVar source_name, actual.semantic_expr) ], adapted))
       (adapt_arities [] expected_arities)
+  else if
+    match (expected, actual.ty) with
+    | TOverloaded_fn _, TFn _ -> true
+    | _ -> false
+  then
+    let expected_arities =
+      match expected with
+      | TOverloaded_fn expected_arities -> expected_arities
+      | _ -> assert false
+    in
+    let source_name = "__lg_generic_function_overload_adapter" in
+    let source =
+      match Semantic_ir.unlocated actual.semantic_expr with
+      | Semantic_ir.Ident _ -> actual.semantic_expr
+      | _ -> Semantic_ir.Ident source_name
+    in
+    let rec adapt_arities adapted = function
+      | [] -> Ok (witness_storage (List.rev adapted))
+      | expected :: rest ->
+          let selected = typed_ir actual.ty source in
+          Result.bind
+            (adapt_value_to_type env
+               (stored_overloaded_arity_type expected)
+               selected)
+            (fun adapted_arity ->
+              adapt_arities (adapted_arity :: adapted) rest)
+    in
+    Result.map
+      (fun adapted ->
+        match Semantic_ir.unlocated actual.semantic_expr with
+        | Semantic_ir.Ident _ -> adapted
+        | _ ->
+            Semantic_ir.Let
+              ([ (Semantic_ir.PVar source_name, actual.semantic_expr) ], adapted))
+      (adapt_arities [] expected_arities)
   else if function_needs_type_adapter expected actual.ty then
     match (expected, actual.ty) with
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
@@ -3430,7 +3521,19 @@ let rec adapt_value_to_type env expected actual =
                 then TInt
                 else actual
               in
-              Result.bind (adapt_value_to_type env actual argument)
+              let adapted_argument =
+                match (expected, actual) with
+                | TFn _, TFn _
+                  when argument_compatible expected actual
+                       || Result.is_ok
+                            (Type_solver.unify Type_solver.empty actual expected)
+                       || Result.is_ok
+                            (Type_solver.unify Type_solver.empty expected actual)
+                  ->
+                    Ok argument.semantic_expr
+                | _ -> adapt_value_to_type env actual argument
+              in
+              Result.bind adapted_argument
                 (fun argument ->
                   adapt_arguments (argument :: adapted) expected_rest
                     actual_rest names)
@@ -13955,6 +14058,11 @@ let create ~compile_expr =
                                    | _ -> false ->
                               adapt_value_to_type env expected_ty arg
                             | _, TOverloaded_fn _
+                              when match expected_ty with
+                                   | TOverloaded_fn _ -> true
+                                   | _ -> false ->
+                              adapt_value_to_type env expected_ty arg
+                            | _, TFn _
                               when match expected_ty with
                                    | TOverloaded_fn _ -> true
                                    | _ -> false ->

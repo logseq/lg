@@ -753,6 +753,13 @@ let rec inferred_form_type params = function
         when List.for_all (fun ty -> Types.equal first ty) rest ->
           TList first
       | _ -> TList (Types.dynamic_constraint TUnknown))
+  | FVector values -> (
+      match List.map (inferred_form_type params) values with
+      | [] -> TVector TUnknown
+      | first :: rest
+        when List.for_all (fun ty -> Types.equal first ty) rest ->
+          TVector first
+      | _ -> TUnknown)
   | FList (FSymbol "__lg_hash-set" :: values) -> (
       match List.map (inferred_form_type params) values with
       | [] -> TSet TUnknown
@@ -1210,6 +1217,22 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     if Type_solver.is_open direct_ty then
       inferred_call_return_type ~lookup_function_ty params form
     else direct_ty
+  in
+  let specialize_accumulating_hof_parameter_types name parameter_types =
+    if not (can_accumulate_overloaded_function_parameter name) then
+      parameter_types
+    else
+      match parameter_types with
+      | (TUnknown | TMeta _ | TVar _) :: collection_ty :: rest -> (
+          match static_seqable_element_type collection_ty with
+          | Some element_ty ->
+              TFn
+                ( [ element_ty ],
+                  Types.truthy_constraint TUnknown
+                )
+              :: collection_ty :: rest
+          | None -> parameter_types)
+      | _ -> parameter_types
   in
   let constrain_protocol_symbol constraint_ty params receiver =
     let value_ty =
@@ -1672,7 +1695,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let parameter_types =
           List.mapi
             (fun index argument ->
-              let argument_ty = inferred_form_type params argument in
+              let argument_ty =
+                inferred_form_or_call_type ~lookup_function_ty params argument
+              in
               let argument_ty =
                 if Types.equal argument_ty TUnknown then
                   inferred_call_return_type ~lookup_function_ty params argument
@@ -1685,6 +1710,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    ^ string_of_int index)
               | ty -> ty)
             args
+        in
+        let parameter_types =
+          specialize_accumulating_hof_parameter_types name parameter_types
         in
         match
           constrain_symbol (TFn (parameter_types, expected_ty)) params name
@@ -2015,7 +2043,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       when has_source_name predicate "__lg_empty-predicate" ->
         infer_form params value
     | FList (FSymbol name :: args) when string_mem_assoc name params ->
-        let parameter_types = List.map (inferred_form_type params) args in
+        let parameter_types =
+          List.map
+            (inferred_form_or_call_type ~lookup_function_ty params)
+            args
+          |> specialize_accumulating_hof_parameter_types name
+        in
         constrain_symbol (TFn (parameter_types, TBool)) params name
     | FList [ FKeyword keyword; FSymbol name ] ->
         add_record_field_constraint name keyword
@@ -3708,7 +3741,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let parameter_tys =
           List.mapi
             (fun index argument ->
-              let argument_ty = inferred_form_type params argument in
+              let argument_ty =
+                inferred_form_or_call_type ~lookup_function_ty params argument
+              in
               let argument_ty =
                 if Types.equal argument_ty TUnknown then
                   inferred_call_return_type ~lookup_function_ty params argument
@@ -3721,6 +3756,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                    ^ string_of_int index)
               | ty -> ty)
             arguments
+        in
+        let parameter_tys =
+          specialize_accumulating_hof_parameter_types name parameter_tys
         in
         match constrain_symbol (TFn (parameter_tys, TUnknown)) params name with
         | Error _ as err -> err

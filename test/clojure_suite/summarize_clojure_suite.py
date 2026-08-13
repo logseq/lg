@@ -134,6 +134,9 @@ def classify(error: str) -> str:
     if "defmulti currently supports" in lower:
         return "missing-core-api-macro-or-var"
 
+    if "unknown function letfn" in lower:
+        return "unsupported-form-or-arity"
+
     if (
         "unknown function" in lower
         or "unknown symbol" in lower
