@@ -462,6 +462,8 @@ let rec argument_compatible expected actual =
   else if Option.is_some (Types.nil_predicate_constraint_info expected) then
     true
   else if Option.is_some (Types.printable_constraint_info expected) then true
+  else if Option.is_some (Types.exception_data_constraint_info expected) then
+    true
   else if Option.is_some (Types.hashable_constraint_info expected) then true
   else if Option.is_some (Types.comparable_constraint_info expected) then true
   else if Option.is_some (Types.array_index_constraint_info expected) then true
@@ -706,6 +708,7 @@ let has_capability_constraint ty =
   || Option.is_some (Types.truthy_constraint_info ty)
   || Option.is_some (Types.nil_predicate_constraint_info ty)
   || Option.is_some (Types.printable_constraint_info ty)
+  || Option.is_some (Types.exception_data_constraint_info ty)
   || Option.is_some (Types.hashable_constraint_info ty)
   || Option.is_some (Types.comparable_constraint_info ty)
   || Option.is_some (Types.array_index_constraint_info ty)
@@ -771,6 +774,14 @@ let constrained_identifier_expression name ty =
                         build value_ty;
                     ]
                 | None -> (
+                    match Types.exception_data_constraint_info ty with
+                    | Some value_ty ->
+                        Semantic_ir.Tuple
+                          [
+                            Semantic_ir.Ident (name ^ "__ex_data");
+                            build value_ty;
+                          ]
+                    | None -> (
                     match Types.hashable_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.Tuple
@@ -825,7 +836,7 @@ let constrained_identifier_expression name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.Ident name))))))))))
+            | _ -> Semantic_ir.Ident name)))))))))))
   in
   build ty
 
@@ -869,6 +880,14 @@ let constrained_identifier_pattern name ty =
                         build value_ty;
                     ]
                 | None -> (
+                    match Types.exception_data_constraint_info ty with
+                    | Some value_ty ->
+                        Semantic_ir.PTuple
+                          [
+                            Semantic_ir.PVar (name ^ "__ex_data");
+                            build value_ty;
+                          ]
+                    | None -> (
                     match Types.hashable_constraint_info ty with
                     | Some value_ty ->
                         Semantic_ir.PTuple
@@ -923,7 +942,7 @@ let constrained_identifier_pattern name ty =
                        else name ^ "__seq_optional");
                     build value_ty;
                   ]
-            | _ -> Semantic_ir.PVar name))))))))))
+            | _ -> Semantic_ir.PVar name)))))))))))
   in
   build ty
 
@@ -978,6 +997,11 @@ let rec constrained_value_expression ty expression =
               constrained_value_expression value_ty
                 (constrained_value_projection expression)
           | None -> (
+              match Types.exception_data_constraint_info ty with
+              | Some value_ty ->
+                  constrained_value_expression value_ty
+                    (constrained_value_projection expression)
+              | None -> (
               match Types.hashable_constraint_info ty with
               | Some value_ty ->
                   constrained_value_expression value_ty
@@ -1010,7 +1034,7 @@ let rec constrained_value_expression ty expression =
              || constraint_name = Types.optional_sequential_constraint_name ->
           constrained_value_expression value_ty
             (constrained_value_projection expression)
-      | _ -> expression)))))))))
+      | _ -> expression))))))))))
 
 let constrained_argument_value argument =
   match Semantic_ir.unlocated argument.semantic_expr with
@@ -1951,6 +1975,34 @@ let rec pack_constrained_value ?row_type_name env expected argument =
           Semantic_ir.Tuple
             [ Semantic_ir.Tuple [ display_witness; readable_witness ]; packed ])
         (pack_constrained_value env value_ty argument)
+  | expected, actual
+    when Option.is_some (Types.exception_data_constraint_info expected)
+         && Option.is_some (Types.exception_data_constraint_info actual) ->
+      Ok (constrained_argument_expression argument)
+  | expected, _
+    when Option.is_some (Types.exception_data_constraint_info expected) ->
+      let value_ty =
+        Types.exception_data_constraint_info expected |> Option.get
+      in
+      let witness_value_ty =
+        match value_ty with
+        | TUnknown | TMeta _ | TVar _ ->
+            Types.constraint_value_type argument.ty
+        | ty -> ty
+      in
+      let value_name = "__lg_exception_data_value" in
+      let value = typed_ir witness_value_ty (Semantic_ir.Ident value_name) in
+      Result.bind
+        (dynamic_scalar_value env
+           (Types.dynamic_constraint TUnknown)
+           value)
+        (fun witness_body ->
+          let witness =
+            Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], witness_body)
+          in
+          Result.map
+            (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+            (pack_constrained_value env value_ty argument))
   | expected, actual
     when Option.is_some (Types.hashable_constraint_info expected)
          && Option.is_some (Types.hashable_constraint_info actual) ->
@@ -7787,6 +7839,19 @@ let create ~compile_expr =
           Semantic_ir.Apply
             (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), args)
         in
+        let compile_exception_data_value value =
+          match Types.exception_data_constraint_info value.ty with
+          | Some _ ->
+              let expression = constrained_argument_expression value in
+              Ok
+                (Semantic_ir.Apply
+                   ( constrained_witness_projection expression,
+                     [ constrained_value_projection expression ] ))
+          | None ->
+              dynamic_scalar_value env
+                (Types.dynamic_constraint TUnknown)
+                value
+        in
         let rec compile_exception_data_literal = function
           | FSymbol "nil" ->
               Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
@@ -7845,9 +7910,9 @@ let create ~compile_expr =
               match compile_expr scope env form with
               | Ok value when Types.is_dynamic value.ty -> Ok value.semantic_expr
               | Ok value -> (
-                  match pack_plain_dynamic_value value with
-                  | Some packed -> Ok packed
-                  | None ->
+                  match compile_exception_data_value value with
+                  | Ok packed -> Ok packed
+                  | Error _ ->
                       Error.error
                         ("ex-info data literal cannot contain "
                        ^ Types.source_name value.ty
@@ -7855,58 +7920,58 @@ let create ~compile_expr =
                           already in the exception data boundary"))
               | Error _ as error -> error)
         in
-        let compile_ex_info message data_form data cause =
-          let packed_data =
-            match data_form with
-            | FMap _ ->
-                (* The data argument is the only open payload field on
-                   Exception_info. Literal EDN-like maps are constructed
-                   directly inside this documented boundary instead of allowing
-                   records or ordinary collections to cross dynamic function
-                   boundaries globally. *)
-                (match compile_exception_data_literal data_form with
-                | Ok _ as packed -> packed
-                | Error _ ->
-                    pack_dynamic_value env
-                      (Types.dynamic_constraint TUnknown)
-                      data)
-            | _ ->
-                pack_dynamic_value env
-                  (Types.dynamic_constraint TUnknown)
-                  data
-          in
-          Result.map
-            (fun data ->
-              let callee, semantic_args =
-                match cause with
-                | None ->
-                    ( "Lg_runtime.Runtime_exception.ex_info",
-                      [ message.semantic_expr; data ] )
-                | Some cause ->
-                    ( "Lg_runtime.Runtime_exception.ex_info_with_cause",
-                      [ message.semantic_expr; data; cause.semantic_expr ] )
-              in
-              typed_ir (TOcaml "exn")
-                (Semantic_ir.Apply (Semantic_ir.Ident callee, semantic_args)))
-            packed_data
+        let compile_message form =
+          match compile_expr scope env form with
+          | Ok message when Types.equal message.ty TString -> Ok message
+          | Ok _ -> Error.error "ex-info message must be a string"
+          | Error _ as error -> error
         in
-        (match compile_args () with
-        | Error _ as error -> error
-        | Ok ([ message; _ ] | [ message; _; _ ])
-          when not (Types.equal message.ty TString) ->
-            Error.error "ex-info message must be a string"
-        | Ok [ _; _; cause ] when not (Types.equal cause.ty (TOcaml "exn")) ->
-            Error.error "ex-info cause must be an exception"
-        | Ok [ message; data ] -> (
-            match arg_forms with
-            | [ _; data_form ] -> compile_ex_info message data_form data None
-            | _ -> Error.error "ex-info expects 2 or 3 arguments")
-        | Ok [ message; data; cause ] ->
-            (match arg_forms with
-            | [ _; data_form; _ ] ->
-                compile_ex_info message data_form data (Some cause)
-            | _ -> Error.error "ex-info expects 2 or 3 arguments")
-        | Ok _ -> Error.error "ex-info expects 2 or 3 arguments")
+        let compile_data data_form =
+          match data_form with
+          | FMap _ ->
+              (* The data argument is the only open payload field on
+                 Exception_info. Literal EDN-like maps are constructed
+                 directly inside this documented boundary instead of allowing
+                 records or ordinary collections to cross dynamic function
+                 boundaries globally. *)
+              compile_exception_data_literal data_form
+          | _ ->
+              Result.bind (compile_expr scope env data_form) (fun data ->
+                  pack_dynamic_value env
+                    (Types.dynamic_constraint TUnknown)
+                    data)
+        in
+        let compile_cause form =
+          match compile_expr scope env form with
+          | Ok cause when Types.equal cause.ty (TOcaml "exn") -> Ok cause
+          | Ok _ -> Error.error "ex-info cause must be an exception"
+          | Error _ as error -> error
+        in
+        let compile_ex_info message data cause =
+          let callee, semantic_args =
+            match cause with
+            | None ->
+                ( "Lg_runtime.Runtime_exception.ex_info",
+                  [ message.semantic_expr; data ] )
+            | Some cause ->
+                ( "Lg_runtime.Runtime_exception.ex_info_with_cause",
+                  [ message.semantic_expr; data; cause.semantic_expr ] )
+          in
+          Ok
+            (typed_ir (TOcaml "exn")
+               (Semantic_ir.Apply (Semantic_ir.Ident callee, semantic_args)))
+        in
+        (match arg_forms with
+        | [ message_form; data_form ] ->
+            Result.bind (compile_message message_form) (fun message ->
+                Result.bind (compile_data data_form) (fun data ->
+                    compile_ex_info message data None))
+        | [ message_form; data_form; cause_form ] ->
+            Result.bind (compile_message message_form) (fun message ->
+                Result.bind (compile_cause cause_form) (fun cause ->
+                    Result.bind (compile_data data_form) (fun data ->
+                        compile_ex_info message data (Some cause))))
+        | _ -> Error.error "ex-info expects 2 or 3 arguments")
     | "throw" -> (
         match compile_args () with
         | Error _ as error -> error

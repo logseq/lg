@@ -464,7 +464,7 @@
     ex-cause {:status :static-adaptation
               :reason :source-function-exposes-the-upstream-exception-info-cause-as-a-closed-optional-exception-through-a-minimal-internal-runtime-primitive}
     ex-info {:status :host-boundary
-             :reason :two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-the-open-data-map-remains-in-the-existing-exception-only-runtime-boundary}
+             :reason :two-and-three-arity-construction-preserves-the-upstream-message-data-and-optional-exception-cause-while-local-static-scalars-cross-through-an-internal-exception-data-capability-inside-the-existing-exception-only-runtime-boundary}
     re-pattern {:status :static-adaptation
                 :reason :source-string-to-regex-function-and-inline-regex-identity-preserve-upstream-first-class-logseq-use-and-direct-call-overload-through-a-minimal-validated-static-regex-primitive}
     re-find {:status :static-adaptation
@@ -474,7 +474,7 @@
     re-seq {:status :static-adaptation
             :reason :source-function-preserves-upstream-successive-regex-match-results-through-a-documented-internal-dynamic-boundary-for-the-open-string-or-capture-vector-result-shape}
     ex-data {:status :static-adaptation
-             :reason :source-function-exposes-the-upstream-exception-info-data-through-a-documented-exception-only-dynamic-payload-boundary}
+             :reason :source-function-exposes-the-upstream-exception-info-data-through-a-documented-exception-only-dynamic-payload-boundary-backed-by-the-internal-exception-data-capability}
     js-obj {:status :host-boundary
             :reason :javascript-object-construction-has-no-portable-native-ocaml-representation-and-cannot-be-modeled-as-a-static-clojure-map-without-changing-identity-and-interop-semantics}
     js->clj {:status :host-boundary

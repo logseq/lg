@@ -1242,6 +1242,14 @@ let fn_code ?(row_param_type_names = []) parts =
                     capability_pattern ?value_type name value_ty;
                   ]
             | None -> (
+                match Types.exception_data_constraint_info ty with
+                | Some value_ty ->
+                    Semantic_ir.PTuple
+                      [
+                        Semantic_ir.PVar (name ^ "__ex_data");
+                        capability_pattern ?value_type name value_ty;
+                      ]
+                | None -> (
                 match Types.hashable_constraint_info ty with
                 | Some value_ty ->
                     Semantic_ir.PTuple
@@ -1302,7 +1310,7 @@ let fn_code ?(row_param_type_names = []) parts =
                 if String.equal type_name "_" then pattern
                 else Semantic_ir.PConstraint (pattern, type_name))
               value_type)
-        ))))))))
+        )))))))))
   in
   let param_patterns =
     List.map2 (fun name ty -> (name, ty)) param_names param_tys
@@ -1317,6 +1325,7 @@ let fn_code ?(row_param_type_names = []) parts =
                || Option.is_some (Types.truthy_constraint_info ty)
                || Option.is_some (Types.nil_predicate_constraint_info ty)
                || Option.is_some (Types.printable_constraint_info ty)
+               || Option.is_some (Types.exception_data_constraint_info ty)
                || Option.is_some (Types.hashable_constraint_info ty)
                || Option.is_some (Types.comparable_constraint_info ty)
                || Option.is_some (Types.array_index_constraint_info ty)
@@ -1371,9 +1380,11 @@ let fn_code ?(row_param_type_names = []) parts =
                     || Option.is_some
                          (Types.truthy_constraint_info binding.ty)
                     || Option.is_some
-                         (Types.nil_predicate_constraint_info binding.ty)
+                        (Types.nil_predicate_constraint_info binding.ty)
                     || Option.is_some
                          (Types.printable_constraint_info binding.ty)
+                    || Option.is_some
+                         (Types.exception_data_constraint_info binding.ty)
                     || Option.is_some
                          (Types.hashable_constraint_info binding.ty)
                     || Option.is_some

@@ -793,8 +793,10 @@ supports the pinned upstream two- and three-argument arities without widening
 its existing exception-only data boundary.
 `ex-data` is source-owned and returns the documented exception-only open data
 payload. Non-empty EDN-like literal maps passed to `ex-info` are built directly
-inside that payload boundary, so ordinary records and collections still do not
-gain a global dynamic conversion path.
+inside that payload boundary. Local static scalar values used in those literal
+maps cross through an internal `exception-data<T>` capability carried only by
+the exception-data path, so ordinary records and collections still do not gain
+a global dynamic conversion path.
 `*exec-tap-fn*`, `add-tap`, `remove-tap`, and `tap>` are source-owned core
 functions backed by a documented tap runtime boundary. The boundary stores tap
 callbacks as `Runtime_dynamic.t -> unit` and converts each direct `tap>` call

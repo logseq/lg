@@ -33,18 +33,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: tests called with incompatible arguments: expected (fn<(fn<(int) -> truthy<any>>, vector<int>) -> any; (fn<(int) -> truthy<any>>, set<int>) -> any; (inference-variable, nil) -> any; (fn<(any) -> truthy<any>>, vector<any>) -> any; (inference-variable, inference-variable) -> any; (set<keyword>, vector<keyword>) -> any; (set<keyword>, vector<keyword>) -> bool; (record<{:a:string,:b:string,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:string,:c:string}>, vector<keyword>) -> bool; (record<{:a:string,:b:nil,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:nil,:c:string}>, vector<keyword>) -> bool; (record<{:a:string,:b:bool,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:bool,:c:string}>, vector<keyword>) -> bool; (fn<(nil) -> truthy<any>>, vector<nil>) -> any; (fn<(bool) -> truthy<any>>, vector<bool>) -> any; (set<nil>, vector<nil>) -> any; (set<bool>, vector<bool>) -> any; (inference-variable, inference-variable) -> any; (fn<(keyword) -> truthy<any>>, vector<keyword>) -> any; (fn<(symbol) -> truthy<any>>, vector<symbol>) -> any; (fn<(string) -> truthy<any>>, vector<string>) -> any; (fn<(vector<any>) -> truthy<any>>, vector<vector<any>>) -> any; (fn<(float) -> truthy<any>>, vector<float>) -> any; (fn<(int) -> truthy<any>>, seq<int>) -> any; (string, vector<any>) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any>), got (fn<(fn<(param/value) -> truthy<param/result>>, seqable<param/value>) -> bool>)",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": "dynamic-boundary-needs-closed-domain",
+    "static_subclass": "first-class-polymorphic-or-hof",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: tests called with incompatible arguments: expected (fn<(fn<(int) -> truthy<any>>, vector<int>) -> any; (fn<(int) -> truthy<any>>, set<int>) -> any; (inference-variable, nil) -> any; (fn<(any) -> truthy<any>>, vector<any>) -> any; (inference-variable, inference-variable) -> any; (set<keyword>, vector<keyword>) -> any; (set<keyword>, vector<keyword>) -> bool; (record<{:a:string,:b:string,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:string,:c:string}>, vector<keyword>) -> bool; (record<{:a:string,:b:nil,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:nil,:c:string}>, vector<keyword>) -> bool; (record<{:a:string,:b:bool,:c:string}>, vector<keyword>) -> any; (record<{:a:string,:b:bool,:c:string}>, vector<keyword>) -> bool; (fn<(nil) -> truthy<any>>, vector<nil>) -> any; (fn<(bool) -> truthy<any>>, vector<bool>) -> any; (set<nil>, vector<nil>) -> any; (set<bool>, vector<bool>) -> any; (inference-variable, inference-variable) -> any; (fn<(keyword) -> truthy<any>>, vector<keyword>) -> any; (fn<(symbol) -> truthy<any>>, vector<symbol>) -> any; (fn<(string) -> truthy<any>>, vector<string>) -> any; (fn<(vector<any>) -> truthy<any>>, vector<vector<any>>) -> any; (fn<(float) -> truthy<any>>, vector<float>) -> any; (fn<(int) -> truthy<any>>, seq<int>) -> any; (string, vector<any>) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any; (inference-variable, nil) -> any; (inference-variable, inference-variable) -> any; (inference-variable, inference-variable) -> any>), got (fn<(fn<(param/value) -> truthy<param/result>>, seqable<param/value>) -> bool>)",
+    "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": "dynamic-boundary-needs-closed-domain",
+    "static_subclass": "first-class-polymorphic-or-hof",
     "target": "native"
   },
   {

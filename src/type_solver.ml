@@ -360,6 +360,12 @@ let rec unify substitutions left right =
     | TOcaml_app ("__lg_printable_constraint", [ value_ty ]), ty
     | ty, TOcaml_app ("__lg_printable_constraint", [ value_ty ]) ->
         unify substitutions value_ty ty
+    | ( TOcaml_app ("__lg_exception_data_constraint", [ left ]),
+        TOcaml_app ("__lg_exception_data_constraint", [ right ]) ) ->
+        unify substitutions left right
+    | TOcaml_app ("__lg_exception_data_constraint", [ value_ty ]), ty
+    | ty, TOcaml_app ("__lg_exception_data_constraint", [ value_ty ]) ->
+        unify substitutions value_ty ty
     | ( TOcaml_app ("__lg_hashable_constraint", [ left ]),
         TOcaml_app ("__lg_hashable_constraint", [ right ]) ) ->
         unify substitutions left right

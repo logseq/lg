@@ -114,6 +114,11 @@ let constrain_seqable element_ty params name =
         Types.printable_constraint
           (add_constraint
              (Option.get (Types.printable_constraint_info existing)))
+    | existing
+      when Option.is_some (Types.exception_data_constraint_info existing) ->
+        Types.exception_data_constraint
+          (add_constraint
+             (Option.get (Types.exception_data_constraint_info existing)))
     | existing when Option.is_some (Types.hashable_constraint_info existing) ->
         Types.hashable_constraint
           (add_constraint
@@ -1998,6 +2003,31 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           | Ok params -> loop params rest)
     in
     loop params forms
+  and infer_exception_data_literal params = function
+    | FSymbol "nil" | FBool _ | FInt _ | FFloat _ | FChar _ | FString _
+    | FRegex _ | FKeyword _ ->
+        Ok params
+    | FSymbol name -> constrain_exception_data_symbol params name
+    | FList [ FSymbol ("quote" | "clojure.core/quote"); FSymbol _ ] ->
+        Ok params
+    | FVector values -> infer_exception_data_values params values
+    | FMap entries -> infer_exception_data_entries params entries
+    | form -> infer_form params form
+  and infer_exception_data_values params = function
+    | [] -> Ok params
+    | value :: rest ->
+        Result.bind
+          (infer_exception_data_literal params value)
+          (fun params -> infer_exception_data_values params rest)
+  and infer_exception_data_entries params = function
+    | [] -> Ok params
+    | (key, value) :: rest ->
+        Result.bind
+          (infer_exception_data_literal params key)
+          (fun params ->
+            Result.bind
+              (infer_exception_data_literal params value)
+              (fun params -> infer_exception_data_entries params rest))
   and infer_truthy params = function
     | FList (FSymbol "__lg_logical-and" :: conditions) ->
         let optionalize_guard params = function
@@ -5420,13 +5450,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                       (Types.printable_constraint (Type_solver.fresh ()))
                       params arg))
           (Ok params) args
-    | FList [ FSymbol "ex-info"; message; data ] ->
+    | FList [ FSymbol ex_info; message; data ]
+      when has_source_name ex_info "ex-info" ->
         Result.bind (infer_expected TString params message) (fun params ->
-            infer_expected (Types.dynamic_constraint TUnknown) params data)
-    | FList [ FSymbol "ex-info"; message; data; cause ] ->
+            match data with
+            | FMap _ -> infer_exception_data_literal params data
+            | _ -> infer_expected (Types.dynamic_constraint TUnknown) params data)
+    | FList [ FSymbol ex_info; message; data; cause ]
+      when has_source_name ex_info "ex-info" ->
         Result.bind (infer_expected TString params message) (fun params ->
             Result.bind
-              (infer_expected (Types.dynamic_constraint TUnknown) params data)
+              (match data with
+              | FMap _ -> infer_exception_data_literal params data
+              | _ -> infer_expected (Types.dynamic_constraint TUnknown) params data)
               (fun params -> infer_expected (TOcaml "exn") params cause))
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
         match infer_truthy params condition with

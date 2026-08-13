@@ -126,6 +126,13 @@ let rec refine_type existing inferred =
            (Types.printable_constraint_info existing |> Option.get)
            (Types.printable_constraint_info inferred |> Option.get))
   | existing, inferred
+    when Option.is_some (Types.exception_data_constraint_info existing)
+         && Option.is_some (Types.exception_data_constraint_info inferred) ->
+      Types.exception_data_constraint
+        (refine_type
+           (Types.exception_data_constraint_info existing |> Option.get)
+           (Types.exception_data_constraint_info inferred |> Option.get))
+  | existing, inferred
     when Option.is_some (Types.comparable_constraint_info existing)
          && Option.is_some (Types.comparable_constraint_info inferred) ->
       Types.comparable_constraint
@@ -174,6 +181,17 @@ and refine_nonmatching_type existing inferred =
       Types.printable_constraint
         (refine_type existing
            (Types.printable_constraint_info inferred |> Option.get))
+  | existing, inferred
+    when Option.is_some (Types.exception_data_constraint_info existing) ->
+      Types.exception_data_constraint
+        (refine_type
+           (Types.exception_data_constraint_info existing |> Option.get)
+           inferred)
+  | existing, inferred
+    when Option.is_some (Types.exception_data_constraint_info inferred) ->
+      Types.exception_data_constraint
+        (refine_type existing
+           (Types.exception_data_constraint_info inferred |> Option.get))
   | existing, inferred
     when Option.is_some (Types.comparable_constraint_info existing) ->
       Types.comparable_constraint
@@ -609,6 +627,19 @@ let constrain_printable_symbol params name =
            params)
   | Some ((TMeta _ | TVar _) as value_ty) ->
       Ok (replace_param name (Types.printable_constraint value_ty) params)
+  | Some _ | None -> Ok params
+
+let constrain_exception_data_symbol params name =
+  match string_assoc_opt name params with
+  | Some ty when Option.is_some (Types.exception_data_constraint_info ty) ->
+      Ok params
+  | Some TUnknown ->
+      Ok
+        (replace_param name
+           (Types.exception_data_constraint (Type_solver.fresh ()))
+           params)
+  | Some ((TMeta _ | TVar _) as value_ty) ->
+      Ok (replace_param name (Types.exception_data_constraint value_ty) params)
   | Some _ | None -> Ok params
 
 let constrain_hashable_symbol params name =

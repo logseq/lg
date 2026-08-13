@@ -107,6 +107,15 @@ let rec core_type ?(type_variables = []) = function
           (None, value_ty);
         ]
   | Types.TOcaml_app (name, [ value_ty ])
+    when name = Types.exception_data_constraint_name ->
+      let value_ty = core_type ~type_variables value_ty in
+      Ast_helper.Typ.tuple ~loc
+        [
+          (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
+                   (type_constructor "Lg_runtime.Runtime_dynamic.t" []));
+          (None, value_ty);
+        ]
+  | Types.TOcaml_app (name, [ value_ty ])
     when name = Types.hashable_constraint_name ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc

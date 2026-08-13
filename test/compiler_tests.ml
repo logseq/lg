@@ -25719,6 +25719,29 @@ let test_source_ex_data_matches_clojurescript () =
     "(def result (ex-data (Failure \"a\") (Failure \"b\")))"
   |> expect_error_contains "called with incompatible arguments"
 
+let test_ex_info_data_literal_accepts_local_static_scalars () =
+  let source =
+    {|
+(ns source-ex-data-local-app
+  (:require [cljs.core :refer [ex-data]]))
+
+(defn boom [x]
+  (ex-info "boom" {:x x}))
+
+(let [x (+ 3 4)]
+  (println (pr-str (ex-data (ex-info "boom" {:x x})))))
+
+(println (pr-str (ex-data (boom 7))))
+|}
+  in
+  let expected = "{:x 7}\n{:x 7}\n" in
+  assert_ocaml_runs "source_ex_data_local_scalar" expected
+    (compile_with_stdlib Lg.Target.Native "test/source_ex_data_local_scalar.cljc"
+       source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_ex_data_local_scalar.cljc" source)
+
 let test_ex_info_supports_clojurescript_cause_arity () =
   let source =
     {|
@@ -48534,6 +48557,8 @@ let tests =
       test_source_ex_cause_matches_clojurescript );
     ( "source ex-data matches ClojureScript",
       test_source_ex_data_matches_clojurescript );
+    ( "ex-info data literal accepts local static scalars",
+      test_ex_info_data_literal_accepts_local_static_scalars );
     ( "ex-info supports ClojureScript cause arity",
       test_ex_info_supports_clojurescript_cause_arity );
     ( "source numeric coercions match ClojureScript",

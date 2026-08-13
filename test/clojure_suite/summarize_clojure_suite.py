@@ -160,6 +160,7 @@ def classify_static_boundary(error: str) -> str:
     if (
         "eq called with incompatible arguments" in lower
         or "every-fn called with incompatible arguments" in lower
+        or "tests called with incompatible arguments" in lower
         or "function types do not line up" in lower
         or "function type must match collection elements" in lower
         or "functions must accept the same argument type" in lower
