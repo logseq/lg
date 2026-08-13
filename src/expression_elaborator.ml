@@ -1156,9 +1156,17 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
             })
           parsed_clauses
       in
-      let initial_arities =
+      let declared_matches_clause declared clause =
+        List.length declared.fixed_params = clause.fixed_count
+        &&
+        match (declared.rest_param, clause.rest_index) with
+        | None, None -> true
+        | Some _, Some _ -> true
+        | None, Some _ | Some _, None -> false
+      in
+      let parsed_clauses, initial_arities =
         match signature with
-        | None -> initial_arities
+        | None -> (parsed_clauses, initial_arities)
         | Some declared
           when List.length declared = List.length initial_arities
                && List.for_all2
@@ -1169,11 +1177,27 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                            (fun _ _ -> true)
                            declared.rest_param inferred.rest_param)
                     declared initial_arities ->
-            declared
-        | Some _ ->
-            failwith
-              ("sidecar overload signature does not match function "
-             ^ source_name)
+            (parsed_clauses, declared)
+        | Some declared -> (
+            let expanded_clauses =
+              declared
+              |> List.map (fun arity ->
+                     parsed_clauses
+                     |> List.find_opt (declared_matches_clause arity))
+            in
+            match
+              List.fold_right
+                (fun clause acc ->
+                  match (clause, acc) with
+                  | Some clause, Some clauses -> Some (clause :: clauses)
+                  | None, _ | _, None -> None)
+                expanded_clauses (Some [])
+            with
+            | Some expanded_clauses -> (expanded_clauses, declared)
+            | None ->
+                failwith
+                  ("sidecar overload signature does not match function "
+                 ^ source_name))
       in
       let targets =
         List.mapi

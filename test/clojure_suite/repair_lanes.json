@@ -192,22 +192,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/group_by.cljc\", line <n>: lg: with-meta requires a statically typed map implementing IWithMeta",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.group-by",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/group_by.cljc\", line <n>: lg: with-meta requires a statically typed map implementing IWithMeta",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.group-by",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/gt.cljc\", line <n>: lg: unknown symbol 1N",
     "lane": "design-reader-and-numeric-tower",
@@ -1000,22 +984,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/partial.cljc\", line <n>: lg: partial has more fixed arguments than function parameters",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.partial",
-    "static_subclass": "first-class-polymorphic-or-hof",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/partial.cljc\", line <n>: lg: partial has more fixed arguments than function parameters",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.partial",
-    "static_subclass": "first-class-polymorphic-or-hof",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/partition.cljc\", line <n>: lg: unknown symbol 2N",
     "lane": "design-reader-and-numeric-tower",
@@ -1048,22 +1016,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/persistent_bang.cljc\", line <n>: lg: persistent! expects a transient collection",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.persistent-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/persistent_bang.cljc\", line <n>: lg: persistent! expects a transient collection",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.persistent-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/plus.cljc\", line <n>: lg: unknown symbol 1N",
     "lane": "design-reader-and-numeric-tower",
@@ -1093,22 +1045,6 @@
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.pop",
     "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/pop_bang.cljc\", line <n>: lg: no protocol implementation for ITransientVector/-pop! and Lg_runtime.Runtime_transient.map<keyword,int>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.pop-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/pop_bang.cljc\", line <n>: lg: no protocol implementation for ITransientVector/-pop! and Lg_runtime.Runtime_transient.map<keyword,int>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.pop-bang",
-    "static_subclass": "transient-collection-boundary",
     "target": "native"
   },
   {

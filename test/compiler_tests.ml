@@ -40363,6 +40363,21 @@ let test_source_fnil_and_partial_match_clojurescript_arities () =
 (println (and (= 3 (partial-once 2))
               (= 3 (partial-once 2))
               (= 1 @partial-evaluations)))
+(def partial-extra-fixed
+  (partial (fn [value] (+ value 1)) 1 17))
+(println (= 2 (partial-extra-fixed)))
+(defn collect-values [& values]
+  (into [] values))
+(def partial-variadic
+  (partial collect-values 1 2 3))
+(println (= [1 2 3 4] (partial-variadic 4)))
+(println (= [1 2 3 4 5] (partial-variadic 4 5)))
+(def partial-partial-variadic
+  ((partial partial) collect-values))
+(def partial-partial-variadic-fixed
+  (partial partial-partial-variadic 1))
+(println (= [1 2] (partial-partial-variadic 1 2)))
+(println (= [1 2] (partial-partial-variadic-fixed 2)))
 (def fnil-evaluations (atom 0))
 (def fnil-once
   (fnil (fn [value] value) (swap! fnil-evaluations inc)))
@@ -40398,7 +40413,7 @@ let test_source_fnil_and_partial_match_clojurescript_arities () =
                     :count)))
 |}
   in
-  let expected = String.concat "" (List.init 29 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 34 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/source_fnil_partial.cljc" source
   in

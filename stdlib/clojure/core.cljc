@@ -4682,14 +4682,14 @@
      ([x] (f arg1 x))
      ([x y] (f arg1 x y))
      ([x y z] (f arg1 x y z))
-     ([x y z & args] (partial-apply-one f arg1 x y z args))))
+     ([x y z & args] (__lg_apply f arg1 x y z args))))
   ([f arg1 arg2]
    (fn
      ([] (f arg1 arg2))
      ([x] (f arg1 arg2 x))
      ([x y] (f arg1 arg2 x y))
      ([x y z] (f arg1 arg2 x y z))
-     ([x y z & args] (partial-apply-two f arg1 arg2 x y z args))))
+     ([x y z & args] (__lg_apply f arg1 arg2 x y z args))))
   ([f arg1 arg2 arg3]
    (fn
      ([] (f arg1 arg2 arg3))
@@ -4697,7 +4697,7 @@
      ([x y] (f arg1 arg2 arg3 x y))
      ([x y z] (f arg1 arg2 arg3 x y z))
      ([x y z & args]
-      (partial-apply-three f arg1 arg2 arg3 x y z args))))
+      (__lg_apply f arg1 arg2 arg3 x y z args))))
   ([f arg1 arg2 arg3 & more]
    (fn [& args]
      (__lg_apply f arg1 arg2 arg3 (concat more args)))))

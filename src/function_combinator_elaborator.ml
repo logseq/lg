@@ -1584,12 +1584,25 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | _, (Error _ as err) -> err
           | Ok fn, Ok fixed_args -> (
               match fn.ty with
-              | TFn (parameter_tys, return_ty)
-                when List.length fixed_args <= List.length parameter_tys ->
+              | TFn (parameter_tys, return_ty) ->
+                  let accepted_fixed_count =
+                    min (List.length fixed_args) (List.length parameter_tys)
+                  in
+                  let rec take_fixed count acc values =
+                    if count = 0 then List.rev acc
+                    else
+                      match values with
+                      | [] -> List.rev acc
+                      | value :: rest -> take_fixed (count - 1) (value :: acc) rest
+                  in
+                  let accepted_fixed_args =
+                    take_fixed accepted_fixed_count [] fixed_args
+                  in
+                  let ignored_fixed_args = drop accepted_fixed_count fixed_args in
                   let expected_fixed_tys =
                     parameter_tys
                     |> List.filteri (fun index _ ->
-                           index < List.length fixed_args)
+                           index < accepted_fixed_count)
                   in
                   let rec adapt_fixed adapted expected actual =
                     match (expected, actual) with
@@ -1604,16 +1617,25 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     | _ -> Error.error "partial fixed arguments do not match function"
                   in
                   Result.map
-                    (fun fixed_args ->
+                    (fun adapted_fixed_args ->
                       let function_name = "__lg_partial_function" in
-                      let fixed_names =
+                      let accepted_fixed_names =
                         List.mapi
                           (fun index _ ->
                             "__lg_partial_fixed_" ^ string_of_int index)
-                          fixed_args
+                          adapted_fixed_args
+                      in
+                      let ignored_fixed_names =
+                        ignored_fixed_args
+                        |> List.mapi (fun index _ ->
+                               "__lg_partial_ignored_"
+                               ^ string_of_int (accepted_fixed_count + index))
+                      in
+                      let fixed_names =
+                        accepted_fixed_names @ ignored_fixed_names
                       in
                       let remaining_tys =
-                        drop (List.length fixed_args) parameter_tys
+                        drop accepted_fixed_count parameter_tys
                       in
                       let remaining_names =
                         remaining_tys
@@ -1625,7 +1647,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         :: List.map2
                              (fun name argument ->
                                (Semantic_ir.PVar name, argument.semantic_expr))
-                             fixed_names fixed_args
+                             fixed_names
+                             (adapted_fixed_args @ ignored_fixed_args)
                       in
                       typed_ir (TFn (remaining_tys, return_ty))
                         (capture_bindings bindings
@@ -1637,39 +1660,43 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   ( Semantic_ir.Ident function_name,
                                     List.map
                                       (fun name -> Semantic_ir.Ident name)
-                                      (fixed_names @ remaining_names) ) ))))
-                    (adapt_fixed [] expected_fixed_tys fixed_args)
-              | TFn _ ->
-                  Error.error
-                    "partial has more fixed arguments than function parameters"
+                                      (accepted_fixed_names @ remaining_names)
+                                  ) ))))
+                    (adapt_fixed [] expected_fixed_tys accepted_fixed_args)
               | TOverloaded_fn arities ->
                   let fixed_count = List.length fixed_args in
                   let selected_arities =
                     arities
                     |> List.mapi (fun index arity -> (index, arity))
                     |> List.filter (fun (_, arity) ->
-                           Option.is_none arity.rest_param
-                           && List.length arity.fixed_params >= fixed_count)
+                           match arity.rest_param with
+                           | None -> List.length arity.fixed_params >= fixed_count
+                           | Some _ -> true)
                   in
                   (match selected_arities with
                   | [] ->
                       Error.error
                         "partial has no function arity accepting the fixed arguments"
                   | (_, first_arity) :: _ ->
+                      let expected_type_at arity index =
+                        match List.nth_opt arity.fixed_params index with
+                        | Some ty -> Some ty
+                        | None -> arity.rest_param
+                      in
                       let expected_fixed_tys =
-                        first_arity.fixed_params
-                        |> List.filteri (fun index _ -> index < fixed_count)
+                        List.init fixed_count (fun index ->
+                            Option.get (expected_type_at first_arity index))
                       in
                       let compatible_prefix =
                         List.for_all
                           (fun (_, arity) ->
-                            let prefix =
-                              arity.fixed_params
-                              |> List.filteri (fun index _ ->
-                                     index < fixed_count)
-                            in
-                            List.length prefix = List.length expected_fixed_tys
-                            && List.for_all2 Types.equal prefix expected_fixed_tys)
+                            List.mapi
+                              (fun index expected ->
+                                match expected_type_at arity index with
+                                | Some actual -> Types.equal actual expected
+                                | None -> false)
+                              expected_fixed_tys
+                            |> List.for_all Fun.id)
                           selected_arities
                       in
                       if not compatible_prefix then
@@ -1703,35 +1730,122 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               selected_arities
                               |> List.mapi (fun returned_index
                                                 (source_index, arity) ->
-                                     let remaining_tys =
-                                       drop fixed_count arity.fixed_params
-                                     in
-                                     let argument_names =
-                                       List.mapi
-                                         (fun index _ ->
-                                           "__lg_partial_argument_"
-                                           ^ string_of_int returned_index ^ "_"
-                                           ^ string_of_int index)
-                                         remaining_tys
-                                     in
-                                     ( {
-                                         fixed_params = remaining_tys;
-                                         rest_param = None;
-                                         return_ty = arity.return_ty;
-                                       },
-                                       Semantic_ir.Fun
-                                         ( List.map
-                                             (fun name -> Semantic_ir.PVar name)
-                                             argument_names,
-                                           Semantic_ir.Apply
-                                             ( overloaded_projection
-                                                 (Semantic_ir.Ident function_name)
-                                                 source_index,
-                                               List.map
+                                     match arity.rest_param with
+                                     | None ->
+                                         let remaining_tys =
+                                           drop fixed_count arity.fixed_params
+                                         in
+                                         let argument_names =
+                                           List.mapi
+                                             (fun index _ ->
+                                               "__lg_partial_argument_"
+                                               ^ string_of_int returned_index
+                                               ^ "_" ^ string_of_int index)
+                                             remaining_tys
+                                         in
+                                         ( {
+                                             fixed_params = remaining_tys;
+                                             rest_param = None;
+                                             return_ty = arity.return_ty;
+                                           },
+                                           Semantic_ir.Fun
+                                             ( List.map
                                                  (fun name ->
-                                                   Semantic_ir.Ident name)
-                                                 (fixed_names @ argument_names) ) )
-                                     ))
+                                                   Semantic_ir.PVar name)
+                                                 argument_names,
+                                               Semantic_ir.Apply
+                                                 ( overloaded_projection
+                                                     (Semantic_ir.Ident
+                                                        function_name)
+                                                     source_index,
+                                                   List.map
+                                                     (fun name ->
+                                                       Semantic_ir.Ident name)
+                                                     (fixed_names @ argument_names)
+                                                 ) ) )
+                                     | Some rest_ty ->
+                                         let source_fixed_count =
+                                           List.length arity.fixed_params
+                                         in
+                                         let remaining_tys =
+                                           if fixed_count < source_fixed_count
+                                           then
+                                             drop fixed_count arity.fixed_params
+                                           else []
+                                         in
+                                         let argument_names =
+                                           List.mapi
+                                             (fun index _ ->
+                                               "__lg_partial_argument_"
+                                               ^ string_of_int returned_index
+                                               ^ "_" ^ string_of_int index)
+                                             remaining_tys
+                                         in
+                                         let rest_name =
+                                           "__lg_partial_argument_"
+                                           ^ string_of_int returned_index
+                                           ^ "_rest"
+                                         in
+                                         let supplied_fixed_arguments =
+                                           fixed_names
+                                           |> List.filteri (fun index _ ->
+                                                  index < source_fixed_count)
+                                           |> List.map (fun name ->
+                                                  Semantic_ir.Ident name)
+                                         in
+                                         let remaining_fixed_arguments =
+                                           List.map
+                                             (fun name -> Semantic_ir.Ident name)
+                                             argument_names
+                                         in
+                                         let rest_prefix =
+                                           fixed_names
+                                           |> List.filteri (fun index _ ->
+                                                  index >= source_fixed_count)
+                                           |> List.map (fun name ->
+                                                  Semantic_ir.Ident name)
+                                         in
+                                         let rest_sequence =
+                                           match rest_prefix with
+                                           | [] -> Semantic_ir.Ident rest_name
+                                           | prefix ->
+                                               Semantic_ir.Apply
+                                                 ( Semantic_ir.Ident
+                                                     "Lg_runtime.Runtime_seq.concat",
+                                                   [
+                                                     Semantic_ir.List
+                                                       [
+                                                         Semantic_ir.Apply
+                                                           ( Semantic_ir.Ident
+                                                               "Lg_runtime.Runtime_seq.of_list",
+                                                             [
+                                                               Semantic_ir.List
+                                                                 prefix;
+                                                             ] );
+                                                         Semantic_ir.Ident
+                                                           rest_name;
+                                                       ];
+                                                   ] )
+                                         in
+                                         ( {
+                                             fixed_params = remaining_tys;
+                                             rest_param = Some rest_ty;
+                                             return_ty = arity.return_ty;
+                                           },
+                                           Semantic_ir.Fun
+                                             ( List.map
+                                                 (fun name ->
+                                                   Semantic_ir.PVar name)
+                                                 argument_names
+                                               @ [ Semantic_ir.PVar rest_name ],
+                                               Semantic_ir.Apply
+                                                 ( overloaded_projection
+                                                     (Semantic_ir.Ident
+                                                        function_name)
+                                                     source_index,
+                                                   supplied_fixed_arguments
+                                                   @ remaining_fixed_arguments
+                                                   @ [ rest_sequence ] ) ) ))
                               |> List.split
                             in
                             let bindings =

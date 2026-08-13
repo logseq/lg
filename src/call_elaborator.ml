@@ -12449,8 +12449,57 @@ let create ~compile_expr =
     | _ :: _ :: _ -> None
   and select_overloaded_arity_for_args env arities args =
     let argument_count = List.length args in
+    let function_type (arity : fn_arity) =
+      let parameters =
+        match arity.rest_param with
+        | None -> arity.fixed_params
+        | Some rest_ty -> arity.fixed_params @ [ TSeq rest_ty ]
+      in
+      TFn (parameters, arity.return_ty)
+    in
+    let rec strict_function_argument_compatible expected actual =
+      match (expected, actual) with
+      | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+        when List.length expected_params = List.length actual_params ->
+          List.for_all2 named_argument_compatible expected_params actual_params
+          && named_argument_compatible expected_return actual_return
+      | TFn (expected_params, _) as expected_fn, TOverloaded_fn actual_arities ->
+          actual_arities
+          |> List.exists (fun actual_arity ->
+                 match
+                   overloaded_arity_parameters actual_arity
+                     (List.length expected_params)
+                 with
+                 | None -> false
+                 | Some actual_params ->
+                     strict_function_argument_compatible expected_fn
+                       (TFn (actual_params, actual_arity.return_ty)))
+      | TOverloaded_fn expected_arities, (TFn _ as actual_fn) ->
+          expected_arities
+          |> List.for_all (fun expected_arity ->
+                 strict_function_argument_compatible
+                   (function_type expected_arity)
+                   actual_fn)
+      | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
+          expected_arities
+          |> List.for_all (fun expected_arity ->
+                 actual_arities
+                 |> List.exists (fun actual_arity ->
+                        List.length actual_arity.fixed_params
+                        = List.length expected_arity.fixed_params
+                        && Option.is_some actual_arity.rest_param
+                           = Option.is_some expected_arity.rest_param
+                        && strict_function_argument_compatible
+                             (function_type expected_arity)
+                             (function_type actual_arity)))
+      | _ -> named_argument_compatible expected actual
+    in
     let compatible expected actual =
-      named_argument_compatible expected actual
+      (match (expected, actual) with
+      | (TFn _ | TOverloaded_fn _), _
+      | _, (TFn _ | TOverloaded_fn _) ->
+          strict_function_argument_compatible expected actual
+      | _ -> named_argument_compatible expected actual)
       ||
       (Option.is_some (Types.seqable_constraint_info expected)
       && Collection_capability.accepts_seqable env actual)
