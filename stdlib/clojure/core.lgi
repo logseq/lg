@@ -361,6 +361,8 @@
 (signature clojure.core/string? :fn<string;bool>)
 (signature clojure.core/keyword? :fn<keyword;bool>)
 (signature clojure.core/symbol? :fn<symbol;bool>)
+(signature clojure.core/var? [value]
+  :fn<value;bool>)
 (signature clojure.core/vector? [value]
   :fn<vector<value>;bool>)
 (signature clojure.core/list? [value]

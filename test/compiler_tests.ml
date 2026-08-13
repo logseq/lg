@@ -13371,6 +13371,41 @@ let test_symbol_accepts_var_quote_literals () =
   if not (string_contains_substring melange_source {|cljs.core/+|}) then
     failwith "Melange var quote symbol should preserve the cljs.core owner"
 
+let test_var_question_recognizes_direct_var_quote_forms () =
+  let referred_source =
+    {|
+(ns app.var-predicate
+  (:require [clojure.core :refer [println var?]]))
+(def constant 42)
+(println (var? #'constant))
+(println (var? (var constant)))
+(println (var? constant))
+(println (var? "constant"))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/var_predicate.cljc"
+      referred_source
+  in
+  assert_ocaml_runs "var_question_recognizes_direct_var_quote_forms"
+    "true\ntrue\nfalse\nfalse\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/var_predicate.cljc"
+       referred_source);
+  let automatic_core_source =
+    {|
+(ns app.var-predicate-auto-core)
+(def constant 42)
+(println (var? #'constant))
+|}
+  in
+  compile_with_stdlib Lg.Target.Native "test/var_predicate_auto_core.cljc"
+    automatic_core_source
+  |> ignore;
+  compile_with_stdlib Lg.Target.Melange "test/var_predicate_auto_core.cljc"
+    automatic_core_source
+  |> ignore
+
 let test_var_quote_dereferences_qualified_chunk_values () =
   let compile target =
     let stdlib = compiled_stdlib target in
@@ -46796,6 +46831,8 @@ let tests =
     ( "var quote resolves static function values",
       test_var_quote_resolves_static_function_values );
     ( "symbol accepts var quote literals", test_symbol_accepts_var_quote_literals );
+    ( "var? recognizes direct var quote forms",
+      test_var_question_recognizes_direct_var_quote_forms );
     ( "var quote dereferences qualified chunk values",
       test_var_quote_dereferences_qualified_chunk_values );
     ( "persistent transient map is seqable",

@@ -193,6 +193,15 @@
   ([namespace value]
    (symbol-two namespace value)))
 
+(defn var?
+  {:inline
+   (fn [value]
+     (and (seq? value)
+          (or (= 'var (first value))
+              (= '__lg-var-quote (first value)))))}
+  [_value]
+  false)
+
 ;; These declarations mirror the statically supported portion of the
 ;; ClojureScript core protocol surface. The compiler registry supplies typed
 ;; implementations for built-in receivers; source records and types can extend
