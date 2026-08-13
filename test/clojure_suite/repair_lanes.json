@@ -97,22 +97,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/interleave.cljc\", line <n>: lg: interleave element types must match",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.interleave",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/interleave.cljc\", line <n>: lg: interleave element types must match",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.interleave",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/interpose.cljc\", line <n>: lg: interpose called with incompatible arguments: expected (inference-variable, seqable<inference-variable>), got (string)",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.interpose",

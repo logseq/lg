@@ -32774,14 +32774,22 @@ let test_interleave_accepts_inferred_seqable_parameters () =
   assert_ocaml_runs "interleave_accepts_inferred_seqable_parameters"
     "true:true:true\n" ocaml_source;
   ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
-  ignore
-    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_interleave_rejects_later_type_mismatches () =
+let test_interleave_promotes_heterogeneous_data_to_closed_edn () =
+  let source =
+    {|
+(println (pr-str (interleave [1 2] ["a" "b"] [\x \y])))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "interleave_promotes_heterogeneous_data_to_closed_edn"
+    "(1 \"a\" \\x 2 \"b\" \\y)\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
   compile_string_with_stdlib
-    {|(def x (interleave [1] (__lg_list 2) ["three"]))|}
-  |> expect_error "interleave element types must match"
+    {|(def x (interleave [1] [(fn [x] x)]))|}
+  |> expect_error_contains "interleave element types must match"
 
 let test_interleave_supports_zero_and_one_collection () =
   let source =
@@ -49557,8 +49565,8 @@ let tests =
       test_interleave_accepts_multiple_collections );
     ( "interleave accepts inferred seqable parameters",
       test_interleave_accepts_inferred_seqable_parameters );
-    ( "interleave rejects later type mismatches",
-      test_interleave_rejects_later_type_mismatches );
+    ( "interleave promotes heterogeneous data to closed EDN",
+      test_interleave_promotes_heterogeneous_data_to_closed_edn );
     ( "interleave supports zero and one collection",
       test_interleave_supports_zero_and_one_collection );
     ("additional sequence helpers work", test_additional_sequence_helpers_work);

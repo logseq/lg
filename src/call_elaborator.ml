@@ -12237,7 +12237,52 @@ let create ~compile_expr =
                       (not (unresolved element_type))
                       && not (Types.equal common_type element_type))
                     prepared
-                then Error.error "interleave element types must match"
+                then
+                  let rec pack_sequences packed = function
+                    | [] -> Ok (List.rev packed)
+                    | (element_type, sequence) :: rest ->
+                        Result.bind
+                          (Edn_value_elaborator.mapper element_type)
+                          (fun mapper ->
+                            pack_sequences
+                              (Semantic_ir.Apply
+                                 ( Semantic_ir.Ident
+                                     "Lg_runtime.Runtime_seq.map",
+                                   [ mapper; sequence ] )
+                              :: packed)
+                              rest)
+                  in
+                  (match pack_sequences [] prepared with
+                  | Error _ -> Error.error "interleave element types must match"
+                  | Ok sequences ->
+                      let sequence_names =
+                        List.mapi
+                          (fun index _ ->
+                            "__lg_interleave_sequence_" ^ string_of_int index)
+                          sequences
+                      in
+                      let result =
+                        Semantic_ir.Apply
+                          ( Semantic_ir.Ident
+                              "Lg_runtime.Runtime_seq.interleave",
+                            [
+                              Semantic_ir.List
+                                (List.map
+                                   (fun name -> Semantic_ir.Ident name)
+                                   sequence_names);
+                            ] )
+                      in
+                      let result =
+                        List.fold_right2
+                          (fun name sequence body ->
+                            Semantic_ir.Let
+                              ([ (Semantic_ir.PVar name, sequence) ], body))
+                          sequence_names sequences result
+                      in
+                      Ok
+                        (typed_ir
+                           (TSeq Edn_value_elaborator.value_ty)
+                           result))
                 else
                   let sequences = List.map snd prepared in
                   let sequence_names =
