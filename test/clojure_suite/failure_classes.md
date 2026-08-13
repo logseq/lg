@@ -75,9 +75,9 @@ Namespaces currently compiling on both targets:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 245 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
+| `static-typing-or-closed-domain-boundary` | 246 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 130 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
-| `missing-core-api-macro-or-var` | 7 | Audit each missing public var/macro/special behavior. Examples include `definterface`, `def`, `promise`, `clojure.test/async`, and defmulti dispatch/value coverage. The suite helper now skips bodies for explicitly unsupported vars such as `bound-fn`, `intern`, `numerator`, and `rationalize`; that is compile coverage, not API support. |
+| `missing-core-api-macro-or-var` | 6 | Audit each missing public var/macro/special behavior. Examples include `definterface`, `def`, `promise`, and defmulti dispatch/value coverage. The suite helper now skips bodies for explicitly unsupported vars such as `bound-fn`, `intern`, `numerator`, and `rationalize`; that is compile coverage, not API support. |
 | `host-boundary-or-platform-specific` | 15 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
@@ -165,6 +165,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `constantly.cljc`. That namespace now fails later on real reader/numeric
   boundaries: Native reaches the ratio literal `111/7`, while Melange reaches
   the named character literal `\return`.
+- `clojure.test/async` is available to the suite runner as a compile-time
+  compatibility macro that binds the completion callback and expands the body.
+  It is not core.async support and does not implement a general async scheduler.
+  This clears the previous `taps.cljc` missing refer blocker; `taps.cljc` now
+  exposes real target blockers instead: Native Java interop
+  `clojure.lang.IPending`, and Melange's typed `swap!` receiver requirement.
 - `clojure.core-test.portability/when-var-exists` now has LG-specific
   compile-time gating for explicitly unsupported vars. This prevents suites for
   unsupported APIs from failing merely because their skipped body contains

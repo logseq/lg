@@ -112,6 +112,10 @@
 (defmacro are [argv expression & arguments]
   `(do ~@(clojure.test/expand-are argv expression arguments)))
 
+(defmacro async [done & body]
+  `(let [~done (fn [& _] nil)]
+     ~@body))
+
 (defmacro testing [context & body]
   `(clojure.test/with-context
     (str ~context)

@@ -162,6 +162,30 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_async_macro_is_available_to_suite(self) -> None:
+        test_file = self.write_suite_file(
+            "async_macro_probe.cljc",
+            "(ns clojure.core-test.async-macro-probe\n"
+            "  (:require [clojure.test :refer [async deftest is]]))\n\n"
+            "(deftest async-example\n"
+            "  (async done\n"
+            "    (is true)\n"
+            "    (done)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.async-macro-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
 
 if __name__ == "__main__":
     unittest.main()
