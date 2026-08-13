@@ -598,15 +598,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         | FList [ FSymbol "tuple"; key; value ]
         | FList [ FSymbol "__lg_vector"; key; value ]
         | FVector [ key; value ] ->
-            Some (key, value)
+            Some [ (key, value) ]
+        | FMap entries -> Some entries
         | _ -> None
       in
       let expand_map_conj collection entries =
         List.fold_left
           (fun expanded entry ->
             match map_entry entry with
-            | Some (key, value) ->
-                FList [ FSymbol "__lg_assoc"; expanded; key; value ]
+            | Some pairs ->
+                List.fold_left
+                  (fun expanded (key, value) ->
+                    FList [ FSymbol "__lg_assoc"; expanded; key; value ])
+                  expanded pairs
             | None -> expanded)
           collection entries
       in
@@ -658,6 +662,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 Error.error
                   "conj requires a statically typed collection; define a sum \
                    type for heterogeneous elements"
+            | TNil ->
+                Ok
+                  (typed_ir (TList value.ty)
+                     (Semantic_ir.List [ value.semantic_expr ]))
             | TList (TUnknown | TMeta _ | TVar _) ->
                 Ok
                   (typed_ir (TList value.ty)

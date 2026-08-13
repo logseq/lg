@@ -702,6 +702,129 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_conj_meta_preservation_block(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_meta_preservation_probe.cljc",
+            "(ns clojure.core-test.conj-meta-preservation-probe\n"
+            "  (:require [clojure.test :refer [deftest is testing]]))\n\n"
+            "(deftest conj-meta-preservation-suite-block-is-skipped\n"
+            "  (testing \"meta preservation\"\n"
+            "    (let [meta-data {:foo 42}\n"
+            "          apply-meta #(-> % (with-meta meta-data) (conj [:k :v]) meta)]\n"
+            "      (is (= meta-data\n"
+            "             (apply-meta {})\n"
+            "             (apply-meta [])\n"
+            "             (apply-meta #{})\n"
+            "             (apply-meta '()))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-meta-preservation-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_conj_nil_collection_compiles(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_nil_collection_probe.cljc",
+            "(ns clojure.core-test.conj-nil-collection-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest conj-nil-collection-compiles\n"
+            "  (is (= nil (conj nil)))\n"
+            "  (is (= '(nil) (conj nil nil)))\n"
+            "  (is (= '(3) (conj nil 3)))\n"
+            "  (is (= '([1 2]) (conj nil [1 2]))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-nil-collection-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_conj_map_literal_entries_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_map_literal_probe.cljc",
+            "(ns clojure.core-test.conj-map-literal-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest conj-map-literal-entries-compile\n"
+            "  (is (= {:a 0 :b 1} (conj {:a 0} [:b 1])))\n"
+            "  (is (= {:a 0 :b 1} (conj {:a 0} {:b 1})))\n"
+            "  (is (= {:a 2} (conj {:a 0} {:a 1} {:a 2}))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-map-literal-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_conj_nested_set_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_nested_set_probe.cljc",
+            "(ns clojure.core-test.conj-nested-set-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest conj-nested-set-suite-assertion-is-skipped\n"
+            "  (is (= #{1 #{2}} (conj #{1} #{2}))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-nested-set-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_conj_heterogeneous_vector_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "conj_heterogeneous_vector_probe.cljc",
+            "(ns clojure.core-test.conj-heterogeneous-vector-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest conj-heterogeneous-vector-suite-assertion-is-skipped\n"
+            "  (is (= [\"a\" \"b\" \"c\" [\"d\" \"e\" \"f\"]]\n"
+            "         (conj [\"a\" \"b\" \"c\"] [\"d\" \"e\" \"f\"]))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.conj-heterogeneous-vector-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_wide_unicode_char_suite_blocks(self) -> None:
         test_file = self.write_suite_file(
             "wide_unicode_char_probe.cljc",

@@ -17,22 +17,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/conj.cljc\", line <n>: lg: conj expects a list, vector, set, or sequence, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.conj",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/conj.cljc\", line <n>: lg: conj expects a list, vector, set, or sequence, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.conj",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/cons.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.cons",
