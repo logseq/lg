@@ -3714,6 +3714,23 @@ let test_conj_packs_values_into_closed_edn_collections () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_identical_instantiates_empty_map_types () =
+  let source =
+    {|
+(let [x (hash-map)
+      y (dissoc (hash-map :a-key :a-val) :a-key)]
+  (println (= x y))
+  (println (identical? x y))
+  (println (identical? x x))
+  (println (identical? y y)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "identical_instantiates_empty_map_types"
+    "true\nfalse\ntrue\ntrue\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_heterogeneous_sets_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string {|(def value #{:tag 1})|} |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value #{1 2.0})|} |> expect_ok |> ignore;
@@ -47423,6 +47440,8 @@ let tests =
       test_clojure_data_collections_use_closed_edn_elements );
     ( "conj packs values into closed EDN collections",
       test_conj_packs_values_into_closed_edn_collections );
+    ( "identical? instantiates empty map types",
+      test_identical_instantiates_empty_map_types );
     ( "heterogeneous sets use closed EDN or require a sum",
       test_heterogeneous_sets_use_closed_edn_or_require_a_sum );
     ( "heterogeneous computed maps require declared sum types",

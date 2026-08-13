@@ -10605,6 +10605,25 @@ let create ~compile_expr =
                     ( "==",
                       constrained_argument_value left,
                       constrained_argument_value right )))
+        | Ok [ left; right ]
+          when
+            (match
+               ( Types.dynamic_map_types
+                   (identity_argument_type left.ty),
+                 Types.dynamic_map_types
+                   (identity_argument_type right.ty) )
+             with
+            | Some (left_key, left_value), Some (right_key, right_value) ->
+                (Type_solver.is_open left_key && Type_solver.is_open left_value)
+                || (Type_solver.is_open right_key
+                   && Type_solver.is_open right_value)
+            | _ -> false) ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Infix
+                    ( "==",
+                      constrained_argument_value left,
+                      constrained_argument_value right )))
         | Ok [ left; right ] ->
             Error.error
               ("identical? arguments must have the same type, got "

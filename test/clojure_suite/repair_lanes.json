@@ -96,22 +96,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/identical_qmark.cljc\", line <n>: lg: identical? arguments must have the same type, got Lg_runtime.Runtime_map.t<inference-variable,inference-variable> and Lg_runtime.Runtime_map.t<keyword,keyword>",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.identical-qmark",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/identical_qmark.cljc\", line <n>: lg: identical? arguments must have the same type, got Lg_runtime.Runtime_map.t<inference-variable,inference-variable> and Lg_runtime.Runtime_map.t<keyword,keyword>",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.identical-qmark",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/identity.cljc\", line <n>: lg: unknown symbol #inst",
     "lane": "design-reader-and-numeric-tower",
