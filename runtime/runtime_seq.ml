@@ -1,6 +1,7 @@
 type 'a t = 'a Seq.t
 
 let memoize sequence = Seq.memoize sequence
+let[@warning "-32"] empty _sequence = Seq.empty
 let[@warning "-32"] realized _sequence = false
 
 let defer thunk =

@@ -196,7 +196,7 @@
     -reduce {:status :static-adaptation :reason :source-protocol-declaration-uses-the-explicit-initial-accumulator-arity-supported-by-the-typed-reduction-boundary}
     -count {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -nth {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
-    -empty {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
+    -empty {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-list-vector-string-set-sequence-and-map-receiver-implementations}
     -peek {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -pop {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -equiv {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
@@ -640,7 +640,7 @@
     reset-vals! {:status :static-adaptation
                  :reason :static-ref-source-port-preserves-the-old-new-vector-and-delegates-validation-and-watch-behavior-to-reset-for-the-supported-atom-boundary}
     empty {:status :static-adaptation
-           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-iemptyablecollection-with-static-list-vector-string-set-and-metadata-preserving-hash-map-implementations-while-lg-requires-a-non-nil-static-receiver}
+           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-iemptyablecollection-with-static-list-vector-string-set-sequence-and-metadata-preserving-hash-map-implementations-while-non-collection-nil-return-semantics-remain-a-static-boundary}
     peek {:status :static-adaptation
           :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-and-explicit-protocol-implementations-while-lg-retains-its-current-nonempty-static-result-contract}
     pop {:status :static-adaptation

@@ -3,6 +3,7 @@ external call0 : (unit -> 'a) -> int -> unit -> 'a = "call" [@@mel.send]
 external call2 : ('a -> 'b -> 'c) -> int -> 'a -> 'b -> 'c = "call"
   [@@mel.send]
 
+let[@warning "-32"] empty _sequence = Seq.empty
 let[@warning "-32"] realized _sequence = false
 
 let defer thunk =

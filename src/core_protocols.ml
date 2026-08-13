@@ -929,6 +929,8 @@ let initial_registry =
   |> add_emptyable Receiver_id.Set_receiver
        "Lg_runtime.Runtime_collection.empty_poly_set"
        (TSet (TVar "empty_element"))
+  |> add_emptyable Receiver_id.Seq_receiver "Lg_runtime.Runtime_seq.empty"
+       (TSeq (TVar "empty_element"))
   |> add_emptyable runtime_map_receiver "Lg_runtime.Runtime_map.empty_like"
        (TOcaml_app
           ( "Lg_runtime.Runtime_map.t",

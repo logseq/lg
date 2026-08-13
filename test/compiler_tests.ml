@@ -6066,14 +6066,17 @@ let test_clojure_collection_protocol_names_dispatch_statically () =
   IEmptyableCollection
   (-empty [bag] (assoc bag :size 0)))
 (def bag (->Bag 3))
-(println (str (count bag) ":" (count (empty bag))))
+(def emptied-seq (empty (seq [1 2 3])))
+(println (str (count bag) ":" (count (empty bag)) ":"
+              (empty? emptied-seq) ":"
+              (= '() emptied-seq)))
 |}
   in
   let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "empty must preserve its statically typed receiver";
   assert_ocaml_runs "clojure_collection_protocol_names_dispatch_statically"
-    "3:0\n" native_source;
+    "3:0:true:true\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
