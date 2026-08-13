@@ -2691,42 +2691,33 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                 with
                 | ( true,
                     Some
-                      ( (`Optional | `Optional_sequential),
-                        _,
-                        actual_value_ty ),
+                      ( (`Optional | `Optional_sequential), _, _ ),
                     Semantic_ir.Ident argument_name ) ->
-                    if not (Types.equal value_ty actual_value_ty) then None
-                    else
-                      let optional_adapter =
-                        Semantic_ir.Ident
-                          (argument_name ^ "__seq_optional")
-                      in
-                      Some
-                        (match element_mapper with
-                        | None -> optional_adapter
-                        | Some mapper ->
-                            let adapter_name =
-                              "__lg_forwarded_seqable_adapter"
-                            in
-                            let mapped_adapter =
-                              Semantic_ir.Apply
-                                ( Semantic_ir.Ident
-                                    "Lg_runtime.Runtime_seq.map_adapter",
-                                  [ mapper; Semantic_ir.Ident adapter_name ] )
-                            in
-                            Semantic_ir.Match
-                              ( optional_adapter,
-                                [
-                                  ( Semantic_ir.PConstructor ("None", None),
-                                    Semantic_ir.Constructor ("None", None) );
-                                  ( Semantic_ir.PConstructor
-                                      ( "Some",
-                                        Some
-                                          (Semantic_ir.PVar adapter_name) ),
-                                    Semantic_ir.Constructor
-                                      ( "Some",
-                                        Some mapped_adapter ) );
-                                ] ))
+                    let optional_adapter =
+                      Semantic_ir.Ident (argument_name ^ "__seq_optional")
+                    in
+                    Some
+                      (match element_mapper with
+                      | None -> optional_adapter
+                      | Some mapper ->
+                          let adapter_name = "__lg_forwarded_seqable_adapter" in
+                          let mapped_adapter =
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_seq.map_adapter",
+                                [ mapper; Semantic_ir.Ident adapter_name ] )
+                          in
+                          Semantic_ir.Match
+                            ( optional_adapter,
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  Semantic_ir.Constructor ("None", None) );
+                                ( Semantic_ir.PConstructor
+                                    ( "Some",
+                                      Some (Semantic_ir.PVar adapter_name) ),
+                                  Semantic_ir.Constructor
+                                    ("Some", Some mapped_adapter) );
+                              ] ))
                 | _ -> None
               in
               let adapter =

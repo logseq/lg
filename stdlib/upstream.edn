@@ -314,7 +314,7 @@
     juxt {:status :static-adaptation
           :reason :source-port-preserves-upstream-one-two-three-and-variadic-function-constructor-arities-returned-zero-one-two-three-and-variadic-arities-left-to-right-call-order-and-homogeneous-static-vector-results-while-a-private-unary-specialization-keeps-common-direct-calls-statically-typed}
     comp {:status :static-adaptation
-          :reason :source-port-preserves-upstream-zero-one-two-three-and-variadic-function-constructor-arities-and-the-returned-zero-one-two-three-and-variadic-arities-for-two-and-three-functions-while-four-or-more-functions-use-a-homogeneous-unary-static-adaptation-and-a-private-direct-call-specialization-because-arbitrary-heterogeneous-function-lists-require-dependent-types}
+          :reason :source-port-preserves-upstream-zero-one-two-three-and-variadic-function-constructor-arities-and-the-returned-zero-one-two-three-and-variadic-arities-for-two-and-three-functions-while-four-or-more-functions-use-a-homogeneous-unary-static-adaptation-nil-after-seq-composes-through-a-private-seq-empty-predicate-and-a-private-direct-call-specialization-because-arbitrary-heterogeneous-function-lists-require-dependent-types}
     partial {:status :static-adaptation
              :reason :source-port-preserves-upstream-one-two-three-four-and-variadic-constructor-arities-returned-zero-one-two-three-and-variadic-arities-fixed-argument-evaluation-order-extra-fixed-argument-ignoring-for-fixed-arity-functions-pure-variadic-functions-and-first-class-partial-partial-calls-while-private-static-specialization-retains-precise-heterogeneous-direct-call-parameter-types}
     fnil {:status :static-adaptation
@@ -1006,8 +1006,8 @@
           :reason :source-function-uses-a-strict-function-fallback-signature-while-inline-specialization-delegates-to-a-private-static-callable-type-predicate-covering-functions-ifn-deftypes-keywords-symbols-vectors-maps-and-sets-without-runtime-dynamic-dispatch}
     partitionv-all {:status :static-adaptation
                     :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
-    random-sample {:status :ported
-                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary}
+    random-sample {:status :static-adaptation
+                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary-while-the-static-signature-accepts-integer-probability-literals-and-nil-collections-as-optional-seqables}
     record? {:status :static-adaptation
              :reason :source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch}
     replace {:status :static-adaptation

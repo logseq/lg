@@ -987,6 +987,40 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         select_unary_functions (unary_fn :: selected) rest)
               in
               Result.bind (select_unary_functions [] fns) (fun fns ->
+              let nil_predicate_form = function
+                | FSymbol ("nil?" | "clojure.core/nil?" | "cljs.core/nil?") ->
+                    true
+                | _ -> false
+              in
+              let seq_form = function
+                | FSymbol ("seq" | "clojure.core/seq" | "cljs.core/seq") ->
+                    true
+                | _ -> false
+              in
+              let seq_empty_predicate () =
+                let element_ty = Type_solver.fresh () in
+                let value_name = "__lg_comp_seq_value" in
+                typed_ir
+                  (TFn ([ TSeq element_ty ], TBool))
+                  (Semantic_ir.Fun
+                     ( [ Semantic_ir.PVar value_name ],
+                       Semantic_ir.Apply
+                         ( Semantic_ir.Ident
+                             "Lg_runtime.Runtime_seq.is_empty",
+                           [ Semantic_ir.Ident value_name ] ) ))
+              in
+              let rec adapt_nil_after_seq forms fns =
+                match (forms, fns) with
+                | left_form :: right_form :: rest_forms, _left_fn :: rest_fns
+                  when nil_predicate_form left_form && seq_form right_form ->
+                    seq_empty_predicate ()
+                    :: adapt_nil_after_seq (right_form :: rest_forms) rest_fns
+                | _form :: rest_forms, fn :: rest_fns ->
+                    fn :: adapt_nil_after_seq rest_forms rest_fns
+                | [], [] -> []
+                | _ -> fns
+              in
+              let fns = adapt_nil_after_seq arg_forms fns in
               let concrete_seqable_element = function
                 | TArray element | TList element | TVector element
                 | TSet element | TSeq element ->

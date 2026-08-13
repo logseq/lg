@@ -40291,14 +40291,17 @@ let test_source_comp_matches_clojurescript_arities () =
   (clojure.core/comp (fn [value] (+ value 1))
                      (fn [value] (* value 3))))
 (def empty-qualified (clojure.core/comp))
+(def empty-after-seq? (comp nil? seq))
 
 (println (= 7 (referred 4)))
 (println (= 9 (aliased 4)))
 (println (= 13 (qualified 4)))
 (println (= 9 (empty-qualified 9)))
+(println (empty-after-seq? []))
+(println (not (empty-after-seq? [1])))
 |}
   in
-  let expected = String.concat "" (List.init 10 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 12 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/source_comp.cljc" source
   in
@@ -42652,6 +42655,70 @@ let test_sets_support_seqable_elements () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/set_seqable_elements.cljc"
        source)
+
+let test_random_sample_accepts_integer_probabilities () =
+  let source =
+    {|
+(ns app.random-sample-int-probability
+  (:require [cljs.core :refer [= println random-sample sequence vec]]))
+
+(println (= [] (vec (random-sample 0 [1 2 3]))))
+(println (= [1 2 3] (vec (random-sample 1 [1 2 3]))))
+(println (= [] (vec (sequence (random-sample 0) [1 2 3]))))
+(println (= [1 2 3] (vec (sequence (random-sample 1) [1 2 3]))))
+(println (= [] (vec (random-sample -1 nil))))
+|}
+  in
+  let expected = String.concat "" (List.init 5 (fun _ -> "true\n")) in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/random_sample_int_probability.cljc" source
+  in
+  assert_ocaml_runs "random_sample_accepts_integer_probabilities" expected
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/random_sample_int_probability.cljc" source)
+
+let cacheable_stdlib_state target =
+  let stdlib = compiled_stdlib target in
+  let cached = Lg.Compiler.cacheable_state stdlib.state in
+  let serialized = Marshal.to_string cached [] in
+  let restored : Lg.Compiler.state = Marshal.from_string serialized 0 in
+  Lg.Compiler.restore_ocaml_environment ~target ~packages:[] restored []
+  |> expect_ok
+
+let test_random_sample_accepts_nil_collections_from_saved_state () =
+  let source =
+    {|
+(ns app.random-sample-nil-collection
+  (:require [cljs.core :refer [= conj println random-sample transduce vec]]))
+
+(println (= [] (vec (random-sample -1 nil))))
+(println (= [] (transduce (random-sample -1) conj [] nil)))
+|}
+  in
+  let expected = "true\ntrue\n" in
+  let state = cacheable_stdlib_state Lg.Target.Native in
+  let _, compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~target:Lg.Target.Native
+      ~filename:"test/random_sample_nil_collection.cljc" state source
+    |> expect_ok
+  in
+  assert_ocaml_runs "random_sample_accepts_nil_collections_from_saved_state"
+    expected
+    (String.concat "\n"
+       [
+         (compiled_stdlib Lg.Target.Native).ocaml_source;
+         compilation.ocaml_source;
+       ]);
+  let melange_state = cacheable_stdlib_state Lg.Target.Melange in
+  ignore
+    (Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+       ~target:Lg.Target.Melange
+       ~filename:"test/random_sample_nil_collection.cljc" melange_state source
+     |> expect_ok)
 
 let test_set_of_rejects_nil_element_annotation () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
@@ -49893,6 +49960,10 @@ let tests =
     ("typed empty sets work", test_typed_empty_sets);
     ("sets support nil elements", test_sets_support_nil_elements);
     ("sets support seqable elements", test_sets_support_seqable_elements);
+    ( "random-sample accepts integer probabilities",
+      test_random_sample_accepts_integer_probabilities );
+    ( "random-sample accepts nil collections from saved state",
+      test_random_sample_accepts_nil_collections_from_saved_state );
     ( "set-of rejects nil element annotation",
       test_set_of_rejects_nil_element_annotation );
     ( "set-of rejects types without comparators",

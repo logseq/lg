@@ -1193,19 +1193,11 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: comp function types do not line up: option<inference-variable> and seq<inference-variable>",
+    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: random-sample called with incompatible arguments: expected (float, __lg_optional_seqable_constraint<int,seq<int>>), got (nil, seq<int>); incompatible positions: 1",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.random-sample",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: comp function types do not line up: option<inference-variable> and seq<inference-variable>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.random-sample",
-    "static_subclass": "first-class-polymorphic-or-hof",
-    "target": "native"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
