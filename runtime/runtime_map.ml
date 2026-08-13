@@ -550,6 +550,10 @@ let equiv left right =
 let to_list map =
   fold_left (fun entries entry -> entry :: entries) [] map |> List.rev
 
+let map_values f map =
+  let mapped = map |> to_list |> List.map (fun (key, value) -> (key, f value)) |> of_list in
+  { mapped with metadata = map.metadata }
+
 let to_seq map =
   let length = Rrbvec.length map.sequence in
   let rec next index () =

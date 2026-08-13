@@ -3558,12 +3558,25 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   | _ -> TNullable payload_ty
                 in
                 infer_expected expected_ty params option_form))
-    | FList
-        [
-          FSymbol "__lg_with-meta";
-          value;
-          metadata;
-        ] ->
+    | FList [ FSymbol "__lg_with-meta"; FSymbol value; metadata ] ->
+        Result.bind (infer_form params metadata) (fun params ->
+            match lookup_protocol_constraint "IWithMeta" with
+            | Some constraint_ty -> (
+                let value_ty =
+                  string_assoc_opt value params |> Option.value ~default:TUnknown
+                in
+                match value_ty with
+                | TNamed_record _ -> Ok params
+                | ty
+                  when Type_solver.is_open ty
+                       && Option.is_none (Types.protocol_constraint_info ty)
+                  ->
+                    constrain_symbol
+                      (Types.protocol_constraint_with_value constraint_ty ty)
+                      params value
+                | _ -> Ok params)
+            | None -> Ok params)
+    | FList [ FSymbol "__lg_with-meta"; value; metadata ] ->
         Result.bind (infer_form params value) (fun params ->
             infer_form params metadata)
     | (FList

@@ -661,6 +661,8 @@ let returned_parameter_index scope env parameter_names body_forms =
         match List.rev forms with
         | form :: _ -> returned_parameter form
         | [] -> None)
+    | Ast.FList [ Ast.FSymbol ("__lg_with-meta" | "with-meta"); value; _metadata ] ->
+        returned_parameter value
     | Ast.FList (Ast.FSymbol method_name :: arguments) -> (
         match Protocol.lookup_marker scope env method_name with
         | Some { protocol_id = Some protocol_id; _ } -> (
@@ -1174,7 +1176,7 @@ let fn_code ?(row_param_type_names = []) parts =
         Some arguments
     | _ -> None
   in
-  let param_tys, return_ty, body_semantic_expr =
+  let param_tys, body_storage_ty, body_semantic_expr =
     match (parts.body.ty, sequence_first_arguments) with
     | TUnknown, Some arguments ->
         let rec tie index reversed = function
@@ -1203,6 +1205,7 @@ let fn_code ?(row_param_type_names = []) parts =
     | return_ty, _ ->
         (param_tys, array_storage_type return_ty, parts.body.semantic_expr)
   in
+  let return_ty = body_storage_ty in
   let rec capability_pattern ?value_type name ty =
     match Types.protocol_constraint_info ty with
     | Some (protocol_id, _, value_ty) ->
@@ -1445,6 +1448,10 @@ let fn_code ?(row_param_type_names = []) parts =
             | Some _ | None -> parameter_ty)
         | None -> return_ty)
     | None -> return_ty
+  in
+  let body_expr =
+    if Types.equal return_ty body_storage_ty then body_expr
+    else coerce_expression_to_type return_ty body_storage_ty body_expr
   in
   {
     (typed_ir

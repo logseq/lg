@@ -11274,6 +11274,86 @@ let create ~compile_expr =
                          "Lg_runtime.Runtime_map.with_metadata",
                        [ value.semantic_expr; metadata ] )))
               (pack_metadata_expression metadata.ty metadata.semantic_expr)
+        | Ok value, Ok metadata
+          when has_protocol_constraint Core_protocols.with_meta_id value.ty
+          -> (
+            match project_protocol_constraint Core_protocols.with_meta_id value with
+            | None ->
+                Error.error
+                  "protocol-constrained with-meta receiver must provide IWithMeta evidence"
+            | Some (witness, receiver) ->
+                let metadata_name = "__lg_with_meta_metadata" in
+                Result.map
+                  (fun metadata ->
+                    typed_ir receiver.ty
+                      (Semantic_ir.Let
+                         ( [
+                             (Semantic_ir.PVar metadata_name, metadata);
+                           ],
+                           Semantic_ir.Match
+                             ( witness,
+                               [
+                                 ( Semantic_ir.PConstructor ("None", None),
+                                   Semantic_ir.Apply
+                                     ( Semantic_ir.Ident "invalid_arg",
+                                       [
+                                         Semantic_ir.String
+                                           "missing protocol implementation for IWithMeta/-with-meta";
+                                       ] ) );
+                                 ( Semantic_ir.PConstructor
+                                     ( "Some",
+                                       Some
+                                         (Semantic_ir.PVar
+                                            "__lg_protocol_methods") ),
+                                   Semantic_ir.Apply
+                                     ( Semantic_ir.Apply
+                                         ( Semantic_ir.Ident "fst",
+                                           [
+                                             Semantic_ir.Ident
+                                               "__lg_protocol_methods";
+                                           ] ),
+                                       [
+                                         receiver.semantic_expr;
+                                         Semantic_ir.Ident metadata_name;
+                                       ] ) );
+                               ] ) )))
+                  (pack_metadata_expression metadata.ty metadata.semantic_expr))
+        | Ok value, Ok metadata
+          when Protocol.type_satisfies env Core_protocols.with_meta_id value.ty
+          ->
+            let value_name = "__lg_with_meta_value" in
+            let metadata_name = "__lg_with_meta_metadata" in
+            Result.bind
+              (pack_metadata_expression metadata.ty metadata.semantic_expr)
+              (fun metadata ->
+                let protocol_env =
+                  env
+                  |> Env.add (Names.scoped_key scope value_name)
+                       (Types.binding value_name value.ty)
+                  |> Env.add (Names.scoped_key scope metadata_name)
+                       (Types.binding metadata_name (TOcaml "Lg_edn_backend.t"))
+                in
+                Result.map
+                  (fun result ->
+                    {
+                      result with
+                      semantic_expr =
+                        Semantic_ir.Let
+                          ( [
+                              ( constrained_identifier_pattern value_name
+                                  value.ty,
+                                value.semantic_expr );
+                              (Semantic_ir.PVar metadata_name, metadata);
+                            ],
+                            result.semantic_expr );
+                    })
+                  (compile_expr scope protocol_env
+                     (FList
+                        [
+                          FSymbol "IWithMeta/-with-meta";
+                          FSymbol value_name;
+                          FSymbol metadata_name;
+                        ])))
         | Ok _, Ok _ ->
             Error.error
               "with-meta requires a statically typed map implementing IWithMeta")
@@ -12423,11 +12503,17 @@ let create ~compile_expr =
                           | None ->
                               Option.value arity.rest_param ~default:expected
                         in
+                        let row_type_name =
+                          List.nth_opt row_param_types index |> Option.join
+                        in
                         if
                           match (storage_expected, argument.ty) with
                           | TSet (TUnknown | TMeta _ | TVar _), TSet _ -> true
                           | _ -> false
                         then adapt_value_to_type env storage_expected argument
+                        else if has_capability_constraint storage_expected then
+                          pack_constrained_value ?row_type_name env
+                            storage_expected argument
                         else
                         match
                           specialize_dynamic_nominal_unpack expected
@@ -12435,9 +12521,6 @@ let create ~compile_expr =
                         with
                         | Some expression -> Ok expression
                         | None ->
-                          let row_type_name =
-                            List.nth_opt row_param_types index |> Option.join
-                          in
                           match (row_type_name, expected) with
                         | Some type_name, TNullable (TRecord fields) ->
                             let fields =
@@ -13409,10 +13492,17 @@ let create ~compile_expr =
                                      Structural_map.record_type_application
                             | None -> None)
                       in
-                      if has_capability_constraint expected_ty then
+                      let capability_expected_ty =
+                        match List.nth_opt storage_param_tys index with
+                        | Some storage_ty
+                          when has_capability_constraint storage_ty ->
+                            storage_ty
+                        | Some _ | None -> expected_ty
+                      in
+                      if has_capability_constraint capability_expected_ty then
                         match
-                          pack_constrained_value ?row_type_name env expected_ty
-                            arg
+                          pack_constrained_value ?row_type_name env
+                            capability_expected_ty arg
                         with
                           | Error _ as err -> err
                           | Ok expression ->
@@ -13801,6 +13891,8 @@ let create ~compile_expr =
                   else
                     match storage_ret_template with
                     | TSet (TUnknown | TMeta _ | TVar _) ->
+                        storage_ret_template
+                    | _ when has_capability_constraint storage_ret_template ->
                         storage_ret_template
                     | _ ->
                         if

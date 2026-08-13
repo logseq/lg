@@ -22959,6 +22959,95 @@ let test_assoc_supports_multiple_pairs () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_supports_multiple_pairs" "Ada:36:true\n" ocaml_source
 
+let test_assoc_treats_nil_as_empty_map () =
+  let source =
+    {|
+(ns app.assoc-nil
+  (:require [clojure.core :refer [= apply assoc println]]))
+(println (= (assoc nil nil nil) {nil nil}))
+(println (= (assoc nil :a 1) {:a 1}))
+(println (= (apply assoc nil [:a 1 :b 2]) {:a 1 :b 2}))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/assoc_nil.cljc" source
+  in
+  assert_ocaml_runs "assoc_treats_nil_as_empty_map" "true\ntrue\ntrue\n"
+    native_source;
+  ignore (compile_with_stdlib Lg.Target.Melange "app/assoc_nil.cljc" source)
+
+let test_assoc_preserves_vector_metadata () =
+  let source =
+    {|
+(ns app.assoc-vector-meta
+  (:require [clojure.core :refer [= apply assoc meta println with-meta]]))
+(def metadata {:source "test"})
+(def tagged (with-meta [1] metadata))
+(println (= metadata (meta (assoc tagged 0 3 1 5))))
+(println (= metadata (meta (apply assoc tagged [0 7 1 9]))))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/assoc_vector_meta.cljc" source
+  in
+  assert_ocaml_runs "assoc_preserves_vector_metadata" "true\ntrue\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/assoc_vector_meta.cljc"
+       source)
+
+let test_assoc_preserves_metadata_through_unannotated_helper () =
+  let source =
+    {|
+(ns app.assoc-helper-meta
+  (:require [clojure.core :refer [= apply assoc meta println with-meta]]))
+(def metadata {:source "helper"})
+(defn tag [value] (with-meta value metadata))
+(defn tagged? [value] (= metadata (meta value)))
+(println (tagged? (apply assoc (tag {}) [:a 1])))
+(println (tagged? (apply assoc (tag {:a 1}) [:a 3 :b 5])))
+(println (tagged? (apply assoc (tag []) [0 1])))
+(println (tagged? (apply assoc (tag [1]) [0 3 1 5])))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/assoc_helper_meta.cljc" source
+  in
+  assert_ocaml_runs "assoc_preserves_metadata_through_unannotated_helper"
+    "true\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/assoc_helper_meta.cljc"
+       source)
+
+let test_conj_nil_promotes_vector_to_nullable_elements () =
+  let source =
+    {|
+(ns app.conj-nil-vector
+  (:require [clojure.core :refer [= conj println]]))
+(println (= (conj [:b] nil) [:b nil]))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/conj_nil_vector.cljc" source
+  in
+  assert_ocaml_runs "conj_nil_promotes_vector_to_nullable_elements" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/conj_nil_vector.cljc"
+       source)
+
+let test_melange_apply_assoc_literal_odd_keyvals_adds_nil () =
+  let source =
+    {|
+(ns app.apply-assoc-literal-kvs
+  (:require [clojure.core :refer [apply assoc]]))
+(def result (apply assoc {:a 1} [:b]))
+|}
+  in
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/apply_assoc_literal_kvs.cljc"
+       source)
+
 let test_assoc_rejects_odd_key_value_pairs () =
   compile_string_with_stdlib
     {|(def bad (assoc {:name "Ada"} :age 36 :admin?))|}
@@ -48004,6 +48093,14 @@ let tests =
     ( "get rejects vector default type mismatch",
       test_get_rejects_vector_default_type_mismatch );
     ("assoc supports multiple pairs", test_assoc_supports_multiple_pairs);
+    ("assoc treats nil as empty map", test_assoc_treats_nil_as_empty_map);
+    ("assoc preserves vector metadata", test_assoc_preserves_vector_metadata);
+    ( "assoc preserves metadata through unannotated helper",
+      test_assoc_preserves_metadata_through_unannotated_helper );
+    ( "conj nil promotes vector to nullable elements",
+      test_conj_nil_promotes_vector_to_nullable_elements );
+    ( "melange apply assoc literal odd keyvals adds nil",
+      test_melange_apply_assoc_literal_odd_keyvals_adds_nil );
     ("assoc rejects odd key value pairs", test_assoc_rejects_odd_key_value_pairs);
     ("assoc supports vector indexes", test_assoc_supports_vector_indexes);
     ( "assoc infers vector parameter from integer index",

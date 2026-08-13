@@ -364,6 +364,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
              [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
     | TBool -> convert "of_bool"
     | TInt | TOcaml "int" -> convert "of_int"
+    | TFloat -> convert "of_float"
+    | TChar -> convert "of_char"
+    | TString -> convert "of_string"
+    | TSymbol -> convert "of_symbol"
+    | TKeyword -> convert "of_keyword"
+    | TRegex -> convert "of_regex"
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         let value_name = "__lg_edn_optional_value" in
         Result.map

@@ -497,6 +497,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           match split_last [] rest with
           | None -> Error.error "apply expects function and collection"
           | Some (fixed_forms, FVector spread_forms) ->
+              let spread_forms =
+                match (Env.target env, fn_form, fixed_forms) with
+                | Target.Melange, FSymbol ("assoc" | "clojure.core/assoc" | "cljs.core/assoc"), _ :: _
+                  when List.length spread_forms mod 2 = 1 ->
+                    spread_forms @ [ FSymbol "nil" ]
+                | _ -> spread_forms
+              in
               compile_expr scope env
                 (FList (fn_form :: (fixed_forms @ spread_forms)))
           | Some (fixed_forms, collection_form) -> (

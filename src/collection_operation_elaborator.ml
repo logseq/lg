@@ -747,6 +747,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                              Semantic_ir.Constructor ("Some", Some value);
                            ] )))
                   value
+            | TVector inner when Types.equal value.ty TNil ->
+                let item_name = "__lg_conj_vector_item" in
+                let optionalized =
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Rrbvec.map",
+                      [
+                        Semantic_ir.Fun
+                          ( [ Semantic_ir.PVar item_name ],
+                            Semantic_ir.Constructor
+                              ( "Some",
+                                Some (Semantic_ir.Ident item_name) ) );
+                        collection.semantic_expr;
+                      ] )
+                in
+                Ok
+                  (typed_ir (TVector (TNullable inner))
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident "Rrbvec.push_back",
+                          [
+                            optionalized;
+                            Semantic_ir.Constructor ("None", None);
+                          ] )))
             | TVector inner ->
                 heterogeneous_collection_type_error "vector"
                   [ inner; value.ty ]
@@ -2184,6 +2206,52 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     | Ok pairs ->
                         Result.bind (adapt_dynamic_fields fields pairs)
                           (assoc_record_pairs target))
+                | TNil -> (
+                    let has_non_keyword_key =
+                      pair_forms
+                      |> List.filteri (fun index _ -> index mod 2 = 0)
+                      |> List.exists (function FKeyword _ -> false | _ -> true)
+                    in
+                    if not has_non_keyword_key then
+                      match compile_record_pairs [] pair_forms with
+                      | Error _ as err -> err
+                      | Ok pairs ->
+                          assoc_record_pairs (Structural_map.record_expr [] [])
+                            pairs
+                    else
+                      match compile_vector_pairs [] pair_forms with
+                      | Error _ as err -> err
+                      | Ok [] -> assert false
+                      | Ok pairs ->
+                          Result.bind
+                            (merge_collection_types "map keys"
+                               (List.map (fun (key, _) -> key.ty) pairs))
+                            (fun key_ty ->
+                              Result.map
+                                (fun value_ty ->
+                                  let expression =
+                                    List.fold_left
+                                      (fun map (key, value) ->
+                                        apply
+                                          (runtime_map_operation
+                                             (runtime_map_key_type key_ty key.ty)
+                                             "assoc")
+                                          [
+                                            map;
+                                            key.semantic_expr;
+                                            value.semantic_expr;
+                                          ])
+                                      (Semantic_ir.Ident
+                                         "Lg_runtime.Runtime_map.empty")
+                                      pairs
+                                  in
+                                  typed_ir
+                                    (Types.dynamic_map key_ty value_ty)
+                                    expression)
+                                (merge_collection_types "map values"
+                                   (List.map
+                                      (fun (_, value) -> value.ty)
+                                      pairs))))
                 | TVector _ -> (
                     match compile_vector_pairs [] pair_forms with
                     | Error _ as err -> err
@@ -2198,6 +2266,28 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               in
                               if not (Types.equal index.ty TInt) then
                                 Error.error "assoc vector index must be int"
+                              else if Types.equal value.ty TNil then
+                                let item_name = "__lg_assoc_vector_item" in
+                                let optionalized =
+                                  apply "Rrbvec.map"
+                                    [
+                                      Semantic_ir.Fun
+                                        ( [ Semantic_ir.PVar item_name ],
+                                          Semantic_ir.Constructor
+                                            ( "Some",
+                                              Some (Semantic_ir.Ident item_name)
+                                            ) );
+                                      expr;
+                                    ]
+                                in
+                                apply_pairs (TVector (TNullable inner))
+                                  (apply "Lg_runtime.Runtime_vector.assoc"
+                                     [
+                                       optionalized;
+                                       index.semantic_expr;
+                                       Semantic_ir.Constructor ("None", None);
+                                     ])
+                                  rest
                               else if
                                 not
                                   (Types.assignable ~policy:Host_boundary
@@ -2211,7 +2301,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                   else TVector value.ty
                                 in
                                 apply_pairs vector_ty
-                                  (apply "Rrbvec.set"
+                                  (apply "Lg_runtime.Runtime_vector.assoc"
                                    [
                                      expr;
                                      index.semantic_expr;
@@ -2395,13 +2485,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                 (List.map select pairs)
                             else Ok declared
                           in
+                          let specialize_values declared =
+                            if unresolved_component declared then
+                              merge_collection_types "map values"
+                                (List.map (fun (_, value) -> value.ty) pairs)
+                            else
+                              let actuals =
+                                List.map (fun (_, value) -> value.ty) pairs
+                              in
+                              if
+                                List.exists
+                                  (fun actual ->
+                                    not
+                                      (Types.assignable
+                                         ~policy:Host_boundary ~expected:declared
+                                         ~actual))
+                                  actuals
+                              then
+                                merge_collection_types "map values"
+                                  (declared :: actuals)
+                              else Ok declared
+                          in
                           Result.bind
                             (specialize "map keys" declared_key_ty
                                (fun (key, _) -> key.ty))
                             (fun key_ty ->
                               Result.bind
-                                (specialize "map values" declared_value_ty
-                                   (fun (_, value) -> value.ty))
+                                (specialize_values declared_value_ty)
                                 (fun value_ty ->
                                   let rec validate = function
                                     | [] -> Ok ()
@@ -2428,6 +2538,29 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                   in
                                   Result.map
                                     (fun () ->
+                                      let initial_map =
+                                        if
+                                          Types.equal value_ty declared_value_ty
+                                          || unresolved_component
+                                               declared_value_ty
+                                        then target.semantic_expr
+                                        else
+                                          apply
+                                            "Lg_runtime.Runtime_map.map_values"
+                                            [
+                                              Semantic_ir.Fun
+                                                ( [
+                                                    Semantic_ir.PVar
+                                                      "__lg_assoc_existing_value";
+                                                  ],
+                                                  coerce_expression_to_type
+                                                    value_ty declared_value_ty
+                                                    (Semantic_ir.Ident
+                                                       "__lg_assoc_existing_value")
+                                                );
+                                              target.semantic_expr;
+                                            ]
+                                      in
                                       let expression =
                                         List.fold_left
                                           (fun map (key, value) ->
@@ -2438,10 +2571,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                                  "assoc")
                                               [
                                                 map;
-                                                key.semantic_expr;
-                                                value.semantic_expr;
+                                                coerce_expression_to_type key_ty
+                                                  key.ty key.semantic_expr;
+                                                coerce_expression_to_type
+                                                  value_ty value.ty
+                                                  value.semantic_expr;
                                               ])
-                                          target.semantic_expr pairs
+                                          initial_map pairs
                                       in
                                       typed_ir
                                         (Types.dynamic_map key_ty value_ty)

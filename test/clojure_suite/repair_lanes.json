@@ -65,22 +65,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/assoc.cljc\", line <n>: lg: assoc expects a map or vector, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.assoc",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/assoc.cljc\", line <n>: lg: assoc expects a map or vector, got nil",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.assoc",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.assoc-bang",

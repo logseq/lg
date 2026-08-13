@@ -280,7 +280,7 @@
   (-meta [value]))
 
 (defprotocol IWithMeta
-  (-with-meta [value metadata]))
+  (-with-meta [value metadata] :self))
 
 ;; LG's typed reduction primitive always supplies the initial accumulator.
 (defprotocol IReduce

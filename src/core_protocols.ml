@@ -702,7 +702,7 @@ let declare_map_protocols registry =
   |> Protocol_registry.declare with_meta_id
        [
          signature (method_id with_meta_id "-with-meta")
-           [ map_ty; metadata_ty ] map_ty;
+           [ map_ty; metadata_ty ] (TVar "__lg_protocol_self");
        ]
   |> add_or_fail
 
@@ -866,6 +866,23 @@ let add_vector_kv_reduce_protocol registry =
     registry
   |> add_or_fail
 
+let add_vector_metadata_protocols registry =
+  let element = TVar "vector_metadata_element" in
+  let vector = TVector element in
+  let metadata_ty = TOcaml "Lg_edn_backend.t" in
+  let add protocol_id method_name ocaml_name ty registry =
+    let binding = Types.binding ~protocol_id ocaml_name ty in
+    Protocol_registry.add_implementation protocol_id
+      (method_id protocol_id method_name)
+      Receiver_id.Vector_receiver binding registry
+    |> add_or_fail
+  in
+  registry
+  |> add meta_id "-meta" "Lg_runtime.Runtime_vector.metadata"
+       (TFn ([ vector ], metadata_ty))
+  |> add with_meta_id "-with-meta" "Lg_runtime.Runtime_vector.with_metadata"
+       (TFn ([ vector; metadata_ty ], vector))
+
 let add_indexed receiver ocaml_name registry =
   let binding =
     Types.binding ~protocol_id:indexed_id ocaml_name
@@ -994,7 +1011,7 @@ let initial_registry =
   |> declare_map_protocols |> add_runtime_map_protocols
   |> add_static_collection_protocols
   |> declare_vector_protocol |> add_vector_associative_protocols
-  |> add_vector_kv_reduce_protocol
+  |> add_vector_kv_reduce_protocol |> add_vector_metadata_protocols
 
 let find_seqable receiver_ty registry =
   match Receiver_id.of_type receiver_ty with
