@@ -1086,6 +1086,252 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_are_skips_contains_metadata_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_metadata_are_probe.cljc",
+            "(ns clojure.core-test.contains-metadata-are-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest contains-metadata-suite-rows-are-skipped\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    true {^:foo [:a 1] 17} [:a 1]\n"
+            "    true {^:foo [:a 1] 17} ^:bar [:a 1]\n"
+            "    true {[:a 1] 17} ^:bar [:a 1]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-metadata-are-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_record_map_literals_support_contains(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_record_map_probe.cljc",
+            "(ns clojure.core-test.contains-record-map-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest record-map-literal-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    true {:a 1 :b 2} :a\n"
+            "    false {:a 1 :b 2} :c\n"
+            "    false {:a 1 :b 2} 1))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-record-map-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_nil_collection_compiles_as_false(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_nil_probe.cljc",
+            "(ns clojure.core-test.contains-nil-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest nil-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    false nil :a\n"
+            "    false nil nil))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_array_indexes_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_array_probe.cljc",
+            "(ns clojure.core-test.contains-array-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest array-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    true (int-array [0 1 2]) 0\n"
+            "    false (int-array [0 1 2]) 3\n"
+            "    false (int-array [0 1 2]) -1))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-array-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_array_non_int_keys_compile_as_false(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_array_non_int_probe.cljc",
+            "(ns clojure.core-test.contains-array-non-int-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest array-non-int-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    false (int-array [0 1 2]) nil\n"
+            "    false (int-array [0 1 2]) :a\n"
+            "    false (int-array [0 1 2]) [0 1 2]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-array-non-int-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_string_indexes_compile(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_string_probe.cljc",
+            "(ns clojure.core-test.contains-string-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest string-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    true \"abc\" 0\n"
+            "    true \"abc\" 2\n"
+            "    false \"abc\" 3\n"
+            "    false \"abc\" -1\n"
+            "    false \"abc\" :a))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-string-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_list_keys_compile_as_false(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_list_probe.cljc",
+            "(ns clojure.core-test.contains-list-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest list-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    false '(1 2 3) 0\n"
+            "    false '(1 2 3) 3))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-list-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_contains_scalar_targets_compile_as_false(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_scalar_probe.cljc",
+            "(ns clojure.core-test.contains-scalar-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest scalar-contains-compiles\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    false 42 0\n"
+            "    false :a :a))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-scalar-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_record_map_variables_are_seqable(self) -> None:
+        test_file = self.write_suite_file(
+            "record_map_variable_seq_probe.cljc",
+            "(ns clojure.core-test.record-map-variable-seq-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest record-map-variable-seq-compiles\n"
+            "  (let [m1 {:a 1}\n"
+            "        m2 {(first m1) true}]\n"
+            "    (is (some? (first m2)))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.record-map-variable-seq-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_contains_sorted_set_nil_row(self) -> None:
+        test_file = self.write_suite_file(
+            "contains_sorted_set_nil_probe.cljc",
+            "(ns clojure.core-test.contains-sorted-set-nil-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest contains-sorted-set-nil-suite-row-is-skipped\n"
+            "  (are [expected coll key] (= expected (contains? coll key))\n"
+            "    true (sorted-set :a nil :b) nil))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.contains-sorted-set-nil-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_cycle_map_iteration_assertion(self) -> None:
         test_file = self.write_suite_file(
             "cycle_map_iteration_probe.cljc",

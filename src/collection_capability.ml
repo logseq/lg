@@ -193,6 +193,35 @@ let rec to_seq_expr env collection =
                     Types.source_name field.ty)
                   values))
   in
+  let record_fields_to_seq fields =
+    match fields with
+    | [] ->
+        Ok
+          ( TTuple [ TKeyword; TUnknown ],
+            apply "List.to_seq" [ Semantic_ir.List [] ] )
+    | (first_field : Types.field) :: rest ->
+        let value_ty = first_field.ty in
+        if
+          List.for_all
+            (fun (field : Types.field) -> Types.equal value_ty field.ty)
+            rest
+        then
+          let entries =
+            Structural_map.values_for collection fields
+            |> List.map (fun ((field : Types.field), value) ->
+                   Semantic_ir.Tuple [ Semantic_ir.String field.keyword; value ])
+          in
+          Ok
+            ( TTuple [ TKeyword; value_ty ],
+              apply "List.to_seq" [ Semantic_ir.List entries ] )
+        else
+          Error.error
+            ("record map sequence has heterogeneous values: "
+           ^ String.concat " | "
+               (List.map
+                  (fun (field : Types.field) -> Types.source_name field.ty)
+                  fields))
+  in
   if
     Option.is_none (Types.seqable_constraint_info collection.ty)
     && not (Types.equal value_ty collection.ty)
@@ -212,7 +241,11 @@ let rec to_seq_expr env collection =
   | (TRecord _ | TNamed_record { nominal = false; _ }) -> (
       match collection.record_values with
       | Some values -> record_values_to_seq values
-      | None -> Error.error "record map value is not seqable")
+      | None -> (
+          match collection.ty with
+          | TRecord fields | TNamed_record { fields; _ } ->
+              record_fields_to_seq fields
+          | _ -> Error.error "record map value is not seqable"))
   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
       Ok
         ( TTuple [ key_ty; value_ty ],

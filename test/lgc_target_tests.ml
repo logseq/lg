@@ -248,6 +248,16 @@ let test_js_literals_are_single_reader_forms_in_conditionals () =
   let melange = compile Lg.Target.Melange source in
   assert_not_contains melange "native"
 
+let test_metadata_forms_do_not_break_map_literals () =
+  let source =
+    {|
+(def map-with-metadata-key {^:foo [:a 1] 17})
+(def map-with-metadata-value {:a ^:foo [1 2]})
+|}
+  in
+  ignore (compile Lg.Target.Native source);
+  ignore (compile Lg.Target.Melange source)
+
 let tests =
   [
     ("reader discard omits forms", test_reader_discard_omits_forms);
@@ -275,6 +285,8 @@ let tests =
       test_spliced_reader_conditional_nil_splices_no_forms );
     ( "JavaScript literals are single reader forms in conditionals",
       test_js_literals_are_single_reader_forms_in_conditionals );
+    ( "metadata forms do not break map literals",
+      test_metadata_forms_do_not_break_map_literals );
     ( "rejects invalid reader conditionals",
       test_rejects_invalid_reader_conditionals );
   ]

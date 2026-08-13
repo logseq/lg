@@ -284,21 +284,56 @@ and parse_until ~target closing open_span description acc = function
       | Error _ as err -> err)
 
 and map_of_forms open_span close_span forms =
+  let rec remove_metadata acc = function
+    | { form = FSymbol "^"; span = metadata_span; _ } :: _metadata :: form
+      :: rest ->
+        let form =
+          {
+            form with
+            span =
+              {
+                start_offset = metadata_span.start_offset;
+                end_offset = form.span.end_offset;
+              };
+          }
+        in
+        remove_metadata (form :: acc) rest
+    | { form = FSymbol "^"; span = metadata_span; _ } :: _ ->
+        error_at metadata_span "metadata expects a form"
+    | { form = FSymbol metadata; span = metadata_span; _ } :: form :: rest
+      when String.starts_with ~prefix:"^" metadata ->
+        let form =
+          {
+            form with
+            span =
+              {
+                start_offset = metadata_span.start_offset;
+                end_offset = form.span.end_offset;
+              };
+          }
+        in
+        remove_metadata (form :: acc) rest
+    | form :: rest -> remove_metadata (form :: acc) rest
+    | [] -> Ok (List.rev acc)
+  in
   let rec pairs acc = function
     | [] -> Ok (List.rev acc)
     | key :: value :: rest -> pairs ((key, value) :: acc) rest
     | [ _ ] -> Error.error "map literal requires an even number of forms"
   in
-  Result.map
-    (fun pairs ->
-      located
-        ~children:(pairs |> List.concat_map (fun (key, value) -> [ key; value ]))
-        (FMap (pairs |> List.map (fun (key, value) -> (key.form, value.form))))
-        {
-          start_offset = open_span.start_offset;
-          end_offset = close_span.end_offset;
-        })
-    (pairs [] forms)
+  Result.bind (remove_metadata [] forms) (fun forms ->
+      Result.map
+        (fun pairs ->
+          located
+            ~children:
+              (pairs |> List.concat_map (fun (key, value) -> [ key; value ]))
+            (FMap
+               (pairs |> List.map (fun (key, value) -> (key.form, value.form))))
+            {
+              start_offset = open_span.start_offset;
+              end_offset = close_span.end_offset;
+            })
+        (pairs [] forms))
 
 and parse_present ~target tokens =
   match parse_one ~target tokens with

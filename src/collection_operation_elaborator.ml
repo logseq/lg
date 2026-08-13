@@ -3969,6 +3969,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  ~default:
                    (Error.error
                       "contains? expects a static membership witness")
+        | TNil, _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
         | TOcaml_app ("Lg_runtime.Runtime_transient.set", [ element_type ]), _
           when Types.equal element_type TUnknown
                || Types.same_shape element_type value.ty ->
@@ -4018,6 +4019,33 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           value.semantic_expr,
                           apply "Rrbvec.length" [ target.semantic_expr ] ) )))
         | TVector _, _ -> Error.error "contains? vector index must be int"
+        | TArray _, TInt ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Infix
+                    ( "&&",
+                      Semantic_ir.Infix
+                        (">=", value.semantic_expr, Semantic_ir.Int 0),
+                      Semantic_ir.Infix
+                        ( "<",
+                          value.semantic_expr,
+                          apply "Array.length" [ target.semantic_expr ] ) )))
+        | TArray _, _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
+        | TString, TInt ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Infix
+                    ( "&&",
+                      Semantic_ir.Infix
+                        (">=", value.semantic_expr, Semantic_ir.Int 0),
+                      Semantic_ir.Infix
+                        ( "<",
+                          value.semantic_expr,
+                          apply "String.length" [ target.semantic_expr ] ) )))
+        | TString, _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
+        | (TList _ | TSeq _), _ -> Ok (typed_ir TBool (Semantic_ir.Bool false))
+        | (TInt | TFloat | TBool | TChar | TKeyword | TSymbol), _ ->
+            Ok (typed_ir TBool (Semantic_ir.Bool false))
         | TMap_keys, TKeyword ->
             Ok
               (typed_ir TBool
@@ -4025,6 +4053,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     ( Semantic_ir.Ident "Lg_runtime.Core_set.String_set.mem",
                       [ value.semantic_expr; target.semantic_expr ] )))
         | TMap_keys, _ -> Error.error "contains? map key must be a keyword"
+        | (TRecord _ | TNamed_record _), TKeyword ->
+            Result.map
+              (fun adapter ->
+                typed_ir TBool
+                  (Semantic_ir.Apply (adapter, [ value.semantic_expr ])))
+              (Collection_capability.contains_adapter target)
+        | (TRecord _ | TNamed_record _), _ ->
+            Ok (typed_ir TBool (Semantic_ir.Bool false))
         | target_ty, _ when Types.is_dynamic target_ty ->
             Result.map
               (fun value ->

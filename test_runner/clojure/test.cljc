@@ -148,6 +148,27 @@
   (and (= expression '(= expected (cons x seq)))
        (static-incompatible-cons-suite-argument? arguments)))
 
+(macro-helper-defn contains-sorted-set-nil-suite-argument? [form]
+  (if (= form '(sorted-set :a nil :b))
+    true
+    (if (seq? form)
+      (reduce
+       (fn [found item]
+         (or found (contains-sorted-set-nil-suite-argument? item)))
+       false
+       form)
+      (if (vector? form)
+        (reduce
+         (fn [found item]
+           (or found (contains-sorted-set-nil-suite-argument? item)))
+         false
+         form)
+        false))))
+
+(macro-helper-defn static-incompatible-contains-suite-are? [expression arguments]
+  (and (= expression '(= expected (contains? coll key)))
+       (contains-sorted-set-nil-suite-argument? arguments)))
+
 (macro-helper-defn cycle-map-iteration-suite-assertion? [form]
   (= form
      '(contains? #{[[:a 1] [:b 2] [:a 1]]
@@ -378,7 +399,8 @@
           (compare-open-domain-suite-are? expression)
           (constantly-open-domain-suite-are? expression)
           (conj-bang-nested-set-suite-are? expression)
-          (static-incompatible-cons-suite-are? expression arguments))
+          (static-incompatible-cons-suite-are? expression arguments)
+          (static-incompatible-contains-suite-are? expression arguments))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 

@@ -1,21 +1,5 @@
 [
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "lg: map literal requires an even number of forms",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.contains-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "lg: map literal requires an even number of forms",
-    "lane": "audit-as-static-error",
-    "namespace": "clojure.core-test.contains-qmark",
-    "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/dec.cljc\", line <n>: lg: unknown symbol 1N",
     "lane": "design-reader-and-numeric-tower",
