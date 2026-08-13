@@ -29453,6 +29453,7 @@ let test_source_drop_map_entry_and_pending_protocols_match_clojurescript () =
 (def delayed (delay 9))
 (def before-force (source-realized? delayed))
 (def forced (force delayed))
+(def source-seq (map inc [1 2 3]))
 
 (println
   (and (= [3 4] (vec (drop-values [1 2 3 4] 2)))
@@ -29469,6 +29470,7 @@ let test_source_drop_map_entry_and_pending_protocols_match_clojurescript () =
        (= 9 forced)
        (source-realized? delayed)
        (source-realized? (future-call (fn [] 1)))
+       (not (source-realized? source-seq))
        (not (source-realized? (PendingFlag. false)))
        (source-realized? (PendingFlag. true))))
 |}

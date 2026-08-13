@@ -519,6 +519,8 @@ let add_reference_protocols registry =
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_future.t") pending_id
        "-realized?" "Lg_runtime.Runtime_future.realized"
        (TFn ([ future ], TBool))
+  |> add Receiver_id.Seq_receiver pending_id "-realized?"
+       "Lg_runtime.Runtime_seq.realized" (TFn ([ TSeq value ], TBool))
   |> add Receiver_id.Ref_receiver reset_id "-reset!"
        "Lg_runtime.Runtime_reference.reset"
        (TFn ([ reference; value ], value))

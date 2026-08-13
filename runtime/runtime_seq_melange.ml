@@ -3,6 +3,8 @@ external call0 : (unit -> 'a) -> int -> unit -> 'a = "call" [@@mel.send]
 external call2 : ('a -> 'b -> 'c) -> int -> 'a -> 'b -> 'c = "call"
   [@@mel.send]
 
+let[@warning "-32"] realized _sequence = false
+
 let defer thunk =
   let sequence = lazy (call0 thunk 0 ()) in
   fun () -> Lazy.force sequence ()
