@@ -17,22 +17,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/dissoc_bang.cljc\", line <n>: lg: dissoc! expects a transient map, got record<{:a:int}>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.dissoc-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/dissoc_bang.cljc\", line <n>: lg: dissoc! expects a transient map, got record<{:a:int}>",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.dissoc-bang",
-    "static_subclass": "transient-collection-boundary",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/distinct.cljc\", line <n>: lg: heterogeneous vector has element types Lg_runtime.Runtime_map.t<keyword,keyword> | record<{:k:keyword}>; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.distinct",
