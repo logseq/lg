@@ -300,6 +300,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     | Some _ -> TNullable value_ty
     | None -> value_ty
   in
+  let core_function_symbol scope env name member =
+    match
+      ( lookup_binding scope env name,
+        lookup_binding scope env ("clojure.core/" ^ member) )
+    with
+    | Ok binding, Ok core_binding -> binding.ocaml_name = core_binding.ocaml_name
+    | _ -> false
+  in
   let compile_function_arg_for_value scope env value_ty extra_tys form =
     let parameter_tys = value_ty :: extra_tys in
     let compile_contextual_call () =
@@ -328,6 +336,16 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         [ body ]
       |> Result.map Function_elaborator.fn_code
     in
+    let compile_identity () =
+      match extra_tys with
+      | [] ->
+          let argument = "__lg_update_identity_arg" in
+          Ok
+            (typed_ir (TFn ([ value_ty ], value_ty))
+               (Semantic_ir.Fun
+                  ([ Semantic_ir.PVar argument ], Semantic_ir.Ident argument)))
+      | _ -> compile_contextual_call ()
+    in
     match form with
     | FList (FSymbol "fn" :: (FVector _ as params) :: body_forms) ->
         let lookup_function_ty name =
@@ -349,20 +367,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                  semantic_expr =
                    constrain_record_function_argument_expr fn value_ty;
                })
+    | FSymbol name when core_function_symbol scope env name "identity" ->
+        compile_identity ()
     | FSymbol _ -> (
         match compile_function_arg scope env form with
         | Ok ({ ty = TFn _; _ } as fn) -> Ok fn
         | Ok _ | Error _ -> compile_contextual_call ())
     | FList _ -> compile_contextual_call ()
     | _ -> compile_function_arg scope env form
-  in
-  let core_function_symbol scope env name member =
-    match
-      ( lookup_binding scope env name,
-        lookup_binding scope env ("clojure.core/" ^ member) )
-    with
-    | Ok binding, Ok core_binding -> binding.ocaml_name = core_binding.ocaml_name
-    | _ -> false
   in
   let compile_deftype_method scope env record method_name args =
     match
@@ -3196,13 +3208,46 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                    concrete type annotation"
               | _ -> Error.error "update expects a map"))
       | target_form :: index_form :: fn_form :: extra_forms -> (
+          let static_ifn_nil =
+            static_ifn_nil_updater (fn_form, extra_forms)
+          in
+          let vector_index_may_be_missing =
+            match (target_form, index_form) with
+            | FVector items, FInt index ->
+                index < 0 || index >= List.length items
+            | _ -> true
+          in
+          let nil_aware_vector_updater =
+            vector_index_may_be_missing
+            &&
+            (static_ifn_nil
+            ||
+            match fn_form with
+            | FSymbol name when extra_forms = [] ->
+                core_function_symbol scope env name "identity"
+                || core_function_symbol scope env name "nil?"
+            | _ -> false)
+          in
+          let fn_form =
+            if static_ifn_nil then
+              FList
+                [
+                  FSymbol "fn";
+                  FVector [ FSymbol "__lg_update_static_ifn_arg" ];
+                  FSymbol "nil";
+                ]
+            else fn_form
+          in
           let target_and_fn =
             Result.bind (compile_args_for scope env extra_forms) (fun extra_args ->
                 Result.bind (compile_expr scope env target_form) (fun target ->
                     let target = unwrap_protocol_value target in
                     let value_ty =
                       match target.ty with
-                      | TVector element_ty -> element_ty
+                      | TVector element_ty ->
+                          if nil_aware_vector_updater then
+                            TNullable element_ty
+                          else element_ty
                       | target_ty -> (
                           match Types.dynamic_map_types target_ty with
                           | Some (_, value_ty) -> value_ty
@@ -3237,28 +3282,108 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                ~actual:arg.ty)
                               (drop 1 param_tys) extra_args
                     then
-                      let old_expr =
-                        apply "Rrbvec.nth"
-                          [ target.semantic_expr;
-                            index.semantic_expr;
-                          ]
+                      let first_param_ty = List.hd param_tys in
+                      let old_value =
+                        match first_param_ty with
+                        | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                            typed_ir first_param_ty
+                              (Semantic_ir.Match
+                                 ( apply "Rrbvec.nth_opt"
+                                     [
+                                       target.semantic_expr;
+                                       index.semantic_expr;
+                                     ],
+                                   [
+                                     ( Semantic_ir.PConstructor
+                                         ( "Some",
+                                           Some
+                                             (Semantic_ir.PVar
+                                                "__lg_update_vector_value") ),
+                                       Semantic_ir.Constructor
+                                         ( "Some",
+                                           Some
+                                             (Semantic_ir.Ident
+                                                "__lg_update_vector_value") )
+                                     );
+                                     ( Semantic_ir.PConstructor ("None", None),
+                                       Semantic_ir.Constructor ("None", None) );
+                                   ] ))
+                        | _ ->
+                            typed_ir inner
+                              (apply "Rrbvec.nth"
+                                 [
+                                   target.semantic_expr;
+                                   index.semantic_expr;
+                                 ])
                       in
-                      let arguments = typed_ir inner old_expr :: extra_args in
+                      let arguments = old_value :: extra_args in
                       Result.bind
                         (prepare_updater_arguments [] param_tys arguments)
                         (fun arguments ->
                           let value_expr =
                             Semantic_ir.Apply (fn.semantic_expr, arguments)
                           in
+                          let index_at_end =
+                            Semantic_ir.Infix
+                              ( "=",
+                                index.semantic_expr,
+                                apply "Rrbvec.length" [ target.semantic_expr ]
+                              )
+                          in
+                          let set_or_append vector value =
+                            Semantic_ir.If
+                              ( index_at_end,
+                                apply "Rrbvec.push_back" [ vector; value ],
+                                apply "Rrbvec.set"
+                                  [ vector; index.semantic_expr; value ] )
+                          in
+                          let nullable_vector_update value_ty value =
+                            let item_name = "__lg_update_vector_item" in
+                            let lifted_target =
+                              apply "Rrbvec.of_list"
+                                [
+                                  apply "List.map"
+                                    [
+                                      Semantic_ir.Fun
+                                        ( [ Semantic_ir.PVar item_name ],
+                                          Semantic_ir.Constructor
+                                            ( "Some",
+                                              Some
+                                                (Semantic_ir.Ident item_name) )
+                                        );
+                                      apply "Rrbvec.to_list"
+                                        [ target.semantic_expr ];
+                                    ];
+                                ]
+                            in
+                            Ok
+                              (typed_ir (TVector value_ty)
+                                 (set_or_append lifted_target value))
+                          in
                           if Types.equal ret inner then
                             Ok
                               (typed_ir target.ty
-                                 (apply "Rrbvec.set"
-                                    [
-                                      target.semantic_expr;
-                                      index.semantic_expr;
-                                      value_expr;
-                                    ]))
+                                 (set_or_append target.semantic_expr value_expr))
+                          else if
+                            match inner with
+                            | TUnknown | TMeta _ | TVar _ -> true
+                            | _ -> false
+                          then
+                            Ok
+                              (typed_ir (TVector ret)
+                                 (set_or_append target.semantic_expr value_expr))
+                          else if Types.equal ret TNil then
+                            nullable_vector_update (TNullable inner)
+                              (Semantic_ir.Constructor ("None", None))
+                          else if
+                            match ret with
+                            | TNullable ret_inner
+                            | TOcaml_app ("option", [ ret_inner ]) ->
+                                Types.assignable ~policy:Host_boundary
+                                  ~expected:inner ~actual:ret_inner
+                            | _ -> false
+                          then
+                            nullable_vector_update ret value_expr
                           else
                             (* Clojure update may change the element type;
                                repack the whole vector as dynamic *)

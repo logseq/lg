@@ -23823,6 +23823,27 @@ let test_update_supports_vector_indexes () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "update_supports_vector_indexes" "[1 42 3]\n" ocaml_source
 
+let test_update_supports_vector_identity_and_ifn_updaters () =
+  let source =
+    {|
+(ns app.update-vector-ifn
+  (:require [clojure.core :refer [= identity println update]]))
+(println (= (update [0 1] 0 identity) [0 1]))
+(println (= (update [0 1] 2 identity) [0 1 nil]))
+(println (= (update [] 0 #{}) [nil]))
+(println (= (update [] 0 {}) [nil]))
+(println (= (update [] 0 :f) [nil]))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/update_vector_ifn.cljc" source
+  in
+  assert_ocaml_runs "update_supports_vector_identity_and_ifn_updaters"
+    "true\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "app/update_vector_ifn.cljc"
+       source)
+
 let test_update_rejects_vector_index_type_mismatch () =
   Lg.Compiler.compile_string
     {|(def x (update [1 2] "0" (fn [value] (+ value 1))))|}
@@ -48028,6 +48049,8 @@ let tests =
     ( "update rejects extra argument type mismatch",
       test_update_rejects_extra_argument_type_mismatch );
     ("update supports vector indexes", test_update_supports_vector_indexes);
+    ( "update supports vector identity and IFn updaters",
+      test_update_supports_vector_identity_and_ifn_updaters );
     ( "update rejects vector index type mismatch",
       test_update_rejects_vector_index_type_mismatch );
     ( "select-keys ignores unknown fields",
