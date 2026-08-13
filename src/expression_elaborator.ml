@@ -257,6 +257,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
             | expanded_bindings :: expanded_body_forms ->
                 compile_let scope env expanded_bindings expanded_body_forms
             | [] -> assert false)
+  | FList (FSymbol "letfn" :: bindings :: body_forms) ->
+      compile_letfn scope env bindings body_forms
   | FList [ FSymbol "__lg_if-let"; binding; then_form; else_form ] ->
       compile_if_let scope env binding then_form else_form
   | FList [ FSymbol "__lg_if-some"; binding; then_form; else_form ] ->
@@ -787,6 +789,30 @@ and compile_loop scope env bindings body_forms =
 
 and compile_let scope env bindings body_forms =
   (Lazy.force context).special_forms.compile_let scope env bindings body_forms
+
+and compile_letfn scope env bindings body_forms =
+  match (bindings, body_forms) with
+  | ( FVector [ FList (FSymbol name :: (FVector _ as params) :: function_body) ],
+      _ :: _ ) ->
+      compile_expr scope env
+        (FList
+           ( FSymbol "let"
+           :: FVector
+                [
+                  FSymbol name;
+                  FList (FSymbol "fn" :: FSymbol name :: params :: function_body);
+                ]
+           :: body_forms ))
+  | FVector [], _ ->
+      Error.error "letfn requires at least one local function binding"
+  | FVector (_ :: _ :: _), _ ->
+      Error.error
+        "letfn currently supports exactly one local recursive function"
+  | FVector [ _ ], _ ->
+      Error.error
+        "letfn binding must be a list of name, parameter vector, and body"
+  | _, [] -> Error.error "letfn requires a body"
+  | _ -> Error.error "letfn expects a vector of local function bindings"
 
 and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)

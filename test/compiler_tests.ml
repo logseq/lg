@@ -6125,6 +6125,38 @@ let test_named_fn_is_locally_recursive () =
 |}
   |> expect_error "unknown symbol private-name"
 
+let test_letfn_supports_single_local_recursive_function () =
+  let source =
+    {|
+(def result
+  (letfn [(countdown [value]
+            (if (zero? value)
+              0
+              (countdown (dec value))))]
+    (countdown 5)))
+(println result)
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "letfn must remain statically recursive";
+  assert_ocaml_runs "letfn_supports_single_local_recursive_function" "0\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_letfn_reports_unsupported_mutual_recursion () =
+  compile_string_with_stdlib
+    {|
+(letfn [(even-local? [value]
+          (if (zero? value) true (odd-local? (dec value))))
+        (odd-local? [value]
+          (if (zero? value) false (even-local? (dec value))))]
+  (even-local? 4))
+|}
+  |> expect_error_contains
+       "letfn currently supports exactly one local recursive function"
+
 let test_if_rejects_static_and_dynamic_function_parameter_join () =
   Lg.Compiler.compile_string
     {|
@@ -47072,6 +47104,10 @@ let tests =
     ( "callback return records are materialized",
       test_callback_return_records_are_materialized );
     ("named fn is locally recursive", test_named_fn_is_locally_recursive);
+    ( "letfn supports single local recursive function",
+      test_letfn_supports_single_local_recursive_function );
+    ( "letfn reports unsupported mutual recursion",
+      test_letfn_reports_unsupported_mutual_recursion );
     ( "if rejects static and dynamic function parameter joins",
       test_if_rejects_static_and_dynamic_function_parameter_join );
     ("JVM lookup hints are rejected", test_jvm_lookup_hints_are_rejected);

@@ -32,19 +32,19 @@
     "target": "native"
   },
   {
-    "class": "unsupported-form-or-arity",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: unknown function letfn",
-    "lane": "implement-form-or-reader-support",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": null,
+    "static_subclass": "dynamic-boundary-needs-closed-domain",
     "target": "melange"
   },
   {
-    "class": "unsupported-form-or-arity",
-    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: unknown function letfn",
-    "lane": "implement-form-or-reader-support",
+    "class": "static-typing-or-closed-domain-boundary",
+    "error": "File \"<suite>/every_qmark.cljc\", line <n>: lg: static values cannot cross a dynamic boundary; keep the value statically typed or define a sum type: use a closed sum type containing every alternative; got int",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.every-qmark",
-    "static_subclass": null,
+    "static_subclass": "dynamic-boundary-needs-closed-domain",
     "target": "native"
   },
   {
