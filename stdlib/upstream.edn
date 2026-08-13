@@ -225,7 +225,7 @@
     -kv-reduce {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -meta {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -with-meta {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
-    -disjoin {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
+    -disjoin {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-set-and-nil-receiver-implementations}
     -assoc-n {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -name {:status :static-adaptation
            :reason :source-inamed-protocol-method-with-static-keyword-symbol-and-extensible-record-receivers}
@@ -646,7 +646,7 @@
     pop {:status :static-adaptation
          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-while-empty-list-and-vector-runtime-errors-remain-separate-boundaries}
     disj {:status :static-adaptation
-          :reason :source-overloads-preserve-upstream-one-two-and-variadic-left-to-right-disjoin-control-flow-and-inline-direct-calls-through-clojurescript-iset-while-lg-requires-a-non-nil-static-set}
+          :reason :source-overloads-preserve-upstream-one-two-and-variadic-left-to-right-disjoin-control-flow-and-inline-direct-calls-through-clojurescript-iset-with-static-set-and-nil-receiver-implementations}
     count {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-icounted-with-static-witnesses-for-nil-seqables-and-explicit-protocol-implementations}
     seq {:status :static-adaptation

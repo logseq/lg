@@ -3,6 +3,7 @@ let conj_seq collection value = Seq.cons value collection
 let conj_vector collection value = Rrbvec.push_back collection value
 let conj_set collection value = Runtime_poly_set.add value collection
 let disjoin_poly_set collection value = Runtime_poly_set.remove value collection
+let disjoin_nil collection _value = collection
 let empty_poly_set _ = Runtime_poly_set.empty
 let empty_list _ = []
 let empty_vector _ = Rrbvec.empty

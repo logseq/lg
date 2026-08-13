@@ -717,6 +717,12 @@ let add_static_set_protocol registry =
   Protocol_registry.add_implementation set_id (method_id set_id "-disjoin")
     Receiver_id.Set_receiver binding registry
   |> add_or_fail
+  |> Protocol_registry.add_implementation set_id (method_id set_id "-disjoin")
+       Receiver_id.Nil_receiver
+       (Types.binding ~protocol_id:set_id
+          "Lg_runtime.Runtime_collection.disjoin_nil"
+          (TFn ([ TNil; element ], TNil)))
+  |> add_or_fail
 
 let add_runtime_map_protocols registry =
   let key = TVar "map_key" in
