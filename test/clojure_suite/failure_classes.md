@@ -20,20 +20,20 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 56 |
-| compile failed | 420 |
+| compiled | 69 |
+| compile failed | 407 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 27 |
-| namespaces failed on both native and Melange | 209 |
-| native-only compiled namespaces | 0 |
+| namespaces compiled on both native and Melange | 33 |
+| namespaces failed on both native and Melange | 202 |
+| native-only compiled namespaces | 1 |
 | Melange-only compiled namespaces | 2 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 27 | 211 |
-| Melange | 29 | 209 |
+| native | 34 | 204 |
+| Melange | 35 | 203 |
 
 Namespaces currently compiling on both targets:
 
@@ -41,9 +41,13 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.and`
 - `clojure.core-test.any-qmark`
 - `clojure.core-test.associative-qmark`
+- `clojure.core-test.bound-fn`
+- `clojure.core-test.bound-fn-star`
 - `clojure.core-test.comment`
+- `clojure.core-test.denominator`
 - `clojure.core-test.fn-qmark`
 - `clojure.core-test.format`
+- `clojure.core-test.intern`
 - `clojure.core-test.keyword`
 - `clojure.core-test.make-hierarchy`
 - `clojure.core-test.name`
@@ -51,12 +55,14 @@ Namespaces currently compiling on both targets:
 - `clojure.core-test.nil-qmark`
 - `clojure.core-test.not`
 - `clojure.core-test.number-range`
+- `clojure.core-test.numerator`
 - `clojure.core-test.or`
 - `clojure.core-test.pr-str`
 - `clojure.core-test.print-str`
 - `clojure.core-test.println-str`
 - `clojure.core-test.prn-str`
 - `clojure.core-test.rand-int`
+- `clojure.core-test.rationalize`
 - `clojure.core-test.sequential-qmark`
 - `clojure.core-test.some-qmark`
 - `clojure.core-test.symbol`
@@ -71,7 +77,7 @@ Namespaces currently compiling on both targets:
 | --- | ---: | --- |
 | `static-typing-or-closed-domain-boundary` | 244 | Split into intentional LG static errors, typed capability gaps, and places where a narrow runtime boundary is justified. Do not weaken all calls to dynamic. Direct `=`/`not=` now returns false/true for disjoint static source types, but first-class reuse of `=` across unrelated types still needs a typed equality capability. |
 | `reader-or-numeric-literal` | 130 | Decide numeric tower and remaining reader literal scope before implementation. Bigint (`N`), bigdecimal (`M`), ratios, tagged `#inst`, out-of-OCaml-int 64-bit literals, and non-ASCII char literals are visible blockers. Tagged `#uuid` string literals now parse as one form and lower to the existing UUID runtime type. |
-| `missing-core-api-macro-or-var` | 21 | Audit each missing public var/macro/special behavior. Examples include `bound-fn`, `bound-fn*`, `eval`, `intern`, `numerator`, `denominator`, `promise`, `definterface`, `def`, `cljs.core/IAtom`, and defmulti dispatch coverage. |
+| `missing-core-api-macro-or-var` | 8 | Audit each missing public var/macro/special behavior. Examples include `definterface`, `def`, `promise`, `cljs.core/IAtom`, `clojure.test/async`, and defmulti dispatch/value coverage. The suite helper now skips bodies for explicitly unsupported vars such as `bound-fn`, `intern`, `numerator`, and `rationalize`; that is compile coverage, not API support. |
 | `host-boundary-or-platform-specific` | 15 | Keep JVM/JS class identity, `cljs.js`, Java interop, and native output module gaps as host-boundary unless LG has a deliberate static representation. Direct `js/undefined` is now a narrow Melange host constant that lowers to static nil; Native `System/getProperty` is limited to the `"line.separator"` literal; Native `(Object.)` is only a truthy suite sentinel and does not implement JVM object identity. `Long/MAX_VALUE`, `Long/MIN_VALUE`, `Double/MAX_VALUE`, `Double/MIN_VALUE`, and the corresponding `js/Number.*` constants used by `number_range.cljc` are static target primitives. `Boolean`, `java.util.UUID`, and `cljs.core.UUID` record identity in suite tests remain host/representation boundaries after `#uuid` reader support. Other JS/JVM globals remain host-boundary. |
 | `missing-suite-support-namespace-or-helper` | 8 | Suite helper namespaces that are not standard core API behavior. Treat separately from source stdlib migration. |
 | `unsupported-form-or-arity` | 0 | The previous `are`/`#uuid` false arity blocker in `parse_uuid.cljc` has been cleared. |
@@ -80,12 +86,14 @@ Namespaces currently compiling on both targets:
 
 ## Platform skew
 
+- `clojure.core-test.eval`: Native compiles by skipping unsupported `eval`;
+  Melange still fails on `cljs.js`.
 - `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
 - `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
 
 ## Current interpretation
 
-The 420 compile failures are not 420 independent core defects. The current
+The 407 compile failures are not 407 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -156,6 +164,12 @@ in `scan_report.json` but still be blocked from smoke promotion.
   `constantly.cljc`. That namespace now fails later on real reader/numeric
   boundaries: Native reaches the ratio literal `111/7`, while Melange reaches
   the named character literal `\return`.
+- `clojure.core-test.portability/when-var-exists` now has LG-specific
+  compile-time gating for explicitly unsupported vars. This prevents suites for
+  unsupported APIs from failing merely because their skipped body contains
+  missing forms. The newly compiling namespaces `bound-fn`, `bound-fn-star`,
+  `denominator`, `intern`, `numerator`, and `rationalize` therefore indicate
+  correct suite gating, not implementation of those public APIs.
 - `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
   disjoint static source types without dynamic packing. The upstream
   `eq.cljc` helper still fails because it passes equality as a first-class

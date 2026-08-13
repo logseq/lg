@@ -138,6 +138,30 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_unsupported_vars(self) -> None:
+        test_file = self.write_suite_file(
+            "unsupported_var_probe.cljc",
+            "(ns clojure.core-test.unsupported-var-probe\n"
+            "  (:require [clojure.core-test.portability\n"
+            "             #?(:cljs :refer-macros :default :refer)\n"
+            "             [when-var-exists]]))\n\n"
+            "(when-var-exists missing-lg-suite-var\n"
+            "  (def impossible (definitely-not-a-function 1)))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.unsupported-var-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
 
 if __name__ == "__main__":
     unittest.main()

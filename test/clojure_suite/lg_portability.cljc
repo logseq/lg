@@ -1,7 +1,20 @@
 (ns clojure.core-test.portability)
 
-(defmacro when-var-exists [_var-sym & body]
-  `(do ~@body))
+(macro-helper-defn unsupported-lg-suite-var? [var-sym]
+  (or (= var-sym 'bound-fn)
+      (= var-sym 'bound-fn*)
+      (= var-sym 'denominator)
+      (= var-sym 'eval)
+      (= var-sym 'intern)
+      (= var-sym 'numerator)
+      (= var-sym 'promise)
+      (= var-sym 'rationalize)
+      (= var-sym 'missing-lg-suite-var)))
+
+(defmacro when-var-exists [var-sym & body]
+  (if (unsupported-lg-suite-var? var-sym)
+    `(println "SKIP -" '~var-sym)
+    `(do ~@body)))
 
 (defn sleep [_ms]
   nil)
