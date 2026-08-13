@@ -62,6 +62,12 @@ let vreset reference value = reset reference value
 
 let swap reference update = reset reference (update reference.value)
 
+let compare_and_set reference old_value new_value =
+  if reference.value = old_value then (
+    ignore (reset reference new_value);
+    true)
+  else false
+
 let same_key key (Watch watch) = String.equal key watch.key
 
 let add_watch reference key callback =

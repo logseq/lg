@@ -534,6 +534,9 @@ let add_reference_protocols registry =
   |> add Receiver_id.Ref_receiver swap_id "-swap!"
        "Lg_runtime.Runtime_reference.swap"
        (TFn ([ reference; TFn ([ value ], value) ], value))
+  |> add Receiver_id.Ref_receiver atom_id "-compare-and-set!"
+       "Lg_runtime.Runtime_reference.compare_and_set"
+       (TFn ([ reference; value; value ], TBool))
   |> add (Receiver_id.Host_receiver "Lg_runtime.Runtime_slot.t") swap_id
        "-swap!" "Lg_runtime.Runtime_slot.swap"
        (TFn ([ slot; TFn ([ value ], value) ], value))

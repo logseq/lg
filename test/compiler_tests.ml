@@ -13007,6 +13007,26 @@ let test_source_ifn_predicate_matches_static_callable_values () =
   if string_contains_substring melange "Runtime_dynamic" then
     failwith "Melange ifn? must use static callable evidence"
 
+let test_satisfies_resolves_cljs_core_protocol_aliases () =
+  let source =
+    {|
+(ns app.cljs-core-protocol-alias
+  (:require [cljs.core :as core :refer [atom println]]))
+
+(def value (atom 1))
+(println (satisfies? cljs.core/IAtom value))
+(println (satisfies? core/IAtom value))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "satisfies_resolves_cljs_core_protocol_aliases" "true\ntrue\n"
+    native_source;
+  let melange_source =
+    compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "cljs.core protocol aliases must stay statically typed"
+
 let test_ifn_predicate_is_source_owned () =
   let core_source = read_file "stdlib/clojure/core.cljc" in
   let manifest = read_file "stdlib/upstream.edn" in
@@ -46721,6 +46741,8 @@ let tests =
     ( "replace is source-owned", test_replace_is_source_owned );
     ( "source ifn predicate matches static callable values",
       test_source_ifn_predicate_matches_static_callable_values );
+    ( "satisfies resolves cljs.core protocol aliases",
+      test_satisfies_resolves_cljs_core_protocol_aliases );
     ( "ifn predicate is source-owned", test_ifn_predicate_is_source_owned );
     ( "runtime protocol extension forms are host boundaries",
       test_runtime_protocol_extension_forms_are_host_boundaries );

@@ -79,10 +79,15 @@ let resolve_protocol_id ~scope env protocol_id =
         | Some target ->
             resolve_core_alias target (Protocol_id.name protocol_id)
         | None -> (
-            match
-              Module_registry.resolve_alias ~scope module_path (Env.modules env)
-            with
-            | None -> protocol_id
+            if
+              String.equal module_path "cljs.core"
+              || String.equal module_path "clojure.core"
+            then resolve_core_alias module_path (Protocol_id.name protocol_id)
+            else
+              match
+                Module_registry.resolve_alias ~scope module_path (Env.modules env)
+              with
+              | None -> protocol_id
             | Some target ->
                 Protocol_id.create ~owner:[ Module_id.to_string target ]
                   ~name:(Protocol_id.name protocol_id)))
