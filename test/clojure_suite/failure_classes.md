@@ -13,7 +13,8 @@ auditable summary with:
 ```bash
 python3 test/clojure_suite/summarize_clojure_suite.py \
   --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea \
-  --static-error-report test/clojure_suite/static_error_lane.json
+  --static-error-report test/clojure_suite/static_error_lane.json \
+  --repair-lane-report test/clojure_suite/repair_lanes.json
 ```
 
 ## Compile coverage
@@ -101,6 +102,18 @@ Static typing subclasses:
 | `dynamic-boundary-needs-closed-domain` | 8 | Failures such as watch events and ex-data cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
 | `form-or-declaration-static-gap` | 8 | Includes forms such as empty-field `deftype`, match-pattern typing, and `(atom nil)` option inference. These need source/type-system work, not stdlib public-name dispatch. |
 | `typed-protocol-or-capability-gap` | 8 | Implement narrow typed capabilities or protocol witnesses where source semantics are useful on native/Melange, such as comparators or typed updater support. Static seq values now satisfy `IPending/-realized?` by returning false instead of exposing realization state; `find` now supports nil receivers and vector index lookup; `hash-set` now supports nil, char, empty list, vector, nested set, and promotes to smoke coverage on both targets. |
+
+Repair lanes are also emitted to
+`test/clojure_suite/repair_lanes.json`, one normalized entry per failing
+namespace/target:
+
+| lane | failures | interpretation |
+| --- | ---: | --- |
+| `design-reader-and-numeric-tower` | 136 | Bigint, bigdecimal, ratio, large integer, named char, and tagged literal behavior must be designed across reader, types, arithmetic, equality, printing, and EDN before implementation. |
+| `audit-as-static-error` | 125 | Upstream negative runtime tests that LG intentionally rejects at compile time; keep these in the static-error lane unless a concrete source-compatible static API is missing. |
+| `design-closed-domain-or-narrow-runtime-boundary` | 72 | Heterogeneous values and open event/error payloads need explicit closed domains or a documented minimal dynamic boundary such as regex match/ex-data/watch payloads. |
+| `implement-static-language-capability` | 44 | Real LG language/runtime capability gaps: first-class polymorphic operations, typed transient domains, option inference, match/type-name forms, comparators, and nullable updaters. |
+| `document-or-gate-host-boundary` | 20 | JVM/JS class identity, Java interop, and platform-only globals must stay documented/gated unless LG introduces a deliberate portable representation. |
 
 ## Platform skew
 

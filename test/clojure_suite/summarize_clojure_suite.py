@@ -268,10 +268,80 @@ def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
     )
 
 
+def repair_lane_for(failure_class: str, static_subclass: str | None) -> str:
+    if static_subclass == "negative-runtime-test-is-static-error":
+        return "audit-as-static-error"
+    if static_subclass in {
+        "dynamic-boundary-needs-closed-domain",
+        "heterogeneous-collection-needs-closed-domain",
+    }:
+        return "design-closed-domain-or-narrow-runtime-boundary"
+    if static_subclass in {
+        "first-class-polymorphic-or-hof",
+        "typed-protocol-or-capability-gap",
+        "transient-collection-boundary",
+        "form-or-declaration-static-gap",
+    }:
+        return "implement-static-language-capability"
+    if failure_class == "reader-or-numeric-literal":
+        return "design-reader-and-numeric-tower"
+    if failure_class == "host-boundary-or-platform-specific":
+        return "document-or-gate-host-boundary"
+    if failure_class == "missing-core-api-macro-or-var":
+        return "port-source-api-or-add-primitive-boundary"
+    if failure_class == "missing-suite-support-namespace-or-helper":
+        return "repair-suite-compatibility-scaffold"
+    if failure_class in {
+        "unsupported-form-or-arity",
+        "unsupported-namespace-form",
+        "reader-conditional-support",
+        "suite-require-form-not-accepted",
+    }:
+        return "implement-form-or-reader-support"
+    return "inspect-unclassified"
+
+
+def repair_lanes(results: Iterable[Result]) -> list[dict[str, str | None]]:
+    """Return one machine-readable repair lane entry per compile failure."""
+
+    lanes = []
+    for result in results:
+        if result.status == "compiled":
+            continue
+        failure_class = classify(result.error)
+        static_subclass = (
+            classify_static_boundary(result.error)
+            if failure_class == "static-typing-or-closed-domain-boundary"
+            else None
+        )
+        lanes.append(
+            {
+                "namespace": result.namespace,
+                "target": result.target,
+                "class": failure_class,
+                "lane": repair_lane_for(failure_class, static_subclass),
+                "static_subclass": static_subclass,
+                "error": normalize_error(result.error),
+            }
+        )
+    return sorted(
+        lanes,
+        key=lambda entry: (entry["namespace"], entry["target"], entry["error"] or ""),
+    )
+
+
 def write_static_error_report(results: Iterable[Result], path: pathlib.Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(static_error_lane(results), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_repair_lane_report(results: Iterable[Result], path: pathlib.Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(repair_lanes(results), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -295,6 +365,9 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
         classify_static_boundary(result.error)
         for result in failures
         if classify(result.error) == "static-typing-or-closed-domain-boundary"
+    )
+    repair_lane_counts = collections.Counter(
+        entry["lane"] for entry in repair_lanes(failures)
     )
     normalized_counts = collections.Counter(normalize_error(result.error) for result in failures)
 
@@ -341,6 +414,13 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
         for subclass, count in static_subclass_counts.most_common():
             print(f"| `{subclass}` | {count} |")
         print()
+    print("## Repair lanes")
+    print()
+    print("| lane | failures |")
+    print("| --- | ---: |")
+    for lane, count in repair_lane_counts.most_common():
+        print(f"| `{lane}` | {count} |")
+    print()
     print("## Namespaces compiled on both native and Melange")
     print()
     for namespace in sorted(
@@ -381,11 +461,18 @@ def main() -> int:
         type=pathlib.Path,
         help="write normalized negative-runtime static errors as JSON",
     )
+    parser.add_argument(
+        "--repair-lane-report",
+        type=pathlib.Path,
+        help="write normalized repair lane entries as JSON",
+    )
     args = parser.parse_args()
 
     results = load_results(args.report)
     if args.static_error_report is not None:
         write_static_error_report(results, args.static_error_report)
+    if args.repair_lane_report is not None:
+        write_repair_lane_report(results, args.repair_lane_report)
     print_markdown(results, args.upstream_commit)
     return 0
 

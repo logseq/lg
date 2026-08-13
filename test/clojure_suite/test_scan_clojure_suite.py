@@ -155,6 +155,74 @@ class SummaryClassificationTests(unittest.TestCase):
             lane,
         )
 
+    def test_builds_machine_readable_repair_lanes(self) -> None:
+        results = [
+            self.summary.Result(
+                namespace="clojure.core-test.apply",
+                file="vendor/clojure-test-suite/test/clojure/core_test/apply.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=7,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/apply.cljc", line 10: lg: apply argument type mismatch: expected int, got char',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.bigint",
+                file="vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc",
+                target="melange",
+                status="compile-failed",
+                elapsed_ms=6,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc", line 4: lg: unknown symbol 1N',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.add-watch",
+                file="vendor/clojure-test-suite/test/clojure/core_test/add_watch.cljc",
+                target="native",
+                status="compile-failed",
+                elapsed_ms=9,
+                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/add_watch.cljc", line 20: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records',
+            ),
+            self.summary.Result(
+                namespace="clojure.core-test.hash-set",
+                file="vendor/clojure-test-suite/test/clojure/core_test/hash_set.cljc",
+                target="native",
+                status="compiled",
+                elapsed_ms=5,
+                error="",
+            ),
+        ]
+
+        lanes = self.summary.repair_lanes(results)
+
+        self.assertEqual(
+            [
+                {
+                    "namespace": "clojure.core-test.add-watch",
+                    "target": "native",
+                    "class": "static-typing-or-closed-domain-boundary",
+                    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+                    "static_subclass": "dynamic-boundary-needs-closed-domain",
+                    "error": 'File "<suite>/add_watch.cljc", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records',
+                },
+                {
+                    "namespace": "clojure.core-test.apply",
+                    "target": "native",
+                    "class": "static-typing-or-closed-domain-boundary",
+                    "lane": "audit-as-static-error",
+                    "static_subclass": "negative-runtime-test-is-static-error",
+                    "error": 'File "<suite>/apply.cljc", line <n>: lg: apply argument type mismatch: expected int, got char',
+                },
+                {
+                    "namespace": "clojure.core-test.bigint",
+                    "target": "melange",
+                    "class": "reader-or-numeric-literal",
+                    "lane": "design-reader-and-numeric-tower",
+                    "static_subclass": None,
+                    "error": 'File "<suite>/bigint.cljc", line <n>: lg: unknown symbol 1N',
+                },
+            ],
+            lanes,
+        )
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:
