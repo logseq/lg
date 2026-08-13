@@ -9,6 +9,8 @@ let empty_vector _ = Rrbvec.empty
 let empty_string _ = ""
 let peek_vector values = Option.get (Rrbvec.peek_back values)
 let pop_vector values = snd (Option.get (Rrbvec.pop_back values))
+let peek_nil _ = None
+let pop_nil _ = None
 
 let count_list = List.length
 let count_vector = Rrbvec.length

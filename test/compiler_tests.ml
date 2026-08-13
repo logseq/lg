@@ -34135,10 +34135,12 @@ let test_source_collection_lifecycle_family_matches_clojurescript () =
 (println (= #{1} (disj #{1 2} 2)))
 (println (= [1 2] (pop [1 2 3])))
 (println (= 3 (peek [1 2 3])))
+(println (nil? (peek nil)))
+(println (nil? (pop nil)))
 (println (= "cljs" (:source (meta empty-tagged))))
 |}
   in
-  let expected = String.concat "" (List.init 10 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 12 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native
       "test/source_collection_lifecycle.cljc" source

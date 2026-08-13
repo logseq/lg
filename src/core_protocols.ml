@@ -946,6 +946,8 @@ let initial_registry =
        "Lg_runtime.Runtime_collection.peek_vector"
        "Lg_runtime.Runtime_collection.pop_vector"
        (TVector (TVar "stack_element")) (TVar "stack_element")
+  |> add_stack Receiver_id.Nil_receiver "Lg_runtime.Runtime_collection.peek_nil"
+       "Lg_runtime.Runtime_collection.pop_nil" TNil TNil
   |> declare_collection_lifecycle_protocols |> add_transient_protocols
   |> add_vector_reversible_protocol
   |> declare_protocol_predicate_family |> add_protocol_predicate_family

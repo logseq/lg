@@ -197,8 +197,8 @@
     -count {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -nth {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -empty {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-list-vector-string-set-sequence-and-map-receiver-implementations}
-    -peek {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
-    -pop {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
+    -peek {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-list-vector-and-nil-receiver-implementations}
+    -pop {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-list-vector-and-nil-receiver-implementations}
     -equiv {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -hash {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
     -rseq {:status :static-adaptation :reason :source-protocol-declaration-with-compiler-backed-static-receiver-implementations}
@@ -642,9 +642,9 @@
     empty {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-iemptyablecollection-with-static-list-vector-string-set-sequence-and-metadata-preserving-hash-map-implementations-while-non-collection-nil-return-semantics-remain-a-static-boundary}
     peek {:status :static-adaptation
-          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-and-explicit-protocol-implementations-while-lg-retains-its-current-nonempty-static-result-contract}
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-while-empty-list-and-vector-runtime-errors-remain-separate-boundaries}
     pop {:status :static-adaptation
-         :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-and-explicit-protocol-implementations-while-lg-requires-a-non-nil-static-receiver}
+         :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-while-empty-list-and-vector-runtime-errors-remain-separate-boundaries}
     disj {:status :static-adaptation
           :reason :source-overloads-preserve-upstream-one-two-and-variadic-left-to-right-disjoin-control-flow-and-inline-direct-calls-through-clojurescript-iset-while-lg-requires-a-non-nil-static-set}
     count {:status :static-adaptation
