@@ -99,6 +99,63 @@ let ratio_float_literal atom =
       | _ -> None)
   | _ -> None
 
+let radix_digit_value = function
+  | '0' .. '9' as ch -> Some (Char.code ch - Char.code '0')
+  | 'a' .. 'z' as ch -> Some (10 + Char.code ch - Char.code 'a')
+  | 'A' .. 'Z' as ch -> Some (10 + Char.code ch - Char.code 'A')
+  | _ -> None
+
+let radix_marker_index atom start =
+  let rec loop index =
+    if index >= String.length atom then None
+    else
+      match atom.[index] with
+      | 'r' | 'R' -> Some index
+      | _ -> loop (index + 1)
+  in
+  loop start
+
+let parse_radix_digits ~sign ~radix digits =
+  let radix64 = Int64.of_int radix in
+  let limit =
+    if sign < 0 then Int64.add (Int64.of_int max_int) 1L
+    else Int64.of_int max_int
+  in
+  let rec loop index acc =
+    if index >= String.length digits then
+      if sign < 0 then
+        if Int64.equal acc limit then Some min_int
+        else Some (-Int64.to_int acc)
+      else Some (Int64.to_int acc)
+    else
+      match radix_digit_value digits.[index] with
+      | Some digit when digit < radix ->
+          let digit64 = Int64.of_int digit in
+          if Int64.compare acc (Int64.div (Int64.sub limit digit64) radix64) > 0
+          then None
+          else loop (index + 1) Int64.(add (mul acc radix64) digit64)
+      | _ -> None
+  in
+  if digits = "" then None else loop 0 0L
+
+let radix_integer_literal atom =
+  let length = String.length atom in
+  let sign, start =
+    if length > 0 && atom.[0] = '-' then (-1, 1)
+    else if length > 0 && atom.[0] = '+' then (1, 1)
+    else (1, 0)
+  in
+  match radix_marker_index atom start with
+  | None -> None
+  | Some marker when marker = start || marker + 1 >= length -> None
+  | Some marker -> (
+      let radix_source = String.sub atom start (marker - start) in
+      match int_of_string_opt radix_source with
+      | Some radix when radix >= 2 && radix <= 36 ->
+          let digits = String.sub atom (marker + 1) (length - marker - 1) in
+          parse_radix_digits ~sign ~radix digits
+      | _ -> None)
+
 let tokenize source =
   let token desc start_offset end_offset =
     { desc; span = { start_offset; end_offset } }
@@ -151,6 +208,9 @@ let tokenize source =
             | ("##Inf" | "##-Inf" | "##NaN"), _ -> Ok (Float atom)
             | _, Some value -> Ok (Int value)
             | _ -> (
+                match radix_integer_literal atom with
+                | Some value -> Ok (Int value)
+                | None -> (
                 match strip_numeric_suffix 'N' atom with
                 | Some integer -> (
                     match int_of_string_opt integer with
@@ -182,7 +242,7 @@ let tokenize source =
                     match float_of_string_opt atom with
                     | Some _ -> Ok (Float atom)
                     | None -> Ok (Symbol atom))
-                | None -> Ok (Symbol atom)))))
+                | None -> Ok (Symbol atom))))))
           in
           (match token_result with
           | Error _ as err -> err

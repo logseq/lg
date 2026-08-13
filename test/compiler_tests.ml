@@ -25195,6 +25195,26 @@ let test_numeric_suffix_literals_compile_to_supported_numeric_types () =
     (compile_with_stdlib Lg.Target.Melange "app/numeric_suffixes.cljc"
        source)
 
+let test_radix_integer_literals_compile_to_supported_ints () =
+  let source =
+    {|
+(ns app.radix-integer-literals
+  (:require [clojure.core :refer [= println]]))
+(println (= 15 2r1111))
+(println (= -8 -2r1000))
+(println (= 52 2r110100))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/radix_integer_literals.cljc"
+      source
+  in
+  assert_ocaml_runs "radix_integer_literals" "true\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "app/radix_integer_literals.cljc" source)
+
 let test_big_numeric_conversions_compile_to_supported_numeric_types () =
   let source =
     {|
@@ -48338,6 +48358,8 @@ let tests =
       test_source_primitive_predicates_and_abs_match_clojurescript );
     ( "numeric suffix literals compile to supported numeric types",
       test_numeric_suffix_literals_compile_to_supported_numeric_types );
+    ( "radix integer literals compile to supported ints",
+      test_radix_integer_literals_compile_to_supported_ints );
     ( "big numeric conversions compile to supported numeric types",
       test_big_numeric_conversions_compile_to_supported_numeric_types );
     ( "apply string rest cases compile statically",

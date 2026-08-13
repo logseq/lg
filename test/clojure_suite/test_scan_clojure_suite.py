@@ -385,6 +385,78 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_clojure_test_skips_nil_bit_operation_assertions(self) -> None:
+        test_file = self.write_suite_file(
+            "nil_bit_operation_probe.cljc",
+            "(ns clojure.core-test.nil-bit-operation-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest nil-bit-operation-assertions-are-skipped\n"
+            "  (is (= 0 (bit-and nil 1)))\n"
+            "  (is (= 0 (bit-and 1 nil)))\n"
+            "  (is (= -1 (bit-not nil)))\n"
+            "  (is (= 0 (unsigned-bit-shift-right nil 1))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.nil-bit-operation-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_keeps_static_bit_operation_assertions(self) -> None:
+        test_file = self.write_suite_file(
+            "static_bit_operation_probe.cljc",
+            "(ns clojure.core-test.static-bit-operation-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest static-bit-operation-assertions-compile\n"
+            "  (is (= 1 (bit-and 1 1)))\n"
+            "  (is (= -2 (bit-not 1))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.static-bit-operation-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_unsupported_64_bit_integer_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "are_64_bit_integer_probe.cljc",
+            "(ns clojure.core-test.are-64-bit-integer-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest unsupported-64-bit-integer-row-is-skipped\n"
+            "  (are [ex a b] (= ex (bit-set a b))\n"
+            "    -9223372036854775808 0 63\n"
+            "    16 0 4))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.are-64-bit-integer-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_static_incompatible_atom_suite_block(self) -> None:
         test_file = self.write_suite_file(
             "atom_nil_probe.cljc",
