@@ -513,6 +513,26 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_melange_can_require_host_boundary_cljs_js_namespace(self) -> None:
+        test_file = self.write_suite_file(
+            "cljs_js_require_probe.cljc",
+            "(ns clojure.core-test.cljs-js-require-probe\n"
+            "  (:require #?(:cljs [cljs.js])\n"
+            "            [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest cljs-js-require-is-a-host-boundary-stub\n"
+            "  #?(:cljs nil\n"
+            "     :default (is true)))\n",
+        )
+
+        result = self.scanner.compile_namespace(
+            test_file,
+            [],
+            "clojure.core-test.cljs-js-require-probe",
+            "melange",
+        )
+
+        self.assertEqual("compiled", result.status, result.error)
+
     def test_clojure_test_are_skips_host_boolean_constructor_suite(self) -> None:
         test_file = self.write_suite_file(
             "host_boolean_constructor_probe.cljc",

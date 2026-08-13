@@ -9,6 +9,7 @@
   clojure/edn.cljc
   cljs/reader.lgi
   cljs/reader.cljc
+  cljs/js.cljc
   cljs/math.lgi
   cljs/math.cljc
   cljs/cache.cljc
@@ -42,6 +43,7 @@
    %{dep:clojure/edn.cljc}
    %{dep:cljs/reader.lgi}
    %{dep:cljs/reader.cljc}
+   %{dep:cljs/js.cljc}
    %{dep:cljs/math.lgi}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}
@@ -76,6 +78,7 @@
   clojure/edn.cljc
   cljs/reader.lgi
   cljs/reader.cljc
+  cljs/js.cljc
   cljs/math.lgi
   cljs/math.cljc
   cljs/cache.cljc
@@ -109,6 +112,7 @@
    %{dep:clojure/edn.cljc}
    %{dep:cljs/reader.lgi}
    %{dep:cljs/reader.cljc}
+   %{dep:cljs/js.cljc}
    %{dep:cljs/math.lgi}
    %{dep:cljs/math.cljc}
    %{dep:cljs/cache.cljc}

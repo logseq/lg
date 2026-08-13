@@ -16,14 +16,6 @@
     "target": "native"
   },
   {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/eval.cljc\", line <n>: lg: cannot require unknown namespace cljs.js",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.eval",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/even_qmark.cljc\", line <n>: lg: unknown symbol 123N",
     "lane": "design-reader-and-numeric-tower",
