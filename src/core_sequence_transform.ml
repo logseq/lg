@@ -201,6 +201,19 @@ let vec collection =
 let set collection =
   match collection_to_list_expr collection with
   | Error _ -> Error.error "set expects a list, vector, or set"
+  | Ok (TSeq inner, list_expr) ->
+      let element_ty = TList inner in
+      Types.set_module_name element_ty
+      |> Result.map (fun set_module ->
+             typed_ir (TSet element_ty)
+               (apply (set_module ^ ".of_list")
+                  [
+                    apply "List.map"
+                      [
+                        Semantic_ir.Ident "List.of_seq";
+                        list_expr;
+                      ];
+                  ]))
   | Ok (inner, list_expr) ->
       Types.set_module_name inner
       |> Result.map (fun set_module ->

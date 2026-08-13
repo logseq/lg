@@ -1064,6 +1064,9 @@ and set_module_name = function
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
   | TVector (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector (TOcaml "Lg_edn_backend.t") -> Ok "Lg_runtime.Runtime_poly_set"
+  | TSeq _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | ty when Option.is_some (seqable_constraint_info ty) ->
+      Ok "Lg_runtime.Runtime_poly_set"
   | TSet (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector inner when is_dynamic inner ->
       Ok "Lg_runtime.Core_set.Dynamic_vector_set"

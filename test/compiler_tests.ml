@@ -42625,6 +42625,34 @@ let test_sets_support_nil_elements () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_sets_support_seqable_elements () =
+  let source =
+    {|
+(ns app.set-seqable-elements
+  (:require [cljs.core :refer [= contains? count map println seq set str]]))
+
+(defn as-seq [^:vector<int> values]
+  (seq values))
+
+(def subsets
+  (set (map as-seq [[1 2] [1 2] [2 3]])))
+
+(println
+  (str
+    (= 2 (count subsets)) ":"
+    (= 1 (count (set (map as-seq [[1 2] [1 2]]))))))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/set_seqable_elements.cljc"
+      source
+  in
+  assert_ocaml_runs "sets_support_seqable_elements" "true:true\n"
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/set_seqable_elements.cljc"
+       source)
+
 let test_set_of_rejects_nil_element_annotation () =
   Lg.Compiler.compile_string {|(def values (set-of :nil))|}
   |> expect_error "unknown set element type :nil"
@@ -49864,6 +49892,7 @@ let tests =
       test_into_rejects_element_type_mismatch );
     ("typed empty sets work", test_typed_empty_sets);
     ("sets support nil elements", test_sets_support_nil_elements);
+    ("sets support seqable elements", test_sets_support_seqable_elements);
     ( "set-of rejects nil element annotation",
       test_set_of_rejects_nil_element_annotation );
     ( "set-of rejects types without comparators",

@@ -1193,18 +1193,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: sets require a generated comparator for seqable<int>",
+    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: comp function types do not line up: option<inference-variable> and seq<inference-variable>",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.random-sample",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "first-class-polymorphic-or-hof",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: sets require a generated comparator for seqable<int>",
+    "error": "File \"<suite>/random_sample.cljc\", line <n>: lg: comp function types do not line up: option<inference-variable> and seq<inference-variable>",
     "lane": "implement-static-language-capability",
     "namespace": "clojure.core-test.random-sample",
-    "static_subclass": "typed-protocol-or-capability-gap",
+    "static_subclass": "first-class-polymorphic-or-hof",
     "target": "native"
   },
   {
