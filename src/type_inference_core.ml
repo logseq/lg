@@ -466,8 +466,57 @@ let edn_function_call_compatible callee call =
         callee_params call_params
   | _ -> false
 
+let fn_arity_of_function = function
+  | TFn (fixed_params, return_ty) ->
+      Some { fixed_params; rest_param = None; return_ty }
+  | _ -> None
+
+let function_types_unify left right =
+  Result.is_ok (Type_solver.unify Type_solver.empty left right)
+  || edn_function_call_compatible left right
+
+let same_fixed_arity left right =
+  List.length left.fixed_params = List.length right.fixed_params
+  && Option.is_none left.rest_param && Option.is_none right.rest_param
+
+let same_function_arity_shape left right =
+  same_fixed_arity left right
+  && Types.equal left.return_ty right.return_ty
+
+let add_overloaded_arity arities arity =
+  if
+    List.exists
+      (fun existing ->
+        same_function_arity_shape existing arity
+        && List.for_all2 Types.equal existing.fixed_params arity.fixed_params)
+      arities
+  then arities
+  else arities @ [ arity ]
+
+let overload_incompatible_function_call existing_ty expected_ty =
+  match (fn_arity_of_function existing_ty, fn_arity_of_function expected_ty) with
+  | Some existing_arity, Some expected_arity
+    when same_fixed_arity existing_arity expected_arity ->
+      Some (TOverloaded_fn [ existing_arity; expected_arity ])
+  | _ -> None
+
+let can_accumulate_overloaded_function_parameter name =
+  String.equal name "eq"
+
 let rec constrain_symbol expected_ty params name =
   match string_assoc_opt name params with
+  | Some (TOverloaded_fn arities)
+    when (match expected_ty with TFn _ -> true | _ -> false) -> (
+      match fn_arity_of_function expected_ty with
+      | Some expected_arity ->
+          if can_accumulate_overloaded_function_parameter name then
+            Ok
+              (replace_param name
+                 (TOverloaded_fn (add_overloaded_arity arities expected_arity))
+                 params)
+          else constrain_monomorphic_symbol expected_ty params name
+                 (TOverloaded_fn arities)
+      | None -> Ok params)
   | None -> Ok params
   | Some (TFn _ as existing_ty)
     when (match expected_ty with TFn _ -> true | _ -> false) ->
@@ -485,16 +534,31 @@ let rec constrain_symbol expected_ty params name =
         | Error _
           when edn_function_call_compatible instantiated expected_ty ->
             Ok params
-        | Error _ ->
-            Error.error
-              (name ^ " called with incompatible arguments: expected "
-             ^ Types.source_name instantiated ^ ", got "
-             ^ Types.source_name expected_ty))
+        | Error _ -> (
+            match
+              if can_accumulate_overloaded_function_parameter name then
+                overload_incompatible_function_call instantiated expected_ty
+              else None
+            with
+            | Some overloaded -> Ok (replace_param name overloaded params)
+            | None ->
+                Error.error
+                  (name ^ " called with incompatible arguments: expected "
+                 ^ Types.source_name instantiated ^ ", got "
+                 ^ Types.source_name expected_ty)))
       else constrain_monomorphic_symbol expected_ty params name existing_ty
   | Some existing_ty ->
       constrain_monomorphic_symbol expected_ty params name existing_ty
 
 and constrain_monomorphic_symbol expected_ty params name existing_ty =
+  match
+    if can_accumulate_overloaded_function_parameter name then
+      overload_incompatible_function_call existing_ty expected_ty
+    else None
+  with
+  | Some overloaded when not (function_types_unify existing_ty expected_ty) ->
+      Ok (replace_param name overloaded params)
+  | _ ->
       let substitutions =
         Type_solver.unify Type_solver.empty existing_ty expected_ty
         |> Result.value ~default:Type_solver.empty

@@ -1,18 +1,18 @@
 [
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (nil, nil), got (bool, bool)",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.eq",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (nil, nil), got (bool, bool)",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/eq.cljc\", line <n>: lg: heterogeneous map keys have types char | int | keyword | string; define a sum type containing these types",
+    "lane": "design-closed-domain-or-narrow-runtime-boundary",
     "namespace": "clojure.core-test.eq",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "heterogeneous-collection-needs-closed-domain",
     "target": "native"
   },
   {

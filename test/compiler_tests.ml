@@ -30238,6 +30238,34 @@ let test_source_generic_equality_matches_clojurescript () =
   assert_ocaml_runs "source_generic_nil_int_equality" "false\n"
     (compile_string_with_stdlib "(println (= nil 1))" |> expect_ok)
 
+let test_source_first_class_equality_parameter_is_statically_overloaded () =
+  let source =
+    {|
+(ns app.first-class-equality-parameter
+  (:require [cljs.core :refer [=]]))
+
+(defn equality-suite [eq]
+  (if (eq nil nil)
+    (if (eq true true)
+      (if (eq "lg" "lg")
+        (if (eq 4 4) true false)
+        false)
+      false)
+    false))
+
+(println (equality-suite =))
+|}
+  in
+  let native_source =
+    compile_string_with_stdlib source |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "first-class equality parameter must remain statically overloaded";
+  assert_ocaml_runs "source_first_class_equality_parameter" "true\n"
+    native_source;
+  compile_string_from_stdlib ~target:Lg.Target.Melange source
+  |> expect_ok |> ignore
+
 let test_source_generic_equality_is_source_owned () =
   let source = read_file "stdlib/clojure/core.cljc" in
   if not (string_contains_substring source "(defn =") then
@@ -48692,6 +48720,8 @@ let tests =
       test_source_numeric_operator_cluster_is_source_owned );
     ( "source generic equality matches ClojureScript",
       test_source_generic_equality_matches_clojurescript );
+    ( "source first-class equality parameter is statically overloaded",
+      test_source_first_class_equality_parameter_is_statically_overloaded );
     ( "source generic equality is source-owned",
       test_source_generic_equality_is_source_owned );
     ( "source writer printing cluster matches ClojureScript",

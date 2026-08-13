@@ -3239,11 +3239,16 @@ let rec adapt_value_to_type env expected actual =
           (adapt_value_to_type env expected_return lookup))
   else if
     match (expected, actual.ty) with
-    | TFn (expected_params, _), TOverloaded_fn arities ->
+    | TFn (expected_params, _) as expected_fn, TOverloaded_fn arities ->
         List.exists
           (fun arity ->
-            Option.is_some
-              (overloaded_arity_parameters arity (List.length expected_params)))
+            match
+              overloaded_arity_parameters arity (List.length expected_params)
+            with
+            | Some actual_params ->
+                argument_compatible expected_fn
+                  (TFn (actual_params, arity.return_ty))
+            | None -> false)
           arities
     | _ -> false
   then
@@ -3257,10 +3262,14 @@ let rec adapt_value_to_type env expected actual =
       arities
       |> List.mapi (fun index arity -> (index, arity))
       |> List.find_map (fun (index, arity) ->
-             Option.map
-               (fun parameters -> (index, arity, parameters))
-               (overloaded_arity_parameters arity
-                  (List.length expected_params)))
+             match
+               overloaded_arity_parameters arity (List.length expected_params)
+             with
+             | Some actual_params
+               when argument_compatible expected
+                      (TFn (actual_params, arity.return_ty)) ->
+                 Some (index, arity, actual_params)
+             | Some _ | None -> None)
     in
     (match selected with
     | None -> Error.error "overloaded callback has no compatible arity"
@@ -12090,6 +12099,45 @@ let create ~compile_expr =
             Option.is_some arity.rest_param
             && argument_count >= List.length arity.fixed_params)
           indexed
+  and select_contextual_overloaded_arity arities argument_count =
+    let fixed_matches =
+      arities
+      |> List.mapi (fun index arity -> (index, arity))
+      |> List.filter (fun (_, (arity : fn_arity)) ->
+             Option.is_none arity.rest_param
+             && List.length arity.fixed_params = argument_count)
+    in
+    match fixed_matches with
+    | [ selected ] -> Some selected
+    | [] ->
+        arities
+        |> List.mapi (fun index arity -> (index, arity))
+        |> List.filter (fun (_, (arity : fn_arity)) ->
+               Option.is_some arity.rest_param
+               && argument_count >= List.length arity.fixed_params)
+        |> (function [ selected ] -> Some selected | _ -> None)
+    | _ :: _ :: _ -> None
+  and select_overloaded_arity_for_args env arities args =
+    let argument_count = List.length args in
+    let compatible expected actual =
+      named_argument_compatible expected actual
+      ||
+      (Option.is_some (Types.seqable_constraint_info expected)
+      && Collection_capability.accepts_seqable env actual)
+    in
+    let indexed = List.mapi (fun index arity -> (index, arity)) arities in
+    match
+      List.find_opt
+        (fun (_, (arity : fn_arity)) ->
+          Option.is_none arity.rest_param
+          && List.length arity.fixed_params = argument_count
+          && List.for_all2
+               (fun expected arg -> compatible expected arg.ty)
+               arity.fixed_params args)
+        indexed
+    with
+    | Some selected -> Some selected
+    | None -> select_overloaded_arity arities argument_count
   and contextual_callback_form expected form =
     let annotation = function
       | TInt -> Some "^int"
@@ -12193,7 +12241,7 @@ let create ~compile_expr =
             when List.length parameter_tys = List.length arg_forms ->
               Some parameter_tys
           | TOverloaded_fn arities ->
-              select_overloaded_arity arities (List.length arg_forms)
+              select_contextual_overloaded_arity arities (List.length arg_forms)
               |> Option.map (fun (_, arity) ->
                      arity.fixed_params
                      @
@@ -12360,7 +12408,7 @@ let create ~compile_expr =
                     Error.error
                       (name ^ " map lookup expects 1 or 2 arguments"))
             | TOverloaded_fn arities -> (
-                match select_overloaded_arity arities (List.length args) with
+                match select_overloaded_arity_for_args env arities args with
                 | None ->
                     Error.error
                       (name ^ " called with unsupported arity "
@@ -13904,6 +13952,11 @@ let create ~compile_expr =
                                        not
                                          (same_set_storage_representation
                                             expected_element actual_element)
+                                   | _ -> false ->
+                              adapt_value_to_type env expected_ty arg
+                            | _, TOverloaded_fn _
+                              when match expected_ty with
+                                   | TOverloaded_fn _ -> true
                                    | _ -> false ->
                               adapt_value_to_type env expected_ty arg
                             | _, TSet (TUnknown | TMeta _ | TVar _)
