@@ -10439,6 +10439,32 @@ let create ~compile_expr =
     | "__lg_max" | "__lg_min" -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok [ arg ] -> Ok arg
+        | Ok args
+          when Env.target env = Target.Melange
+               && List.exists (fun arg -> Types.equal arg.ty TNil) args ->
+            let use_float =
+              List.exists (fun arg -> Types.equal arg.ty TFloat) args
+            in
+            let args =
+              List.map
+                (fun arg ->
+                  if Types.equal arg.ty TNil then
+                    if use_float then
+                      typed_ir TFloat
+                        (Semantic_ir.Sequence
+                           [ arg.semantic_expr; Semantic_ir.Float "0." ])
+                    else
+                      typed_ir TInt
+                        (Semantic_ir.Sequence
+                           [ arg.semantic_expr; Semantic_ir.Int 0 ])
+                  else arg)
+                args
+            in
+            if use_float then
+              Core_float.compile_min_max name
+                (List.map Core_float.widen_to_float args)
+            else Core_int.compile_min_max name args
         | Ok args
           when List.exists (fun arg -> Types.equal arg.ty TFloat) args
                && List.for_all

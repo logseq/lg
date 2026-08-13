@@ -25946,6 +25946,58 @@ let test_melange_nil_numeric_coercion_matches_clojurescript () =
       "(neg? nil)";
     ]
 
+let test_source_extrema_preserve_single_values_and_melange_nil () =
+  let portable_source =
+    {|
+(ns test.source-extrema-single
+  (:require [clojure.core :refer [= max min println]]))
+
+(println
+  (and (= "x" (max "x"))
+       (= :x (min :x))
+       (= [1 2] (max [1 2]))))
+|}
+  in
+  assert_ocaml_runs "source_extrema_preserve_single_values" "true\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/source_extrema_single.cljc" portable_source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/source_extrema_single.cljc" portable_source);
+  let melange_source =
+    {|
+(ns test.melange-extrema-nil
+  (:require [clojure.core :refer [= max min nil? println]]))
+
+(println
+  (and (= 1 (max nil 1))
+       (= 1 (max 1 nil))
+       (= 0 (max nil -1))
+       (= 0 (max -1 nil))
+       (= 0 (min nil 1))
+       (= 0 (min 1 nil))
+       (= -1 (min nil -1))
+       (= -1 (min -1 nil))))
+|}
+  in
+  let generated =
+    compile_with_stdlib_result Lg.Target.Melange
+      "test/melange_extrema_nil.cljc" melange_source
+    |> expect_ok
+  in
+  if string_contains_substring generated "Runtime_dynamic" then
+    failwith "Melange nil extrema must remain statically typed";
+  List.iter
+    (fun expression ->
+      match
+        compile_with_stdlib_result Lg.Target.Native
+          "test/native_extrema_nil_rejected.cljc" expression
+      with
+      | Error _ -> ()
+      | Ok generated ->
+          failwith ("Native must reject nil extrema, got:\n" ^ generated))
+    [ "(max nil 1)"; "(min nil 1)" ]
+
 let test_source_unchecked_extrema_macros_match_clojurescript () =
   let source =
     {|
@@ -48894,6 +48946,8 @@ let tests =
       test_source_numeric_coercions_match_clojurescript );
     ( "Melange nil numeric coercion matches ClojureScript",
       test_melange_nil_numeric_coercion_matches_clojurescript );
+    ( "source extrema preserve single values and Melange nil",
+      test_source_extrema_preserve_single_values_and_melange_nil );
     ( "source unchecked extrema macros match ClojureScript",
       test_source_unchecked_extrema_macros_match_clojurescript );
     ( "source HAMT bit macros match ClojureScript",

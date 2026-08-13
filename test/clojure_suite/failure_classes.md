@@ -22,11 +22,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 346 |
-| compile failed | 130 |
+| compiled | 350 |
+| compile failed | 126 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 168 |
-| namespaces failed on both native and Melange | 60 |
+| namespaces compiled on both native and Melange | 170 |
+| namespaces failed on both native and Melange | 58 |
 | native-only compiled namespaces | 8 |
 | Melange-only compiled namespaces | 2 |
 
@@ -34,10 +34,10 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 176 | 62 |
-| Melange | 170 | 68 |
+| native | 178 | 60 |
+| Melange | 172 | 66 |
 
-The summarizer emits the authoritative current list of all 168 namespaces.
+The summarizer emits the authoritative current list of all 170 namespaces.
 The list below records the earlier 46-namespace milestone and is retained only
 as migration history:
 
@@ -112,7 +112,7 @@ Static typing subclasses:
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
 | `dynamic-boundary-needs-closed-domain` | 2 | Failures such as watch events cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
 | `form-or-declaration-static-gap` | 0 | Current repair lanes have no remaining failures in this subclass. New entries should be inspected before adding compiler-owned public-name dispatch. |
-| `typed-protocol-or-capability-gap` | 12 | Remaining positive gaps are `max`/`min` numeric coercion, structural-record `find`, and generated comparators for supported tuple/list/nested-vector set elements. |
+| `typed-protocol-or-capability-gap` | 8 | Remaining positive gaps are structural-record `find` and generated comparators for supported tuple/list/nested-vector set elements. `max.cljc` and `min.cljc` now compile on both targets after single-argument identity and Melange nil-to-zero extrema support. |
 
 Repair lanes are also emitted to
 `test/clojure_suite/repair_lanes.json`, one normalized entry per failing
@@ -123,7 +123,7 @@ namespace/target:
 | `design-reader-and-numeric-tower` | 4 | Tagged instant literals and BigDecimal precision/rounding require deliberate source and runtime types. |
 | `audit-as-static-error` | 75 | Upstream negative runtime tests and whole-suite polymorphic fixtures that LG intentionally rejects at compile time. |
 | `design-closed-domain-or-narrow-runtime-boundary` | 30 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
-| `implement-static-language-capability` | 12 | Positive gaps: extrema numeric coercion, structural-record `find`, and generated static set comparators. |
+| `implement-static-language-capability` | 8 | Positive gaps: structural-record `find` and generated static set comparators. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
 | `implement-form-or-reader-support` | 0 | Current repair lanes have no remaining failures in this lane. New compiler/analyzer form gaps must be implemented as static forms rather than source-portable function dispatch. |
 
@@ -136,7 +136,7 @@ namespace/target:
 
 ## Current interpretation
 
-The 130 compile failures are not 130 independent core defects. The current
+The 126 compile failures are not 126 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests

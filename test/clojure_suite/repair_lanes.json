@@ -297,22 +297,6 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/max.cljc\", line <n>: lg: expected int arguments for max",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.max",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/max.cljc\", line <n>: lg: expected int arguments for max",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.max",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/merge.cljc\", line <n>: lg: merge expects at least 1 map",
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.merge",
@@ -325,22 +309,6 @@
     "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.merge",
     "static_subclass": "negative-runtime-test-is-static-error",
-    "target": "native"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/min.cljc\", line <n>: lg: expected int arguments for min",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.min",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/min.cljc\", line <n>: lg: expected int arguments for min",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.min",
-    "static_subclass": "typed-protocol-or-capability-gap",
     "target": "native"
   },
   {
