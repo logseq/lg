@@ -3731,24 +3731,39 @@ let test_identical_instantiates_empty_map_types () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_hash_map_uses_closed_edn_for_heterogeneous_data () =
+  let source =
+    {|
+(def value (hash-map "a" 1 [:b :c] "2" \d nil))
+(println (= value {"a" 1 [:b :c] "2" \d nil}))
+(println (str (get value "a") ":" (get value [:b :c]) ":"
+              (nil? (get value \d))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "hash_map_uses_closed_edn_for_heterogeneous_data"
+    "true\n1:\"2\":true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_heterogeneous_sets_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string {|(def value #{:tag 1})|} |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value #{1 2.0})|} |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value #{(fn [x] x) 1})|}
   |> expect_error_contains "define a sum type"
 
-let test_heterogeneous_computed_maps_require_declared_sum_types () =
+let test_heterogeneous_computed_maps_use_closed_edn_or_require_a_sum () =
   Lg.Compiler.compile_string
     {|(def key :left) (def value (__lg_hash-map key 1 :right "two"))|}
-  |> expect_error_contains
-       "heterogeneous map values have types int | string; define a sum type";
+  |> expect_ok |> ignore;
   Lg.Compiler.compile_string {|(def value (__lg_hash-map :left 1 "right" 2))|}
-  |> expect_error_contains
-       "heterogeneous map keys have types keyword | string; define a sum type";
+  |> expect_ok |> ignore;
   Lg.Compiler.compile_string
     {|(def key :left) (def value (__lg_hash-map key 1 :right 2.0))|}
-  |> expect_error_contains
-       "heterogeneous map values have types float | int; define a sum type"
+  |> expect_ok |> ignore;
+  Lg.Compiler.compile_string
+    {|(def value (__lg_hash-map (fn [x] x) 1 :right 2))|}
+  |> expect_error_contains "value cannot be represented as closed EDN"
 
 let test_vector_updates_require_sum_elements () =
   compile_with_stdlib_result Lg.Target.Native
@@ -47470,10 +47485,12 @@ let tests =
       test_conj_packs_values_into_closed_edn_collections );
     ( "identical? instantiates empty map types",
       test_identical_instantiates_empty_map_types );
+    ( "hash-map uses closed EDN for heterogeneous data",
+      test_hash_map_uses_closed_edn_for_heterogeneous_data );
     ( "heterogeneous sets use closed EDN or require a sum",
       test_heterogeneous_sets_use_closed_edn_or_require_a_sum );
-    ( "heterogeneous computed maps require declared sum types",
-      test_heterogeneous_computed_maps_require_declared_sum_types );
+    ( "heterogeneous computed maps use closed EDN or require a sum",
+      test_heterogeneous_computed_maps_use_closed_edn_or_require_a_sum );
     ( "vector updates require sum elements",
       test_vector_updates_require_sum_elements );
     ( "list updates require sum elements", test_list_updates_require_sum_elements );

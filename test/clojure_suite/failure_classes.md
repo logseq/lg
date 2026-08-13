@@ -22,11 +22,11 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 371 |
-| compile failed | 105 |
+| compiled | 373 |
+| compile failed | 103 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 180 |
-| namespaces failed on both native and Melange | 47 |
+| namespaces compiled on both native and Melange | 181 |
+| namespaces failed on both native and Melange | 46 |
 | native-only compiled namespaces | 8 |
 | Melange-only compiled namespaces | 3 |
 
@@ -34,8 +34,8 @@ Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 188 | 50 |
-| Melange | 183 | 55 |
+| native | 189 | 49 |
+| Melange | 184 | 54 |
 
 The summarizer emits the authoritative current list of all 173 namespaces.
 The list below records the earlier 46-namespace milestone and is retained only
@@ -92,7 +92,7 @@ as migration history:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 92 | Split into intentional LG static errors and closed-domain boundaries. Do not weaken ordinary values or collections to dynamic. |
+| `static-typing-or-closed-domain-boundary` | 90 | Split into intentional LG static errors and closed-domain boundaries. Do not weaken ordinary values or collections to dynamic. |
 | `reader-or-numeric-literal` | 4 | Remaining blockers are tagged `#inst` literals and real `with-precision` BigDecimal semantics. Arbitrary precision remains a separate numeric-tower design. |
 | `host-boundary-or-platform-specific` | 9 | Keep JVM/JS class identity, Java interop, target globals, Var mutation, and true asynchronous `future` behavior gated unless LG introduces deliberate portable static representations. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
@@ -107,7 +107,7 @@ Static typing subclasses:
 | --- | ---: | --- |
 | `negative-runtime-test-is-static-error` | 67 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
 | `suite-polymorphic-fixture-is-static-error` | 11 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, and Native `nth.cljc` sharing one helper across collections and regex matchers. Supported monomorphic/direct calls have focused coverage. |
-| `heterogeneous-collection-needs-closed-domain` | 12 | Add explicit closed domains only where the heterogeneous shape is part of a supported API; do not erase ordinary collections to dynamic. |
+| `heterogeneous-collection-needs-closed-domain` | 10 | Add explicit closed domains only where the heterogeneous shape is part of a supported API; do not erase ordinary collections to dynamic. |
 | `first-class-polymorphic-or-hof` | 0 | No remaining compile failure is assigned to the implementation lane. The `juxt.cljc` whole-file fixture intentionally combines functions with incompatible static argument domains and is audited separately; supported monomorphic `juxt` arities remain covered on Native and Melange. |
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
 | `dynamic-boundary-needs-closed-domain` | 2 | Failures such as watch events cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
@@ -122,7 +122,7 @@ namespace/target:
 | --- | ---: | --- |
 | `design-reader-and-numeric-tower` | 4 | Tagged instant literals and BigDecimal precision/rounding require deliberate source and runtime types. |
 | `audit-as-static-error` | 78 | Upstream negative runtime tests and whole-suite heterogeneous/polymorphic fixtures that LG intentionally rejects at compile time. |
-| `design-closed-domain-or-narrow-runtime-boundary` | 14 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
+| `design-closed-domain-or-narrow-runtime-boundary` | 12 | Heterogeneous values and open event payloads need explicit closed domains or a documented minimal boundary. |
 | `implement-static-language-capability` | 0 | The current scan has no remaining positive implementation failures. Closed tuple/list/nested-vector element types receive deterministic generated `Set.Make` modules without dynamic storage. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
 | `implement-form-or-reader-support` | 0 | Current repair lanes have no remaining failures in this lane. New compiler/analyzer form gaps must be implemented as static forms rather than source-portable function dispatch. |
@@ -136,7 +136,7 @@ namespace/target:
 
 ## Current interpretation
 
-The 105 compile failures are not 105 independent core defects. The current
+The 103 compile failures are not 103 independent core defects. The current
 highest leverage blockers are:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -184,6 +184,12 @@ seqable value for `reverse`, while the source-owned `persistent-tree-map`
 implements `IReversible/-rseq` through its existing descending tree traversal.
 The targeted scanner result was verified after rebuilding both aggregate
 stdlib state artifacts.
+
+`clojure.core-test.hash-map` now compiles on both targets. When heterogeneous
+keys and values are recursively Clojure data, `hash-map` constructs a concrete
+`Runtime_map<Lg_edn_backend.t,Lg_edn_backend.t>` and collection operations pack
+their statically typed keys at the call boundary. No `Runtime_dynamic` storage
+or conversion is involved.
 
 ## Promotion/typecheck failures
 

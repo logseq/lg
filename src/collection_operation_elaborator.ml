@@ -1157,6 +1157,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       let unresolved = function TUnknown -> true | _ -> false in
       let adapt_transient_value expected (actual : typed_expr) =
         if unresolved expected then Ok actual.semantic_expr
+        else if Edn_value_elaborator.is_value_type expected then
+          Edn_value_elaborator.pack_expression actual.ty actual.semantic_expr
         else if Types.is_dynamic expected && not (Types.is_dynamic actual.ty)
         then pack_dynamic_value env expected actual
         else if Types.is_dynamic actual.ty && not (Types.is_dynamic expected)
@@ -3050,29 +3052,60 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 | [ _ ] -> assert false
               in
               let keys, values = split [] [] arguments in
-              Result.bind
-                (merge_collection_value_types "map keys" keys)
-                (fun key_ty ->
-                  Result.map
-                    (fun value_ty ->
+              let compile_map key_ty value_ty adapt_key adapt_value =
+                let entries =
+                  List.map2
+                    (fun key value ->
+                      Semantic_ir.Tuple [ adapt_key key; adapt_value value ])
+                    keys values
+                in
+                let expression =
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_map.of_list",
+                      [ Semantic_ir.List entries ] )
+                in
+                typed_ir (Types.dynamic_map key_ty value_ty) expression
+              in
+              match
+                ( merge_collection_value_types "map keys" keys,
+                  merge_collection_value_types "map values" values )
+              with
+              | Ok key_ty, Ok value_ty ->
+                  Ok
+                    (compile_map key_ty value_ty
+                       (fun key ->
+                         coerce_expression_to_type key_ty key.ty
+                           key.semantic_expr)
+                       (fun value ->
+                         coerce_expression_to_type value_ty value.ty
+                           value.semantic_expr))
+              | Error _, _ | _, Error _ ->
+                  let rec pack_values packed = function
+                    | [] -> Ok (List.rev packed)
+                    | value :: rest ->
+                        Result.bind
+                          (Edn_value_elaborator.pack_expression value.ty
+                             value.semantic_expr)
+                          (fun packed_value ->
+                            pack_values (packed_value :: packed) rest)
+                  in
+                  (match (pack_values [] keys, pack_values [] values) with
+                  | Ok packed_keys, Ok packed_values ->
                       let entries =
                         List.map2
-                          (fun key value ->
-                            Semantic_ir.Tuple
-                              [
-                                coerce_expression_to_type key_ty key.ty
-                                  key.semantic_expr;
-                                coerce_expression_to_type value_ty value.ty
-                                  value.semantic_expr;
-                              ])
-                          keys values
+                          (fun key value -> Semantic_ir.Tuple [ key; value ])
+                          packed_keys packed_values
                       in
-                      typed_ir (Types.dynamic_map key_ty value_ty)
-                        (Semantic_ir.Apply
-                           ( Semantic_ir.Ident
-                               "Lg_runtime.Runtime_map.of_list",
-                             [ Semantic_ir.List entries ] )))
-                    (merge_collection_value_types "map values" values)))
+                      Ok
+                        (typed_ir
+                           (Types.dynamic_map Edn_value_elaborator.value_ty
+                              Edn_value_elaborator.value_ty)
+                           (Semantic_ir.Apply
+                              ( Semantic_ir.Ident
+                                  "Lg_runtime.Runtime_map.of_list",
+                                [ Semantic_ir.List entries ] )))
+                  | Error error, _ -> Error error
+                  | _, Error error -> Error error))
     and compile_update scope env arg_forms =
     let nested_update_value = "__lg_nested_update_value" in
     let arg_forms =

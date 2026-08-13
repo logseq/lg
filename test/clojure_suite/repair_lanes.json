@@ -80,22 +80,6 @@
     "target": "native"
   },
   {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/hash_map.cljc\", line <n>: lg: heterogeneous map keys have types char | string | vector<keyword>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.hash-map",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/hash_map.cljc\", line <n>: lg: heterogeneous map keys have types char | string | vector<keyword>; define a sum type containing these types",
-    "lane": "design-closed-domain-or-narrow-runtime-boundary",
-    "namespace": "clojure.core-test.hash-map",
-    "static_subclass": "heterogeneous-collection-needs-closed-domain",
-    "target": "native"
-  },
-  {
     "class": "reader-or-numeric-literal",
     "error": "File \"<suite>/identity.cljc\", line <n>: lg: unknown symbol #inst",
     "lane": "design-reader-and-numeric-tower",
