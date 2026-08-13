@@ -76,6 +76,35 @@ class SummaryClassificationTests(unittest.TestCase):
                     self.summary.classify(message),
                 )
 
+    def test_classifies_static_boundary_details(self) -> None:
+        self.assertTrue(
+            hasattr(self.summary, "classify_static_boundary"),
+            "summarizer should expose static boundary subclasses",
+        )
+
+        examples = {
+            "File \"<suite>/eq.cljc\", line <n>: lg: eq called with incompatible arguments: expected (nil, nil), got (bool, bool)":
+                "first-class-polymorphic-or-hof",
+            "File \"<suite>/some.cljc\", line <n>: lg: some function type must match collection elements":
+                "first-class-polymorphic-or-hof",
+            "File \"<suite>/add_watch.cljc\", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records":
+                "dynamic-boundary-needs-closed-domain",
+            "File \"<suite>/butlast.cljc\", line <n>: lg: heterogeneous vector has element types int | keyword; define a sum type containing these types":
+                "heterogeneous-collection-needs-closed-domain",
+            "File \"<suite>/apply.cljc\", line <n>: lg: apply argument type mismatch: expected int, got char":
+                "negative-runtime-test-is-static-error",
+            "File \"<suite>/drop_last.cljc\", line <n>: lg: no protocol implementation for IPending/-realized? and seq<int>":
+                "typed-protocol-or-capability-gap",
+            "File \"<suite>/assoc_bang.cljc\", line <n>: lg: assoc! expects a transient collection followed by key/value pairs":
+                "transient-collection-boundary",
+            "File \"<suite>/case.cljc\", line <n>: lg: match pattern type must match target":
+                "form-or-declaration-static-gap",
+        }
+
+        for message, expected in examples.items():
+            with self.subTest(message=message):
+                self.assertEqual(expected, self.summary.classify_static_boundary(message))
+
 
 class ScannerDependencyTests(unittest.TestCase):
     def setUp(self) -> None:

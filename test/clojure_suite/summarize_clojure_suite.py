@@ -147,6 +147,76 @@ def classify(error: str) -> str:
     return "other-compiler-error"
 
 
+def classify_static_boundary(error: str) -> str:
+    """Classify static typing failures into action-oriented subclasses."""
+
+    message = error or ""
+    lower = message.lower()
+
+    if (
+        "eq called with incompatible arguments" in lower
+        or "every-fn called with incompatible arguments" in lower
+        or "function types do not line up" in lower
+        or "function type must match collection elements" in lower
+        or "functions must accept the same argument type" in lower
+        or "has more fixed arguments than function parameters" in lower
+    ):
+        return "first-class-polymorphic-or-hof"
+
+    if (
+        "cannot cross a dynamic boundary" in lower
+        or "records cannot cross" in lower
+    ):
+        return "dynamic-boundary-needs-closed-domain"
+
+    if (
+        "heterogeneous " in lower
+        or "must have the same type" in lower
+        or "element types must match" in lower
+        or "default must match collection element type" in lower
+    ):
+        return "heterogeneous-collection-needs-closed-domain"
+
+    if (
+        "assoc!" in lower
+        or "conj!" in lower
+        or "dissoc!" in lower
+        or "transient" in lower
+    ):
+        return "transient-collection-boundary"
+
+    if (
+        "no protocol implementation" in lower
+        or "requires a generated comparator" in lower
+        or "sets require" in lower
+        or "requires a statically typed" in lower
+        or "nullable updater" in lower
+        or "guard narrowing requires" in lower
+    ):
+        return "typed-protocol-or-capability-gap"
+
+    if (
+        "deftype expects" in lower
+        or "cannot infer" in lower
+        or "requires an explicit option element type" in lower
+        or "match pattern type must match target" in lower
+    ):
+        return "form-or-declaration-static-gap"
+
+    if (
+        "type mismatch" in lower
+        or "expects " in lower
+        or "incompatible arguments" in lower
+        or "not supported for nil" in lower
+        or "not supported for string" in lower
+        or "indexes must be int" in lower
+        or "map literal requires an even number" in lower
+    ):
+        return "negative-runtime-test-is-static-error"
+
+    return "other-static-boundary"
+
+
 def grouped_by_namespace(results: Iterable[Result]) -> dict[str, dict[str, Result]]:
     grouped: dict[str, dict[str, Result]] = collections.defaultdict(dict)
     for result in results:
@@ -179,6 +249,11 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
 
     failures = [result for result in results if result.status != "compiled"]
     class_counts = collections.Counter(classify(result.error) for result in failures)
+    static_subclass_counts = collections.Counter(
+        classify_static_boundary(result.error)
+        for result in failures
+        if classify(result.error) == "static-typing-or-closed-domain-boundary"
+    )
     normalized_counts = collections.Counter(normalize_error(result.error) for result in failures)
 
     print("# clojure-test-suite scan summary")
@@ -216,6 +291,14 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
     for failure_class, count in class_counts.most_common():
         print(f"| `{failure_class}` | {count} |")
     print()
+    if static_subclass_counts:
+        print("## Static typing subclasses")
+        print()
+        print("| subclass | failures |")
+        print("| --- | ---: |")
+        for subclass, count in static_subclass_counts.most_common():
+            print(f"| `{subclass}` | {count} |")
+        print()
     print("## Namespaces compiled on both native and Melange")
     print()
     for namespace in sorted(
