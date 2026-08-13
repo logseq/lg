@@ -901,12 +901,20 @@ let rec inferred_form_type params = function
 and returned_vector_type params = function
   | FVector items ->
       let item_tys = List.map (inferred_form_type params) items in
+      let edn_scalar_element = function
+        | TInt | TOcaml "int" | TBool | TNil -> true
+        | TNullable inner | TOcaml_app ("option", [ inner ]) -> (
+            match inner with TInt | TOcaml "int" | TBool -> true | _ -> false)
+        | _ -> false
+      in
       let element_ty =
         match item_tys with
         | [] -> TUnknown
         | first :: rest
           when List.for_all (fun ty -> Types.equal first ty) rest ->
             first
+        | _ when List.for_all edn_scalar_element item_tys ->
+            TOcaml "Lg_edn_backend.t"
         | _ -> Types.dynamic_constraint TUnknown
       in
       Some (TVector element_ty)

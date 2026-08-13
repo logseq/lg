@@ -3360,6 +3360,81 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                               (typed_ir (TVector value_ty)
                                  (set_or_append lifted_target value))
                           in
+                          let rec pack_edn_value ty expression =
+                            match Types.constraint_value_type ty with
+                            | TOcaml "Lg_edn_backend.t" -> Ok expression
+                            | TNil ->
+                                Ok
+                                  (Semantic_ir.Sequence
+                                     [
+                                       expression;
+                                       Semantic_ir.Ident
+                                         "Lg_runtime.Runtime_metadata.nil";
+                                     ])
+                            | TBool ->
+                                Ok
+                                  (apply
+                                     "Lg_runtime.Runtime_metadata.of_bool"
+                                     [ expression ])
+                            | TInt | TOcaml "int" ->
+                                Ok
+                                  (apply "Lg_runtime.Runtime_metadata.of_int"
+                                     [ expression ])
+                            | TNullable inner
+                            | TOcaml_app ("option", [ inner ]) ->
+                                let value_name = "__lg_update_edn_value" in
+                                Result.map
+                                  (fun packed ->
+                                    Semantic_ir.Match
+                                      ( expression,
+                                        [
+                                          ( Semantic_ir.PConstructor
+                                              ("None", None),
+                                            Semantic_ir.Ident
+                                              "Lg_runtime.Runtime_metadata.nil"
+                                          );
+                                          ( Semantic_ir.PConstructor
+                                              ( "Some",
+                                                Some
+                                                  (Semantic_ir.PVar value_name)
+                                              ),
+                                            packed );
+                                        ] ))
+                                  (pack_edn_value inner
+                                     (Semantic_ir.Ident value_name))
+                            | _ ->
+                                Error.error
+                                  "vector update result requires a closed sum \
+                                   element type"
+                          in
+                          let edn_vector_update () =
+                            let item_name = "__lg_update_edn_item" in
+                            match
+                              ( pack_edn_value inner
+                                  (Semantic_ir.Ident item_name),
+                                pack_edn_value ret value_expr )
+                            with
+                            | (Error _ as error), _ | _, (Error _ as error) ->
+                                error
+                            | Ok packed_item, Ok packed_value ->
+                                let edn_target =
+                                  apply "Rrbvec.of_list"
+                                    [
+                                      apply "List.map"
+                                        [
+                                          Semantic_ir.Fun
+                                            ( [ Semantic_ir.PVar item_name ],
+                                              packed_item );
+                                          apply "Rrbvec.to_list"
+                                            [ target.semantic_expr ];
+                                        ];
+                                    ]
+                                in
+                                Ok
+                                  (typed_ir
+                                     (TVector (TOcaml "Lg_edn_backend.t"))
+                                     (set_or_append edn_target packed_value))
+                          in
                           if Types.equal ret inner then
                             Ok
                               (typed_ir target.ty
@@ -3385,6 +3460,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                           then
                             nullable_vector_update ret value_expr
                           else
+                            match edn_vector_update () with
+                            | Ok _ as result -> result
+                            | Error _ ->
                             (* Clojure update may change the element type;
                                repack the whole vector as dynamic *)
                             let dynamic = Types.dynamic_constraint TUnknown in

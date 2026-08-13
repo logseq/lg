@@ -349,10 +349,55 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
     | _ -> None
   in
+  let rec pack_edn_expression ty expression =
+    let convert name =
+      Ok
+        (Semantic_ir.Apply
+           ( Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name),
+             [ expression ] ))
+    in
+    match Types.constraint_value_type ty with
+    | TOcaml "Lg_edn_backend.t" -> Ok expression
+    | TNil ->
+        Ok
+          (Semantic_ir.Sequence
+             [ expression; Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" ])
+    | TBool -> convert "of_bool"
+    | TInt | TOcaml "int" -> convert "of_int"
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        let value_name = "__lg_edn_optional_value" in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Match
+              ( expression,
+                [
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil" );
+                  ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar value_name)),
+                    packed );
+                ] ))
+          (pack_edn_expression inner (Semantic_ir.Ident value_name))
+    | TVector element_ty ->
+        Result.map
+          (fun mapper ->
+            Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_vector",
+                [ mapper; expression ] ))
+          (edn_mapper element_ty)
+    | _ -> Error.error "value cannot be represented as closed EDN metadata"
+  and edn_mapper ty =
+    let value_name = "__lg_edn_vector_value" in
+    Result.map
+      (fun body -> Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], body))
+      (pack_edn_expression ty (Semantic_ir.Ident value_name))
+  in
   let rec adapt_branch_expression env result_ty (branch : typed_expr) =
     match (result_ty, branch.ty) with
     | target, source when Types.equal target source ->
         Ok branch.semantic_expr
+    | TOcaml "Lg_edn_backend.t", source ->
+        pack_edn_expression source branch.semantic_expr
     | target, source
       when Option.is_some (protocol_value_type source) ->
         adapt_branch_expression env target
@@ -616,8 +661,26 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       ^ String.concat " | " types
                       ^ "; define a sum type containing these types")
                   in
+                  let edn_vector () =
+                    let rec pack packed = function
+                      | [] -> Ok (List.rev packed)
+                      | expression :: rest ->
+                          Result.bind
+                            (pack_edn_expression expression.ty
+                               expression.semantic_expr)
+                            (fun value -> pack (value :: packed) rest)
+                    in
+                    match pack [] expressions with
+                    | Ok values ->
+                        Ok
+                          (typed_ir (TVector (TOcaml "Lg_edn_backend.t"))
+                             (Semantic_ir.Apply
+                                ( Semantic_ir.Ident "Rrbvec.of_list",
+                                  [ Semantic_ir.List values ] )))
+                    | Error _ -> heterogeneous_error ()
+                  in
                   match element_ty with
-                  | None -> heterogeneous_error ()
+                  | None -> edn_vector ()
                   | Some element_ty when Types.is_dynamic element_ty ->
                       heterogeneous_error ()
                   | Some

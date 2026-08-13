@@ -23844,6 +23844,24 @@ let test_update_supports_vector_identity_and_ifn_updaters () =
     (compile_with_stdlib Lg.Target.Melange "app/update_vector_ifn.cljc"
        source)
 
+let test_update_vector_append_allows_nil_predicate_result () =
+  let source =
+    {|
+(ns app.update-vector-nil-predicate
+  (:require [clojure.core :refer [= nil? println update]]))
+(println (= (update [0 1] 2 nil?) [0 1 true]))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "app/update_vector_nil_predicate.cljc"
+      source
+  in
+  assert_ocaml_runs "update_vector_append_allows_nil_predicate_result" "true\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "app/update_vector_nil_predicate.cljc" source)
+
 let test_update_rejects_vector_index_type_mismatch () =
   Lg.Compiler.compile_string
     {|(def x (update [1 2] "0" (fn [value] (+ value 1))))|}
@@ -48051,6 +48069,8 @@ let tests =
     ("update supports vector indexes", test_update_supports_vector_indexes);
     ( "update supports vector identity and IFn updaters",
       test_update_supports_vector_identity_and_ifn_updaters );
+    ( "update vector append allows nil predicate result",
+      test_update_vector_append_allows_nil_predicate_result );
     ( "update rejects vector index type mismatch",
       test_update_rejects_vector_index_type_mismatch );
     ( "select-keys ignores unknown fields",
