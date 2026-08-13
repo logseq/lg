@@ -1289,18 +1289,18 @@
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/remove.cljc\", line <n>: lg: comp function types do not line up: fn<() -> inference-variable; (inference-variable) -> inference-variable; (inference-variable, option<inference-variable>) -> reduced<inference-variable>> and fn<() -> inference-variable; (inference-variable) -> inference-variable; (inference-variable, int) -> reduced<inference-variable>>",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/remove.cljc\", line <n>: lg: complement expects a statically typed function",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.remove",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "melange"
   },
   {
     "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/remove.cljc\", line <n>: lg: comp function types do not line up: fn<() -> inference-variable; (inference-variable) -> inference-variable; (inference-variable, option<inference-variable>) -> reduced<inference-variable>> and fn<() -> inference-variable; (inference-variable) -> inference-variable; (inference-variable, int) -> reduced<inference-variable>>",
-    "lane": "implement-static-language-capability",
+    "error": "File \"<suite>/remove.cljc\", line <n>: lg: complement expects a statically typed function",
+    "lane": "audit-as-static-error",
     "namespace": "clojure.core-test.remove",
-    "static_subclass": "first-class-polymorphic-or-hof",
+    "static_subclass": "negative-runtime-test-is-static-error",
     "target": "native"
   },
   {

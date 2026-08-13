@@ -549,8 +549,8 @@
          :reason :source-port-preserves-the-upstream-transducer-and-lazy-one-two-three-and-variadic-collection-arities-shortest-input-termination-memoized-realization-and-infinite-prefixes-while-multi-collection-direct-calls-inline-to-a-private-static-specialization-for-left-to-right-single-evaluation-and-mixed-collection-storage}
     filter {:status :static-adaptation
             :reason :source-port-preserves-the-upstream-stateful-transducer-and-lazy-two-arity-control-flow-without-the-clojurescript-chunk-optimization}
-    remove {:status :ported
-            :reason :source-port-composes-the-source-filter-and-complement-arities}
+    remove {:status :static-adaptation
+            :reason :source-port-composes-the-source-filter-and-complement-arities-while-inline-specializing-remove-nil?-to-a-typed-option-narrowing-transducer-for-composed-transducer-pipelines}
     take {:status :static-adaptation
           :reason :source-port-preserves-upstream-stateful-early-termination-and-lazy-prefix-control-flow-through-an-explicit-static-reduced-result}
     drop {:status :static-adaptation

@@ -2052,7 +2052,28 @@
   ([pred coll]
    (filter-seq pred (seq coll))))
 
+(defn- remove-nil-transducer [rf]
+  (fn
+    ([] (rf))
+    ([result] (rf result))
+    ([result input]
+     (match input
+       None
+       (runtime-reduced/continue result)
+       (Some value)
+       (rf result value)))))
+
 (defn remove
+  {:inline
+   (fn
+     ([pred]
+      (if (or (= pred 'nil?)
+              (= pred 'clojure.core/nil?)
+              (= pred 'cljs.core/nil?))
+        (list 'fn ['rf] (list 'remove-nil-transducer 'rf))
+        (list 'filter (list 'complement pred))))
+     ([pred coll]
+      (list 'filter (list 'complement pred) coll)))}
   ([pred]
    (filter (complement pred)))
   ([pred coll]

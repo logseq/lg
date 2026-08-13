@@ -41923,6 +41923,29 @@ let test_take_while_transducers_compile_and_truncate_sequences () =
     (compile_with_stdlib Lg.Target.Melange
        "test/take_while_transducers.cljc" source)
 
+let test_remove_nil_transducer_narrows_optional_inputs () =
+  let source =
+    {|
+(ns test.remove-nil-transducer
+  (:require [clojure.core :refer [= comp conj even? nil? println remove transduce]]))
+
+(println
+  (= [1]
+     (transduce (comp (remove nil?) (remove even?))
+                conj
+                [nil 0 nil 1 nil 2])))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/remove_nil_transducer.cljc"
+      source
+  in
+  assert_ocaml_runs "remove_nil_transducer_narrows_optional_inputs" "true\n"
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/remove_nil_transducer.cljc"
+       source)
+
 let test_into_applies_composed_transducers () =
   let source =
     {|
@@ -49905,6 +49928,8 @@ let tests =
       test_eduction_preserves_statically_typed_sequence_elements );
     ( "take-while transducers compile and truncate sequences",
       test_take_while_transducers_compile_and_truncate_sequences );
+    ( "remove nil? transducer narrows optional inputs",
+      test_remove_nil_transducer_narrows_optional_inputs );
     ( "into applies composed transducers",
       test_into_applies_composed_transducers );
     ( "into transducers build typed sets",

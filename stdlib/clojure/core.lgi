@@ -215,6 +215,8 @@
   :fn<fn<input;truthy<predicate-result>>;seq<input>;seq<input>>)
 (signature clojure.core/filter [input storage accumulator predicate-result]
   :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;optional-seqable<input;storage>;seq<input>>>)
+(signature clojure.core/remove-nil-transducer [input accumulator]
+  :fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;option<input>;__lg_maybe_reduced_callback_result<accumulator>>>>)
 (signature clojure.core/remove [input storage accumulator predicate-result]
   :overload<fn<fn<input;truthy<predicate-result>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;truthy<predicate-result>>;optional-seqable<input;storage>;seq<input>>>)
 (signature clojure.core/take-seq [input]
