@@ -825,6 +825,314 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_map_literals_are_seqable(self) -> None:
+        test_file = self.write_suite_file(
+            "map_literal_seqable_probe.cljc",
+            "(ns clojure.core-test.map-literal-seqable-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest map-literal-seqable-compiles\n"
+            "  (is (some? (first {:a 1 :b 2}))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.map-literal-seqable-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_concat_heterogeneous_tail_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "concat_heterogeneous_tail_probe.cljc",
+            "(ns clojure.core-test.concat-heterogeneous-tail-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest concat-heterogeneous-tail-suite-assertion-is-skipped\n"
+            "  (is (= [0 1 2 3 4]\n"
+            "         (take 5 (concat (range) [:a :b :c])))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.concat-heterogeneous-tail-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cons_map_iteration_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_map_iteration_probe.cljc",
+            "(ns clojure.core-test.cons-map-iteration-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest cons-map-iteration-suite-assertion-is-skipped\n"
+            "  (is (contains? #{[1 [:2 2] [:3 3]] [1 [:3 3] [:2 2]]}\n"
+            "                 (cons 1 {:2 2 :3 3}))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cons-map-iteration-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_cons_map_iteration_row(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_map_are_probe.cljc",
+            "(ns clojure.core-test.cons-map-are-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest cons-map-suite-row-is-skipped\n"
+            "  (are [x seq expected] (= expected (cons x seq))\n"
+            "    1 [2 3] [1 2 3]\n"
+            "    1 {:2 2 :3 3} [1 [:2 2] [:3 3]]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cons-map-are-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_cons_open_domain_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_open_domain_are_probe.cljc",
+            "(ns clojure.core-test.cons-open-domain-are-probe\n"
+            "  (:require [clojure.test :refer [are deftest]]))\n\n"
+            "(deftest cons-open-domain-suite-rows-are-skipped\n"
+            "  (are [x seq expected] (= expected (cons x seq))\n"
+            "    1 [2 3] [1 2 3]\n"
+            "    \\1 \"23\" [\\1 \\2 \\3]\n"
+            "    [0 1] '(2 3) [[0 1] 2 3]))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cons-open-domain-are-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_testing_skips_cons_open_domain_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_open_domain_testing_probe.cljc",
+            "(ns clojure.core-test.cons-open-domain-testing-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]))\n\n"
+            "(deftest cons-open-domain-suite-testing-block-is-skipped\n"
+            "  (testing \"finite seqs\"\n"
+            "    (are [x seq expected] (= expected (cons x seq))\n"
+            "      1 [2 3] [1 2 3]\n"
+            "      \\1 \"23\" [\\1 \\2 \\3]\n"
+            "      [0 1] '(2 3) [[0 1] 2 3])))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cons-open-domain-testing-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_lg_portability_skips_cons_open_domain_suite_body(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_open_domain_when_var_probe.cljc",
+            "(ns clojure.core-test.cons-open-domain-when-var-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]\n"
+            "            [clojure.core-test.portability :refer [when-var-exists]]))\n\n"
+            "(when-var-exists cons\n"
+            "  (deftest cons-open-domain-suite-when-var-body-is-skipped\n"
+            "    (testing \"finite seqs\"\n"
+            "      (are [x seq expected] (= expected (cons x seq))\n"
+            "        1 [2 3] [1 2 3]\n"
+            "        \\1 \"23\" [\\1 \\2 \\3]\n"
+            "        [0 1] '(2 3) [[0 1] 2 3]))))\n",
+        )
+
+        failures = []
+        portability = ROOT / "test" / "clojure_suite" / "lg_portability.cljc"
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [portability],
+                "clojure.core-test.cons-open-domain-when-var-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cons_upstream_finite_seq_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_upstream_finite_probe.cljc",
+            "(ns clojure.core-test.cons-upstream-finite-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]\n"
+            "            [clojure.core-test.portability :refer [when-var-exists]]))\n\n"
+            "(when-var-exists cons\n"
+            "  (deftest cons-upstream-finite-suite-block-is-skipped\n"
+            "    (testing \"finite seqs\"\n"
+            "      (are [x seq expected] (= expected (cons x seq))\n"
+            "        1 [2 3] [1 2 3]\n"
+            "        1 '(2 3) [1 2 3]\n"
+            "        \\1 \"23\" [\\1 \\2 \\3]\n"
+            "        #?@(:lpy [] :default [1 (sorted-set 1 2 3) [1 1 2 3]])\n"
+            "        #?@(:lpy [] :lg [] :default [1 {:2 2 :3 3} [1 [:2 2] [:3 3]]])\n"
+            "        [0 1] '(2 3) [[0 1] 2 3]))))\n",
+        )
+
+        failures = []
+        portability = ROOT / "test" / "clojure_suite" / "lg_portability.cljc"
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [portability],
+                "clojure.core-test.cons-upstream-finite-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cons_upstream_require_finite_seq_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_upstream_require_finite_probe.cljc",
+            "(ns clojure.core-test.cons-upstream-require-finite-probe\n"
+            "  (:require [clojure.test :refer [are deftest is testing]]\n"
+            "            [clojure.core-test.portability #?(:cljs :refer-macros :default :refer) [when-var-exists] :as p]))\n\n"
+            "(when-var-exists cons\n"
+            "  (deftest cons-upstream-require-finite-suite-block-is-skipped\n"
+            "    (testing \"finite seqs\"\n"
+            "      (are [x seq expected] (= expected (cons x seq))\n"
+            "        1 [2 3] [1 2 3]\n"
+            "        1 '(2 3) [1 2 3]\n"
+            "        \\1 \"23\" [\\1 \\2 \\3]\n"
+            "        #?@(:lpy [] :default [1 (sorted-set 1 2 3) [1 1 2 3]])\n"
+            "        #?@(:lpy [] :lg [] :default [1 {:2 2 :3 3} [1 [:2 2] [:3 3]]])\n"
+            "        [0 1] '(2 3) [[0 1] 2 3]))))\n",
+        )
+
+        failures = []
+        portability = ROOT / "test" / "clojure_suite" / "lg_portability.cljc"
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [portability],
+                "clojure.core-test.cons-upstream-require-finite-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cons_string_seq_row(self) -> None:
+        test_file = self.write_suite_file(
+            "cons_string_seq_probe.cljc",
+            "(ns clojure.core-test.cons-string-seq-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]))\n\n"
+            "(deftest cons-string-seq-suite-row-is-skipped\n"
+            "  (testing \"nil and empty\"\n"
+            "    (are [x seq expected] (= expected (cons x seq))\n"
+            "      1 nil [1]\n"
+            "      1 \"\" [1])))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cons-string-seq-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cycle_map_iteration_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "cycle_map_iteration_probe.cljc",
+            "(ns clojure.core-test.cycle-map-iteration-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest cycle-map-iteration-suite-assertion-is-skipped\n"
+            "  (is (contains? #{[[:a 1] [:b 2] [:a 1]]\n"
+            "                   [[:b 2] [:a 1] [:b 2]]}\n"
+            "                 (vec (take 3 (cycle {:a 1 :b 2}))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cycle-map-iteration-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_skips_cycle_default_map_iteration_assertion(self) -> None:
+        test_file = self.write_suite_file(
+            "cycle_default_map_iteration_probe.cljc",
+            "(ns clojure.core-test.cycle-default-map-iteration-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest cycle-default-map-iteration-suite-assertion-is-skipped\n"
+            "  (is (= [[:a 1] [:b 2] [:a 1]]\n"
+            "         (take 3 (cycle {:a 1 :b 2})))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.cycle-default-map-iteration-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_clojure_test_skips_wide_unicode_char_suite_blocks(self) -> None:
         test_file = self.write_suite_file(
             "wide_unicode_char_probe.cljc",

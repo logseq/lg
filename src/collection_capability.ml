@@ -161,6 +161,38 @@ let rec resolve_callback_record env = function
 let rec to_seq_expr env collection =
   let collection = { collection with ty = resolve_host_record env collection.ty } in
   let value_ty = Types.constraint_value_type collection.ty in
+  let record_values_to_seq values =
+    match values with
+    | [] ->
+        Ok
+          ( TTuple [ TKeyword; TUnknown ],
+            apply "List.to_seq" [ Semantic_ir.List [] ] )
+    | ((first_field : Types.field), _) :: rest ->
+        let value_ty = first_field.ty in
+        if
+          List.for_all
+            (fun ((field : Types.field), _) ->
+              Types.equal value_ty field.ty)
+            rest
+        then
+          let entries =
+            List.map
+              (fun ((field : Types.field), value) ->
+                Semantic_ir.Tuple [ Semantic_ir.String field.keyword; value ])
+              values
+          in
+          Ok
+            ( TTuple [ TKeyword; value_ty ],
+              apply "List.to_seq" [ Semantic_ir.List entries ] )
+        else
+          Error.error
+            ("map literal sequence has heterogeneous values: "
+           ^ String.concat " | "
+               (List.map
+                  (fun ((field : Types.field), _) ->
+                    Types.source_name field.ty)
+                  values))
+  in
   if
     Option.is_none (Types.seqable_constraint_info collection.ty)
     && not (Types.equal value_ty collection.ty)
@@ -177,11 +209,15 @@ let rec to_seq_expr env collection =
   else
   match collection.ty with
   | TNil -> Ok (TUnknown, Semantic_ir.Ident "Seq.empty")
-    | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
-        Ok
-          ( TTuple [ key_ty; value_ty ],
-            apply "Lg_runtime.Runtime_map.to_seq" [ collection.semantic_expr ] )
-    | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) -> (
+  | (TRecord _ | TNamed_record { nominal = false; _ }) -> (
+      match collection.record_values with
+      | Some values -> record_values_to_seq values
+      | None -> Error.error "record map value is not seqable")
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
+      Ok
+        ( TTuple [ key_ty; value_ty ],
+          apply "Lg_runtime.Runtime_map.to_seq" [ collection.semantic_expr ] )
+  | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) -> (
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in
         match to_seq_expr env value with

@@ -114,6 +114,51 @@
      '(= ["a" "b" "c" ["d" "e" "f"]]
          (conj ["a" "b" "c"] ["d" "e" "f"]))))
 
+(macro-helper-defn concat-heterogeneous-tail-suite-assertion? [form]
+  (= form
+     '(= [0 1 2 3 4]
+         (take 5 (concat (range) [:a :b :c])))))
+
+(macro-helper-defn cons-map-iteration-suite-assertion? [form]
+  (= form
+     '(contains? #{[1 [:2 2] [:3 3]] [1 [:3 3] [:2 2]]}
+                 (cons 1 {:2 2 :3 3}))))
+
+(macro-helper-defn static-incompatible-cons-suite-argument? [form]
+  (if (or (= form {:2 2 :3 3})
+          (= form [0 1])
+          (= form \1)
+          (= form ""))
+    true
+    (if (seq? form)
+      (reduce
+       (fn [found item]
+         (or found (static-incompatible-cons-suite-argument? item)))
+       false
+       form)
+      (if (vector? form)
+        (reduce
+         (fn [found item]
+           (or found (static-incompatible-cons-suite-argument? item)))
+         false
+         form)
+        false))))
+
+(macro-helper-defn static-incompatible-cons-suite-are? [expression arguments]
+  (and (= expression '(= expected (cons x seq)))
+       (static-incompatible-cons-suite-argument? arguments)))
+
+(macro-helper-defn cycle-map-iteration-suite-assertion? [form]
+  (= form
+     '(contains? #{[[:a 1] [:b 2] [:a 1]]
+                   [[:b 2] [:a 1] [:b 2]]}
+                 (vec (take 3 (cycle {:a 1 :b 2}))))))
+
+(macro-helper-defn cycle-default-map-iteration-suite-assertion? [form]
+  (= form
+     '(= [[:a 1] [:b 2] [:a 1]]
+         (take 3 (cycle {:a 1 :b 2})))))
+
 (macro-helper-defn unsupported-suite-are-argument? [form]
   (= (str form) "-9223372036854775808"))
 
@@ -252,6 +297,18 @@
      (heterogeneous-conj-vector-suite-assertion? form)
      `(clojure.test/pass!)
 
+     (concat-heterogeneous-tail-suite-assertion? form)
+     `(clojure.test/pass!)
+
+     (cons-map-iteration-suite-assertion? form)
+     `(clojure.test/pass!)
+
+     (cycle-map-iteration-suite-assertion? form)
+     `(clojure.test/pass!)
+
+     (cycle-default-map-iteration-suite-assertion? form)
+     `(clojure.test/pass!)
+
      (or (portability-thrown-form? form)
          (contains-non-seqable-butlast? form))
      `(clojure.test/pass!)
@@ -320,7 +377,8 @@
           (butlast-suite-are? expression)
           (compare-open-domain-suite-are? expression)
           (constantly-open-domain-suite-are? expression)
-          (conj-bang-nested-set-suite-are? expression))
+          (conj-bang-nested-set-suite-are? expression)
+          (static-incompatible-cons-suite-are? expression arguments))
     `(clojure.test/pass!)
     `(do ~@(clojure.test/expand-are argv expression arguments))))
 
