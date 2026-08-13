@@ -1,37 +1,5 @@
 [
   {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/double.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.double",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/double.cljc\", line <n>: lg: unknown symbol 1N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.double",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/double_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.double-qmark",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "reader-or-numeric-literal",
-    "error": "File \"<suite>/double_qmark.cljc\", line <n>: lg: unknown symbol 0N",
-    "lane": "design-reader-and-numeric-tower",
-    "namespace": "clojure.core-test.double-qmark",
-    "static_subclass": null,
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/drop.cljc\", line <n>: lg: drop called with incompatible arguments: expected (int, seqable<inference-variable>), got (int, nil); incompatible positions: 2",
     "lane": "audit-as-static-error",

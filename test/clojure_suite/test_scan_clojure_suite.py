@@ -1877,6 +1877,25 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_double_melange_matches_cljs_identity_cases(self) -> None:
+        test_file = self.write_suite_file(
+            "double_melange_identity_probe.cljc",
+            "(ns clojure.core-test.double-melange-identity-probe\n"
+            "  (:require [clojure.test :refer [deftest is]]))\n\n"
+            "(deftest double-cljs-identity-cases-compile\n"
+            "  (is (= \"0\" (double \"0\")))\n"
+            "  (is (= :0 (double :0))))\n",
+        )
+
+        result = self.scanner.compile_namespace(
+            test_file,
+            [],
+            "clojure.core-test.double-melange-identity-probe",
+            "melange",
+        )
+
+        self.assertEqual("compiled", result.status, result.error)
+
     def test_record_map_variables_are_seqable(self) -> None:
         test_file = self.write_suite_file(
             "record_map_variable_seq_probe.cljc",

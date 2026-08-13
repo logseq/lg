@@ -8953,6 +8953,7 @@ let create ~compile_expr =
     | "__lg_double" -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok [ value ] when Env.target env = Target.Melange -> Ok value
         | Ok [ { ty = TInt; semantic_expr; _ } ] ->
             Ok
               (typed_ir TFloat
