@@ -1,21 +1,5 @@
 [
   {
-    "class": "host-boundary-or-platform-specific",
-    "error": "File \"<suite>/empty.cljc\", line <n>: lg: File \"_none_\", line <n>:\nError: Unbound constructor js/Date",
-    "lane": "document-or-gate-host-boundary",
-    "namespace": "clojure.core-test.empty",
-    "static_subclass": null,
-    "target": "melange"
-  },
-  {
-    "class": "static-typing-or-closed-domain-boundary",
-    "error": "File \"<suite>/empty.cljc\", line <n>: lg: with-meta requires a statically typed map implementing IWithMeta",
-    "lane": "implement-static-language-capability",
-    "namespace": "clojure.core-test.empty",
-    "static_subclass": "typed-protocol-or-capability-gap",
-    "target": "native"
-  },
-  {
     "class": "static-typing-or-closed-domain-boundary",
     "error": "File \"<suite>/empty_qmark.cljc\", line <n>: lg: heterogeneous set has element types char | int | string; define a sum type containing these types",
     "lane": "design-closed-domain-or-narrow-runtime-boundary",

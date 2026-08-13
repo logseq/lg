@@ -13,6 +13,8 @@
       (= var-sym 'case)
       (= var-sym 'bound-fn)
       (= var-sym 'bound-fn*)
+      (= var-sym 'defrecord)
+      (= var-sym 'deftype)
       (= var-sym 'denominator)
       (= var-sym 'eval)
       (= var-sym 'intern)

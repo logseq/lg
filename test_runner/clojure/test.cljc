@@ -174,6 +174,7 @@
       (= form 'js/String)
       (= form 'Object)
       (= form 'js/Object)
+      (= form 'js/Date)
       (= form 'python/str)
       (= form 'python/object)
       (= form 'stdClass)))
@@ -255,8 +256,7 @@
         (concat row filtered-rest)))))
 
 (macro-helper-defn filter-static-incompatible-are-arguments [argv expression arguments]
-  (if (and (derive-suite-expression? expression)
-           (contains-host-class-suite-form? arguments))
+  (if (contains-host-class-suite-form? arguments)
     (filter-host-class-suite-rows (count argv) arguments)
     arguments))
 

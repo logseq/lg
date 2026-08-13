@@ -294,6 +294,36 @@ class ScannerDependencyTests(unittest.TestCase):
 
         self.assertEqual([], failures)
 
+    def test_when_var_exists_skips_unsupported_record_and_type_forms(self) -> None:
+        test_file = self.write_suite_file(
+            "record_type_portability_probe.cljc",
+            "(ns clojure.core-test.record-type-portability-probe\n"
+            "  (:require [clojure.core-test.portability :refer [when-var-exists]]\n"
+            "            [clojure.test :refer [deftest is testing]]))\n\n"
+            "(deftest nested-record-and-type-forms-are-skipped\n"
+            "  (testing \"record\"\n"
+            "    (when-var-exists defrecord\n"
+            "      (defrecord Record [field])\n"
+            "      (is (= nil (empty (->Record \"\"))))))\n"
+            "  (testing \"datatype\"\n"
+            "    (when-var-exists deftype\n"
+            "      (deftype MyType [field])\n"
+            "      (is (= nil (empty (->MyType \"\")))))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.record-type-portability-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
     def test_portability_thrown_skips_static_error_bodies(self) -> None:
         test_file = self.write_suite_file(
             "portability_thrown_probe.cljc",
@@ -450,6 +480,32 @@ class ScannerDependencyTests(unittest.TestCase):
                 test_file,
                 [],
                 "clojure.core-test.are-64-bit-integer-probe",
+                target,
+            )
+            if result.status != "compiled":
+                failures.append(f"{target}: {result.error}")
+
+        self.assertEqual([], failures)
+
+    def test_clojure_test_are_skips_host_constructor_rows(self) -> None:
+        test_file = self.write_suite_file(
+            "empty_host_constructor_probe.cljc",
+            "(ns clojure.core-test.empty-host-constructor-probe\n"
+            "  (:require [clojure.test :refer [are deftest testing]]))\n\n"
+            "(deftest empty-host-constructor-suite-rows-are-skipped\n"
+            "  (testing \"common\"\n"
+            "    (are [expected x] (= expected (empty x))\n"
+            "      [] [1]\n"
+            "      #?@(:cljs [nil (js/Date)]\n"
+            "          :clj [nil (new Object)]))))\n",
+        )
+
+        failures = []
+        for target in ["native", "melange"]:
+            result = self.scanner.compile_namespace(
+                test_file,
+                [],
+                "clojure.core-test.empty-host-constructor-probe",
                 target,
             )
             if result.status != "compiled":
