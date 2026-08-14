@@ -131,3 +131,9 @@ clojure.core-test.rseq
 clojure.core-test.set
 clojure.core-test.some
 clojure.core-test.when-first
+
+# Lazy iteration, variadic sequencing, and map construction batch.
+clojure.core-test.cycle
+clojure.core-test.doseq
+clojure.core-test.hash-map
+clojure.core-test.interleave

@@ -4690,6 +4690,13 @@ let compile_equality scope env args =
       || map_record_compatible right_ty left_ty
       ||
       match (left_ty, right_ty) with
+      | (TUnknown | TMeta _ | TVar _), _
+      | _, (TUnknown | TMeta _ | TVar _) ->
+          true
+      | ( TOcaml_app ("Lg_runtime.Runtime_map.t", [ left_key; left_value ]),
+          TOcaml_app ("Lg_runtime.Runtime_map.t", [ right_key; right_value ]) ) ->
+          value_compatible left_key right_key
+          && value_compatible left_value right_value
       | TSet left, TSet right ->
           value_compatible left right
           && Types.set_module_name left = Types.set_module_name right
@@ -4699,7 +4706,9 @@ let compile_equality scope env args =
         (Types.dynamic_map_types map_ty, Types.record_fields record_ty)
       with
       | Some (key_ty, value_ty), Some fields
-        when Types.equal key_ty TKeyword || Types.equal key_ty TString ->
+        when fields = []
+             || Types.equal key_ty TKeyword
+             || Types.equal key_ty TString ->
           List.for_all
             (fun (field : field) ->
               value_compatible value_ty field.ty)

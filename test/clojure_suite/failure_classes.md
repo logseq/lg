@@ -228,10 +228,10 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 112 namespaces (112/183,
-61.2%). Native runs the 107 applicable namespaces, while Melange runs 111
-namespaces with 1,953
-assertions. Both targets pass with zero failures and zero errors. The four
+target qualifier. The current manifest contains 116 namespaces (116/183,
+63.4%). Native runs the 111 applicable namespaces, while Melange runs 115
+namespaces with 2,003 assertions. Both targets pass with zero failures and zero
+errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
 Native's single OCaml float and int representations do not expose.
@@ -283,6 +283,15 @@ heterogeneous nested map; eager closed EDN packing does not terminate. `vec`
 remains outside because the ClojureScript fixture requires a vector to alias a
 mutable JavaScript array, while LG's Native/Melange RRB vector representation
 copies array contents.
+
+The following lazy iteration and map construction batch promotes `cycle`,
+`doseq`, `hash-map`, and `interleave` on both targets. The upstream fixtures
+exercise bounded consumption of infinite sequences, nested binding modifiers,
+variadic `apply`, duplicate map keys, heterogeneous entries, and nested maps.
+Empty structural maps are compatible with runtime maps regardless of the
+runtime map's static key type, and nested generic map compatibility is checked
+recursively. This fixes independently instantiated empty-map equality without
+dynamic storage or a name-based special case.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

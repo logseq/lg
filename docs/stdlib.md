@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 112 namespaces (112/183, 61.2%): Native executes 107
-applicable namespaces, and Melange executes 111 namespaces with 1,953
+currently contains 116 namespaces (116/183, 63.4%): Native executes 111
+applicable namespaces, and Melange executes 115 namespaces with 2,003
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -284,6 +284,15 @@ nested map is eagerly realized while packing the map into closed EDN. The
 upstream `vec` fixture remains outside because ClojureScript aliases the source
 JavaScript array, while LG vectors use one persistent RRB representation on
 Native and Melange and therefore copy array contents.
+
+The promoted lazy iteration and map construction batch adds `cycle`, `doseq`,
+`hash-map`, and `interleave`. It covers finite prefixes of infinite sequences,
+destructuring and modifier clauses in `doseq`, variadic interleaving through
+`apply`, heterogeneous map construction, duplicate keys, and nested maps. Map
+equality now treats an empty structural map as compatible with a runtime map
+of any static key type and recursively compares generic nested map shapes;
+independently instantiated empty maps therefore no longer compile to constant
+false, and no dynamic representation is introduced.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
