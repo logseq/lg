@@ -550,9 +550,13 @@ let add_record_field_constraint name keyword field_ty params =
         (fun ty -> replace_param name ty params)
         (add_constraint existing_ty)
 
+let float_literal_type value =
+  if String.contains value '/' then TOcaml "Lg_runtime.Runtime_ratio.t"
+  else TFloat
+
 let rec numeric_form_type params = function
   | FInt _ -> TInt
-  | FFloat _ -> TFloat
+  | FFloat value -> float_literal_type value
   | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList
@@ -568,6 +572,11 @@ let rec numeric_form_type params = function
           types
       then TOcaml "Lg_runtime.Runtime_decimal.t"
       else if List.exists (Types.equal TFloat) types then TFloat
+      else if
+        List.exists
+          (Types.equal (TOcaml "Lg_runtime.Runtime_ratio.t"))
+          types
+      then TOcaml "Lg_runtime.Runtime_ratio.t"
       else if List.exists (Types.equal TInt) types then TInt
       else TUnknown
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
@@ -577,7 +586,7 @@ let rec numeric_form_type params = function
 
 let rec inferred_form_type params = function
   | FInt _ -> TInt
-  | FFloat _ -> TFloat
+  | FFloat value -> float_literal_type value
   | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
   | FChar _ -> TChar
   | FString _ -> TString
@@ -5421,7 +5430,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           match inferred_form_type params target with
           | TList _ -> TList element_ty
           | TSeq _ -> TSeq element_ty
-          | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+          | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
               TSeq element_ty
           | TSet _ -> (
               match Types.set_module_name element_ty with

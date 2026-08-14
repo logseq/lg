@@ -787,7 +787,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                 heterogeneous_collection_type_error "sequence"
                   [ inner; value.ty ]
             | TOcaml_app (name, [ inner ])
-              when name = Types.next_seq_type_name ->
+              when Types.is_next_seq_type_name name ->
                 if Types.same_shape inner value.ty then
                   let value =
                     coerce_expression_to_type inner value.ty value.semantic_expr

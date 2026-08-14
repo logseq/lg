@@ -53,6 +53,58 @@ let prepare_inferred_recursive_fn =
 let prepare_inferred_recursive_fn_with_return =
   Expression_elaborator.prepare_inferred_recursive_fn_with_return
 
+let resolve_auto_keywords scope env form =
+  let resolve keyword =
+    if not (String.starts_with ~prefix:"::" keyword) then Ok keyword
+    else
+      let name = String.sub keyword 2 (String.length keyword - 2) in
+      match String.index_opt name '/' with
+      | None -> Ok (":" ^ scope ^ "/" ^ name)
+      | Some index ->
+          let alias = String.sub name 0 index in
+          let local_name =
+            String.sub name (index + 1) (String.length name - index - 1)
+          in
+          (match Env.resolve_namespace_alias ~scope alias env with
+          | Some namespace -> Ok (":" ^ namespace ^ "/" ^ local_name)
+          | None ->
+              Error.error
+                ("cannot resolve auto-keyword namespace alias " ^ alias))
+  in
+  let rec walk source =
+    let resolved =
+      match source with
+      | FKeyword keyword -> Result.map (fun keyword -> FKeyword keyword) (resolve keyword)
+      | FList forms -> Result.map (fun forms -> FList forms) (walk_many forms)
+      | FVector forms -> Result.map (fun forms -> FVector forms) (walk_many forms)
+      | FMap entries ->
+          let rec walk_entries resolved = function
+            | [] -> Ok (FMap (List.rev resolved))
+            | (key, value) :: rest ->
+                Result.bind (walk key) (fun key ->
+                    Result.bind (walk value) (fun value ->
+                        walk_entries ((key, value) :: resolved) rest))
+          in
+          walk_entries [] entries
+      | (FSymbol _ | FCoreSymbol _ | FString _ | FRegex _ | FInt _ | FFloat _
+        | FDecimal _ | FChar _ | FBool _) as leaf ->
+          Ok leaf
+    in
+    Result.map
+      (fun target ->
+        if target != source then Source_context.copy_location ~source ~target;
+        target)
+      resolved
+  and walk_many forms =
+    let rec loop resolved = function
+      | [] -> Ok (List.rev resolved)
+      | form :: rest ->
+          Result.bind (walk form) (fun form -> loop (form :: resolved) rest)
+    in
+    loop [] forms
+  in
+  walk form
+
 let fn_code = Expression_elaborator.fn_code
 let binding_of_expr = Expression_support.binding_of_expr
 let lookup_function = Expression_support.lookup_function
@@ -1203,6 +1255,10 @@ let inferred =
   inferred
 
 let rec compile scope env next_type form =
+  Result.bind (resolve_auto_keywords scope env form) (fun form ->
+      compile_resolved scope env next_type form)
+
+and compile_resolved scope env next_type form =
   let env =
     match form with
     | FList

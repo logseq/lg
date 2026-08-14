@@ -485,10 +485,23 @@ let protocol_witness_name value_name protocol_id =
       0 12
 
 let next_seq_type_name = "__lg_next_seq"
+let reversible_next_seq_type_name = "__lg_reversible_next_seq"
+
+let is_next_seq_type_name name =
+  name = next_seq_type_name || name = reversible_next_seq_type_name
+
 let next_seq inner = TOcaml_app (next_seq_type_name, [ inner ])
 
+let reversible_next_seq inner =
+  TOcaml_app (reversible_next_seq_type_name, [ inner ])
+
 let next_seq_element = function
-  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name -> Some inner
+  | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name -> Some inner
+  | _ -> None
+
+let reversible_next_seq_element = function
+  | TOcaml_app (name, [ inner ]) when name = reversible_next_seq_type_name ->
+      Some inner
   | _ -> None
 
 let reduced_type_name = "Lg_runtime.Runtime_reduced.t"
@@ -736,7 +749,7 @@ let rec assignable ~policy ~expected ~actual =
       assignable ~policy ~expected ~actual
   | TSeq expected, TOcaml_app (name, [ actual ])
   | TOcaml_app (name, [ expected ]), TSeq actual
-    when name = next_seq_type_name ->
+    when is_next_seq_type_name name ->
       assignable ~policy ~expected ~actual
   | TNamed_record expected, TNamed_record actual
     when expected.type_name = actual.type_name ->
@@ -841,7 +854,7 @@ let rec source_name = function
       "optional-protocol<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ inner ]) when name = weak_type_name ->
       "weak<" ^ source_name inner ^ ">"
-  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
+  | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name ->
       "seq<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
       "reduced<" ^ source_name inner ^ ">"
@@ -971,7 +984,7 @@ let rec ocaml_name = function
   | TOcaml_app (name, [ witness_ty; value_ty ])
     when Option.is_some (protocol_constraint_id name) ->
       "(" ^ ocaml_name witness_ty ^ " option * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ inner ]) when name = next_seq_type_name ->
+  | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name ->
       ocaml_name inner ^ " Seq.t"
   | TOcaml_app (name, [ arg ]) ->
       let arg_name =

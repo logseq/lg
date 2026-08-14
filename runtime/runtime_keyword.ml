@@ -2,6 +2,33 @@ type t = string
 
 let of_string value = value
 
+let body value =
+  if String.length value > 0 && value.[0] = ':' then
+    String.sub value 1 (String.length value - 1)
+  else value
+
+let slash_indices value =
+  let rec collect indices index =
+    match String.index_from_opt value index '/' with
+    | None -> List.rev indices
+    | Some found -> collect (found :: indices) (found + 1)
+  in
+  collect [] 0
+
+let[@warning "-32"] cljs_name value =
+  let value = body value in
+  match slash_indices value with
+  | [] -> value
+  | [ separator ] ->
+      String.sub value (separator + 1) (String.length value - separator - 1)
+  | _ -> value
+
+let[@warning "-32"] cljs_namespace value =
+  let value = body value in
+  match slash_indices value with
+  | [ separator ] -> Some (String.sub value 0 separator)
+  | [] | _ :: _ :: _ -> None
+
 let identifier_start value length =
   if length > 0 && String.unsafe_get value 0 = ':' then 1 else 0
 

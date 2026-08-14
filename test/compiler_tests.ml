@@ -33202,6 +33202,46 @@ let test_next_sequence_storage_matches_clojure_equality () =
     "test/next_sequence_storage_equality.cljc" source
   |> ignore
 
+let test_clojure_scalar_reader_and_rendering_alignment () =
+  let source =
+    {|
+(ns test.scalar-alignment
+  (:require [clojure.core :as core]))
+(println
+  (str (namespace ::local) ":"
+       (namespace ::core/local) ":"
+       (qualified-keyword? ::local) ":"
+       (simple-keyword? ::local) ":"
+       (seqable? (seq [1 2 3])) ":"
+       (seqable? (seq (sorted-map :a 1))) ":"
+       (str nil) ":"
+       (str 0.0) ":"
+       (str ##Inf) ":"
+       (str ##NaN)))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native "test/scalar_alignment.cljc" source
+  in
+  assert_ocaml_runs "clojure_scalar_reader_and_rendering_alignment"
+    "test.scalar-alignment:clojure.core:true:false:true:true::0.0:Infinity:NaN\n"
+    native;
+  compile_with_stdlib Lg.Target.Melange "test/scalar_alignment.cljc" source
+  |> ignore;
+  let ratio_source =
+    {|
+(println
+  (str (str 0/2) ":" (str 1/2) ":" (str -1/2) ":"
+       (ratio? 1/2) ":" (rational? 1/2) ":" (number? 1/2)))
+|}
+  in
+  let ratio_native =
+    compile_with_stdlib Lg.Target.Native "test/ratio_str_alignment.clj"
+      ratio_source
+  in
+  assert_ocaml_runs "clojure_ratio_str_alignment"
+    "0:1/2:-1/2:true:true:true\n" ratio_native
+
 let test_last_returns_nil_for_empty_collections () =
   let source =
     {|
@@ -49969,6 +50009,8 @@ let tests =
       test_nested_drop_while_infers_seqable_parameters );
     ( "next sequence storage matches Clojure equality",
       test_next_sequence_storage_matches_clojure_equality );
+    ( "Clojure scalar reader and rendering alignment",
+      test_clojure_scalar_reader_and_rendering_alignment );
     ( "loop initializers propagate seqable constraints",
       test_loop_initializers_propagate_seqable_constraints );
     ( "batched predicate/collection core functions accept truthy params",

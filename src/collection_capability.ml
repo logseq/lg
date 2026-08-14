@@ -500,7 +500,13 @@ let element_type_of_ty env ty =
 let seq_expr env collection =
   match to_seq_expr env collection with
   | Error _ -> Error.error "seq expects a seqable value"
-  | Ok (inner, sequence) -> Ok (typed_ir (Types.next_seq inner) sequence)
+  | Ok (inner, sequence) ->
+      let sequence_type =
+        match (Compiler_environment.target env, collection.ty) with
+        | Target.Melange, TVector _ -> Types.reversible_next_seq inner
+        | _ -> Types.next_seq inner
+      in
+      Ok (typed_ir sequence_type sequence)
 
 let rest_expr env collection =
   match to_seq_expr env collection with

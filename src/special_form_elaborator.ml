@@ -1699,7 +1699,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | TSeq _ ->
                   false
               | TOcaml_app (name, [ _ ])
-                when name = Types.next_seq_type_name ->
+                when Types.is_next_seq_type_name name ->
                   false
               | _ -> true
             in
@@ -3012,7 +3012,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     let sequence_element = function
                       | TList inner | TVector inner | TSeq inner -> Some inner
                       | TOcaml_app (name, [ inner ])
-                        when name = Types.next_seq_type_name ->
+                        when Types.is_next_seq_type_name name ->
                           Some inner
                       | _ -> None
                     in
@@ -3045,7 +3045,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           TSeq inner
                       | ( (TList current_inner | TVector current_inner),
                           TOcaml_app (name, [ actual_inner ]) )
-                        when name = Types.next_seq_type_name ->
+                        when Types.is_next_seq_type_name name ->
                           let inner =
                             merge_sequence_inner current_inner actual_inner
                           in
@@ -3054,13 +3054,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           TOcaml_app (name, [ actual_inner ]) )
                       | ( TOcaml_app (name, [ current_inner ]),
                           TSeq actual_inner )
-                        when name = Types.next_seq_type_name ->
+                        when Types.is_next_seq_type_name name ->
                           Types.next_seq
                             (merge_sequence_inner current_inner actual_inner)
                       | ( TOcaml_app (current_name, [ current_inner ]),
                           TOcaml_app (actual_name, [ actual_inner ]) )
-                        when current_name = Types.next_seq_type_name
-                             && actual_name = Types.next_seq_type_name ->
+                        when Types.is_next_seq_type_name current_name
+                             && Types.is_next_seq_type_name actual_name ->
                           Types.next_seq
                             (merge_sequence_inner current_inner actual_inner)
                       | TSeq current_inner, TSeq actual_inner ->
@@ -3215,7 +3215,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   let sequence_element_type = function
                     | TSeq inner -> Some inner
                     | TOcaml_app (name, [ inner ])
-                      when name = Types.next_seq_type_name ->
+                      when Types.is_next_seq_type_name name ->
                         Some inner
                     | _ -> None
                   in
@@ -3237,7 +3237,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 [ value.semantic_expr ] ) )
                     | TSeq inner -> Some (inner, value.semantic_expr)
                     | TOcaml_app (name, [ inner ])
-                      when name = Types.next_seq_type_name ->
+                      when Types.is_next_seq_type_name name ->
                         Some (inner, value.semantic_expr)
                     | _ -> None
                   in

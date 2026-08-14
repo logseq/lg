@@ -14,7 +14,11 @@ let string_ends_with_dot value =
 let ensure_decimal_fraction value =
   if string_ends_with_dot value then value ^ "0" else value
 
-let clj_display_float value = string_of_float value |> ensure_decimal_fraction
+let clj_display_float value =
+  if Float.is_nan value then "NaN"
+  else if value = Float.infinity then "Infinity"
+  else if value = Float.neg_infinity then "-Infinity"
+  else string_of_float value |> ensure_decimal_fraction
 
 let clj_readable_float value =
   if Float.is_nan value then "##NaN"

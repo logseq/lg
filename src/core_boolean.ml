@@ -155,7 +155,8 @@ let compile ~target name args =
       compile_runtime_type_predicate name "Lg_runtime.Runtime_dynamic.is_number"
         (fun ty ->
           Types.is_numeric ty
-          || Types.equal ty (TOcaml "Lg_runtime.Runtime_decimal.t"))
+          || Types.equal ty (TOcaml "Lg_runtime.Runtime_decimal.t")
+          || Types.equal ty (TOcaml "Lg_runtime.Runtime_ratio.t"))
         args
   | "__lg_string-predicate" ->
       compile_string_family_predicate ~target name ~keyword:false args

@@ -89,7 +89,7 @@ let rec truthiness_expression ?(constrained_identifier = true) ty expression =
               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
                 [ expression ] );
           ] )
-  | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+  | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
       Semantic_ir.Apply
         ( Semantic_ir.Ident "not",
           [
@@ -107,7 +107,7 @@ let truthiness_needs_value ty =
   | TBool | TNullable _ | TOcaml_app ("option", [ _ ]) | TOcaml "option"
   | TSeq _ ->
       true
-  | TOcaml_app (name, [ _ ]) -> name = Types.next_seq_type_name
+  | TOcaml_app (name, [ _ ]) -> Types.is_next_seq_type_name name
   | _ -> false
 
 let nil_predicate_needs_value ty =
@@ -122,7 +122,7 @@ let nil_predicate_needs_value ty =
       | TNullable _ | TOcaml_app ("option", [ _ ])
       | TOcaml "Lg_edn_backend.t" ->
           true
-      | TOcaml_app (name, [ _ ]) -> name = Types.next_seq_type_name
+      | TOcaml_app (name, [ _ ]) -> Types.is_next_seq_type_name name
       | _ -> false)
 
 let rec nil_predicate_expression ty expression =
@@ -187,7 +187,7 @@ let rec nil_predicate_expression ty expression =
       | TOcaml "Lg_edn_backend.t" ->
           Semantic_ir.Apply
             (Semantic_ir.Ident "Lg_runtime.Runtime_edn.is_nil", [ expression ])
-      | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+      | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
               [ expression ] )
@@ -638,7 +638,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       Semantic_ir.Apply (Semantic_ir.Ident "Option.get", [ expression ])
   | ( (TNullable target | TOcaml_app ("option", [ target ])),
       TOcaml_app (name, [ _ ]) )
-    when name = Types.next_seq_type_name ->
+    when Types.is_next_seq_type_name name ->
       let sequence_name = "__lg_nullable_next_sequence" in
       let sequence = Semantic_ir.Ident sequence_name in
       let _ = target in
@@ -654,7 +654,7 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
   | target_ty, TOcaml_app (constraint_name, [ _element_ty; _value_ty ])
     when (match target_ty with
          | TSeq _ -> true
-         | TOcaml_app (name, [ _ ]) -> name = Types.next_seq_type_name
+         | TOcaml_app (name, [ _ ]) -> Types.is_next_seq_type_name name
          | _ -> false)
          && (constraint_name = Types.seqable_constraint_name
             || constraint_name = Types.optional_seqable_constraint_name

@@ -386,7 +386,7 @@ and refine_nonmatching_type existing inferred =
         (refine_type existing
            (Option.get (Types.seqable_constraint_element inferred)))
   | TOcaml_app (name, [ existing ]), inferred
-    when name = Types.next_seq_type_name
+    when Types.is_next_seq_type_name name
          && Option.is_some (Types.seqable_constraint_element inferred) ->
       Types.next_seq
         (refine_type existing

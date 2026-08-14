@@ -1424,7 +1424,7 @@ let dynamic_boundary_error_message direction ty =
         (cannot_cross "collections"
            "keep the collection statically typed and use a closed sum for \
             heterogeneous elements")
-  | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+  | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
       Some
         (cannot_cross "collections"
            "keep the collection statically typed and use a closed sum for \
@@ -1553,7 +1553,7 @@ let rec pack_metadata_expression ty expression =
               [ mapper; expression ] ))
         (metadata_mapper element_ty)
   | TOcaml_app (name, [ element_ty ])
-    when name = Types.next_seq_type_name ->
+    when Types.is_next_seq_type_name name ->
       let sequence_name = "__lg_metadata_next_sequence" in
       let sequence = Semantic_ir.Ident sequence_name in
       Result.map
@@ -5712,14 +5712,21 @@ let create ~compile_expr =
           "Lg_runtime.Runtime_print.clj_readable_char"
     in
     match value.ty with
-    | TFloat when print_context ->
+    | TFloat ->
         Semantic_ir.Apply (Semantic_ir.Ident float_printer, [ value.semantic_expr ])
+    | TNil when not print_context ->
+        Semantic_ir.Sequence [ value.semantic_expr; Semantic_ir.String "" ]
     | TChar when print_context && pr ->
         Semantic_ir.Apply
           (Semantic_ir.Ident readable_char_printer, [ value.semantic_expr ])
     | TChar when print_context ->
         Semantic_ir.Apply
           (Semantic_ir.Ident "String.make", [ Semantic_ir.Int 1; value.semantic_expr ])
+    | TOcaml "Lg_runtime.Runtime_decimal.t"
+      when not print_context && Env.target env = Target.Melange ->
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_decimal.to_cljs_string",
+            [ value.semantic_expr ] )
     | ty when Option.is_some (Types.printable_constraint_info ty) -> (
         match Semantic_ir.unlocated value.semantic_expr with
         | Semantic_ir.Ident name ->
@@ -5751,7 +5758,7 @@ let create ~compile_expr =
           ( value.semantic_expr,
             [
               ( Semantic_ir.PConstructor ("None", None),
-                Semantic_ir.String "nil" );
+                Semantic_ir.String (if print_context then "nil" else "") );
               ( Semantic_ir.PConstructor
                   ("Some", Some (Semantic_ir.PVar value_name)),
                 stringify_value scope env ~pr ?print_length ?print_level
@@ -7438,6 +7445,26 @@ let create ~compile_expr =
                 in
                 let expression =
                   if
+                    protocol_basename = "ISeqable"
+                    && Option.is_some (Types.next_seq_element receiver.ty)
+                  then
+                    Semantic_ir.Sequence
+                      [ receiver.semantic_expr; Semantic_ir.Bool true ]
+                  else if
+                    protocol_basename = "ISeqable"
+                    && Env.target env = Target.Melange
+                    && Types.equal receiver.ty TChar
+                  then
+                    Semantic_ir.Sequence
+                      [ receiver.semantic_expr; Semantic_ir.Bool true ]
+                  else if
+                    protocol_basename = "IReversible"
+                    && Option.is_some
+                         (Types.reversible_next_seq_element receiver.ty)
+                  then
+                    Semantic_ir.Sequence
+                      [ receiver.semantic_expr; Semantic_ir.Bool true ]
+                  else if
                     Protocol_id.name protocol_id = "ISequential"
                     && Option.is_some
                          (Types.seqable_constraint_info receiver.ty)
@@ -9709,8 +9736,12 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> (
             let decimal_ty = TOcaml "Lg_runtime.Runtime_decimal.t" in
+            let ratio_ty = TOcaml "Lg_runtime.Runtime_ratio.t" in
             let has_decimal =
               List.exists (fun arg -> Types.equal arg.ty decimal_ty) args
+            in
+            let has_ratio =
+              List.exists (fun arg -> Types.equal arg.ty ratio_ty) args
             in
             let decimal_compatible arg =
               Types.equal arg.ty decimal_ty
@@ -9722,6 +9753,18 @@ let create ~compile_expr =
               else
                 typed_ir decimal_ty
                   (apply "Lg_runtime.Runtime_decimal.of_int"
+                     [ arg.semantic_expr ])
+            in
+            let ratio_compatible arg =
+              Types.equal arg.ty ratio_ty
+              || Types.equal arg.ty TInt
+              || Types.equal arg.ty (TOcaml "int")
+            in
+            let as_ratio arg =
+              if Types.equal arg.ty ratio_ty then arg
+              else
+                typed_ir ratio_ty
+                  (apply "Lg_runtime.Runtime_ratio.of_int"
                      [ arg.semantic_expr ])
             in
             if
@@ -9772,6 +9815,40 @@ let create ~compile_expr =
                           (fun product arg ->
                             apply binary_function
                               [ product; arg.semantic_expr ])
+                          first.semantic_expr rest))
+              | _, [] -> assert false)
+            else if has_ratio && List.for_all ratio_compatible args then
+              let args = List.map as_ratio args in
+              let binary_function =
+                match name with
+                | "__lg_add" -> "Lg_runtime.Runtime_ratio.add"
+                | "__lg_subtract" -> "Lg_runtime.Runtime_ratio.subtract"
+                | "__lg_multiply" -> "Lg_runtime.Runtime_ratio.multiply"
+                | "__lg_divide" -> "Lg_runtime.Runtime_ratio.divide"
+                | _ -> assert false
+              in
+              (match (name, args) with
+              | "__lg_subtract", [ value ] ->
+                  Ok
+                    (typed_ir ratio_ty
+                       (apply "Lg_runtime.Runtime_ratio.negate"
+                          [ value.semantic_expr ]))
+              | "__lg_divide", [ value ] ->
+                  Ok
+                    (typed_ir ratio_ty
+                       (apply binary_function
+                          [
+                            apply "Lg_runtime.Runtime_ratio.of_int"
+                              [ Semantic_ir.Int 1 ];
+                            value.semantic_expr;
+                          ]))
+              | _, first :: rest ->
+                  Ok
+                    (typed_ir ratio_ty
+                       (List.fold_left
+                          (fun result arg ->
+                            apply binary_function
+                              [ result; arg.semantic_expr ])
                           first.semantic_expr rest))
               | _, [] -> assert false)
             else
@@ -10634,6 +10711,17 @@ let create ~compile_expr =
                         constrained_argument_value arg,
                         Semantic_ir.Float "1." )))
             else if
+              Types.equal value_ty (TOcaml "Lg_runtime.Runtime_ratio.t")
+            then
+              Ok
+                (typed_ir value_ty
+                   (apply "Lg_runtime.Runtime_ratio.subtract"
+                      [
+                        constrained_argument_value arg;
+                        apply "Lg_runtime.Runtime_ratio.of_int"
+                          [ Semantic_ir.Int 1 ];
+                      ]))
+            else if
               Types.equal value_ty TNil && Env.target env = Target.Melange
             then Ok (typed_ir TInt (Semantic_ir.Int (-1)))
             else Error.error "dec expects a numeric value"
@@ -10723,15 +10811,16 @@ let create ~compile_expr =
     | "__lg_builtin-name" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_scalar.compile "name" args)
+        | Ok args -> Core_scalar.compile ~target:(Env.target env) "name" args)
     | ("__lg_builtin-keyword" | "__lg_builtin-symbol") as name -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_scalar.compile name args)
+        | Ok args -> Core_scalar.compile ~target:(Env.target env) name args)
     | "__lg_builtin-namespace" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_scalar.compile "namespace" args)
+        | Ok args ->
+            Core_scalar.compile ~target:(Env.target env) "namespace" args)
     | "__lg_nan-predicate" -> (
         match compile_args_for scope env arg_forms with
         | Error _ as error -> error
@@ -10781,7 +10870,8 @@ let create ~compile_expr =
           (resolve_name
           ^ " cannot be used without a closed result type; define a closed sum \
              type containing the supported Vars")
-    | "__lg_rational-predicate" | "__lg_decimal-predicate"
+    | "__lg_ratio-predicate" | "__lg_rational-predicate"
+    | "__lg_decimal-predicate"
     | "__lg_float-predicate" | "__lg_double-predicate"
     | "__lg_symbol-predicate"
     | "__lg_char-predicate" | "__lg_regex-predicate" -> (
@@ -10865,6 +10955,11 @@ let create ~compile_expr =
                 Ok
                   (typed_ir arg.ty
                      (apply "Lg_runtime.Runtime_decimal.abs"
+                        [ arg.semantic_expr ]))
+            | TOcaml "Lg_runtime.Runtime_ratio.t" ->
+                Ok
+                  (typed_ir arg.ty
+                     (apply "Lg_runtime.Runtime_ratio.abs"
                         [ arg.semantic_expr ]))
             | _ -> Error.error "abs expects a numeric argument")
         | Ok _ -> Error.error "abs expects 1 argument")
@@ -15886,7 +15981,7 @@ let create ~compile_expr =
                       |> Option.map (fun element_ty -> TSeq element_ty)
                       |> Option.value ~default:ret
                   | TOcaml_app (name, [ TUnknown ]) as ret
-                    when name = Types.next_seq_type_name ->
+                    when Types.is_next_seq_type_name name ->
                       param_tys
                       |> List.mapi (fun index param_ty -> (index, param_ty))
                       |> List.find_map (fun (index, param_ty) ->

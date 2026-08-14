@@ -149,7 +149,7 @@ let optional_identifier_expr ~prefix namespace name =
               present );
           ] ) )
 
-let compile_name name args =
+let compile_name target name args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg -> (
@@ -166,6 +166,11 @@ let compile_name name args =
           with
           | Error _ as error -> error
           | Ok body -> Ok (typed_ir TString (identifier_name_expr body)))
+      | TKeyword when target = Target.Melange ->
+          Ok
+            (typed_ir TString
+               (apply "Lg_runtime.Runtime_keyword.cljs_name"
+                  [ arg.semantic_expr ]))
       | TKeyword | TSymbol -> (
           match identifier_body_expr name arg with
           | Error _ as err -> err
@@ -188,7 +193,7 @@ let compile_keyword _name args =
       | _ -> Error.error "keyword expects keyword, string, or symbol")
   | _ -> Error.error "keyword expects 1 argument"
 
-let compile_namespace name args =
+let compile_namespace target name args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg -> (
@@ -205,6 +210,11 @@ let compile_namespace name args =
                 (identifier_namespace_expr body))
             (identifier_body_expr name
                { arg with semantic_expr = identifier; ty = TKeyword })
+      | TKeyword when target = Target.Melange ->
+          Ok
+            (typed_ir (TOcaml_app ("option", [ TString ]))
+               (apply "Lg_runtime.Runtime_keyword.cljs_namespace"
+                  [ arg.semantic_expr ]))
       | TKeyword | TSymbol | TUnknown ->
           Result.map
             (fun body ->
@@ -236,10 +246,10 @@ let compile_identifier_parts name return_ty prefix args =
         (name ^ " expects an optional string namespace and string name")
   | _ -> Error.error (name ^ " expects 2 arguments")
 
-let compile name args =
+let compile ~target name args =
   match name with
-  | "name" -> compile_name name args
-  | "namespace" -> compile_namespace name args
+  | "name" -> compile_name target name args
+  | "namespace" -> compile_namespace target name args
   | "__lg_builtin-keyword" -> (
       match args with
       | [ _ ] -> compile_keyword "keyword" args

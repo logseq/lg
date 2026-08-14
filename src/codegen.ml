@@ -105,7 +105,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
           ( [ Semantic_ir.PVar "value" ],
             stringify_expr_ir ~pr ?print_length ?print_level
               (typed_ir ty (Semantic_ir.Ident "value")) )
-    | TOcaml_app (name, [ _ ]) when name = Types.next_seq_type_name ->
+    | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],
             stringify_expr_ir ~pr ?print_length ?print_level
@@ -168,6 +168,8 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
         (if pr then "Lg_runtime.Runtime_decimal.to_edn_string"
          else "Lg_runtime.Runtime_decimal.to_string")
         [ expr.semantic_expr ]
+  | TOcaml "Lg_runtime.Runtime_ratio.t" ->
+      apply "Lg_runtime.Runtime_ratio.to_string" [ expr.semantic_expr ]
   | TOcaml "Lg_edn_backend.t" ->
       apply "Lg_runtime.Runtime_edn.write_string" [ expr.semantic_expr ]
   | TOcaml "value" ->
@@ -175,7 +177,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
         (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
          else "Lg_runtime.Runtime_dynamic.polymorphic_str")
         [ expr.semantic_expr ]
-  | TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+  | TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
       render_print_level ?print_level (fun child_print_level ->
           Semantic_ir.If
             ( apply "Lg_runtime.Runtime_seq.is_empty" [ expr.semantic_expr ],

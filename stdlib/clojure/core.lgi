@@ -539,7 +539,7 @@
 (signature clojure.core/any? [value] :fn<value;bool>)
 (signature clojure.core/gensym
   :overload<fn<symbol>;fn<string;symbol>>)
-(signature clojure.core/ratio? [value] :fn<value;bool>)
+(signature clojure.core/ratio? :fn<Lg_runtime.Runtime_ratio.t;bool>)
 (signature clojure.core/decimal? [value] :fn<value;bool>)
 (signature clojure.core/range
   :overload<fn<seq<int>>;fn<int;seq<int>>;fn<int;int;seq<int>>;fn<int;int;int;seq<int>>>)

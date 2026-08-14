@@ -766,7 +766,7 @@ let lookup_impl env protocol_id method_name receiver_ty =
       let receiver_id =
         match (Protocol_id.name protocol_id, receiver_ty) with
         | ("ISeq" | "INext" | "IDrop"), TOcaml_app (name, [ _ ])
-          when name = Types.next_seq_type_name ->
+          when Types.is_next_seq_type_name name ->
             Receiver_id.Seq_receiver
         | _ -> receiver_id
       in

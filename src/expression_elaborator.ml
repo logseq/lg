@@ -107,6 +107,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
   | FFloat "##-Inf" ->
       Ok (typed_ir TFloat (Semantic_ir.Ident "Float.neg_infinity"))
   | FFloat "##NaN" -> Ok (typed_ir TFloat (Semantic_ir.Ident "Float.nan"))
+  | FFloat value when String.contains value '/' ->
+      Ok
+        (typed_ir (TOcaml "Lg_runtime.Runtime_ratio.t")
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_ratio.of_string",
+                [ Semantic_ir.String value ] )))
   | FFloat value -> Ok (typed_ir TFloat (Semantic_ir.Float value))
   | FDecimal value ->
       Ok

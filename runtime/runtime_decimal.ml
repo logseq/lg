@@ -86,7 +86,9 @@ let of_string source =
   let digits = integer ^ fraction in
   if digits = "" || not (String.for_all (function '0' .. '9' -> true | _ -> false) digits)
   then invalid source;
-  normalize { negative; digits; scale = String.length fraction - exponent }
+  let digits = strip_leading_zeros digits in
+  let negative = negative && not (all_zero digits 0) in
+  { negative; digits; scale = String.length fraction - exponent }
 
 let of_int value = of_string (string_of_int value)
 
@@ -315,8 +317,7 @@ let equal left right =
 
 let is_integer value = (normalize value).scale <= 0
 
-let to_string value =
-  let value = normalize value in
+let render value =
   let sign = if value.negative then "-" else "" in
   let length = String.length value.digits in
   if value.scale <= 0 then
@@ -327,6 +328,9 @@ let to_string value =
     ^ String.sub value.digits integer_length value.scale
   else
     sign ^ "0." ^ String.make (value.scale - length) '0' ^ value.digits
+
+let to_string value = render value
+let[@warning "-32"] to_cljs_string value = render (normalize value)
 
 let to_edn_string value = to_string value ^ "M"
 

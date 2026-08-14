@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 239; then
-  echo "compiler call dispatch changed: expected 239 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 242; then
+  echo "compiler call dispatch changed: expected 242 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -191,6 +191,7 @@ awk '
     internal_abi["__lg_bigdec"] = "typed-floating-decimal-conversion-compatibility-primitive"
     internal_abi["__lg_nan-predicate"] = "typed-floating-point-nan-predicate-primitive"
     internal_abi["__lg_decimal-predicate"] = "typed-static-decimal-representation-predicate-primitive"
+    internal_abi["__lg_ratio-predicate"] = "typed-static-ratio-representation-predicate-primitive"
     internal_abi["__lg_with-precision"] = "typed-arbitrary-precision-decimal-math-context-thunk-primitive"
     internal_abi["__lg_array-map"] = "typed-alternating-key-value-array-map-construction-primitive"
     internal_abi["__lg_hash-map"] = "typed-alternating-key-value-hash-map-construction-primitive"
@@ -264,7 +265,7 @@ awk '
     split("requiring-resolve resolve", xs)
     for (i in xs) host_reason[xs[i]] = "compiler-namespace-resolution-boundary"
     host_reason["weak-ref"] = "target-specific-weak-reference-allocation-boundary"
-    split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_ifn-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate __lg_uuid-predicate __lg_delay-predicate", xs)
+    split("__lg_nil-predicate __lg_true-predicate __lg_false-predicate __lg_int-predicate __lg_number-predicate __lg_string-predicate __lg_keyword-predicate __lg_symbol-predicate __lg_list-predicate __lg_seq-predicate __lg_fn-predicate __lg_ifn-predicate __lg_ratio-predicate __lg_rational-predicate __lg_float-predicate __lg_double-predicate __lg_zero-predicate __lg_pos-predicate __lg_neg-predicate __lg_char-predicate __lg_identical-predicate __lg_array-predicate __lg_array-value-predicate __lg_reduced-predicate __lg_uuid-predicate __lg_delay-predicate", xs)
     for (i in xs) type_predicate[xs[i]] = 1
   }
   {
@@ -318,8 +319,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 153; then
-  echo "compiler form dispatch changed: expected 153 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 154; then
+  echo "compiler form dispatch changed: expected 154 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi

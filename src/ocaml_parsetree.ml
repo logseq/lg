@@ -196,7 +196,7 @@ let rec core_type ?(type_variables = []) = function
               [ core_type ~type_variables witness_ty ]);
           (None, core_type ~type_variables value_ty);
         ]
-  | Types.TOcaml_app (name, [ inner ]) when name = Types.next_seq_type_name ->
+  | Types.TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
       type_constructor "Seq.t" [ core_type ~type_variables inner ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))

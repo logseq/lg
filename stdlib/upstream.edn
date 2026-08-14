@@ -358,7 +358,7 @@
     associative? {:status :static-adaptation
                   :reason :source-function-and-inline-specialization-use-clojurescript-iassociative-protocol-satisfaction-without-name-based-compiler-dispatch}
     rational? {:status :static-adaptation
-               :reason :source-function-and-inline-definition-preserve-the-current-static-integer-rational-domain-without-an-open-number-hierarchy}
+               :reason :source-function-and-inline-definition-recognize-the-closed-static-integer-and-runtime-ratio-domains-without-an-open-number-hierarchy}
     float? {:status :static-adaptation
             :reason :source-function-provides-a-first-class-float-predicate-and-inline-specialization-for-the-static-float-domain}
     double? {:status :static-adaptation
@@ -872,7 +872,7 @@
            :reason :source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings}
     any? {:status :ported}
     ratio? {:status :static-adaptation
-            :reason :lg-has-no-ratio-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
+            :reason :source-function-and-inline-definition-recognize-the-closed-runtime-ratio-representation-without-dynamic-number-boxing}
     decimal? {:status :static-adaptation
               :reason :source-predicate-specializes-static-decimal-and-legacy-bigdec-float-representations-without-dynamic-boxing}
     realized? {:status :static-adaptation

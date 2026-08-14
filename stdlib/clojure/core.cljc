@@ -4050,9 +4050,10 @@
   (runtime-static-value/consume x)
   true)
 
-(defn ratio? [x]
-  (runtime-static-value/consume x)
-  false)
+(defn ratio?
+  {:inline (fn [x] (list '__lg_ratio-predicate x))}
+  [x]
+  (__lg_ratio-predicate x))
 
 (defn decimal?
   {:inline (fn [x] (list '__lg_decimal-predicate x))}

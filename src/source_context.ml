@@ -46,6 +46,11 @@ let source_unit : string option Domain.DLS.key =
 
 let find form = Form_table.find_opt (Domain.DLS.get locations) form
 
+let copy_location ~source ~target =
+  match find source with
+  | None -> ()
+  | Some location -> Form_table.replace (Domain.DLS.get locations) target location
+
 let anonymous_record_owner owner =
   match Domain.DLS.get source_unit with
   | None -> owner

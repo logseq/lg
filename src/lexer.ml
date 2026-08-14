@@ -176,8 +176,7 @@ let ratio_float_literal atom =
   match String.split_on_char '/' atom with
   | [ numerator; denominator ] -> (
       match (int_of_string_opt numerator, int_of_string_opt denominator) with
-      | Some numerator, Some denominator when denominator <> 0 ->
-          Some (string_of_float (float_of_int numerator /. float_of_int denominator))
+      | Some _, Some denominator when denominator <> 0 -> Some atom
       | _ -> None)
   | _ -> None
 

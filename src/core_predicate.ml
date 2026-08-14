@@ -21,7 +21,13 @@ let compile ~target name args =
              [ evaluated_argument arg; Semantic_ir.Bool value ])
       in
       match name with
-      | "__lg_rational-predicate" -> static_bool (Types.equal arg.ty TInt)
+      | "__lg_ratio-predicate" ->
+          static_bool
+            (Types.equal arg.ty (TOcaml "Lg_runtime.Runtime_ratio.t"))
+      | "__lg_rational-predicate" ->
+          static_bool
+            (Types.equal arg.ty TInt
+            || Types.equal arg.ty (TOcaml "Lg_runtime.Runtime_ratio.t"))
       | "__lg_decimal-predicate" ->
           static_bool
             (Types.equal arg.ty (TOcaml "Lg_runtime.Runtime_decimal.t"))
