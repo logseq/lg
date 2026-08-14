@@ -2333,39 +2333,46 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
           | _ -> Ok function_))
 
 and compile_named_fn scope env name params body_forms =
-  let ocaml_name = "__lg_named_fn_" ^ Names.sanitize_name name in
-  Result.bind
-    (prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms)
-    (fun parts ->
-      let function_ = fn_code parts in
-      match Semantic_ir.unlocated function_.semantic_expr with
-      | Semantic_ir.Fun (patterns, body) ->
-          Ok
-            {
-              function_ with
-              semantic_expr =
-                Semantic_ir.annotate function_.ty
-                  (Semantic_ir.LetRecIn
-                     ( ocaml_name,
-                       patterns,
-                       body,
-                       Semantic_ir.Ident ocaml_name ));
-            }
-      | Semantic_ir.Tuple
-          [ Semantic_ir.Fun (patterns, body); Semantic_ir.Unit ] ->
-          Ok
-            {
-              function_ with
-              semantic_expr =
-                Semantic_ir.annotate function_.ty
-                  (Semantic_ir.LetRecIn
-                     ( ocaml_name,
-                       patterns,
-                       body,
-                       Semantic_ir.Tuple
-                         [ Semantic_ir.Ident ocaml_name; Semantic_ir.Unit ] ));
-            }
-      | _ -> Error.error "named fn requires a function body")
+  let recursive =
+    body_forms
+    |> List.concat_map Dependency_graph.symbols
+    |> List.exists (String.equal name)
+  in
+  if not recursive then compile_fn scope env params body_forms
+  else
+    let ocaml_name = "__lg_named_fn_" ^ Names.sanitize_name name in
+    Result.bind
+      (prepare_inferred_recursive_fn ~ocaml_name scope env name params body_forms)
+      (fun parts ->
+        let function_ = fn_code parts in
+        match Semantic_ir.unlocated function_.semantic_expr with
+        | Semantic_ir.Fun (patterns, body) ->
+            Ok
+              {
+                function_ with
+                semantic_expr =
+                  Semantic_ir.annotate function_.ty
+                    (Semantic_ir.LetRecIn
+                       ( ocaml_name,
+                         patterns,
+                         body,
+                         Semantic_ir.Ident ocaml_name ));
+              }
+        | Semantic_ir.Tuple
+            [ Semantic_ir.Fun (patterns, body); Semantic_ir.Unit ] ->
+            Ok
+              {
+                function_ with
+                semantic_expr =
+                  Semantic_ir.annotate function_.ty
+                    (Semantic_ir.LetRecIn
+                       ( ocaml_name,
+                         patterns,
+                         body,
+                         Semantic_ir.Tuple
+                           [ Semantic_ir.Ident ocaml_name; Semantic_ir.Unit ] ));
+              }
+        | _ -> Error.error "named fn requires a function body")
 
 and compile_call scope env name arg_forms =
   (Lazy.force context).calls.compile_call scope env name arg_forms

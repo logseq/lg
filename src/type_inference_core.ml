@@ -218,16 +218,17 @@ and refine_nonmatching_type existing inferred =
         (refine_type existing
            (Types.printable_constraint_info inferred |> Option.get))
   | existing, inferred
-    when Option.is_some (Types.exception_data_constraint_info existing) ->
-      Types.exception_data_constraint
-        (refine_type
-           (Types.exception_data_constraint_info existing |> Option.get)
-           inferred)
+    when Option.is_some (Types.exception_data_constraint_info existing)
+         && Option.is_none (Types.exception_data_constraint_info inferred) ->
+      let value_ty = Types.exception_data_constraint_info existing |> Option.get in
+      if Types.same_shape value_ty inferred then refine_type value_ty inferred
+      else Types.exception_data_constraint (refine_type value_ty inferred)
   | existing, inferred
-    when Option.is_some (Types.exception_data_constraint_info inferred) ->
-      Types.exception_data_constraint
-        (refine_type existing
-           (Types.exception_data_constraint_info inferred |> Option.get))
+    when Option.is_some (Types.exception_data_constraint_info inferred)
+         && Option.is_none (Types.exception_data_constraint_info existing) ->
+      let value_ty = Types.exception_data_constraint_info inferred |> Option.get in
+      if Types.same_shape existing value_ty then refine_type existing value_ty
+      else Types.exception_data_constraint (refine_type existing value_ty)
   | existing, inferred
     when Option.is_some (Types.comparable_constraint_info existing) ->
       Types.comparable_constraint

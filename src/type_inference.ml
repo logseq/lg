@@ -596,6 +596,7 @@ let rec inferred_form_type params = function
   | FString _ -> TString
   | FBool _ -> TBool
   | FSymbol "nil" -> TNil
+  | FSymbol ("true" | "false") -> TBool
   | FList [ FSymbol "__lg_constantly"; result ] ->
       Types.constant_function (inferred_form_type params result)
   | FList (FSymbol "do" :: body_forms) -> (
@@ -623,6 +624,12 @@ let rec inferred_form_type params = function
         FSymbol _;
       ] ->
       TSymbol
+  | FList
+      [
+        FSymbol ("quote" | "clojure.core/quote");
+        FList [];
+      ] ->
+      TList TUnknown
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FVector [] ] ->
       TRef (TVector TUnknown)
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FSymbol "nil" ] ->
@@ -787,11 +794,18 @@ let rec inferred_form_type params = function
           TList first
       | _ -> TList (Types.dynamic_constraint TUnknown))
   | FVector values -> (
-      match List.map (inferred_form_type params) values with
-      | [] -> TVector TUnknown
+      let types = List.map (inferred_form_type params) values in
+      let non_nil = List.filter (fun ty -> not (Types.equal ty TNil)) types in
+      match non_nil with
+      | [] -> if types = [] then TVector TUnknown else TVector TNil
       | first :: rest
         when List.for_all (fun ty -> Types.equal first ty) rest ->
-          TVector first
+          if List.exists (Types.equal TNil) types then
+            TVector
+              (match first with
+              | TNullable _ | TOcaml_app ("option", [ _ ]) -> first
+              | _ -> TNullable first)
+          else TVector first
       | _ -> TUnknown)
   | FList (FSymbol "__lg_hash-set" :: values) -> (
       match List.map (inferred_form_type params) values with
@@ -910,11 +924,18 @@ let rec inferred_form_type params = function
   | FList ((FSymbol "__lg_get" | FSymbol "__lg_find") :: _) -> TUnknown
   | FMap pairs ->
       let homogeneous_type forms =
-        match List.map (inferred_form_type params) forms with
-        | [] -> Some TUnknown
+        let types = List.map (inferred_form_type params) forms in
+        let non_nil = List.filter (fun ty -> not (Types.equal ty TNil)) types in
+        match non_nil with
+        | [] -> Some (if types = [] then TUnknown else TNil)
         | first :: rest
           when List.for_all (fun ty -> Types.equal first ty) rest ->
-            Some first
+            if List.exists (Types.equal TNil) types then
+              Some
+                (match first with
+                | TNullable _ | TOcaml_app ("option", [ _ ]) -> first
+                | _ -> TNullable first)
+            else Some first
         | _ -> None
       in
       if
@@ -1272,6 +1293,29 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       parameter_types
     else
       match parameter_types with
+      | map_ty :: collection_ty :: rest
+        when Option.is_some (Types.dynamic_map_types map_ty)
+             || (match map_ty with
+                | TRecord _ | TNamed_record _ -> true
+                | _ -> false) -> (
+          match static_seqable_element_type collection_ty with
+          | Some element_ty ->
+              TFn ([ element_ty ], TBool) :: collection_ty :: rest
+          | None -> parameter_types)
+      | TFn ([ parameter_ty ], return_ty) :: collection_ty :: rest -> (
+          match static_seqable_element_type collection_ty with
+          | Some element_ty ->
+              let return_ty =
+                Types.instantiate_type ~templates:[ parameter_ty ]
+                  ~actuals:[ element_ty ] return_ty
+              in
+              let return_ty =
+                match Types.truthy_constraint_info return_ty with
+                | Some _ -> return_ty
+                | None -> Types.truthy_constraint return_ty
+              in
+              TFn ([ element_ty ], return_ty) :: collection_ty :: rest
+          | None -> parameter_types)
       | (TUnknown | TMeta _ | TVar _) :: collection_ty :: rest -> (
           match static_seqable_element_type collection_ty with
           | Some element_ty ->
@@ -1428,6 +1472,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       |> Type_solver.of_list
     in
     Type_solver.apply substitutions ty
+  in
+  let inferred_hof_argument_type params form =
+    let inferred =
+      inferred_form_or_call_type ~lookup_function_ty params form
+    in
+    if not (Type_solver.is_open inferred) then inferred
+    else
+      match form with
+      | FSymbol name -> (
+          match lookup_function_ty name with
+          | Ok ty -> freshen_call_type name ty
+          | Error _ -> inferred)
+      | _ -> inferred
   in
   let branch_expected_type params expected branch other =
     let branch_is_nullable =
@@ -1745,7 +1802,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           List.mapi
             (fun index argument ->
               let argument_ty =
-                inferred_form_or_call_type ~lookup_function_ty params argument
+                if can_accumulate_overloaded_function_parameter name then
+                  inferred_hof_argument_type params argument
+                else
+                  inferred_form_or_call_type ~lookup_function_ty params
+                    argument
               in
               let argument_ty =
                 if Types.equal argument_ty TUnknown then
@@ -2133,7 +2194,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList (FSymbol name :: args) when string_mem_assoc name params ->
         let parameter_types =
           List.map
-            (inferred_form_or_call_type ~lookup_function_ty params)
+            (if can_accumulate_overloaded_function_parameter name then
+               inferred_hof_argument_type params
+             else inferred_form_or_call_type ~lookup_function_ty params)
             args
           |> specialize_accumulating_hof_parameter_types name
         in
@@ -3717,6 +3780,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol predicate; value ]
       when has_source_name predicate "__lg_empty-predicate" ->
         infer_form params value
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_true-predicate"
+           || has_source_name predicate "__lg_false-predicate" ->
+        let value_ty =
+          inferred_form_or_call_type ~lookup_function_ty params value
+        in
+        if Type_solver.is_open value_ty then infer_expected TBool params value
+        else infer_form params value
     | FList [ FSymbol predicate; FSymbol value ]
       when has_source_name predicate "__lg_symbol-predicate" ->
         constrain_symbol_predicate params value
@@ -3832,7 +3903,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           List.mapi
             (fun index argument ->
               let argument_ty =
-                inferred_form_or_call_type ~lookup_function_ty params argument
+                if can_accumulate_overloaded_function_parameter name then
+                  inferred_hof_argument_type params argument
+                else
+                  inferred_form_or_call_type ~lookup_function_ty params
+                    argument
               in
               let argument_ty =
                 if Types.equal argument_ty TUnknown then

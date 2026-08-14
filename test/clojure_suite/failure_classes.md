@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 134 namespaces (134/183,
-73.2%). Native runs the 127 applicable namespaces, while Melange runs 133
-namespaces with 2,540 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 136 namespaces (136/183,
+74.3%). Native runs the 129 applicable namespaces, while Melange runs 135
+namespaces with 2,596 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -332,10 +332,7 @@ on Melange. `uuid?` now recognizes the present branch of the statically typed
 `option<uuid>` returned by `parse-uuid`, while preserving false for a failed
 parse and for every non-UUID static type. `pos-int?` reuses the safe numeric
 guard narrowing fixed by the preceding batch; Native remains excluded because
-its current source reader does not distinguish `1N` from `1`. The attempted
-`every?`, `not-every?`, `ffirst`, `nfirst`, `pos?`, `neg?`, and `zero?` promoted
-copies were removed after their focused RED audit instead of retaining unused
-fixtures.
+its current source reader does not distinguish `1N` from `1`.
 
 The numeric predicate batch promotes `zero?`, `pos?`, and `neg?` on both
 targets. Direct calls preserve int and float behavior and now compare closed
@@ -356,6 +353,17 @@ dispatch. The upstream bad-inner-type runtime-exception assertions remain
 static errors, and `(nfirst "")` is omitted because proving its `option<char>`
 is None requires a value-level empty-string type unavailable in the current
 type system.
+
+The universal-predicate batch promotes `every?` and `not-every?` on both
+targets through the upstream first-class helper. Helper-accumulated static
+overloads preserve callable sets and maps, empty and nil collections, truthy
+identity values across concrete types, early termination, and infinite
+sequences. Non-empty all-nil vectors retain `vector<nil>` inference rather than
+collapsing into an empty `vector<any>` overload, and `true?`/`false?` propagate
+their declared boolean input to otherwise open call results. The upstream
+bad-shape runtime-exception assertions remain static errors and are omitted
+under the selected static-error policy. No ordinary value or callback is
+stored in `Runtime_dynamic`.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

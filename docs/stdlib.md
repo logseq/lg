@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 134 namespaces (134/183, 73.2%): Native executes 127
-applicable namespaces, and Melange executes 133 namespaces with 2,540
+currently contains 136 namespaces (136/183, 74.3%): Native executes 129
+applicable namespaces, and Melange executes 135 namespaces with 2,596
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -262,6 +262,16 @@ equality across those representations. The private `__lg_next_seq` marker uses
 an empty `Seq.t` as its compact OCaml representation, but equality, `nil?`, and
 EDN conversion observe it as Clojure nil; ordinary `rest` continues to return
 an empty non-nil sequence.
+
+The promoted universal-predicate batch adds `every?` and `not-every?` through
+the upstream first-class helper shared by both namespaces. Static overloaded
+callback parameters preserve vector, set, list, nil, callable set/map, truthy
+identity, early-termination, and infinite-sequence cases. Non-empty all-nil
+vectors retain a `vector<nil>` inference instead of merging with empty
+`vector<any>` overloads, and literal `true?`/`false?` calls constrain open call
+results to their declared boolean input without introducing dynamic storage.
+The upstream bad-shape runtime-exception assertions remain static errors and
+are intentionally omitted under the static-error policy.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,

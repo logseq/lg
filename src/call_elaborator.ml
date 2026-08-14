@@ -3489,6 +3489,112 @@ let rec adapt_value_to_type env expected actual =
     Result.bind (adapt_set_callable actual) (fun callable ->
         adapt_value_to_type env expected callable)
   else if
+    match (expected, actual.ty) with
+    | TFn (expected_params, expected_return), TFn (actual_params, _)
+      when Option.is_some (Types.truthy_constraint_info expected_return)
+           && List.length expected_params = List.length actual_params
+           && callback_parameters_compatible expected_params actual_params ->
+        true
+    | _ -> false
+  then
+    let expected_params, expected_return, actual_params, actual_return =
+      match (expected, actual.ty) with
+      | ( TFn (expected_params, expected_return),
+          TFn (actual_params, actual_return) ) ->
+          (expected_params, expected_return, actual_params, actual_return)
+      | _ -> assert false
+    in
+    let parameter_names =
+      List.mapi
+        (fun index _ ->
+          "__lg_truthy_result_callback_argument_" ^ string_of_int index)
+        expected_params
+    in
+    let rec adapt_parameters adapted expected actual names =
+      match (expected, actual, names) with
+      | [], [], [] -> Ok (List.rev adapted)
+      | expected :: expected_rest, actual :: actual_rest, name :: names ->
+          Result.bind
+            (adapt_value_to_type env actual
+               (typed_ir expected (Semantic_ir.Ident name)))
+            (fun argument ->
+              adapt_parameters (argument :: adapted) expected_rest actual_rest
+                names)
+      | _ -> Error.error "truthy callback parameter arity mismatch"
+    in
+    Result.bind
+      (adapt_parameters [] expected_params actual_params parameter_names)
+      (fun arguments ->
+        let result =
+          typed_ir actual_return
+            (Semantic_ir.Apply (actual.semantic_expr, arguments))
+        in
+        Result.map
+          (fun packed ->
+            Semantic_ir.Fun
+              ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
+                packed ))
+          (pack_constrained_value env expected_return result))
+  else if
+    match (expected, actual.ty, actual.record_values) with
+    | TFn ([ TKeyword ], _), (TRecord _ | TNamed_record _), Some _ -> true
+    | _ -> false
+  then
+    let expected_return, values =
+      match (expected, actual.record_values) with
+      | TFn ([ TKeyword ], expected_return), Some values ->
+          (expected_return, values)
+      | _ -> assert false
+    in
+    let key_name = "__lg_callable_record_key" in
+    let bindings, values =
+      values
+      |> List.mapi (fun index ((field : field), value) ->
+             let name =
+               "__lg_callable_record_value_" ^ string_of_int index
+             in
+             ((Semantic_ir.PVar name, value), (field, name)))
+      |> List.split
+    in
+    let rec adapt_cases cases = function
+      | [] ->
+          let missing =
+            if Types.equal expected_return TBool then
+              Ok (Semantic_ir.Bool false)
+            else
+              adapt_value_to_type env expected_return
+                (typed_ir TNil Semantic_ir.Unit)
+          in
+          Result.map
+            (fun missing ->
+              let clauses =
+                List.rev ((Semantic_ir.PAny, missing) :: cases)
+              in
+              let body =
+                Semantic_ir.Match (Semantic_ir.Ident key_name, clauses)
+              in
+              Semantic_ir.Let
+                ( bindings,
+                  Semantic_ir.Fun ([ Semantic_ir.PVar key_name ], body) ))
+            missing
+      | ((field : field), name) :: rest ->
+          let field_value = typed_ir field.ty (Semantic_ir.Ident name) in
+          let adapted =
+            if Types.equal expected_return TBool then
+              Ok
+                (Expression_support.truthiness_expression field.ty
+                   field_value.semantic_expr)
+            else adapt_value_to_type env expected_return field_value
+          in
+          Result.bind
+            adapted
+            (fun value ->
+              adapt_cases
+                ((Semantic_ir.PString field.keyword, value) :: cases)
+                rest)
+    in
+    adapt_cases [] values
+  else if
     match (expected, Types.constant_function_result actual.ty) with
     | TFn _, Some _ -> true
     | _ -> false
@@ -3554,11 +3660,18 @@ let rec adapt_value_to_type env expected actual =
                ( Semantic_ir.Ident "Lg_runtime.Runtime_map.get_option",
                  [ map; key ] ))
         in
+        let result =
+          if Types.equal expected_return TBool then
+            Ok
+              (Expression_support.truthiness_expression lookup.ty
+                 lookup.semantic_expr)
+          else adapt_value_to_type env expected_return lookup
+        in
         Result.map
           (fun result ->
             wrap
               (Semantic_ir.Fun ([ Semantic_ir.PVar key_name ], result)))
-          (adapt_value_to_type env expected_return lookup))
+          result)
   else if
     match (expected, actual.ty) with
     | TFn (expected_params, _) as expected_fn, TOverloaded_fn arities ->
@@ -3886,11 +3999,15 @@ let rec adapt_value_to_type env expected actual =
               let adapted_argument =
                 match (expected, actual) with
                 | TFn _, TFn _
-                  when argument_compatible expected actual
-                       || Result.is_ok
-                            (Type_solver.unify Type_solver.empty actual expected)
-                       || Result.is_ok
-                            (Type_solver.unify Type_solver.empty expected actual)
+                  when not
+                         (function_needs_representation_adapter expected actual)
+                       && (argument_compatible expected actual
+                          || Result.is_ok
+                               (Type_solver.unify Type_solver.empty actual
+                                  expected)
+                          || Result.is_ok
+                               (Type_solver.unify Type_solver.empty expected
+                                  actual))
                   ->
                     Ok argument.semantic_expr
                 | _ -> adapt_value_to_type env actual argument
@@ -13937,7 +14054,7 @@ let create ~compile_expr =
                && argument_count >= List.length arity.fixed_params)
         |> (function [ selected ] -> Some selected | _ -> None)
     | _ :: _ :: _ -> None
-  and select_overloaded_arity_for_args env arities args =
+  and select_overloaded_arity_for_args ~prefer_specific env arities args =
     let argument_count = List.length args in
     let function_type (arity : fn_arity) =
       let parameters =
@@ -13994,6 +14111,13 @@ let create ~compile_expr =
                         && strict_function_argument_compatible
                              (function_type expected_arity)
                              (function_type actual_arity)))
+      | TFn ([ expected_key ], _), actual -> (
+          match Types.dynamic_map_types actual with
+          | Some (actual_key, _) -> compatible_value expected_key actual_key
+          | None -> (
+              match actual with
+              | TRecord _ | TNamed_record _ -> Types.equal expected_key TKeyword
+              | _ -> false))
       | _ -> named_argument_compatible expected actual
     in
     let compatible expected actual =
@@ -14007,18 +14131,98 @@ let create ~compile_expr =
       && Collection_capability.accepts_seqable env actual)
     in
     let indexed = List.mapi (fun index arity -> (index, arity)) arities in
-    match
-      List.find_opt
-        (fun (_, (arity : fn_arity)) ->
-          Option.is_none arity.rest_param
-          && List.length arity.fixed_params = argument_count
-          && List.for_all2
-               (fun expected arg -> compatible expected arg.ty)
-               arity.fixed_params args)
-        indexed
-    with
-    | Some selected -> Some selected
-    | None -> select_overloaded_arity arities argument_count
+    let fixed_match (_, (arity : fn_arity)) =
+      Option.is_none arity.rest_param
+      && List.length arity.fixed_params = argument_count
+      && List.for_all2
+           (fun expected arg -> compatible expected arg.ty)
+           arity.fixed_params args
+    in
+    if not prefer_specific then
+      match List.find_opt fixed_match indexed with
+      | Some selected -> Some selected
+      | None -> select_overloaded_arity arities argument_count
+    else
+    let fixed_matches = List.filter fixed_match indexed in
+    let specificity (arity : fn_arity) =
+      let rec exactness expected actual =
+        if Types.equal expected actual then 4
+        else
+          match (expected, actual) with
+          | ( TFn (expected_params, expected_return),
+              TFn (actual_params, actual_return) )
+            when List.length expected_params = List.length actual_params ->
+              let parameter_score =
+                List.fold_left2
+                  (fun score expected actual ->
+                    score + exactness expected actual)
+                  0 expected_params actual_params
+              in
+              let return_score =
+                match Types.truthy_constraint_info expected_return with
+                | Some payload when Types.equal payload actual_return -> 3
+                | Some _ -> 0
+                | None -> exactness expected_return actual_return
+              in
+              let identity_score =
+                match (expected_params, actual_params) with
+                | [ expected_parameter ], [ actual_parameter ] -> (
+                    match Types.truthy_constraint_info expected_return with
+                    | Some payload
+                      when Types.equal actual_parameter actual_return
+                           && Types.equal expected_parameter payload ->
+                        5
+                    | Some _ | None -> 0)
+                | _ -> 0
+              in
+              parameter_score + return_score + identity_score
+          | TList expected, TList actual
+          | TVector expected, TVector actual
+          | TSet expected, TSet actual
+          | TSeq expected, TSeq actual
+          | TArray expected, TArray actual
+          | TNullable expected, TNullable actual ->
+              2 + exactness expected actual
+          | ( TOcaml_app (expected_name, [ expected ]),
+              TOcaml_app (actual_name, [ actual ]) )
+            when String.equal expected_name actual_name ->
+              2 + exactness expected actual
+          | TFn ([ expected_key ], TBool), actual -> (
+              match Types.dynamic_map_types actual with
+              | Some (actual_key, _) ->
+                  3 + exactness expected_key actual_key
+              | None -> (
+                  match actual with
+                  | TRecord _ | TNamed_record _
+                    when Types.equal expected_key TKeyword ->
+                      3
+                  | _ -> 0))
+          | _ -> 0
+      in
+      let return_exactness =
+        match Env.expected_type env with
+        | Some expected when Types.equal expected arity.return_ty -> 4
+        | Some _ | None -> 0
+      in
+      let return_resolved =
+        if contains_unresolved_type arity.return_ty then 0 else 1
+      in
+      List.fold_left2
+        (fun (exact, resolved) expected argument ->
+          ( exact + exactness expected argument.ty,
+            resolved + (if contains_unresolved_type expected then 0 else 1) ))
+        (return_exactness, return_resolved) arity.fixed_params args
+    in
+    let more_specific left right =
+      let left_score = specificity (snd left) in
+      let right_score = specificity (snd right) in
+      if left_score >= right_score then left else right
+    in
+    match fixed_matches with
+    | first :: rest when prefer_specific ->
+        Some (List.fold_left more_specific first rest)
+    | first :: _ -> Some first
+    | [] -> select_overloaded_arity arities argument_count
   and contextual_callback_form expected form =
     let annotation = function
       | TInt -> Some "^int"
@@ -14309,7 +14513,14 @@ let create ~compile_expr =
                     Error.error
                       (name ^ " map lookup expects 1 or 2 arguments"))
             | TOverloaded_fn arities -> (
-                match select_overloaded_arity_for_args env arities args with
+                let prefer_specific =
+                  String.equal name "every-fn"
+                  || String.ends_with ~suffix:"/every-fn" name
+                in
+                match
+                  select_overloaded_arity_for_args ~prefer_specific env arities
+                    args
+                with
                 | None ->
                     Error.error
                       (name ^ " called with unsupported arity "
@@ -14702,6 +14913,15 @@ let create ~compile_expr =
                                        actual_return
                               | None -> false)
                             expected_arities
+                      | TFn ([ expected_key ], _), actual -> (
+                          match Types.dynamic_map_types actual with
+                          | Some (actual_key, _) ->
+                              compatible_value expected_key actual_key
+                          | None -> (
+                              match actual with
+                              | TRecord _ | TNamed_record _ ->
+                                  Types.equal expected_key TKeyword
+                              | _ -> compatible_value expected actual))
                       | _ -> compatible_value expected actual
                     in
                     let fixed_compatible =
