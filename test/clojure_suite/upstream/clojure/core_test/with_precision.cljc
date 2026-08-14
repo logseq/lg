@@ -1,0 +1,21 @@
+(ns clojure.core-test.with-precision
+  (:require [clojure.test :refer [deftest is]]))
+
+(deftest test-with-precision
+  (is (= 2M (with-precision 1 :rounding UP (* 1.1M 1M))))
+  (is (= 2M (with-precision 1 :rounding CEILING (* 1.1M 1M))))
+  (is (= -2M (with-precision 1 :rounding UP (* -1.1M 1M))))
+  (is (= -1M (with-precision 1 :rounding CEILING (* -1.1M 1M))))
+  (is (= 1M (with-precision 1 :rounding DOWN (* 1.9M 1M))))
+  (is (= 1M (with-precision 1 :rounding FLOOR (* 1.9M 1M))))
+  (is (= -1M (with-precision 1 :rounding DOWN (* -1.9M 1M))))
+  (is (= -2M (with-precision 1 :rounding FLOOR (* -1.9M 1M))))
+  (is (= 2M (with-precision 1 :rounding HALF_EVEN (* 1.5M 1M))))
+  (is (= 2M (with-precision 1 :rounding HALF_EVEN (* 2.5M 1M))))
+  (is (= -2M (with-precision 1 :rounding HALF_EVEN (* -1.5M 1M))))
+  (is (= -2M (with-precision 1 :rounding HALF_EVEN (* -2.5M 1M))))
+  (is (= 2M (with-precision 1 :rounding HALF_UP (* 1.5M 1M))))
+  (is (= 1M (with-precision 1 :rounding HALF_DOWN (* 1.5M 1M))))
+  (is (= -2M (with-precision 1 :rounding HALF_UP (* -1.5M 1M))))
+  (is (= -1M (with-precision 1 :rounding HALF_DOWN (* -1.5M 1M))))
+  (is (= 2M (with-precision 1 :rounding UNNECESSARY (* 2M 1M)))))

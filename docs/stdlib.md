@@ -248,9 +248,9 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 174 namespaces (174/185, 94.1%): Native executes 167
-applicable namespaces as 185 tests, and Melange executes 173 namespaces as 191
-tests with 2,998 assertions. Both are green. The
+currently contains 176 namespaces (176/185, 95.1%): Native executes 169
+applicable namespaces as 187 tests, and Melange executes 175 namespaces as 193
+tests with 3,027 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -268,6 +268,13 @@ neither `Runtime_dynamic.t`, a heterogeneous registry, nor universal
 pack/unpack. Unbound roots remain uncaptured and observe later call-site
 bindings, while active roots are restored around every call, including nested
 capture and exception restoration.
+
+The next promotion runs the upstream positive `when-let` and `with-precision`
+behavior on both targets. It covers vector, nil, empty vector, sequence,
+single-evaluation, implicit `do`, every supported decimal rounding direction,
+and exact `UNNECESSARY` arithmetic. The upstream negative `UNNECESSARY` row is
+kept out of runtime smoke because LG's static-error lane does not use a fake
+`thrown?` assertion to claim runtime coverage.
 
 The promoted `rest`, `next`, `nnext`, and `fnext` batch preserves map-entry
 tuple storage and nested vector storage while implementing Clojure sequential

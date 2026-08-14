@@ -235,3 +235,7 @@ clojure.core-test.fnil
 clojure.core-test.binding
 clojure.core-test.bound-fn
 clojure.core-test.bound-fn-star
+
+# Truthy binding and decimal math context.
+clojure.core-test.when-let
+clojure.core-test.with-precision
