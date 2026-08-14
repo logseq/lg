@@ -12,6 +12,22 @@ let min_number left right =
   else if left < right then left
   else right
 
+let max_nullable left right =
+  let left_number = Option.value left ~default:0.0 in
+  let right_number = Option.value right ~default:0.0 in
+  if Float.is_nan left_number then left
+  else if Float.is_nan right_number then right
+  else if left_number > right_number then left
+  else right
+
+let min_nullable left right =
+  let left_number = Option.value left ~default:0.0 in
+  let right_number = Option.value right ~default:0.0 in
+  if Float.is_nan left_number then left
+  else if Float.is_nan right_number then right
+  else if left_number < right_number then left
+  else right
+
 let encoded_exponent value =
   let bits = Int64.bits_of_float value in
   Int64.(to_int (logand (shift_right_logical bits 52) 0x7ffL))

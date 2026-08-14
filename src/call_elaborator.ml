@@ -4594,6 +4594,17 @@ let compile_equality scope env args =
                  [ value.semantic_expr ])
         | _ -> None
     in
+    let ratio_ty = TOcaml "Lg_runtime.Runtime_ratio.t" in
+    let ratio_value value =
+      if Types.equal value.ty ratio_ty then Some value.semantic_expr
+      else
+        match value.ty with
+        | TInt | TOcaml "int" ->
+            Some
+              (apply "Lg_runtime.Runtime_ratio.of_int"
+                 [ value.semantic_expr ])
+        | _ -> None
+    in
     let rec sequential_value = function
       | TList _ | TSeq _ | TVector _ | TArray _ -> true
       | TNullable inner | TOcaml_app ("option", [ inner ]) ->
@@ -4637,6 +4648,15 @@ let compile_equality scope env args =
              (Semantic_ir.Apply
                 ( Semantic_ir.Ident "Lg_runtime.Runtime_instant.equal",
                   [ left.semantic_expr; right.semantic_expr ] )))
+      else if Types.equal left.ty ratio_ty || Types.equal right.ty ratio_ty then (
+        match (ratio_value left, ratio_value right) with
+        | Some left, Some right ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_ratio.equal",
+                      [ left; right ] )))
+        | None, _ | _, None -> fallback ())
       else if Types.equal left.ty decimal_ty || Types.equal right.ty decimal_ty
       then (
         match (decimal_value left, decimal_value right) with
@@ -11320,25 +11340,86 @@ let create ~compile_expr =
             let use_float =
               List.exists (fun arg -> Types.equal arg.ty TFloat) args
             in
+            let value_ty = if use_float then TFloat else TInt in
+            let optional_ty = TOcaml_app ("option", [ value_ty ]) in
             let args =
               List.map
                 (fun arg ->
                   if Types.equal arg.ty TNil then
-                    if use_float then
-                      typed_ir TFloat
-                        (Semantic_ir.Sequence
-                           [ arg.semantic_expr; Semantic_ir.Float "0." ])
-                    else
-                      typed_ir TInt
-                        (Semantic_ir.Sequence
-                           [ arg.semantic_expr; Semantic_ir.Int 0 ])
-                  else arg)
+                    typed_ir optional_ty
+                      (Semantic_ir.Sequence
+                         [ arg.semantic_expr;
+                           Semantic_ir.Constructor ("None", None);
+                         ])
+                  else
+                    let arg =
+                      if use_float then Core_float.widen_to_float arg else arg
+                    in
+                    typed_ir optional_ty
+                      (Semantic_ir.Constructor
+                         ("Some", Some arg.semantic_expr)))
                 args
             in
-            if use_float then
-              Core_float.compile_min_max name
-                (List.map Core_float.widen_to_float args)
-            else Core_int.compile_min_max name args
+            let operation =
+              match (use_float, name) with
+              | true, "__lg_max" ->
+                  "Lg_runtime.Runtime_math_common.max_nullable"
+              | true, _ -> "Lg_runtime.Runtime_math_common.min_nullable"
+              | false, "__lg_max" ->
+                  "Lg_runtime.Runtime_int.int_max_nullable"
+              | false, _ -> "Lg_runtime.Runtime_int.int_min_nullable"
+            in
+            let expression =
+              Core_int.bind_arguments "__lg_nullable_extrema_argument_" args
+                (function
+                  | [] -> assert false
+                  | first :: rest ->
+                      List.fold_left
+                        (fun expression arg ->
+                          apply operation
+                            [ expression; arg.semantic_expr ])
+                        first.semantic_expr rest)
+            in
+            Ok (typed_ir optional_ty expression)
+        | Ok args
+          when List.exists
+                 (fun arg ->
+                   Types.equal arg.ty
+                     (TOcaml "Lg_runtime.Runtime_ratio.t"))
+                 args
+               && List.for_all
+                    (fun arg ->
+                      Types.equal arg.ty TInt
+                      || Types.equal arg.ty (TOcaml "int")
+                      || Types.equal arg.ty
+                           (TOcaml "Lg_runtime.Runtime_ratio.t"))
+                    args ->
+            let ratio_ty = TOcaml "Lg_runtime.Runtime_ratio.t" in
+            let as_ratio arg =
+              if Types.equal arg.ty ratio_ty then arg
+              else
+                typed_ir ratio_ty
+                  (apply "Lg_runtime.Runtime_ratio.of_int"
+                     [ arg.semantic_expr ])
+            in
+            let operation =
+              if name = "__lg_max" then
+                "Lg_runtime.Runtime_ratio.max"
+              else "Lg_runtime.Runtime_ratio.min"
+            in
+            let args = List.map as_ratio args in
+            let expression =
+              Core_int.bind_arguments "__lg_ratio_extrema_argument_" args
+                (function
+                  | [] -> assert false
+                  | first :: rest ->
+                      List.fold_left
+                        (fun expression arg ->
+                          apply operation
+                            [ expression; arg.semantic_expr ])
+                        first.semantic_expr rest)
+            in
+            Ok (typed_ir ratio_ty expression)
         | Ok args
           when List.exists (fun arg -> Types.equal arg.ty TFloat) args
                && List.for_all

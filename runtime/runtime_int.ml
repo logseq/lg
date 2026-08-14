@@ -24,6 +24,15 @@ let int_quot = ( / )
 let int_rem = ( mod )
 let int_max left right = if left > right then left else right
 let int_min left right = if left < right then left else right
+
+let int_max_nullable left right =
+  if Option.value left ~default:0 > Option.value right ~default:0 then left
+  else right
+
+let int_min_nullable left right =
+  if Option.value left ~default:0 < Option.value right ~default:0 then left
+  else right
+
 let int_zero value = value = 0
 let int_positive value = value > 0
 let int_negative value = value < 0

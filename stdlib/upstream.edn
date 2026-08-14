@@ -398,9 +398,9 @@
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
     max {:status :static-adaptation
-         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-single-argument-identity-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-and-an-inline-typed-primitive-widens-mixed-direct-call-inputs-and-coerces-melange-nil-to-zero}
+         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-single-argument-identity-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-the-inline-typed-primitive-widens-mixed-direct-call-inputs-native-int-ratio-results-normalize-to-the-closed-runtime-ratio-domain-and-melange-nil-numeric-comparison-uses-zero-while-an-option-result-preserves-the-selected-original-nil-or-number}
     min {:status :static-adaptation
-         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-single-argument-identity-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-and-an-inline-typed-primitive-widens-mixed-direct-call-inputs-and-coerces-melange-nil-to-zero}
+         :reason :source-port-preserves-upstream-one-two-and-variadic-arities-single-argument-identity-nan-propagation-later-tie-selection-and-left-to-right-reduction-while-a-private-static-int-float-protocol-supports-first-class-homogeneous-use-the-inline-typed-primitive-widens-mixed-direct-call-inputs-native-int-ratio-results-normalize-to-the-closed-runtime-ratio-domain-and-melange-nil-numeric-comparison-uses-zero-while-an-option-result-preserves-the-selected-original-nil-or-number}
     unchecked-max {:status :ported
                    :reason :source-macro-preserves-upstream-one-two-and-variadic-arities-two-argument-single-evaluation-and-max-composition-order}
     unchecked-min {:status :ported

@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 116 namespaces (116/183,
-63.4%). Native runs the 111 applicable namespaces, while Melange runs 115
-namespaces with 2,003 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 118 namespaces (118/183,
+64.5%). Native runs the 113 applicable namespaces, while Melange runs 117
+namespaces with 2,051 assertions. Both targets pass with zero failures and zero
 errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -292,6 +292,20 @@ Empty structural maps are compatible with runtime maps regardless of the
 runtime map's static key type, and nested generic map compatibility is checked
 recursively. This fixes independently instantiated empty-map equality without
 dynamic storage or a name-based special case.
+
+The upstream `fnil` fixture remains an audited static error. It reuses one
+closure created by `(fnil test-fn 100)` first with `nil`/integer input and then
+with a symbol input. The closure's nullable argument has one rigid static
+payload type in LG, so the fixture cannot require both `int` and `string`
+without an explicit closed sum. The promoted copy is intentionally omitted.
+
+The following numeric extrema batch promotes `max` and `min` on both targets.
+Native exact mixed integer/ratio calls use the closed ratio domain and explicit
+cross-domain equality. Melange nil/numeric calls use zero only for comparison
+and retain the selected original value as `option<int>` or `option<float>`, so
+nil identity is not silently replaced by numeric zero. The fixtures cover NaN,
+infinities, variadic order, and single-argument non-number identity without
+dynamic values.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

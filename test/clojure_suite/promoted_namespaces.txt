@@ -137,3 +137,7 @@ clojure.core-test.cycle
 clojure.core-test.doseq
 clojure.core-test.hash-map
 clojure.core-test.interleave
+
+# Variadic numeric extrema.
+clojure.core-test.max
+clojure.core-test.min

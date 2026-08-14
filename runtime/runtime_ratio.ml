@@ -65,3 +65,6 @@ let compare left right =
   Int.compare
     (left.numerator * right.denominator)
     (right.numerator * left.denominator)
+
+let max left right = if compare left right > 0 then left else right
+let min left right = if compare left right < 0 then left else right

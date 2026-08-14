@@ -26264,10 +26264,10 @@ let test_source_extrema_preserve_single_values_and_melange_nil () =
 (println
   (and (= 1 (max nil 1))
        (= 1 (max 1 nil))
-       (= 0 (max nil -1))
-       (= 0 (max -1 nil))
-       (= 0 (min nil 1))
-       (= 0 (min 1 nil))
+       (nil? (max nil -1))
+       (nil? (max -1 nil))
+       (nil? (min nil 1))
+       (nil? (min 1 nil))
        (= -1 (min nil -1))
        (= -1 (min -1 nil))))
 |}
