@@ -471,9 +471,13 @@
   :fn<vector<value>;option<vector<value>>>)
 (signature clojure.core/+
   :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/+'
+  :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
 (signature clojure.core/-
   :overload<fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
 (signature clojure.core/*
+  :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
+(signature clojure.core/*'
   :overload<fn<int>;fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)
 (signature clojure.core//
   :overload<fn<int;int>;fn<int;int;int>;variadic-fn<int;int;int;int>>)

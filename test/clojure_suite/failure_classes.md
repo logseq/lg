@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 166 namespaces (166/183,
-90.7%). Native runs 159 applicable namespaces as 165 tests, while Melange runs
-165 namespaces as 171 tests with 2,914 assertions. Both targets pass with zero
+target qualifier. The current manifest contains 170 namespaces (170/183,
+92.9%). Native runs 163 applicable namespaces as 175 tests, while Melange runs
+169 namespaces as 181 tests with 2,962 assertions. Both targets pass with zero
 failures and zero errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -539,11 +539,17 @@ order without dynamic storage.
   object: current `#'x` compilation resolves to the referenced static value for
   call/deref compatibility, so bound Var-object identity remains outside this
   narrow predicate surface.
-- `clojure.core-test.portability/big-int?` is available as a suite helper and
-  `+'`/`*'` bodies are gated as unsupported numeric-tower tests. This removes
-  the remaining suite-helper failure class and promotes `plus_squote.cljc` and
-  `star_squote.cljc` on both Native and Melange. Ordinary `plus.cljc` and
-  `star.cljc` now fail later on bigint reader literals such as `1N`.
+- `clojure.core/+'` and `clojure.core/*'` are source definitions with zero,
+  unary, binary, variadic, `apply`, and first-class coverage over integer,
+  float, mixed numeric, Infinity/NaN, and decimal inputs. Apostrophe-suffixed
+  names use a distinct generated OCaml `_prime` encoding, covered by an
+  ordinary-name/ordinary-name' collision regression. The curated
+  `plus_squote.cljc` and `star_squote.cljc` fixtures are promoted on Native and
+  Melange; unsupported static-error and unmodeled bigint cases remain in the
+  generated audit rather than being presented as passing runtime cases.
+- `clojure.core/ifn?` is promoted with functions and all supported static
+  callable collection/named-value domains. Non-callable nil, integer, string,
+  and character values return false without a universal dynamic type.
 
 ## Suggested repair order
 

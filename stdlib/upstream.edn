@@ -174,10 +174,14 @@
     identity {:status :ported}
     + {:status :static-adaptation
        :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-addition-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
+    +' {:status :static-adaptation
+        :reason :source-checked-addition-alias-preserves-zero-one-two-and-variadic-arities-left-to-right-reduction-apply-and-first-class-calls-through-the-same-static-int-float-and-decimal-numeric-boundary-as-addition}
     - {:status :static-adaptation
        :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-negation-and-left-to-right-subtraction-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
     * {:status :static-adaptation
        :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-multiplication-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
+    *' {:status :static-adaptation
+        :reason :source-checked-multiplication-alias-preserves-zero-one-two-and-variadic-arities-left-to-right-reduction-apply-and-first-class-calls-through-the-same-static-int-float-and-decimal-numeric-boundary-as-multiplication}
     / {:status :static-adaptation
        :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-exact-native-direct-and-applied-integer-ratios-melange-floating-direct-and-applied-integer-division-direct-float-decimal-or-mixed-numeric-widening-and-target-specific-zero-division-behavior}
     < {:status :static-adaptation

@@ -82,6 +82,7 @@ let sanitize_name name =
           | '0' .. '9' as ch -> Buffer.add_char buffer ch
           | '_' -> Buffer.add_char buffer '_'
           | '!' -> Buffer.add_string buffer "_bang"
+          | '\'' -> Buffer.add_string buffer "_prime"
           | '-' | '?' | '/' | '.' -> Buffer.add_char buffer '_'
           | _ -> Buffer.add_char buffer '_')
         name;
@@ -139,8 +140,10 @@ let ocaml_binding_names = Hashtbl.create 4096
 
 let operator_binding_name = function
   | "+" -> Some "add"
+  | "+'" -> Some "add_prime"
   | "-" -> Some "subtract"
   | "*" -> Some "multiply"
+  | "*'" -> Some "multiply_prime"
   | "/" -> Some "divide"
   | "<" -> Some "less"
   | "<=" -> Some "less_equal"

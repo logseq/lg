@@ -3513,6 +3513,13 @@
   ([x y] (__lg_add x y))
   ([x y & more] (__lg_reduce + (__lg_add x y) more)))
 
+(defn +'
+  {:inline (fn [& values] (cons '__lg_add values))}
+  ([] (__lg_add))
+  ([x] x)
+  ([x y] (__lg_add x y))
+  ([x y & more] (__lg_reduce +' (__lg_add x y) more)))
+
 (defn -
   {:inline (fn [& values] (cons '__lg_subtract values))}
   ([x] (__lg_subtract x))
@@ -3525,6 +3532,13 @@
   ([x] x)
   ([x y] (__lg_multiply x y))
   ([x y & more] (__lg_reduce * (__lg_multiply x y) more)))
+
+(defn *'
+  {:inline (fn [& values] (cons '__lg_multiply values))}
+  ([] (__lg_multiply))
+  ([x] x)
+  ([x y] (__lg_multiply x y))
+  ([x y & more] (__lg_reduce *' (__lg_multiply x y) more)))
 
 #?(:native
    (defn- divide-native-step

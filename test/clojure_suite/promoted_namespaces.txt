@@ -221,3 +221,9 @@ clojure.core-test.shuffle
 clojure.core-test.update
 clojure.core-test.group-by
 clojure.core-test.run-bang
+
+# Checked arithmetic aliases and static callable/Var syntax predicates.
+clojure.core-test.plus-squote
+clojure.core-test.star-squote
+clojure.core-test.var-qmark
+clojure.core-test.ifn-qmark

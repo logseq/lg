@@ -224,7 +224,7 @@ When a pinned ClojureScript checkout is supplied, the report also contains an
 protocol method read from the reviewed core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 1,058 public entries, including 788 entries
+pinned surface currently contains 1,058 public entries, including 790 entries
 in `cljs.core`. Public methods declared by
 `defprotocol` are inventoried independently instead of being hidden behind the
 protocol var. Each row is
@@ -237,7 +237,7 @@ macro surfaces. The current baseline is 786 source entries, 3 typed primitives,
 out-of-scope Spec entries. With Spec excluded by project scope, source coverage
 is 786/1,000 (78.6%); 971/1,000 entries are either source-owned or have a
 documented primitive, special-form, or host boundary. All 29 deferred entries
-belong to `cljs.pprint`. `cljs.core` itself has 614 source entries, 3 typed
+belong to `cljs.pprint`. `cljs.core` itself has 616 source entries, 3 typed
 primitives, 56 special forms, 115 host boundaries, and no deferred or
 unclassified entries. Every public function,
 macro, protocol method, multimethod, and public value discovered in the pinned
@@ -248,9 +248,9 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 166 namespaces (166/183, 90.7%): Native executes 159
-applicable namespaces as 165 tests, and Melange executes 165 namespaces as 171
-tests with 2,914 assertions. Both are green. The
+currently contains 170 namespaces (170/183, 92.9%): Native executes 163
+applicable namespaces as 175 tests, and Melange executes 169 namespaces as 181
+tests with 2,962 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -308,6 +308,17 @@ first-class calls, including non-integral and reciprocal results, instead of
 silently truncating through OCaml integer division. Melange uses a separate
 typed floating primitive and retains ClojureScript Infinity and NaN behavior.
 Decimal, mixed int/float, and left-to-right reduction remain statically typed.
+
+The checked-arithmetic batch promotes `+'` and `*'` on both targets. Their
+source definitions preserve the upstream zero, unary, binary, variadic,
+`apply`, and first-class call shapes over LG's static integer, float, and
+decimal numeric domains. Apostrophes are encoded as `_prime` in generated
+OCaml bindings, so an ordinary source name and its apostrophe-suffixed variant
+remain distinct instead of colliding after name sanitization. The same batch
+promotes direct `var?` syntax recognition and the static callable domains of
+`ifn?`, including functions, maps, sets, vectors, keywords, and symbols. LG
+does not expose a first-class JavaScript Var wrapper; resolved values therefore
+remain non-Vars outside literal `var`/reader-var-quote syntax.
 
 The hierarchy batch promotes `parents`, `ancestors`, `descendants`, `derive`,
 and `underive` on both targets. Curated upstream fixtures cover direct and
