@@ -92,28 +92,32 @@ def main() -> int:
     parser.add_argument("--suite-dir", type=pathlib.Path, required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
+    parser.add_argument(
+        "--working-directory", type=pathlib.Path, default=pathlib.Path.cwd()
+    )
     args = parser.parse_args()
 
     namespaces = read_manifest(args.manifest, target=args.target)
     sources = promoted_source_files(args.suite_dir, namespaces)
+    working_directory = args.working_directory.resolve()
     with tempfile.TemporaryDirectory(prefix="lg-clojure-smoke-") as tmp:
         runner = pathlib.Path(tmp) / "runner.cljc"
         runner.write_text(runner_source(namespaces), encoding="utf-8")
         command = [
-            str(args.lg_cli),
+            str(args.lg_cli.resolve()),
             "--target",
             args.target,
             "--compile-files-from",
-            str(args.state),
-            str(args.test_runtime),
-            str(args.platform_test),
-            str(args.portability),
-            *(str(source) for source in sources),
+            str(args.state.resolve()),
+            str(args.test_runtime.resolve()),
+            str(args.platform_test.resolve()),
+            str(args.portability.resolve()),
+            *(str(source.resolve()) for source in sources),
             str(runner),
             "-o",
-            str(args.output),
+            str(args.output.resolve()),
         ]
-        completed = subprocess.run(command, check=False)
+        completed = subprocess.run(command, check=False, cwd=working_directory)
     return completed.returncode
 
 

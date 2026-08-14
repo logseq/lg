@@ -1001,6 +1001,20 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList
+      [
+        FSymbol "__lg_into";
+        target;
+        transducer;
+        source;
+      ] ->
+      inferred_call_return_type ~lookup_function_ty params
+        (FList
+           [
+             FSymbol "__lg_into";
+             target;
+             FList [ FSymbol "sequence"; transducer; source ];
+           ])
   | FList [ FSymbol reduce_name; _reducer; collection ]
     when has_source_name reduce_name "__lg_reduce" ->
       let collection_ty = inferred_form_type params collection in

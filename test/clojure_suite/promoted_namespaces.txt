@@ -111,3 +111,18 @@ clojure.core-test.unsigned-bit-shift-right
 clojure.core-test.identical-qmark
 clojure.core-test.ratio-qmark
 clojure.core-test.rational-qmark
+
+# Collection and sequence behavior batch.
+clojure.core-test.find
+clojure.core-test.peek
+clojure.core-test.rand-nth
+clojure.core-test.butlast
+clojure.core-test.take-last
+clojure.core-test.seq-qmark
+clojure.core-test.drop
+clojure.core-test.dissoc
+clojure.core-test.partial
+clojure.core-test.distinct
+clojure.core-test.reverse
+clojure.core-test.conj
+clojure.core-test.rseq

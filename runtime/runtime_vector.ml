@@ -38,7 +38,8 @@ let assoc vector index value =
     else Rrbvec.set vector index value
   in
   preserve_metadata vector updated
-let rseq vector = Rrbvec.rev vector
+let rseq vector =
+  Rrbvec.to_seq (Rrbvec.rev vector)
 let nth vector index = Rrbvec.nth vector index
 
 let nth_default vector index not_found =

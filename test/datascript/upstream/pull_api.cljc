@@ -1077,7 +1077,7 @@
   :fn<list<frame>;frame>)
 
 (defn- first-seq [stack]
-  (peek stack))
+  (nth stack 0))
 
 (signature datascript.pull-api/next-seq
   :fn<list<frame>;list<frame>>)

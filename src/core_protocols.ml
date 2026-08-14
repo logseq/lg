@@ -474,7 +474,7 @@ let add_vector_reversible_protocol registry =
   let vector = TVector element in
   let binding =
     Types.binding ~protocol_id:reversible_id "Lg_runtime.Runtime_vector.rseq"
-      (TFn ([ vector ], vector))
+      (TFn ([ vector ], Types.next_seq element))
   in
   Protocol_registry.add_implementation reversible_id
     (method_id reversible_id "-rseq")
@@ -991,12 +991,15 @@ let initial_registry =
           ( "Lg_runtime.Runtime_map.t",
             [ TVar "empty_key"; TVar "empty_value" ] ))
   |> declare_stack
-  |> add_stack Receiver_id.List_receiver "List.hd" "List.tl"
-       (TList (TVar "stack_element")) (TVar "stack_element")
+  |> add_stack Receiver_id.List_receiver
+       "Lg_runtime.Runtime_collection.peek_list" "List.tl"
+       (TList (TVar "stack_element"))
+       (TNullable (TVar "stack_element"))
   |> add_stack Receiver_id.Vector_receiver
        "Lg_runtime.Runtime_collection.peek_vector"
        "Lg_runtime.Runtime_collection.pop_vector"
-       (TVector (TVar "stack_element")) (TVar "stack_element")
+       (TVector (TVar "stack_element"))
+       (TNullable (TVar "stack_element"))
   |> add_stack Receiver_id.Nil_receiver "Lg_runtime.Runtime_collection.peek_nil"
        "Lg_runtime.Runtime_collection.pop_nil" TNil TNil
   |> declare_collection_lifecycle_protocols |> add_transient_protocols

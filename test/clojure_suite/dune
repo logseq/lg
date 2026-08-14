@@ -9,6 +9,7 @@
   promoted_namespaces.txt
   lg_portability.cljc
   (source_tree upstream)
+  (source_tree ../../src)
   ../../bin/lg_cli.exe)
  (action
   (run
@@ -30,6 +31,8 @@
    upstream/clojure/core_test
    --manifest
    %{dep:promoted_namespaces.txt}
+   --working-directory
+   %{workspace_root}
    --output
    %{target})))
 
@@ -49,7 +52,7 @@
  (name clojure_test_suite_smoke_native)
  (modules clojure_test_suite_smoke_native)
  (flags
-  (:standard -w -26-27-32-37))
+  (:standard -w -26-27-32-37-69))
  (libraries
   lg.runtime
   lg.edn-backend.native
@@ -69,6 +72,7 @@
   promoted_namespaces.txt
   lg_portability.cljc
   (source_tree upstream)
+  (source_tree ../../src)
   ../../bin/lg_cli.exe)
  (action
   (run
@@ -90,6 +94,8 @@
    upstream/clojure/core_test
    --manifest
    %{dep:promoted_namespaces.txt}
+   --working-directory
+   %{workspace_root}
    --output
    %{target})))
 
@@ -112,7 +118,7 @@
  (modules clojure_test_suite_smoke_melange)
  (preprocess
   (pps melange.ppx))
- (compile_flags -w -26-27-32-37)
+ (compile_flags -w -26-27-32-37-69)
  (libraries
   lg.edn-backend
   lg.edn-backend.melange

@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 96 namespaces: Native executes 91 applicable namespaces,
-and Melange executes 95 namespaces with 1,717 assertions. Both are green. The
+currently contains 109 namespaces: Native executes 104 applicable namespaces,
+and Melange executes 108 namespaces with 1,889 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -261,6 +261,14 @@ equality across those representations. The private `__lg_next_seq` marker uses
 an empty `Seq.t` as its compact OCaml representation, but equality, `nil?`, and
 EDN conversion observe it as Clojure nil; ordinary `rest` continues to return
 an empty non-nil sequence.
+
+The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
+`distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,
+`seq?`, and `take-last`. Empty stack peeks and empty reverse sequences now use
+typed nil-aware results, three-argument `into` preserves its target collection
+type through transducer inference, `conj` infers appended values independently
+from the result collection expectation, and structural-map `find` coerces a
+closed lookup key to the map's declared key representation before lookup.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the

@@ -104,7 +104,7 @@ Static typing subclasses:
 | subclass | failures | handling |
 | --- | ---: | --- |
 | `negative-runtime-test-is-static-error` | 59 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
-| `suite-polymorphic-fixture-is-static-error` | 20 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, `seq.cljc` mixing decimal and int set elements, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
+| `suite-polymorphic-fixture-is-static-error` | 20 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, collection fixtures such as `disj.cljc`, `sort.cljc`, and `zipmap.cljc`, `seq.cljc` mixing decimal and int set elements, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
 | `heterogeneous-collection-needs-closed-domain` | 7 | Heterogeneous list/vector and nullable element fixtures remain audited static errors; they require explicit closed sums rather than dynamic storage. |
 | `first-class-polymorphic-or-hof` | 2 | The remaining entries are whole-file fixtures that combine incompatible static higher-order domains. Supported monomorphic and call-site-specialized higher-order behavior remains covered on Native and Melange. |
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
@@ -228,8 +228,8 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 96 namespaces. Native runs the
-91 applicable namespaces, while Melange runs 95 namespaces with 1,717
+target qualifier. The current manifest contains 109 namespaces. Native runs the
+104 applicable namespaces, while Melange runs 108 namespaces with 1,889
 assertions. Both targets pass with zero failures and zero errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -260,6 +260,17 @@ sequential equality converts closed tuple map entries and nested vectors to a
 shared EDN comparison representation. Empty `next` sequences retain compact
 `Seq.t` storage while observing Clojure nil semantics for equality, `nil?`, and
 EDN conversion; `rest` remains a non-nil empty sequence.
+
+The next collection/sequence promotion adds `butlast`, `conj`, `dissoc`,
+`distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,
+`seq?`, and `take-last` on both targets. `run!` remains outside the manifest
+because an open callback's `Reduced<T>` capability is not yet propagated into
+the source function parameter. `pop` remains outside because eagerly packing a
+discarded infinite sequence inside a heterogeneous vector does not terminate.
+`group-by` remains outside because metadata-bearing vector keys and grouped
+item metadata order still disagree with upstream. The `disj`, `sort`,
+`take-while`, and `zipmap` whole-file fixtures reuse incompatible concrete
+domains and remain audited static errors rather than dynamicized tests.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

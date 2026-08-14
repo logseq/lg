@@ -4399,8 +4399,16 @@
   ([] (__lg_rand))
   ([n] (__lg_rand n)))
 
-(defn rand-nth [coll]
-  (nth coll (rand-int (count coll))))
+(defn rand-nth
+  {:inline (fn [coll]
+             (if (nil? coll)
+               nil
+               (list 'nth coll (list 'rand-int (list 'count coll)))))}
+  [coll]
+  (let [values (seq coll)]
+    (if values
+      (nth values (rand-int (count values)))
+      nil)))
 
 (defn uuid
   "Returns a UUID consistent with string `source`."
@@ -4983,7 +4991,7 @@
   (take (dec (count coll)) coll))
 
 (defn take-last [n coll]
-  (drop (- (count coll) n) coll))
+  (seq (drop (- (count coll) n) coll)))
 
 (defn drop-last
   ([coll]

@@ -721,7 +721,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok _ | Error _ -> compile_builtin ())
       | _ -> compile_builtin ()
     and compile_conj_values scope env arg_forms =
-      match compile_args_for scope env arg_forms with
+      match
+        compile_args_for scope (Env.with_expected_type None env) arg_forms
+      with
       | Error _ as err -> err
       | Ok (collection :: values) when values <> [] ->
           let add_value collection value =
@@ -2192,6 +2194,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | Some (key_ty, value_ty)
               when Types.assignable ~policy:Host_boundary ~expected:key_ty
                      ~actual:key.ty ->
+                let key_expr =
+                  coerce_expression_to_type key_ty key.ty key.semantic_expr
+                in
                 Ok
                   (typed_ir
                      (TOcaml_app ("option", [ TTuple [ key_ty; value_ty ] ]))
@@ -2199,7 +2204,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (runtime_map_operation
                            (runtime_map_key_type key_ty key.ty)
                            "find")
-                        [ target.semantic_expr; key.semantic_expr ]))
+                        [ target.semantic_expr; key_expr ]))
             | None
               when Types.equal target.ty TUnknown
                  || match target.ty with TVar _ -> true | _ -> false ->

@@ -368,7 +368,7 @@
     reversible? {:status :static-adaptation
                  :reason :source-function-and-inline-specialization-use-clojurescript-ireversible-protocol-satisfaction-without-name-based-compiler-dispatch}
     rseq {:status :static-adaptation
-          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-so-call-sites-retain-the-concrete-static-result-type}
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-ireversible-rseq-while-vector-receivers-return-the-nil-aware-next-sequence-marker-required-by-empty-rseq-seq-predicate-equality-and-edn-semantics}
     find {:status :static-adaptation
           :reason :source-function-inline-selects-typed-map-entry-lookup-so-map-valued-keys-use-static-clojure-map-hash-and-equality-supports-vector-index-lookup-and-compile-time-keyword-projection-from-heterogeneous-structural-records-and-returns-static-none-for-missing-record-fields-nil-receivers-or-nil-vector-keys-while-other-non-map-receivers-still-delegate-to-explicit-clojurescript-ifind-implementations}
     equiv-map {:status :static-adaptation
@@ -642,7 +642,7 @@
     empty {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-iemptyablecollection-with-static-list-vector-set-sequence-and-metadata-preserving-hash-map-implementations-and-default-nil-return-semantics-for-non-emptyable-values}
     peek {:status :static-adaptation
-          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-while-empty-list-and-vector-runtime-errors-remain-separate-boundaries}
+          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-with-typed-optional-results-preserving-upstream-empty-list-and-vector-nil-semantics}
     pop {:status :static-adaptation
          :reason :source-function-and-inline-specialization-delegate-to-clojurescript-istack-for-built-in-lists-vectors-nil-and-explicit-protocol-implementations-while-empty-list-and-vector-runtime-errors-remain-separate-boundaries}
     disj {:status :static-adaptation
@@ -807,7 +807,8 @@
           :reason :source-public-overloads-preserve-cljs-zero-and-one-arity-floating-results-with-inline-static-int-or-float-bound-specialization}
     rand-int {:status :static-adaptation
               :reason :source-wrapper-over-the-typed-runtime-random-primitive}
-    rand-nth {:status :ported}
+    rand-nth {:status :static-adaptation
+              :reason :source-port-preserves-random-index-selection-and-empty-or-nil-results-while-inline-static-specialization-retains-a-non-optional-element-result-for-known-seqable-inputs}
     uuid {:status :static-adaptation
           :reason :source-wrapper-preserves-the-upstream-string-to-uuid-constructor-over-the-closed-runtime-uuid-type}
     random-uuid {:status :static-adaptation
@@ -954,7 +955,7 @@
     butlast {:status :static-adaptation
              :reason :composed-from-static-count-and-take-and-empty-results-are-empty-sequences}
     take-last {:status :static-adaptation
-               :reason :finite-static-sequences-use-count-and-drop}
+               :reason :finite-static-sequences-use-count-and-drop-then-the-nil-aware-next-sequence-marker-so-zero-count-and-empty-inputs-preserve-upstream-nil-semantics}
     drop-last {:status :static-adaptation
                :reason :finite-static-sequences-use-count-and-take}
     reverse {:status :static-adaptation
