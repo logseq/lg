@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 150 namespaces (150/183,
-82.0%). Native runs the 143 applicable namespaces, while Melange runs 149
-namespaces with 2,783 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 155 namespaces (155/183,
+84.7%). Native runs the 148 applicable namespaces, while Melange runs 154
+namespaces with 2,834 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -401,6 +401,15 @@ of OCaml truncating division. Melange keeps its separate typed floating path,
 including ClojureScript Infinity and NaN results for division by zero. Neither
 target introduces dynamic numeric storage.
 
+The hierarchy batch promotes `parents`, `ancestors`, `descendants`, `derive`,
+and `underive` on both targets. Its closed EDN fixtures cover direct and
+transitive relationships, chains and diamonds, immutable local updates,
+global updates with cleanup, symbol tags, idempotent direct edges, and
+transitive-closure rebuilding after `underive`. The original `ancestors`
+fixture is still gated by `when-var-exists` because it embeds JVM/JavaScript
+class objects; the curated fixture bypasses that host-class-only gate and
+executes the portable hierarchy behavior directly.
+
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
   helper that calls `(clone-test (int-array 3) ...)` and then
@@ -501,10 +510,11 @@ target introduces dynamic numeric storage.
   instance identity without changing source constructor arity. Source-defined
   `deftype`/`defrecord` names now also compile as portable EDN symbol hierarchy
   tags such as `clojure.core-test.parents/TestParentsRecord`, without modeling
-  JVM or JS class objects. `parents.cljc` and `descendants.cljc` now fail later
-  on mixed EDN named-value vectors such as `[TestParentsRecord ::record]`,
-  which need a closed EDN literal/domain promotion rather than a type-name
-  symbol fix.
+  JVM or JS class objects. The portable keyword/symbol surfaces from
+  `parents.cljc`, `ancestors.cljc`, and `descendants.cljc` are promoted through
+  curated fixtures. Their remaining mixed EDN named-value vectors such as
+  `[TestParentsRecord ::record]` need a closed EDN literal/domain promotion
+  rather than a type-name symbol fix.
 - `clojure.core/var?` now compiles as a source inline predicate for direct
   `#'x` and `(var x)` syntax and is declared in `core.lgi`, so it works through
   explicit refer and automatic core refer. This promotes `var_qmark.cljc` on
@@ -525,7 +535,7 @@ target introduces dynamic numeric storage.
    generated audit only; they are not runtime repair work or Dune gates.
 3. Repair small source-portable API gaps that do not require broad type-system
    changes.
-4. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with
+4. Address regex, watches/ex-data, and multimethod dynamic boundaries with
    narrow documented runtime types where static closed domains are insufficient.
 5. Keep ratio and JVM numeric-class behavior explicitly gated unless a closed
    portable representation is added.

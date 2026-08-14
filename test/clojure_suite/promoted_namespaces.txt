@@ -199,3 +199,10 @@ clojure.core-test.plus
 clojure.core-test.minus
 clojure.core-test.star
 clojure.core-test.slash
+
+# Hierarchy queries and immutable/global hierarchy updates.
+clojure.core-test.parents
+clojure.core-test.ancestors
+clojure.core-test.descendants
+clojure.core-test.derive
+clojure.core-test.underive
