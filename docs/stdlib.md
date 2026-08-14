@@ -224,7 +224,7 @@ When a pinned ClojureScript checkout is supplied, the report also contains an
 protocol method read from the reviewed core and namespace sources. The extractor evaluates both Clojure and
 ClojureScript reader-conditional branches, handles tagged JavaScript literals,
 recurses through top-level `if` branches, and excludes private definitions. The
-pinned surface currently contains 1,058 public entries, including 790 entries
+pinned surface currently contains 1,058 public entries, including 788 entries
 in `cljs.core`. Public methods declared by
 `defprotocol` are inventoried independently instead of being hidden behind the
 protocol var. Each row is
@@ -232,9 +232,14 @@ classified independently as source, typed primitive, special form, host
 boundary, static-typing blocker, out of scope, or deferred. A namespace's
 aggregate support does not make a missing public var appear supported. Manifest entries for
 `clojure.core` also classify the corresponding `cljs.core` function and inline
-macro surfaces. The current baseline is 740 source entries (80.96%), zero typed
-primitives, 44 special forms, 116 host boundaries, 14 static-typing blockers,
-and zero deferred entries. Every public function,
+macro surfaces. The current baseline is 786 source entries, 3 typed primitives,
+59 special forms, 123 host boundaries, 29 deferred entries, and 58 explicitly
+out-of-scope Spec entries. With Spec excluded by project scope, source coverage
+is 786/1,000 (78.6%); 971/1,000 entries are either source-owned or have a
+documented primitive, special-form, or host boundary. All 29 deferred entries
+belong to `cljs.pprint`. `cljs.core` itself has 614 source entries, 3 typed
+primitives, 56 special forms, 115 host boundaries, and no deferred or
+unclassified entries. Every public function,
 macro, protocol method, multimethod, and public value discovered in the pinned
 surface therefore has explicit ownership and evidence.
 Source coverage only counts
@@ -701,6 +706,25 @@ short tails, and padding. Their typed unfold state avoids a public `lazy-seq`
 compiler route. Overloaded calls now also unify repeated `seqable<T>` element
 variables across arguments, so a padding collection cannot silently use a
 different element type from the input collection.
+
+### Tagged instants and arbitrary-precision decimals
+
+`#inst` literals are validated during compilation and lower to the closed
+`Runtime_instant.t` representation. Display output is normalized to UTC and
+readable output retains the `#inst` EDN tag. Invalid dates, offsets, or tagged
+payloads fail before generated OCaml is emitted.
+
+Decimal `M` literals lower to the closed `Runtime_decimal.t` representation.
+The runtime stores an arbitrary-length coefficient and decimal scale rather
+than a machine float. Static decimal addition, subtraction, multiplication,
+terminating division, equality, ordering, absolute value, and mixed int/float
+adaptation are available on Native and Melange without `Runtime_dynamic`.
+`with-precision` is a precompiled `clojure.core` source macro. It expands to a
+private typed math-context thunk, supports `UP`, `DOWN`, `CEILING`, `FLOOR`,
+`HALF_UP`, `HALF_DOWN`, `HALF_EVEN`, and `UNNECESSARY`, and restores the prior
+context after normal return or exception. The compiler inventory records only
+the private typed primitive and the `#inst` reader form; the public
+`with-precision` name remains source-owned.
 
 `eduction` is source-owned as a public macro over the existing typed
 `->Eduction` constructor. It preserves the upstream `xform*` then final
@@ -1389,6 +1413,16 @@ qualified `clojure.core/apply` calls; they resolve through the aggregate source
 namespace. The upstream five-fixed-plus-final-sequence first-class arity remains
 documented as unrepresentable because its rest arguments are heterogeneous by
 construction.
+
+`mapcat` is source-owned with its transducer, single-collection, two-collection,
+three-collection, and variadic collection arities. Multi-collection calls stop
+at the shortest input and preserve callback argument order. The implementation
+uses the same static `map`, `map-many-seq`, `concat`, and `apply` capabilities as
+ordinary source consumers; callback inputs, seqable callback results, and
+transducer accumulator types remain statically related. The upstream
+`mapcat.cljc` namespace now reaches only deliberate negative tests whose
+callbacks return non-seqable values, which the suite audit records as expected
+compile-time errors on Native and Melange.
 
 The architecture tests in `test/stdlib` enforce that `clojure.set` is no
 longer classified as compiler-owned and that source-owned core functions have

@@ -103,6 +103,9 @@ let rec compile_form ~compile_expr scope env form =
       Ok
         (typed_dynamic
            (apply (runtime "dynamic_float") [ Semantic_ir.Float value ]))
+  | FDecimal _ ->
+      Error.error
+        "static decimal values cannot cross the multimethod dynamic boundary"
   | FChar value ->
       Ok
         (typed_dynamic

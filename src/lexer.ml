@@ -141,6 +141,37 @@ let strip_numeric_suffix suffix atom =
     Some (String.sub atom 0 (String.length atom - 1))
   else None
 
+let valid_decimal_literal source =
+  let length = String.length source in
+  let index =
+    if length > 0 && (source.[0] = '-' || source.[0] = '+') then 1 else 0
+  in
+  let rec digits index =
+    if index < length then
+      match source.[index] with '0' .. '9' -> digits (index + 1) | _ -> index
+    else index
+  in
+  let integer_end = digits index in
+  let fraction_end =
+    if integer_end < length && source.[integer_end] = '.' then
+      digits (integer_end + 1)
+    else integer_end
+  in
+  let has_digit = integer_end > index || fraction_end > integer_end + 1 in
+  if not has_digit then false
+  else if fraction_end = length then true
+  else if source.[fraction_end] = 'e' || source.[fraction_end] = 'E' then
+    let exponent_start = fraction_end + 1 in
+    let exponent_start =
+      if
+        exponent_start < length
+        && (source.[exponent_start] = '-' || source.[exponent_start] = '+')
+      then exponent_start + 1
+      else exponent_start
+    in
+    exponent_start < length && digits exponent_start = length
+  else false
+
 let ratio_float_literal atom =
   match String.split_on_char '/' atom with
   | [ numerator; denominator ] -> (
@@ -272,17 +303,9 @@ let tokenize source =
                         | None -> Ok (Symbol atom)))
                 | None -> (
                 match strip_numeric_suffix 'M' atom with
-                | Some decimal when looks_like_float decimal -> (
-                    match float_of_string_opt decimal with
-                    | Some _ -> Ok (Float decimal)
-                    | None -> Ok (Symbol atom))
-                | Some decimal -> (
-                    match int_of_string_opt decimal with
-                    | Some value -> Ok (Int value)
-                    | None -> (
-                        match float_of_string_opt decimal with
-                        | Some value -> Ok (Float (string_of_float value))
-                        | None -> Ok (Symbol atom)))
+                | Some decimal when valid_decimal_literal decimal ->
+                    Ok (Decimal decimal)
+                | Some _ -> Ok (Symbol atom)
                 | None -> (
                 match ratio_float_literal atom with
                 | Some value -> Ok (Float value)

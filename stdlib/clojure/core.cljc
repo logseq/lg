@@ -1803,9 +1803,12 @@
   (assert (= 2 (count bindings))
           "when-first requires exactly 2 forms in its binding vector")
   (let [[name source] bindings]
-    `(when-let [source# (seq ~source)]
-       (let [~name (first source#)]
-         ~@body))))
+    (if body
+      `(when-let [source# (seq ~source)]
+         (let [~name (first source#)]
+           ~@body))
+      `(when-let [source# (seq ~source)]
+         (let [~name (first source#)] nil)))))
 
 (defmacro while [test & body]
   `(loop []
@@ -1824,6 +1827,12 @@
 
 (defmacro with-redefs [bindings & body]
   `(__lg_with_redefs ~bindings ~@body))
+
+(defmacro with-precision [precision & expressions]
+  (if (= :rounding (first expressions))
+    `(__lg_with-precision ~precision ~(name (second expressions))
+       (fn [] ~@(nnext expressions)))
+    `(__lg_with-precision ~precision "HALF_UP" (fn [] ~@expressions))))
 
 (defmacro -> [x & forms]
   (loop [x x
@@ -2289,7 +2298,19 @@
    (fn [rf]
      ((map f) (cat rf))))
   ([f coll]
-   (mapcat-seq f (seq []) (seq coll))))
+   (mapcat-seq f (seq []) (seq coll)))
+  ([f left right]
+   (apply concat (map f left right)))
+  ([f first-coll second-coll third-coll]
+   (apply concat (map f first-coll second-coll third-coll)))
+  ([f first-coll second-coll third-coll & colls]
+   (apply concat
+          (map-many-seq
+           f
+           (seq first-coll)
+           (seq second-coll)
+           (seq third-coll)
+           (map-seq (fn [coll] (seq coll)) (seq colls))))))
 
 (defn cat [rf]
   (fn
@@ -2352,7 +2373,11 @@
         (list 'transduce* xform (list 'conj-reducer) [] coll)
         (list 'transduce* xform f coll)))
      ([xform f init coll]
-      (list 'transduce* xform f init coll)))}
+      (if (or (= f 'conj)
+              (= f 'clojure.core/conj)
+              (= f 'cljs.core/conj))
+        (list 'transduce* xform (list 'conj-reducer) init coll)
+        (list 'transduce* xform f init coll))))}
   ([xform f coll]
    (transduce* xform f coll))
   ([xform f init coll]

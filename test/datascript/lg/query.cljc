@@ -946,7 +946,7 @@
 
 (defprotocol IPostProcess
   (-post-process
-   [find return-map tuples]
+   [find return-map ^:vector<array<query-types/result>> tuples]
    :datascript.lg.query-types/output))
 
 (extend-type datascript.parser/FindRel

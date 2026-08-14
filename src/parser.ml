@@ -113,6 +113,23 @@ let rec parse_one ~target = function
                     },
                   rest )
           | _ -> error_at value.span "#uuid literal expects a string"))
+  | { desc = Symbol "#inst"; span = prefix_span } :: rest -> (
+      match parse_one ~target rest with
+      | Error _ -> error_at prefix_span "#inst literal expects a string"
+      | Ok (value, rest) -> (
+          match value.form with
+          | FString _ ->
+              let head = located (FSymbol "#inst") prefix_span in
+              let children = [ head; value ] in
+              Ok
+                ( located ~children
+                    (FList (List.map (fun child -> child.form) children))
+                    {
+                      start_offset = prefix_span.start_offset;
+                      end_offset = value.span.end_offset;
+                    },
+                  rest )
+          | _ -> error_at value.span "#inst literal expects a string"))
   | { desc = Symbol "#js"; span = prefix_span } :: rest -> (
       match parse_one ~target rest with
       | Error _ -> error_at prefix_span "#js literal expects a map or vector"
@@ -141,6 +158,8 @@ let rec parse_one ~target = function
   | { desc = Int value; span } :: rest -> Ok (located (FInt value) span, rest)
   | { desc = Float value; span } :: rest ->
       Ok (located (FFloat value) span, rest)
+  | { desc = Decimal value; span } :: rest ->
+      Ok (located (FDecimal value) span, rest)
   | { desc = Char value; span } :: rest -> Ok (located (FChar value) span, rest)
   | { desc = Bool value; span } :: rest -> Ok (located (FBool value) span, rest)
   | { desc = Lparen; span = open_span } :: rest ->

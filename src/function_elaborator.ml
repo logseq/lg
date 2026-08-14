@@ -677,7 +677,8 @@ let returned_parameter_index scope env parameter_names body_forms =
             | None -> None)
         | Some _ | None -> None)
     | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
-    | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ | Ast.FVector _
+    | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _
+    | Ast.FVector _
     | Ast.FMap _ | Ast.FList _ ->
         None
   in
@@ -770,7 +771,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                     matches_parameter_as_option name key
                     || matches_parameter_as_option name value)
                   pairs
-            | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FString _
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _
+            | Ast.FString _
             | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
             | Ast.FCoreSymbol _ ->
                 false
@@ -804,7 +806,8 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                     directly_accesses_field parameter key
                     || directly_accesses_field parameter value)
                   pairs
-            | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FString _
+            | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _
+            | Ast.FString _
             | Ast.FRegex _ | Ast.FBool _ | Ast.FKeyword _ | Ast.FSymbol _
             | Ast.FCoreSymbol _ ->
                 false

@@ -13,15 +13,17 @@ module Form_table = Hashtbl.Make (struct
     | Ast.FRegex value -> Hashtbl.hash (4, value)
     | Ast.FInt value -> Hashtbl.hash (5, value)
     | Ast.FFloat value -> Hashtbl.hash (6, value)
-    | Ast.FChar value -> Hashtbl.hash (7, value)
-    | Ast.FBool value -> Hashtbl.hash (8, value)
-    | Ast.FList _ -> 9
-    | Ast.FVector _ -> 10
-    | Ast.FMap _ -> 11
+    | Ast.FDecimal value -> Hashtbl.hash (7, value)
+    | Ast.FChar value -> Hashtbl.hash (8, value)
+    | Ast.FBool value -> Hashtbl.hash (9, value)
+    | Ast.FList _ -> 10
+    | Ast.FVector _ -> 11
+    | Ast.FMap _ -> 12
 
   let hash = function
     | (Ast.FSymbol _ | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _
-      | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _)
+      | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _
+      | Ast.FBool _)
       as form ->
         leaf_hash form
     | Ast.FList forms -> (
@@ -33,7 +35,7 @@ module Form_table = Hashtbl.Make (struct
         match fields with
         | (key, _) :: _ ->
             Hashtbl.hash (11, List.length fields, leaf_hash key)
-        | [] -> 11)
+        | [] -> 12)
 end)
 
 let locations : Location.t Form_table.t Domain.DLS.key =

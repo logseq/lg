@@ -158,6 +158,16 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
         [ expr.semantic_expr ]
   | TOcaml "Lg_runtime.Runtime_uuid.t" ->
       apply "Lg_runtime.Runtime_uuid.to_string" [ expr.semantic_expr ]
+  | TOcaml "Lg_runtime.Runtime_instant.t" ->
+      apply
+        (if pr then "Lg_runtime.Runtime_instant.to_edn_string"
+         else "Lg_runtime.Runtime_instant.to_string")
+        [ expr.semantic_expr ]
+  | TOcaml "Lg_runtime.Runtime_decimal.t" ->
+      apply
+        (if pr then "Lg_runtime.Runtime_decimal.to_edn_string"
+         else "Lg_runtime.Runtime_decimal.to_string")
+        [ expr.semantic_expr ]
   | TOcaml "Lg_edn_backend.t" ->
       apply "Lg_runtime.Runtime_edn.write_string" [ expr.semantic_expr ]
   | TOcaml "value" ->

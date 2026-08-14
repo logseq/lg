@@ -148,15 +148,37 @@ let rec refine_type existing inferred =
            (Types.array_index_constraint_info inferred |> Option.get))
   | existing, inferred -> (
       match
-        ( Types.protocol_constraint_info existing,
-          Types.protocol_constraint_info inferred )
+        ( Types.seqable_constraint_info existing,
+          Types.seqable_constraint_info inferred )
       with
-      | ( Some (existing_id, _, existing_value),
-          Some (inferred_id, _, inferred_value) )
-        when Protocol_id.equal existing_id inferred_id ->
-          Types.protocol_constraint_with_value existing
-            (refine_type existing_value inferred_value)
-      | _ -> refine_nonmatching_type existing inferred)
+      | ( Some (existing_kind, existing_element, existing_value),
+          Some (inferred_kind, inferred_element, inferred_value) ) ->
+          let element_ty = refine_type existing_element inferred_element in
+          let value_ty = refine_type existing_value inferred_value in
+          let kind =
+            match (existing_kind, inferred_kind) with
+            | `Required, _ | _, `Required -> `Required
+            | `Optional_sequential, _ | _, `Optional_sequential ->
+                `Optional_sequential
+            | `Optional, `Optional -> `Optional
+          in
+          (match kind with
+          | `Required ->
+              Types.seqable_constraint_with_value element_ty value_ty
+          | `Optional -> Types.optional_seqable_constraint element_ty value_ty
+          | `Optional_sequential ->
+              Types.optional_sequential_constraint element_ty value_ty)
+      | _ -> (
+          match
+            ( Types.protocol_constraint_info existing,
+              Types.protocol_constraint_info inferred )
+          with
+          | ( Some (existing_id, _, existing_value),
+              Some (inferred_id, _, inferred_value) )
+            when Protocol_id.equal existing_id inferred_id ->
+              Types.protocol_constraint_with_value existing
+                (refine_type existing_value inferred_value)
+          | _ -> refine_nonmatching_type existing inferred))
 
 and refine_nonmatching_type existing inferred =
   match (existing, inferred) with
@@ -170,6 +192,20 @@ and refine_nonmatching_type existing inferred =
         (refine_type
            (Types.hashable_constraint_info existing |> Option.get)
            inferred)
+  | existing, inferred
+    when Option.is_some (Types.printable_constraint_info existing)
+         && Option.is_none (Types.printable_constraint_info inferred) ->
+      let value_ty = Types.printable_constraint_info existing |> Option.get in
+      if Types.same_shape value_ty inferred then
+        refine_type value_ty inferred
+      else Types.printable_constraint (refine_type value_ty inferred)
+  | existing, inferred
+    when Option.is_some (Types.printable_constraint_info inferred)
+         && Option.is_none (Types.printable_constraint_info existing) ->
+      let value_ty = Types.printable_constraint_info inferred |> Option.get in
+      if Types.same_shape existing value_ty then
+        refine_type existing value_ty
+      else Types.printable_constraint (refine_type existing value_ty)
   | existing, inferred
     when Option.is_some (Types.printable_constraint_info existing) ->
       Types.printable_constraint
@@ -437,6 +473,11 @@ let refine_returned_seqable_vector params branch other_ty =
   | _ -> params
 
 let same_refinable_wrapper left right =
+  if
+    Option.is_some (Types.seqable_constraint_info left)
+    && Option.is_some (Types.seqable_constraint_info right)
+  then true
+  else
   match (left, right) with
   | TNullable _, TNullable _
   | TNullable _, TOcaml_app ("option", [ _ ])

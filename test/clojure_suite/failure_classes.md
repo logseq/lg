@@ -12,9 +12,7 @@ auditable summary with:
 
 ```bash
 python3 test/clojure_suite/summarize_clojure_suite.py \
-  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea \
-  --static-error-report test/clojure_suite/static_error_lane.json \
-  --repair-lane-report test/clojure_suite/repair_lanes.json
+  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea
 ```
 
 ## Compile coverage
@@ -22,22 +20,22 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 381 |
-| compile failed | 95 |
+| compiled | 375 |
+| compile failed | 101 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 185 |
-| namespaces failed on both native and Melange | 42 |
-| native-only compiled namespaces | 8 |
-| Melange-only compiled namespaces | 3 |
+| namespaces compiled on both native and Melange | 183 |
+| namespaces failed on both native and Melange | 46 |
+| native-only compiled namespaces | 5 |
+| Melange-only compiled namespaces | 4 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 193 | 45 |
-| Melange | 188 | 50 |
+| native | 188 | 50 |
+| Melange | 187 | 51 |
 
-The summarizer emits the authoritative current list of all 173 namespaces.
+The summarizer emits the authoritative current list of all 183 namespaces.
 The list below records the earlier 46-namespace milestone and is retained only
 as migration history:
 
@@ -92,8 +90,8 @@ as migration history:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 82 | The remaining entries are intentional LG static errors. Do not weaken ordinary values or collections to dynamic. |
-| `reader-or-numeric-literal` | 4 | Remaining blockers are tagged `#inst` literals and real `with-precision` BigDecimal semantics. Arbitrary precision remains a separate numeric-tower design. |
+| `static-typing-or-closed-domain-boundary` | 92 | The remaining entries are intentional LG static errors. Do not weaken ordinary values or collections to dynamic. |
+| `reader-or-numeric-literal` | 0 | `#inst`, decimal literals, arbitrary-precision decimal arithmetic, ordering, and `with-precision` are implemented for Native and Melange. |
 | `host-boundary-or-platform-specific` | 9 | Keep JVM/JS class identity, Java interop, target globals, Var mutation, and true asynchronous `future` behavior gated unless LG introduces deliberate portable static representations. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
 | `missing-core-api-macro-or-var` | 0 | The current scan has no remaining failures in this class. New entries should be inspected before adding compiler-owned public-name dispatch. |
@@ -105,23 +103,21 @@ Static typing subclasses:
 
 | subclass | failures | handling |
 | --- | ---: | --- |
-| `negative-runtime-test-is-static-error` | 67 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
-| `suite-polymorphic-fixture-is-static-error` | 15 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
-| `heterogeneous-collection-needs-closed-domain` | 0 | No remaining compile failure is assigned to this implementation lane; known heterogeneous suite fixtures are audited as intentional static errors. |
-| `first-class-polymorphic-or-hof` | 0 | No remaining compile failure is assigned to the implementation lane. The `juxt.cljc` whole-file fixture intentionally combines functions with incompatible static argument domains and is audited separately; supported monomorphic `juxt` arities remain covered on Native and Melange. |
+| `negative-runtime-test-is-static-error` | 59 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
+| `suite-polymorphic-fixture-is-static-error` | 20 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, the `find.cljc` mixed int/keyword/string key map, `seq.cljc` mixing decimal and int set elements, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
+| `heterogeneous-collection-needs-closed-domain` | 7 | Heterogeneous list/vector and nullable element fixtures remain audited static errors; they require explicit closed sums rather than dynamic storage. |
+| `first-class-polymorphic-or-hof` | 2 | The remaining entries are whole-file fixtures that combine incompatible static higher-order domains. Supported monomorphic and call-site-specialized higher-order behavior remains covered on Native and Melange. |
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
-| `dynamic-boundary-needs-closed-domain` | 2 | Failures such as watch events cross a narrow dynamic boundary today. Model common Logseq-facing domains explicitly or document the smallest allowed dynamic boundary before expanding support. |
-| `form-or-declaration-static-gap` | 0 | Current repair lanes have no remaining failures in this subclass. New entries should be inspected before adding compiler-owned public-name dispatch. |
+| `dynamic-boundary-needs-closed-domain` | 0 | No remaining suite compile failure requires expanding a dynamic boundary. |
+| `form-or-declaration-static-gap` | 4 | These whole-suite declaration/pattern fixtures are retained as audited static errors under the user-selected policy; direct supported forms retain focused coverage. |
 | `typed-protocol-or-capability-gap` | 0 | The structural-record `find` and closed tuple/list/nested-vector set comparator gaps are fixed. New entries must receive focused TDD coverage before entering this lane. |
 
-Repair lanes are also emitted to
-`test/clojure_suite/repair_lanes.json`, one normalized entry per failing
-namespace/target:
+The summary groups failing namespace/target entries into these repair lanes:
 
 | lane | failures | interpretation |
 | --- | ---: | --- |
-| `design-reader-and-numeric-tower` | 4 | Tagged instant literals and BigDecimal precision/rounding require deliberate source and runtime types. |
-| `audit-as-static-error` | 82 | Upstream negative runtime tests and whole-suite heterogeneous/polymorphic fixtures that LG intentionally rejects at compile time. |
+| `design-reader-and-numeric-tower` | 0 | Tagged instant and decimal reader/numeric blockers are cleared. |
+| `audit-as-static-error` | 92 | All failures caused by the deliberate LG static type contract are audited here and are not repair work. |
 | `design-closed-domain-or-narrow-runtime-boundary` | 0 | The current scan has no remaining positive closed-domain implementation failures. |
 | `implement-static-language-capability` | 0 | The current scan has no remaining positive implementation failures. Closed tuple/list/nested-vector element types receive deterministic generated `Set.Make` modules without dynamic storage. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
@@ -129,25 +125,25 @@ namespace/target:
 
 ## Platform skew
 
-- `clojure.core-test.eval`: Native compiles by skipping unsupported `eval`;
-  Melange still fails on `cljs.js`.
-- `clojure.core-test.num`: Melange compiles; native fails on `definterface`.
-- `clojure.core-test.remove-watch`: Melange compiles; native fails on `def`.
+Nine namespaces compile on only one target: `double`, `long`, `not-empty`,
+`nth`, `nthrest`, `num`, `parse-uuid`, `remove-watch`, and `subs`. Their failed
+target entries are classified as either an audited static error or a documented
+host/platform boundary in the generated reports.
 
 ## Current interpretation
 
-The 95 compile failures are not 95 independent core defects. The current
-highest leverage blockers are:
+The 101 compile failures are not unresolved core defects under the selected LG
+policy. They consist only of 92 audited static errors and 9 documented
+host/platform boundaries:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
    intentionally call functions with bad argument types and expect `thrown?`.
    In LG, many of these should remain compile-time errors and need a separate
    static-error lane.
-2. Numeric boundaries now exposed past `number_range`: bigint, bigdecimal,
-   ratio, and char literal support must be scoped explicitly because they
-   affect reader, type system, equality, ordering, arithmetic, printing, and
-   EDN. UUID string reader literals are supported, but Java/CLJS UUID class and
-   record identity remain separate host/representation boundaries.
+2. Tagged instants and arbitrary-precision decimal literals now have closed
+   static representations. Decimal equality, ordering, arithmetic, printing,
+   and `with-precision` rounding compile on Native and Melange without dynamic
+   storage. Ratios and JVM numeric class identity remain outside this batch.
 3. Host boundaries: JVM class identity, JVM `:import`, and JS globals are not portable stdlib
    source and should remain classified unless an LG-native representation is
    designed.
@@ -355,5 +351,5 @@ in `scan_report.json` but still be blocked from smoke promotion.
    changes.
 4. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with
    narrow documented runtime types where static closed domains are insufficient.
-5. Decide numeric tower scope before implementing bigint/ratio/bigdecimal
-   behavior.
+5. Keep ratio and JVM numeric-class behavior explicitly gated unless a closed
+   portable representation is added.

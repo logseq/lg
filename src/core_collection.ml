@@ -91,7 +91,7 @@ let empty_predicate env collection =
   | TNil -> Ok (static_bool true)
   | TChar when Compiler_environment.target env = Target.Melange ->
       Ok (static_bool false)
-  | TRecord fields | TNamed_record { fields; _ } ->
+  | TRecord fields | TNamed_record { fields; nominal = false; _ } ->
       Ok (static_bool (fields = []))
   | _ when Collection_capability.is_counted env collection ->
       Collection_capability.count_expr env collection
@@ -101,7 +101,8 @@ let empty_predicate env collection =
       Collection_capability.seq_expr env collection
       |> Result.map (fun sequence ->
              typed_ir TBool
-               (Semantic_ir.Prefix ("not", sequence.semantic_expr)))
+               (apply "Lg_runtime.Runtime_seq.is_empty"
+                  [ sequence.semantic_expr ]))
 
 let empty env collection =
   let seqable_value =

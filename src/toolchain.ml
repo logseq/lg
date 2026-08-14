@@ -799,7 +799,7 @@ module Lg_frontend : FRONTEND = struct
                           bindings entries
                     | Ast.FSymbol _ | Ast.FCoreSymbol _ | Ast.FKeyword _
                     | Ast.FString _ | Ast.FRegex _ | Ast.FInt _ | Ast.FFloat _
-                    | Ast.FChar _ | Ast.FBool _ ->
+                    | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _ ->
                         bindings
                   in
                   List.fold_left bind_form [] ast

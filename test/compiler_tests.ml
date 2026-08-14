@@ -3232,7 +3232,7 @@ let test_core_form_expansions_use_hygienic_identifiers () =
             contains_core expected key || contains_core expected value)
           pairs
     | FSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
-    | FChar _ | FBool _ ->
+    | FDecimal _ | FChar _ | FBool _ ->
         false
   in
   if
@@ -14357,6 +14357,25 @@ let test_user_macro_str_keeps_string_values_unquoted () =
   assert_ocaml_runs "user_macro_str_keeps_string_values_unquoted"
     "value=[1 \"two\"]\n" ocaml_source
 
+let test_quoted_collection_sharing_includes_the_static_type () =
+  let source =
+    {|
+(defmacro passthrough [value]
+  value)
+
+(defn first-string [^:list<string> values]
+  (first values))
+
+(println (first-string (passthrough '("Devil" "Tupen"))))
+|}
+  in
+  let compile target =
+    compile_string_with_stdlib ~target source |> expect_ok
+  in
+  assert_ocaml_runs "quoted_collection_sharing_includes_the_static_type"
+    "Devil\n" (compile Lg.Target.Native);
+  ignore (compile Lg.Target.Melange)
+
 let test_user_macros_track_helpers_passed_as_values () =
   let source =
     {|
@@ -19045,6 +19064,121 @@ let test_str_uses_static_printable_witnesses () =
     failwith "generic str must use static printable witnesses";
   assert_ocaml_runs "str_uses_static_printable_witnesses" "42:Ada\n"
     (compile_string_with_stdlib source |> expect_ok)
+
+let test_concrete_collection_elements_discharge_printable_constraints () =
+  let source =
+    {|
+(ns app.printable-collection)
+
+(signature app.printable-collection/name-present?
+  :fn<vector<string>;string;bool>)
+
+(defn name-present? [names name]
+  (match (some (fn [candidate] (= candidate name)) names)
+    None false
+    (Some _) true))
+
+(defn render-names [sources]
+  (let [names
+        (reduce
+         (fn [names source]
+           (let [name (str source)]
+             (if (name-present? names name)
+               names
+               (conj names name))))
+         []
+         sources)]
+    (reduce
+     (fn [result name]
+       (if (= result "") name (str result name)))
+     ""
+     names)))
+
+(println (render-names ["a" "b" "a"]))
+|}
+  in
+  let consumer_source = compile_string_from_stdlib source |> expect_ok in
+  if string_contains_substring consumer_source "Runtime_dynamic" then
+    failwith "concrete printable collection elements must remain static";
+  assert_ocaml_runs
+    "concrete_collection_elements_discharge_printable_constraints" "ab\n"
+    (compile_string_with_stdlib source |> expect_ok)
+
+let test_not_accepts_nullable_some_results () =
+  let source =
+    {|
+(defn missing-db-id? [attrs]
+  (not (some (fn [attr] (= attr :db/id)) attrs)))
+
+(println (str (missing-db-id? [:db/name]) ":"
+              (missing-db-id? [:db/id])))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "not_accepts_nullable_some_results" "true:false\n"
+    native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source)
+
+let test_generic_record_accessors_keep_concrete_printable_fields () =
+  let source =
+    {|
+(type-record options
+  (ref-type :Lg_runtime.Runtime_ref_type.t))
+
+(defn options-ref-type [options]
+  (.-ref-type options))
+
+(def adapted
+  (record options
+    (ref-type (Lg_runtime.Runtime_ref_type.Strong))))
+
+(println (pr-str (options-ref-type adapted)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "generic_record_accessors_keep_concrete_printable_fields"
+    "<value>\n" native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_test_macros_preserve_typed_callback_parameters () =
+  let source =
+    {|
+(ns macro-sequential-regression)
+
+(type-record item
+  (value :int))
+
+(macro-helper-defn contains-marker? [form]
+  (if (seq? form)
+    (or (= form '(marker))
+        (reduce
+         (fn [found nested]
+           (or found (contains-marker? nested)))
+         false
+         form))
+    (if (vector? form)
+      (reduce
+       (fn [found nested]
+         (or found (contains-marker? nested)))
+       false
+       form)
+      false)))
+
+(defmacro preserve-typed-form [form]
+  (if (contains-marker? form) form form))
+
+(def typed-callback
+  (preserve-typed-form
+   (fn [^macro-sequential-regression/item target]
+     (= 1 (.-value target)))))
+
+(println (typed-callback (record item (value 1))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "test_macros_preserve_typed_callback_parameters"
+    "true\n" native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_conditional_function_type_relationship_is_checked_by_ocaml () =
   Lg.Compiler.compile_string
@@ -28612,6 +28746,42 @@ let test_partition_by_emits_nonrecursive_finish_helper () =
   assert_ocaml_runs "partition_by_emits_nonrecursive_finish_helper" "2\n"
     ocaml_source
 
+let test_seq_preserves_empty_nil_semantics () =
+  let source =
+    {|(println (nil? (seq [])))|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "seq_preserves_empty_nil_semantics" "true\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_partition_by_preserves_empty_semantics () =
+  let source = {|(println (count (partition-by identity [])))|} in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "partition_by_preserves_empty_semantics" "0\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_empty_predicate_uses_nominal_counted_protocol () =
+  let source =
+    {|
+(type-record counted-box
+  (size :int))
+(extend-type counted-box ICounted
+  (-count [box] (:size box)))
+(extend-type counted-box ISeqable
+  (-seq [box] (take (:size box) [1])))
+(def empty-box (record counted-box (size 0)))
+(def full-box (record counted-box (size 1)))
+(println (str (empty? empty-box) ":" (empty? full-box)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "empty_predicate_uses_nominal_counted_protocol"
+    "true:false\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_doseq_uses_upstream_seqable_iteration () =
   let source =
     {|
@@ -33504,6 +33674,132 @@ let test_source_cljs_test_are_accepts_parse_uuid_suite_shape () =
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "test/source_cljs_test_are_parse_uuid_shape.cljc" source)
+
+let test_inst_reader_literal_is_closed_and_target_portable () =
+  let source =
+    {|
+(def instant #inst "2010-11-12T13:14:15.666-05:00")
+(def utc #inst "2010-11-12T18:14:15.666Z")
+(println (identical? instant (identity instant)))
+(println (= instant utc))
+(println (pr-str instant))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/inst_literal.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "instant literals must remain closed static values";
+  assert_ocaml_runs "inst_reader_literal_is_closed_and_target_portable"
+    "true\ntrue\n#inst \"2010-11-12T18:14:15.666Z\"\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/inst_literal.cljc" source);
+  compile_with_stdlib_result Lg.Target.Native "test/invalid_inst_literal.cljc"
+    {|#inst "2010-02-30T00:00:00Z"|}
+  |> expect_error_contains "invalid #inst literal";
+  compile_with_stdlib_result Lg.Target.Native "test/non_string_inst_literal.cljc"
+    {|#inst 42|}
+  |> expect_error_contains "#inst literal expects a string"
+
+let test_with_precision_preserves_decimal_rounding_semantics () =
+  let source =
+    {|
+(println (= 2M (with-precision 1 :rounding UP (* 1.1M 1M))))
+(println (= 2M (with-precision 1 :rounding CEILING (* 1.1M 1M))))
+(println (= -2M (with-precision 1 :rounding UP (* -1.1M 1M))))
+(println (= -1M (with-precision 1 :rounding CEILING (* -1.1M 1M))))
+(println (= 1M (with-precision 1 :rounding DOWN (* 1.9M 1M))))
+(println (= 1M (with-precision 1 :rounding FLOOR (* 1.9M 1M))))
+(println (= -1M (with-precision 1 :rounding DOWN (* -1.9M 1M))))
+(println (= -2M (with-precision 1 :rounding FLOOR (* -1.9M 1M))))
+(println (= 2M (with-precision 1 :rounding HALF_EVEN (* 1.5M 1M))))
+(println (= 2M (with-precision 1 :rounding HALF_EVEN (* 2.5M 1M))))
+(println (= -2M (with-precision 1 :rounding HALF_EVEN (* -1.5M 1M))))
+(println (= -2M (with-precision 1 :rounding HALF_EVEN (* -2.5M 1M))))
+(println (= 2M (with-precision 1 :rounding HALF_UP (* 1.5M 1M))))
+(println (= 1M (with-precision 1 :rounding HALF_DOWN (* 1.5M 1M))))
+(println (= -2M (with-precision 1 :rounding HALF_UP (* -1.5M 1M))))
+(println (= -1M (with-precision 1 :rounding HALF_DOWN (* -1.5M 1M))))
+(println (= 2M (with-precision 1 :rounding UNNECESSARY (* 2M 1M))))
+(println (= 1219326311370217952237463801111263526900M
+            (* 12345678901234567890M 98765432109876543210M)))
+|}
+  in
+  let expected = String.concat "" (List.init 18 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/with_precision.cljc" source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "decimal arithmetic must not use Runtime_dynamic";
+  assert_ocaml_runs "with_precision_preserves_decimal_rounding_semantics"
+    expected native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/with_precision.cljc" source);
+  let unnecessary =
+    {|
+(println
+  (try
+    (with-precision 1 :rounding UNNECESSARY (* 1.5M 1M))
+    false
+    (catch (Invalid_argument message) (= "rounding necessary" message))))
+|}
+  in
+  let generated =
+    compile_with_stdlib_result Lg.Target.Native
+      "test/with_precision_unnecessary.cljc" unnecessary
+    |> expect_ok
+  in
+  assert_ocaml_runs "with_precision_unnecessary" "true\n" generated
+
+let test_decimal_arithmetic_and_ordering_remain_exact () =
+  let source =
+    {|
+(println (= 0.3M (+ 0.1M 0.2M)))
+(println (= -1.5M (- 1M 2.5M)))
+(println (= -2M (- 2M)))
+(println (= 3.75M (/ 7.5M 2M)))
+(println (= 0.125M (/ 1M 8M)))
+(println (> 1.0M 0))
+(println (>= 1M 1.0M))
+(println (< -1M 0))
+(println (<= 1M 1))
+(println (= 2.0 (/ 2.0M 1.0)))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/decimal_arithmetic.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "decimal arithmetic and ordering must remain static";
+  assert_ocaml_runs "decimal_arithmetic_and_ordering_remain_exact"
+    (String.concat "" (List.init 10 (fun _ -> "true\n")))
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/decimal_arithmetic.cljc"
+       source)
+
+let test_when_first_without_body_returns_nil () =
+  let source =
+    {|
+(println (nil? (when-first [_x nil])))
+(println (nil? (when-first [_x [false]])))
+(println (nil? (when-first [_x [true]])))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/when_first_empty.cljc"
+      source
+    |> expect_ok
+  in
+  assert_ocaml_runs "when_first_without_body_returns_nil" "true\ntrue\ntrue\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/when_first_empty.cljc"
+       source)
 
 let test_source_cljs_test_are_accepts_syntax_quoted_constants () =
   let source =
@@ -41013,6 +41309,69 @@ let test_mapcat_infers_unannotated_collection_parameters () =
     (compile_with_stdlib Lg.Target.Melange "test/mapcat_unannotated.cljc"
        source)
 
+let test_mapcat_specializes_identity_collection_return () =
+  let source =
+    {|
+(def values (mapcat identity [[1 2] [3 4]]))
+(println (pr-str values))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/mapcat_identity.cljc" source
+  in
+  assert_ocaml_runs "mapcat_specializes_identity_collection_return"
+    "(1 2 3 4)\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/mapcat_identity.cljc" source)
+
+let test_mapcat_matches_multiple_collection_arities () =
+  let source =
+    {|
+(def pairs
+  (mapcat (fn [x y] [(* 2 x) (* 2 y)]) [1 2 3] [1 2 3]))
+(def shortest
+  (mapcat (fn [x y] [(* x y)]) [1 2] [2 2 2]))
+(def triples
+  (mapcat (fn [x y z] [x y z]) [1 2] [3 4] [5 6]))
+(def variadic
+  (mapcat (fn [a b c d] [a b c d]) [1] [2] [3] [4]))
+(println (pr-str pairs))
+(println (pr-str shortest))
+(println (pr-str triples))
+(println (pr-str variadic))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/mapcat_multiple.cljc" source
+  in
+  assert_ocaml_runs "mapcat_matches_multiple_collection_arities"
+    "(2 2 4 4 6 6)\n(2 4)\n(1 3 5 2 4 6)\n(1 2 3 4)\n"
+    ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/mapcat_multiple.cljc" source)
+
+let test_mapcat_preserves_empty_nil_and_transducer_results () =
+  let source =
+    {|
+(def empty-results
+  (mapcat (fn [x] (if (odd? x) [] [x])) [1 2 3]))
+(def nil-results
+  (mapcat (fn [x] (if (even? x) [x] nil)) [1 2 3 4]))
+(def transduced
+  (transduce (mapcat (fn [x] (repeat 2 x))) conj [] [1 2]))
+(println (pr-str (vec empty-results)))
+(println (pr-str (vec nil-results)))
+(println (pr-str transduced))
+|}
+  in
+  let ocaml_source =
+    compile_with_stdlib Lg.Target.Native "test/mapcat_edges.cljc" source
+  in
+  assert_ocaml_runs "mapcat_preserves_empty_nil_and_transducer_results"
+    "[2]\n[2 4]\n[1 1 2 2]\n" ocaml_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/mapcat_edges.cljc" source)
+
 let test_sort_by_preserves_static_record_element_types () =
   let source =
     {|
@@ -42316,6 +42675,17 @@ let test_eduction_applies_map_filter_and_cat_transducers () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/eduction_transducers.cljc"
        source)
+
+let test_transduce_map_count_adapts_nested_vectors () =
+  let source =
+    {|(println (transduce (map count) + 0 [[1 2] [3]]))|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "nested transducer inputs must remain statically typed";
+  assert_ocaml_runs "transduce_map_count_adapts_nested_vectors" "3\n"
+    native_source;
+  ignore (compile_string_with_stdlib ~target:Lg.Target.Melange source)
 
 let test_distinct_transducer_conj_runtime_behavior () =
   let source =
@@ -48243,6 +48613,8 @@ let tests =
       test_user_macros_expand_syntax_quote_and_unquote );
     ( "user macro str keeps string values unquoted",
       test_user_macro_str_keeps_string_values_unquoted );
+    ( "quoted collection sharing includes the static type",
+      test_quoted_collection_sharing_includes_the_static_type );
     ( "user macros track helpers passed as values",
       test_user_macros_track_helpers_passed_as_values );
     ( "user macros receive portable namespace environment",
@@ -48757,6 +49129,14 @@ let tests =
       test_unannotated_defrecord_fields_are_statically_polymorphic );
     ( "str uses static printable witnesses",
       test_str_uses_static_printable_witnesses );
+    ( "concrete collection elements discharge printable constraints",
+      test_concrete_collection_elements_discharge_printable_constraints );
+    ( "not accepts nullable some results",
+      test_not_accepts_nullable_some_results );
+    ( "generic record accessors keep concrete printable fields",
+      test_generic_record_accessors_keep_concrete_printable_fields );
+    ( "test macros preserve typed callback parameters",
+      test_test_macros_preserve_typed_callback_parameters );
     ( "conditional function type relationship is checked by OCaml",
       test_conditional_function_type_relationship_is_checked_by_ocaml );
     ( "unannotated function parameters reject bad int calls",
@@ -49448,6 +49828,12 @@ let tests =
       test_partition_by_keyword_infers_seqable_record_parameters );
     ( "partition-by emits a nonrecursive finish helper",
       test_partition_by_emits_nonrecursive_finish_helper );
+    ( "seq preserves empty nil semantics",
+      test_seq_preserves_empty_nil_semantics );
+    ( "partition-by preserves empty semantics",
+      test_partition_by_preserves_empty_semantics );
+    ( "empty? uses nominal counted protocol",
+      test_empty_predicate_uses_nominal_counted_protocol );
     ( "batched predicate/collection core functions reject bad predicates",
       test_batched_predicate_collection_core_functions_reject_bad_predicates );
     ( "batched predicate/collection core functions reject bad run function",
@@ -49810,6 +50196,14 @@ let tests =
       test_cljs_test_assert_expr_is_source_owned );
     ( "source cljs.test are accepts parse-uuid suite shape",
       test_source_cljs_test_are_accepts_parse_uuid_suite_shape );
+    ( "#inst reader literal is closed and target portable",
+      test_inst_reader_literal_is_closed_and_target_portable );
+    ( "with-precision preserves decimal rounding semantics",
+      test_with_precision_preserves_decimal_rounding_semantics );
+    ( "decimal arithmetic and ordering remain exact",
+      test_decimal_arithmetic_and_ordering_remain_exact );
+    ( "when-first without body returns nil",
+      test_when_first_without_body_returns_nil );
     ( "source cljs.test are accepts syntax-quoted constants",
       test_source_cljs_test_are_accepts_syntax_quoted_constants );
     ( "source cljs.test synchronous registry rejects invalid forms",
@@ -50343,6 +50737,12 @@ let tests =
       test_source_predicate_combinators_reject_mismatched_predicates );
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );
+    ( "mapcat specializes identity collection return",
+      test_mapcat_specializes_identity_collection_return );
+    ( "mapcat matches multiple collection arities",
+      test_mapcat_matches_multiple_collection_arities );
+    ( "mapcat preserves empty nil and transducer results",
+      test_mapcat_preserves_empty_nil_and_transducer_results );
     ( "sort-by preserves static record element types",
       test_sort_by_preserves_static_record_element_types );
     ( "sort-by preserves named record lists",
@@ -50475,6 +50875,8 @@ let tests =
       test_into_accepts_inferred_seqable_parameters );
     ( "Eduction applies map filter and cat transducers",
       test_eduction_applies_map_filter_and_cat_transducers );
+    ( "transduce map count adapts nested vectors",
+      test_transduce_map_count_adapts_nested_vectors );
     ( "distinct transducer conj runtime behavior",
       test_distinct_transducer_conj_runtime_behavior );
     ("Eduction is source-owned", test_eduction_is_source_owned);

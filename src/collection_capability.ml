@@ -11,6 +11,9 @@ let identifier_holds_packed_constraint name =
   || String.starts_with ~prefix:"__lg_erased_callback_arg_" name
   || String.starts_with ~prefix:"__lg_callback_argument_" name
   || String.starts_with ~prefix:"__lg_nullable_callback_arg_" name
+  || String.starts_with ~prefix:"__lg_apply_argument_" name
+  || String.starts_with ~prefix:"__lg_apply_head_" name
+  || String.starts_with ~prefix:"__lg_apply_rest_item" name
   || String.starts_with ~prefix:"__lg_static_argument_" name
   || String.starts_with ~prefix:"__lg_erased_protocol_arg_" name
 
@@ -397,13 +400,8 @@ let rec to_seq_expr env collection =
                                seqable value"))))))
 
 let accepts_seqable env ty =
-  if Types.is_dynamic ty then true
-  else
-  match Types.seqable_constraint_element ty with
-  | Some _ -> true
-  | None ->
-      Option.is_some
-        (Core_protocols.find_seqable ty (Compiler_environment.protocols env))
+  Result.is_ok
+    (to_seq_expr env (typed_ir ty (Semantic_ir.Ident "__lg_seqable_probe")))
 
 let accepts_contains = function
   | TSet _ | TVector _ | TMap_keys | TRecord _ | TNamed_record _ -> true
@@ -502,7 +500,7 @@ let element_type_of_ty env ty =
 let seq_expr env collection =
   match to_seq_expr env collection with
   | Error _ -> Error.error "seq expects a seqable value"
-  | Ok (inner, sequence) -> Ok (typed_ir (TSeq inner) sequence)
+  | Ok (inner, sequence) -> Ok (typed_ir (Types.next_seq inner) sequence)
 
 let rest_expr env collection =
   match to_seq_expr env collection with

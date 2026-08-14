@@ -1548,7 +1548,7 @@ let semantic_tokens analysis =
   let token_semantics (token : Ast.token) =
     match token.desc with
     | String _ | Regex _ | Char _ -> [ { range = token.span; kind = `String } ]
-    | Int _ | Float _ -> [ { range = token.span; kind = `Number } ]
+    | Int _ | Float _ | Decimal _ -> [ { range = token.span; kind = `Number } ]
     | Keyword _ | Bool _ -> [ { range = token.span; kind = `Keyword } ]
     | Symbol _ ->
         let occurrences = semantic_occurrences_for_token analysis token in
@@ -1899,7 +1899,8 @@ let rec declaration_type_references add references = function
       add_type_annotation_references add annotation references
   | FVector forms | FList forms ->
       List.fold_left (declaration_type_references add) references forms
-  | FSymbol _ | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
+  | FSymbol _ | FBool _ | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _
+  | FRegex _
   | FMap _ | FCoreSymbol _ ->
       references
 
@@ -2028,7 +2029,8 @@ let referenced_symbols source =
           (fun references (key, value) ->
             form_references bound (form_references bound references key) value)
           references entries
-    | FBool _ | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FKeyword _
+    | FBool _ | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+    | FKeyword _
     | FCoreSymbol _ ->
         references
   in

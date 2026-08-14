@@ -24,6 +24,7 @@ type token_desc =
   | Regex of string
   | Int of int
   | Float of string
+  | Decimal of string
   | Char of char
   | Bool of bool
 
@@ -63,6 +64,7 @@ type form =
   | FRegex of string
   | FInt of int
   | FFloat of string
+  | FDecimal of string
   | FChar of char
   | FBool of bool
   | FList of form list

@@ -64,6 +64,7 @@ let rec string_of_form = function
   | FRegex value -> "#" ^ Printf.sprintf "%S" value
   | FInt value -> string_of_int value
   | FFloat value -> value
+  | FDecimal value -> value ^ "M"
   | FChar value -> "\\" ^ String.make 1 value
   | FBool value -> string_of_bool value
   | FList forms ->
@@ -139,9 +140,14 @@ let truthy = function
   | Recur _ ->
       true
 
-let strip_internal_metadata = function
-  | FList [ FSymbol "__type-hint"; _; form ] -> form
+let rec strip_internal_metadata = function
+  | FList [ FSymbol "__type-hint"; _; form ] -> strip_internal_metadata form
   | form -> form
+
+let macro_form_matches predicate = function
+  | Form form -> predicate (strip_internal_metadata form)
+  | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _ | Recur _ ->
+      false
 
 let rec split_params fixed = function
   | [] -> Ok (List.rev fixed, None)
@@ -304,7 +310,8 @@ let rec eval context = function
                   Error.error
                     "Java interop is not supported; use static LG types and functions"
               | None -> Error.error ("unknown macro symbol " ^ name))))
-  | (FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _)
+  | (FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _ | FBool _
+    | FKeyword _)
     as form ->
       Ok (Form form)
   | FVector forms ->
@@ -611,8 +618,19 @@ and eval_call context name arg_forms =
                 Env.find_macro_function ~scope:context.namespace name
                   context.compiler_env
               with
-              | Some definition ->
-                  invoke_function_definition context definition arg_forms
+              | Some definition -> (
+                  match
+                    invoke_function_definition context definition arg_forms
+                  with
+                  | Error (error : Error.t) ->
+                      Error
+                        {
+                          error with
+                          message =
+                            error.message ^ " while evaluating macro helper "
+                            ^ definition.name;
+                        }
+                  | Ok _ as result -> result)
               | None -> eval_builtin context name arg_forms)))
 
 and apply_value context callable args =
@@ -649,10 +667,21 @@ and apply_value context callable args =
       | Ok arity -> (
           match bind_value_params context.locals arity.params args with
           | Error _ as error -> error
-          | Ok locals ->
-              eval_body
-                { context with namespace = definition.namespace; locals }
-                arity.body))
+          | Ok locals -> (
+              match
+                eval_body
+                  { context with namespace = definition.namespace; locals }
+                  arity.body
+              with
+              | Error (error : Error.t) ->
+                  Error
+                    {
+                      error with
+                      message =
+                        error.message ^ " while evaluating macro helper "
+                        ^ definition.name;
+                    }
+              | Ok _ as result -> result)))
   | Builtin "identity" -> (
       match args with
       | [ value ] -> Ok value
@@ -860,36 +889,50 @@ and eval_builtin context name arg_forms =
       unary (fun value ->
           Ok
             (Form
-               (FBool (match value with Form (FSymbol _) -> true | _ -> false))))
+               (FBool
+                  (macro_form_matches
+                     (function FSymbol _ -> true | _ -> false)
+                     value))))
   | "keyword?" ->
       unary (fun value ->
           Ok
             (Form
                (FBool
-                  (match value with Form (FKeyword _) -> true | _ -> false))))
+                  (macro_form_matches
+                     (function FKeyword _ -> true | _ -> false)
+                     value))))
   | "vector?" ->
       unary (fun value ->
           Ok
             (Form
-               (FBool (match value with Form (FVector _) -> true | _ -> false))))
+               (FBool
+                  (macro_form_matches
+                     (function FVector _ -> true | _ -> false)
+                     value))))
   | "map?" ->
       unary (fun value ->
           Ok
             (Form
-               (FBool (match value with Form (FMap _) -> true | _ -> false))))
+               (FBool
+                  (macro_form_matches
+                     (function FMap _ -> true | _ -> false)
+                     value))))
   | "seq?" ->
       unary (fun value ->
           Ok
             (Form
-               (FBool (match value with Form (FList _) -> true | _ -> false))))
+               (FBool
+                  (macro_form_matches
+                     (function FList _ -> true | _ -> false)
+                     value))))
   | "sequential?" ->
       unary (fun value ->
           Ok
             (Form
                (FBool
-                  (match value with
-                  | Form (FList _ | FVector _) -> true
-                  | _ -> false))))
+                  (macro_form_matches
+                     (function FList _ | FVector _ -> true | _ -> false)
+                     value))))
   | "empty?" ->
       unary (fun value ->
           sequence_forms value
@@ -1423,7 +1466,15 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
           locals = [ ("&env", macro_environment) ];
         }
       in
-      Result.bind (invoke_definition context definition args) form_of_value
+      (match invoke_definition context definition args with
+      | Error (error : Error.t) ->
+          Error
+            {
+              error with
+              message =
+                error.message ^ " while expanding macro " ^ definition.name;
+            }
+      | Ok value -> form_of_value value)
 
 let rec expand_all ~scope ~compiler_env = function
   | FList (FSymbol ("quote" | "syntax-quote") :: _ as forms) ->

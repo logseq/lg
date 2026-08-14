@@ -131,6 +131,8 @@ let rec compile_form ~compile_expr scope env form =
   | FFloat value ->
       Ok
         (typed_dynamic (apply (dynamic_runtime "float") [ Semantic_ir.Float value ]))
+  | FDecimal _ ->
+      Error.error "static decimal values cannot cross the tap dynamic boundary"
   | FChar value ->
       Ok (typed_dynamic (apply (dynamic_runtime "char") [ Semantic_ir.Char value ]))
   | FBool value ->

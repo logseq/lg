@@ -196,6 +196,10 @@ let add_record_field_constraint name keyword field_ty params =
       | (TUnknown | TMeta _ | TVar _), _
       | _, (TUnknown | TMeta _ | TVar _) ->
           true
+      | left, right
+        when Option.is_some (Types.seqable_constraint_info left)
+             && Option.is_some (Types.seqable_constraint_info right) ->
+          true
       | TNullable left, TNullable right
       | TNullable left, TOcaml_app ("option", [ right ])
       | TOcaml_app ("option", [ left ]), TNullable right ->
@@ -549,6 +553,7 @@ let add_record_field_constraint name keyword field_ty params =
 let rec numeric_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
+  | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList
       (FSymbol
@@ -557,7 +562,12 @@ let rec numeric_form_type params = function
       :: args)
     ->
       let types = List.map (numeric_form_type params) args in
-      if List.exists (Types.equal TFloat) types then TFloat
+      if
+        List.exists
+          (Types.equal (TOcaml "Lg_runtime.Runtime_decimal.t"))
+          types
+      then TOcaml "Lg_runtime.Runtime_decimal.t"
+      else if List.exists (Types.equal TFloat) types then TFloat
       else if List.exists (Types.equal TInt) types then TInt
       else TUnknown
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
@@ -568,6 +578,7 @@ let rec numeric_form_type params = function
 let rec inferred_form_type params = function
   | FInt _ -> TInt
   | FFloat _ -> TFloat
+  | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
   | FChar _ -> TChar
   | FString _ -> TString
   | FBool _ -> TBool
@@ -589,6 +600,8 @@ let rec inferred_form_type params = function
   | FKeyword _ -> TKeyword
   | FList [ FSymbol "#uuid"; FString _ ] ->
       TOcaml "Lg_runtime.Runtime_uuid.t"
+  | FList [ FSymbol "#inst"; FString _ ] ->
+      TOcaml "Lg_runtime.Runtime_instant.t"
   | FList
       [
         FSymbol ("quote" | "clojure.core/quote");
@@ -1734,7 +1747,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
          ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
          | "__lg_max" | "__lg_min" )
       :: args)
-      when Types.equal expected_ty TInt || Types.equal expected_ty TFloat ->
+      when Types.equal expected_ty TInt
+           || Types.equal expected_ty TFloat
+           || Types.equal expected_ty (TOcaml "Lg_runtime.Runtime_decimal.t") ->
         infer_expected_all expected_ty params args
     | FList
         [ FKeyword nested_keyword; FList [ FKeyword keyword; FSymbol name ] ] ->
@@ -4979,12 +4994,24 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let expected_ty =
           if
             List.exists
+              (fun arg ->
+                Types.equal (numeric_form_type params arg)
+                  (TOcaml "Lg_runtime.Runtime_decimal.t"))
+              args
+          then TOcaml "Lg_runtime.Runtime_decimal.t"
+          else if
+            List.exists
               (fun arg -> Types.equal (numeric_form_type params arg) TFloat)
               args
           then TFloat
           else TInt
         in
         infer_expected_all expected_ty params args
+    | FList [ FSymbol "__lg_with-precision"; precision; rounding_mode; thunk ] ->
+        Result.bind (infer_expected TInt params precision) (fun params ->
+            Result.bind
+              (infer_expected TString params rounding_mode)
+              (fun params -> infer_form params thunk))
     | FList
         [
           FSymbol
@@ -5011,6 +5038,19 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         infer_expected
           (if Types.equal arg_ty TFloat then TFloat else TInt)
           params arg
+    | FList [ FSymbol "__lg_dec"; arg ] ->
+        let arg_ty =
+          match inferred_form_type params arg with
+          | TUnknown ->
+              inferred_call_return_type ~lookup_function_ty params arg
+          | ty -> ty
+        in
+        let expected_ty =
+          if Types.equal arg_ty TFloat then TFloat
+          else if Types.equal arg_ty (TOcaml "int") then TOcaml "int"
+          else TInt
+        in
+        infer_expected expected_ty params arg
     | FList [ FSymbol "__lg_bigdec"; arg ]
     | FList [ FSymbol "__lg_bigint"; arg ] ->
         infer_form params arg
@@ -6038,7 +6078,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                  Result.bind result (fun params -> infer_form params value))
                (Ok params)
     | FList forms -> infer_all params forms
-    | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _
+    | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _ | FBool _
+    | FKeyword _
     | FSymbol _ | FCoreSymbol _ ->
         Ok params
   in
@@ -6080,7 +6121,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                 Result.bind (propagate_record_ref_writes params key)
                   (fun params -> propagate_record_ref_writes params value)))
           (Ok params) pairs
-    | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _ | FKeyword _
+    | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _ | FBool _
+    | FKeyword _
     | FSymbol _ | FCoreSymbol _ ->
         Ok params
   in

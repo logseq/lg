@@ -113,7 +113,7 @@
 (signature clojure.core/compare [value]
   :fn<comparable<value>;value;int>)
 (signature clojure.core/seq [value storage]
-  :fn<seqable<value;storage>;seq<value>>)
+  :fn<seqable<value;storage>;__lg_next_seq<value>>)
 (signature clojure.core/first [value storage]
   :fn<seqable<value;storage>;option<value>>)
 (signature clojure.core/rest [value storage]
@@ -249,8 +249,8 @@
   :overload<fn<fn<int;input;option<output>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<int;input;option<output>>;seqable<input;storage>;seq<output>>>)
 (signature clojure.core/mapcat-seq [input output inner-storage]
   :fn<fn<input;seqable<output;inner-storage>>;seq<output>;seq<input>;seq<output>>)
-(signature clojure.core/mapcat [input output storage inner-storage accumulator]
-  :overload<fn<fn<input;seqable<output;inner-storage>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;seqable<output;inner-storage>>;seqable<input;storage>;seq<output>>>)
+(signature clojure.core/mapcat [input output storage inner-storage accumulator left right left-storage right-storage first second third first-storage second-storage third-storage rest rest-storage]
+  :overload<fn<fn<input;seqable<output;inner-storage>>;fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;output;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>>>;fn<fn<input;seqable<output;inner-storage>>;seqable<input;storage>;seq<output>>;fn<fn<left;right;seqable<output;inner-storage>>;seqable<left;left-storage>;seqable<right;right-storage>;seq<output>>;fn<fn<first;second;third;seqable<output;inner-storage>>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;seq<output>>;variadic-fn<variadic-fn<first;second;third;rest;seqable<output;inner-storage>>;seqable<first;first-storage>;seqable<second;second-storage>;seqable<third;third-storage>;seqable<rest;rest-storage>;seq<output>>>)
 (signature clojure.core/cat [input storage accumulator]
   :fn<overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;input;__lg_maybe_reduced_callback_result<accumulator>>>;overload<fn<accumulator>;fn<accumulator;accumulator>;fn<accumulator;seqable<input;storage>;__lg_maybe_reduced_callback_result<accumulator>>>>)
 (signature clojure.core/halt-when [input accumulator predicate-result]

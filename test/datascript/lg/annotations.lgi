@@ -31,6 +31,9 @@
 (signature datascript.storage/serialize-schema
   :fn<map<keyword;map<keyword;Datascript_runtime.Data_value.t>>;map<string;map<string;Datascript_runtime.Data_value.t>>>)
 
+(signature datascript.storage/db-with-tail-datoms
+  :fn<datascript.db/DB;vector<datascript.db/Datom>;datascript.db/DB>)
+
 (signature datascript.js/transact [metadata]
   :variadic-fn<datascript.conn/Conn;vector<datascript.db/tx-entry>;map<keyword;Datascript_runtime.Data_value.t>;datascript.db/TxReport>)
 

@@ -45,7 +45,7 @@ let rec contains_source_macro scope env = function
           || contains_source_macro scope env value)
         entries
   | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _
-  | FFloat _ | FChar _ | FBool _ ->
+  | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
       false
 
 let source_type_tag_symbol scope env type_name =
@@ -108,6 +108,12 @@ and compile_expr_unlocated scope (env : Env.t) = function
       Ok (typed_ir TFloat (Semantic_ir.Ident "Float.neg_infinity"))
   | FFloat "##NaN" -> Ok (typed_ir TFloat (Semantic_ir.Ident "Float.nan"))
   | FFloat value -> Ok (typed_ir TFloat (Semantic_ir.Float value))
+  | FDecimal value ->
+      Ok
+        (typed_ir (TOcaml "Lg_runtime.Runtime_decimal.t")
+           (Semantic_ir.Apply
+              ( Semantic_ir.Ident "Lg_runtime.Runtime_decimal.of_string",
+                [ Semantic_ir.String value ] )))
   | FChar value -> Ok (typed_ir TChar (Semantic_ir.Char value))
   | FString value -> Ok (typed_ir TString (Semantic_ir.String value))
   | FRegex value ->
@@ -297,6 +303,18 @@ and compile_expr_unlocated scope (env : Env.t) = function
                 [ Semantic_ir.String source ] )))
   | FList (FSymbol "#uuid" :: _) ->
       Error.error "#uuid expects one string literal"
+  | FList [ FSymbol "#inst"; FString source ] -> (
+      match Instant_literal.parse source with
+      | Error message -> Error.error message
+      | Ok epoch_millis ->
+          Ok
+            (typed_ir (TOcaml "Lg_runtime.Runtime_instant.t")
+               (Semantic_ir.Apply
+                  ( Semantic_ir.Ident
+                      "Lg_runtime.Runtime_instant.of_epoch_millis",
+                    [ Semantic_ir.Int64 epoch_millis ] ))))
+  | FList (FSymbol "#inst" :: _) ->
+      Error.error "#inst expects one string literal"
   | FList (FSymbol "do" :: body_forms) ->
       compile_body scope env "do requires at least one form" body_forms
   | FList [ FKeyword keyword; target ] ->
@@ -410,7 +428,8 @@ and compile_quoted scope env form =
     Result.map
       (fun expression ->
         let digest =
-          Marshal.to_string form [] |> Digest.string |> Digest.to_hex
+          Marshal.to_string form [] ^ "\000" ^ Types.ocaml_name expression.ty
+          |> Digest.string |> Digest.to_hex
           |> fun value -> String.sub value 0 12
         in
         {
@@ -537,7 +556,7 @@ and compile_doseq scope env bindings body_forms =
             form_mentions name key || form_mentions name value)
           entries
     | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
-    | FChar _ | FBool _ ->
+    | FDecimal _ | FChar _ | FBool _ ->
         false
   in
   let rec expand recur_form = function
@@ -1796,7 +1815,8 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                 contains_polymorphic_self_call key
                 || contains_polymorphic_self_call value)
               pairs
-        | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+        | FBool _
         | FKeyword _ | FSymbol _ | FCoreSymbol _ ->
             false
       in
@@ -2225,6 +2245,32 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
           List.map
             (function TUnknown | TMeta _ | TVar _ -> None | ty -> Some ty)
             parameter_tys
+      | Some (TOverloaded_fn arities), Ok specs ->
+          let argument_count = List.length specs in
+          let parameter_tys =
+            arities
+            |> List.find_map (fun (arity : fn_arity) ->
+                   match arity.rest_param with
+                   | None
+                     when List.length arity.fixed_params = argument_count ->
+                       Some arity.fixed_params
+                   | Some rest_ty
+                     when argument_count >= List.length arity.fixed_params ->
+                       Some
+                         (arity.fixed_params
+                         @ List.init
+                             (argument_count - List.length arity.fixed_params)
+                             (fun _ -> rest_ty))
+                   | None | Some _ -> None)
+          in
+          (match parameter_tys with
+          | Some parameter_tys ->
+              List.map
+                (function
+                  | TUnknown | TMeta _ | TVar _ -> None
+                  | ty -> Some ty)
+                parameter_tys
+          | None -> [])
       | _ -> []
   in
   let expected_return_ty =

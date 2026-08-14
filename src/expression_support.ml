@@ -397,9 +397,6 @@ let edn_scalar_collection_type = function
 let merge_collection_types collection types =
   match types with
   | [] -> Ok TUnknown
-  | types
-    when collection = "list" && List.for_all edn_scalar_collection_type types ->
-      Ok (TOcaml "Lg_edn_backend.t")
   | first :: rest ->
       let merged =
         List.fold_left
@@ -409,6 +406,10 @@ let merge_collection_types collection types =
       in
       (match merged with
       | Some ty when not (Types.contains_dynamic ty) -> Ok ty
+      | Some _ | None
+        when collection = "list"
+             && List.for_all edn_scalar_collection_type types ->
+          Ok (TOcaml "Lg_edn_backend.t")
       | Some _ | None -> heterogeneous_collection_type_error collection types)
 
 let merge_collection_value_types collection values =

@@ -564,7 +564,7 @@
     keep {:status :static-adaptation
           :reason :source-port-preserves-upstream-optional-result-transducer-and-lazy-filter-map-control-flow}
     mapcat {:status :static-adaptation
-            :reason :source-port-preserves-the-one-arity-map-cat-transducer-and-lazy-single-collection-flattening-while-additional-collection-arities-remain-dependent-variadic-work}
+            :reason :source-port-preserves-the-map-cat-transducer-lazy-single-collection-flattening-and-two-three-or-variadic-multi-collection-shortest-input-arities-through-static-map-map-many-seq-and-apply-capabilities}
     cat {:status :static-adaptation
          :reason :source-port-preserves-input-order-through-the-explicit-statically-reduced-reducing-function-abi}
     halt-when {:status :static-adaptation
@@ -874,7 +874,7 @@
     ratio? {:status :static-adaptation
             :reason :lg-has-no-ratio-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
     decimal? {:status :static-adaptation
-              :reason :lg-has-no-decimal-runtime-representation-so-the-source-predicate-evaluates-its-static-argument-once-and-returns-false}
+              :reason :source-predicate-specializes-static-decimal-and-legacy-bigdec-float-representations-without-dynamic-boxing}
     realized? {:status :static-adaptation
                :reason :source-wrapper-dispatches-through-ipending-for-static-delay-future-sequence-and-user-defined-receivers-while-lg-seq-values-return-false-instead-of-exposing-realization-state}
     range {:status :static-adaptation
@@ -1166,6 +1166,8 @@
               :reason :mutable-clojurescript-per-object-runtime-protocol-extension-depends-on-javascript-object-masks-and-conflicts-with-lg-static-protocol-dispatch}
     with-redefs {:status :static-adaptation
                  :reason :source-macro-expands-to-a-private-typed-var-root-rebinding-form-for-ordinary-monomorphic-source-functions-that-restores-values-after-body-or-exception-and-keeps-replacement-values-at-the-root-static-type}
+    with-precision {:status :static-adaptation
+                    :reason :source-macro-preserves-default-and-explicit-rounding-mode-body-shape-over-a-private-typed-arbitrary-precision-decimal-math-context-boundary-with-exception-safe-restoration}
     *exec-tap-fn* {:status :static-adaptation
                    :reason :source-function-delegates-to-a-documented-runtime-tap-callback-dynamic-boundary-and-executes-synchronously-on-native-and-melange-instead-of-the-upstream-javascript-settimeout-scheduler}
     --destructure-map {:status :special-form

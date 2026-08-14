@@ -713,7 +713,7 @@ let rec form_references_unresolved_declaration scope env = function
           || form_references_unresolved_declaration scope env value)
         pairs
   | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
-  | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+  | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _ ->
       false
 
 let rec form_references_names names = function
@@ -731,7 +731,7 @@ let rec form_references_names names = function
           form_references_names names key || form_references_names names value)
         pairs
   | Ast.FCoreSymbol _ | Ast.FKeyword _ | Ast.FString _ | Ast.FRegex _
-  | Ast.FInt _ | Ast.FFloat _ | Ast.FChar _ | Ast.FBool _ ->
+  | Ast.FInt _ | Ast.FFloat _ | Ast.FDecimal _ | Ast.FChar _ | Ast.FBool _ ->
       false
 
 let add_unresolved_names names form =

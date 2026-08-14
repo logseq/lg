@@ -100,7 +100,7 @@
 
 (signature datascript.lru/-get
   [key value]
-  :fn<cache-state<key;value>;key;fn<unit;value>;value>)
+  :fn<cache-state<key;value>;key;fn<value>;value>)
 
 (defprotocol ICache
   (-get [this key compute-fn]))

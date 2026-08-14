@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 238; then
-  echo "compiler call dispatch changed: expected 238 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 239; then
+  echo "compiler call dispatch changed: expected 239 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -155,7 +155,7 @@ awk '
     internal_abi["__lg_equal"] = "typed-static-generic-equality-primitive"
     internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"
     internal_abi["__lg_subtract"] = "typed-static-numeric-subtraction-primitive"
-    internal_abi["__lg_multiply"] = "typed-static-numeric-multiplication-primitive"
+    internal_abi["__lg_multiply"] = "typed-static-int-float-or-arbitrary-precision-decimal-multiplication-primitive"
     internal_abi["__lg_divide"] = "typed-static-numeric-division-primitive"
     internal_abi["__lg_numeric-equal"] = "typed-static-numeric-equality-primitive"
     internal_abi["__lg_less"] = "typed-static-numeric-less-than-primitive"
@@ -188,9 +188,10 @@ awk '
     internal_abi["__lg_abs"] = "typed-static-numeric-absolute-value-primitive"
     internal_abi["__lg_dec"] = "typed-static-numeric-decrement-primitive"
     internal_abi["__lg_bigint"] = "typed-integer-reader-and-conversion-primitive"
-    internal_abi["__lg_bigdec"] = "typed-floating-decimal-reader-and-conversion-primitive-pending-arbitrary-precision-decimal-type"
+    internal_abi["__lg_bigdec"] = "typed-floating-decimal-conversion-compatibility-primitive"
     internal_abi["__lg_nan-predicate"] = "typed-floating-point-nan-predicate-primitive"
-    internal_abi["__lg_decimal-predicate"] = "typed-current-decimal-representation-predicate-primitive"
+    internal_abi["__lg_decimal-predicate"] = "typed-static-decimal-representation-predicate-primitive"
+    internal_abi["__lg_with-precision"] = "typed-arbitrary-precision-decimal-math-context-thunk-primitive"
     internal_abi["__lg_array-map"] = "typed-alternating-key-value-array-map-construction-primitive"
     internal_abi["__lg_hash-map"] = "typed-alternating-key-value-hash-map-construction-primitive"
     internal_abi["__lg_hash-set"] = "typed-homogeneous-hash-set-construction-primitive"
@@ -317,8 +318,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 150; then
-  echo "compiler form dispatch changed: expected 150 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 153; then
+  echo "compiler form dispatch changed: expected 153 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -336,8 +337,11 @@ awk -F '\t' '
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
     form_reason["__lg_defer_seq"] = "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive"
+    form_reason["__lg_dec"] = "private-typed-static-numeric-decrement-inference-primitive"
     form_reason["new"] = "typed-host-constructor-application-elaboration"
     form_reason["#uuid"] = "compiler-owned-tagged-uuid-reader-literal-elaboration"
+    form_reason["#inst"] = "compiler-owned-validated-tagged-instant-reader-literal-elaboration"
+    form_reason["__lg_with-precision"] = "private-typed-arbitrary-precision-decimal-math-context-inference-primitive"
     form_reason["letfn"] = "compiler-owned-recursive-local-function-binding-elaboration"
   }
   FNR == NR {

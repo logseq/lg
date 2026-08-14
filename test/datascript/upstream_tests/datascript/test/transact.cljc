@@ -215,7 +215,8 @@
       (Datascript_runtime.Data_value.Auto_tempid first-id)
       (match second-tempid
         (Datascript_runtime.Data_value.Auto_tempid second-id)
-        (do
+        (let [^:int first-id first-id
+              ^:int second-id second-id]
           (is (= (inc before) first-id))
           (is (= (inc first-id) second-id)))
         _ (is false))

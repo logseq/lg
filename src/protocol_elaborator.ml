@@ -475,7 +475,8 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
               (fun (key, value) ->
                 form_mentions name key || form_mentions name value)
               pairs
-        | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _ | FBool _
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+        | FBool _
         | FKeyword _ | FCoreSymbol _ ->
             false
       in

@@ -120,6 +120,7 @@ def classify(error: str) -> str:
         or "function types do not line up" in lower
         or "function type must match" in lower
         or "functions must accept the same argument type" in lower
+        or "collection value is not seqable" in lower
         or "indexes must be int" in lower
         or "default must match collection element type" in lower
         or "has more fixed arguments than function parameters" in lower
@@ -220,6 +221,7 @@ def classify_static_boundary(error: str) -> str:
         "type mismatch" in lower
         or "expects " in lower
         or "incompatible arguments" in lower
+        or "collection value is not seqable" in lower
         or "not supported for nil" in lower
         or "not supported for string" in lower
         or "indexes must be int" in lower
@@ -258,6 +260,11 @@ def classify_result(result: Result) -> str:
         and "unknown function with-precision" in result.error
     ):
         return "reader-or-numeric-literal"
+    if (
+        result.namespace == "clojure.core-test.seq"
+        and "set value type must match element type" in result.error
+    ):
+        return "static-typing-or-closed-domain-boundary"
     return classify(result.error)
 
 
@@ -266,8 +273,10 @@ def classify_result_static_boundary(result: Result) -> str:
 
     subclass = classify_static_boundary(result.error)
     suite_fixture_errors = {
+        "clojure.core-test.identity": "atom nil requires an explicit option element type",
         "clojure.core-test.juxt": "juxt functions must accept the same argument type",
         "clojure.core-test.portability": "int? guard narrowing requires a statically typed value",
+        "clojure.core-test.seq": "set value type must match element type",
         "clojure.core-test.transient": "cannot infer :x as printable<inference-variable> because it is already int",
         "clojure.core-test.zero-qmark": "expected int arguments for zero?",
         "clojure.core-test.pos-qmark": "expected int arguments for pos?",
@@ -319,53 +328,9 @@ def namespace_outcome(native_status: str, melange_status: str) -> str:
     return "failed-both"
 
 
-def static_error_lane(results: Iterable[Result]) -> list[dict[str, str]]:
-    """Return failures that are expected static errors for negative suite tests."""
-
-    lane = []
-    for result in results:
-        if result.status == "compiled":
-            continue
-        if classify_result(result) != "static-typing-or-closed-domain-boundary":
-            continue
-        static_subclass = classify_result_static_boundary(result)
-        if static_subclass not in {
-            "negative-runtime-test-is-static-error",
-            "suite-polymorphic-fixture-is-static-error",
-        }:
-            continue
-        lane.append(
-            {
-                "namespace": result.namespace,
-                "target": result.target,
-                "static_subclass": static_subclass,
-                "error": normalize_error(result.error),
-            }
-        )
-    return sorted(
-        lane,
-        key=lambda entry: (entry["namespace"], entry["target"], entry["error"]),
-    )
-
-
 def repair_lane_for(failure_class: str, static_subclass: str | None) -> str:
-    if static_subclass in {
-        "negative-runtime-test-is-static-error",
-        "suite-polymorphic-fixture-is-static-error",
-    }:
+    if failure_class == "static-typing-or-closed-domain-boundary":
         return "audit-as-static-error"
-    if static_subclass in {
-        "dynamic-boundary-needs-closed-domain",
-        "heterogeneous-collection-needs-closed-domain",
-    }:
-        return "design-closed-domain-or-narrow-runtime-boundary"
-    if static_subclass in {
-        "first-class-polymorphic-or-hof",
-        "typed-protocol-or-capability-gap",
-        "transient-collection-boundary",
-        "form-or-declaration-static-gap",
-    }:
-        return "implement-static-language-capability"
     if failure_class == "reader-or-numeric-literal":
         return "design-reader-and-numeric-tower"
     if failure_class == "host-boundary-or-platform-specific":
@@ -410,22 +375,6 @@ def repair_lanes(results: Iterable[Result]) -> list[dict[str, str | None]]:
     return sorted(
         lanes,
         key=lambda entry: (entry["namespace"], entry["target"], entry["error"] or ""),
-    )
-
-
-def write_static_error_report(results: Iterable[Result], path: pathlib.Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(static_error_lane(results), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
-def write_repair_lane_report(results: Iterable[Result], path: pathlib.Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(repair_lanes(results), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
 
@@ -539,23 +488,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=pathlib.Path, default=DEFAULT_REPORT)
     parser.add_argument("--upstream-commit")
-    parser.add_argument(
-        "--static-error-report",
-        type=pathlib.Path,
-        help="write normalized negative-runtime static errors as JSON",
-    )
-    parser.add_argument(
-        "--repair-lane-report",
-        type=pathlib.Path,
-        help="write normalized repair lane entries as JSON",
-    )
     args = parser.parse_args()
 
     results = load_results(args.report)
-    if args.static_error_report is not None:
-        write_static_error_report(results, args.static_error_report)
-    if args.repair_lane_report is not None:
-        write_repair_lane_report(results, args.repair_lane_report)
     print_markdown(results, args.upstream_commit)
     return 0
 

@@ -71,6 +71,8 @@ let rec compile_form ~compile_expr scope env form =
   | FString value -> Ok (typed_dynamic (apply (runtime "dynamic_string") [ Semantic_ir.String value ]))
   | FInt value -> Ok (typed_dynamic (apply (runtime "dynamic_int") [ Semantic_ir.Int value ]))
   | FFloat value -> Ok (typed_dynamic (apply (runtime "dynamic_float") [ Semantic_ir.Float value ]))
+  | FDecimal _ ->
+      Error.error "static decimal values cannot cross the report dynamic boundary"
   | FChar value -> Ok (typed_dynamic (apply (runtime "dynamic_char") [ Semantic_ir.Char value ]))
   | FBool value -> Ok (typed_dynamic (apply (runtime "dynamic_bool") [ Semantic_ir.Bool value ]))
   | FRegex value -> Ok (typed_dynamic (apply (runtime "dynamic_regex") [ Semantic_ir.String value ]))

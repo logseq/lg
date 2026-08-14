@@ -123,48 +123,6 @@ class SummaryClassificationTests(unittest.TestCase):
             ),
         )
 
-    def test_builds_machine_readable_static_error_lane(self) -> None:
-        results = [
-            self.summary.Result(
-                namespace="clojure.core-test.apply",
-                file="vendor/clojure-test-suite/test/clojure/core_test/apply.cljc",
-                target="native",
-                status="compile-failed",
-                elapsed_ms=7,
-                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/apply.cljc", line 10: lg: apply argument type mismatch: expected int, got char',
-            ),
-            self.summary.Result(
-                namespace="clojure.core-test.hash-set",
-                file="vendor/clojure-test-suite/test/clojure/core_test/hash_set.cljc",
-                target="native",
-                status="compiled",
-                elapsed_ms=5,
-                error="",
-            ),
-            self.summary.Result(
-                namespace="clojure.core-test.bigint",
-                file="vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc",
-                target="native",
-                status="compile-failed",
-                elapsed_ms=6,
-                error='File "/workspace/vendor/clojure-test-suite/test/clojure/core_test/bigint.cljc", line 4: lg: unknown symbol 1N',
-            ),
-        ]
-
-        lane = self.summary.static_error_lane(results)
-
-        self.assertEqual(
-            [
-                {
-                    "namespace": "clojure.core-test.apply",
-                    "target": "native",
-                    "static_subclass": "negative-runtime-test-is-static-error",
-                    "error": 'File "<suite>/apply.cljc", line <n>: lg: apply argument type mismatch: expected int, got char',
-                }
-            ],
-            lane,
-        )
-
     def test_builds_machine_readable_repair_lanes(self) -> None:
         results = [
             self.summary.Result(
@@ -209,7 +167,7 @@ class SummaryClassificationTests(unittest.TestCase):
                     "namespace": "clojure.core-test.add-watch",
                     "target": "native",
                     "class": "static-typing-or-closed-domain-boundary",
-                    "lane": "design-closed-domain-or-narrow-runtime-boundary",
+                    "lane": "audit-as-static-error",
                     "static_subclass": "dynamic-boundary-needs-closed-domain",
                     "error": 'File "<suite>/add_watch.cljc", line <n>: lg: records cannot cross a dynamic boundary; define a closed sum type containing the supported records',
                 },
@@ -317,7 +275,7 @@ class SummaryClassificationTests(unittest.TestCase):
             self.summary.repair_lanes([precision])[0]["lane"],
         )
 
-    def test_extrema_numeric_coercion_is_an_implementation_lane(self) -> None:
+    def test_extrema_numeric_coercion_is_a_static_error_audit(self) -> None:
         result = self.summary.Result(
             namespace="clojure.core-test.max",
             file="vendor/clojure-test-suite/test/clojure/core_test/max.cljc",
@@ -329,8 +287,26 @@ class SummaryClassificationTests(unittest.TestCase):
 
         lane = self.summary.repair_lanes([result])[0]
 
-        self.assertEqual("implement-static-language-capability", lane["lane"])
+        self.assertEqual("audit-as-static-error", lane["lane"])
         self.assertEqual("typed-protocol-or-capability-gap", lane["static_subclass"])
+
+    def test_mapcat_non_seqable_result_is_a_static_error_audit(self) -> None:
+        result = self.summary.Result(
+            namespace="clojure.core-test.mapcat",
+            file="vendor/clojure-test-suite/test/clojure/core_test/mapcat.cljc",
+            target="native",
+            status="compile-failed",
+            elapsed_ms=7,
+            error='File "<suite>/mapcat.cljc", line <n>: lg: mapcat argument 1: collection value is not seqable: tuple<keyword,int>',
+        )
+
+        lane = self.summary.repair_lanes([result])[0]
+
+        self.assertEqual("audit-as-static-error", lane["lane"])
+        self.assertEqual(
+            "negative-runtime-test-is-static-error",
+            lane["static_subclass"],
+        )
 
     def test_find_mixed_key_fixture_is_a_static_error_audit(self) -> None:
         result = self.summary.Result(

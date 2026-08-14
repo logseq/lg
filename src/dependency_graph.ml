@@ -69,7 +69,8 @@ let rec symbols form =
       List.concat_map
         (fun (key, value) -> symbols key @ symbols value)
         pairs
-  | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
+  | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FDecimal _
+  | FChar _ | FBool _ ->
       []
 
 let type_annotation_builtins =
@@ -249,7 +250,7 @@ let dependency_symbols = function
                 type_dependencies key @ type_dependencies value)
               pairs
         | FSymbol _ | FCoreSymbol _ | FString _ | FRegex _ | FInt _
-        | FFloat _ | FChar _ | FBool _ ->
+        | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
             []
       in
       List.concat_map type_dependencies method_forms
@@ -280,7 +281,7 @@ let method_names form =
           (fun names (key, value) -> collect (collect names key) value)
           names pairs
     | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _
-    | FFloat _ | FChar _ | FBool _ ->
+    | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
         names
   in
   collect [] form
@@ -313,7 +314,8 @@ let rec provided_names = function
              | FSymbol constructor -> Some constructor
              | FList (FSymbol constructor :: _) -> Some constructor
              | FVector _ | FList _ | FMap _ | FCoreSymbol _ | FKeyword _
-             | FString _ | FRegex _ | FInt _ | FFloat _ | FChar _ | FBool _ ->
+             | FString _ | FRegex _ | FInt _ | FFloat _ | FDecimal _ | FChar _
+             | FBool _ ->
                  None)
       in
       name :: constructors

@@ -1149,10 +1149,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | Error _ as err -> err
     | Ok option_expr
       when require_truthy
+           && Option.is_none (Types.next_seq_element option_expr.ty)
            &&
            match Types.constraint_value_type option_expr.ty with
            | TNil | TBool | TNullable _ | TOcaml "option"
-           | TOcaml_app ("option", [ _ ]) | TUnknown | TMeta _ | TVar _ ->
+           | TOcaml_app ("option", [ _ ]) | TSeq _ | TUnknown | TMeta _
+           | TVar _ ->
                false
            | ty when Types.is_dynamic ty -> false
            | _ -> true ->
@@ -1603,7 +1605,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   and compile_logical scope env operator forms =
     let literal_truthiness = function
       | FSymbol "nil" | FBool false -> Some false
-      | FBool true | FInt _ | FFloat _ | FChar _ | FString _ | FRegex _
+      | FBool true | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _
+      | FRegex _
       | FKeyword _ ->
           Some true
       | FSymbol _ | FCoreSymbol _ | FList _ | FVector _ | FMap _ -> None
@@ -2929,9 +2932,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | None -> TUnknown)
                       | Ok _ | Error _ -> TUnknown)
                   | FList _ | FVector _ | FMap _ | FCoreSymbol _
+                  | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
                   | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
-                  | FChar _ | FBool _ ->
-                      TUnknown
+                  | FChar _ | FBool _ -> TUnknown
                 and recur_argument_types aliases = function
                   | FList (FSymbol "recur" :: arguments) ->
                       [ List.map (form_type aliases) arguments ]
@@ -3361,7 +3364,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 @ nested_function_parameters value)
               pairs
         | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _
-        | FInt _ | FFloat _ | FChar _ | FBool _ ->
+        | FInt _ | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
             []
       in
       let nested_parameters = nested_function_parameters value_form in
