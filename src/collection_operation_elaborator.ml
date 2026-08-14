@@ -1337,6 +1337,26 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                                [ target.semantic_expr; key; default ]))
                         (adapt_transient_value result_value_ty default))
       in
+      let string_index_is_valid target index =
+        Semantic_ir.Infix
+          ( "&&",
+            Semantic_ir.Infix
+              (">=", index.semantic_expr, Semantic_ir.Int 0),
+            Semantic_ir.Infix
+              ( "<",
+                index.semantic_expr,
+                apply "String.length" [ target.semantic_expr ] ) )
+      in
+      let string_get target index =
+        apply "String.get" [ target.semantic_expr; index.semantic_expr ]
+      in
+      let string_get_option target index =
+        Semantic_ir.If
+          ( string_index_is_valid target index,
+            Semantic_ir.Constructor
+              ("Some", Some (string_get target index)),
+            Semantic_ir.Constructor ("None", None) )
+      in
       let arg_forms =
         match arg_forms with
         | [ target; key ] -> [ target; resolve_keyword_alias scope env key ]
@@ -1648,6 +1668,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok index -> (
               let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
+              | TString, TInt ->
+                  Ok
+                    (typed_ir (TNullable TChar)
+                       (string_get_option target index))
+              | TString, _ -> Error.error "get string index must be int"
               | TVector inner, TInt ->
                   Ok
                     (typed_ir inner
@@ -1997,6 +2022,20 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
           | Ok target, Ok index, Ok default -> (
               let target = unwrap_protocol_value target in
               match (target.ty, index.ty) with
+              | TString, TInt when Types.equal default.ty TChar ->
+                  Ok
+                    (typed_ir TChar
+                       (Semantic_ir.If
+                          ( string_index_is_valid target index,
+                            string_get target index,
+                            default.semantic_expr )))
+              | TString, TInt when Types.equal default.ty TNil ->
+                  Ok
+                    (typed_ir (TNullable TChar)
+                       (string_get_option target index))
+              | TString, TInt ->
+                  Error.error "get default for string must be char or nil"
+              | TString, _ -> Error.error "get string index must be int"
               | TVector inner, TInt when Types.equal inner default.ty ->
                   Ok
                     (typed_ir inner

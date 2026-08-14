@@ -179,3 +179,10 @@ clojure.core-test.not-every-qmark
 # Nullable numeric parsing from strings.
 clojure.core-test.parse-long
 clojure.core-test.parse-double
+
+# ClojureScript identity casts and UUID generation.
+clojure.core-test.short
+clojure.core-test.random-uuid
+
+# Statically indexed string lookup, including nested get-in traversal.
+clojure.core-test.get

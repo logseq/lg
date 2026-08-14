@@ -13706,7 +13706,7 @@ let create ~compile_expr =
       match ty with
       | TNullable inner | TOcaml_app ("option", [ inner ]) ->
           supports_lookup inner
-      | TVector _ | TRecord _ | TNamed_record _ -> true
+      | TString | TVector _ | TRecord _ | TNamed_record _ -> true
       | TUnknown | TMeta _ | TVar _ -> true
       | ty when Types.is_dynamic ty -> true
       | ty when Option.is_some (Types.dynamic_map_types ty) -> true

@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 138 namespaces (138/183, 75.4%): Native executes 131
-applicable namespaces, and Melange executes 137 namespaces with 2,648
+currently contains 141 namespaces (141/183, 77.0%): Native executes 134
+applicable namespaces, and Melange executes 140 namespaces with 2,685
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -280,6 +280,16 @@ strings, and nullable results follow the upstream target branches. Native
 host static integer range, while Melange retains the ClojureScript
 `Number.isSafeInteger` boundary. Non-string runtime-exception assertions remain
 compile-time type errors and are omitted under the static-error policy.
+
+The scalar/UUID/string-lookup batch promotes `short`, `random-uuid`, and the
+statically expressible string cases from `get` on both targets. `short` keeps
+the ClojureScript identity-cast behavior in the shared source library.
+`random-uuid` preserves the upstream version-four and variant bits, and its
+format assertion now traverses the split UUID through ordinary `get-in`.
+Two-argument string `get` returns `option<char>` after explicit lower/upper
+bounds checks; the three-argument form accepts a statically matching `char`
+default. This also lets nested `get-in` continue through strings without a
+dynamic lookup or a name-specific UUID workaround.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,

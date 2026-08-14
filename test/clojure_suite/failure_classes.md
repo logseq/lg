@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 138 namespaces (138/183,
-75.4%). Native runs the 131 applicable namespaces, while Melange runs 137
-namespaces with 2,648 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 141 namespaces (141/183,
+77.0%). Native runs the 134 applicable namespaces, while Melange runs 140
+namespaces with 2,685 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -372,6 +372,16 @@ Melange's JavaScript safe-integer ceiling. Melange keeps the ClojureScript
 safe-integer rule. Decimal floats preserve malformed-input rejection,
 scientific notation, and positive/negative Infinity. Non-string exception
 assertions are omitted because LG rejects those calls statically.
+
+The scalar/UUID/string-lookup batch promotes `short`, `random-uuid`, and a
+portable static subset of `get` on both targets. `short` follows the
+ClojureScript identity-cast branch. UUID generation retains the upstream
+version-four format check through `str`, `clojure.string/split`, and nested
+`get-in`. String lookup now performs explicit bounds checks, returns
+`option<char>` for two arguments, and accepts a same-typed `char` default for
+three arguments. The upstream `get` rows that deliberately mix unrelated
+collection/result/default domains remain compile-time static errors and are
+not weakened into a universal value.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
