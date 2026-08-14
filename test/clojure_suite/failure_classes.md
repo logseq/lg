@@ -228,8 +228,8 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 64 namespaces. Native runs the
-59 applicable namespaces, while Melange runs 63 namespaces with 1,254
+target qualifier. The current manifest contains 68 namespaces. Native runs the
+63 applicable namespaces, while Melange runs 67 namespaces with 1,324
 assertions. Both targets pass with zero failures and zero errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -254,12 +254,12 @@ The `constantly`, `second`, `last`, and `empty` namespaces are also promoted on
 both targets. `constantly` uses a private typed constant-function capability so
 ignored argument types instantiate independently at every direct, `apply`, or
 higher-order call; its captured result remains statically typed and evaluated
-once. The copied but unpromoted `rest`, `next`, `nnext`, and `fnext` fixtures
-were removed. Their positive sorted-map and nested nullable collection cases
-expose one shared storage-type blocker: tuple map entries or vector payloads
-are currently relabeled as a contextual sequential type without converting the
-generated OCaml representation. The upstream clone remains authoritative for
-the focused repair; these namespaces are not counted as runtime-supported.
+once. The `rest`, `next`, `nnext`, and `fnext` namespaces now promote on both
+targets. Unresolved vector context no longer erases concrete EDN storage, and
+sequential equality converts closed tuple map entries and nested vectors to a
+shared EDN comparison representation. Empty `next` sequences retain compact
+`Seq.t` storage while observing Clojure nil semantics for equality, `nil?`, and
+EDN conversion; `rest` remains a non-nil empty sequence.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

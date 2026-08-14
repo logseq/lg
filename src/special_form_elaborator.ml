@@ -568,7 +568,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | Some _ | None ->
     let expected_element =
       match Env.expected_type env with
-      | Some (TVector element) when not (Types.is_dynamic element) ->
+      | Some (TVector element)
+        when (not (Types.is_dynamic element))
+             && not (Types.equal element TUnknown) ->
           Some element
       | Some _ | None -> None
     in

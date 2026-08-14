@@ -650,7 +650,7 @@
     count {:status :static-adaptation
            :reason :source-function-and-inline-specialization-delegate-to-clojurescript-icounted-with-static-witnesses-for-nil-seqables-and-explicit-protocol-implementations}
     seq {:status :static-adaptation
-         :reason :source-function-and-inline-specialization-preserve-static-seqable-adaptation-through-a-private-typed-primitive-while-lg-represents-an-empty-sequence-directly-instead-of-upstream-nil}
+         :reason :source-function-and-inline-specialization-preserve-static-seqable-adaptation-through-a-private-typed-primitive-whose-empty-seq-storage-is-observed-as-upstream-nil-by-truthiness-nil-predicates-equality-and-edn-conversion}
     first {:status :static-adaptation
            :reason :source-function-and-inline-specialization-preserve-the-upstream-optional-head-result-through-a-private-typed-seqable-primitive}
     rest {:status :static-adaptation
@@ -754,9 +754,9 @@
     ffirst {:status :ported}
     fnext {:status :ported}
     nfirst {:status :static-adaptation
-            :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}
+            :reason :source-composition-preserves-upstream-nil-on-exhaustion-through-the-private-typed-next-sequence-marker-without-option-allocations-or-dynamic-storage}
     nnext {:status :static-adaptation
-           :reason :exhausted-static-sequences-are-empty-rather-than-dynamic-nil}
+           :reason :source-composition-preserves-upstream-nil-on-exhaustion-through-the-private-typed-next-sequence-marker-without-option-allocations-or-dynamic-storage}
     bit-clear {:status :static-adaptation
                :reason :composed-from-static-integer-bit-primitives}
     bit-flip {:status :static-adaptation

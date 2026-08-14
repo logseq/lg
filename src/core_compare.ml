@@ -56,6 +56,8 @@ let nullable_equality_compatible left_ty right_ty =
   | TNil, (TNullable _ | TOcaml_app ("option", [ _ ]))
   | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil ->
       true
+  | TNil, ty when Option.is_some (Types.next_seq_element ty) -> true
+  | ty, TNil when Option.is_some (Types.next_seq_element ty) -> true
   | (TNullable inner | TOcaml_app ("option", [ inner ])), actual
   | actual, (TNullable inner | TOcaml_app ("option", [ inner ])) ->
       Types.assignable ~policy:Host_boundary ~expected:inner ~actual
@@ -183,6 +185,12 @@ let rec equality_expr ?env left right =
           ] )
   | TNil, (TNullable _ | TOcaml_app ("option", [ _ ])) ->
       equality_expr ?env right left
+  | TNil, ty when Option.is_some (Types.next_seq_element ty) ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+          [ right.semantic_expr ] )
+  | ty, TNil when Option.is_some (Types.next_seq_element ty) ->
+      equality_expr ?env right left
   | (TNullable inner | TOcaml_app ("option", [ inner ])), right_ty
     when Types.assignable ~policy:Host_boundary ~expected:inner
            ~actual:right_ty ->
@@ -251,7 +259,23 @@ let rec equality_expr ?env left right =
         ( Core_sequence_transform.collection_to_seq_expr left,
           Core_sequence_transform.collection_to_seq_expr right )
       with
-      | Ok (_, left), Ok (_, right) -> static_sequence_equal left right
+      | Ok (_, left_sequence), Ok (_, right_sequence) ->
+          let equal = static_sequence_equal left_sequence right_sequence in
+          let left_is_next = Option.is_some (Types.next_seq_element left_ty) in
+          let right_is_next = Option.is_some (Types.next_seq_element right_ty) in
+          if left_is_next = right_is_next then equal
+          else
+            let next_sequence =
+              if left_is_next then left_sequence else right_sequence
+            in
+            Semantic_ir.Infix
+              ( "&&",
+                Semantic_ir.Prefix
+                  ( "not",
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                        [ next_sequence ] ) ),
+                equal )
       | Error _, _ | _, Error _ -> Semantic_ir.Bool false)
   | (TFn _ | TOverloaded_fn _), (TFn _ | TOverloaded_fn _) ->
       Semantic_ir.Apply

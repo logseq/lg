@@ -1552,6 +1552,23 @@ let rec pack_metadata_expression ty expression =
             ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_seq",
               [ mapper; expression ] ))
         (metadata_mapper element_ty)
+  | TOcaml_app (name, [ element_ty ])
+    when name = Types.next_seq_type_name ->
+      let sequence_name = "__lg_metadata_next_sequence" in
+      let sequence = Semantic_ir.Ident sequence_name in
+      Result.map
+        (fun mapper ->
+          Semantic_ir.Let
+            ( [ (Semantic_ir.PVar sequence_name, expression) ],
+              Semantic_ir.If
+                ( Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
+                      [ sequence ] ),
+                  Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil",
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident "Lg_runtime.Runtime_metadata.of_seq",
+                      [ mapper; sequence ] ) ) ))
+        (metadata_mapper element_ty)
   | TVector element_ty ->
       Result.map
         (fun mapper ->
@@ -4577,11 +4594,11 @@ let compile_equality scope env args =
                  [ value.semantic_expr ])
         | _ -> None
     in
-    let sequential_edn_elements = function
-      | TList element_ty | TSeq element_ty | TVector element_ty
-      | TArray element_ty ->
-          is_edn_value_type element_ty
-      | _ -> false
+    let rec sequential_value = function
+      | TList _ | TSeq _ | TVector _ | TArray _ -> true
+      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+          sequential_value inner
+      | ty -> Option.is_some (Types.next_seq_element ty)
     in
     let tuple_sequential_pair () =
       match
@@ -4655,10 +4672,7 @@ let compile_equality scope env args =
              true
          | _ -> false)
       then tuple_sequential_pair ()
-      else if
-        Core_compare.sequential_type left.ty
-        && Core_compare.sequential_type right.ty
-        && (sequential_edn_elements left.ty || sequential_edn_elements right.ty)
+      else if sequential_value left.ty && sequential_value right.ty
       then tuple_sequential_pair ()
       else if
         is_edn_value_type left.ty && is_edn_value_type right.ty

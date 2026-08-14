@@ -73,3 +73,9 @@ clojure.core-test.constantly
 clojure.core-test.second
 clojure.core-test.last
 clojure.core-test.empty
+
+# Sequence storage adaptation batch.
+clojure.core-test.rest
+clojure.core-test.next
+clojure.core-test.nnext
+clojure.core-test.fnext

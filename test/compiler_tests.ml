@@ -33179,6 +33179,29 @@ let test_additional_sequence_helpers_work () =
     "(2 3 4):(3 4):(4):1:[3 4]:(2):1:5:[4 3 2 1]:true:true:(1 3 6 10)\n"
     ocaml_source
 
+let test_next_sequence_storage_matches_clojure_equality () =
+  let source =
+    {|
+(println
+  (str (= [[:b 2] [:c 3]] (rest (sorted-map :a 1 :b 2 :c 3))) ":"
+       (= nil (next [1])) ":"
+       (nil? (nnext [])) ":"
+       (= '(2 3) (fnext '([0 1] [2 3]))) ":"
+       (= '() (next [1]))))
+|}
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/next_sequence_storage_equality.cljc" source
+  in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "next sequence equality must preserve closed static storage";
+  assert_ocaml_runs "next_sequence_storage_matches_clojure_equality"
+    "true:true:true:true:false\n" native;
+  compile_with_stdlib Lg.Target.Melange
+    "test/next_sequence_storage_equality.cljc" source
+  |> ignore
+
 let test_last_returns_nil_for_empty_collections () =
   let source =
     {|
@@ -49944,6 +49967,8 @@ let tests =
       test_let_aliases_propagate_seqable_constraints );
     ( "nested drop-while infers seqable parameters",
       test_nested_drop_while_infers_seqable_parameters );
+    ( "next sequence storage matches Clojure equality",
+      test_next_sequence_storage_matches_clojure_equality );
     ( "loop initializers propagate seqable constraints",
       test_loop_initializers_propagate_seqable_constraints );
     ( "batched predicate/collection core functions accept truthy params",
