@@ -206,3 +206,11 @@ clojure.core-test.ancestors
 clojure.core-test.descendants
 clojure.core-test.derive
 clojure.core-test.underive
+
+# Closed, statically typed transient collection operations.
+clojure.core-test.assoc-bang
+clojure.core-test.conj-bang
+clojure.core-test.disj-bang
+clojure.core-test.dissoc-bang
+clojure.core-test.persistent-bang
+clojure.core-test.pop-bang

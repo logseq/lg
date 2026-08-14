@@ -107,7 +107,7 @@ Static typing subclasses:
 | `suite-polymorphic-fixture-is-static-error` | 20 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, collection fixtures such as `disj.cljc`, `sort.cljc`, and `zipmap.cljc`, `seq.cljc` mixing decimal and int set elements, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
 | `heterogeneous-collection-needs-closed-domain` | 7 | Heterogeneous list/vector and nullable element fixtures remain audited static errors; they require explicit closed sums rather than dynamic storage. |
 | `first-class-polymorphic-or-hof` | 2 | The remaining entries are whole-file fixtures that combine incompatible static higher-order domains. Supported monomorphic and call-site-specialized higher-order behavior remains covered on Native and Melange. |
-| `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and is audited as a static error; focused typed transient operations remain covered separately. |
+| `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. Six typed transient operation namespaces are promoted on both targets. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and remains an audited static error. |
 | `dynamic-boundary-needs-closed-domain` | 0 | No remaining suite compile failure requires expanding a dynamic boundary. |
 | `form-or-declaration-static-gap` | 4 | These whole-suite declaration/pattern fixtures are retained as audited static errors under the user-selected policy; direct supported forms retain focused coverage. |
 | `typed-protocol-or-capability-gap` | 0 | The structural-record `find` and closed tuple/list/nested-vector set comparator gaps are fixed. New entries must receive focused TDD coverage before entering this lane. |
@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 155 namespaces (155/183,
-84.7%). Native runs the 148 applicable namespaces, while Melange runs 154
-namespaces with 2,834 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 161 namespaces (161/183,
+88.0%). Native runs the 154 applicable namespaces, while Melange runs 160
+namespaces with 2,866 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -409,6 +409,14 @@ transitive-closure rebuilding after `underive`. The original `ancestors`
 fixture is still gated by `when-var-exists` because it embeds JVM/JavaScript
 class objects; the curated fixture bypasses that host-class-only gate and
 executes the portable hierarchy behavior directly.
+
+The transient collection batch promotes `assoc!`, `conj!`, `disj!`, `dissoc!`,
+`persistent!`, and `pop!` on both targets. Curated fixtures retain the upstream
+collection-specific behavior and arities while placing maps, vectors, and sets
+in independent static instances. They cover repeated and missing removals,
+variadic updates, vector append and pop, map-entry insertion, set mutation, and
+persistent conversion. Bad-shape rows remain static errors, and no transient
+operation uses a dynamic collection wrapper.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

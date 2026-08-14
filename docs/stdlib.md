@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 155 namespaces (155/183, 84.7%): Native executes 148
-applicable namespaces, and Melange executes 154 namespaces with 2,834
+currently contains 161 namespaces (161/183, 88.0%): Native executes 154
+applicable namespaces, and Melange executes 160 namespaces with 2,866
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -317,6 +317,14 @@ and closure rebuilding after edge removal. The upstream host-class and custom
 record cases remain outside the portable fixture because LG intentionally uses
 the closed EDN named-value hierarchy domain rather than JVM or JavaScript class
 objects.
+
+The transient collection batch promotes `assoc!`, `conj!`, `disj!`, `dissoc!`,
+`persistent!`, and `pop!` on both targets. Map, vector, and set fixtures are
+partitioned by static collection domain while retaining upstream zero, unary,
+and variadic behavior, repeated and absent key removal, vector append/update,
+map-entry insertion, set insertion/removal, and persistent conversion. Invalid
+persistent collection calls remain compile-time static errors and are not
+weakened into a universal transient representation.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,
