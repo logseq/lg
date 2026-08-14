@@ -13,6 +13,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCANNER_PATH = ROOT / "test" / "clojure_suite" / "scan_clojure_suite.py"
 SUMMARY_PATH = ROOT / "test" / "clojure_suite" / "summarize_clojure_suite.py"
+PROMOTION_PATH = ROOT / "test" / "clojure_suite" / "compile_promoted_smoke.py"
 
 
 def load_scanner():
@@ -33,6 +34,109 @@ def load_summary():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load_promotion():
+    spec = importlib.util.spec_from_file_location("compile_promoted_smoke", PROMOTION_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load compile_promoted_smoke.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class PromotedSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.promotion = load_promotion()
+        self.tmp = tempfile.TemporaryDirectory(
+            prefix="lg-clojure-promotion-test-", dir=ROOT / "_build"
+        )
+        self.suite_dir = pathlib.Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def write_suite_file(self, name: str, source: str) -> pathlib.Path:
+        path = self.suite_dir / name
+        path.write_text(source, encoding="utf-8")
+        return path
+
+    def test_manifest_ignores_comments_and_rejects_duplicates(self) -> None:
+        manifest = self.suite_dir / "promoted.txt"
+        manifest.write_text(
+            "# predicate batch\n"
+            "clojure.core-test.and\n\n"
+            "clojure.core-test.or\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            ["clojure.core-test.and", "clojure.core-test.or"],
+            self.promotion.read_manifest(manifest),
+        )
+
+        manifest.write_text(
+            "clojure.core-test.and\nclojure.core-test.and\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate promoted namespace"):
+            self.promotion.read_manifest(manifest)
+
+    def test_manifest_filters_explicit_target_qualifiers(self) -> None:
+        manifest = self.suite_dir / "promoted.txt"
+        manifest.write_text(
+            "clojure.core-test.and\n"
+            "clojure.core-test.double-qmark melange\n"
+            "clojure.core-test.format native\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            ["clojure.core-test.and", "clojure.core-test.format"],
+            self.promotion.read_manifest(manifest, target="native"),
+        )
+        self.assertEqual(
+            ["clojure.core-test.and", "clojure.core-test.double-qmark"],
+            self.promotion.read_manifest(manifest, target="melange"),
+        )
+
+        manifest.write_text(
+            "clojure.core-test.and jvm\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "invalid promotion target"):
+            self.promotion.read_manifest(manifest, target="native")
+
+    def test_resolves_recursive_dependencies_before_promoted_targets(self) -> None:
+        dependency = self.write_suite_file(
+            "number_range.cljc",
+            "(ns clojure.core-test.number-range)\n",
+        )
+        target = self.write_suite_file(
+            "rand_int.cljc",
+            "(ns clojure.core-test.rand-int\n"
+            "  (:require [clojure.core-test.number-range :as ranges]))\n",
+        )
+
+        self.assertEqual(
+            [dependency, target],
+            self.promotion.promoted_source_files(
+                self.suite_dir,
+                ["clojure.core-test.rand-int"],
+            ),
+        )
+
+    def test_generates_runner_requiring_every_promoted_namespace(self) -> None:
+        source = self.promotion.runner_source(
+            ["clojure.core-test.and", "clojure.core-test.any-qmark"]
+        )
+
+        self.assertIn("[clojure.core-test.and :as and-test]", source)
+        self.assertIn(
+            "[clojure.core-test.any-qmark :as any-qmark-test]", source
+        )
+        self.assertTrue(source.endswith("(run-tests)\n"))
 
 
 class SummaryClassificationTests(unittest.TestCase):

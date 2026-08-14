@@ -306,7 +306,7 @@
     completing {:status :static-adaptation
                 :reason :source-overloaded-reducing-function-preserves-zero-one-two-result-relations-while-one-arity-expands-identity-to-avoid-rigid-cross-overload-self-instantiation}
     complement {:status :static-adaptation
-                :reason :current-static-function-types-support-unary-truthy-predicate-complement}
+                :reason :source-function-preserves-first-class-unary-truthy-predicate-complement-while-an-inline-private-typed-primitive-specializes-direct-calls-including-overloaded-not-every-without-public-name-dispatch}
     every-pred {:status :static-adaptation
                 :reason :source-port-preserves-the-upstream-one-two-three-and-variadic-predicate-constructor-arities-returned-zero-one-two-three-and-variadic-arities-short-circuit-order-and-boolean-results-while-homogeneous-static-predicate-inputs-replace-open-ifn-dispatch}
     some-fn {:status :static-adaptation
@@ -1007,7 +1007,7 @@
     partitionv-all {:status :static-adaptation
                     :reason :source-port-reuses-the-partition-all-transducer-and-preserves-two-and-three-arity-lazy-vector-partitions}
     random-sample {:status :static-adaptation
-                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary-while-the-static-signature-accepts-integer-probability-literals-nil-collections-as-optional-seqables-and-the-cljs-only-nil-probability-case-through-melange-nil-numeric-coercion}
+                   :reason :source-port-preserves-both-arities-by-composing-the-source-filter-transducer-and-lazy-filter-with-the-typed-rand-boundary-while-target-reader-branches-normalize-native-float-probabilities-and-melange-option-float-probabilities-including-cljs-nil-to-zero-and-direct-integer-literals-widen-through-the-private-static-call-boundary}
     record? {:status :static-adaptation
              :reason :source-function-and-inline-specialization-use-an-optional-static-irecord-marker-witness-with-implicit-satisfaction-restricted-to-defrecord-values-and-no-open-value-or-dynamic-dispatch}
     replace {:status :static-adaptation

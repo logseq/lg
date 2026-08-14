@@ -313,6 +313,8 @@ let equal left right =
   && left.scale = right.scale
   && String.equal left.digits right.digits
 
+let is_integer value = (normalize value).scale <= 0
+
 let to_string value =
   let value = normalize value in
   let sign = if value.negative then "-" else "" in
@@ -329,6 +331,9 @@ let to_string value =
 let to_edn_string value = to_string value ^ "M"
 
 let to_float value = float_of_string (to_string value)
+
+let is_safe_integer value =
+  is_integer value && Float.abs (to_float value) <= 9007199254740991.
 
 let rounding_mode_of_string = function
   | "UP" -> Up

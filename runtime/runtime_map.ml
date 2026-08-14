@@ -547,6 +547,9 @@ let equiv_by operations value_equal left right =
 let equiv left right =
   equiv_by generic_operations Runtime_static_value.equal left right
 
+let equiv_with value_equal left right =
+  equiv_by generic_operations value_equal left right
+
 let to_list map =
   fold_left (fun entries entry -> entry :: entries) [] map |> List.rev
 
@@ -579,6 +582,9 @@ let map_key_operations () = { hash; equal = equiv }
 
 let equiv_map_key left right =
   equiv_by (map_key_operations ()) Runtime_static_value.equal left right
+
+let equiv_map_key_with value_equal left right =
+  equiv_by (map_key_operations ()) value_equal left right
 
 let assoc_map_key map key value =
   assoc_by (map_key_operations ()) map key value

@@ -246,6 +246,15 @@ Source coverage only counts
 real precompiled LG definitions; classifying a boundary does not inflate the
 percentage.
 
+Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
+is separate from compile-scan coverage. The manifest-driven promoted smoke
+currently contains 56 namespaces: Native executes 51 applicable namespaces,
+and Melange executes 55 namespaces with 1,105 assertions. Both are green. The
+manifest accepts an optional `native` or `melange` qualifier, so target-specific
+numeric identity tests remain explicit while ordinary additions require no
+Dune or generated-runner edits. Static-error fixtures remain in the generated
+audit and are not treated as runtime failures or weakened into dynamic values.
+
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
 largest former blocker rows were `type` (499), `with-redefs` (427),

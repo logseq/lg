@@ -657,6 +657,30 @@ let lookup_marker scope env method_name =
           String.concat "/" (List.rev (protocol_name :: reversed_owner))
           |> canonical_protocol_name
         in
+        let aliased_protocol_id =
+          match String.rindex_opt protocol_name '/' with
+          | None -> None
+          | Some separator ->
+              let namespace = String.sub protocol_name 0 separator in
+              let local_name =
+                String.sub protocol_name (separator + 1)
+                  (String.length protocol_name - separator - 1)
+                |> canonical_protocol_name
+              in
+              Option.map
+                (fun target ->
+                  let root_id =
+                    Protocol_id.create ~owner:[] ~name:local_name
+                  in
+                  if
+                    (String.equal target "clojure.core"
+                    || String.equal target "cljs.core")
+                    && Option.is_some
+                         (Protocol_registry.find_protocol root_id registry)
+                  then root_id
+                  else Protocol_id.create ~owner:[ target ] ~name:local_name)
+                (Env.resolve_namespace_alias ~scope namespace env)
+        in
         let namespace_owner =
           match Env.resolve_namespace_alias ~scope protocol_name env with
           | Some target -> Some target
@@ -667,6 +691,9 @@ let lookup_marker scope env method_name =
               in
               if protocols = [] then None else Some protocol_name
         in
+        (match aliased_protocol_id with
+        | Some protocol_id -> marker_for protocol_id method_name
+        | None ->
         (match namespace_owner with
         | Some owner -> (
             match
@@ -684,7 +711,7 @@ let lookup_marker scope env method_name =
             | None ->
                 marker_for
                   (Protocol_id.create ~owner:[] ~name:protocol_name)
-                  method_name))
+                  method_name)))
     | [ method_name ] ->
         let owner = if scope = "" then [] else [ scope ] in
         let protocols =
@@ -736,6 +763,13 @@ let lookup_protocol_marker ?(refine = true) scope env protocol_name method_name 
 let lookup_impl env protocol_id method_name receiver_ty =
   match registry_receiver_id receiver_ty with
   | Some receiver_id ->
+      let receiver_id =
+        match (Protocol_id.name protocol_id, receiver_ty) with
+        | ("ISeq" | "INext" | "IDrop"), TOcaml_app (name, [ _ ])
+          when name = Types.next_seq_type_name ->
+            Receiver_id.Seq_receiver
+        | _ -> receiver_id
+      in
       let method_id = method_id protocol_id method_name in
       let registry = Env.protocols env in
       Protocol_registry.find_implementation_or_default protocol_id method_id

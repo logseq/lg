@@ -10,7 +10,7 @@ let evaluated_argument arg =
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
-let compile name args =
+let compile ~target name args =
   match one_arg name args with
   | Error _ as err -> err
   | Ok arg ->
@@ -24,10 +24,15 @@ let compile name args =
       | "__lg_rational-predicate" -> static_bool (Types.equal arg.ty TInt)
       | "__lg_decimal-predicate" ->
           static_bool
-            (Types.equal arg.ty TFloat
-            || Types.equal arg.ty (TOcaml "Lg_runtime.Runtime_decimal.t"))
+            (Types.equal arg.ty (TOcaml "Lg_runtime.Runtime_decimal.t"))
       | "__lg_float-predicate" | "__lg_double-predicate" ->
-          static_bool (Types.equal arg.ty TFloat)
+          static_bool
+            (Types.equal arg.ty TFloat
+            || (target = Target.Melange
+               &&
+               (Types.equal arg.ty TInt
+               || Types.equal arg.ty
+                    (TOcaml "Lg_runtime.Runtime_decimal.t"))))
       | "__lg_symbol-predicate"
         when Option.is_some
                (Types.symbol_predicate_constraint_info arg.ty) ->
@@ -49,6 +54,14 @@ let compile name args =
             (apply "Lg_runtime.Runtime_dynamic.is_symbol"
                [ arg.semantic_expr ])
       | "__lg_symbol-predicate" -> static_bool (Types.equal arg.ty TSymbol)
+      | "__lg_char-predicate"
+        when target = Target.Melange && Types.equal arg.ty TString ->
+          bool
+            (Semantic_ir.Infix
+               ( "=",
+                 Semantic_ir.Apply
+                   (Semantic_ir.Ident "String.length", [ arg.semantic_expr ]),
+                 Semantic_ir.Int 1 ))
       | "__lg_char-predicate" -> static_bool (Types.equal arg.ty TChar)
       | "__lg_regex-predicate" -> static_bool (Types.equal arg.ty TRegex)
       | _ -> Error.error ("unknown function " ^ name)

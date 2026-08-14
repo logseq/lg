@@ -25346,6 +25346,10 @@ let test_protocol_predicate_family_matches_clojurescript () =
 (println (sequential? [1]))
 (println (sequential? (list 1)))
 (println (sequential? (seq [1])))
+(println (sequential? (seq "abc")))
+(println (sequential? (seq (to-array [1 2 3]))))
+(println (not (sequential? (seq ""))))
+(println (not (sequential? (seq (to-array [])))))
 (println (not (sequential? #{1})))
 (println (not (sequential? "a")))
 (println (sorted? (ProtocolSorted. 1)))
@@ -25354,7 +25358,7 @@ let test_protocol_predicate_family_matches_clojurescript () =
 (println (= 1 @evaluations))
 |}
   in
-  let expected = String.concat "" (List.init 15 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 19 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native
       "test/source_protocol_predicate_family.cljc" source
@@ -25369,6 +25373,32 @@ let test_protocol_predicate_family_matches_clojurescript () =
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange protocol predicates must use static protocol witnesses"
+
+let test_upstream_collection_and_numeric_predicate_edges () =
+  let source =
+    {|
+(println (coll? (seq [1 2 3])))
+(println (not (counted? "a string")))
+(println (not (counted? (object-array 3))))
+(println (not (set? nil)))
+(println (vector? (first {:a 1})))
+(println (decimal? 1.0M))
+(println (not (decimal? 1.0)))
+(println (number? 1.0M))
+|}
+  in
+  let expected = String.concat "" (List.init 8 (fun _ -> "true\n")) in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/upstream_collection_numeric_predicates.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "collection and numeric predicates must remain statically typed";
+  assert_ocaml_runs "upstream_collection_and_numeric_predicate_edges" expected
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/upstream_collection_numeric_predicates.cljc" source)
 
 let test_protocol_predicate_family_has_no_name_based_compiler_dispatch () =
   let compiler_paths =
@@ -43474,6 +43504,23 @@ let test_contains_infers_generic_membership_for_variable_keys () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_contains_preserves_optional_map_entry_keys () =
+  let source =
+    {|
+(let [m1 {:a 1}
+      m2 {(first m1) true}]
+  (println
+    (str
+      (contains? m1 (first m1)) ":"
+      (contains? m2 (first m1)))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "contains_preserves_optional_map_entry_keys" "false:true\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_contains_freshens_generic_membership_across_set_modules () =
   let source =
     {|
@@ -49686,6 +49733,8 @@ let tests =
       test_reversible_predicate_has_no_name_based_compiler_dispatch );
     ( "protocol predicate family matches ClojureScript",
       test_protocol_predicate_family_matches_clojurescript );
+    ( "upstream collection and numeric predicate edges",
+      test_upstream_collection_and_numeric_predicate_edges );
     ( "protocol predicate family has no name-based compiler dispatch",
       test_protocol_predicate_family_has_no_name_based_compiler_dispatch );
     ( "source primitive predicates and abs match ClojureScript",
@@ -50952,6 +51001,8 @@ let tests =
       test_concat_rejects_nested_heterogeneous_vectors );
     ( "contains? infers generic membership for variable keys",
       test_contains_infers_generic_membership_for_variable_keys );
+    ( "contains? preserves optional map-entry keys",
+      test_contains_preserves_optional_map_entry_keys );
     ( "contains? freshens generic membership across set modules",
       test_contains_freshens_generic_membership_across_set_modules );
     ( "into rejects element type mismatch",

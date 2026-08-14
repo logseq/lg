@@ -150,6 +150,7 @@ val is_string : t -> bool
 val is_int : t -> bool
 val is_float : t -> bool
 val is_number : t -> bool
+val is_integer_number : t -> bool
 val is_zero : t -> bool
 val is_positive : t -> bool
 val is_negative : t -> bool

@@ -1,0 +1,63 @@
+# Runtime/typechecked on Native and Melange.
+clojure.core-test.and
+clojure.core-test.any-qmark
+clojure.core-test.associative-qmark
+clojure.core-test.comment
+clojure.core-test.fn-qmark
+clojure.core-test.format
+clojure.core-test.hash-set
+clojure.core-test.keyword
+clojure.core-test.make-hierarchy
+clojure.core-test.name
+clojure.core-test.nan-qmark
+clojure.core-test.nil-qmark
+clojure.core-test.not
+clojure.core-test.number-range
+clojure.core-test.or
+clojure.core-test.pr-str
+clojure.core-test.print-str
+clojure.core-test.println-str
+clojure.core-test.prn-str
+clojure.core-test.rand-int
+clojure.core-test.sequential-qmark
+clojure.core-test.some-qmark
+clojure.core-test.symbol
+clojure.core-test.when
+clojure.core-test.when-not
+clojure.core-test.with-out-str
+
+# Predicate, scalar, and collection batch.
+clojure.core-test.abs
+clojure.core-test.boolean
+clojure.core-test.boolean-qmark
+clojure.core-test.char-qmark
+clojure.core-test.coll-qmark
+clojure.core-test.contains-qmark
+clojure.core-test.count
+clojure.core-test.counted-qmark
+clojure.core-test.dec
+clojure.core-test.decimal-qmark
+# Native's single OCaml float representation cannot assert JVM float32/double64
+# class identity or ratio exclusions. Melange runs the complete CLJS surface.
+clojure.core-test.double-qmark melange
+clojure.core-test.empty-qmark
+clojure.core-test.even-qmark
+clojure.core-test.false-qmark
+clojure.core-test.first
+clojure.core-test.float-qmark melange
+clojure.core-test.ident-qmark
+clojure.core-test.inc
+# Native does not materialize JVM BigInt suffixes or ratios as public source
+# types. Melange runs the complete CLJS numeric predicate expectations.
+clojure.core-test.int-qmark melange
+clojure.core-test.integer-qmark melange
+clojure.core-test.keyword-qmark
+clojure.core-test.list-qmark
+clojure.core-test.map-qmark
+clojure.core-test.number-qmark
+clojure.core-test.odd-qmark
+clojure.core-test.set-qmark
+clojure.core-test.string-qmark
+clojure.core-test.symbol-qmark
+clojure.core-test.true-qmark
+clojure.core-test.vector-qmark

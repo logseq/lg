@@ -577,7 +577,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | [], [ key ], (FMap _ | FList (FSymbol "__lg_hash-map" :: _))
               | [], [ key ], FVector _ ->
                   compile_expr scope env
-                    (FList [ FSymbol "get"; fn_form; key ])
+                    (FList [ FSymbol "__lg_get"; fn_form; key ])
               | [], [ candidate ], FKeyword _ -> (
                   match compile_expr scope env candidate with
                   | Ok { ty = TSet _; _ } ->

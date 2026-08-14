@@ -941,6 +941,12 @@ let is_float value = match value.payload with Float _ -> true | _ -> false
 let is_number value =
   match value.payload with Int _ | Float _ -> true | _ -> false
 
+let is_integer_number value =
+  match value.payload with
+  | Int _ -> true
+  | Float value -> Float.is_integer value
+  | _ -> false
+
 let is_zero value =
   match value.payload with
   | Int value -> value = 0

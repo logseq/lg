@@ -502,6 +502,7 @@ let rec argument_compatible expected actual =
         argument_compatible expected actual
     | (TNullable expected | TOcaml_app ("option", [ expected ])), actual ->
         argument_compatible expected actual
+    | TFloat, TInt -> true
     | TOcaml "int", TInt | TInt, TOcaml "int" -> true
     | TFn ([ TUnit ], expected_return), TFn ([], actual_return)
     | TFn ([], expected_return), TFn ([ TUnit ], actual_return) ->
@@ -3337,7 +3338,9 @@ let adapt_every_special_arity env expected actual =
         | Not_every -> Semantic_ir.Bool false
       in
       let public_name =
-        match every_like with Every -> "every?" | Not_every -> "not-every?"
+        match every_like with
+        | Every -> "every" ^ "?"
+        | Not_every -> "not-every" ^ "?"
       in
       let predicate_name = "__lg_every_ignored_predicate" in
       let collection_name = "__lg_every_empty_collection" in
@@ -3432,6 +3435,15 @@ let rec adapt_value_to_type env expected actual =
           (Types.set_module_name actual_element))
   else if Types.equal expected (TOcaml "int") && Types.equal actual.ty TInt then
     Ok actual.semantic_expr
+  else if Types.equal expected TFloat && Types.equal actual.ty TInt then
+    Ok
+      (Semantic_ir.Apply
+         ( Semantic_ir.Ident
+             (match Env.target env with
+             | Target.Melange ->
+                 "Lg_runtime.Runtime_int_melange.to_float_unchecked"
+             | Target.Native | Target.Js_of_ocaml -> "float_of_int"),
+           [ actual.semantic_expr ] ))
   else if
     Types.equal expected (TOcaml "Lg_edn_backend.t")
     && (is_edn_value_type actual.ty || edn_compatible_static_type actual.ty)
@@ -4639,6 +4651,28 @@ let compile_equality scope env args =
       Protocol.type_satisfies env protocol value.ty
     in
     let sequence value = Collection_capability.to_seq_expr env value in
+    let rec value_compatible left_ty right_ty =
+      Types.same_shape left_ty right_ty
+      || map_record_compatible left_ty right_ty
+      || map_record_compatible right_ty left_ty
+      ||
+      match (left_ty, right_ty) with
+      | TSet left, TSet right ->
+          value_compatible left right
+          && Types.set_module_name left = Types.set_module_name right
+      | _ -> false
+    and map_record_compatible map_ty record_ty =
+      match
+        (Types.dynamic_map_types map_ty, Types.record_fields record_ty)
+      with
+      | Some (key_ty, value_ty), Some fields
+        when Types.equal key_ty TKeyword || Types.equal key_ty TString ->
+          List.for_all
+            (fun (field : field) ->
+              value_compatible value_ty field.ty)
+            fields
+      | _ -> false
+    in
     if
       satisfies Core_protocols.map_id left
       && satisfies Core_protocols.map_id right
@@ -4646,8 +4680,8 @@ let compile_equality scope env args =
       match (sequence left, sequence right) with
       | ( Ok (TTuple [ left_key; left_value ], left_entries),
           Ok (TTuple [ right_key; right_value ], right_entries) )
-        when Types.same_shape left_key right_key
-             && Types.same_shape left_value right_value ->
+        when value_compatible left_key right_key
+             && value_compatible left_value right_value ->
           let as_runtime_map value entries =
             match Types.dynamic_map_types value.ty with
             | Some (key_ty, value_ty)
@@ -4663,14 +4697,41 @@ let compile_equality scope env args =
                           [ entries ] );
                     ] )
           in
+          let value_equality =
+            match (left_value, right_value) with
+            | TSet left_element, TSet right_element
+              when value_compatible left_element right_element
+                   && Types.set_module_name left_element
+                      = Types.set_module_name right_element ->
+                Result.map
+                  (fun set_module ->
+                    Semantic_ir.Ident (set_module ^ ".equal"))
+                  (Types.set_module_name left_element)
+                |> Result.to_option
+            | _ -> None
+          in
+          let map_key = Option.is_some (Types.dynamic_map_types left_key) in
+          let operation, arguments =
+            match value_equality with
+            | Some value_equality ->
+                ( (if map_key then
+                     "Lg_runtime.Runtime_map.equiv_map_key_with"
+                   else "Lg_runtime.Runtime_map.equiv_with"),
+                  [ value_equality;
+                    as_runtime_map left left_entries;
+                    as_runtime_map right right_entries;
+                  ] )
+            | None ->
+                ( (if map_key then "Lg_runtime.Runtime_map.equiv_map_key"
+                   else "Lg_runtime.Runtime_map.equiv"),
+                  [ as_runtime_map left left_entries;
+                    as_runtime_map right right_entries;
+                  ] )
+          in
           Some
             (Ok
                (Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_map.equiv",
-                    [
-                      as_runtime_map left left_entries;
-                      as_runtime_map right right_entries;
-                    ] )))
+                  (Semantic_ir.Ident operation, arguments)))
       | Ok (TTuple [ _; _ ], _), Ok (TTuple [ _; _ ], _) ->
           Some
             (Ok
@@ -4687,7 +4748,23 @@ let compile_equality scope env args =
     then
       match (sequence left, sequence right) with
       | Ok (left_element, left_values), Ok (right_element, right_values)
-        when Types.same_shape left_element right_element ->
+        when value_compatible left_element right_element ->
+          let left_module = Types.set_module_name left_element in
+          let right_module = Types.set_module_name right_element in
+          let comparison_module =
+            match (left_module, right_module) with
+            | Ok left_module, Ok right_module
+              when String.equal left_module right_module ->
+                Ok left_module
+            | Ok "Lg_runtime.Runtime_poly_set", Ok right_module
+              when not (String.equal right_module "Lg_runtime.Runtime_poly_set") ->
+                Ok right_module
+            | Ok left_module, Ok "Lg_runtime.Runtime_poly_set"
+              when not (String.equal left_module "Lg_runtime.Runtime_poly_set") ->
+                Ok left_module
+            | Ok _, Ok _ -> Error.error "set equality storage mismatch"
+            | (Error _ as error), _ | _, (Error _ as error) -> error
+          in
           Some
             (Result.map
                (fun set_module ->
@@ -4699,7 +4776,27 @@ let compile_equality scope env args =
                  Semantic_ir.Apply
                    ( Semantic_ir.Ident (set_module ^ ".equal"),
                      [ of_sequence left_values; of_sequence right_values ] ))
-               (Types.set_module_name left_element))
+               comparison_module)
+      | Ok (left_element, left_values), Ok (right_element, right_values)
+        when (match left_element with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+             || (match right_element with TUnknown | TMeta _ | TVar _ -> true | _ -> false) ->
+          let concrete_element =
+            match left_element with
+            | TUnknown | TMeta _ | TVar _ -> right_element
+            | _ -> left_element
+          in
+          Some
+            (Result.map
+               (fun set_module ->
+                 let of_sequence values =
+                   Semantic_ir.Apply
+                     ( Semantic_ir.Ident (set_module ^ ".of_seq"),
+                       [ values ] )
+                 in
+                 Semantic_ir.Apply
+                   ( Semantic_ir.Ident (set_module ^ ".equal"),
+                     [ of_sequence left_values; of_sequence right_values ] ))
+               (Types.set_module_name concrete_element))
       | Ok _, Ok _ ->
           Some
             (Ok
@@ -7265,6 +7362,32 @@ let create ~compile_expr =
                   "satisfies? requires a statically typed receiver; define a \
                    closed sum type for alternative receiver types"
             | Some protocol_id, Ok receiver ->
+                let protocol_basename = Protocol.method_basename protocol_name in
+                let statically_satisfies ty =
+                  if
+                    protocol_basename = "ICounted"
+                    && Env.target env = Target.Melange
+                    && Types.equal ty TNil
+                  then true
+                  else if
+                    protocol_basename = "ICounted"
+                    &&
+                    match ty with
+                    | TString | TArray _ | TOcaml_app ("array", [ _ ]) -> true
+                    | _ -> false
+                  then false
+                  else if
+                    protocol_basename = "IVector"
+                    &&
+                    match ty with TTuple [ _; _ ] -> true | _ -> false
+                  then true
+                  else if
+                    protocol_basename = "IFind"
+                    &&
+                    match ty with TVector _ -> true | _ -> false
+                  then false
+                  else Protocol.type_satisfies env protocol_id ty
+                in
                 let expression =
                   if
                     Protocol_id.name protocol_id = "ISequential"
@@ -7284,11 +7407,59 @@ let create ~compile_expr =
                                       ("Some", Some Semantic_ir.PAny),
                                     Semantic_ir.Bool true );
                                 ] )
-                        | _ -> Semantic_ir.Bool false)
+                        | _ ->
+                            let packed_name = "__lg_sequential_predicate_value" in
+                            let packed = Semantic_ir.Ident packed_name in
+                            Semantic_ir.Let
+                              ( [
+                                  ( Semantic_ir.PVar packed_name,
+                                    receiver.semantic_expr );
+                                ],
+                                Semantic_ir.Match
+                                  ( Semantic_ir.Apply
+                                      (Semantic_ir.Ident "fst", [ packed ]),
+                                    [
+                                      ( Semantic_ir.PConstructor
+                                          ("None", None),
+                                        Semantic_ir.Bool false );
+                                      ( Semantic_ir.PConstructor
+                                          ("Some", Some Semantic_ir.PAny),
+                                        Semantic_ir.Bool true );
+                                    ] ) ))
                     | Some (`Required, _, _) ->
                         Semantic_ir.Sequence
                           [ receiver.semantic_expr; Semantic_ir.Bool true ]
                     | None -> assert false
+                  else if
+                    Protocol_id.name protocol_id = "ISequential"
+                    && Option.is_some (Types.next_seq_element receiver.ty)
+                  then
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "not",
+                        [
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_seq.is_empty",
+                              [ receiver.semantic_expr ] );
+                        ] )
+                  else if
+                    Protocol_id.name protocol_id = "ICollection"
+                    && Option.is_some (Types.next_seq_element receiver.ty)
+                  then
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "not",
+                        [
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident
+                                "Lg_runtime.Runtime_seq.is_empty",
+                              [ receiver.semantic_expr ] );
+                        ] )
+                  else if
+                    Protocol_id.name protocol_id = "ISequential"
+                    && is_sequential_type receiver.ty
+                  then
+                    Semantic_ir.Sequence
+                      [ receiver.semantic_expr; Semantic_ir.Bool true ]
                   else if has_protocol_constraint protocol_id receiver.ty then
                     match protocol_witness_expression protocol_id receiver with
                     | Some witness ->
@@ -7303,12 +7474,28 @@ let create ~compile_expr =
                             ] )
                     | None -> Semantic_ir.Bool false
                   else
-                    Semantic_ir.Sequence
-                      [
-                        receiver.semantic_expr;
-                        Semantic_ir.Bool
-                          (Protocol.type_satisfies env protocol_id receiver.ty);
-                      ]
+                    match receiver.ty with
+                    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                        Semantic_ir.Match
+                          ( receiver.semantic_expr,
+                            [
+                              ( Semantic_ir.PConstructor ("None", None),
+                                Semantic_ir.Bool false );
+                              ( Semantic_ir.PConstructor
+                                  ("Some", Some Semantic_ir.PAny),
+                                Semantic_ir.Bool (statically_satisfies inner) );
+                            ] )
+                    | TNil
+                      when protocol_basename = "ISet" ->
+                        Semantic_ir.Sequence
+                          [ receiver.semantic_expr; Semantic_ir.Bool false ]
+                    | _ ->
+                        Semantic_ir.Sequence
+                          [
+                            receiver.semantic_expr;
+                            Semantic_ir.Bool
+                              (statically_satisfies receiver.ty);
+                          ]
                 in
                 Ok (typed_ir TBool expression))
         | _ -> Error.error "satisfies? expects a protocol and value")
@@ -9565,7 +9752,7 @@ let create ~compile_expr =
               else args
             in
             if Result.is_ok (Core_int.expect_int_args operator args) then
-              Core_int.compile_operator operator args
+              Core_int.compile_operator ~target:(Env.target env) operator args
             else if Core_float.expect_float_args args then
               Core_float.compile_operator operator args
             else if
@@ -10380,12 +10567,17 @@ let create ~compile_expr =
               Types.equal value_ty TInt
               || Types.equal value_ty (TOcaml "int")
             then
-              Ok
-                (typed_ir value_ty
-                   (Semantic_ir.Infix
-                      ( "-",
-                        constrained_argument_value arg,
-                        Semantic_ir.Int 1 )))
+              let expression =
+                if Env.target env = Target.Melange then
+                  apply "Lg_runtime.Runtime_int_melange.subtract"
+                    [ constrained_argument_value arg; Semantic_ir.Int 1 ]
+                else
+                  Semantic_ir.Infix
+                    ( "-",
+                      constrained_argument_value arg,
+                      Semantic_ir.Int 1 )
+              in
+              Ok (typed_ir value_ty expression)
             else if Types.equal value_ty TFloat then
               Ok
                 (typed_ir TFloat
@@ -10543,7 +10735,8 @@ let create ~compile_expr =
     | "__lg_char-predicate" | "__lg_regex-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
-        | Ok args -> Core_predicate.compile name args)
+        | Ok args ->
+            Core_predicate.compile ~target:(Env.target env) name args)
     | ("__lg_zero-predicate" | "__lg_pos-predicate" | "__lg_neg-predicate")
       as predicate -> (
         let source_predicate =
@@ -10603,6 +10796,11 @@ let create ~compile_expr =
             match arg.ty with
             | TNil when Env.target env = Target.Melange ->
                 Ok (typed_ir TInt (Semantic_ir.Sequence [ arg.semantic_expr; Semantic_ir.Int 0 ]))
+            | TInt | TOcaml "int" when Env.target env = Target.Melange ->
+                Ok
+                  (typed_ir arg.ty
+                     (apply "Lg_runtime.Runtime_int_melange.abs_unchecked"
+                        [ arg.semantic_expr ]))
             | TInt | TOcaml "int" ->
                 Ok
                   (typed_ir arg.ty
@@ -11555,6 +11753,7 @@ let create ~compile_expr =
         | Error _ as err -> err
         | Ok args -> Core_sequence.compile env name args)
     | "__lg_some" -> compile_some scope env arg_forms
+    | "__lg_complement" -> compile_static_complement scope env arg_forms
     | "__lg_sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort-by" -> compile_sort_by scope env arg_forms
@@ -12092,7 +12291,7 @@ let create ~compile_expr =
   and compile_boolean_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
-    | Ok args -> Core_boolean.compile name args
+    | Ok args -> Core_boolean.compile ~target:(Env.target env) name args
   and compile_collection_call scope env name arg_forms =
     let argument_env =
       match (name, Env.expected_type env) with
@@ -13199,9 +13398,6 @@ let create ~compile_expr =
                 let is_core_not_every =
                   match function_form with
                   | FSymbol function_name -> (
-                      String.equal function_name "not-every?"
-                      || String.equal function_name "clojure.core/not-every?"
-                      ||
                       match lookup_binding scope env function_name with
                       | Ok binding ->
                           String.equal binding.ocaml_name
@@ -13468,13 +13664,6 @@ let create ~compile_expr =
                ^ string_of_int (List.length arg_forms) ^ "; expected "
                ^ string_of_int (List.length parameter_tys))
           | _ -> Error.error (name ^ " has an invalid multimethod binding")
-        else
-        if
-          String.equal name "complement"
-          || String.equal name "clojure.core/complement"
-          || String.equal fn.ocaml_name "clojure_core_complement_"
-        then
-          compile_static_complement scope env arg_forms
         else
         let contextual_parameter_tys =
           match fn.ty with
@@ -14972,9 +15161,13 @@ let create ~compile_expr =
                     raw_storage_param_tys param_tys
                 in
                 let storage_ret_template =
-                  Types.maybe_reduced_callback_element ret
-                  |> Option.value ~default:ret
-                  |> Type_solver.apply storage_substitutions
+                  let storage_ret =
+                    Types.maybe_reduced_callback_element ret
+                    |> Option.value ~default:ret
+                  in
+                  match storage_ret with
+                  | TSet (TUnknown | TMeta _ | TVar _) -> storage_ret
+                  | _ -> Type_solver.apply storage_substitutions storage_ret
                 in
                 let erased_callback_storage_call =
                   List.exists2

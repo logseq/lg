@@ -224,6 +224,24 @@ Promotion into `@test/clojure_suite/clojure-test-suite-smoke` adds OCaml
 typechecking and runtime execution. A namespace can therefore be `compiled-both`
 in `scan_report.json` but still be blocked from smoke promotion.
 
+The promotion runner is manifest-driven by
+`test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
+does not require editing Dune or a generated runner. A line contains either a
+namespace, or a namespace followed by the explicit `native` or `melange`
+target qualifier. The current manifest contains 56 namespaces. Native runs the
+51 applicable namespaces, while Melange runs 55 namespaces with 1,105
+assertions. Both targets pass with zero failures and zero errors. The four
+Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
+`integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
+Native's single OCaml float and int representations do not expose.
+
+The promoted predicate/collection batch also verifies option-valued map-entry
+keys, map entries as vectors, sequence protocol predicates, decimal versus
+float identity, Melange safe-integer predicates, and target-correct 32-bit hash
+mixing. Source-returned generic sets are converted at their call boundary to
+the concrete static set module, and map equality accepts a typed value-equality
+callback for map-of-set results; neither path stores dynamic values.
+
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
   helper that calls `(clone-test (int-array 3) ...)` and then
@@ -345,8 +363,8 @@ in `scan_report.json` but still be blocked from smoke promotion.
 ## Suggested repair order
 
 1. Re-run the compile scan and promote newly compiling namespaces to Dune smoke.
-2. Add a static-error test lane for upstream `thrown?` cases that LG rejects at
-   compile time by design.
+2. Keep upstream `thrown?` cases that LG rejects at compile time in the
+   generated audit only; they are not runtime repair work or Dune gates.
 3. Repair small source-portable API gaps that do not require broad type-system
    changes.
 4. Address regex, watches/ex-data, hierarchy/multimethod dynamic boundaries with

@@ -2628,11 +2628,24 @@
   ([n coll]
    (take-nth-seq n (seq coll))))
 
-(defn random-sample
-  ([probability]
-   (filter (fn [_] (< (rand) probability))))
-  ([probability coll]
-   (filter (fn [_] (< (rand) probability)) coll)))
+#?(:melange
+   (defn random-sample
+     ([^:option<float> probability]
+      (let [probability (match probability
+                          (Some value) value
+                          None 0.0)]
+        (filter (fn [_] (< (rand) probability)))))
+     ([^:option<float> probability coll]
+      (let [probability (match probability
+                          (Some value) value
+                          None 0.0)]
+        (filter (fn [_] (< (rand) probability)) coll))))
+   :default
+   (defn random-sample
+     ([^:float probability]
+      (filter (fn [_] (< (rand) probability))))
+     ([^:float probability coll]
+      (filter (fn [_] (< (rand) probability)) coll))))
 
 (defn filterv [pred coll]
   (__lg_reduce
@@ -2791,7 +2804,9 @@
      ([x] (cf x))
      ([x y] (f x y)))))
 
-(defn complement [f]
+(defn complement
+  {:inline (fn [f] (list '__lg_complement f))}
+  [f]
   (fn [x]
     (not (f x))))
 
@@ -3635,8 +3650,12 @@
 (defn bit-not [x]
   (bit-xor-two x -1))
 
+(defn- int32-value [value]
+  #?(:melange (runtime-int-melange/int32 value)
+     :default (runtime-int/int32 value)))
+
 (defn int-rotate-left [x n]
-  (runtime-int/int32
+  (int32-value
    (bit-or
     (runtime-int/shift-left-32 x n)
     (runtime-int/logical-shift-right-32 x (- n)))))
@@ -3646,38 +3665,38 @@
         al (bit-and a 0xffff)
         bh (bit-and (runtime-int/logical-shift-right-32 b 16) 0xffff)
         bl (bit-and b 0xffff)]
-    (runtime-int/int32
+    (int32-value
      (+ (* al bl)
         (runtime-int/logical-shift-right-32
          (runtime-int/shift-left-32 (+ (* ah bl) (* al bh)) 16)
          0)))))
 
 (def m3-seed 0)
-(def m3-C1 (runtime-int/int32 0xcc9e2d51))
-(def m3-C2 (runtime-int/int32 0x1b873593))
+(def m3-C1 (int32-value 0xcc9e2d51))
+(def m3-C2 (int32-value 0x1b873593))
 
 (defn m3-mix-K1 [k1]
-  (-> (runtime-int/int32 k1)
+  (-> (int32-value k1)
       (imul m3-C1)
       (int-rotate-left 15)
       (imul m3-C2)))
 
 (defn m3-mix-H1 [h1 k1]
-  (runtime-int/int32
-   (-> (runtime-int/int32 h1)
-       (bit-xor (runtime-int/int32 k1))
+  (int32-value
+   (-> (int32-value h1)
+       (bit-xor (int32-value k1))
        (int-rotate-left 13)
        (imul 5)
-       (+ (runtime-int/int32 0xe6546b64)))))
+       (+ (int32-value 0xe6546b64)))))
 
 (defn m3-fmix [h1 len]
-  (as-> (runtime-int/int32 h1) h1
+  (as-> (int32-value h1) h1
     (bit-xor h1 len)
     (bit-xor h1 (runtime-int/logical-shift-right-32 h1 16))
-    (imul h1 (runtime-int/int32 0x85ebca6b))
+    (imul h1 (int32-value 0x85ebca6b))
     (bit-xor h1 (runtime-int/logical-shift-right-32 h1 13))
-    (imul h1 (runtime-int/int32 0xc2b2ae35))
-    (runtime-int/int32
+    (imul h1 (int32-value 0xc2b2ae35))
+    (int32-value
      (bit-xor h1 (runtime-int/logical-shift-right-32 h1 16)))))
 
 (defn m3-hash-int [input]

@@ -4,7 +4,7 @@ set -eu
 root=$1
 
 for name in filter remove take drop take-while drop-while map-indexed keep keep-indexed mapcat cat halt-when transduce sequence repeatedly reduce reductions reduce-kv take-nth random-sample partition partition-all partitionv-all partition-by repeat cycle filterv dorun run! group-by sort sort-by; do
-  if ! grep -E "^\\(defn ${name}([[:space:]]|$)" \
+  if ! grep -E "^[[:space:]]*\\(defn ${name}([[:space:]]|$)" \
     "$root/stdlib/clojure/core.cljc" >/dev/null; then
     echo "clojure.core/$name is not source-defined" >&2
     exit 1

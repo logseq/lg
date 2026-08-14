@@ -91,9 +91,9 @@ let runtime_map_operation key_ty operation =
 
 let runtime_map_key_type declared actual =
   if Types.equal actual TNil then TNil
+  else if Types.equal declared TUnknown then actual
   else if
     Types.is_dynamic declared || Types.is_dynamic actual
-    || Types.equal declared TUnknown
   then
     Types.dynamic_constraint TUnknown
   else declared
