@@ -12377,7 +12377,12 @@ let create ~compile_expr =
         match arg_forms with
         | [ target_form; transducer_form; source_form ] ->
             compile_into scope env target_form
-              (FList [ FSymbol "sequence"; transducer_form; source_form ])
+              (FList
+                 [
+                   FSymbol "__lg_transformer_sequence";
+                   transducer_form;
+                   source_form;
+                 ])
         | [ target_form; source_form ] ->
             compile_into scope env target_form source_form
         | _ -> compile_sequence_transform_call scope env name arg_forms)
