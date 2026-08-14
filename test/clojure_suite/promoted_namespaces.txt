@@ -156,3 +156,9 @@ clojure.core-test.float
 # source domain; Melange runs the complete ClojureScript expectation set.
 clojure.core-test.neg-int-qmark melange
 clojure.core-test.parse-boolean
+
+# UUID and positive-integer predicates.
+clojure.core-test.uuid-qmark
+# Native cannot distinguish upstream bigint suffixes from its current int
+# source domain; Melange runs the complete ClojureScript expectation set.
+clojure.core-test.pos-int-qmark melange

@@ -204,9 +204,32 @@ let compile ~target name args =
           | ty -> overloaded_storage_predicate ty)
         args
   | "__lg_uuid-predicate" ->
-      compile_type_predicate name
-        (function TOcaml "Lg_runtime.Runtime_uuid.t" -> true | _ -> false)
-        args
+      (match one_arg name args with
+      | Error _ as error -> error
+      | Ok
+          ({
+             ty =
+               (TNullable (TOcaml "Lg_runtime.Runtime_uuid.t")
+               | TOcaml_app
+                   ( "option",
+                     [ TOcaml "Lg_runtime.Runtime_uuid.t" ] ));
+             semantic_expr;
+             _;
+           }) ->
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Apply
+                  (Semantic_ir.Ident "Option.is_some", [ semantic_expr ])))
+      | Ok arg ->
+          Ok
+            (typed_ir TBool
+               (Semantic_ir.Sequence
+                  [
+                    evaluated_argument arg;
+                    Semantic_ir.Bool
+                      (Types.equal arg.ty
+                         (TOcaml "Lg_runtime.Runtime_uuid.t"));
+                  ])))
   | "__lg_delay-predicate" ->
       compile_type_predicate name
         (function TOcaml_app ("Lazy.t", [ _ ]) -> true | _ -> false)

@@ -12721,8 +12721,10 @@ let test_source_uuid_wrapper_matches_clojurescript () =
 
 (def uuid-fn core/uuid)
 (def parsed (uuid-fn "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"))
+(def parsed-option (parse-uuid "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))
 
 (println (uuid? parsed))
+(println (uuid? parsed-option))
 (println (= "a0b1c2d3-e4f5-4678-9abc-def012345678" (str parsed)))
 |}
   in
@@ -12730,7 +12732,7 @@ let test_source_uuid_wrapper_matches_clojurescript () =
   if string_contains_substring native_consumer "Runtime_dynamic" then
     failwith "source UUID wrapper must remain statically typed";
   let native = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "source_uuid_wrapper" "true\ntrue\n" native;
+  assert_ocaml_runs "source_uuid_wrapper" "true\ntrue\ntrue\n" native;
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in

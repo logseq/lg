@@ -68,7 +68,7 @@ tagged-literal?	source	source-function-and-inline-specialization-use-an-optional
 trampoline	source	source-function-preserves-the-upstream-zero-arity-bounce-loop-through-an-explicit-trampoline-step-closed-sum-instead-of-runtime-fn-predicate-dispatch-while-the-upstream-variadic-arity-remains-covered-by-the-existing-typed-apply-abi
 to-array-2d	source	source-port-preserves-ragged-nested-seqable-conversion-through-static-inner-and-outer-sequence-witnesses
 unsafe-bit-and	source	source-function-exposes-the-static-integer-bitwise-and-result-while-javascript-zero-falsiness-remains-a-separate-host-boundary
-uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings
+uuid?	source	source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-recognizes-present-option-uuid-results-from-parse-uuid-and-distinguishes-ordinary-strings-without-dynamic-unpacking
 vec-lite	source	source-public-wrapper-preserves-cljs-seqable-to-vector-realization-through-the-existing-static-vec-boundary
 coercive-=	host-boundary	javascript-loose-equality-crosses-static-type-domains-and-has-no-portable-native-equivalent
 coercive-boolean	host-boundary	javascript-falsiness-for-zero-nan-empty-string-null-and-undefined-differs-from-clojure-truthiness

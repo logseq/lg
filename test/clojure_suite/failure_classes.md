@@ -228,14 +228,14 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 127 namespaces (127/183,
-69.4%). Native runs the 121 applicable namespaces, while Melange runs 126
-namespaces with 2,386 assertions. Both targets pass with zero failures and zero
-errors. The five
+target qualifier. The current manifest contains 129 namespaces (129/183,
+70.5%). Native runs the 122 applicable namespaces, while Melange runs 128
+namespaces with 2,448 assertions. Both targets pass with zero failures and zero
+errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
-`integer-qmark`, and `neg-int-qmark`) assert ClojureScript/JVM numeric identity
-distinctions that Native's current float, int, and bigint source domains do not
-expose.
+`integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
+ClojureScript/JVM numeric identity distinctions that Native's current float,
+int, and bigint source domains do not expose.
 
 The promoted predicate/collection batch also verifies option-valued map-entry
 keys, map entries as vectors, sequence protocol predicates, decimal versus
@@ -326,6 +326,16 @@ promotion because the upstream namespace requires a distinct `1N` reader and
 source domain; Native currently collapses that suffix into `int`, which would
 make the fixture's `neg-int? -1N` and `neg-int? -1` expectations contradictory.
 No dynamic boundary was added for that missing domain.
+
+The following predicate batch promotes `uuid?` on both targets and `pos-int?`
+on Melange. `uuid?` now recognizes the present branch of the statically typed
+`option<uuid>` returned by `parse-uuid`, while preserving false for a failed
+parse and for every non-UUID static type. `pos-int?` reuses the safe numeric
+guard narrowing fixed by the preceding batch; Native remains excluded because
+its current source reader does not distinguish `1N` from `1`. The attempted
+`every?`, `not-every?`, `ffirst`, `nfirst`, `pos?`, `neg?`, and `zero?` promoted
+copies were removed after their focused RED audit instead of retaining unused
+fixtures.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

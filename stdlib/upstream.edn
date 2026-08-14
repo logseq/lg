@@ -482,7 +482,7 @@
     integer? {:status :static-adaptation
               :reason :source-function-provides-a-first-class-integer-predicate-while-its-inline-definition-specializes-direct-calls-because-lg-separates-integral-and-floating-static-types}
     pos-int? {:status :static-adaptation
-              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-positive-branches-for-the-supported-lg-int-domain}
+              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-positive-branches-while-melange-runtime-confirmed-safe-float-and-decimal-values-narrow-through-the-existing-javascript-integer-representation-and-native-bigint-distinction-remains-an-explicit-reader-source-domain-blocker}
     neg-int? {:status :static-adaptation
               :reason :source-function-and-single-evaluation-inline-definition-preserve-the-integer-and-negative-branches-while-melange-runtime-confirmed-safe-float-and-decimal-values-narrow-through-the-existing-javascript-integer-representation-and-native-bigint-distinction-remains-an-explicit-reader-source-domain-blocker}
     nat-int? {:status :static-adaptation
@@ -870,7 +870,7 @@
     special-symbol? {:status :static-adaptation
                      :reason :static-symbol-input-preserves-upstream-special-form-set-membership}
     uuid? {:status :static-adaptation
-           :reason :source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-distinguishes-ordinary-strings}
+           :reason :source-public-function-matches-cljs-iuuid-predicate-with-a-first-class-nominal-uuid-signature-and-inline-static-specialization-that-recognizes-present-option-uuid-results-from-parse-uuid-and-distinguishes-ordinary-strings-without-dynamic-unpacking}
     any? {:status :ported}
     ratio? {:status :static-adaptation
             :reason :source-function-and-inline-definition-recognize-the-closed-runtime-ratio-representation-without-dynamic-number-boxing}

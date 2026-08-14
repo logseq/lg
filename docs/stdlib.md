@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 127 namespaces (127/183, 69.4%): Native executes 121
-applicable namespaces, and Melange executes 126 namespaces with 2,386
+currently contains 129 namespaces (129/183, 70.5%): Native executes 122
+applicable namespaces, and Melange executes 128 namespaces with 2,448
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -319,6 +319,13 @@ now receives the corresponding JavaScript integer representation instead of an
 unreachable placeholder. Native `neg-int?` and `bigint` promotion still require
 a distinct arbitrary-precision integer reader/source domain; that gap is kept
 explicit rather than represented dynamically.
+
+The next predicate batch adds `uuid?` on both targets and `pos-int?` on
+Melange. A successful `parse-uuid` remains `option<uuid>` at its public static
+boundary; the UUID predicate tests that option directly instead of rejecting
+the wrapper or unpacking it dynamically. Melange positive-integer checks reuse
+the safe float/decimal-to-JavaScript-integer guard projection. Native promotion
+continues to wait for a distinct bigint reader and source domain.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
