@@ -751,10 +751,11 @@
     odd? {:status :ported}
     every? {:status :static-adaptation
             :reason :uses-static-sequence-truthiness-and-indexed-access-after-the-upstream-nonempty-check-and-first-class-overload-adapters-preserve-empty-collection-behavior-for-non-callable-predicates-without-dynamic-erasure}
-    ffirst {:status :ported}
+    ffirst {:status :ported
+            :reason :source-composition-preserves-upstream-first-of-first-while-general-static-map-entry-tuple-seqability-supports-map-and-empty-map-inputs-without-name-based-dispatch}
     fnext {:status :ported}
     nfirst {:status :static-adaptation
-            :reason :source-composition-preserves-upstream-nil-on-exhaustion-through-the-private-typed-next-sequence-marker-without-option-allocations-or-dynamic-storage}
+            :reason :source-composition-preserves-upstream-next-of-first-and-nil-on-exhaustion-through-general-static-map-entry-tuple-seqability-and-the-private-typed-next-sequence-marker-without-option-allocations-or-dynamic-storage}
     nnext {:status :static-adaptation
            :reason :source-composition-preserves-upstream-nil-on-exhaustion-through-the-private-typed-next-sequence-marker-without-option-allocations-or-dynamic-storage}
     bit-clear {:status :static-adaptation

@@ -15083,7 +15083,12 @@ let create ~compile_expr =
                       Collection_capability.element_type_of_ty env actual )
                   with
                   | Some (_, expected_element, _), Some actual_element ->
-                      if callback_record_compatible env expected_element actual_element
+                      if
+                        Option.is_some
+                          (Types.seqable_constraint_info expected_element)
+                        && Collection_capability.accepts_seqable env actual_element
+                      then true
+                      else if callback_record_compatible env expected_element actual_element
                       then true
                       else if
                         known_scalar expected_element

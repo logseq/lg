@@ -29058,15 +29058,24 @@ let test_ffirst_is_first_class_and_empty_safe () =
 (println (= [(Some 1) (Some 2)] (mapv ffirst [[[1]] [[2]]])))
 (println (nil? (ffirst empty-nested)))
 (println (nil? (ffirst empty-inner)))
+(println (= :a (ffirst {:a :b})))
+(println (= '(:b) (nfirst {:a :b})))
+(println (nil? (ffirst {})))
+(println (nil? (nfirst {})))
 |}
   in
   let native_source =
     compile_with_stdlib Lg.Target.Native "test/ffirst_group_by.cljc" source
   in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "nested sequence access must remain statically typed";
   assert_ocaml_runs "ffirst_is_first_class_and_empty_safe"
-    "true\ntrue\ntrue\n" native_source;
-  ignore
-    (compile_with_stdlib Lg.Target.Melange "test/ffirst_group_by.cljc" source)
+    "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n" native_source;
+  let melange_source =
+    compile_with_stdlib Lg.Target.Melange "test/ffirst_group_by.cljc" source
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange nested sequence access must remain statically typed"
 
 let test_group_by_infers_generic_seqable_collections () =
   let source =

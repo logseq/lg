@@ -167,3 +167,7 @@ clojure.core-test.pos-int-qmark melange
 clojure.core-test.pos-qmark
 clojure.core-test.neg-qmark
 clojure.core-test.zero-qmark
+
+# Nested sequence access across maps, sets, strings, and sequences.
+clojure.core-test.ffirst
+clojure.core-test.nfirst

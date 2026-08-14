@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 132 namespaces (132/183,
-72.1%). Native runs the 125 applicable namespaces, while Melange runs 131
-namespaces with 2,515 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 134 namespaces (134/183,
+73.2%). Native runs the 127 applicable namespaces, while Melange runs 133
+namespaces with 2,540 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -346,6 +346,16 @@ false. Native bad-type runtime-exception assertions are omitted because LG
 rejects those calls statically; the positive-bigint identity assertion is also
 omitted on Native until bigint has a distinct reader/source domain. No numeric
 value is packed into `Runtime_dynamic`.
+
+The nested sequence batch promotes `ffirst` and `nfirst` on both targets.
+Runtime map entries now expose their two-field tuple as a static seqable value
+when key and value share a type, and expected nested-seqable constraints flow
+into map literal key/value elaboration, including empty maps. This preserves
+map, set, vector, list, range, and string traversal without name-based
+dispatch. The upstream bad-inner-type runtime-exception assertions remain
+static errors, and `(nfirst "")` is omitted because proving its `option<char>`
+is None requires a value-level empty-string type unavailable in the current
+type system.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

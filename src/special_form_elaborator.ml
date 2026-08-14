@@ -921,7 +921,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             in
             loop [ first_expr ] rest))
   and compile_map scope env pairs =
-    match Option.bind (Env.expected_type env) Types.dynamic_map_types with
+    let expected_map_types =
+      match Option.bind (Env.expected_type env) Types.dynamic_map_types with
+      | Some _ as map_types -> map_types
+      | None ->
+          Option.bind (Env.expected_type env) (fun expected ->
+              Option.bind (Types.seqable_constraint_info expected)
+                (fun (_, entry_ty, _) ->
+                  Option.map
+                    (fun value_ty -> (value_ty, value_ty))
+                    (Types.seqable_constraint_element entry_ty)))
+    in
+    match expected_map_types with
     | Some (key_ty, value_ty) ->
         let compile_entry (key_form, value_form) =
           Result.bind

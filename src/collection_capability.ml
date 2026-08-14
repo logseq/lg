@@ -258,6 +258,22 @@ let rec to_seq_expr env collection =
       Ok
         ( TTuple [ key_ty; value_ty ],
           apply "Lg_runtime.Runtime_map.to_seq" [ collection.semantic_expr ] )
+  | TTuple [ key_ty; value_ty ]
+    when Types.equal key_ty value_ty
+         || (match key_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+         || (match value_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
+    ->
+      let element_ty = Type_inference_core.refine_type key_ty value_ty in
+      Ok
+        ( element_ty,
+          apply "List.to_seq"
+            [
+              Semantic_ir.List
+                [
+                  apply "fst" [ collection.semantic_expr ];
+                  apply "snd" [ collection.semantic_expr ];
+                ];
+            ] )
   | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) -> (
       let value_name = "__lg_optional_seqable_value" in
       let value = typed_ir value_ty (Semantic_ir.Ident value_name) in

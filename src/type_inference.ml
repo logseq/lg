@@ -23,6 +23,10 @@ let static_sequential_element_type ty =
       Some element_ty
   | _ -> None
 
+let nested_seqable_map_entry_type ty =
+  Option.bind (Types.seqable_constraint_info ty)
+    (fun (_, entry_ty, _) -> Types.seqable_constraint_element entry_ty)
+
 let flatten_result_type collection_ty =
   match static_seqable_element_type collection_ty with
   | None -> TUnknown
@@ -1907,6 +1911,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           Result.bind
             (infer_expected (Types.dynamic_map key_ty value_ty) params target)
             (fun params -> infer_expected key_ty params key)
+    | FMap pairs
+      when Option.is_some (nested_seqable_map_entry_type expected_ty) ->
+        let entry_ty = Option.get (nested_seqable_map_entry_type expected_ty) in
+        pairs
+        |> List.fold_left
+             (fun result (key, value) ->
+               Result.bind result (fun params ->
+                   Result.bind (infer_expected entry_ty params key) (fun params ->
+                       infer_expected entry_ty params value)))
+             (Ok params)
     | FMap pairs when Option.is_some (Types.dynamic_map_types expected_ty) ->
         let key_ty, value_ty =
           Option.get (Types.dynamic_map_types expected_ty)

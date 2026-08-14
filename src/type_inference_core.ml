@@ -502,6 +502,7 @@ let is_edn_value_type = Edn_value_elaborator.is_value_type
 let edn_function_argument_compatible expected actual =
   let directly_seqable = function
     | TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TString -> true
+    | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) -> true
     | ty ->
         is_edn_value_type ty
         || Option.is_some (Types.seqable_constraint_info ty)

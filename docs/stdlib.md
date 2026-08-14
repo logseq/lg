@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 132 namespaces (132/183, 72.1%): Native executes 125
-applicable namespaces, and Melange executes 131 namespaces with 2,515
+currently contains 134 namespaces (134/183, 73.2%): Native executes 127
+applicable namespaces, and Melange executes 133 namespaces with 2,540
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -333,6 +333,13 @@ decimal, or ratio domain and compare against a same-domain zero. Melange also
 implements the upstream nil/boolean coercion explicitly. First-class use keeps
 the existing static integer contract, and direct polymorphic calls do not add
 dynamic numeric storage.
+
+The nested sequence batch adds `ffirst` and `nfirst` on both targets. Map-entry
+tuples participate in the general static seqable capability when their fields
+share an element type, and nested expected types refine map literals before
+code generation. Empty maps therefore preserve nil behavior while non-empty
+maps return the key or value tail through the ordinary source composition.
+No function-name dispatch or dynamic map-entry representation is involved.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
