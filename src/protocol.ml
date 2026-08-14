@@ -164,6 +164,12 @@ let receiver_id = function
 
 let registry_receiver_id = Receiver_id.of_type
 
+let protocol_receiver_id protocol_id receiver_ty =
+  match (Protocol_id.owner protocol_id, receiver_ty) with
+  | _ :: _, TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
+      Some Receiver_id.Seq_receiver
+  | _ -> registry_receiver_id receiver_ty
+
 let source_type_implicitly_satisfies protocol_id receiver_ty =
   match
     (Protocol_id.owner protocol_id, Protocol_id.name protocol_id, receiver_ty)
@@ -182,7 +188,7 @@ let type_satisfies env protocol_id receiver_ty =
   let satisfies registry =
     match
       ( Protocol_registry.find_protocol protocol_id registry,
-        registry_receiver_id receiver_ty )
+        protocol_receiver_id protocol_id receiver_ty )
     with
     | Some declaration, Some receiver_id ->
         if Protocol_registry.Method_map.is_empty declaration.methods then
@@ -280,7 +286,7 @@ let find_implementation_or_evidence env protocol_id method_id receiver_id =
 let witness_implementations env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
-      registry_receiver_id receiver_ty )
+      protocol_receiver_id protocol_id receiver_ty )
   with
   | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
       let implementations =
@@ -339,7 +345,7 @@ let infer_constraint_substitutions env substitutions constraint_ty receiver_ty =
 let witness_methods env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
-      registry_receiver_id receiver_ty )
+      protocol_receiver_id protocol_id receiver_ty )
   with
   | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
       let rec collect methods = function
@@ -366,7 +372,7 @@ let witness_methods env protocol_id receiver_ty =
 let witness_implemented_methods env protocol_id receiver_ty =
   match
     ( Protocol_registry.find_protocol protocol_id (Env.protocols env),
-      registry_receiver_id receiver_ty )
+      protocol_receiver_id protocol_id receiver_ty )
   with
   | Some (declaration : Protocol_registry.declaration), Some receiver_id ->
       let methods =
@@ -761,7 +767,7 @@ let lookup_protocol_marker ?(refine = true) scope env protocol_name method_name 
       | None -> None)
 
 let lookup_impl env protocol_id method_name receiver_ty =
-  match registry_receiver_id receiver_ty with
+  match protocol_receiver_id protocol_id receiver_ty with
   | Some receiver_id ->
       let receiver_id =
         match (Protocol_id.name protocol_id, receiver_ty) with

@@ -603,6 +603,12 @@ across incremental compilation. The runtime does not provide a generic named
 record payload or process-wide protocol, lookup, printer, or record-packer
 registry.
 
+For source-declared protocols, the nonempty `__lg_next_seq<T>` representation
+is the same static `:seq` receiver domain as `seq<T>`. Protocol satisfaction,
+witness construction, and direct implementation lookup must normalize both to
+the source `:seq` receiver. Compiler-owned protocols keep their explicit host
+receiver identities and are not changed by this source-protocol normalization.
+
 A protocol method whose result preserves its receiver type declares `:self`
 as its return annotation. The compiler substitutes the statically witnessed
 receiver type at each call; it must not merge concrete implementations into a
