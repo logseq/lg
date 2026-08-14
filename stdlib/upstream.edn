@@ -1239,7 +1239,7 @@
     dispatch-fn {:status :static-adaptation
                  :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
     double-array {:status :static-adaptation
-                  :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
+                  :reason :source-function-and-static-overload-interface-preserve-upstream-zero-filled-size-and-initializer-arities-while-one-argument-homogeneous-collection-inputs-retain-their-uncoerced-element-type}
     dt->et {:status :special-form
             :reason :clojurescript-macro-helper-that-rewrites-deftype-and-defrecord-protocol-implementation-forms}
     eduction {:status :static-adaptation
@@ -1265,7 +1265,7 @@
     get-validator {:status :static-adaptation
                    :reason :source-function-returns-the-typed-reference-validator-callback-option-without-dynamic-callback-storage}
     int-array {:status :static-adaptation
-               :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
+               :reason :source-function-and-static-overload-interface-preserve-upstream-zero-filled-size-and-initializer-arities-while-one-argument-homogeneous-collection-inputs-retain-their-uncoerced-element-type}
     is_proto_ {:status :host-boundary
                :reason :tests-javascript-constructor-prototype-object-identity}
     iter {:status :host-boundary
@@ -1285,7 +1285,7 @@
     load-file {:status :host-boundary
                :reason :node-only-bootstrap-hook-loads-and-evaluates-a-javascript-file}
     long-array {:status :static-adaptation
-                :reason :source-function-preserves-the-upstream-size-or-seqable-and-initial-value-or-seqable-arities-through-private-static-protocol-witnesses-with-zero-filled-native-array-storage}
+                :reason :source-function-and-static-overload-interface-preserve-upstream-zero-filled-size-and-initializer-arities-while-one-argument-homogeneous-collection-inputs-retain-their-uncoerced-element-type}
     methods {:status :static-adaptation
              :reason :source-macro-expands-symbol-call-site-introspection-to-the-documented-runtime-multifn-boundary}
     missing-protocol {:status :host-boundary

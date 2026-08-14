@@ -134,6 +134,14 @@
   :fn<int;seq<value>;array<option<value>>>)
 (signature clojure.core/object-array-from-sized-array [value]
   :fn<int;array<value>;array<option<value>>>)
+(signature clojure.core/int-array [value]
+  :overload<fn<int;array<int>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;int;array<int>>;fn<int;nil;array<int>>;fn<int;list<int>;array<int>>;fn<int;vector<int>;array<int>>;fn<int;seq<int>;array<int>>;fn<int;array<int>;array<int>>>)
+(signature clojure.core/long-array [value]
+  :overload<fn<int;array<int>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;int;array<int>>;fn<int;nil;array<int>>;fn<int;list<int>;array<int>>;fn<int;vector<int>;array<int>>;fn<int;seq<int>;array<int>>;fn<int;array<int>;array<int>>>)
+(signature clojure.core/double-array [value]
+  :overload<fn<int;array<float>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;float;array<float>>;fn<int;nil;array<float>>;fn<int;list<float>;array<float>>;fn<int;vector<float>;array<float>>;fn<int;seq<float>;array<float>>;fn<int;array<float>;array<float>>>)
+(signature clojure.core/float-array [value]
+  :overload<fn<int;array<float>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;float;array<float>>;fn<int;nil;array<float>>;fn<int;list<float>;array<float>>;fn<int;vector<float>;array<float>>;fn<int;seq<float>;array<float>>;fn<int;array<float>;array<float>>>)
 (signature clojure.core/object-array [value]
   :overload<fn<int;array<option<value>>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;list<value>;array<option<value>>>;fn<int;vector<value>;array<option<value>>>;fn<int;seq<value>;array<option<value>>>;fn<int;array<value>;array<option<value>>>;fn<int;nil;array<option<value>>>;fn<int;string;array<string>>;fn<int;keyword;array<keyword>>;fn<int;symbol;array<symbol>>;fn<int;int;array<int>>;fn<int;float;array<float>>;fn<int;bool;array<bool>>;fn<int;char;array<char>>>)
 (signature clojure.core/aget [value index]

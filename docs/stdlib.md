@@ -782,6 +782,10 @@ dynamic dispatch. The small generic runtime helper only performs bounded array
 filling. Because OCaml arrays cannot contain JavaScript's uninitialized holes,
 size-only numeric arrays use the corresponding Clojure zero value; shorter
 numeric sequence initializers leave the remaining cells at that same zero value.
+One-argument list, vector, sequence, and array inputs are not numerically
+coerced by ClojureScript. LG therefore gives each numeric constructor an
+explicit static overload interface: size calls retain numeric zero-filled
+storage, while collection calls preserve the homogeneous input element type.
 `object-array` uses nil for size-only allocation and for sequence padding, while
 scalar two-argument initialization fills the array with the scalar value.
 Sequence inputs retain their homogeneous static element type instead of being

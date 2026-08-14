@@ -510,13 +510,13 @@
 ;; witnesses. Numeric size-only arrays use the Clojure zero value because an
 ;; OCaml array cannot contain JavaScript's uninitialized holes.
 (defprotocol ^:private IIntArraySource
-  (-int-array-source [source] :array<int>))
+  (-int-array-source [source]))
 
 (defprotocol ^:private IIntArrayInitial
   (-int-array-initial [initial size] :array<int>))
 
 (defprotocol ^:private IDoubleArraySource
-  (-double-array-source [source] :array<float>))
+  (-double-array-source [source]))
 
 (defprotocol ^:private IDoubleArrayInitial
   (-double-array-initial [initial size] :array<float>))
@@ -556,7 +556,9 @@
   (-int-array-source [^:int size] (make-array size 0))
   IIntArrayInitial
   (-int-array-initial [^:int initial ^:int size]
-    (make-array size initial)))
+    (make-array size initial))
+  IDoubleArraySource
+  (-double-array-source [^:int size] (make-array size 0.0)))
 
 (extend-type :float
   IDoubleArrayInitial
