@@ -228,13 +228,14 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 122 namespaces (122/183,
-66.7%). Native runs the 117 applicable namespaces, while Melange runs 121
-namespaces with 2,274 assertions. Both targets pass with zero failures and zero
-errors. The four
-Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
-`integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
-Native's single OCaml float and int representations do not expose.
+target qualifier. The current manifest contains 127 namespaces (127/183,
+69.4%). Native runs the 121 applicable namespaces, while Melange runs 126
+namespaces with 2,386 assertions. Both targets pass with zero failures and zero
+errors. The five
+Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
+`integer-qmark`, and `neg-int-qmark`) assert ClojureScript/JVM numeric identity
+distinctions that Native's current float, int, and bigint source domains do not
+expose.
 
 The promoted predicate/collection batch also verifies option-valued map-entry
 keys, map entries as vectors, sequence protocol predicates, decimal versus
@@ -313,6 +314,18 @@ domain, ratio/float comparisons widen explicitly, and decimal ordering keeps
 its exact decimal representation. Melange preserves target-specific nil-as-zero
 comparison. Pairwise short-circuiting, NaN, infinities, mixed numeric types,
 unary identity, and variadic `apply` are covered without dynamic dispatch.
+
+The scalar coercion batch promotes `byte`, `char`, `float`, and `parse-boolean`
+on both targets, plus `neg-int?` on Melange. `byte` and `float` retain the
+ClojureScript identity-cast behavior on Native as well as Melange; mixed
+numeric assertions are partitioned by static domain rather than stored in a
+universal number value. Melange integer-guard narrowing now projects a
+runtime-confirmed safe float or decimal into its existing JavaScript integer
+representation before evaluating the guarded branch. `bigint` remains outside
+promotion because the upstream namespace requires a distinct `1N` reader and
+source domain; Native currently collapses that suffix into `int`, which would
+make the fixture's `neg-int? -1N` and `neg-int? -1` expectations contradictory.
+No dynamic boundary was added for that missing domain.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

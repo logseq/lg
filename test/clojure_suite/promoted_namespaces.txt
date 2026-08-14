@@ -147,3 +147,12 @@ clojure.core-test.gt
 clojure.core-test.gt-eq
 clojure.core-test.lt
 clojure.core-test.lt-eq
+
+# Scalar coercions and integer-sign predicate.
+clojure.core-test.byte
+clojure.core-test.char
+clojure.core-test.float
+# Native cannot distinguish upstream bigint suffixes from its current int
+# source domain; Melange runs the complete ClojureScript expectation set.
+clojure.core-test.neg-int-qmark melange
+clojure.core-test.parse-boolean

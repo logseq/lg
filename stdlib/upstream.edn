@@ -484,7 +484,7 @@
     pos-int? {:status :static-adaptation
               :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-positive-branches-for-the-supported-lg-int-domain}
     neg-int? {:status :static-adaptation
-              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-integer-and-negative-branches-for-the-supported-lg-int-domain}
+              :reason :source-function-and-single-evaluation-inline-definition-preserve-the-integer-and-negative-branches-while-melange-runtime-confirmed-safe-float-and-decimal-values-narrow-through-the-existing-javascript-integer-representation-and-native-bigint-distinction-remains-an-explicit-reader-source-domain-blocker}
     nat-int? {:status :static-adaptation
               :reason :source-function-and-single-evaluation-inline-definition-preserve-the-upstream-integer-and-not-negative-branches-for-the-supported-lg-int-domain}
     ident? {:status :static-adaptation

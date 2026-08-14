@@ -11404,6 +11404,24 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as error -> error
         | Ok [ value ] when Types.equal value.ty TInt -> Ok value
+        | Ok [ value ]
+          when Env.target env = Target.Melange
+               && Types.equal value.ty TFloat ->
+            Ok
+              (typed_ir TInt
+                 (apply "Lg_runtime.Runtime_int_melange.of_float_unchecked"
+                    [ value.semantic_expr ]))
+        | Ok [ value ]
+          when Env.target env = Target.Melange
+               && Types.equal value.ty
+                    (TOcaml "Lg_runtime.Runtime_decimal.t") ->
+            Ok
+              (typed_ir TInt
+                 (apply "Lg_runtime.Runtime_int_melange.of_float_unchecked"
+                    [
+                      apply "Lg_runtime.Runtime_decimal.to_float"
+                        [ value.semantic_expr ];
+                    ]))
         | Ok [ value ] when Types.is_dynamic value.ty ->
             Error.error
               "int? guard narrowing requires a statically typed value; define \
