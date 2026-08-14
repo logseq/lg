@@ -230,3 +230,8 @@ clojure.core-test.ifn-qmark
 
 # Higher-order default substitution with independent static argument types.
 clojure.core-test.fnil
+
+# Statically typed dynamic Var rebinding and bound function capture.
+clojure.core-test.binding
+clojure.core-test.bound-fn
+clojure.core-test.bound-fn-star

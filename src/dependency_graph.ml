@@ -327,6 +327,10 @@ let rec provided_names = function
       :: _) ->
       [ name ]
   | FList
+      (FSymbol ("defn" | "defn-") :: FSymbol "^:dynamic" :: FSymbol name
+      :: _) ->
+      [ name ]
+  | FList
       (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
     ->
       [ name ]

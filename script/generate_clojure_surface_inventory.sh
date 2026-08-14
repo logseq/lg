@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 243; then
-  echo "compiler call dispatch changed: expected 243 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 244; then
+  echo "compiler call dispatch changed: expected 244 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -130,6 +130,7 @@ awk '
     internal_abi["__lg_juxt"] = "typed-unary-direct-call-juxtaposition-specialization-primitive"
     internal_abi["__lg_comp"] = "typed-unary-direct-call-composition-specialization-primitive"
     internal_abi["__lg_fnil"] = "typed-default-substitution-function-specialization-primitive"
+    internal_abi["__lg_bound-fn"] = "typed-dynamic-var-binding-capture-and-function-wrapper-specialization-primitive"
     internal_abi["__lg_partial"] = "typed-fixed-argument-function-specialization-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"

@@ -12387,6 +12387,7 @@ let create ~compile_expr =
         | Ok args -> Core_sequence.compile env name args)
     | "__lg_some" -> compile_some scope env arg_forms
     | "__lg_complement" -> compile_static_complement scope env arg_forms
+    | "__lg_bound-fn" -> compile_bound_function scope env arg_forms
     | "__lg_constantly" -> (
         match compile_args () with
         | Ok [ result ] -> (
@@ -14058,6 +14059,108 @@ let create ~compile_expr =
       | form -> compile_expr scope env form
     in
     Result.bind compiled adapt_set_callable
+  and compile_bound_function scope env arg_forms =
+    match arg_forms with
+    | [ function_form ] ->
+        Result.bind (compile_function_arg scope env function_form) (fun fn ->
+            let dynamic_roots =
+              Env.filter_map
+                (fun _ binding ->
+                  match binding with
+                  | {
+                   ty = TRef _;
+                   ocaml_name;
+                   dynamically_bindable = true;
+                   _;
+                  } -> Some ocaml_name
+                  | _ -> None)
+                env
+              |> List.sort_uniq String.compare
+            in
+            let function_name = "__lg_bound_function" in
+            let captures =
+              List.mapi
+                (fun index root_name ->
+                  ( root_name,
+                    "__lg_bound_capture_" ^ string_of_int index ))
+                dynamic_roots
+            in
+            let restore_captures body =
+              List.fold_right
+                (fun (root_name, capture_name) body ->
+                  apply "Lg_runtime.Runtime_binding.with_capture"
+                    [
+                      Semantic_ir.Ident root_name;
+                      Semantic_ir.Ident capture_name;
+                      Semantic_ir.Fun ([], body);
+                    ])
+                captures body
+            in
+            let bindings =
+              (Semantic_ir.PVar function_name, fn.semantic_expr)
+              :: List.map
+                   (fun (root_name, capture_name) ->
+                     ( Semantic_ir.PVar capture_name,
+                       apply "Lg_runtime.Runtime_binding.capture"
+                         [ Semantic_ir.Ident root_name ] ))
+                   captures
+            in
+            let wrap_function target parameter_tys rest_param =
+              let parameter_names =
+                List.mapi
+                  (fun index _ ->
+                    "__lg_bound_argument_" ^ string_of_int index)
+                  parameter_tys
+              in
+              let rest_name = "__lg_bound_rest" in
+              let patterns =
+                List.map (fun name -> Semantic_ir.PVar name) parameter_names
+                @
+                match rest_param with
+                | None -> []
+                | Some _ -> [ Semantic_ir.PVar rest_name ]
+              in
+              let arguments =
+                List.map (fun name -> Semantic_ir.Ident name) parameter_names
+                @
+                match rest_param with
+                | None -> []
+                | Some _ -> [ Semantic_ir.Ident rest_name ]
+              in
+              Semantic_ir.Fun
+                (patterns, restore_captures (Semantic_ir.Apply (target, arguments)))
+            in
+            match fn.ty with
+            | TFn (parameter_tys, _return_ty) ->
+                Ok
+                  (typed_ir fn.ty
+                     (Semantic_ir.Let
+                        ( bindings,
+                          wrap_function (Semantic_ir.Ident function_name)
+                            parameter_tys None )))
+            | TOverloaded_fn arities ->
+                let functions =
+                  List.mapi
+                    (fun index arity ->
+                      wrap_function
+                        (overloaded_projection
+                           (Semantic_ir.Ident function_name)
+                           index)
+                        arity.fixed_params arity.rest_param)
+                    arities
+                in
+                let overloaded =
+                  List.fold_right
+                    (fun function_ rest ->
+                      Semantic_ir.Tuple [ function_; rest ])
+                    functions Semantic_ir.Unit
+                in
+                Ok
+                  (typed_ir fn.ty (Semantic_ir.Let (bindings, overloaded)))
+            | ty ->
+                Error.error
+                  ("bound-fn* expects a function, got " ^ Types.source_name ty))
+    | _ -> Error.error "bound-fn* expects 1 argument"
   and compile_static_complement scope env arg_forms =
     match arg_forms with
     | [ function_form ] ->
@@ -14389,6 +14492,13 @@ let create ~compile_expr =
         compile_inferred_ocaml_call scope env name arg_forms
     | Ok fn -> (
         let fn = Types.instantiate_binding fn in
+        let fn_value = binding_runtime_value fn in
+        let fn =
+          if fn.dynamically_bindable then
+            { fn with ty = fn_value.ty; overload_targets = [] }
+          else fn
+        in
+        let fn_expression = fn_value.semantic_expr in
         if fn.multimethod then
           match fn.ty with
           | TFn (parameter_tys, _) when List.length parameter_tys = List.length arg_forms -> (
@@ -14548,7 +14658,7 @@ let create ~compile_expr =
                      (Semantic_ir.Let
                         ( [
                             ( Semantic_ir.PVar result_name,
-                              Semantic_ir.Ident fn.ocaml_name );
+                              fn_expression );
                           ],
                           Semantic_ir.Sequence
                             (List.map
@@ -14569,7 +14679,7 @@ let create ~compile_expr =
                             ( Semantic_ir.Ident
                                 "Lg_runtime.Runtime_map.get_option",
                               [
-                                Semantic_ir.Ident fn.ocaml_name;
+                                fn_expression;
                                 key.semantic_expr;
                               ] )))
                 | _ -> assert false)
@@ -14577,11 +14687,11 @@ let create ~compile_expr =
                 Ok
                   (typed_ir TUnknown
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident fn.ocaml_name,
+                        ( fn_expression,
                           List.map (fun arg -> arg.semantic_expr) args )))
             | TOcaml_app
                 ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) -> (
-                let map = Semantic_ir.Ident fn.ocaml_name in
+                let map = fn_expression in
                 match args with
                 | [ key ]
                   when Types.assignable ~policy:Host_boundary ~expected:key_ty
@@ -15336,8 +15446,7 @@ let create ~compile_expr =
                                 with
                                 | Some target -> Semantic_ir.Ident target
                                 | None ->
-                                    overloaded_projection
-                                      (Semantic_ir.Ident fn.ocaml_name)
+                                    overloaded_projection fn_expression
                                       arity_index
                               in
                               let call =
@@ -16648,7 +16757,7 @@ let create ~compile_expr =
                         else ret
                 in
                 let call =
-                  Semantic_ir.Apply (Semantic_ir.Ident fn.ocaml_name, arg_exprs)
+                  Semantic_ir.Apply (fn_expression, arg_exprs)
                 in
                 let same_storage_representation =
                   match (storage_ret, ret) with
@@ -16748,8 +16857,8 @@ let create ~compile_expr =
                   if callable.callable_optional then
                     Semantic_ir.Apply
                       ( Semantic_ir.Ident "Option.get",
-                        [ Semantic_ir.Ident fn.ocaml_name ] )
-                  else Semantic_ir.Ident fn.ocaml_name
+                        [ fn_expression ] )
+                  else fn_expression
                 in
                 let receiver =
                   typed_ir (TNamed_record callable.callable_record)
@@ -16836,7 +16945,7 @@ let create ~compile_expr =
                               ( Semantic_ir.Ident (set_module ^ ".mem"),
                                 [
                                   argument;
-                                  Semantic_ir.Ident fn.ocaml_name;
+                                  fn_expression;
                                 ] )
                           in
                           Semantic_ir.If

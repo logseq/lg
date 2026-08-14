@@ -1262,12 +1262,39 @@ and compile_resolved scope env next_type form =
   let env =
     match form with
     | FList
+        (FSymbol ("defn" | "defn-") :: FSymbol "^:dynamic" :: FSymbol name
+        :: _) ->
+        Require.remove_source_core_macro_alias env scope name
+    | FList
         (FSymbol ("def" | "defonce" | "defn" | "defn-") :: FSymbol name :: _)
       ->
         Require.remove_source_core_macro_alias env scope name
     | _ -> env
   in
   match form with
+  | FList
+      (FSymbol ("defn" | "defn-")
+      :: FSymbol "^:dynamic"
+      :: (FSymbol name as name_form)
+      :: forms) ->
+      let forms =
+        match forms with
+        | FString _docstring :: rest -> rest
+        | rest -> rest
+      in
+      let forms =
+        match forms with
+        | FMap _attributes :: rest -> rest
+        | rest -> rest
+      in
+      compile scope env next_type
+        (FList
+           [
+             FSymbol "def";
+             FSymbol "^:dynamic";
+             name_form;
+             FList (FSymbol "fn" :: FSymbol name :: forms);
+           ])
   | FList
       [
         FSymbol "do";

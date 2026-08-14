@@ -262,6 +262,11 @@ module Lg_frontend : FRONTEND = struct
         (Ast.FSymbol (("defn" | "defn-") as head) :: forms)
       ->
         (match forms with
+        | Ast.FSymbol "^:dynamic" :: name :: rest ->
+            Ast.FList
+              (Ast.FSymbol head :: Ast.FSymbol "^:dynamic"
+              :: normalize_metadata name
+              :: normalize_metadata_sequence rest)
         | Ast.FSymbol annotation :: name :: rest
           when definition_type_hint annotation ->
             Ast.FList

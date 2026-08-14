@@ -230,9 +230,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 171 namespaces (171/185,
-92.4%). Native runs 164 applicable namespaces as 178 tests, while Melange runs
-170 namespaces as 184 tests with 2,972 assertions. Both targets pass with zero
+target qualifier. The current manifest contains 174 namespaces (174/185,
+94.1%). Native runs 167 applicable namespaces as 185 tests, while Melange runs
+173 namespaces as 191 tests with 2,998 assertions. Both targets pass with zero
 failures and zero errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -502,12 +502,14 @@ order without dynamic storage.
   This clears the previous `taps.cljc` missing refer blocker; `taps.cljc` now
   exposes real target blockers instead: Native Java interop
   `clojure.lang.IPending`, and Melange's typed `swap!` receiver requirement.
-- `clojure.core-test.portability/when-var-exists` now has LG-specific
-  compile-time gating for explicitly unsupported vars. This prevents suites for
-  unsupported APIs from failing merely because their skipped body contains
-  missing forms. The newly compiling namespaces `bound-fn`, `bound-fn-star`,
-  `denominator`, `intern`, `numerator`, and `rationalize` therefore indicate
-  correct suite gating, not implementation of those public APIs.
+- `clojure.core-test.portability/when-var-exists` has LG-specific compile-time
+  gating for explicitly unsupported vars. This prevents suites for unsupported
+  APIs from failing merely because their skipped body contains missing forms.
+  `denominator`, `intern`, `numerator`, and `rationalize` in that historical
+  batch therefore indicated correct suite gating rather than public API
+  implementation. `bound-fn` and `bound-fn*` are now independently promoted
+  with typed dynamic-Var capture fixtures on Native and Melange; upstream
+  `future` and cross-thread cases remain a separate host concurrency surface.
 - `clojure.core/=` and `clojure.core/not=` now support direct comparisons of
   disjoint static source types without dynamic packing. The upstream
   `eq.cljc` helper still fails because it passes equality as a first-class

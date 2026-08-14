@@ -248,13 +248,26 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 171 namespaces (171/185, 92.4%): Native executes 164
-applicable namespaces as 178 tests, and Melange executes 170 namespaces as 184
-tests with 2,972 assertions. Both are green. The
+currently contains 174 namespaces (174/185, 94.1%): Native executes 167
+applicable namespaces as 185 tests, and Melange executes 173 namespaces as 191
+tests with 2,998 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
 audit and are not treated as runtime failures or weakened into dynamic values.
+
+The promoted dynamic Var batch preserves `^:dynamic` metadata on both `defn`
+and `defn-`, stores a dynamic function as a typed `ref<fn<...>>`, and
+dereferences it through the ordinary runtime-value path when it appears in call
+position. `binding` remains a compiler-owned scope form because it installs and
+restores typed Var roots. Public `bound-fn*` is source-defined with an inline
+call to the private `__lg_bound-fn` typed primitive, while `bound-fn` is a
+source macro over it. The primitive enumerates statically known dynamic roots at
+the call site and captures each root in its own concrete option type; it uses
+neither `Runtime_dynamic.t`, a heterogeneous registry, nor universal
+pack/unpack. Unbound roots remain uncaptured and observe later call-site
+bindings, while active roots are restored around every call, including nested
+capture and exception restoration.
 
 The promoted `rest`, `next`, `nnext`, and `fnext` batch preserves map-entry
 tuple storage and nested vector storage while implementing Clojure sequential

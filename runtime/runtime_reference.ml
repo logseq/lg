@@ -12,12 +12,17 @@ and 'value t = {
   mutable watches : 'value watch list;
   mutable validator : 'value validator;
   mutable metadata : Lg_edn_backend.t option;
+  mutable binding_depth : int;
 }
 and 'value validator = ('value -> bool) option
 
-let of_value value = { value; watches = []; validator = None; metadata = None }
+let of_value value =
+  { value; watches = []; validator = None; metadata = None; binding_depth = 0 }
 
 let deref reference = reference.value
+let is_bound reference = reference.binding_depth > 0
+let enter_binding reference = reference.binding_depth <- reference.binding_depth + 1
+let leave_binding reference = reference.binding_depth <- reference.binding_depth - 1
 
 let metadata reference =
   Option.value reference.metadata ~default:Lg_edn_backend.Nil

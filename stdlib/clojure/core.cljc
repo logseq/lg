@@ -1706,6 +1706,9 @@
 
 (defmacro comment [& _body])
 
+(defmacro bound-fn [& function-tail]
+  `(bound-fn* (fn ~@function-tail)))
+
 (defmacro if-not
   ([test then]
    `(if ~test nil ~then))
@@ -2804,6 +2807,11 @@
 
 (defn identity [x]
   x)
+
+(defn bound-fn*
+  {:inline (fn [function] (list '__lg_bound-fn function))}
+  [function]
+  function)
 
 (defn completing
   ([f]
