@@ -14329,6 +14329,35 @@ let create ~compile_expr =
       | (TFn _ | TOverloaded_fn _), _
       | _, (TFn _ | TOverloaded_fn _) ->
           strict_function_argument_compatible expected actual
+      | TList expected, TList actual
+      | TVector expected, TVector actual
+      | TSet expected, TSet actual
+      | TSeq expected, TSeq actual
+      | TArray expected, TArray actual ->
+          Type_solver.is_open expected
+          || Type_solver.is_open actual
+          || argument_compatible expected actual
+      | TArray expected, TOcaml_app ("array", [ actual ])
+      | TOcaml_app ("array", [ expected ]), TArray actual ->
+          Type_solver.is_open expected
+          || Type_solver.is_open actual
+          || argument_compatible expected actual
+      | TSeq expected, TOcaml_app (name, [ actual ])
+      | TOcaml_app (name, [ expected ]), TSeq actual
+        when Types.is_next_seq_type_name name ->
+          Type_solver.is_open expected
+          || Type_solver.is_open actual
+          || argument_compatible expected actual
+      | TInt, TInt | TFloat, (TFloat | TInt) | TChar, TChar
+      | TString, TString | TBool, TBool | TKeyword, TKeyword
+      | TSymbol, TSymbol | TNil, TNil ->
+          true
+      | (TInt | TFloat | TChar | TString | TBool | TKeyword | TSymbol | TNil),
+        _ ->
+          false
+      | (TList _ | TVector _ | TSet _ | TSeq _ | TArray _), _
+      | TOcaml_app ("array", [ _ ]), _ ->
+          false
       | _ -> named_argument_compatible expected actual)
       ||
       (Option.is_some (Types.seqable_constraint_info expected)
@@ -14920,6 +14949,11 @@ let create ~compile_expr =
                                          env substitutions template
                                          (Types.constraint_value_type actual))
                                 | None ->
+                                match (template, actual) with
+                                | TSeq expected, TOcaml_app (name, [ actual ])
+                                  when Types.is_next_seq_type_name name ->
+                                    Type_solver.unify substitutions expected actual
+                                | _ ->
                                 match
                                   ( Option.map
                                       (fun (_, element_ty, _) -> element_ty)

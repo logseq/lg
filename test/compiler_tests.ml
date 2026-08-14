@@ -12873,8 +12873,10 @@ let test_source_object_array_matches_clojurescript () =
 |}
   in
   let native_consumer = compile_string_from_stdlib source |> expect_ok in
-  if string_contains_substring native_consumer "Runtime_dynamic" then
-    failwith "object-array must remain statically typed";
+  if
+    string_contains_substring native_consumer "Runtime_dynamic.t"
+    || string_contains_substring native_consumer "__lg_dynamic"
+  then failwith "object-array storage must remain statically typed";
   let native = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "source_object_array"
     "3:true:filled:true\ntrue\ntrue\ntrue\ntrue\n[7 8 nil nil]:true:true\n"
@@ -12882,8 +12884,10 @@ let test_source_object_array_matches_clojurescript () =
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
-  if string_contains_substring melange "Runtime_dynamic" then
-    failwith "Melange object-array must remain statically typed"
+  if
+    string_contains_substring melange "Runtime_dynamic.t"
+    || string_contains_substring melange "__lg_dynamic"
+  then failwith "Melange object-array storage must remain statically typed"
 
 let test_object_array_is_source_owned () =
   let core_source = read_file "stdlib/clojure/core.cljc" in

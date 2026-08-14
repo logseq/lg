@@ -1305,7 +1305,7 @@
     obj-map {:status :host-boundary
              :reason :constructs-the-clojurescript-lite-mode-javascript-object-backed-map}
     object-array {:status :static-adaptation
-                  :reason :source-port-preserves-upstream-size-seqable-fill-and-seq-padding-arities-through-a-typed-object-array-source-protocol}
+                  :reason :source-port-preserves-upstream-size-seqable-fill-and-seq-padding-arities-through-typed-source-protocols-and-an-explicit-static-overload-interface-with-size-only-elements-remaining-polymorphic-static-array-values-and-only-using-the-existing-printer-boundary-when-printed-before-the-element-type-is-constrained}
     persistent-array-map-seq {:status :typed-primitive
                               :reason :lg-array-map-is-a-source-wrapper-over-the-static-map-primitive-and-its-seq-is-provided-by-typed-map-entry-iteration-instead-of-clojurescript-alternating-array-storage}
     pr-seq-writer {:status :static-adaptation

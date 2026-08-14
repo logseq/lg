@@ -134,6 +134,8 @@
   :fn<int;seq<value>;array<option<value>>>)
 (signature clojure.core/object-array-from-sized-array [value]
   :fn<int;array<value>;array<option<value>>>)
+(signature clojure.core/object-array [value]
+  :overload<fn<int;array<option<value>>>;fn<list<value>;array<value>>;fn<vector<value>;array<value>>;fn<seq<value>;array<value>>;fn<array<value>;array<value>>;fn<int;list<value>;array<option<value>>>;fn<int;vector<value>;array<option<value>>>;fn<int;seq<value>;array<option<value>>>;fn<int;array<value>;array<option<value>>>;fn<int;nil;array<option<value>>>;fn<int;string;array<string>>;fn<int;keyword;array<keyword>>;fn<int;symbol;array<symbol>>;fn<int;int;array<int>>;fn<int;float;array<float>>;fn<int;bool;array<bool>>;fn<int;char;array<char>>>)
 (signature clojure.core/aget [value index]
   :fn<array<value>;array-index<index>;value>)
 (signature clojure.core/aset [value index]

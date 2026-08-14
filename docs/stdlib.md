@@ -786,6 +786,14 @@ numeric sequence initializers leave the remaining cells at that same zero value.
 scalar two-argument initialization fills the array with the scalar value.
 Sequence inputs retain their homogeneous static element type instead of being
 coerced, matching the pinned ClojureScript behavior.
+Its LG interface enumerates the supported source and initializer shapes so
+first-class, aliased, and qualified calls select the same typed protocol
+implementation. Overload selection compares collection and scalar shapes
+strictly before specializing element variables. A size-only array remains a
+static `array<option<T>>`; if `T` is still unconstrained when an element is
+printed, only the existing polymorphic printer implementation boundary is used.
+The array is never stored as `Runtime_dynamic.t` and no dynamic pack/unpack API
+is exposed.
 `ICloneable`, `-clone`, and `clone` are source-owned. The protocol's `:self`
 result keeps each receiver and clone in one static type. LG supplies fresh,
 equal list, vector, sequence, and hash-map implementations; the map clone shares
