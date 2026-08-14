@@ -24495,7 +24495,7 @@ let test_seqable_predicate_checks_closed_sum_values () =
 let test_batched_core_functions_reject_non_int_arguments () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_zero.cljc"
     {|(def x (zero? "0"))|}
-  |> expect_error "expected int arguments for zero?";
+  |> expect_error "expected numeric argument for zero?";
   compile_with_stdlib_result Lg.Target.Native "test/bad_inc.cljc"
     {|(def x (inc "0"))|}
   |> expect_error_contains "called with incompatible arguments";
@@ -25446,6 +25446,12 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
 (println (not (zero? 1)))
 (println (pos? 2.5))
 (println (neg? -2))
+(println (zero? 0.0M))
+(println (pos? 1.0M))
+(println (neg? -1.0M))
+(println (zero? 0/2))
+(println (pos? 1/2))
+(println (neg? -1/2))
 (println (char? \a))
 (println (not (char? "a")))
 (println (identical? shared shared))
@@ -25482,7 +25488,7 @@ let test_source_primitive_predicates_and_abs_match_clojurescript () =
 (println (= 10 @evaluations))
 |}
   in
-  let expected = String.concat "" (List.init 27 (fun _ -> "true\n")) in
+  let expected = String.concat "" (List.init 33 (fun _ -> "true\n")) in
   let native_source =
     compile_with_stdlib Lg.Target.Native
       "test/source_primitive_predicates.cljc" source

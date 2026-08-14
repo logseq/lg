@@ -390,11 +390,11 @@
     reduceable? {:status :static-adaptation
                  :reason :source-function-preserves-clojurescript-ireduce-satisfaction-through-the-canonical-static-reducible-protocol-with-built-in-map-and-collection-implementations}
     zero? {:status :static-adaptation
-           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-numeric-zero-predicate}
+           :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-decimal-ratio-and-clojurescript-melange-nil-or-boolean-calls-through-an-internal-closed-domain-numeric-zero-predicate}
     pos? {:status :static-adaptation
-          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-positive-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-decimal-ratio-and-clojurescript-melange-nil-or-boolean-calls-through-an-internal-closed-domain-positive-number-predicate}
     neg? {:status :static-adaptation
-          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-or-clojurescript-melange-nil-calls-through-an-internal-static-negative-number-predicate}
+          :reason :source-function-preserves-int-first-class-use-while-the-upstream-inline-macro-specializes-direct-int-float-decimal-ratio-and-clojurescript-melange-nil-or-boolean-calls-through-an-internal-closed-domain-negative-number-predicate}
     abs {:status :static-adaptation
          :reason :source-function-preserves-int-first-class-use-while-a-source-inline-macro-specializes-direct-int-or-float-calls-to-typed-primitives-and-preserves-positive-zero-nan-and-infinity-behavior}
     max {:status :static-adaptation

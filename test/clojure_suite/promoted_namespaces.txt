@@ -162,3 +162,8 @@ clojure.core-test.uuid-qmark
 # Native cannot distinguish upstream bigint suffixes from its current int
 # source domain; Melange runs the complete ClojureScript expectation set.
 clojure.core-test.pos-int-qmark melange
+
+# Numeric sign and zero predicates across closed numeric domains.
+clojure.core-test.pos-qmark
+clojure.core-test.neg-qmark
+clojure.core-test.zero-qmark

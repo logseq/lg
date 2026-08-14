@@ -5056,9 +5056,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               inferred_call_return_type ~lookup_function_ty params arg
           | ty -> ty
         in
-        infer_expected
-          (if Types.equal arg_ty (TOcaml "int") then TOcaml "int" else TInt)
-          params arg
+        (match arg_ty with
+        | TUnknown | TMeta _ | TVar _ -> infer_expected TInt params arg
+        | _ -> infer_form params arg)
     | FList [ FSymbol "__lg_abs"; arg ] ->
         let arg_ty =
           match inferred_form_type params arg with

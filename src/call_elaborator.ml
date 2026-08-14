@@ -11070,6 +11070,14 @@ let create ~compile_expr =
               (typed_ir TBool
                  (Semantic_ir.Sequence
                     [ arg.semantic_expr; Semantic_ir.Bool false ]))
+        | Ok [ arg ]
+          when Types.equal arg.ty TBool && Env.target env = Target.Melange ->
+            Ok
+              (typed_ir TBool
+                 (if predicate = "__lg_pos-predicate" then arg.semantic_expr
+                  else
+                    Semantic_ir.Sequence
+                      [ arg.semantic_expr; Semantic_ir.Bool false ]))
         | Ok [ arg ] ->
             let operator =
               match predicate with
@@ -11081,16 +11089,35 @@ let create ~compile_expr =
             let zero =
               match arg.ty with
               | TInt | TUnknown | TOcaml "int" ->
-                  Ok (Semantic_ir.Int 0)
-              | TFloat -> Ok (Semantic_ir.Float "0.0")
+                  Ok (arg.semantic_expr, Semantic_ir.Int 0)
+              | TFloat ->
+                  Ok (arg.semantic_expr, Semantic_ir.Float "0.0")
+              | TOcaml "Lg_runtime.Runtime_decimal.t" ->
+                  Ok
+                    ( apply "Lg_runtime.Runtime_decimal.compare"
+                        [
+                          arg.semantic_expr;
+                          apply "Lg_runtime.Runtime_decimal.of_int"
+                            [ Semantic_ir.Int 0 ];
+                        ],
+                      Semantic_ir.Int 0 )
+              | TOcaml "Lg_runtime.Runtime_ratio.t" ->
+                  Ok
+                    ( apply "Lg_runtime.Runtime_ratio.compare"
+                        [
+                          arg.semantic_expr;
+                          apply "Lg_runtime.Runtime_ratio.of_int"
+                            [ Semantic_ir.Int 0 ];
+                        ],
+                      Semantic_ir.Int 0 )
               | _ ->
                   Error.error
-                    ("expected int arguments for " ^ source_predicate)
+                    ("expected numeric argument for " ^ source_predicate)
             in
             Result.map
-              (fun zero ->
+              (fun (value, zero) ->
                 typed_ir TBool
-                  (Semantic_ir.Infix (operator, arg.semantic_expr, zero)))
+                  (Semantic_ir.Infix (operator, value, zero)))
               zero
         | Ok _ -> Error.error (source_predicate ^ " expects 1 arguments"))
     | "__lg_abs" -> (

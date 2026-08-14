@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 129 namespaces (129/183,
-70.5%). Native runs the 122 applicable namespaces, while Melange runs 128
-namespaces with 2,448 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 132 namespaces (132/183,
+72.1%). Native runs the 125 applicable namespaces, while Melange runs 131
+namespaces with 2,515 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -336,6 +336,16 @@ its current source reader does not distinguish `1N` from `1`. The attempted
 `every?`, `not-every?`, `ffirst`, `nfirst`, `pos?`, `neg?`, and `zero?` promoted
 copies were removed after their focused RED audit instead of retaining unused
 fixtures.
+
+The numeric predicate batch promotes `zero?`, `pos?`, and `neg?` on both
+targets. Direct calls preserve int and float behavior and now compare closed
+decimal and ratio values against their exact domain zero. Melange additionally
+preserves ClojureScript nil and boolean coercion: all three predicates are
+false for nil, `pos?` follows the boolean value, and `zero?`/`neg?` remain
+false. Native bad-type runtime-exception assertions are omitted because LG
+rejects those calls statically; the positive-bigint identity assertion is also
+omitted on Native until bigint has a distinct reader/source domain. No numeric
+value is packed into `Runtime_dynamic`.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
