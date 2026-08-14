@@ -248,8 +248,9 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 109 namespaces: Native executes 104 applicable namespaces,
-and Melange executes 108 namespaces with 1,889 assertions. Both are green. The
+currently contains 112 namespaces (112/183, 61.2%): Native executes 107
+applicable namespaces, and Melange executes 111 namespaces with 1,953
+assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -269,6 +270,20 @@ typed nil-aware results, three-argument `into` preserves its target collection
 type through transducer inference, `conj` infers appended values independently
 from the result collection expectation, and structural-map `find` coerces a
 closed lookup key to the map's declared key representation before lookup.
+
+The next higher-order and collection conversion batch promotes `set`, `some`,
+and `when-first`. Polymorphic unary callbacks now instantiate their return type
+from the collection element type, so `some identity` retains a closed EDN
+result. Closed EDN truthiness and boolean predicates distinguish only nil and
+false as falsey, and set equality converts otherwise incompatible but
+EDN-representable element shapes before comparison. This covers map and set
+predicates, nil-key maps, tuple map entries versus vector entries, and mixed
+closed EDN sequences without dynamic storage. The upstream `get-in` fixture
+remains outside promotion because an unselected `(range)` inside a heterogeneous
+nested map is eagerly realized while packing the map into closed EDN. The
+upstream `vec` fixture remains outside because ClojureScript aliases the source
+JavaScript array, while LG vectors use one persistent RRB representation on
+Native and Melange and therefore copy array contents.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the

@@ -126,3 +126,8 @@ clojure.core-test.distinct
 clojure.core-test.reverse
 clojure.core-test.conj
 clojure.core-test.rseq
+
+# Collection conversion, optional-map, and higher-order behavior batch.
+clojure.core-test.set
+clojure.core-test.some
+clojure.core-test.when-first

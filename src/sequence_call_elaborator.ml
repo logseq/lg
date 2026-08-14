@@ -144,6 +144,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
   let adapt_unary_function env actual_ty fn =
     match fn.ty with
     | TFn ([ expected_ty ], return_ty)
+      when Type_solver.is_open expected_ty ->
+        let return_ty =
+          Types.instantiate_type ~templates:[ expected_ty ] ~actuals:[ actual_ty ]
+            return_ty
+        in
+        Ok
+          (normalize_truthy_function
+             (typed_ir (TFn ([ actual_ty ], return_ty)) fn.semantic_expr))
+    | TFn ([ expected_ty ], return_ty)
       when Types.is_dynamic actual_ty && not (Types.is_dynamic expected_ty) ->
         let item_name = "__lg_erased_sequence_item" in
         Result.map
@@ -423,7 +432,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
   let adapt_optional_map_callable element_ty callable =
     match (optional_payload_type element_ty, Types.dynamic_map_types callable.ty) with
     | Some payload_ty, Some (key_ty, value_ty)
-      when Types.assignable ~policy:Host_boundary ~expected:key_ty
+      when Option.is_none (optional_payload_type key_ty)
+           && Types.assignable ~policy:Host_boundary ~expected:key_ty
              ~actual:payload_ty ->
         let callable_name = "__lg_optional_map_callable" in
         let item_name = "__lg_optional_map_item" in
@@ -507,6 +517,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         :: body_forms) ->
         compile_contextual_fn scope env ~name
           ~param_type_overrides:[ Some element_ty ] params body_forms
+    | FList (FSymbol "__lg_hash-set" :: _) as form ->
+        Result.bind
+          (compile_expr scope
+             (Env.with_expected_type (Some (TSet element_ty)) env)
+             form)
+          adapt_set_callable
     | FSymbol name -> (
         let compile_deferred_call () =
           let item_name = "__lg_protocol_function_item" in
@@ -533,7 +549,11 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         | Ok _
           when has_source_name name "zero?"
                || has_source_name name "pos?"
-               || has_source_name name "neg?" ->
+               || has_source_name name "neg?"
+               || has_source_name name "nil?"
+               || has_source_name name "true?"
+               || has_source_name name "false?"
+               || has_source_name name "not" ->
             compile_deferred_call ()
         | Ok { ty = TOverloaded_fn arities; _ }
           when List.exists

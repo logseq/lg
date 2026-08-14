@@ -123,6 +123,14 @@ let bool_value = function
 
 let is_nil = function Lg_edn_backend.Nil -> true | _ -> false
 
+let rec truthy = function
+  | Lg_edn_backend.Nil | Lg_edn_backend.Bool false -> false
+  | Lg_edn_backend.Json_source source -> truthy (Lg_edn_backend.of_json_string source)
+  | _ -> true
+
+let is_true = function Lg_edn_backend.Bool true -> true | _ -> false
+let is_false = function Lg_edn_backend.Bool false -> true | _ -> false
+
 let sequence_values = function
   | Lg_edn_backend.List values | Lg_edn_backend.Vector values -> Some values
   | Lg_edn_backend.Int4_vector (first, second, third, fourth) ->
@@ -195,6 +203,12 @@ let rec equal left right =
           Array.length left = Array.length right
           && Array.for_all2 equal left right
       | _ -> false)
+
+let equal_sets left right =
+  let left = Array.of_seq left in
+  let right = Array.of_seq right in
+  Array.length left = Array.length right
+  && Array.for_all (fun value -> Array.exists (equal value) right) left
 
 let rec contains collection key =
   let open Lg_edn_backend in

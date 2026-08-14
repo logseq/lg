@@ -31,6 +31,12 @@ let compile_bool_literal_predicate name args expected =
                 (if expected then "Lg_runtime.Runtime_dynamic.is_true"
                  else "Lg_runtime.Runtime_dynamic.is_false"),
               [ arg.semantic_expr ] )
+        else if Edn_value_elaborator.is_value_type arg.ty then
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident
+                (if expected then "Lg_runtime.Runtime_edn.is_true"
+                 else "Lg_runtime.Runtime_edn.is_false"),
+              [ arg.semantic_expr ] )
         else if Types.equal arg.ty TBool then
           Semantic_ir.Infix ("=", arg.semantic_expr, Semantic_ir.Bool expected)
         else

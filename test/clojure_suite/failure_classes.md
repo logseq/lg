@@ -228,8 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 109 namespaces. Native runs the
-104 applicable namespaces, while Melange runs 108 namespaces with 1,889
+target qualifier. The current manifest contains 112 namespaces (112/183,
+61.2%). Native runs the 107 applicable namespaces, while Melange runs 111
+namespaces with 1,953
 assertions. Both targets pass with zero failures and zero errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -271,6 +272,17 @@ discarded infinite sequence inside a heterogeneous vector does not terminate.
 item metadata order still disagree with upstream. The `disj`, `sort`,
 `take-while`, and `zipmap` whole-file fixtures reuse incompatible concrete
 domains and remain audited static errors rather than dynamicized tests.
+
+The following higher-order batch promotes `set`, `some`, and `when-first` on
+both targets. Unary polymorphic callback instantiation preserves `identity`'s
+element/result relationship, closed EDN truthiness preserves nil/false
+semantics, and cross-representation set equality compares tuple map entries
+with vector entries through a closed EDN conversion. `get-in` remains outside
+because its upstream fixture embeds an unselected infinite `(range)` inside a
+heterogeneous nested map; eager closed EDN packing does not terminate. `vec`
+remains outside because the ClojureScript fixture requires a vector to alias a
+mutable JavaScript array, while LG's Native/Melange RRB vector representation
+copies array contents.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

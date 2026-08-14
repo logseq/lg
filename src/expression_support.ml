@@ -35,6 +35,9 @@ let adapt_set_callable callable =
 
 let rec truthiness_expression ?(constrained_identifier = true) ty expression =
   match ty with
+  | ty when Edn_value_elaborator.is_value_type ty ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "Lg_runtime.Runtime_edn.truthy", [ expression ])
   | ty when Types.is_dynamic ty ->
       Semantic_ir.Apply
         (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy", [ expression ])
@@ -102,6 +105,7 @@ let rec truthiness_expression ?(constrained_identifier = true) ty expression =
 let truthiness_needs_value ty =
   Types.is_dynamic ty
   || Option.is_some (Types.truthy_constraint_info ty)
+  || Edn_value_elaborator.is_value_type ty
   ||
   match ty with
   | TBool | TNullable _ | TOcaml_app ("option", [ _ ]) | TOcaml "option"

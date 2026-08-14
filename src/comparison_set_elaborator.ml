@@ -185,8 +185,18 @@ let create ~compile_expr =
               Ok
                 (typed_ir (TSet TUnknown)
                    (Semantic_ir.Ident "Lg_runtime.Runtime_poly_set.empty")))
-      | _ :: _ -> (
-          match compile_args_for scope env arg_forms with
+      | _ :: _ ->
+          let expected_element =
+            match Compiler_environment.expected_type env with
+            | Some (TSet element_ty) when not (Type_solver.is_open element_ty) ->
+                Some element_ty
+            | Some _ | None -> None
+          in
+          (match
+             compile_args_for scope
+               (Compiler_environment.with_expected_type None env)
+               arg_forms
+           with
           | Error _ as err -> err
           | Ok [] -> Error.error "hash-set expects elements"
           | Ok exprs ->
@@ -211,26 +221,36 @@ let create ~compile_expr =
                   (fun value ->
                     pack_edn_expression value.ty value.semantic_expr)
               in
-              (match merge_collection_value_types "set" exprs with
-              | Ok element_ty ->
+              match expected_element with
+              | Some element_ty ->
                   compile_values element_ty (fun value ->
-                      if Types.equal element_ty value.ty then
-                        Ok value.semantic_expr
+                      if Edn_value_elaborator.is_value_type element_ty then
+                        pack_edn_expression value.ty value.semantic_expr
                       else
-                        match element_ty with
-                        | TNullable _
-                        | TOcaml_app ("option", [ _ ]) ->
-                            Ok
-                              (coerce_expression_to_type element_ty value.ty
-                                 value.semantic_expr)
-                        | _ -> coerce_set_element element_ty value)
-              | Error _ as error ->
-                  if
-                    List.for_all
-                      (fun value -> edn_packable_static_type value.ty)
-                      exprs
-                  then compile_edn_set ()
-                  else error))
+                        Ok
+                          (coerce_expression_to_type element_ty value.ty
+                             value.semantic_expr))
+              | None -> (
+                  match merge_collection_value_types "set" exprs with
+                  | Ok element_ty ->
+                      compile_values element_ty (fun value ->
+                          if Types.equal element_ty value.ty then
+                            Ok value.semantic_expr
+                          else
+                            match element_ty with
+                            | TNullable _
+                            | TOcaml_app ("option", [ _ ]) ->
+                                Ok
+                                  (coerce_expression_to_type element_ty value.ty
+                                     value.semantic_expr)
+                            | _ -> coerce_set_element element_ty value)
+                  | Error _ as error ->
+                      if
+                        List.for_all
+                          (fun value -> edn_packable_static_type value.ty)
+                          exprs
+                      then compile_edn_set ()
+                      else error))
     and compile_set_of env arg_forms =
       match arg_forms with
       | [ FKeyword keyword ] -> (

@@ -4600,6 +4600,11 @@ let compile_equality scope env args =
           sequential_value inner
       | ty -> Option.is_some (Types.next_seq_element ty)
     in
+    let edn_value_or_optional = function
+      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+          is_edn_value_type inner
+      | ty -> is_edn_value_type ty
+    in
     let tuple_sequential_pair () =
       match
         ( pack_metadata_value left,
@@ -4611,16 +4616,6 @@ let compile_equality scope env args =
                (Semantic_ir.Apply
                   (Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal", [ left; right ])))
       | Error _, _ | _, Error _ -> fallback ()
-    in
-    let metadata_pair metadata other =
-      match pack_metadata_value other with
-      | Error _ -> fallback ()
-      | Ok other ->
-          Ok
-            (typed_ir TBool
-               (Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal",
-                    [ metadata.semantic_expr; other ] )))
     in
     let dynamic_pair dynamic other =
       match pack_dynamic_value env dynamic.ty other with
@@ -4674,18 +4669,8 @@ let compile_equality scope env args =
       then tuple_sequential_pair ()
       else if sequential_value left.ty && sequential_value right.ty
       then tuple_sequential_pair ()
-      else if
-        is_edn_value_type left.ty && is_edn_value_type right.ty
-      then
-        Ok
-          (typed_ir TBool
-             (Semantic_ir.Apply
-                ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal",
-                  [ left.semantic_expr; right.semantic_expr ] )))
-      else if is_edn_value_type left.ty && not (is_edn_value_type right.ty)
-      then metadata_pair left right
-      else if is_edn_value_type right.ty && not (is_edn_value_type left.ty)
-      then metadata_pair right left
+      else if edn_value_or_optional left.ty || edn_value_or_optional right.ty
+      then tuple_sequential_pair ()
       else if Types.is_dynamic left.ty && not (Types.is_dynamic right.ty) then
         dynamic_pair left right
       else if Types.is_dynamic right.ty && not (Types.is_dynamic left.ty) then
@@ -4795,6 +4780,27 @@ let compile_equality scope env args =
       && satisfies Core_protocols.set_id right
     then
       match (sequence left, sequence right) with
+      | Ok (left_element, left_values), Ok (right_element, right_values)
+        when (not (value_compatible left_element right_element))
+             && Edn_value_elaborator.is_packable left_element
+             && Edn_value_elaborator.is_packable right_element -> (
+          match
+            ( Edn_value_elaborator.mapper left_element,
+              Edn_value_elaborator.mapper right_element )
+          with
+          | Ok left_mapper, Ok right_mapper ->
+              Some
+                (Ok
+                   (Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_edn.equal_sets",
+                        [ Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Seq.map",
+                              [ left_mapper; left_values ] );
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Seq.map",
+                              [ right_mapper; right_values ] );
+                        ] )))
+          | Error _, _ | _, Error _ -> None)
       | Ok (left_element, left_values), Ok (right_element, right_values)
         when value_compatible left_element right_element ->
           let left_module = Types.set_module_name left_element in
