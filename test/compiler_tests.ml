@@ -33875,6 +33875,25 @@ let test_decimal_arithmetic_and_ordering_remain_exact () =
     (compile_with_stdlib Lg.Target.Melange "test/decimal_arithmetic.cljc"
        source)
 
+let test_ratio_ordering_promotes_closed_numeric_domains () =
+  let source =
+    {|
+(println (> 1/2 1/16))
+(println (< 1/16 0.5))
+(println (>= -1/16 -1/2))
+(println (<= -0.5 -1/16))
+|}
+  in
+  let native_source =
+    compile_with_stdlib_result Lg.Target.Native "test/ratio_ordering.cljc"
+      source
+    |> expect_ok
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "ratio ordering must remain in closed static numeric domains";
+  assert_ocaml_runs "ratio_ordering_promotes_closed_numeric_domains"
+    "true\ntrue\ntrue\ntrue\n" native_source
+
 let test_when_first_without_body_returns_nil () =
   let source =
     {|
@@ -50318,6 +50337,8 @@ let tests =
       test_with_precision_preserves_decimal_rounding_semantics );
     ( "decimal arithmetic and ordering remain exact",
       test_decimal_arithmetic_and_ordering_remain_exact );
+    ( "ratio ordering promotes closed numeric domains",
+      test_ratio_ordering_promotes_closed_numeric_domains );
     ( "when-first without body returns nil",
       test_when_first_without_body_returns_nil );
     ( "source cljs.test are accepts syntax-quoted constants",

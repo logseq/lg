@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 118 namespaces (118/183,
-64.5%). Native runs the 113 applicable namespaces, while Melange runs 117
-namespaces with 2,051 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 122 namespaces (122/183,
+66.7%). Native runs the 117 applicable namespaces, while Melange runs 121
+namespaces with 2,274 assertions. Both targets pass with zero failures and zero
 errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -306,6 +306,13 @@ and retain the selected original value as `option<int>` or `option<float>`, so
 nil identity is not silently replaced by numeric zero. The fixtures cover NaN,
 infinities, variadic order, and single-argument non-number identity without
 dynamic values.
+
+The following numeric ordering batch promotes `<`, `<=`, `>`, and `>=` on both
+targets. Native ratio/integer comparisons remain exact in the closed ratio
+domain, ratio/float comparisons widen explicitly, and decimal ordering keeps
+its exact decimal representation. Melange preserves target-specific nil-as-zero
+comparison. Pairwise short-circuiting, NaN, infinities, mixed numeric types,
+unary identity, and variadic `apply` are covered without dynamic dispatch.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

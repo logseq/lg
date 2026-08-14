@@ -141,3 +141,9 @@ clojure.core-test.interleave
 # Variadic numeric extrema.
 clojure.core-test.max
 clojure.core-test.min
+
+# Numeric ordering across exact, floating, and target-specific nil values.
+clojure.core-test.gt
+clojure.core-test.gt-eq
+clojure.core-test.lt
+clojure.core-test.lt-eq

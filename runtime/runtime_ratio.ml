@@ -51,6 +51,7 @@ let to_string value =
   else string_of_int value.numerator ^ "/" ^ string_of_int value.denominator
 
 let to_int value = value.numerator / value.denominator
+let to_float value = float_of_int value.numerator /. float_of_int value.denominator
 
 let equal left right =
   left.numerator = right.numerator && left.denominator = right.denominator

@@ -10503,6 +10503,23 @@ let create ~compile_expr =
           | "__lg_greater-equal" -> ">="
           | _ -> assert false
         in
+        let compile_pairwise_ordering build args =
+          let rec comparisons = function
+            | left :: ((right :: _) as rest) ->
+                build left right :: comparisons rest
+            | [] | [ _ ] -> []
+          in
+          let expression =
+            match comparisons args with
+            | [] -> Semantic_ir.Bool true
+            | first :: rest ->
+                List.fold_left
+                  (fun result comparison ->
+                    Semantic_ir.Infix ("&&", result, comparison))
+                  first rest
+          in
+          Ok (typed_ir TBool expression)
+        in
         if arg_forms = [] then
           Error.error (operator ^ " expects at least 1 arguments")
         else
@@ -10515,6 +10532,69 @@ let create ~compile_expr =
                  && List.exists (fun arg -> Types.is_dynamic arg.ty) args ->
               Error.error
                 (operator ^ " expects statically typed numeric arguments")
+          | Ok args
+            when operator <> "="
+                 && List.exists
+                      (fun arg ->
+                        Types.equal arg.ty
+                          (TOcaml "Lg_runtime.Runtime_ratio.t"))
+                      args
+                 && List.exists (fun arg -> Types.equal arg.ty TFloat) args
+                 && List.for_all
+                      (fun arg ->
+                        Types.equal arg.ty
+                          (TOcaml "Lg_runtime.Runtime_ratio.t")
+                        || Types.equal arg.ty TInt
+                        || Types.equal arg.ty (TOcaml "int")
+                        || Types.equal arg.ty TFloat)
+                      args ->
+              let as_float arg =
+                if
+                  Types.equal arg.ty
+                    (TOcaml "Lg_runtime.Runtime_ratio.t")
+                then
+                  apply "Lg_runtime.Runtime_ratio.to_float"
+                    [ arg.semantic_expr ]
+                else if Types.equal arg.ty TFloat then arg.semantic_expr
+                else
+                  apply "float_of_int" [ arg.semantic_expr ]
+              in
+              compile_pairwise_ordering
+                (fun left right ->
+                  Semantic_ir.Infix
+                    (operator, as_float left, as_float right))
+                args
+          | Ok args
+            when operator <> "="
+                 && List.exists
+                      (fun arg ->
+                        Types.equal arg.ty
+                          (TOcaml "Lg_runtime.Runtime_ratio.t"))
+                      args
+                 && List.for_all
+                      (fun arg ->
+                        Types.equal arg.ty
+                          (TOcaml "Lg_runtime.Runtime_ratio.t")
+                        || Types.equal arg.ty TInt
+                        || Types.equal arg.ty (TOcaml "int"))
+                      args ->
+              let as_ratio arg =
+                if
+                  Types.equal arg.ty
+                    (TOcaml "Lg_runtime.Runtime_ratio.t")
+                then arg.semantic_expr
+                else
+                  apply "Lg_runtime.Runtime_ratio.of_int"
+                    [ arg.semantic_expr ]
+              in
+              compile_pairwise_ordering
+                (fun left right ->
+                  Semantic_ir.Infix
+                    ( operator,
+                      apply "Lg_runtime.Runtime_ratio.compare"
+                        [ as_ratio left; as_ratio right ],
+                      Semantic_ir.Int 0 ))
+                args
           | Ok args
             when operator <> "="
                  && List.exists

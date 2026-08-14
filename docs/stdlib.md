@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 118 namespaces (118/183, 64.5%): Native executes 113
-applicable namespaces, and Melange executes 117 namespaces with 2,051
+currently contains 122 namespaces (122/183, 66.7%): Native executes 117
+applicable namespaces, and Melange executes 121 namespaces with 2,274
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -301,6 +301,14 @@ nil/numeric calls compare nil as JavaScript zero while returning an optional
 original argument, preserving whether nil or the number won the comparison.
 NaN propagation, infinities, single-argument identity, later-tie selection,
 and variadic left-to-right reduction remain covered without dynamic values.
+
+The promoted numeric ordering batch adds `<`, `<=`, `>`, and `>=`. Native
+ratio/integer pairs compare exactly through `Runtime_ratio.compare`, while
+ratio/float pairs use an explicit float projection. Decimal comparisons retain
+their exact decimal path; Melange nil/numeric pairs retain ClojureScript's
+target-specific zero coercion. Unary identity, pairwise short-circuit order,
+NaN, infinities, mixed numeric calls, and variadic `apply` are covered without
+dynamic numeric dispatch.
 
 The corrected Logseq audit exposes high-frequency automatic core blockers that
 were invisible in qualified-var-only reports. At the pinned Logseq commit the
