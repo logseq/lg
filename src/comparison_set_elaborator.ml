@@ -34,7 +34,21 @@ let create ~compile_expr =
         true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         comparable_type inner
+    | TVector inner -> comparable_type inner
     | _ -> false
+  in
+  let rec static_comparator = function
+    | TKeyword | TSymbol ->
+        Semantic_ir.Ident "Lg_runtime.Runtime_keyword.compare_identifier"
+    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_compare.compare_option",
+            [ static_comparator inner ] )
+    | TVector inner ->
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "Lg_runtime.Runtime_compare.compare_vector",
+            [ static_comparator inner ] )
+    | _ -> Semantic_ir.Ident "Stdlib.compare"
   in
   let nullable_inner = function
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
@@ -164,6 +178,16 @@ let create ~compile_expr =
                     "IComparable/-compare has an invalid signature"
               | None when not (comparable_type ty) ->
                   non_concrete_compare_error ()
+              | None when (match ty with TVector _ -> true | _ -> false) ->
+                  let element_ty =
+                    match ty with
+                    | TVector element_ty -> element_ty
+                    | _ -> assert false
+                  in
+                  Ok
+                    (typed_ir TInt
+                       (apply "Lg_runtime.Runtime_compare.compare_vector"
+                          [ static_comparator element_ty; left; right ]))
               | None ->
                   Ok
                     (typed_ir TInt

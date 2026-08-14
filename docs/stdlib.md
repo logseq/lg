@@ -248,9 +248,9 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 161 namespaces (161/183, 88.0%): Native executes 154
-applicable namespaces, and Melange executes 160 namespaces with 2,866
-assertions. Both are green. The
+currently contains 166 namespaces (166/183, 90.7%): Native executes 159
+applicable namespaces as 165 tests, and Melange executes 165 namespaces as 171
+tests with 2,914 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -325,6 +325,17 @@ and variadic behavior, repeated and absent key removal, vector append/update,
 map-entry insertion, set insertion/removal, and persistent conversion. Invalid
 persistent collection calls remain compile-time static errors and are not
 weakened into a universal transient representation.
+
+The comparison/eager traversal batch promotes `compare`, `shuffle`, `update`,
+`group-by`, and `run!` on both targets. Homogeneous vectors now compare in
+Clojure lexicographic order through recursive static element comparators rather
+than the RRB tree's OCaml representation. `run!` accepts a closed typed
+ordinary-or-reduced callback capability, preserves left-to-right effects,
+returns nil, and stops immediately on a reduced result. The fixtures also cover
+shuffle permutation invariants, all supported `update` extra-argument arities,
+and stable item order within `group-by` buckets. Metadata-bearing `group-by`
+rows remain outside this portable fixture until metadata-preserving vector
+storage is available.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,

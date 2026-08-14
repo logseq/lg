@@ -228,10 +228,10 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 161 namespaces (161/183,
-88.0%). Native runs the 154 applicable namespaces, while Melange runs 160
-namespaces with 2,866 assertions. Both targets pass with zero failures and zero
-errors. The six
+target qualifier. The current manifest contains 166 namespaces (166/183,
+90.7%). Native runs 159 applicable namespaces as 165 tests, while Melange runs
+165 namespaces as 171 tests with 2,914 assertions. Both targets pass with zero
+failures and zero errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
 ClojureScript/JVM numeric identity distinctions that Native's current float,
@@ -265,12 +265,11 @@ EDN conversion; `rest` remains a non-nil empty sequence.
 
 The next collection/sequence promotion adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,
-`seq?`, and `take-last` on both targets. `run!` remains outside the manifest
-because an open callback's `Reduced<T>` capability is not yet propagated into
-the source function parameter. `pop` remains outside because eagerly packing a
+`seq?`, and `take-last` on both targets. `pop` remains outside because eagerly packing a
 discarded infinite sequence inside a heterogeneous vector does not terminate.
-`group-by` remains outside because metadata-bearing vector keys and grouped
-item metadata order still disagree with upstream. The `disj`, `sort`,
+The full upstream `group-by` fixture remains outside because metadata-bearing
+vector keys and grouped item metadata order still disagree with upstream; its
+portable grouping and ordering behavior is promoted in a curated fixture. The `disj`, `sort`,
 `take-while`, and `zipmap` whole-file fixtures reuse incompatible concrete
 domains and remain audited static errors rather than dynamicized tests.
 
@@ -417,6 +416,16 @@ in independent static instances. They cover repeated and missing removals,
 variadic updates, vector append and pop, map-entry insertion, set mutation, and
 persistent conversion. Bad-shape rows remain static errors, and no transient
 operation uses a dynamic collection wrapper.
+
+The comparison/eager traversal batch promotes `compare`, `shuffle`, `update`,
+`group-by`, and `run!` on both targets. Recursive static element comparators
+give homogeneous vectors Clojure lexicographic ordering without comparing RRB
+tree internals. A general typed callback adapter now wraps ordinary callback
+results as continuation values and preserves explicit reduced results, so
+`run!` stops after the first reduced result while retaining nil return and
+left-to-right effects. The batch also verifies shuffle permutation invariants,
+all supported `update` extra-argument arities, and stable `group-by` bucket
+order without dynamic storage.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

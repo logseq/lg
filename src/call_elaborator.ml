@@ -388,6 +388,11 @@ let maybe_reduced_callback_payload expected actual =
       | _ -> None)
   | _ -> None
 
+let reduced_callback_element ty =
+  match Types.maybe_reduced_callback_element ty with
+  | Some _ as inner -> inner
+  | None -> Types.reduced_element ty
+
 let is_optional_type = function
   | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
   | _ -> false
@@ -489,11 +494,25 @@ let rec argument_compatible expected actual =
     | Some ((`Optional | `Optional_sequential), _, _), TNil -> true
     | _, (TNullable actual | TOcaml_app ("option", [ actual ])) ->
         argument_compatible expected actual
-    | _, (TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TString) ->
-        true
+    | Some (_, expected_element, _),
+      (TList actual_element | TVector actual_element | TSet actual_element
+      | TSeq actual_element | TArray actual_element) ->
+        Type_solver.is_open expected_element
+        || Type_solver.is_open actual_element
+        || argument_compatible expected_element actual_element
+    | Some (_, expected_element, _), TString ->
+        Type_solver.is_open expected_element
+        || argument_compatible expected_element TChar
     | _, actual when is_edn_value_type actual -> true
     | _, ty when Types.is_dynamic ty -> true
-    | _, _ -> Option.is_some (Types.seqable_constraint_info actual)
+    | Some (_, expected_element, _), actual -> (
+        match Types.seqable_constraint_info actual with
+        | Some (_, actual_element, _) ->
+            Type_solver.is_open expected_element
+            || Type_solver.is_open actual_element
+            || argument_compatible expected_element actual_element
+        | None -> false)
+    | None, _ -> false
   else
     match (expected, actual) with
     | (TNullable _ | TOcaml_app ("option", [ _ ])), TNil -> true
@@ -1303,13 +1322,38 @@ let compile_static_compare_capability env left right =
               true
           | TNullable inner | TOcaml_app ("option", [ inner ]) ->
               comparable_type inner
+          | TVector inner -> comparable_type inner
           | _ -> false
+        in
+        let rec static_comparator = function
+          | TKeyword | TSymbol ->
+              Semantic_ir.Ident
+                "Lg_runtime.Runtime_keyword.compare_identifier"
+          | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident
+                    "Lg_runtime.Runtime_compare.compare_option",
+                  [ static_comparator inner ] )
+          | TVector inner ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident
+                    "Lg_runtime.Runtime_compare.compare_vector",
+                  [ static_comparator inner ] )
+          | _ -> Semantic_ir.Ident "Stdlib.compare"
         in
         if Types.equal value_ty TKeyword || Types.equal value_ty TSymbol then
           Ok
             (Semantic_ir.Apply
                 ( Semantic_ir.Ident
                    "Lg_runtime.Runtime_keyword.compare_identifier",
+                 [
+                   constrained_argument_value left;
+                   constrained_argument_value right;
+                 ] ))
+        else if (match value_ty with TVector _ -> true | _ -> false) then
+          Ok
+            (Semantic_ir.Apply
+               ( static_comparator value_ty,
                  [
                    constrained_argument_value left;
                    constrained_argument_value right;
@@ -3427,6 +3471,57 @@ let rec adapt_value_to_type env expected actual =
   in
   if same_concrete_type expected actual.ty && same_representation then
     Ok actual.semantic_expr
+  else if
+    match (expected, actual.ty) with
+    | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
+      when Option.is_some (reduced_callback_element expected_return)
+           && callback_parameters_compatible expected_params actual_params ->
+        let expected_inner =
+          reduced_callback_element expected_return |> Option.get
+        in
+        (match Types.reduced_element actual_return with
+        | Some actual_inner ->
+            Types.assignable ~policy:Host_boundary ~expected:expected_inner
+              ~actual:actual_inner
+        | None ->
+            Types.assignable ~policy:Host_boundary ~expected:expected_inner
+              ~actual:actual_return)
+    | _ -> false
+  then
+    let expected_params, actual_params, actual_return =
+      match (expected, actual.ty) with
+      | TFn (expected_params, _), TFn (actual_params, actual_return) ->
+          (expected_params, actual_params, actual_return)
+      | _ -> assert false
+    in
+    let parameter_names =
+      List.mapi
+        (fun index _ -> "__lg_reduced_callback_argument_" ^ string_of_int index)
+        expected_params
+    in
+    let rec adapt_parameters adapted expected actual_params names =
+      match (expected, actual_params, names) with
+      | [], [], [] -> Ok (List.rev adapted)
+      | expected_ty :: expected, actual_ty :: actual_params, name :: names ->
+          let value = typed_ir expected_ty (Semantic_ir.Ident name) in
+          Result.bind (adapt_value_to_type env actual_ty value) (fun value ->
+              adapt_parameters (value :: adapted) expected actual_params names)
+      | _ -> Error.error "reduced callback parameter arity mismatch"
+    in
+    Result.map
+      (fun arguments ->
+        let call = Semantic_ir.Apply (actual.semantic_expr, arguments) in
+        let body =
+          match Types.reduced_element actual_return with
+          | Some _ -> call
+          | None ->
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
+                  [ call ] )
+        in
+        Semantic_ir.Fun
+          (List.map (fun name -> Semantic_ir.PVar name) parameter_names, body))
+      (adapt_parameters [] expected_params actual_params parameter_names)
   else if
     match (expected, actual.ty) with TSet _, TSet _ -> true | _ -> false
   then
@@ -16254,6 +16349,22 @@ let create ~compile_expr =
                                    | TTuple _ -> true
                                    | _ -> false ->
                               adapt_value_to_type env expected_ty arg
+                            | _, TFn (_, expected_return)
+                              when Option.is_some
+                                     (reduced_callback_element expected_return)
+                                   && (match arg.ty with
+                                      | TFn _ -> true
+                                      | _ -> false) ->
+                                (match (expected_ty, arg.ty) with
+                                | ( TFn (expected_params, _),
+                                    TFn (actual_params, _) )
+                                  when callback_parameters_compatible
+                                         expected_params actual_params ->
+                                    adapt_value_to_type env expected_ty arg
+                                | _ ->
+                                    Error.error
+                                      (name
+                                     ^ " called with incompatible arguments"))
                             | _
                               when match (expected_ty, arg.ty) with
                                    | TSet expected_element, TSet actual_element ->

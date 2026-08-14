@@ -214,3 +214,10 @@ clojure.core-test.disj-bang
 clojure.core-test.dissoc-bang
 clojure.core-test.persistent-bang
 clojure.core-test.pop-bang
+
+# Comparable, randomization, updater, grouping, and eager traversal behavior.
+clojure.core-test.compare
+clojure.core-test.shuffle
+clojure.core-test.update
+clojure.core-test.group-by
+clojure.core-test.run-bang

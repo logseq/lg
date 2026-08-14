@@ -284,7 +284,7 @@
 (signature clojure.core/doall [doall-value doall-storage]
   :overload<fn<seqable<doall-value;doall-storage>;doall-storage>;fn<int;seqable<doall-value;doall-storage>;doall-storage>>)
 (signature clojure.core/run! [input output storage]
-  :fn<fn<input;output>;seqable<input;storage>;option<unit>>)
+  :fn<fn<input;__lg_maybe_reduced_callback_result<output>>;seqable<input;storage>;option<unit>>)
 (signature clojure.core/group-by [input key storage]
   :fn<fn<input;key>;seqable<input;storage>;map<key;vector<input>>>)
 (signature clojure.core/reduce [input accumulator storage]

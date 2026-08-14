@@ -2576,7 +2576,15 @@
    coll))
 
 (defn run! [proc coll]
-  (dorun (map proc coll)))
+  (loop [remaining (seq coll)]
+    (if (seq remaining)
+      (if-some [input (first remaining)]
+        (let [result (proc input)]
+          (if (reduced? result)
+            nil
+            (recur (next remaining))))
+        nil)
+      nil)))
 
 (defn group-by [f coll]
   (__lg_reduce
