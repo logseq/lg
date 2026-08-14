@@ -150,21 +150,31 @@ let rec evaluate_for_effect expression =
   | _ -> expression
 
 let rec never_returns = function
-  | Typed (_, expression) | Located (_, _, expression) ->
+  | Typed (_, expression)
+  | Located (_, _, expression)
+  | Constraint (expression, _)
+  | SharedValue (_, expression)
+  | PackDynamic { conversion = expression; _ }
+  | UnpackDynamic { conversion = expression; _ }
+  | NullableToSeq { conversion = expression; _ } ->
       never_returns expression
-  | Apply (Ident "raise", [ _ ])
-  | Apply (Ident "Lg_runtime.Runtime_exception.throw", [ _ ]) ->
-      true
+  | Apply (fn, [ _ ]) -> (
+      match unlocated fn with
+      | Ident "raise" | Ident "Lg_runtime.Runtime_exception.throw" -> true
+      | _ -> false)
   | Labelled_apply (Ident "Fun.protect", arguments) ->
       List.exists
         (function
           | None, Fun ([ PUnit ], body) -> never_returns body
           | _ -> false)
         arguments
-  | Sequence expressions -> (
-      match List.rev expressions with
-      | last :: _ -> never_returns last
-      | [] -> false)
+  | Sequence expressions -> List.exists never_returns expressions
+  | Let (bindings, body) ->
+      List.exists (fun (_, value) -> never_returns value) bindings
+      || never_returns body
+  | EvaluateOnce (_, value, body) ->
+      never_returns value || never_returns body
+  | LetRecIn (_, _, _, body) -> never_returns body
   | _ -> false
 
 let annotate ty = function

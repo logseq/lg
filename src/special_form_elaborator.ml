@@ -2270,7 +2270,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       if Semantic_ir.never_returns expression then true
       else
         match Semantic_ir.unlocated expression with
-        | Semantic_ir.Apply (Semantic_ir.Ident name, _) ->
+        | Semantic_ir.Apply (fn, _) -> (
+            match Semantic_ir.unlocated fn with
+            | Semantic_ir.Ident name ->
             Env.find_map
               (fun _ (binding : binding) ->
                 if
@@ -2280,6 +2282,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 else None)
               env
             |> Option.is_some
+            | _ -> false)
         | _ -> false
     in
     let compatible_try_type body handlers =

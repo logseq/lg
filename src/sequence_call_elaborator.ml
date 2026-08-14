@@ -1334,7 +1334,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     and compile_mapv scope env arg_forms =
       match arg_forms with
     | [ fn_form; collection_form ] -> (
-          match compile_expr scope env collection_form with
+          match
+            compile_expr scope (Env.with_expected_type None env) collection_form
+          with
           | Error _ as error -> error
           | Ok collection -> (
               match Collection_capability.to_seq_expr env collection with
