@@ -86,6 +86,13 @@ let instantiate_binding (binding : binding) =
   | None -> binding
   | Some scheme -> { binding with ty = Type_solver.instantiate scheme }
 
+let constant_function_name = "__lg_constant_function"
+let constant_function result_ty = TOcaml_app (constant_function_name, [ result_ty ])
+let constant_function_result = function
+  | TOcaml_app (name, [ result_ty ]) when name = constant_function_name ->
+      Some result_ty
+  | _ -> None
+
 let seqable_constraint_name = "__lg_seqable_constraint"
 let seqable_constraint element_ty =
   TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])

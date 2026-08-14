@@ -3472,6 +3472,40 @@ let rec adapt_value_to_type env expected actual =
     Result.bind (adapt_set_callable actual) (fun callable ->
         adapt_value_to_type env expected callable)
   else if
+    match (expected, Types.constant_function_result actual.ty) with
+    | TFn _, Some _ -> true
+    | _ -> false
+  then
+    let parameter_tys, expected_return, actual_return =
+      match (expected, Types.constant_function_result actual.ty) with
+      | TFn (parameter_tys, expected_return), Some actual_return ->
+          (parameter_tys, expected_return, actual_return)
+      | _ -> assert false
+    in
+    let result_name = "__lg_adapted_constant_function_result" in
+    let parameter_names =
+      List.mapi
+        (fun index _ ->
+          "__lg_adapted_constant_function_arg_" ^ string_of_int index)
+        parameter_tys
+    in
+    let result = typed_ir actual_return (Semantic_ir.Ident result_name) in
+    Result.map
+      (fun body ->
+        Semantic_ir.Let
+          ( [ (Semantic_ir.PVar result_name, actual.semantic_expr) ],
+            Semantic_ir.Fun
+              ( List.map2 constrained_identifier_pattern parameter_names
+                  parameter_tys,
+                Semantic_ir.Sequence
+                  (List.map
+                     (fun name ->
+                       Semantic_ir.evaluate_for_effect
+                         (Semantic_ir.Ident name))
+                     parameter_names
+                  @ [ body ]) ) ))
+      (adapt_value_to_type env expected_return result)
+  else if
     match (expected, Types.dynamic_map_types actual.ty) with
     | TFn ([ _ ], _), Some _ -> true
     | _ -> false
@@ -10608,6 +10642,10 @@ let create ~compile_expr =
                         | TFn _ | TOverloaded_fn _ | TKeyword | TSymbol
                         | TVector _ | TSet _ | TRecord _ | TMap_keys ->
                             true
+                        | ty
+                          when Option.is_some
+                                 (Types.constant_function_result ty) ->
+                            true
                         | ty when Option.is_some (Types.dynamic_map_types ty) ->
                             true
                         | ty ->
@@ -11754,6 +11792,42 @@ let create ~compile_expr =
         | Ok args -> Core_sequence.compile env name args)
     | "__lg_some" -> compile_some scope env arg_forms
     | "__lg_complement" -> compile_static_complement scope env arg_forms
+    | "__lg_constantly" -> (
+        match compile_args () with
+        | Ok [ result ] -> (
+            match Env.expected_type env with
+            | Some (TFn (parameter_tys, expected_return)) ->
+                let return_ty =
+                  if contains_unresolved_type expected_return then result.ty
+                  else expected_return
+                in
+                let result_name = "__lg_contextual_constant_result" in
+                let parameter_names =
+                  List.mapi
+                    (fun index _ ->
+                      "__lg_contextual_constant_arg_" ^ string_of_int index)
+                    parameter_tys
+                in
+                Result.map
+                  (fun body ->
+                    typed_ir (TFn (parameter_tys, return_ty))
+                      (Semantic_ir.Let
+                         ( [
+                             ( Semantic_ir.PVar result_name,
+                               result.semantic_expr );
+                           ],
+                           Semantic_ir.Fun
+                             ( List.map2 constrained_identifier_pattern
+                                 parameter_names parameter_tys,
+                               body ) )))
+                  (adapt_value_to_type env return_ty
+                     (typed_ir result.ty (Semantic_ir.Ident result_name)))
+            | Some _ | None ->
+                Ok
+                  (typed_ir (Types.constant_function result.ty)
+                     result.semantic_expr))
+        | Ok _ -> Error.error "constantly expects 1 argument"
+        | Error _ as error -> error)
     | "__lg_sort" ->
         compile_sequence_transform_call scope env name arg_forms
     | "__lg_sort-by" -> compile_sort_by scope env arg_forms
@@ -13784,6 +13858,23 @@ let create ~compile_expr =
               static_deftype_callable env fn.ty (List.length args + 1)
             in
             match fn.ty with
+            | ty when Option.is_some (Types.constant_function_result ty) ->
+                let result_ty = Types.constant_function_result ty |> Option.get in
+                let result_name = "__lg_constant_function_result" in
+                Ok
+                  (typed_ir result_ty
+                     (Semantic_ir.Let
+                        ( [
+                            ( Semantic_ir.PVar result_name,
+                              Semantic_ir.Ident fn.ocaml_name );
+                          ],
+                          Semantic_ir.Sequence
+                            (List.map
+                               (fun argument ->
+                                 Semantic_ir.evaluate_for_effect
+                                   argument.semantic_expr)
+                               args
+                            @ [ Semantic_ir.Ident result_name ]) )))
             | (TUnknown | TMeta _ | TVar _)
               when match arg_forms with
                    | [ _key; FSymbol "nil" ] -> true
@@ -15304,6 +15395,27 @@ let create ~compile_expr =
                             List.nth_opt storage_param_tys index,
                             arg.ty )
                         with
+                        | _, Some (TFn (storage_params, storage_return)), marker_ty
+                          when Option.is_some
+                                 (Types.constant_function_result marker_ty) ->
+                            let storage_params =
+                              List.map
+                                (Type_solver.apply substitutions)
+                                storage_params
+                            in
+                            let storage_return =
+                              Type_solver.apply substitutions storage_return
+                            in
+                            let actual_return =
+                              Types.constant_function_result marker_ty
+                              |> Option.get
+                            in
+                            let storage_return =
+                              if contains_unresolved_type storage_return then
+                                actual_return
+                              else storage_return
+                            in
+                            TFn (storage_params, storage_return)
                         | ( TFn (_, _),
                             Some (TFn (storage_params, storage_return)),
                             TFn (actual_params, _) )
@@ -15585,6 +15697,12 @@ let create ~compile_expr =
                                         callback_expected_ty arg
                                   | TFn _, TOverloaded_fn _ ->
                                       adapt_overloaded_callback env
+                                        callback_expected_ty arg
+                                  | TFn _, marker_ty
+                                    when Option.is_some
+                                           (Types.constant_function_result
+                                              marker_ty) ->
+                                      adapt_value_to_type env
                                         callback_expected_ty arg
                                   | TFn ([ _ ], _), map_ty
                                     when Option.is_some

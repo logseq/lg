@@ -193,6 +193,7 @@ let compile ~target name args =
       compile_type_predicate name
         (function
           | TFn _ | TOverloaded_fn _ -> true
+          | ty when Option.is_some (Types.constant_function_result ty) -> true
           | ty -> overloaded_storage_predicate ty)
         args
   | "__lg_uuid-predicate" ->

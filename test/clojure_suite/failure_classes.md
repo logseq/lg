@@ -228,8 +228,8 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 60 namespaces. Native runs the
-55 applicable namespaces, while Melange runs 59 namespaces with 1,203
+target qualifier. The current manifest contains 64 namespaces. Native runs the
+59 applicable namespaces, while Melange runs 63 namespaces with 1,254
 assertions. Both targets pass with zero failures and zero errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -249,6 +249,17 @@ the result of `conj` on a literal vector preserves the exact appended argument
 forms, so alternating key/value arguments retain their independent static
 types. This covers ClojureScript's odd-`assoc` nil behavior without making the
 spread collection or public API dynamic.
+
+The `constantly`, `second`, `last`, and `empty` namespaces are also promoted on
+both targets. `constantly` uses a private typed constant-function capability so
+ignored argument types instantiate independently at every direct, `apply`, or
+higher-order call; its captured result remains statically typed and evaluated
+once. The copied but unpromoted `rest`, `next`, `nnext`, and `fnext` fixtures
+were removed. Their positive sorted-map and nested nullable collection cases
+expose one shared storage-type blocker: tuple map entries or vector payloads
+are currently relabeled as a contextual sequential type without converting the
+generated OCaml representation. The upstream clone remains authoritative for
+the focused repair; these namespaces are not counted as runtime-supported.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
@@ -309,11 +320,10 @@ spread collection or public API dynamic.
   `fnil.cljc` namespace now fails later because the test stores int defaults and
   the symbol `'not-nil` in the same result vector; that is a heterogeneous
   collection typing issue, not an unsupported `fnil` arity.
-- Runtime source-level syntax-quoted constants now compile as quoted data,
-  clearing the false `syntax-quote` missing-core blocker in
-  `constantly.cljc`. That namespace now fails later on real reader/numeric
-  boundaries: Native reaches the ratio literal `111/7`, while Melange reaches
-  the named character literal `\return`.
+- Runtime source-level syntax-quoted constants compile as quoted data, and the
+  target reader branches exclude JVM-only ratios while preserving named
+  characters. Together with the typed constant-function capability this now
+  promotes `constantly.cljc` on Native and Melange.
 - `clojure.test/async` is available to the suite runner as a compile-time
   compatibility macro that binds the completion callback and expands the body.
   It is not core.async support and does not implement a general async scheduler.

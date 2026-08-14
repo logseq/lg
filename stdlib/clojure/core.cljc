@@ -2039,7 +2039,7 @@
 (defn map
   {:inline (fn
              ([f] (list 'map-transducer f))
-             ([f coll] (list 'map-one f coll))
+             ([f coll] (list '__lg_map f coll))
              ([f first-coll second-coll]
               (list '__lg_map f first-coll second-coll))
              ([f first-coll second-coll third-coll]
@@ -2810,7 +2810,9 @@
   (fn [x]
     (not (f x))))
 
-(defn constantly [x]
+(defn constantly
+  {:inline (fn [x] (list '__lg_constantly x))}
+  [x]
   (fn
     ([] x)
     ([_arg] x)

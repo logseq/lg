@@ -583,6 +583,8 @@ let rec inferred_form_type params = function
   | FString _ -> TString
   | FBool _ -> TBool
   | FSymbol "nil" -> TNil
+  | FList [ FSymbol "__lg_constantly"; result ] ->
+      Types.constant_function (inferred_form_type params result)
   | FList (FSymbol "do" :: body_forms) -> (
       match List.rev body_forms with
       | result :: _ -> inferred_form_type params result
@@ -1077,6 +1079,8 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
                       (fun _ -> rest_ty)
               in
               instantiate parameter_tys arity.return_ty)
+      | Ok ty when Option.is_some (Types.constant_function_result ty) ->
+          Types.constant_function_result ty |> Option.get
       | Ok _ | Error _ -> TUnknown)
   | _ -> TUnknown
 
@@ -1998,6 +2002,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                         (fun _ -> rest_ty)
                 in
                 infer_call parameter_tys arity.return_ty)
+        | Ok ty when Option.is_some (Types.constant_function_result ty) ->
+            infer_all params args
         | _ -> infer_form params form)
     | form -> infer_form params form
   and infer_all params forms =
@@ -2211,6 +2217,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.map (freshen_call_type name) (lookup_function_ty name)
           in
           match function_ty with
+      | Ok ty when Option.is_some (Types.constant_function_result ty) ->
+          infer_all params args
       | Ok (TFn (param_tys, _ret)) when List.length param_tys = List.length args
         ->
         let callback_element_candidates =
@@ -5054,6 +5062,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_bigdec"; arg ]
     | FList [ FSymbol "__lg_bigint"; arg ] ->
         infer_form params arg
+    | FList [ FSymbol "__lg_constantly"; arg ] -> infer_form params arg
     | FList [ FSymbol "__lg_ex-message"; arg ] ->
         infer_expected (TOcaml "exn") params arg
     | FList [ FSymbol "__lg_ex-cause"; arg ] ->

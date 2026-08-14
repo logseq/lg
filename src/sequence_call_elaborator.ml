@@ -399,6 +399,27 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     | TNullable payload | TOcaml_app ("option", [ payload ]) -> Some payload
     | _ -> None
   in
+  let adapt_constant_callable element_ty callable =
+    match Types.constant_function_result callable.ty with
+    | None -> Ok callable
+    | Some return_ty ->
+        let result_name = "__lg_map_constant_function_result" in
+        let item_name = "__lg_map_constant_function_item" in
+        Ok
+          (typed_ir (TFn ([ element_ty ], return_ty))
+             (Semantic_ir.Let
+                ( [
+                    (Semantic_ir.PVar result_name, callable.semantic_expr);
+                  ],
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar item_name ],
+                      Semantic_ir.Sequence
+                        [
+                          Semantic_ir.evaluate_for_effect
+                            (Semantic_ir.Ident item_name);
+                          Semantic_ir.Ident result_name;
+                        ] ) )))
+  in
   let adapt_optional_map_callable element_ty callable =
     match (optional_payload_type element_ty, Types.dynamic_map_types callable.ty) with
     | Some payload_ty, Some (key_ty, value_ty)
@@ -531,10 +552,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                || Option.is_some
                     (Types.protocol_constraint_info parameter_ty) ->
             compile_deferred_call ()
-        | Ok function_ -> adapt_set_callable function_
+        | Ok function_ ->
+            Result.bind (adapt_constant_callable element_ty function_)
+              adapt_set_callable
         | Error _ -> compile_deferred_call ())
     | form ->
         Result.bind (compile_function_arg scope env form) (fun callable ->
+            Result.bind (adapt_constant_callable element_ty callable)
+              (fun callable ->
             Result.bind (adapt_optional_map_callable element_ty callable)
               (fun callable ->
             let callable_map = is_callable_map_type callable.ty in
@@ -563,7 +588,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                              body.semantic_expr ) )))
                 (compile_expr scope function_env
                    (FList
-                      [ FSymbol callable_name; FSymbol item_name ]))))
+                      [ FSymbol callable_name; FSymbol item_name ])))))
   in
   let compile_function_arg_for_collections scope env element_tys = function
     | (FSymbol name as form) ->

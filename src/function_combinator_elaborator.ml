@@ -812,6 +812,33 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                             refine_sequence_concat_function fn fixed_args inner
                           in
                           match fn.ty with
+                          | ty
+                            when Option.is_some
+                                   (Types.constant_function_result ty) ->
+                              let return_ty =
+                                Types.constant_function_result ty |> Option.get
+                              in
+                              let result_name =
+                                "__lg_apply_constant_function_result"
+                              in
+                              Ok
+                                (typed_ir return_ty
+                                   (Semantic_ir.Let
+                                      ( [
+                                          ( Semantic_ir.PVar result_name,
+                                            fn.semantic_expr );
+                                        ],
+                                        Semantic_ir.Sequence
+                                          (List.map
+                                             (fun argument ->
+                                               Semantic_ir.evaluate_for_effect
+                                                 argument.semantic_expr)
+                                             fixed_args
+                                          @ [
+                                              Semantic_ir.evaluate_for_effect
+                                                list_expr;
+                                              Semantic_ir.Ident result_name;
+                                            ]) )))
                           | TFn ([ TInt; TInt ], TInt)
                             when Types.equal inner TInt
                                    && List.for_all

@@ -67,3 +67,9 @@ clojure.core-test.apply
 clojure.core-test.assoc
 clojure.core-test.concat
 clojure.core-test.cons
+
+# Common sequence and higher-order runtime batch.
+clojure.core-test.constantly
+clojure.core-test.second
+clojure.core-test.last
+clojure.core-test.empty

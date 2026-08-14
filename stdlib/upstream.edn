@@ -320,7 +320,7 @@
     fnil {:status :static-adaptation
           :reason :source-port-preserves-upstream-one-two-and-three-default-constructor-cases-returned-fixed-and-variadic-arities-nil-substitution-positions-and-default-evaluation-order-for-homogeneous-first-class-functions-while-conj-canonicalizes-to-the-private-collection-primitive-and-private-static-specializations-retain-precise-direct-call-and-collection-capability-types}
     constantly {:status :static-adaptation
-                :reason :upstream-zero-one-two-and-variadic-returned-function-arities-use-static-homogeneous-variadic-rest-values}
+                :reason :source-definition-retains-upstream-zero-one-two-and-variadic-arities-while-an-inline-private-typed-constant-function-capability-allows-each-direct-apply-and-higher-order-call-to-instantiate-ignored-argument-types-independently-without-dynamic-storage}
     boolean {:status :ported}
     truth_ {:status :static-adaptation
             :reason :source-function-and-single-substitution-inline-definition-preserve-clojurescript-nil-and-false-only-falsey-semantics-without-the-upstream-javascript-boolean-tagged-expression}
@@ -546,7 +546,7 @@
     lazy-cat {:status :static-adaptation
               :reason :source-macro-preserves-left-to-right-lazy-concatenation-through-lazy-seq-and-the-current-static-concat-boundary}
     map {:status :static-adaptation
-         :reason :source-port-preserves-the-upstream-transducer-and-lazy-one-two-three-and-variadic-collection-arities-shortest-input-termination-memoized-realization-and-infinite-prefixes-while-multi-collection-direct-calls-inline-to-a-private-static-specialization-for-left-to-right-single-evaluation-and-mixed-collection-storage}
+         :reason :source-port-preserves-the-upstream-transducer-and-lazy-one-two-three-and-variadic-collection-arities-shortest-input-termination-memoized-realization-and-infinite-prefixes-while-direct-collection-calls-inline-to-a-private-static-specialization-for-left-to-right-single-evaluation-mixed-collection-storage-and-typed-constant-function-capabilities}
     filter {:status :static-adaptation
             :reason :source-port-preserves-the-upstream-stateful-transducer-and-lazy-two-arity-control-flow-without-the-clojurescript-chunk-optimization}
     remove {:status :static-adaptation
