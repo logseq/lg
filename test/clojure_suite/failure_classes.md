@@ -20,22 +20,22 @@ python3 test/clojure_suite/summarize_clojure_suite.py \
 | metric | count |
 | --- | ---: |
 | compile attempts | 476 |
-| compiled | 375 |
-| compile failed | 101 |
+| compiled | 385 |
+| compile failed | 91 |
 | namespaces scanned | 238 |
-| namespaces compiled on both native and Melange | 183 |
-| namespaces failed on both native and Melange | 46 |
+| namespaces compiled on both native and Melange | 185 |
+| namespaces failed on both native and Melange | 38 |
 | native-only compiled namespaces | 5 |
-| Melange-only compiled namespaces | 4 |
+| Melange-only compiled namespaces | 10 |
 
 Target split:
 
 | target | compiled | compile failed |
 | --- | ---: | ---: |
-| native | 188 | 50 |
-| Melange | 187 | 51 |
+| native | 190 | 48 |
+| Melange | 195 | 43 |
 
-The summarizer emits the authoritative current list of all 183 namespaces.
+The summarizer emits the authoritative current list of all 185 namespaces.
 The list below records the earlier 46-namespace milestone and is retained only
 as migration history:
 
@@ -90,7 +90,7 @@ as migration history:
 
 | class | failures | handling |
 | --- | ---: | --- |
-| `static-typing-or-closed-domain-boundary` | 92 | The remaining entries are intentional LG static errors. Do not weaken ordinary values or collections to dynamic. |
+| `static-typing-or-closed-domain-boundary` | 82 | The remaining entries are intentional LG static errors. Do not weaken ordinary values or collections to dynamic. |
 | `reader-or-numeric-literal` | 0 | `#inst`, decimal literals, arbitrary-precision decimal arithmetic, ordering, and `with-precision` are implemented for Native and Melange. |
 | `host-boundary-or-platform-specific` | 9 | Keep JVM/JS class identity, Java interop, target globals, Var mutation, and true asynchronous `future` behavior gated unless LG introduces deliberate portable static representations. |
 | `missing-suite-support-namespace-or-helper` | 0 | The current scan has no remaining failures in this class. Suite helpers remain compatibility scaffolding and should not be counted as stdlib API support. |
@@ -103,13 +103,14 @@ Static typing subclasses:
 
 | subclass | failures | handling |
 | --- | ---: | --- |
-| `negative-runtime-test-is-static-error` | 59 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
-| `suite-polymorphic-fixture-is-static-error` | 20 | Whole-suite fixtures reuse incompatible concrete domains, including numeric predicate `are` fixtures, collection fixtures such as `disj.cljc`, `sort.cljc`, and `zipmap.cljc`, `seq.cljc` mixing decimal and int set elements, Native `nth.cljc` sharing one helper across collections and regex matchers, and `eq`/`not-eq` sharing one helper across function, sequential, and map domains. Supported monomorphic/direct calls have focused coverage. |
-| `heterogeneous-collection-needs-closed-domain` | 7 | Heterogeneous list/vector and nullable element fixtures remain audited static errors; they require explicit closed sums rather than dynamic storage. |
-| `first-class-polymorphic-or-hof` | 2 | The remaining entries are whole-file fixtures that combine incompatible static higher-order domains. Supported monomorphic and call-site-specialized higher-order behavior remains covered on Native and Melange. |
+| `negative-runtime-test-is-static-error` | 57 | Upstream intentionally calls functions with wrong runtime argument types and expects thrown exceptions. LG keeps these as compile-time errors. |
+| `suite-polymorphic-fixture-is-static-error` | 10 | Whole-suite fixtures reuse incompatible concrete domains, including collection fixtures such as `sort.cljc` and `zipmap.cljc`, `seq.cljc` mixing decimal and int set elements, and Native `nth.cljc` sharing one helper across collections and regex matchers. Supported monomorphic/direct calls have focused coverage. |
+| `heterogeneous-collection-needs-closed-domain` | 5 | Heterogeneous list/vector and nullable element fixtures remain audited static errors; they require explicit closed sums rather than dynamic storage. |
+| `first-class-polymorphic-or-hof` | 6 | The remaining entries are whole-file fixtures that combine incompatible static higher-order domains. Supported monomorphic and call-site-specialized higher-order behavior remains covered on Native and Melange. |
+| `other-static-boundary` | 4 | The remaining static diagnostics do not need a more specific repair subclass; they stay in the audited static-error lane. |
 | `transient-collection-boundary` | 0 | No remaining compile failure is assigned to this subclass. Six typed transient operation namespaces are promoted on both targets. The `transient.cljc` whole-file `are` fixture reuses one inferred local function across vector, map, and set domains and remains an audited static error. |
 | `dynamic-boundary-needs-closed-domain` | 0 | No remaining suite compile failure requires expanding a dynamic boundary. |
-| `form-or-declaration-static-gap` | 4 | These whole-suite declaration/pattern fixtures are retained as audited static errors under the user-selected policy; direct supported forms retain focused coverage. |
+| `form-or-declaration-static-gap` | 0 | No remaining scan failure is assigned to this subclass. |
 | `typed-protocol-or-capability-gap` | 0 | The structural-record `find` and closed tuple/list/nested-vector set comparator gaps are fixed. New entries must receive focused TDD coverage before entering this lane. |
 
 The summary groups failing namespace/target entries into these repair lanes:
@@ -117,7 +118,7 @@ The summary groups failing namespace/target entries into these repair lanes:
 | lane | failures | interpretation |
 | --- | ---: | --- |
 | `design-reader-and-numeric-tower` | 0 | Tagged instant and decimal reader/numeric blockers are cleared. |
-| `audit-as-static-error` | 92 | All failures caused by the deliberate LG static type contract are audited here and are not repair work. |
+| `audit-as-static-error` | 82 | All failures caused by the deliberate LG static type contract are audited here and are not repair work. |
 | `design-closed-domain-or-narrow-runtime-boundary` | 0 | The current scan has no remaining positive closed-domain implementation failures. |
 | `implement-static-language-capability` | 0 | The current scan has no remaining positive implementation failures. Closed tuple/list/nested-vector element types receive deterministic generated `Set.Make` modules without dynamic storage. |
 | `document-or-gate-host-boundary` | 9 | JVM/JS identity, Java interop, target-only globals, and futures remain documented/gated. |
@@ -125,15 +126,16 @@ The summary groups failing namespace/target entries into these repair lanes:
 
 ## Platform skew
 
-Nine namespaces compile on only one target: `double`, `long`, `not-empty`,
-`nth`, `nthrest`, `num`, `parse-uuid`, `remove-watch`, and `subs`. Their failed
+Fifteen namespaces compile on only one target: `bigint`, `double`, `long`,
+`minus`, `nfirst`, `not-empty`, `nth`, `nthrest`, `num`, `parse-uuid`, `plus`,
+`remove-watch`, `slash`, `star`, and `subs`. Their failed
 target entries are classified as either an audited static error or a documented
 host/platform boundary in the generated reports.
 
 ## Current interpretation
 
-The 101 compile failures are not unresolved core defects under the selected LG
-policy. They consist only of 92 audited static errors and 9 documented
+The 91 compile failures are not unresolved core defects under the selected LG
+policy. They consist only of 82 audited static errors and 9 documented
 host/platform boundaries:
 
 1. Static typing versus upstream negative runtime tests: many upstream tests
@@ -228,8 +230,8 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 170 namespaces (170/183,
-92.9%). Native runs 163 applicable namespaces as 175 tests, while Melange runs
+target qualifier. The current manifest contains 170 namespaces (170/185,
+91.9%). Native runs 163 applicable namespaces as 175 tests, while Melange runs
 169 namespaces as 181 tests with 2,962 assertions. Both targets pass with zero
 failures and zero errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,

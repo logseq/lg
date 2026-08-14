@@ -159,6 +159,10 @@ class SummaryClassificationTests(unittest.TestCase):
                 "host-boundary-or-platform-specific",
             "File \"<suite>/reduce.cljc\", line <n>: lg: lg namespaces do not support :import":
                 "host-boundary-or-platform-specific",
+            "File \"<suite>/plus.cljc\", line <n>: lg: expected int arguments for +":
+                "static-typing-or-closed-domain-boundary",
+            "File \"<suite>/seq.cljc\", line <n>: lg: set value type must match element type: expected decimal, got int":
+                "static-typing-or-closed-domain-boundary",
         }
 
         for message, expected in examples.items():

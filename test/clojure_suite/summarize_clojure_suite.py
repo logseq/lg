@@ -103,6 +103,7 @@ def classify(error: str) -> str:
 
     if (
         "expects " in lower
+        or "expected int arguments" in lower
         or "type mismatch" in lower
         or "must have the same type" in lower
         or "incompatible arguments" in lower
@@ -117,6 +118,7 @@ def classify(error: str) -> str:
         or "not supported for string" in lower
         or "requires a statically typed" in lower
         or "element types must match" in lower
+        or "type must match element type" in lower
         or "function types do not line up" in lower
         or "function type must match" in lower
         or "functions must accept the same argument type" in lower
