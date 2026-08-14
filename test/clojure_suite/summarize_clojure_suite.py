@@ -320,6 +320,31 @@ def grouped_by_namespace(results: Iterable[Result]) -> dict[str, dict[str, Resul
     return dict(grouped)
 
 
+def compiled_both_namespaces(results: Iterable[Result]) -> list[str]:
+    by_namespace = grouped_by_namespace(results)
+    return sorted(
+        namespace
+        for namespace, target_results in by_namespace.items()
+        if target_results.get(
+            "native", Result("", "", "native", "missing", 0, "")
+        ).status
+        == "compiled"
+        and target_results.get(
+            "melange", Result("", "", "melange", "missing", 0, "")
+        ).status
+        == "compiled"
+    )
+
+
+def write_compiled_both_inventory(
+    path: pathlib.Path, results: Iterable[Result], upstream_commit: str | None
+) -> None:
+    header = ["# Generated from scan_report.json for jank-lang/clojure-test-suite commit"]
+    header.append(f"# {upstream_commit or 'unknown'}.")
+    namespaces = compiled_both_namespaces(results)
+    path.write_text("\n".join([*header, *namespaces]) + "\n", encoding="utf-8")
+
+
 def namespace_outcome(native_status: str, melange_status: str) -> str:
     if native_status == "compiled" and melange_status == "compiled":
         return "compiled-both"
@@ -457,15 +482,7 @@ def print_markdown(results: list[Result], upstream_commit: str | None) -> None:
     print()
     print("## Namespaces compiled on both native and Melange")
     print()
-    for namespace in sorted(
-        namespace
-        for namespace, target_results in by_ns.items()
-        if namespace_outcome(
-            target_results.get("native", Result("", "", "native", "missing", 0, "")).status,
-            target_results.get("melange", Result("", "", "melange", "missing", 0, "")).status,
-        )
-        == "compiled-both"
-    ):
+    for namespace in compiled_both_namespaces(results):
         print(f"- `{namespace}`")
     print()
     print("## Platform-skew namespaces")
@@ -490,9 +507,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=pathlib.Path, default=DEFAULT_REPORT)
     parser.add_argument("--upstream-commit")
+    parser.add_argument("--compiled-both-output", type=pathlib.Path)
     args = parser.parse_args()
 
     results = load_results(args.report)
+    if args.compiled_both_output is not None:
+        write_compiled_both_inventory(
+            args.compiled_both_output, results, args.upstream_commit
+        )
     print_markdown(results, args.upstream_commit)
     return 0
 

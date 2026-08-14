@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCANNER_PATH = ROOT / "test" / "clojure_suite" / "scan_clojure_suite.py"
 SUMMARY_PATH = ROOT / "test" / "clojure_suite" / "summarize_clojure_suite.py"
 PROMOTION_PATH = ROOT / "test" / "clojure_suite" / "compile_promoted_smoke.py"
+COVERAGE_PATH = ROOT / "test" / "clojure_suite" / "check_promotion_coverage.py"
 
 
 def load_scanner():
@@ -44,6 +45,81 @@ def load_promotion():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load_coverage():
+    spec = importlib.util.spec_from_file_location("check_promotion_coverage", COVERAGE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load check_promotion_coverage.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class PromotionCoverageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.coverage = load_coverage()
+        self.tmp = tempfile.TemporaryDirectory(
+            prefix="lg-clojure-coverage-test-", dir=ROOT / "_build"
+        )
+        self.directory = pathlib.Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def write(self, name: str, content: str) -> pathlib.Path:
+        path = self.directory / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_compiled_surface_must_be_promoted_or_excluded(self) -> None:
+        compiled = self.write(
+            "compiled.txt", "clojure.core-test.a\nclojure.core-test.b\n"
+        )
+        promoted = self.write("promoted.txt", "clojure.core-test.a\n")
+        exclusions = self.write(
+            "excluded.tsv",
+            "namespace\ttarget\tclassification\treason\n"
+            "clojure.core-test.b\tboth\tstatic-error\tclosed fixture domain\n",
+        )
+
+        self.coverage.check_coverage(compiled, promoted, exclusions)
+
+        exclusions.write_text(
+            "namespace\ttarget\tclassification\treason\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "unclassified compiled target"):
+            self.coverage.check_coverage(compiled, promoted, exclusions)
+
+    def test_exclusions_require_concrete_allowed_classification(self) -> None:
+        compiled = self.write("compiled.txt", "clojure.core-test.a\n")
+        promoted = self.write("promoted.txt", "")
+        exclusions = self.write(
+            "excluded.tsv",
+            "namespace\ttarget\tclassification\treason\n"
+            "clojure.core-test.a\tboth\tunknown\tTODO\n",
+        )
+
+        with self.assertRaisesRegex(ValueError, "invalid exclusion classification"):
+            self.coverage.check_coverage(compiled, promoted, exclusions)
+
+    def test_target_qualified_promotion_requires_other_target_exclusion(self) -> None:
+        compiled = self.write("compiled.txt", "clojure.core-test.a\n")
+        promoted = self.write("promoted.txt", "clojure.core-test.a melange\n")
+        exclusions = self.write(
+            "excluded.tsv",
+            "namespace\ttarget\tclassification\treason\n"
+            "clojure.core-test.a\tnative\thost-boundary\tNative identity differs\n",
+        )
+
+        self.coverage.check_coverage(compiled, promoted, exclusions)
+
+        exclusions.write_text(
+            "namespace\ttarget\tclassification\treason\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "unclassified compiled target"):
+            self.coverage.check_coverage(compiled, promoted, exclusions)
 
 
 class PromotedSmokeTests(unittest.TestCase):
@@ -230,6 +306,18 @@ class SummaryClassificationTests(unittest.TestCase):
                 'File "<suite>/every_qmark.cljc", line <n>: lg: unknown function letfn'
             ),
         )
+
+    def test_extracts_compiled_both_namespaces(self) -> None:
+        results = [
+            self.summary.Result("both", "both.cljc", "native", "compiled", 1, ""),
+            self.summary.Result("both", "both.cljc", "melange", "compiled", 1, ""),
+            self.summary.Result("native", "native.cljc", "native", "compiled", 1, ""),
+            self.summary.Result(
+                "native", "native.cljc", "melange", "compile-failed", 1, "error"
+            ),
+        ]
+
+        self.assertEqual(["both"], self.summary.compiled_both_namespaces(results))
 
     def test_builds_machine_readable_repair_lanes(self) -> None:
         results = [

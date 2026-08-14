@@ -1,0 +1,22 @@
+namespace	target	classification	reason
+clojure.core-test.aclone	both	static-error	One upstream helper is monomorphized by aset and then reused for int arrays and nullable object arrays; supporting both requires a typed array capability or call-site specialization.
+clojure.core-test.add-watch	both	static-error	The full fixture accumulates heterogeneous watcher event records and exception-data maps in one collection; typed add-watch behavior is covered by focused Native and Melange tests.
+clojure.core-test.atom	both	static-error	The full fixture reuses atoms and validators across unrelated nil, map, integer, set, symbol, sequence, and metadata domains that require separate static instantiations or a declared closed sum.
+clojure.core-test.case	both	static-error	The full fixture combines keyword, string, integer, collection, and host constants in shared case dispatch tables; LG supports homogeneous statically typed case targets in focused coverage.
+clojure.core-test.denominator	both	host-boundary	The API depends on the JVM ratio numeric domain, which is not part of the Native or Melange source numeric model.
+clojure.core-test.disj	both	static-error	The full fixture reuses helpers across incompatible set element domains and negative argument rows; direct homogeneous disj behavior is covered elsewhere.
+clojure.core-test.double-qmark	native	host-boundary	Native uses distinct static int and float domains and does not expose the ClojureScript JavaScript-number identity asserted by this fixture.
+clojure.core-test.eval	both	host-boundary	Runtime evaluation of arbitrary code data requires a self-hosted compiler environment and open result domain.
+clojure.core-test.float-qmark	native	host-boundary	Native uses distinct static int and float domains and does not expose the ClojureScript JavaScript-number identity asserted by this fixture.
+clojure.core-test.get-in	both	static-error	The full fixture embeds an unselected infinite range in heterogeneous nested data; eagerly converting that open domain to closed EDN cannot terminate, while static paths have focused coverage.
+clojure.core-test.int-qmark	native	host-boundary	Native does not use the ClojureScript JavaScript safe-integer representation tested by this namespace.
+clojure.core-test.integer-qmark	native	host-boundary	Native does not use the ClojureScript JavaScript safe-integer representation tested by this namespace.
+clojure.core-test.intern	both	host-boundary	Intern mutates a runtime namespace and installs Vars with arbitrary unrelated value types, which is outside the precompiled static namespace artifact model.
+clojure.core-test.neg-int-qmark	native	host-boundary	Native does not use the ClojureScript JavaScript safe-integer representation tested by this namespace.
+clojure.core-test.numerator	both	host-boundary	The API depends on the JVM ratio numeric domain, which is not part of the Native or Melange source numeric model.
+clojure.core-test.pop	both	static-error	The full fixture places an unselected infinite sequence beside unrelated vector values, requiring an open heterogeneous element domain; finite homogeneous pop behavior is covered.
+clojure.core-test.pos-int-qmark	native	host-boundary	Native does not use the ClojureScript JavaScript safe-integer representation tested by this namespace.
+clojure.core-test.rationalize	both	host-boundary	The API constructs JVM ratio values and therefore requires a numeric domain absent from Native and Melange LG source types.
+clojure.core-test.sort	both	static-error	The full fixture reuses sort and comparator helpers across incompatible element and callback domains; monomorphic stable sorting is covered on both targets.
+clojure.core-test.vec	both	host-boundary	The ClojureScript fixture requires vec over a mutable JavaScript array to retain host aliasing, while LG vectors use target-independent persistent RRB storage.
+clojure.core-test.zipmap	both	static-error	The full fixture reuses one helper across incompatible key and value domains; independently instantiated homogeneous and closed-EDN zipmap calls are covered separately.

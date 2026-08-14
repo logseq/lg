@@ -1,4 +1,22 @@
 (rule
+ (alias clojure-test-suite-promotion-audit)
+ (deps
+  check_promotion_coverage.py
+  compiled_both_namespaces.txt
+  promoted_namespaces.txt
+  promotion_exclusions.tsv)
+ (action
+  (run
+   python3
+   %{dep:check_promotion_coverage.py}
+   --compiled
+   %{dep:compiled_both_namespaces.txt}
+   --promoted
+   %{dep:promoted_namespaces.txt}
+   --exclusions
+   %{dep:promotion_exclusions.tsv})))
+
+(rule
  (target clojure_test_suite_smoke_native_chunk.ml)
  (deps
   ../../stdlib/lg_stdlib_native.state
@@ -138,6 +156,7 @@
  (alias clojure-test-suite-smoke)
  (deps
   clojure_test_suite_smoke_native.exe
+  (alias clojure-test-suite-promotion-audit)
   (alias clojure-test-suite-smoke-melange)
   clojure-test-suite-smoke-melange/test/clojure_suite/clojure_test_suite_smoke_melange.js)
  (action

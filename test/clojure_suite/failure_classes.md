@@ -230,10 +230,15 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 176 namespaces (176/185,
-95.1%). Native runs 169 applicable namespaces as 187 tests, while Melange runs
-175 namespaces as 193 tests with 3,027 assertions. Both targets pass with zero
-failures and zero errors. The six
+target qualifier. The current manifest contains 176 namespace declarations.
+Native runs 187 tests, while Melange runs 193 tests with 3,027 assertions. Both
+targets pass with zero failures and zero errors. The committed compiled-both
+inventory contains 185 namespaces and 370 target pairs: 334 pairs have runtime
+promotion, while `promotion_exclusions.tsv` classifies the other 36 as 18
+static-error and 18 host-boundary pairs. Six curated namespaces run on both
+targets despite not compiling on both as full upstream files in the original
+scan. The target-level audit accounts for 370/370 pairs and prevents a
+Melange-only promotion from being counted as Native evidence. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
 ClojureScript/JVM numeric identity distinctions that Native's current float,

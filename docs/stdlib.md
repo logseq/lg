@@ -248,9 +248,15 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 176 namespaces (176/185, 95.1%): Native executes 169
-applicable namespaces as 187 tests, and Melange executes 175 namespaces as 193
-tests with 3,027 assertions. Both are green. The
+currently contains 176 namespace declarations: Native executes 187 tests, and
+Melange executes 193 tests with 3,027 assertions. Both are green. The pinned
+compiled-both inventory contains 185 namespaces, or 370 namespace/target pairs.
+Of those pairs, 334 (90.3%) have runtime promotion and 36 have a concrete
+exclusion: 18 static-error pairs and 18 host-boundary pairs. Six additional
+curated namespaces run on both targets even though their full upstream files
+did not compile on both in the original scan. The promotion audit therefore
+accounts for all 370/370 scanned target pairs without counting a target-qualified
+Melange test as Native coverage. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated

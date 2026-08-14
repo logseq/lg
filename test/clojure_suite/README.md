@@ -35,7 +35,20 @@ Summarize the ignored raw report with:
 
 ```bash
 python3 test/clojure_suite/summarize_clojure_suite.py \
-  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea
+  --upstream-commit 6299706516f55d2ccb2d5abb5662489971584dea \
+  --compiled-both-output test/clojure_suite/compiled_both_namespaces.txt
 ```
 
 The current failure classification is tracked in `failure_classes.md`.
+`compiled_both_namespaces.txt` is the committed 185-namespace scan surface,
+and `promotion_exclusions.tsv` records a concrete static-error or host-boundary
+reason for every target that is not executed by the smoke manifest. Verify the
+target-level closure with:
+
+```bash
+rtk dune build \
+  @test/clojure_suite/clojure-test-suite-promotion-audit
+```
+
+The aggregate smoke depends on this audit, so CI rejects any compiled Native or
+Melange target that is neither promoted nor explicitly classified.
