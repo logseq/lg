@@ -61,3 +61,9 @@ clojure.core-test.string-qmark
 clojure.core-test.symbol-qmark
 clojure.core-test.true-qmark
 clojure.core-test.vector-qmark
+
+# Common collection and higher-order runtime batch.
+clojure.core-test.apply
+clojure.core-test.assoc
+clojure.core-test.concat
+clojure.core-test.cons

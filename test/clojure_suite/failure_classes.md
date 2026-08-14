@@ -228,8 +228,8 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 56 namespaces. Native runs the
-51 applicable namespaces, while Melange runs 55 namespaces with 1,105
+target qualifier. The current manifest contains 60 namespaces. Native runs the
+55 applicable namespaces, while Melange runs 59 namespaces with 1,203
 assertions. Both targets pass with zero failures and zero errors. The four
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`, and
 `integer-qmark`) assert ClojureScript/JVM numeric identity distinctions that
@@ -241,6 +241,14 @@ float identity, Melange safe-integer predicates, and target-correct 32-bit hash
 mixing. Source-returned generic sets are converted at their call boundary to
 the concrete static set module, and map equality accepts a typed value-equality
 callback for map-of-set results; neither path stores dynamic values.
+
+The `apply`, `assoc`, `concat`, and `cons` runtime batch is promoted on both
+targets. A statically literal empty spread now invokes the function's actual
+zero/fixed arity without generating impossible element branches. Applying over
+the result of `conj` on a literal vector preserves the exact appended argument
+forms, so alternating key/value arguments retain their independent static
+types. This covers ClojureScript's odd-`assoc` nil behavior without making the
+spread collection or public API dynamic.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

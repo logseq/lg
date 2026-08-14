@@ -565,6 +565,17 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | fn_form :: rest -> (
           match split_last [] rest with
           | None -> Error.error "apply expects function and collection"
+          | Some
+              ( fixed_forms,
+                FList
+                  [ FSymbol
+                      ( "conj" | "clojure.core/conj" | "cljs.core/conj"
+                      | "__lg_conj" );
+                    FVector spread_forms;
+                    appended;
+                  ] ) ->
+              compile_expr scope env
+                (FList (fn_form :: (fixed_forms @ spread_forms @ [ appended ])))
           | Some (fixed_forms, FVector spread_forms) ->
               let spread_forms =
                 match (Env.target env, fn_form, fixed_forms) with
@@ -604,7 +615,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               | (Error _ as err), _ -> err
               | _, (Error _ as err) -> err
               | Ok fixed_args, Ok collection -> (
-                  match (fn_form, fixed_args, collection.ty) with
+                  if
+                    Edn_value_elaborator.is_literal_empty_collection
+                      collection.ty collection.semantic_expr
+                  then
+                    Result.map
+                      (fun direct_call ->
+                        {
+                          direct_call with
+                          semantic_expr =
+                            Semantic_ir.Sequence
+                              [ collection.semantic_expr; direct_call.semantic_expr ];
+                        })
+                      (compile_expr scope env (FList (fn_form :: fixed_forms)))
+                  else
+                    match (fn_form, fixed_args, collection.ty) with
                   | ( FSymbol
                         ("conj" | "clojure.core/conj" | "cljs.core/conj"),
                       [ target ],

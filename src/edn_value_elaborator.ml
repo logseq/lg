@@ -61,6 +61,25 @@ let is_provably_empty_collection ty expression =
       empty_map_expression expression
   | _ -> false
 
+let is_literal_empty_collection ty expression =
+  match (Types.constraint_value_type ty, unwrap_shared_expression expression) with
+  | TNil, Semantic_ir.Constructor ("None", None) -> true
+  | TList _, (Semantic_ir.List [] | Semantic_ir.Ident "[]") -> true
+  | TVector _, Semantic_ir.Ident ("Rrbvec.empty" | "V.empty") -> true
+  | ( TSet _,
+      Semantic_ir.Ident
+        ( "Lg_runtime.Runtime_poly_set.empty"
+        | "Lg_runtime.Runtime_map_set.empty"
+        | "Set.empty" ) ) ->
+      true
+  | ( map_ty,
+      Semantic_ir.Ident
+        ( "Lg_runtime.Runtime_map.empty" | "Lg_runtime.Lg_map.empty"
+        | "M.empty" ) )
+    when Option.is_some (Types.dynamic_map_types map_ty) ->
+      true
+  | _ -> false
+
 let rec is_packable ty =
   match Types.constraint_value_type ty with
   | TOcaml "Lg_edn_backend.t" -> true
