@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 242; then
-  echo "compiler call dispatch changed: expected 242 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 243; then
+  echo "compiler call dispatch changed: expected 243 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -187,6 +187,7 @@ awk '
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
     internal_abi["__lg_abs"] = "typed-static-numeric-absolute-value-primitive"
     internal_abi["__lg_dec"] = "typed-static-numeric-decrement-primitive"
+    internal_abi["__lg_divide-int"] = "typed-first-class-integer-division-source-fallback-primitive"
     internal_abi["__lg_bigint"] = "typed-integer-reader-and-conversion-primitive"
     internal_abi["__lg_bigdec"] = "typed-floating-decimal-conversion-compatibility-primitive"
     internal_abi["__lg_nan-predicate"] = "typed-floating-point-nan-predicate-primitive"
@@ -220,6 +221,8 @@ awk '
     internal_abi["__lg_with_redefs"] = "typed-var-root-temporary-rebinding-primitive"
     internal_abi["__lg_set"] = "typed-seqable-to-set-conversion-primitive"
     internal_abi["__lg_some"] = "typed-nullable-first-truthy-sequence-search-primitive"
+    internal_abi["__lg_complement"] = "typed-contextual-fixed-arity-predicate-negation-primitive"
+    internal_abi["__lg_constantly"] = "typed-contextual-constant-function-construction-primitive"
     internal_abi["__lg_update"] = "typed-map-vector-or-record-update-primitive"
     internal_abi["__lg_with-meta"] = "typed-closed-edn-metadata-conversion-primitive"
     internal_abi["__lg_transient"] = "typed-persistent-to-transient-collection-primitive"
@@ -285,12 +288,12 @@ awk '
     } else if (narrowing[$0]) {
       classification = "typed-primitive"
       reason = "static-guard-narrowing-primitive"
-    } else if (type_predicate[$0]) {
-      classification = "typed-primitive"
-      reason = "internal-static-type-predicate-primitive"
     } else if ($0 in internal_abi) {
       classification = "typed-primitive"
       reason = internal_abi[$0]
+    } else if (type_predicate[$0]) {
+      classification = "typed-primitive"
+      reason = "internal-static-type-predicate-primitive"
     } else if ($0 in typed_reason) {
       classification = "typed-primitive"
       reason = typed_reason[$0]
@@ -339,6 +342,7 @@ awk -F '\t' '
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
     form_reason["__lg_defer_seq"] = "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive"
     form_reason["__lg_dec"] = "private-typed-static-numeric-decrement-inference-primitive"
+    form_reason["__lg_constantly"] = "private-typed-contextual-constant-function-inference-primitive"
     form_reason["new"] = "typed-host-constructor-application-elaboration"
     form_reason["#uuid"] = "compiler-owned-tagged-uuid-reader-literal-elaboration"
     form_reason["#inst"] = "compiler-owned-validated-tagged-instant-reader-literal-elaboration"

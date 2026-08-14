@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 81 namespaces: Native executes 76 applicable namespaces,
-and Melange executes 80 namespaces with 1,555 assertions. Both are green. The
+currently contains 96 namespaces: Native executes 91 applicable namespaces,
+and Melange executes 95 namespaces with 1,717 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -654,7 +654,7 @@ that LG already provides.
 The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
-The call elaborator contributes 242 reviewed routes. A separate OCaml-AST
+The call elaborator contributes 243 reviewed routes. A separate OCaml-AST
 extractor now audits 154 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `dotimes`,
 `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
@@ -673,7 +673,7 @@ reason; the inventory test rejects the former catch-all blocker description.
 Completion requires reducing `source-shadowed` to zero by removing its legacy
 name-based compiler fallback, while resolving each static-typing blocker as the
 language gains the required capability, variadic, or higher-order relation.
-The current 242-name compiler dispatch inventory has zero `source-shadowed`
+The current 243-name compiler dispatch inventory has zero `source-shadowed`
 entries: the source definitions of `identity`, `complement`, `boolean`, `truth_`,
 `int-rotate-left`, `imul`, `m3-mix-K1`, `m3-mix-H1`, `m3-fmix`,
 `m3-hash-int`, `m3-hash-unencoded-chars`, `hash-string*`,

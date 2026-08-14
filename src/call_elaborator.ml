@@ -9723,13 +9723,14 @@ let create ~compile_expr =
                           })
                         (adapt_fields [] values))))
         | _ -> Error.error "record expects a record type and fields")
-    | "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide" -> (
+    | "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
+    | "__lg_divide-int" -> (
         let operator =
           match name with
           | "__lg_add" -> "+"
           | "__lg_subtract" -> "-"
           | "__lg_multiply" -> "*"
-          | "__lg_divide" -> "/"
+          | "__lg_divide" | "__lg_divide-int" -> "/"
           | _ -> assert false
         in
         match compile_args () with
@@ -9876,7 +9877,41 @@ let create ~compile_expr =
                   args
               else args
             in
-            if Result.is_ok (Core_int.expect_int_args operator args) then
+            if
+              name = "__lg_divide"
+              && Env.target env = Target.Native
+              && (match Env.expected_type env with
+                 | Some expected -> not (Types.equal expected TInt)
+                 | None -> true)
+              && Result.is_ok (Core_int.expect_int_args operator args)
+            then
+              let ratio_args =
+                List.map
+                  (fun arg ->
+                    apply "Lg_runtime.Runtime_ratio.of_int"
+                      [ arg.semantic_expr ])
+                  args
+              in
+              (match ratio_args with
+              | [ value ] ->
+                  Ok
+                    (typed_ir ratio_ty
+                       (apply "Lg_runtime.Runtime_ratio.divide"
+                          [
+                            apply "Lg_runtime.Runtime_ratio.of_int"
+                              [ Semantic_ir.Int 1 ];
+                            value;
+                          ]))
+              | first :: rest ->
+                  Ok
+                    (typed_ir ratio_ty
+                       (List.fold_left
+                          (fun result value ->
+                            apply "Lg_runtime.Runtime_ratio.divide"
+                              [ result; value ])
+                          first rest))
+              | [] -> assert false)
+            else if Result.is_ok (Core_int.expect_int_args operator args) then
               Core_int.compile_operator ~target:(Env.target env) operator args
             else if Core_float.expect_float_args args then
               Core_float.compile_operator operator args
@@ -9948,6 +9983,18 @@ let create ~compile_expr =
                  (apply "int_of_float" [ semantic_expr ]))
         | Ok [ { ty = TOcaml "int64"; semantic_expr; _ } ] ->
             Ok (typed_ir TInt (apply "Int64.to_int" [ semantic_expr ]))
+        | Ok
+            [
+              {
+                ty = TOcaml "Lg_runtime.Runtime_ratio.t";
+                semantic_expr;
+                _;
+              };
+            ] ->
+            Ok
+              (typed_ir TInt
+                 (apply "Lg_runtime.Runtime_ratio.to_int"
+                    [ semantic_expr ]))
         | Ok [ { ty; semantic_expr; _ } ] when Types.is_dynamic ty ->
             Ok
               (typed_ir TInt

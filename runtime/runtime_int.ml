@@ -34,7 +34,8 @@ let bit_or left right = left lor right
 let bit_xor left right = left lxor right
 let shift_left value count = value lsl count
 let shift_right value count = value asr count
-let logical_shift_right value count = value lsr count
+let logical_shift_right value count =
+  Int64.shift_right_logical (Int64.of_int value) count |> Int64.to_int
 
 let int32 value = Int32.of_int value |> Int32.to_int
 

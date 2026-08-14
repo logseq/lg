@@ -10,6 +10,7 @@ let subtract = binary ( -. )
 let multiply = binary ( *. )
 let negate value = of_float_unchecked (-. (to_float_unchecked value))
 let int32 value = value lor 0
+let logical_shift_right value count = value lsr count
 
 let abs_unchecked value =
   of_float_unchecked (Float.abs (to_float_unchecked value))

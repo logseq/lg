@@ -50,8 +50,12 @@ let to_string value =
   if value.denominator = 1 then string_of_int value.numerator
   else string_of_int value.numerator ^ "/" ^ string_of_int value.denominator
 
+let to_int value = value.numerator / value.denominator
+
 let equal left right =
   left.numerator = right.numerator && left.denominator = right.denominator
+
+let is_ratio value = value.denominator <> 1
 
 let abs value =
   if value.numerator < 0 then { value with numerator = -value.numerator }

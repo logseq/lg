@@ -484,7 +484,7 @@
 (println (= 0 (count (merge-with add-values nil nil))))
 
 (def merged-disjoint
-  (merge-with (fn [_left _right] (/ 1 0)) {:left 1} {:right 2}))
+  (merge-with (fn [_left _right] (quot 1 0)) {:left 1} {:right 2}))
 (println (= 1 (get merged-disjoint :left 0)))
 (println (= 2 (get merged-disjoint :right 0)))
 

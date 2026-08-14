@@ -478,6 +478,7 @@ awk -F '\t' '$1 == "compiler-call" && ($2 == "identity" || $3 == "source-shadowe
 awk -F '\t' '$1 == "compiler-call" && ($2 == "keyword" || $2 == "symbol") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "__lg_builtin-keyword" || $2 == "__lg_builtin-symbol") && $3 == "typed-primitive" {found++} END {exit found != 2}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_ratio-predicate" && $3 == "typed-primitive" && $4 == "typed-static-ratio-representation-predicate-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_divide-int" && $3 == "typed-primitive" && $4 == "typed-first-class-integer-division-source-fallback-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && ($2 == "contains?" || $2 == "assoc" || $2 == "dissoc" || $2 == "find" || $2 == "keys") {found=1} END {exit found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_find" && $3 == "typed-primitive" && $4 == "typed-map-entry-lookup-capability-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "definition" && ($2 == "clojure.core/max" || $2 == "clojure.core/min") && $3 == "source" {found++} END {exit found != 2}' "$tmp/manifest-status.tsv"

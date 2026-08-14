@@ -3515,9 +3515,9 @@
 
 (defn /
   {:inline (fn [& values] (cons '__lg_divide values))}
-  ([x] (__lg_divide 1 x))
-  ([x y] (__lg_divide x y))
-  ([x y & more] (__lg_reduce / (__lg_divide x y) more)))
+  ([x] (__lg_divide-int 1 x))
+  ([x y] (__lg_divide-int x y))
+  ([x y & more] (__lg_reduce / (__lg_divide-int x y) more)))
 
 (defn- less-chain [x y more]
   (if (__lg_less x y)
@@ -4287,7 +4287,7 @@
          right right]
     (if (> left right)
       (double left)
-      (let [middle (+ left (/ (- right left) 2))]
+      (let [middle (+ left (quot (- right left) 2))]
         (if (< (compare (aget values middle) key) 0)
           (recur (inc middle) right)
           (recur left (dec middle)))))))
@@ -4297,7 +4297,7 @@
          right right]
     (if (> left right)
       (double left)
-      (let [middle (+ left (/ (- right left) 2))]
+      (let [middle (+ left (quot (- right left) 2))]
         (if (> (compare (aget values middle) key) 0)
           (recur left (dec middle))
           (recur (inc middle) right))))))
@@ -4463,7 +4463,8 @@
    (symbol (str prefix-string (swap! gensym_counter inc)))))
 
 (defn bit-shift-right-zero-fill [x n]
-  (runtime-int/logical-shift-right x n))
+  #?(:melange (runtime-int-melange/logical-shift-right x n)
+     :default (runtime-int/logical-shift-right x n)))
 
 (defn- bit-and-not-two [x y]
   (bit-and x (bit-not y)))
