@@ -9876,13 +9876,13 @@ let create ~compile_expr =
                         (adapt_fields [] values))))
         | _ -> Error.error "record expects a record type and fields")
     | "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
-    | "__lg_divide-int" -> (
+    | "__lg_divide-melange" -> (
         let operator =
           match name with
           | "__lg_add" -> "+"
           | "__lg_subtract" -> "-"
           | "__lg_multiply" -> "*"
-          | "__lg_divide" | "__lg_divide-int" -> "/"
+          | "__lg_divide" | "__lg_divide-melange" -> "/"
           | _ -> assert false
         in
         match compile_args () with
@@ -9943,7 +9943,8 @@ let create ~compile_expr =
                 | "__lg_add" -> "Lg_runtime.Runtime_decimal.add"
                 | "__lg_subtract" -> "Lg_runtime.Runtime_decimal.subtract"
                 | "__lg_multiply" -> "Lg_runtime.Runtime_decimal.multiply"
-                | "__lg_divide" -> "Lg_runtime.Runtime_decimal.divide"
+                | "__lg_divide" | "__lg_divide-melange" ->
+                    "Lg_runtime.Runtime_decimal.divide"
                 | _ -> assert false
               in
               (match (name, args) with
@@ -9952,7 +9953,7 @@ let create ~compile_expr =
                     (typed_ir decimal_ty
                        (apply "Lg_runtime.Runtime_decimal.negate"
                           [ value.semantic_expr ]))
-              | "__lg_divide", [ value ] ->
+              | ("__lg_divide" | "__lg_divide-melange"), [ value ] ->
                   Ok
                     (typed_ir decimal_ty
                        (apply binary_function
@@ -9977,7 +9978,8 @@ let create ~compile_expr =
                 | "__lg_add" -> "Lg_runtime.Runtime_ratio.add"
                 | "__lg_subtract" -> "Lg_runtime.Runtime_ratio.subtract"
                 | "__lg_multiply" -> "Lg_runtime.Runtime_ratio.multiply"
-                | "__lg_divide" -> "Lg_runtime.Runtime_ratio.divide"
+                | "__lg_divide" | "__lg_divide-melange" ->
+                    "Lg_runtime.Runtime_ratio.divide"
                 | _ -> assert false
               in
               (match (name, args) with
@@ -9986,7 +9988,7 @@ let create ~compile_expr =
                     (typed_ir ratio_ty
                        (apply "Lg_runtime.Runtime_ratio.negate"
                           [ value.semantic_expr ]))
-              | "__lg_divide", [ value ] ->
+              | ("__lg_divide" | "__lg_divide-melange"), [ value ] ->
                   Ok
                     (typed_ir ratio_ty
                        (apply binary_function
@@ -10011,7 +10013,7 @@ let create ~compile_expr =
                 && List.exists (fun arg -> Types.equal arg.ty TNil) args
               then
                 let use_float =
-                  name = "__lg_divide"
+                  (name = "__lg_divide" || name = "__lg_divide-melange")
                   || List.exists (fun arg -> Types.equal arg.ty TFloat) args
                 in
                 List.map
@@ -10032,9 +10034,7 @@ let create ~compile_expr =
             if
               name = "__lg_divide"
               && Env.target env = Target.Native
-              && (match Env.expected_type env with
-                 | Some expected -> not (Types.equal expected TInt)
-                 | None -> true)
+              && args <> []
               && Result.is_ok (Core_int.expect_int_args operator args)
             then
               let ratio_args =
@@ -10063,6 +10063,12 @@ let create ~compile_expr =
                               [ result; value ])
                           first rest))
               | [] -> assert false)
+            else if
+              name = "__lg_divide-melange"
+              && Result.is_ok (Core_int.expect_int_args operator args)
+            then
+              Core_float.compile_operator operator
+                (List.map Core_float.widen_to_float args)
             else if Result.is_ok (Core_int.expect_int_args operator args) then
               Core_int.compile_operator ~target:(Env.target env) operator args
             else if Core_float.expect_float_args args then

@@ -179,7 +179,7 @@
     * {:status :static-adaptation
        :reason :source-zero-one-two-and-variadic-function-and-inline-specialization-preserve-left-to-right-multiplication-with-static-int-first-class-calls-direct-int-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-coercion}
     / {:status :static-adaptation
-       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-exact-native-direct-integer-ratios-direct-float-or-mixed-numeric-widening-and-clojurescript-only-melange-nil-to-zero-floating-coercion}
+       :reason :source-unary-binary-and-variadic-function-and-inline-specialization-preserve-reciprocal-and-left-to-right-division-with-static-int-first-class-calls-exact-native-direct-and-applied-integer-ratios-melange-floating-direct-and-applied-integer-division-direct-float-decimal-or-mixed-numeric-widening-and-target-specific-zero-division-behavior}
     < {:status :static-adaptation
        :reason :source-one-two-and-variadic-function-preserves-upstream-short-circuiting-monotonic-comparison-while-inline-specialization-supports-direct-static-int-float-decimal-exact-ratio-int-or-explicitly-widened-ratio-float-calls-and-target-aware-melange-nil-numeric-coercion}
     <= {:status :static-adaptation

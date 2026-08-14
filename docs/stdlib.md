@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 146 namespaces (146/183, 79.8%): Native executes 139
-applicable namespaces, and Melange executes 145 namespaces with 2,734
+currently contains 150 namespaces (150/183, 82.0%): Native executes 143
+applicable namespaces, and Melange executes 149 namespaces with 2,783
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -300,6 +300,14 @@ nested source conditionals so a general truthy predicate remains statically
 represented. `take-nth` explicitly skips every input for a zero-step
 transducer, matching ClojureScript on Native without evaluating integer
 remainder by zero. Negative steps retain their upstream transducer behavior.
+
+The arithmetic batch promotes `+`, `-`, `*`, and `/` on both targets with
+zero, unary, binary, variadic, and `apply` coverage where each operator allows
+those arities. Native integer division now returns exact ratios for direct and
+first-class calls, including non-integral and reciprocal results, instead of
+silently truncating through OCaml integer division. Melange uses a separate
+typed floating primitive and retains ClojureScript Infinity and NaN behavior.
+Decimal, mixed int/float, and left-to-right reduction remain statically typed.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,
@@ -459,7 +467,10 @@ shapes that apply to each operator, including unary reciprocal division and
 pairwise monotonic comparison. Their source inline definitions route direct
 integer, floating, and mixed numeric calls to private typed primitives; the
 ordinary source functions remain statically first-class for homogeneous integer
-calls. Generated OCaml uses readable names such as `clojure_core_add` and
+calls. Native `/` returns the closed exact-ratio domain for integer direct and
+first-class calls; Melange `/` returns its statically typed floating numeric
+result and preserves ClojureScript zero-division behavior. Generated OCaml uses
+readable names such as `clojure_core_add` and
 `clojure_core_less_equal`. Metadata normalization recognizes a generic type
 hint only when its `<...>` form is complete, so ordinary `<` and `<=` symbols
 remain valid source definition names.
@@ -772,7 +783,7 @@ The generator pins the reviewed compiler dispatch count and fails when that
 surface changes. Entries are classified as `source-shadowed`,
 `blocked-static-typing`, `special-form`, `typed-primitive`, or `host-boundary`.
 The call elaborator contributes 243 reviewed routes. A separate OCaml-AST
-extractor now audits 154 form-head pattern routes in expression elaboration and
+extractor now audits 155 form-head pattern routes in expression elaboration and
 type inference; this closes the former gap where `case`, `condp`, `dotimes`,
 `fn`, `for`, `let`, and `loop` were compiler-owned but appeared as unclassified
 deferred upstream vars. The private `__lg_doseq` route is classified separately

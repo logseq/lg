@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 146 namespaces (146/183,
-79.8%). Native runs the 139 applicable namespaces, while Melange runs 145
-namespaces with 2,734 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 150 namespaces (150/183,
+82.0%). Native runs the 143 applicable namespaces, while Melange runs 149
+namespaces with 2,783 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -392,6 +392,14 @@ conditionals so truthy callback capabilities are not collapsed to `bool`.
 Native `take-nth` now handles the ClojureScript zero-step transducer result
 explicitly instead of raising OCaml `Division_by_zero`; negative steps keep the
 same index/remainder order.
+
+The arithmetic batch promotes `+`, `-`, `*`, and `/` on both targets. Direct
+and first-class calls cover each supported arity, `apply`, mixed int/float
+coercion, decimals, Infinity, and NaN. Native integer `/` now uses the closed
+exact-ratio domain for reciprocal, binary, variadic, and applied calls instead
+of OCaml truncating division. Melange keeps its separate typed floating path,
+including ClojureScript Infinity and NaN results for division by zero. Neither
+target introduces dynamic numeric storage.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream

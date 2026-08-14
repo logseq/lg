@@ -193,3 +193,9 @@ clojure.core-test.take-nth
 clojure.core-test.take-while
 clojure.core-test.drop-last
 clojure.core-test.drop-while
+
+# Numeric arithmetic across direct and applied arities.
+clojure.core-test.plus
+clojure.core-test.minus
+clojure.core-test.star
+clojure.core-test.slash

@@ -565,28 +565,35 @@ let rec numeric_form_type params = function
   | FSymbol name -> string_assoc_opt name params |> Option.value ~default:TUnknown
   | FList
       (FSymbol
-         ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
-         | "__lg_max" | "__lg_min" )
+         ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_max"
+         | "__lg_min" )
       :: args)
-    ->
-      let types = List.map (numeric_form_type params) args in
-      if
-        List.exists
-          (Types.equal (TOcaml "Lg_runtime.Runtime_decimal.t"))
-          types
-      then TOcaml "Lg_runtime.Runtime_decimal.t"
-      else if List.exists (Types.equal TFloat) types then TFloat
-      else if
-        List.exists
-          (Types.equal (TOcaml "Lg_runtime.Runtime_ratio.t"))
-          types
-      then TOcaml "Lg_runtime.Runtime_ratio.t"
-      else if List.exists (Types.equal TInt) types then TInt
-      else TUnknown
+    -> numeric_result_type params ~integer_result:TInt args
+  | FList (FSymbol "__lg_divide" :: args) ->
+      numeric_result_type params
+        ~integer_result:(TOcaml "Lg_runtime.Runtime_ratio.t") args
+  | FList (FSymbol "__lg_divide-melange" :: args) ->
+      numeric_result_type params ~integer_result:TFloat args
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | FList [ FSymbol "__lg_bigdec"; _ ] -> TFloat
   | FList [ FSymbol "__lg_bigint"; _ ] -> TInt
   | _ -> TUnknown
+
+and numeric_result_type params ~integer_result args =
+  let types = List.map (numeric_form_type params) args in
+  if
+    List.exists
+      (Types.equal (TOcaml "Lg_runtime.Runtime_decimal.t"))
+      types
+  then TOcaml "Lg_runtime.Runtime_decimal.t"
+  else if List.exists (Types.equal TFloat) types then TFloat
+  else if
+    List.exists
+      (Types.equal (TOcaml "Lg_runtime.Runtime_ratio.t"))
+      types
+  then TOcaml "Lg_runtime.Runtime_ratio.t"
+  else if List.exists (Types.equal TInt) types then integer_result
+  else TUnknown
 
 let rec inferred_form_type params = function
   | FInt _ -> TInt
@@ -664,7 +671,7 @@ let rec inferred_form_type params = function
   | FList
       (FSymbol
          ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
-         | "__lg_max" | "__lg_min" )
+         | "__lg_divide-melange" | "__lg_max" | "__lg_min" )
       :: _)
     as form ->
       numeric_form_type params form
@@ -1837,7 +1844,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
       (FSymbol
          ( "__lg_add" | "__lg_subtract" | "__lg_multiply" | "__lg_divide"
-         | "__lg_max" | "__lg_min" )
+         | "__lg_divide-melange" | "__lg_max" | "__lg_min" )
       :: args)
       when Types.equal expected_ty TInt
            || Types.equal expected_ty TFloat
@@ -5108,7 +5115,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         (FSymbol
            ( "__lg_add" | "__lg_subtract" | "__lg_multiply"
-           | "__lg_divide" | "__lg_max" | "__lg_min" )
+           | "__lg_divide" | "__lg_divide-melange" | "__lg_max"
+           | "__lg_min" )
         :: args)
       ->
         let expected_ty =

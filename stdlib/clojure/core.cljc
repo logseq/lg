@@ -3518,11 +3518,29 @@
   ([x y] (__lg_multiply x y))
   ([x y & more] (__lg_reduce * (__lg_multiply x y) more)))
 
-(defn /
-  {:inline (fn [& values] (cons '__lg_divide values))}
-  ([x] (__lg_divide-int 1 x))
-  ([x y] (__lg_divide-int x y))
-  ([x y & more] (__lg_reduce / (__lg_divide-int x y) more)))
+#?(:native
+   (defn- divide-native-step
+     [^:Lg_runtime.Runtime_ratio.t result ^:int input]
+     (__lg_divide result input))
+   :melange
+   (defn- divide-melange-step
+     [^:float result ^:int input]
+     (__lg_divide-melange result input)))
+
+#?(:native
+   (defn /
+     {:inline (fn [& values] (cons '__lg_divide values))}
+     ([^:int x] (__lg_divide x))
+     ([^:int x ^:int y] (__lg_divide x y))
+     ([^:int x ^:int y & ^:seq<int> more]
+      (__lg_reduce divide-native-step (__lg_divide x y) more)))
+   :melange
+   (defn /
+     {:inline (fn [& values] (cons '__lg_divide-melange values))}
+     ([^:int x] (__lg_divide-melange x))
+     ([^:int x ^:int y] (__lg_divide-melange x y))
+     ([^:int x ^:int y & ^:seq<int> more]
+      (__lg_reduce divide-melange-step (__lg_divide-melange x y) more))))
 
 (defn- less-chain [x y more]
   (if (__lg_less x y)

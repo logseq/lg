@@ -30820,7 +30820,7 @@ let test_source_printing_function_cluster_is_source_owned () =
       "src/expression_support.ml"; "src/top_level_elaborator.ml";
     ]
 
-let test_source_numeric_operator_cluster_matches_clojurescript () =
+let test_source_numeric_operator_cluster_matches_target_semantics () =
   let source =
     {|
 (ns app.source-numeric-operators
@@ -30839,6 +30839,7 @@ let test_source_numeric_operator_cluster_matches_clojurescript () =
   (- 7) ":" (- 20 3 2) ":" (subtract 20 5 3) ":"
   (*) ":" (* 5) ":" (* 2 3 4) ":" (multiply 2 3 5) ":"
   (/ 4.0) ":" (/ 20 2 2) ":" (divide 24 3 2) ":"
+  (/ 3) ":" (/ 15 2) ":" (divide 15 2) ":"
   (< 1) ":" (< 1 2 3 4) ":" (< 1 3 2) ":" (less-than 1 2 3) ":"
   (<= 1 1 2) ":" (> 4 3 2) ":" (>= 4 4 2) ":"
   (== 1 1.0 1) ":" (core/+ 1.5 2)))
@@ -30857,7 +30858,7 @@ let test_source_numeric_operator_cluster_matches_clojurescript () =
              ("generated ML is missing readable operator name "
             ^ generated_name));
   assert_ocaml_runs "source_numeric_operator_cluster"
-    "0:7:10:9:-7:15:12:1:5:24:30:0.25:5:4:true:true:false:true:true:true:true:true:3.5\n"
+    "0:7:10:9:-7:15:12:1:5:24:30:0.25:5:4:1/3:15/2:15/2:true:true:false:true:true:true:true:true:3.5\n"
     (compile_string_with_stdlib source |> expect_ok);
   let melange =
     compile_string_from_stdlib ~target:Lg.Target.Melange source |> expect_ok
@@ -31103,6 +31104,26 @@ let test_source_writer_printing_cluster_is_source_owned () =
     [ "src/call_elaborator.ml"; "src/type_inference.ml";
       "src/expression_support.ml";
     ]
+
+let test_source_division_uses_target_typed_primitives () =
+  let source = read_file "stdlib/clojure/core.cljc" in
+  if string_contains_substring source "__lg_divide-int" then
+    failwith "source / must not lower through truncating integer division";
+  if not (string_contains_substring source "__lg_divide-melange") then
+    failwith "source / is missing its statically typed Melange division path";
+  let native = compile_string_from_stdlib "(/ 15 2)" |> expect_ok in
+  if not (string_contains_substring native "Runtime_ratio.divide") then
+    failwith "Native integer division must lower to exact ratio division";
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "Native exact division must remain statically typed";
+  let melange =
+    compile_string_from_stdlib ~target:Lg.Target.Melange "(/ 15 2)"
+    |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_ratio" then
+    failwith "Melange division must not lower through the Native ratio domain";
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange division must remain statically typed"
 
 let test_source_printing_options_cluster_matches_clojurescript () =
   let source =
@@ -50121,10 +50142,12 @@ let tests =
       test_source_printing_function_cluster_matches_clojurescript );
     ( "source printing function cluster is source-owned",
       test_source_printing_function_cluster_is_source_owned );
-    ( "source numeric operator cluster matches ClojureScript",
-      test_source_numeric_operator_cluster_matches_clojurescript );
+    ( "source numeric operator cluster matches target semantics",
+      test_source_numeric_operator_cluster_matches_target_semantics );
     ( "source numeric operator cluster is source-owned",
       test_source_numeric_operator_cluster_is_source_owned );
+    ( "source division uses target typed primitives",
+      test_source_division_uses_target_typed_primitives );
     ( "source generic equality matches ClojureScript",
       test_source_generic_equality_matches_clojurescript );
     ( "source first-class equality parameter is statically overloaded",

@@ -156,7 +156,8 @@ awk '
     internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"
     internal_abi["__lg_subtract"] = "typed-static-numeric-subtraction-primitive"
     internal_abi["__lg_multiply"] = "typed-static-int-float-or-arbitrary-precision-decimal-multiplication-primitive"
-    internal_abi["__lg_divide"] = "typed-static-numeric-division-primitive"
+    internal_abi["__lg_divide"] = "typed-native-exact-ratio-or-static-numeric-division-primitive"
+    internal_abi["__lg_divide-melange"] = "typed-melange-floating-numeric-division-primitive"
     internal_abi["__lg_numeric-equal"] = "typed-static-numeric-equality-primitive"
     internal_abi["__lg_less"] = "typed-static-numeric-less-than-primitive"
     internal_abi["__lg_less-equal"] = "typed-static-numeric-less-than-or-equal-primitive"
@@ -187,7 +188,6 @@ awk '
     internal_abi["__lg_weak-clear!"] = "typed-weak-reference-clear-primitive"
     internal_abi["__lg_abs"] = "typed-static-numeric-absolute-value-primitive"
     internal_abi["__lg_dec"] = "typed-static-numeric-decrement-primitive"
-    internal_abi["__lg_divide-int"] = "typed-first-class-integer-division-source-fallback-primitive"
     internal_abi["__lg_bigint"] = "typed-integer-reader-and-conversion-primitive"
     internal_abi["__lg_bigdec"] = "typed-floating-decimal-conversion-compatibility-primitive"
     internal_abi["__lg_nan-predicate"] = "typed-floating-point-nan-predicate-primitive"
@@ -322,8 +322,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 154; then
-  echo "compiler form dispatch changed: expected 154 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 155; then
+  echo "compiler form dispatch changed: expected 155 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
