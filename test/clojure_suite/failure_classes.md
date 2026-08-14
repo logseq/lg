@@ -230,9 +230,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 170 namespaces (170/185,
-91.9%). Native runs 163 applicable namespaces as 175 tests, while Melange runs
-169 namespaces as 181 tests with 2,962 assertions. Both targets pass with zero
+target qualifier. The current manifest contains 171 namespaces (171/185,
+92.4%). Native runs 164 applicable namespaces as 178 tests, while Melange runs
+170 namespaces as 184 tests with 2,972 assertions. Both targets pass with zero
 failures and zero errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -295,11 +295,13 @@ runtime map's static key type, and nested generic map compatibility is checked
 recursively. This fixes independently instantiated empty-map equality without
 dynamic storage or a name-based special case.
 
-The upstream `fnil` fixture remains an audited static error. It reuses one
-closure created by `(fnil test-fn 100)` first with `nil`/integer input and then
-with a symbol input. The closure's nullable argument has one rigid static
-payload type in LG, so the fixture cannot require both `int` and `string`
-without an explicit closed sum. The promoted copy is intentionally omitted.
+The curated `fnil` fixture is promoted on both targets. It covers independent
+integer, string, boolean, and variadic-rest parameter types through a
+materialized first-class `fnil`, plus automatic, aliased, and qualified core
+access and one-time default evaluation. The original whole-suite fixture still
+reuses one closure with incompatible integer and symbol payloads and remains an
+audited static error; that does not restrict independent types in distinct
+argument positions.
 
 The following numeric extrema batch promotes `max` and `min` on both targets.
 Native exact mixed integer/ratio calls use the closed ratio domain and explicit
@@ -483,11 +485,13 @@ order without dynamic storage.
   `double-array`/`float-array` element types and optional map-predicate lookups
   such as `(some {2 "two"} [nil 3 2])` without dynamic packing. The upstream
   `some.cljc` namespace compiles on both Native and Melange.
-- `clojure.core/fnil` now supports variadic function arities whose default
-  positions fall in the wrapped function's rest parameter. The upstream
-  `fnil.cljc` namespace now fails later because the test stores int defaults and
-  the symbol `'not-nil` in the same result vector; that is a heterogeneous
-  collection typing issue, not an unsupported `fnil` arity.
+- `clojure.core/fnil` supports variadic function arities whose default
+  positions fall in the wrapped function's rest parameter. Its first-class
+  sidecar now also gives the first, second, third, and rest positions independent
+  static type variables, so heterogeneous function parameter positions do not
+  require dynamic packing. The original upstream fixture's reuse of one
+  nullable position across integer and symbol payloads remains a separate
+  static-error case.
 - Runtime source-level syntax-quoted constants compile as quoted data, and the
   target reader branches exclude JVM-only ratios while preserving named
   characters. Together with the typed constant-function capability this now

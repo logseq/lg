@@ -227,3 +227,6 @@ clojure.core-test.plus-squote
 clojure.core-test.star-squote
 clojure.core-test.var-qmark
 clojure.core-test.ifn-qmark
+
+# Higher-order default substitution with independent static argument types.
+clojure.core-test.fnil

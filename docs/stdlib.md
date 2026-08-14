@@ -248,9 +248,9 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 170 namespaces (170/185, 91.9%): Native executes 163
-applicable namespaces as 175 tests, and Melange executes 169 namespaces as 181
-tests with 2,962 assertions. Both are green. The
+currently contains 171 namespaces (171/185, 92.4%): Native executes 164
+applicable namespaces as 178 tests, and Melange executes 170 namespaces as 184
+tests with 2,972 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
 Dune or generated-runner edits. Static-error fixtures remain in the generated
@@ -319,6 +319,14 @@ promotes direct `var?` syntax recognition and the static callable domains of
 `ifn?`, including functions, maps, sets, vectors, keywords, and symbols. LG
 does not expose a first-class JavaScript Var wrapper; resolved values therefore
 remain non-Vars outside literal `var`/reader-var-quote syntax.
+
+The higher-order defaulting batch promotes `fnil` on both targets. Its
+first-class sidecar now retains independent rigid types for the first, second,
+third, and variadic-rest argument positions instead of forcing every default
+and wrapped parameter into one type. Direct, aliased, qualified, and
+materialized calls preserve two- and three-argument substitution, false versus
+nil behavior, and one-time evaluation of default expressions without dynamic
+packing.
 
 The hierarchy batch promotes `parents`, `ancestors`, `descendants`, `derive`,
 and `underive` on both targets. Curated upstream fixtures cover direct and

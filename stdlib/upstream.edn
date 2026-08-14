@@ -322,7 +322,7 @@
     partial {:status :static-adaptation
              :reason :source-port-preserves-upstream-one-two-three-four-and-variadic-constructor-arities-returned-zero-one-two-three-and-variadic-arities-fixed-argument-evaluation-order-extra-fixed-argument-ignoring-for-fixed-arity-functions-pure-variadic-functions-and-first-class-partial-partial-calls-while-private-static-specialization-retains-precise-heterogeneous-direct-call-parameter-types}
     fnil {:status :static-adaptation
-          :reason :source-port-preserves-upstream-one-two-and-three-default-constructor-cases-returned-fixed-and-variadic-arities-nil-substitution-positions-and-default-evaluation-order-for-homogeneous-first-class-functions-while-conj-canonicalizes-to-the-private-collection-primitive-and-private-static-specializations-retain-precise-direct-call-and-collection-capability-types}
+          :reason :source-port-preserves-upstream-one-two-and-three-default-constructor-cases-returned-fixed-and-variadic-arities-nil-substitution-positions-and-default-evaluation-order-while-the-first-class-sidecar-keeps-first-second-third-and-rest-argument-types-independent-conj-canonicalizes-to-the-private-collection-primitive-and-private-static-specializations-retain-precise-direct-call-and-collection-capability-types}
     constantly {:status :static-adaptation
                 :reason :source-definition-retains-upstream-zero-one-two-and-variadic-arities-while-an-inline-private-typed-constant-function-capability-allows-each-direct-apply-and-higher-order-call-to-instantiate-ignored-argument-types-independently-without-dynamic-storage}
     boolean {:status :ported}
