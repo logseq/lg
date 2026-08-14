@@ -186,3 +186,10 @@ clojure.core-test.random-uuid
 
 # Statically indexed string lookup, including nested get-in traversal.
 clojure.core-test.get
+
+# Lazy prefix selection and removal, including stateful transducers.
+clojure.core-test.take
+clojure.core-test.take-nth
+clojure.core-test.take-while
+clojure.core-test.drop-last
+clojure.core-test.drop-while

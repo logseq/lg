@@ -558,7 +558,7 @@
     take-while {:status :static-adaptation
                 :reason :source-port-preserves-upstream-predicate-ordered-early-termination-and-lazy-prefix-control-flow}
     drop-while {:status :static-adaptation
-                :reason :source-port-preserves-upstream-stateful-transducer-and-lazy-prefix-skipping-control-flow}
+                :reason :source-port-preserves-upstream-stateful-transducer-predicate-short-circuit-order-per-reduction-state-reset-and-lazy-prefix-skipping-control-flow-while-nested-conditionals-retain-general-truthy-predicate-capabilities}
     map-indexed {:status :static-adaptation
                  :reason :source-port-preserves-upstream-zero-based-stateful-transducer-and-lazy-index-progression}
     keep {:status :static-adaptation
@@ -612,7 +612,7 @@
     reduce-kv {:status :static-adaptation
                :reason :source-public-function-dispatches-first-class-maps-through-ikvreduce-and-inlines-direct-calls-to-a-private-typed-empty-accumulator-inference-primitive-with-vector-protocol-parity}
     take-nth {:status :static-adaptation
-              :reason :source-port-preserves-the-stateful-transducer-index-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
+              :reason :source-port-preserves-the-stateful-transducer-index-negative-and-positive-step-remainder-order-zero-step-clojurescript-empty-result-and-lazy-drop-recursion-through-the-explicit-reducing-function-abi}
     partition-all {:status :static-adaptation
                    :reason :source-port-preserves-stateful-vector-buffering-completion-flush-and-lazy-partial-tail-partitions-without-the-javascript-array-list-fast-path}
     deref {:status :static-adaptation

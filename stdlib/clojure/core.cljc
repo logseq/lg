@@ -2207,11 +2207,13 @@
          ([] (rf))
          ([result] (rf result))
          ([result input]
-          (if (and @dropping (pred input))
-            (runtime-reduced/continue result)
-            (do
-              (vreset! dropping false)
-              (rf result input))))))))
+          (if @dropping
+            (if (pred input)
+              (runtime-reduced/continue result)
+              (do
+                (vreset! dropping false)
+                (rf result input)))
+            (rf result input)))))))
   ([pred coll]
    (lazy-seq (drop-while-seq pred coll))))
 
@@ -2622,9 +2624,12 @@
          ([] (rf))
          ([result] (rf result))
          ([result input]
-          (if (zero? (rem (vswap! index inc) n))
-            (rf result input)
-            (runtime-reduced/continue result)))))))
+          (let [current-index (vswap! index inc)]
+            (if (zero? n)
+              (runtime-reduced/continue result)
+              (if (zero? (rem current-index n))
+                (rf result input)
+                (runtime-reduced/continue result)))))))))
   ([n coll]
    (take-nth-seq n (seq coll))))
 

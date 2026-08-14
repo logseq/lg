@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 141 namespaces (141/183,
-77.0%). Native runs the 134 applicable namespaces, while Melange runs 140
-namespaces with 2,685 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 146 namespaces (146/183,
+79.8%). Native runs the 139 applicable namespaces, while Melange runs 145
+namespaces with 2,734 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -382,6 +382,16 @@ version-four format check through `str`, `clojure.string/split`, and nested
 three arguments. The upstream `get` rows that deliberately mix unrelated
 collection/result/default domains remain compile-time static errors and are
 not weakened into a universal value.
+
+The lazy-prefix batch promotes `take`, `take-nth`, `take-while`, `drop-last`,
+and `drop-while` on both targets. The fixtures retain upstream laziness,
+finite/infinite prefixes, empty inputs, boundary counts, negative drop counts,
+transducer early termination, and per-reduction state reset. The source
+`drop-while` transducer preserves predicate short-circuit order with nested
+conditionals so truthy callback capabilities are not collapsed to `bool`.
+Native `take-nth` now handles the ClojureScript zero-step transducer result
+explicitly instead of raising OCaml `Division_by_zero`; negative steps keep the
+same index/remainder order.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
