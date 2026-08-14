@@ -248,8 +248,8 @@ percentage.
 
 Runtime validation against the pinned `jank-lang/clojure-test-suite` checkout
 is separate from compile-scan coverage. The manifest-driven promoted smoke
-currently contains 136 namespaces (136/183, 74.3%): Native executes 129
-applicable namespaces, and Melange executes 135 namespaces with 2,596
+currently contains 138 namespaces (138/183, 75.4%): Native executes 131
+applicable namespaces, and Melange executes 137 namespaces with 2,648
 assertions. Both are green. The
 manifest accepts an optional `native` or `melange` qualifier, so target-specific
 numeric identity tests remain explicit while ordinary additions require no
@@ -272,6 +272,14 @@ vectors retain a `vector<nil>` inference instead of merging with empty
 results to their declared boolean input without introducing dynamic storage.
 The upstream bad-shape runtime-exception assertions remain static errors and
 are intentionally omitted under the static-error policy.
+
+The promoted numeric-parser batch adds `parse-long` and `parse-double` on both
+targets. Decimal grammar, signs, scientific notation, Infinity, malformed
+strings, and nullable results follow the upstream target branches. Native
+`parse-long` validates with `int_of_string_opt`, accepting values within the
+host static integer range, while Melange retains the ClojureScript
+`Number.isSafeInteger` boundary. Non-string runtime-exception assertions remain
+compile-time type errors and are omitted under the static-error policy.
 
 The promoted collection/sequence batch adds `butlast`, `conj`, `dissoc`,
 `distinct`, `drop`, `find`, `partial`, `peek`, `rand-nth`, `reverse`, `rseq`,

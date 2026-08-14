@@ -608,6 +608,9 @@ let decimal_integer_string source =
     in
     valid start
 
+let parse_native_decimal_integer source =
+  if decimal_integer_string source then int_of_string_opt source else None
+
 let safe_decimal_integer_string source =
   if not (decimal_integer_string source) then false
   else

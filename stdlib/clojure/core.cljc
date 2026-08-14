@@ -3973,14 +3973,16 @@
     nil))
 
 (defn parse-long [source]
-  (if (and (runtime-string/decimal-integer-string source)
-           (runtime-string/safe-decimal-integer-string source))
-    (let [value #?(:melange (runtime-number-melange/parse-int source 10)
-                   :default (runtime-string/parse-int-radix source 10))]
-      (when (and (<= value 9007199254740991)
-                 (>= value -9007199254740991))
-        value))
-    nil))
+  #?(:melange
+     (if (and (runtime-string/decimal-integer-string source)
+              (runtime-string/safe-decimal-integer-string source))
+       (let [value (runtime-number-melange/parse-int source 10)]
+         (when (and (<= value 9007199254740991)
+                    (>= value -9007199254740991))
+           value))
+       nil)
+     :default
+     (runtime-string/parse-native-decimal-integer source)))
 
 (defn parse-double [source]
   (cond

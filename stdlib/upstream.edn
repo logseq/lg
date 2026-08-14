@@ -853,7 +853,7 @@
     parse-boolean {:status :static-adaptation
                    :reason :non-string-input-is-rejected-statically-while-valid-string-control-flow-matches-upstream}
     parse-long {:status :static-adaptation
-                :reason :source-port-preserves-upstream-decimal-grammar-and-safe-integer-guards-through-boolean-typed-grammar-and-pre-parse-overflow-validators}
+                :reason :source-port-preserves-upstream-decimal-grammar-native-int-range-validation-and-clojurescript-safe-integer-guards-through-target-specific-pre-parse-overflow-validation}
     parse-double {:status :static-adaptation
                   :reason :source-port-preserves-upstream-nan-before-number-grammar-branching-through-boolean-typed-grammar-validators}
     NaN? {:status :static-adaptation

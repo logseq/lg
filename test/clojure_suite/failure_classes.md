@@ -228,9 +228,9 @@ The promotion runner is manifest-driven by
 `test/clojure_suite/promoted_namespaces.txt`; adding a runtime-ready namespace
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
-target qualifier. The current manifest contains 136 namespaces (136/183,
-74.3%). Native runs the 129 applicable namespaces, while Melange runs 135
-namespaces with 2,596 assertions. Both targets pass with zero failures and zero
+target qualifier. The current manifest contains 138 namespaces (138/183,
+75.4%). Native runs the 131 applicable namespaces, while Melange runs 137
+namespaces with 2,648 assertions. Both targets pass with zero failures and zero
 errors. The six
 Melange-only namespaces (`double-qmark`, `float-qmark`, `int-qmark`,
 `integer-qmark`, `neg-int-qmark`, and `pos-int-qmark`) assert
@@ -364,6 +364,14 @@ their declared boolean input to otherwise open call results. The upstream
 bad-shape runtime-exception assertions remain static errors and are omitted
 under the selected static-error policy. No ordinary value or callback is
 stored in `Runtime_dynamic`.
+
+The numeric-parser batch promotes `parse-long` and `parse-double` on both
+targets. Native decimal integers are validated against the actual static OCaml
+integer range before conversion, so upstream 18-digit values no longer inherit
+Melange's JavaScript safe-integer ceiling. Melange keeps the ClojureScript
+safe-integer rule. Decimal floats preserve malformed-input rejection,
+scientific notation, and positive/negative Infinity. Non-string exception
+assertions are omitted because LG rejects those calls statically.
 
 - `clojure.core-test.aclone`: LG generation succeeds for Native and Melange,
   but smoke promotion typechecks the generated OCaml and fails on the upstream
