@@ -51,12 +51,12 @@
 
 (rule
  (target source_core_extrema_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml source_core_extrema_app_chunk.ml)
+ (deps source_core_extrema_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:source_core_extrema_app_chunk.ml})))))
 
 (executable
@@ -64,7 +64,12 @@
  (modules source_core_extrema_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -96,30 +101,20 @@
 
 (rule
  (target source_core_extrema_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  source_core_extrema_app_melange_chunk.ml)
+ (deps source_core_extrema_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:source_core_extrema_app_melange_chunk.ml})))))
-
-(melange.emit
- (target source-core-extrema-melange)
- (alias source-core-extrema-melange)
- (module_systems es6)
- (modules source_core_extrema_melange)
- (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
  (target source_core_extrema_melange.actual)
  (deps
-  (alias source-core-extrema-melange)
-  source-core-extrema-melange/test/stdlib/source_core_extrema_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/source_core_extrema_melange.js
   source_core_extrema.expected)
  (action
   (progn
@@ -127,7 +122,7 @@
     %{target}
     (run
      node
-     %{dep:source-core-extrema-melange/test/stdlib/source_core_extrema_melange.js}))
+     %{dep:stdlib-tests-melange/test/stdlib/source_core_extrema_melange.js}))
    (diff %{dep:source_core_extrema.expected} %{target}))))
 
 (rule
@@ -166,12 +161,12 @@
 
 (rule
  (target source_core_doseq_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml source_core_doseq_app_chunk.ml)
+ (deps source_core_doseq_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:source_core_doseq_app_chunk.ml})))))
 
 (executable
@@ -179,7 +174,12 @@
  (modules source_core_doseq_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -211,30 +211,20 @@
 
 (rule
  (target source_core_doseq_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  source_core_doseq_app_melange_chunk.ml)
+ (deps source_core_doseq_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:source_core_doseq_app_melange_chunk.ml})))))
-
-(melange.emit
- (target source-core-doseq-melange)
- (alias source-core-doseq-melange)
- (module_systems es6)
- (modules source_core_doseq_melange)
- (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
  (target source_core_doseq_melange.actual)
  (deps
-  (alias source-core-doseq-melange)
-  source-core-doseq-melange/test/stdlib/source_core_doseq_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/source_core_doseq_melange.js
   source_core_doseq.expected)
  (action
   (progn
@@ -242,19 +232,17 @@
     %{target}
     (run
      node
-     %{dep:source-core-doseq-melange/test/stdlib/source_core_doseq_melange.js}))
+     %{dep:stdlib-tests-melange/test/stdlib/source_core_doseq_melange.js}))
    (diff %{dep:source_core_doseq.expected} %{target}))))
 
 (rule
  (target source_core_nominal_predicates_native.ml)
- (deps
-  ../../stdlib/lg_stdlib_native.ml
-  source_core_nominal_predicates_app_chunk.ml)
+ (deps source_core_nominal_predicates_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:source_core_nominal_predicates_app_chunk.ml})))))
 
 (executable
@@ -262,7 +250,12 @@
  (modules source_core_nominal_predicates_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -296,30 +289,20 @@
 
 (rule
  (target source_core_nominal_predicates_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  source_core_nominal_predicates_app_melange_chunk.ml)
+ (deps source_core_nominal_predicates_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:source_core_nominal_predicates_app_melange_chunk.ml})))))
-
-(melange.emit
- (target source-core-nominal-predicates-melange)
- (alias source-core-nominal-predicates-melange)
- (module_systems es6)
- (modules source_core_nominal_predicates_melange)
- (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
  (target source_core_nominal_predicates_melange.actual)
  (deps
-  (alias source-core-nominal-predicates-melange)
-  source-core-nominal-predicates-melange/test/stdlib/source_core_nominal_predicates_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/source_core_nominal_predicates_melange.js
   source_core_nominal_predicates.expected)
  (action
   (progn
@@ -327,7 +310,7 @@
     %{target}
     (run
      node
-     %{dep:source-core-nominal-predicates-melange/test/stdlib/source_core_nominal_predicates_melange.js}))
+     %{dep:stdlib-tests-melange/test/stdlib/source_core_nominal_predicates_melange.js}))
    (diff %{dep:source_core_nominal_predicates.expected} %{target}))))
 
 (rule
@@ -349,14 +332,12 @@
 
 (rule
  (target source_core_lazy_transducer_native.ml)
- (deps
-  ../../stdlib/lg_stdlib_native.ml
-  source_core_lazy_transducer_app_chunk.ml)
+ (deps source_core_lazy_transducer_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:source_core_lazy_transducer_app_chunk.ml})))))
 
 (executable
@@ -364,7 +345,12 @@
  (modules source_core_lazy_transducer_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -398,30 +384,20 @@
 
 (rule
  (target source_core_lazy_transducer_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  source_core_lazy_transducer_app_melange_chunk.ml)
+ (deps source_core_lazy_transducer_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:source_core_lazy_transducer_app_melange_chunk.ml})))))
-
-(melange.emit
- (target source-core-lazy-transducer-melange)
- (alias source-core-lazy-transducer-melange)
- (module_systems es6)
- (modules source_core_lazy_transducer_melange)
- (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
  (target source_core_lazy_transducer_melange.actual)
  (deps
-  (alias source-core-lazy-transducer-melange)
-  source-core-lazy-transducer-melange/test/stdlib/source_core_lazy_transducer_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/source_core_lazy_transducer_melange.js
   source_core_lazy_transducer.expected)
  (action
   (progn
@@ -429,7 +405,7 @@
     %{target}
     (run
      node
-     %{dep:source-core-lazy-transducer-melange/test/stdlib/source_core_lazy_transducer_melange.js}))
+     %{dep:stdlib-tests-melange/test/stdlib/source_core_lazy_transducer_melange.js}))
    (diff %{dep:source_core_lazy_transducer.expected} %{target}))))
 
 (rule
@@ -440,12 +416,12 @@
 
 (rule
  (target source_core_additions_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml source_core_additions_app_chunk.ml)
+ (deps source_core_additions_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:source_core_additions_app_chunk.ml})))))
 
 (executable
@@ -453,7 +429,12 @@
  (modules source_core_additions_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -485,30 +466,20 @@
 
 (rule
  (target source_core_additions_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  source_core_additions_app_melange_chunk.ml)
+ (deps source_core_additions_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:source_core_additions_app_melange_chunk.ml})))))
-
-(melange.emit
- (target source-core-additions-melange)
- (alias source-core-additions-melange)
- (module_systems es6)
- (modules source_core_additions_melange)
- (compile_flags -w -27-32 -warn-error +106)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
  (alias runtest)
  (target source_core_additions_melange.actual)
  (deps
-  (alias source-core-additions-melange)
-  source-core-additions-melange/test/stdlib/source_core_additions_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/source_core_additions_melange.js
   source_core_additions.expected)
  (action
   (progn
@@ -516,17 +487,17 @@
     %{target}
     (run
      node
-     %{dep:source-core-additions-melange/test/stdlib/source_core_additions_melange.js}))
+     %{dep:stdlib-tests-melange/test/stdlib/source_core_additions_melange.js}))
    (diff %{dep:source_core_additions.expected} %{target}))))
 
 (rule
  (target clojure_set_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml clojure_set_app_chunk.ml)
+ (deps clojure_set_app_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:clojure_set_app_chunk.ml})))))
 
 (executable
@@ -534,7 +505,12 @@
  (modules clojure_set_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)
@@ -544,7 +520,7 @@
   (progn
    (with-stdout-to
     %{target}
-   (run %{exe:clojure_set_native.exe}))
+    (run %{exe:clojure_set_native.exe}))
    (diff %{dep:clojure_set.expected} %{target}))))
 
 (rule
@@ -566,36 +542,45 @@
 
 (rule
  (target clojure_set_melange.ml)
- (deps ../../stdlib/lg_stdlib_melange.ml clojure_set_app_melange_chunk.ml)
+ (deps clojure_set_app_melange_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (cat %{dep:clojure_set_app_melange_chunk.ml})))))
 
 (melange.emit
- (target clojure-set-melange)
- (alias clojure-set-melange)
+ (target stdlib-tests-melange)
+ (alias stdlib-tests-melange)
  (module_systems es6)
- (modules clojure_set_melange)
- (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
+ (modules
+  clojure_set_melange
+  source_core_additions_melange
+  source_core_doseq_melange
+  source_core_extrema_melange
+  source_core_lazy_transducer_melange
+  source_core_nominal_predicates_melange)
+ (compile_flags -w -27-32 -warn-error +106)
+ (libraries
+  lg_compiled_stdlib_melange
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (alias runtest)
  (target clojure_set_melange.actual)
  (deps
-  (alias clojure-set-melange)
-  clojure-set-melange/test/stdlib/clojure_set_melange.js
+  (alias stdlib-tests-melange)
+  stdlib-tests-melange/test/stdlib/clojure_set_melange.js
   clojure_set.expected)
  (action
   (progn
    (with-stdout-to
     %{target}
-    (run
-     node
-     %{dep:clojure-set-melange/test/stdlib/clojure_set_melange.js}))
+    (run node %{dep:stdlib-tests-melange/test/stdlib/clojure_set_melange.js}))
    (diff %{dep:clojure_set.expected} %{target}))))
 
 (rule
@@ -760,60 +745,96 @@
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  reader_deregister_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  reader_deregister_tag_parser_bad_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:reader_deregister_tag_parser_bad_arity.cljc}
    "called with incompatible arguments")))
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  source_core_hierarchy_bad_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  source_core_hierarchy_bad_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:source_core_hierarchy_bad_arity.cljc}
    "called with incompatible arguments")))
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  clojure_zip_bad_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_zip_bad_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_zip_bad_arity.cljc}
    "called with incompatible arguments")))
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  reader_register_default_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  reader_register_default_tag_parser_bad_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:reader_register_default_tag_parser_bad_arity.cljc}
    "called with incompatible arguments")))
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  reader_deregister_default_tag_parser_bad_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  reader_deregister_default_tag_parser_bad_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:reader_deregister_default_tag_parser_bad_arity.cljc}
    "called with incompatible arguments")))
 
 (rule
  (alias runtest)
- (deps check_compile_error.sh ../../stdlib/lg_stdlib_native.state
-  clojure_walk_bad_keywordize_arity.cljc ../../bin/lg_cli.exe)
+ (deps
+  check_compile_error.sh
+  ../../stdlib/lg_stdlib_native.state
+  clojure_walk_bad_keywordize_arity.cljc
+  ../../bin/lg_cli.exe)
  (action
-  (run sh %{dep:check_compile_error.sh} %{exe:../../bin/lg_cli.exe}
+  (run
+   sh
+   %{dep:check_compile_error.sh}
+   %{exe:../../bin/lg_cli.exe}
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:clojure_walk_bad_keywordize_arity.cljc}
    "called with incompatible arguments")))
@@ -2023,10 +2044,7 @@
 
 (rule
  (alias aggregate-stdlib-consumer)
- (deps
-  check_aggregate_stdlib_consumer.sh
-  dune
-  ../../stdlib/dune)
+ (deps check_aggregate_stdlib_consumer.sh dune ../../stdlib/dune)
  (action
   (run sh %{dep:check_aggregate_stdlib_consumer.sh} ../..)))
 
@@ -2054,12 +2072,12 @@
 
 (rule
  (target aggregate_files_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml aggregate_files_chunk.ml)
+ (deps aggregate_files_chunk.ml)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (cat %{dep:aggregate_files_chunk.ml})))))
 
 (executable
@@ -2067,7 +2085,12 @@
  (modules aggregate_files_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (alias runtest)

@@ -235,7 +235,9 @@ let compile_symbol name args =
 let compile_identifier_parts name return_ty prefix args =
   match args with
   | [ namespace_arg; name_arg ]
-    when Types.equal namespace_arg.ty (TOcaml_app ("option", [ TString ]))
+    when (match Types.constraint_value_type namespace_arg.ty with
+         | TNullable TString | TOcaml_app ("option", [ TString ]) -> true
+         | _ -> false)
          && Types.equal name_arg.ty TString ->
       Ok
         (typed_ir return_ty
@@ -246,16 +248,16 @@ let compile_identifier_parts name return_ty prefix args =
         (name ^ " expects an optional string namespace and string name")
   | _ -> Error.error (name ^ " expects 2 arguments")
 
-let compile ~target name args =
-  match name with
-  | "name" -> compile_name target name args
-  | "namespace" -> compile_namespace target name args
-  | "__lg_builtin-keyword" -> (
+let compile ~target builtin args =
+  let name = Builtin_id.scalar_source_name builtin in
+  match builtin with
+  | Builtin_id.Name -> compile_name target name args
+  | Builtin_id.Namespace -> compile_namespace target name args
+  | Builtin_id.Keyword -> (
       match args with
       | [ _ ] -> compile_keyword "keyword" args
       | _ -> compile_identifier_parts name TKeyword ":" args)
-  | "__lg_builtin-symbol" -> (
+  | Builtin_id.Symbol -> (
       match args with
       | [ _ ] -> compile_symbol "symbol" args
       | _ -> compile_identifier_parts name TSymbol "" args)
-  | _ -> Error.error ("unknown function " ^ name)

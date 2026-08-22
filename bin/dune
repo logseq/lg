@@ -1,9 +1,8 @@
 (executable
  (name lg_cli)
- (modules lg_cli)
+ (modules lg_cli compiler_artifact)
  (public_name lg)
  (package lg)
- (ocamlc_flags :standard -no-g)
  (ocamlopt_flags :standard -no-g)
  (libraries lg lg.edn-backend.native rrbvec unix))
 
@@ -12,6 +11,5 @@
  (modules lg_lsp lsp_server)
  (public_name lg-lsp)
  (package lg)
- (ocamlc_flags :standard -no-g)
  (ocamlopt_flags :standard -no-g)
  (libraries lg yojson unix))

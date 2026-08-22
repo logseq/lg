@@ -6,9 +6,15 @@ example="$2"
 stdlib_state="$3"
 stdlib_implementation="$4"
 
-output="$($cli --run-from "$stdlib_state" "$stdlib_implementation" "$example")"
+run_stderr="$(mktemp)"
+output="$($cli --run-from "$stdlib_state" "$stdlib_implementation" "$example" 2>"$run_stderr")"
 
 [ "$output" = "ADA:true:1" ]
+if grep -q 'findlib: \[WARNING\] Interface' "$run_stderr"; then
+  echo "CLI run mixed local and installed LG interfaces" >&2
+  cat "$run_stderr" >&2
+  exit 1
+fi
 
 invalid_source="$(mktemp)"
 invalid_stdout="$(mktemp)"
@@ -16,7 +22,7 @@ invalid_stderr="$(mktemp)"
 warning_source="$(mktemp)"
 warning_stdout="$(mktemp)"
 warning_stderr="$(mktemp)"
-trap 'exit_status=$?; rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr"; exit "$exit_status"' EXIT
+trap 'exit_status=$?; rm -f "$run_stderr" "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr"; exit "$exit_status"' EXIT
 
 if "$cli" --target browser "$example" >"$invalid_stdout" 2>"$invalid_stderr"; then
   echo "expected unknown target to fail" >&2
@@ -53,7 +59,7 @@ grep -q "File \"$warning_source\", line 1" "$warning_stderr"
 package_source="$(mktemp)"
 package_stdout="$(mktemp)"
 multi_dir="$(mktemp -d)"
-trap 'exit_status=$?; rm -f "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"; exit "$exit_status"' EXIT
+trap 'exit_status=$?; rm -f "$run_stderr" "$invalid_source" "$invalid_stdout" "$invalid_stderr" "$warning_source" "$warning_stdout" "$warning_stderr" "$package_source" "$package_stdout"; rm -rf "$multi_dir"; exit "$exit_status"' EXIT
 
 printf '%s\n' \
   '(require [ocaml.package/core] [ocaml.Core.Int :as int])' \
@@ -269,6 +275,10 @@ grep -Fq '"globPattern":"**/*.cljc"' "$lsp_output"
 grep -q '"method":"textDocument/publishDiagnostics"' "$lsp_output"
 grep -q '"severity":1' "$lsp_output"
 grep -q '"severity":2' "$lsp_output"
+grep -q '"code":"LG2000"' "$lsp_output"
+grep -q '"code":"OCAML-WARNING"' "$lsp_output"
+grep -q '"phase":"semantic"' "$lsp_output"
+grep -q '"phase":"ocaml"' "$lsp_output"
 grep -q 'not exhaustive' "$lsp_output"
 grep -Fq '"uri":"file:///tmp/semantic-error.cljc","diagnostics":[{"range"' "$lsp_output"
 grep -Fq '"uri":"file:///tmp/warning.cljc","diagnostics":[{"range"' "$lsp_output"

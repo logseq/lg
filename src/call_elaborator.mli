@@ -36,9 +36,10 @@ val pack_constrained_value :
   Types.typed_expr ->
   (Semantic_ir.t, Error.t) result
 
-val adapt_value_to_type :
+val plan_and_emit_argument :
   Compiler_environment.t ->
-  Types.ty ->
+  ?row_type_name:string ->
+  expected:Types.ty ->
   Types.typed_expr ->
   (Semantic_ir.t, Error.t) result
 

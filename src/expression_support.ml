@@ -488,20 +488,11 @@ let capability_storage_expression ty expression =
                                 layer (name ^ "__contains") value_ty
                             | None -> (
                                 match ty with
-                                | TOcaml_app
-                                    ( constraint_name,
-                                      [ _element_ty; value_ty ] )
-                                  when constraint_name
-                                       = Types.seqable_constraint_name
-                                       || constraint_name
-                                          = Types.optional_seqable_constraint_name
-                                       || constraint_name
-                                          = Types.optional_sequential_constraint_name
-                                  ->
+                                | TConstraint
+                                    (Seqable_constraint
+                                      { requirement; storage = value_ty; _ }) ->
                                     let witness_name =
-                                      if
-                                        constraint_name
-                                        = Types.seqable_constraint_name
+                                      if requirement = Required
                                       then name ^ "__seq"
                                       else name ^ "__seq_optional"
                                     in
@@ -655,19 +646,17 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
                   [ sequence ] ),
               Semantic_ir.Constructor ("None", None),
               Semantic_ir.Constructor ("Some", Some present) ) )
-  | target_ty, TOcaml_app (constraint_name, [ _element_ty; _value_ty ])
+  | target_ty,
+    TConstraint (Seqable_constraint { requirement; _ })
     when (match target_ty with
          | TSeq _ -> true
          | TOcaml_app (name, [ _ ]) -> Types.is_next_seq_type_name name
-         | _ -> false)
-         && (constraint_name = Types.seqable_constraint_name
-            || constraint_name = Types.optional_seqable_constraint_name
-            || constraint_name = Types.optional_sequential_constraint_name) ->
+         | _ -> false) ->
       let adapter_name = "__lg_coerce_seq_adapter" in
       let value_name = "__lg_coerce_seq_value" in
       let adapter = Semantic_ir.Ident adapter_name in
       let adapter =
-        if constraint_name = Types.seqable_constraint_name then adapter
+        if requirement = Required then adapter
         else
           Semantic_ir.Match
             ( adapter,
@@ -932,6 +921,7 @@ let anonymous_record_type_parameters fields =
     | TSeq ty ->
         visit ty
     | TOcaml_app (_, arguments) | TTuple arguments -> List.iter visit arguments
+    | TConstraint constraint_ -> List.iter visit (constraint_children constraint_)
     | TFn (parameters, return_ty) -> List.iter visit (return_ty :: parameters)
     | TOverloaded_fn arities ->
         List.iter
@@ -1028,6 +1018,8 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
           allocate_types env next_type items arguments
         in
         (TOcaml_app (name, arguments), env, next_type, items)
+    | TConstraint constraint_ ->
+        allocate_constraint env next_type items constraint_
     | TTuple arguments ->
         let arguments, env, next_type, items =
           allocate_types env next_type items arguments
@@ -1096,6 +1088,49 @@ let allocate_nested_anonymous_records ~owner env next_type fields =
           loop env next_type items (ty :: allocated) rest
     in
     loop env next_type items [] types
+  and allocate_constraint env next_type items constraint_ =
+    let map_one build value =
+      map_inner env next_type items (fun value -> TConstraint (build value)) value
+    in
+    let map_two build left right =
+      let values, env, next_type, items =
+        allocate_types env next_type items [ left; right ]
+      in
+      match values with
+      | [ left; right ] -> (TConstraint (build left right), env, next_type, items)
+      | _ -> (TConstraint constraint_, env, next_type, items)
+    in
+    match constraint_ with
+    | Seqable_constraint ({ element; storage; _ } as seqable) ->
+        map_two
+          (fun element storage ->
+            Seqable_constraint { seqable with element; storage })
+          element storage
+    | Contains_constraint { key; storage } ->
+        map_two (fun key storage -> Contains_constraint { key; storage }) key
+          storage
+    | Truthy_constraint value -> map_one (fun value -> Truthy_constraint value) value
+    | Nil_predicate_constraint value ->
+        map_one (fun value -> Nil_predicate_constraint value) value
+    | Printable_constraint value ->
+        map_one (fun value -> Printable_constraint value) value
+    | Exception_data_constraint value ->
+        map_one (fun value -> Exception_data_constraint value) value
+    | Hashable_constraint value ->
+        map_one (fun value -> Hashable_constraint value) value
+    | Comparable_constraint value ->
+        map_one (fun value -> Comparable_constraint value) value
+    | Array_index_constraint value ->
+        map_one (fun value -> Array_index_constraint value) value
+    | Symbol_predicate_constraint value ->
+        map_one (fun value -> Symbol_predicate_constraint value) value
+    | Open_boundary_constraint value ->
+        map_one (fun value -> Open_boundary_constraint value) value
+    | Protocol_constraint ({ witness; value; _ } as protocol) ->
+        map_two
+          (fun witness value ->
+            Protocol_constraint { protocol with witness; value })
+          witness value
   and allocate_fields env next_type items fields =
     let rec loop env next_type items allocated = function
       | [] -> { nested_fields = List.rev allocated; env; next_type; items }
@@ -1521,6 +1556,8 @@ let parameterize_row_fields fields =
     | TNullable ty -> TNullable (parameterize ty)
     | TOcaml_app (name, arguments) ->
         TOcaml_app (name, List.map parameterize arguments)
+    | TConstraint constraint_ ->
+        TConstraint (map_constraint parameterize constraint_)
     | TTuple items -> TTuple (List.map parameterize items)
     | TArray ty -> TArray (parameterize ty)
     | TRef ty -> TRef (parameterize ty)
@@ -1574,10 +1611,7 @@ let row_param_fields ?(allow_nullable = false) = function
   | ty when Option.is_some (Types.contains_constraint_info ty) ->
       let _, value_ty = Types.contains_constraint_info ty |> Option.get in
       direct_row_fields ~allow_nullable value_ty
-  | TOcaml_app (constraint_name, [ element_ty; _ ])
-    when constraint_name = Types.seqable_constraint_name
-         || constraint_name = Types.optional_seqable_constraint_name
-         || constraint_name = Types.optional_sequential_constraint_name ->
+  | TConstraint (Seqable_constraint { element = element_ty; _ }) ->
       (match direct_row_fields ~allow_nullable element_ty with
       | Some _ as fields -> fields
       | None -> (
@@ -1861,6 +1895,8 @@ let rec concrete_constraint_type = function
       concrete_constraint_type ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.for_all concrete_constraint_type arguments
+  | TConstraint constraint_ ->
+      List.for_all concrete_constraint_type (constraint_children constraint_)
   | TFn (parameters, return_type) ->
       List.for_all concrete_constraint_type (return_type :: parameters)
   | TNamed_record record ->
@@ -1870,7 +1906,7 @@ let rec concrete_constraint_type = function
       true
 
 let param_constraint_name = function
-  | TOcaml_app (name, [ _; _ ]) when name = Types.seqable_constraint_name -> None
+  | TConstraint (Seqable_constraint { requirement = Required; _ }) -> None
   | TFn _ as ty when concrete_constraint_type ty -> Some (Types.ocaml_name ty)
   | (TNullable _ | TList _ | TVector _ | TSet _ | TSeq _) as ty
     when concrete_constraint_type ty ->
@@ -1879,6 +1915,7 @@ let param_constraint_name = function
     when Types.is_homogeneous_record fields && concrete_constraint_type ty ->
       Some (Types.ocaml_name ty)
   | (TInt | TFloat | TChar | TString | TSymbol | TKeyword | TBool | TUnit
-    | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _) as ty ->
+    | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TNamed_record _
+    | TConstraint _) as ty ->
       Some (Types.ocaml_name ty)
   | _ -> None

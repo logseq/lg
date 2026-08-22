@@ -18,8 +18,9 @@ let static_sequential_element_type ty =
   match Types.constraint_value_type ty with
   | TList element_ty | TVector element_ty | TSeq element_ty ->
       Some element_ty
-  | TOcaml_app (constraint_name, [ element_ty; _ ])
-    when constraint_name = Types.optional_sequential_constraint_name ->
+  | TConstraint
+      (Seqable_constraint
+        { requirement = Optional_sequential; element = element_ty; _ }) ->
       Some element_ty
   | _ -> None
 
@@ -78,20 +79,16 @@ let constrain_seqable element_ty params name =
           (Types.seqable_constraint_with_value
              (Types.seqable_constraint element_ty)
              map_ty)
-    | TOcaml_app (constraint_name, [ existing_element; value_ty ])
-      when constraint_name = Types.seqable_constraint_name
-           || constraint_name = Types.optional_seqable_constraint_name
-           || constraint_name = Types.optional_sequential_constraint_name ->
+    | TConstraint
+        (Seqable_constraint
+          ({ element = existing_element; _ } as constraint_)) ->
         let element_ty =
           if Types.equal existing_element TUnknown then element_ty
           else if Types.is_dynamic existing_element then existing_element
           else refine_type existing_element element_ty
         in
-        if constraint_name = Types.seqable_constraint_name then
-          Types.seqable_constraint_with_value element_ty value_ty
-        else if constraint_name = Types.optional_seqable_constraint_name then
-          Types.optional_seqable_constraint element_ty value_ty
-        else Types.optional_sequential_constraint element_ty value_ty
+        TConstraint
+          (Seqable_constraint { constraint_ with element = element_ty })
     | TNamed_record { type_parameters = [ parameter ]; _ } as record_ty ->
         Types.substitute_type_variables
           (Type_solver.of_list [ (Type_solver.Declared parameter, element_ty) ])
@@ -219,6 +216,10 @@ let add_record_field_constraint name keyword field_ty params =
           left_name = right_name
           && List.length left_args = List.length right_args
           && List.for_all2 same_open_shape left_args right_args
+      | TConstraint left, TConstraint right ->
+          Types.constraint_compatible
+            (fun ~expected ~actual -> same_open_shape expected actual)
+            left right
       | TTuple left, TTuple right ->
           List.length left = List.length right
           && List.for_all2 same_open_shape left right
@@ -1477,9 +1478,11 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let restore_guarded_protocol_receivers base inferred condition =
     let guarded = guarded_protocol_receivers condition in
     let rec optionalize_seqable = function
-      | TOcaml_app (name, [ element_ty; value_ty ])
-        when name = Types.seqable_constraint_name ->
-          Types.optional_seqable_constraint element_ty value_ty
+      | TConstraint
+          (Seqable_constraint
+            ({ requirement = Required; _ } as constraint_)) ->
+          TConstraint
+            (Seqable_constraint { constraint_ with requirement = Optional })
       | ty -> (
           match Types.protocol_constraint_info ty with
           | Some (_, _, value_ty) ->
@@ -2102,11 +2105,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             in
             let expected_return_ty =
               match (expected_ty, parameter_tys, return_ty_for_unification) with
-              | ( TOcaml_app (name, [ element_ty; _ ]),
+              | ( TConstraint
+                    (Seqable_constraint
+                      { requirement = Required; element = element_ty; _ }),
                   [ TArray parameter_ty ],
                   TSeq return_ty )
-                when String.equal name Types.seqable_constraint_name
-                     && Result.is_ok
+                when Result.is_ok
                           (Type_solver.unify Type_solver.empty parameter_ty
                              return_ty) ->
                   TSeq element_ty
@@ -2446,18 +2450,17 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let param_tys =
           List.map
             (function
-              | TOcaml_app
-                  ( constraint_name,
-                    [ (TUnknown | TMeta _ | TVar _); value_ty ] )
-                when (constraint_name = Types.seqable_constraint_name
-                     || constraint_name
-                        = Types.optional_seqable_constraint_name
-                     || constraint_name
-                        = Types.optional_sequential_constraint_name)
-                     && Option.is_some callback_element ->
-                  TOcaml_app
-                    ( constraint_name,
-                      [ Option.get callback_element; value_ty ] )
+              | TConstraint
+                  (Seqable_constraint
+                    ({ element = (TUnknown | TMeta _ | TVar _); _ } as
+                    constraint_))
+                when Option.is_some callback_element ->
+                  TConstraint
+                    (Seqable_constraint
+                       {
+                         constraint_ with
+                         element = Option.get callback_element;
+                       })
               | ty -> ty)
             param_tys
         in

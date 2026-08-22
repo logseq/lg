@@ -115,19 +115,11 @@ let rec capability_pattern name ty =
                       | Some (_, value_ty) -> layer (name ^ "__contains") value_ty
                       | None -> (
                           match ty with
-                          | TOcaml_app
-                              (constraint_name, [ _element_ty; value_ty ])
-                            when constraint_name
-                                 = Types.seqable_constraint_name
-                                 || constraint_name
-                                    = Types.optional_seqable_constraint_name
-                                 || constraint_name
-                                    = Types.optional_sequential_constraint_name
-                            ->
+                          | TConstraint
+                              (Seqable_constraint
+                                { requirement; storage = value_ty; _ }) ->
                               let witness_name =
-                                if
-                                  constraint_name
-                                  = Types.seqable_constraint_name
+                                if requirement = Required
                                 then name ^ "__seq"
                                 else name ^ "__seq_optional"
                               in
@@ -547,11 +539,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let rec compile_vector scope env forms =
     let compile_tuple expected_types =
-      let rec compile values expected forms =
+      let rec compile values actual_types expected forms =
         match (expected, forms) with
         | [], [] ->
             Ok
-              (typed_ir (TTuple expected_types)
+              (typed_ir (TTuple (List.rev actual_types))
                  (Semantic_ir.Tuple (List.rev values)))
         | expected_ty :: expected_rest, form :: form_rest ->
             let item_env = Env.with_expected_type (Some expected_ty) env in
@@ -559,18 +551,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 Result.bind
                   (adapt_branch_expression env expected_ty value)
                   (fun value ->
-                    compile (value :: values) expected_rest form_rest))
+                    compile (value :: values) (expected_ty :: actual_types)
+                      expected_rest form_rest))
         | (TNullable _ | TOcaml_app ("option", [ _ ])) :: expected_rest, [] ->
             compile
               (Semantic_ir.Constructor ("None", None) :: values)
-              expected_rest []
+              (TNil :: actual_types) expected_rest []
         | _ :: _, [] ->
             Error.error
               "tuple literal is missing a required destructured element"
         | [], _ :: _ ->
             Error.error "tuple literal has more elements than its static shape"
       in
-      compile [] expected_types forms
+      compile [] [] expected_types forms
     in
     match Env.expected_type env with
     | Some (TTuple expected_types) when forms <> [] ->
@@ -3182,6 +3175,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           contains_protocol inner
                       | TOcaml_app (_, arguments) | TTuple arguments ->
                           List.exists contains_protocol arguments
+                      | TConstraint constraint_ ->
+                          List.exists contains_protocol
+                            (constraint_children constraint_)
                       | TFn (parameters, return_ty) ->
                           List.exists contains_protocol
                             (return_ty :: parameters)

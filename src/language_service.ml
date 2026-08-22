@@ -65,7 +65,9 @@ type t = {
 }
 
 let analyze ~filename source =
-  match Toolchain.analyze ~filename source with
+  match
+    Compiler_session.run (fun () -> Toolchain.analyze ~filename source)
+  with
   | Error _ as err -> err
   | Ok compiler -> (
       match Lexer.tokenize source with
@@ -76,7 +78,10 @@ let analyze ~filename source =
           | Ok forms -> Ok { source; tokens; forms; compiler }))
 
 let analyze_from_state ?(target = Target.default) ~filename state source =
-  match Toolchain.analyze_from_state ~target ~filename state source with
+  match
+    Compiler_session.run (fun () ->
+        Toolchain.analyze_from_state ~target ~filename state source)
+  with
   | Error _ as err -> err
   | Ok compiler -> (
       match Lexer.tokenize source with
@@ -125,13 +130,19 @@ let analyze_workspace_with_errors_using analyze_compiler sources =
               errors ))
 
 let analyze_workspace_with_errors sources =
-  analyze_workspace_with_errors_using Toolchain.analyze_workspace_with_errors
+  analyze_workspace_with_errors_using
+    (fun sources ->
+      Compiler_session.run (fun () ->
+          Toolchain.analyze_workspace_with_errors sources))
     sources
 
 let analyze_workspace_with_errors_from_state ?(target = Target.default) state
     sources =
   analyze_workspace_with_errors_using
-    (Toolchain.analyze_workspace_with_errors_from_state ~target state)
+    (fun sources ->
+      Compiler_session.run (fun () ->
+          Toolchain.analyze_workspace_with_errors_from_state ~target state
+            sources))
     sources
 
 let analyze_workspace sources =
@@ -426,19 +437,21 @@ let consider_semantic_identity best ~offset ~location ~matches ~uid
 let best_semantic_identity best = Option.map snd !best
 
 let identifier_identity_at analysis offset source_name =
-  smallest_expression analysis.compiler.typed_structure offset (fun expression ->
-      match expression.Typedtree.exp_desc with
-      | Typedtree.Texp_ident (path, _, _) ->
-          identifier_name_matches source_name path
-      | _ -> false)
-  |> Option.map (fun (expression : Typedtree.expression) ->
-         match expression.exp_desc with
-         | Typedtree.Texp_ident (_, _, description) ->
-             {
-               key = Ocaml_uid description.val_uid;
-               definition_location = description.val_loc;
-             }
-         | _ -> assert false)
+  match
+    smallest_expression analysis.compiler.typed_structure offset
+      (fun expression ->
+        match expression.Typedtree.exp_desc with
+        | Typedtree.Texp_ident (path, _, _) ->
+            identifier_name_matches source_name path
+        | _ -> false)
+  with
+  | Some { Typedtree.exp_desc = Texp_ident (_, _, description); _ } ->
+      Some
+        {
+          key = Ocaml_uid description.val_uid;
+          definition_location = description.val_loc;
+        }
+  | Some _ | None -> None
 
 let binding_identity_at analysis offset source_name =
   let best = ref None in
@@ -1844,6 +1857,10 @@ let rec add_type_references add ty references =
       List.fold_left
         (fun references argument -> add_type_references add argument references)
         references arguments
+  | TConstraint constraint_ ->
+      List.fold_left
+        (fun references argument -> add_type_references add argument references)
+        references (Types.constraint_children constraint_)
   | TTuple arguments ->
       List.fold_left
         (fun references argument -> add_type_references add argument references)

@@ -659,7 +659,13 @@ and compile_doseq scope env bindings body_forms =
   match bindings with
   | FVector forms ->
       Result.bind (expand None forms) (fun (_needs_recur, expanded) ->
-          compile_expr scope env expanded)
+          Result.map
+            (fun expression ->
+              typed_ir TNil
+                (Semantic_ir.Let
+                   ( [ (Semantic_ir.PAny, expression.semantic_expr) ],
+                     Semantic_ir.Constructor ("None", None) )))
+            (compile_expr scope env expanded))
   | _ -> Error.error "doseq bindings must be a vector"
 
 and compile_for scope env bindings body =
@@ -864,14 +870,14 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
         | Some expected ->
             Result.map
               (fun semantic_expr -> typed_ir expected semantic_expr)
-              (Call_elaborator.adapt_value_to_type env expected body))
+              (Call_elaborator.plan_and_emit_argument env ~expected body))
   in
   let prepare param_type_overrides =
     let compile_default expected form =
       let adapt actual =
         Result.map
           (fun semantic_expr -> typed_ir expected semantic_expr)
-          (Call_elaborator.adapt_value_to_type env expected actual)
+          (Call_elaborator.plan_and_emit_argument env ~expected actual)
       in
       match (expected, form) with
       | TFn (parameter_tys, return_ty), FSymbol function_name ->
@@ -906,7 +912,8 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
                            (fun name -> Semantic_ir.PVar name)
                            parameter_names,
                          body )))
-                (Call_elaborator.adapt_value_to_type env return_ty body))
+                (Call_elaborator.plan_and_emit_argument env ~expected:return_ty
+                   body))
       | _ ->
           Result.bind
             (compile_expr scope (Env.with_expected_type (Some expected) env) form)
@@ -1618,8 +1625,8 @@ and prepare_multi_arity_fn ?(infer_state_return = false) ?signature ~ocaml_name
                             prepared_parts with
                             body = typed_ir return_ty semantic_expr;
                           })
-                        (Call_elaborator.adapt_value_to_type clause_env return_ty
-                           prepared_parts.body)
+                        (Call_elaborator.plan_and_emit_argument clause_env
+                           ~expected:return_ty prepared_parts.body)
                 in
                 Result.bind prepared_parts (fun parts ->
                 let param_tys =
@@ -1759,7 +1766,8 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
               Result.map
                 (fun semantic_expr ->
                   { parts with body = typed_ir return_ty semantic_expr })
-                (Call_elaborator.adapt_value_to_type env return_ty parts.body)
+                (Call_elaborator.plan_and_emit_argument env ~expected:return_ty
+                   parts.body)
             else
               Error.error
                 ("recursive defn " ^ source_name ^ " must return "
@@ -1915,19 +1923,20 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
             List.map
               (fun ty ->
                 match ty with
-                | TOcaml_app
-                    ( name,
-                      [ element_ty; (TUnknown | TMeta _ | TVar _) ] )
-                  when (name = Types.seqable_constraint_name
-                       || name = Types.optional_seqable_constraint_name
-                       || name = Types.optional_sequential_constraint_name)
-                       && Types.is_dynamic element_ty ->
-                    TOcaml_app
-                      ( name,
-                        [
-                          element_ty;
-                          Types.dynamic_constraint TUnknown;
-                        ] )
+                | TConstraint
+                    (Seqable_constraint
+                      ({
+                         element = element_ty;
+                         storage = (TUnknown | TMeta _ | TVar _);
+                         _;
+                       } as constraint_))
+                  when Types.is_dynamic element_ty ->
+                    TConstraint
+                      (Seqable_constraint
+                         {
+                           constraint_ with
+                           storage = Types.dynamic_constraint TUnknown;
+                         })
                 | ty
                   when Option.is_some (Types.protocol_constraint_info ty)
                        && Option.is_some (Types.seqable_constraint_info ty) ->
@@ -2066,8 +2075,8 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                     Result.map
                       (fun semantic_expr ->
                         { parts with body = typed_ir return_ty semantic_expr })
-                      (Call_elaborator.adapt_value_to_type env return_ty
-                         parts.body))
+                      (Call_elaborator.plan_and_emit_argument env
+                         ~expected:return_ty parts.body))
             in
             let return_var = Type_solver.fresh () in
             let initial_return_ty =
@@ -2173,7 +2182,8 @@ and prepare_inferred_recursive_fn_with_return ~ocaml_name scope env source_name
                   (Semantic_ir.Constraint
                      (semantic_expr, Types.ocaml_name return_ty));
             })
-          (Call_elaborator.adapt_value_to_type env return_ty parts.body)
+          (Call_elaborator.plan_and_emit_argument env ~expected:return_ty
+             parts.body)
       else
         Error.error
           ("recursive defn " ^ source_name ^ " must return "

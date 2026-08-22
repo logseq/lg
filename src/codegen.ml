@@ -186,7 +186,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
                           [ expr.semantic_expr ];
                       ]))
                 ")" ))
-  | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ ->
+  | TArray _ | TRef _ | TOcaml _ | TOcaml_app _ | TTuple _ | TConstraint _ ->
       Semantic_ir.String "<value>"
   | TList inner ->
       render_print_level ?print_level (fun child_print_level ->

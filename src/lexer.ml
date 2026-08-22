@@ -23,7 +23,8 @@ let rec skip_ignored source i =
 let read_string source start =
   let buffer = Buffer.create 16 in
   let rec loop i =
-    if i >= String.length source then Error.error "unterminated string"
+    if i >= String.length source then
+      Error.error ~code:"LG1001" ~phase:`Lexing "unterminated string"
     else
       match source.[i] with
       | '"' -> Ok (Buffer.contents buffer, i + 1)
@@ -53,7 +54,8 @@ let read_string source start =
 let read_regex source start =
   let buffer = Buffer.create 16 in
   let rec loop i =
-    if i >= String.length source then Error.error "unterminated regex"
+    if i >= String.length source then
+      Error.error ~code:"LG1001" ~phase:`Lexing "unterminated regex"
     else
       match source.[i] with
       | '"' -> Ok (Buffer.contents buffer, i + 1)
@@ -257,7 +259,9 @@ let tokenize source =
           loop (i + 2) (token (Symbol "#_") i (i + 2) :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '\'' ->
           let value, next = read_atom source (i + 2) in
-          if value = "" then Error.error "var quote expects a symbol"
+          if value = "" then
+            Error.error ~code:"LG1001" ~phase:`Lexing
+              "var quote expects a symbol"
           else loop next (token (Var_quote value) i next :: tokens)
       | '#' when i + 1 < String.length source && source.[i + 1] = '(' ->
           loop (i + 2) (token Anon_lparen i (i + 2) :: tokens)

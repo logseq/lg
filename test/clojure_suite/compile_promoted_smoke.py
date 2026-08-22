@@ -92,6 +92,7 @@ def main() -> int:
     parser.add_argument("--suite-dir", type=pathlib.Path, required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
+    parser.add_argument("--open-module", required=True)
     parser.add_argument(
         "--working-directory", type=pathlib.Path, default=pathlib.Path.cwd()
     )
@@ -102,6 +103,7 @@ def main() -> int:
     working_directory = args.working_directory.resolve()
     with tempfile.TemporaryDirectory(prefix="lg-clojure-smoke-") as tmp:
         runner = pathlib.Path(tmp) / "runner.cljc"
+        compiled_output = pathlib.Path(tmp) / "compiled.ml"
         runner.write_text(runner_source(namespaces), encoding="utf-8")
         command = [
             str(args.lg_cli.resolve()),
@@ -115,9 +117,15 @@ def main() -> int:
             *(str(source.resolve()) for source in sources),
             str(runner),
             "-o",
-            str(args.output.resolve()),
+            str(compiled_output),
         ]
         completed = subprocess.run(command, check=False, cwd=working_directory)
+        if completed.returncode == 0:
+            args.output.write_text(
+                f"open {args.open_module}\n"
+                + compiled_output.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
     return completed.returncode
 
 

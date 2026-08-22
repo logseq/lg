@@ -4,7 +4,5 @@
  (wrapped false)
  (modes melange)
  (preprocess
- (pps melange.ppx))
- (libraries
-  melange-edn-melange
-  melange-transit-melange))
+  (pps melange.ppx))
+ (libraries melange-edn-melange melange-transit-melange))

@@ -599,6 +599,10 @@ let rec anonymous_type_equal left right =
     when left_name = right_name ->
       List.length left_args = List.length right_args
       && List.for_all2 anonymous_type_equal left_args right_args
+  | Types.TConstraint left, Types.TConstraint right ->
+      Types.constraint_compatible
+        (fun ~expected ~actual -> anonymous_type_equal expected actual)
+        left right
   | Types.TTuple left, Types.TTuple right ->
       List.length left = List.length right
       && List.for_all2 anonymous_type_equal left right
@@ -640,6 +644,11 @@ let rec anonymous_type_layout_compatible left right =
     when left_name = right_name ->
       List.length left_args = List.length right_args
       && List.for_all2 anonymous_type_layout_compatible left_args right_args
+  | Types.TConstraint left, Types.TConstraint right ->
+      Types.constraint_compatible
+        (fun ~expected ~actual ->
+          anonymous_type_layout_compatible expected actual)
+        left right
   | Types.TTuple left, Types.TTuple right ->
       List.length left = List.length right
       && List.for_all2 anonymous_type_layout_compatible left right
@@ -678,6 +687,18 @@ let find_anonymous_record_by_layout ~owner fields env =
            && anonymous_fields_layout_compatible fields record.fields
          then Some record
          else None)
+
+let find_unique_anonymous_record_by_layout fields env =
+  let candidates =
+    env.anonymous_records
+    |> List.filter_map (fun (_, (record : Semantic_type.named_record)) ->
+           if anonymous_fields_layout_compatible fields record.fields then
+             Some record
+           else None)
+  in
+  match candidates with
+  | [ record ] -> Some record
+  | [] | _ :: _ :: _ -> None
 
 let add_anonymous_record ~owner record env =
   { env with anonymous_records = (owner, record) :: env.anonymous_records }

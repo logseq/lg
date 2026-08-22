@@ -14,22 +14,26 @@ let env_include_dirs () =
   | Some value ->
       value |> String.split_on_char ':' |> List.filter (fun dir -> dir <> "")
 
+let project_build_root () =
+  let cwd = Sys.getcwd () in
+  match find_project_root cwd with
+  | Some root -> Filename.concat root "_build/default"
+  | None -> cwd
+
 let project_include_dirs () =
-  match find_project_root (Sys.getcwd ()) with
-  | None -> []
-  | Some root ->
-      existing_dirs
-        [
-          Filename.concat root "_build/default/src";
-          Filename.concat root "_build/default/src/.lg.objs/byte";
-          Filename.concat root "_build/default/runtime";
-          Filename.concat root "_build/default/runtime/.lg_runtime.objs/byte";
-          Filename.concat root "_build/default/runtime_edn_backend";
-          Filename.concat root
-            "_build/default/runtime_edn_backend/.lg_edn_backend.objs/byte";
-          Filename.concat root "_build/default/vendor/rrbvec";
-          Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
-        ]
+  let root = project_build_root () in
+  existing_dirs
+    [
+      Filename.concat root "src";
+      Filename.concat root "src/.lg.objs/byte";
+      Filename.concat root "runtime";
+      Filename.concat root "runtime/.lg_runtime.objs/byte";
+      Filename.concat root "runtime_edn_backend";
+      Filename.concat root
+        "runtime_edn_backend/.lg_edn_backend.objs/byte";
+      Filename.concat root "vendor/rrbvec";
+      Filename.concat root "vendor/rrbvec/.rrbvec.objs/byte";
+    ]
 
 let base_include_dirs = lazy (env_include_dirs () @ project_include_dirs ())
 let include_dirs () = Lazy.force base_include_dirs

@@ -28,20 +28,25 @@
 
 (rule
  (target compatibility_native.ml)
- (deps ../../stdlib/lg_stdlib_native.ml compatibility_native_chunk.ml)
+ (deps compatibility_native_chunk.ml)
  (action
-   (with-stdout-to
-    %{target}
-    (progn
-     (cat %{dep:../../stdlib/lg_stdlib_native.ml})
-     (cat %{dep:compatibility_native_chunk.ml})))))
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Lg_stdlib_native\n")
+    (cat %{dep:compatibility_native_chunk.ml})))))
 
 (executable
  (name compatibility_native)
  (modules compatibility_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.runtime lg.edn-backend.native lg-test.runtime lg-test.alcotest))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.runtime
+  lg.edn-backend.native
+  lg-test.runtime
+  lg-test.alcotest))
 
 (rule
  (target compatibility_melange_chunk.ml)
@@ -68,13 +73,13 @@
 
 (rule
  (target compatibility_melange.ml)
- (deps ../../stdlib/lg_stdlib_melange.ml compatibility_melange_chunk.ml)
+ (deps compatibility_melange_chunk.ml)
  (action
-   (with-stdout-to
-    %{target}
-    (progn
-     (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
-     (cat %{dep:compatibility_melange_chunk.ml})))))
+  (with-stdout-to
+   %{target}
+   (progn
+    (echo "open Lg_stdlib_melange\n")
+    (cat %{dep:compatibility_melange_chunk.ml})))))
 
 (melange.emit
  (target compatibility-melange)
@@ -85,6 +90,7 @@
   (pps melange.ppx))
  (compile_flags -w -27-32)
  (libraries
+  lg_compiled_stdlib_melange
   lg.edn-backend
   lg.edn-backend.melange
   lg.runtime

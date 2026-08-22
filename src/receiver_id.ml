@@ -44,7 +44,8 @@ let of_type = function
   | TRecord fields when Types.is_homogeneous_record fields ->
       Some (Host_receiver "Lg_runtime.Runtime_map.t")
   | TOcaml name | TOcaml_app (name, _) -> Some (Host_receiver name)
+  | TNullable _ -> Some (Host_receiver "option")
   | TNamed_record record -> Some (Record_receiver record.type_id)
   | TFn _ | TOverloaded_fn _ -> Some (Host_receiver "fn")
-  | TNullable _ | TUnknown | TMeta _ | TMap_keys | TVar _ | TRecord _ ->
+  | TUnknown | TMeta _ | TMap_keys | TVar _ | TRecord _ | TConstraint _ ->
       None

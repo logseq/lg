@@ -103,9 +103,11 @@ both required OCaml packages and the subsequent incremental compilation input;
 the CLI does not parse the same file again after restoring a compiler state.
 State-producing compilation does not read or write prefix caches: its explicit
 state artifact is already the reusable checkpoint. The cold-build gate covers
-the full aggregate-stdlib plus DataScript path and enforces a fixed 10-second
-limit. The limit cannot be relaxed through configuration, and the gate removes
-cache-related environment settings before building from a clean tree.
+compiler construction and the full aggregate native stdlib in an isolated
+temporary build directory, and enforces a fixed 10-second limit. The limit
+cannot be relaxed through configuration, and the gate removes cache-related
+environment settings. DataScript owns its downstream performance workloads in
+the separate `datascript-lg` repository.
 
 The cold path builds the native compiler with classic inlining and disables
 cross-function expansion. Recursive DataScript and persistent-sorted-set SCCs

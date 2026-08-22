@@ -19,6 +19,7 @@ let error_at span message =
     { Lexing.pos_fname = ""; pos_lnum = 1; pos_bol = 0; pos_cnum = offset }
   in
   Error.error
+    ~code:"LG1002" ~phase:`Parsing
     ~location:
       {
         Location.loc_start = position span.start_offset;
@@ -207,7 +208,7 @@ let rec parse_one ~target = function
                 end_offset = close_span.end_offset;
               },
             rest ))
-  | [] -> Error.error "expected form"
+  | [] -> Error.error ~code:"LG1002" ~phase:`Parsing "expected form"
   | { desc = Rparen; span } :: _ -> error_at span "unexpected ')'"
   | { desc = Rbracket; span } :: _ -> error_at span "unexpected ']'"
   | { desc = Rbrace; span } :: _ -> error_at span "unexpected '}'"
@@ -266,14 +267,17 @@ and anonymous_function open_span close_span forms =
     let rec map_pairs pairs = function
       | key :: value :: rest ->
           map_pairs ((key.form, value.form) :: pairs) rest
-      | [] -> List.rev pairs
-      | [ _ ] -> assert false
+      | [] -> Some (List.rev pairs)
+      | [ _ ] -> None
     in
     let rewritten_form =
       match rewrite_symbol form.form with
       | FList _ -> FList (List.map (fun child -> child.form) children)
       | FVector _ -> FVector (List.map (fun child -> child.form) children)
-      | FMap _ -> FMap (map_pairs [] children)
+      | FMap entries -> (
+          match map_pairs [] children with
+          | Some entries -> FMap entries
+          | None -> FMap entries)
       | rewritten -> rewritten
     in
     { form with form = rewritten_form; children }
@@ -338,7 +342,9 @@ and map_of_forms open_span close_span forms =
   let rec pairs acc = function
     | [] -> Ok (List.rev acc)
     | key :: value :: rest -> pairs ((key, value) :: acc) rest
-    | [ _ ] -> Error.error "map literal requires an even number of forms"
+    | [ _ ] ->
+        Error.error ~code:"LG1002" ~phase:`Parsing
+          "map literal requires an even number of forms"
   in
   Result.bind (remove_metadata [] forms) (fun forms ->
       Result.map

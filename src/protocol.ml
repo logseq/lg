@@ -471,12 +471,16 @@ let rec merge_method_return_types env left right =
 let rec stable_method_return_type = function
   | Types.TNullable return_ty ->
       Types.TNullable (stable_method_return_type return_ty)
-  | Types.TOcaml_app (name, [ element_ty; _ ])
-    when name = Types.seqable_constraint_name ->
+  | Types.TConstraint
+      (Seqable_constraint { requirement = Required; element = element_ty; _ }) ->
       Types.TSeq element_ty
-  | Types.TOcaml_app (name, [ element_ty; _ ])
-    when name = Types.optional_seqable_constraint_name
-         || name = Types.optional_sequential_constraint_name ->
+  | Types.TConstraint
+      (Seqable_constraint
+        {
+          requirement = (Optional | Optional_sequential);
+          element = element_ty;
+          _;
+        }) ->
       Types.TNullable (Types.TSeq element_ty)
   | return_ty -> return_ty
 

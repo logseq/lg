@@ -2,6 +2,5 @@
  (name rrbvec)
  (public_name lg.rrbvec)
  (modes native byte melange)
- (ocamlc_flags :standard -no-g)
  (ocamlopt_flags :standard -no-g)
  (wrapped false))

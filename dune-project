@@ -9,6 +9,9 @@
  (name lg)
  (maintainers "Tienson Qin <tiensonqin@gmail.com>")
  (authors "Tienson Qin")
+ (homepage "https://github.com/tiensonqin/lg")
+ (bug_reports "https://github.com/tiensonqin/lg/issues")
+ (license MIT)
  (synopsis "Clojure syntax for OCaml")
  (description
   "A statically typed Clojure-syntax frontend that emits checked OCaml Parsetree.")
@@ -29,6 +32,9 @@
  (name lg-test)
  (maintainers "Tienson Qin <tiensonqin@gmail.com>")
  (authors "Tienson Qin")
+ (homepage "https://github.com/tiensonqin/lg")
+ (bug_reports "https://github.com/tiensonqin/lg/issues")
+ (license MIT)
  (synopsis "Clojure-compatible test runner for CljML")
  (description
   "A Clojure.test-compatible test runner with Alcotest and Melange backends.")

@@ -187,11 +187,11 @@ let global_parents tag = parents !global tag
 let global_ancestors tag = ancestors !global tag
 let global_descendants tag = descendants !global tag
 
-let global_derive tag parent =
+let global_derive tag parent : value option =
   validate_global tag parent;
   global := derive !global tag parent;
   None
 
-let global_underive tag parent =
+let global_underive tag parent : value option =
   global := underive !global tag parent;
   None

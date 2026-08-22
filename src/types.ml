@@ -102,117 +102,101 @@ let constant_function_result = function
       Some result_ty
   | _ -> None
 
-let seqable_constraint_name = "__lg_seqable_constraint"
 let seqable_constraint element_ty =
-  TOcaml_app (seqable_constraint_name, [ element_ty; TUnknown ])
+  TConstraint
+    (Seqable_constraint
+       { requirement = Required; element = element_ty; storage = TUnknown })
 
 let seqable_constraint_with_value element_ty value_ty =
-  TOcaml_app (seqable_constraint_name, [ element_ty; value_ty ])
+  TConstraint
+    (Seqable_constraint
+       { requirement = Required; element = element_ty; storage = value_ty })
 
-let contains_constraint_name = "__lg_contains_constraint"
 let contains_constraint key_ty =
-  TOcaml_app (contains_constraint_name, [ key_ty; TUnknown ])
+  TConstraint (Contains_constraint { key = key_ty; storage = TUnknown })
 
 let contains_constraint_with_value key_ty value_ty =
-  TOcaml_app (contains_constraint_name, [ key_ty; value_ty ])
+  TConstraint (Contains_constraint { key = key_ty; storage = value_ty })
 
 let contains_constraint_info = function
-  | TOcaml_app (name, [ key_ty; value_ty ])
-    when name = contains_constraint_name ->
-      Some (key_ty, value_ty)
+  | TConstraint (Contains_constraint { key; storage }) -> Some (key, storage)
   | _ -> None
-
-let optional_seqable_constraint_name = "__lg_optional_seqable_constraint"
-let optional_sequential_constraint_name = "__lg_optional_sequential_constraint"
 
 let optional_seqable_constraint element_ty value_ty =
-  TOcaml_app (optional_seqable_constraint_name, [ element_ty; value_ty ])
+  TConstraint
+    (Seqable_constraint
+       { requirement = Optional; element = element_ty; storage = value_ty })
 
 let optional_sequential_constraint element_ty value_ty =
-  TOcaml_app (optional_sequential_constraint_name, [ element_ty; value_ty ])
+  TConstraint
+    (Seqable_constraint
+       {
+         requirement = Optional_sequential;
+         element = element_ty;
+         storage = value_ty;
+       })
 
-let truthy_constraint_name = "__lg_truthy_constraint"
 let truthy_constraint value_ty =
-  TOcaml_app (truthy_constraint_name, [ value_ty ])
+  TConstraint (Truthy_constraint value_ty)
 
 let truthy_constraint_info = function
-  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
-      Some value_ty
+  | TConstraint (Truthy_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let nil_predicate_constraint_name = "__lg_nil_predicate_constraint"
 let nil_predicate_constraint value_ty =
-  TOcaml_app (nil_predicate_constraint_name, [ value_ty ])
+  TConstraint (Nil_predicate_constraint value_ty)
 
 let nil_predicate_constraint_info = function
-  | TOcaml_app (name, [ value_ty ])
-    when name = nil_predicate_constraint_name ->
-      Some value_ty
+  | TConstraint (Nil_predicate_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let printable_constraint_name = "__lg_printable_constraint"
 let printable_constraint value_ty =
-  TOcaml_app (printable_constraint_name, [ value_ty ])
+  TConstraint (Printable_constraint value_ty)
 
 let printable_constraint_info = function
-  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
-      Some value_ty
+  | TConstraint (Printable_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let exception_data_constraint_name = "__lg_exception_data_constraint"
 let exception_data_constraint value_ty =
-  TOcaml_app (exception_data_constraint_name, [ value_ty ])
+  TConstraint (Exception_data_constraint value_ty)
 
 let exception_data_constraint_info = function
-  | TOcaml_app (name, [ value_ty ])
-    when name = exception_data_constraint_name ->
-      Some value_ty
+  | TConstraint (Exception_data_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let hashable_constraint_name = "__lg_hashable_constraint"
 let hashable_constraint value_ty =
-  TOcaml_app (hashable_constraint_name, [ value_ty ])
+  TConstraint (Hashable_constraint value_ty)
 
 let hashable_constraint_info = function
-  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
-      Some value_ty
+  | TConstraint (Hashable_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let comparable_constraint_name = "__lg_comparable_constraint"
 let comparable_constraint value_ty =
-  TOcaml_app (comparable_constraint_name, [ value_ty ])
+  TConstraint (Comparable_constraint value_ty)
 
 let comparable_constraint_info = function
-  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
-      Some value_ty
+  | TConstraint (Comparable_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let array_index_constraint_name = "__lg_array_index_constraint"
 let array_index_constraint value_ty =
-  TOcaml_app (array_index_constraint_name, [ value_ty ])
+  TConstraint (Array_index_constraint value_ty)
 
 let array_index_constraint_info = function
-  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
-      Some value_ty
+  | TConstraint (Array_index_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let symbol_predicate_constraint_name = "__lg_symbol_predicate_constraint"
 let symbol_predicate_constraint value_ty =
-  TOcaml_app (symbol_predicate_constraint_name, [ value_ty ])
+  TConstraint (Symbol_predicate_constraint value_ty)
 
 let symbol_predicate_constraint_info = function
-  | TOcaml_app (name, [ value_ty ])
-    when name = symbol_predicate_constraint_name ->
-      Some value_ty
+  | TConstraint (Symbol_predicate_constraint value_ty) -> Some value_ty
   | _ -> None
 
-let dynamic_constraint_name = "__lg_open_value_constraint"
 let dynamic_constraint capability =
-  TOcaml_app (dynamic_constraint_name, [ capability ])
+  TConstraint (Open_boundary_constraint capability)
 
 let dynamic_constraint_info = function
-  | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
-      Some capability
+  | TConstraint (Open_boundary_constraint capability) -> Some capability
   | _ -> None
 
 let is_dynamic ty = Option.is_some (dynamic_constraint_info ty)
@@ -224,6 +208,24 @@ let rec contains_dynamic = function
       contains_dynamic ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists contains_dynamic arguments
+  | TConstraint constraint_ -> (
+      match constraint_ with
+      | Seqable_constraint { element; storage; _ } ->
+          contains_dynamic element || contains_dynamic storage
+      | Contains_constraint { key; storage } ->
+          contains_dynamic key || contains_dynamic storage
+      | Truthy_constraint value
+      | Nil_predicate_constraint value
+      | Printable_constraint value
+      | Exception_data_constraint value
+      | Hashable_constraint value
+      | Comparable_constraint value
+      | Array_index_constraint value
+      | Symbol_predicate_constraint value
+      | Open_boundary_constraint value ->
+          contains_dynamic value
+      | Protocol_constraint { witness; value; _ } ->
+          contains_dynamic witness || contains_dynamic value)
   | TFn (parameters, return_ty) ->
       List.exists contains_dynamic (return_ty :: parameters)
   | TOverloaded_fn arities ->
@@ -257,25 +259,6 @@ let weak_element = function
   | TOcaml_app (name, [ value_ty ]) when name = weak_type_name -> Some value_ty
   | _ -> None
 
-let protocol_constraint_prefix = "__lg_protocol_constraint:"
-let guarded_protocol_constraint_prefix = "__lg_guarded_protocol_constraint:"
-
-let protocol_constraint_id name =
-  let prefix =
-    if String.starts_with ~prefix:protocol_constraint_prefix name then
-      Some protocol_constraint_prefix
-    else if
-      String.starts_with ~prefix:guarded_protocol_constraint_prefix name
-    then Some guarded_protocol_constraint_prefix
-    else None
-  in
-  Option.map
-    (fun prefix ->
-      String.sub name (String.length prefix)
-        (String.length name - String.length prefix)
-      |> Protocol_id.of_string)
-    prefix
-
 let protocol_witness_type method_types =
   List.fold_right (fun method_ty rest -> TTuple [ method_ty; rest ])
     method_types TUnit
@@ -289,9 +272,14 @@ let rec protocol_witness_method_types = function
   | _ -> None
 
 let protocol_constraint protocol_id method_types value_ty =
-  TOcaml_app
-    ( protocol_constraint_prefix ^ Protocol_id.to_string protocol_id,
-      [ protocol_witness_type method_types; value_ty ] )
+  TConstraint
+    (Protocol_constraint
+       {
+         protocol_id;
+         witness = protocol_witness_type method_types;
+         value = value_ty;
+         guarded = false;
+       })
 
 let sorted_constraint entry_ty key_ty value_ty =
   let protocol_id = Protocol_id.create ~owner:[] ~name:"ISorted" in
@@ -313,26 +301,17 @@ let map_entry_constraint key_ty value_ty storage_ty =
 
 let guarded_protocol_constraint constraint_ty =
   match constraint_ty with
-  | TOcaml_app (name, arguments) -> (
-      match protocol_constraint_id name with
-      | Some protocol_id ->
-          TOcaml_app
-            ( guarded_protocol_constraint_prefix
-              ^ Protocol_id.to_string protocol_id,
-              arguments )
-      | None -> constraint_ty)
+  | TConstraint (Protocol_constraint constraint_) ->
+      TConstraint (Protocol_constraint { constraint_ with guarded = true })
   | _ -> constraint_ty
 
 let is_guarded_protocol_constraint = function
-  | TOcaml_app (name, _) ->
-      String.starts_with ~prefix:guarded_protocol_constraint_prefix name
+  | TConstraint (Protocol_constraint { guarded; _ }) -> guarded
   | _ -> false
 
 let protocol_constraint_info = function
-  | TOcaml_app (name, [ witness_ty; value_ty ]) ->
-      Option.map
-        (fun protocol_id -> (protocol_id, witness_ty, value_ty))
-        (protocol_constraint_id name)
+  | TConstraint (Protocol_constraint { protocol_id; witness; value; _ }) ->
+      Some (protocol_id, witness, value)
   | _ -> None
 
 let sorted_constraint_info ty =
@@ -381,26 +360,21 @@ let capability_constraint_value ty =
                               Option.map snd (contains_constraint_info ty)))))))))
 
 let rec seqable_constraint_element = function
-  | TOcaml_app (name, [ element_ty; _container_ty ])
-    when name = seqable_constraint_name
-         || name = optional_seqable_constraint_name
-         || name = optional_sequential_constraint_name ->
-      Some element_ty
+  | TConstraint (Seqable_constraint { element; _ }) -> Some element
   | ty -> (
       match capability_constraint_value ty with
       | Some value_ty -> seqable_constraint_element value_ty
       | None -> None)
 
 let rec seqable_constraint_info = function
-  | TOcaml_app (name, [ element_ty; value_ty ])
-    when name = seqable_constraint_name ->
-      Some (`Required, element_ty, value_ty)
-  | TOcaml_app (name, [ element_ty; value_ty ])
-    when name = optional_seqable_constraint_name ->
-      Some (`Optional, element_ty, value_ty)
-  | TOcaml_app (name, [ element_ty; value_ty ])
-    when name = optional_sequential_constraint_name ->
-      Some (`Optional_sequential, element_ty, value_ty)
+  | TConstraint (Seqable_constraint { requirement; element; storage }) ->
+      let requirement =
+        match requirement with
+        | Required -> `Required
+        | Optional -> `Optional
+        | Optional_sequential -> `Optional_sequential
+      in
+      Some (requirement, element, storage)
   | ty -> (
       match capability_constraint_value ty with
       | Some value_ty -> seqable_constraint_info value_ty
@@ -414,12 +388,22 @@ let rec constraint_value_type ty =
   | Some value_ty -> constraint_value_type value_ty
   | None -> (
       match ty with
-      | TOcaml_app (name, [ _element_ty; value_ty ])
-        when name = seqable_constraint_name
-             || name = optional_seqable_constraint_name
-             || name = optional_sequential_constraint_name ->
-          constraint_value_type value_ty
+      | TConstraint (Seqable_constraint { storage; _ }) ->
+          constraint_value_type storage
       | value_ty -> value_ty))
+
+let static_unary_constraint_value = function
+  | TConstraint
+      ( Truthy_constraint value
+      | Nil_predicate_constraint value
+      | Printable_constraint value
+      | Exception_data_constraint value
+      | Hashable_constraint value
+      | Comparable_constraint value
+      | Array_index_constraint value
+      | Symbol_predicate_constraint value ) ->
+      Some value
+  | _ -> None
 
 let rec remove_protocol_constraint protocol_id ty =
   match protocol_constraint_info ty with
@@ -428,10 +412,14 @@ let rec remove_protocol_constraint protocol_id ty =
       remove_protocol_constraint protocol_id value_ty
   | Some (_, witness_ty, value_ty) -> (
       match ty with
-      | TOcaml_app (name, [ _; _ ]) ->
-          TOcaml_app
-            ( name,
-              [ witness_ty; remove_protocol_constraint protocol_id value_ty ] )
+      | TConstraint (Protocol_constraint constraint_) ->
+          TConstraint
+            (Protocol_constraint
+               {
+                 constraint_ with
+                 witness = witness_ty;
+                 value = remove_protocol_constraint protocol_id value_ty;
+               })
       | _ -> ty)
   | None -> ty
 
@@ -460,7 +448,7 @@ let rec deduplicate_protocol_constraints ty =
   match protocol_constraint_info ty with
   | Some (protocol_id, witness_ty, value_ty) -> (
       match ty with
-      | TOcaml_app (name, [ _; _ ]) ->
+      | TConstraint (Protocol_constraint constraint_) ->
           let value_ty =
             value_ty |> deduplicate_protocol_constraints
             |> remove_protocol_constraint protocol_id
@@ -468,24 +456,21 @@ let rec deduplicate_protocol_constraints ty =
           let witness_ty =
             protocol_witness_with_receiver value_ty witness_ty
           in
-          TOcaml_app (name, [ witness_ty; value_ty ])
+          TConstraint
+            (Protocol_constraint
+               { constraint_ with witness = witness_ty; value = value_ty })
       | _ -> ty)
   | None -> ty
 
 let protocol_constraint_with_value constraint_ty value_ty =
   match constraint_ty with
-  | TOcaml_app (name, [ witness_ty; _ ])
-    when Option.is_some (protocol_constraint_id name) -> (
-      match protocol_constraint_id name with
-      | Some protocol_id ->
-          let value_ty = remove_protocol_constraint protocol_id value_ty in
-          let witness_ty =
-            protocol_witness_with_receiver value_ty witness_ty
-          in
-          TOcaml_app
-            (name, [ witness_ty; value_ty ])
-          |> deduplicate_protocol_constraints
-      | None -> constraint_ty)
+  | TConstraint
+      (Protocol_constraint ({ protocol_id; witness; _ } as constraint_)) ->
+      let value_ty = remove_protocol_constraint protocol_id value_ty in
+      let witness = protocol_witness_with_receiver value_ty witness in
+      TConstraint
+        (Protocol_constraint { constraint_ with witness; value = value_ty })
+      |> deduplicate_protocol_constraints
   | ty -> ty
 
 let protocol_witness_name value_name protocol_id =
@@ -526,13 +511,35 @@ let dynamic_map key value =
 
 let record_extension_keyword = ":__lg/extmap"
 let record_metadata_key = "\000lg-record-metadata"
-let record_extension_type = dynamic_map TKeyword (dynamic_constraint TUnknown)
 let record_identity_keyword = ":__lg/identity"
 
 let dynamic_map_types = function
   | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key; value ]) ->
       Some (key, value)
   | _ -> None
+
+let rec edn_compatible_static_type = function
+  | TUnknown | TMeta _ | TVar _ -> true
+  | TNil | TBool | TString | TChar | TSymbol | TKeyword | TInt | TFloat
+  | TRegex ->
+      true
+  | TOcaml "int" | TOcaml "int64" | TOcaml "float" | TOcaml "string"
+  | TOcaml "bool" ->
+      true
+  | TList element | TSeq element | TVector element | TArray element
+  | TOcaml_app ("array", [ element ])
+  | TSet element
+  | TNullable element
+  | TOcaml_app ("option", [ element ]) ->
+      edn_compatible_static_type element
+  | TRecord fields | TNamed_record { fields; nominal = false; _ } ->
+      List.for_all
+        (fun (field : field) -> edn_compatible_static_type field.ty)
+        fields
+  | TOcaml_app ("Lg_runtime.Runtime_map.t", [ key_ty; value_ty ]) ->
+      edn_compatible_static_type key_ty
+      && edn_compatible_static_type value_ty
+  | _ -> false
 
 let reduced_element = function
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name -> Some inner
@@ -568,6 +575,7 @@ let rec equal left right =
       left_name = right_name
       && List.length left_args = List.length right_args
       && List.for_all2 equal left_args right_args
+  | TConstraint left, TConstraint right -> equal_constraint left right
   | TTuple left, TTuple right ->
       List.length left = List.length right && List.for_all2 equal left right
   | TArray left, TArray right | TRef left, TRef right -> equal left right
@@ -609,6 +617,52 @@ let rec equal left right =
           left right
   | TNamed_record left, TNamed_record right ->
       Type_id.equal left.type_id right.type_id
+  | _ -> false
+
+and equal_constraint left right =
+  match (left, right) with
+  | ( Seqable_constraint
+        { requirement = left_requirement; element = left_element; storage = left_storage },
+      Seqable_constraint
+        {
+          requirement = right_requirement;
+          element = right_element;
+          storage = right_storage;
+        } ) ->
+      left_requirement = right_requirement
+      && equal left_element right_element
+      && equal left_storage right_storage
+  | ( Contains_constraint { key = left_key; storage = left_storage },
+      Contains_constraint { key = right_key; storage = right_storage } ) ->
+      equal left_key right_key && equal left_storage right_storage
+  | Truthy_constraint left, Truthy_constraint right
+  | Nil_predicate_constraint left, Nil_predicate_constraint right
+  | Printable_constraint left, Printable_constraint right
+  | Exception_data_constraint left, Exception_data_constraint right
+  | Hashable_constraint left, Hashable_constraint right
+  | Comparable_constraint left, Comparable_constraint right
+  | Array_index_constraint left, Array_index_constraint right
+  | Symbol_predicate_constraint left, Symbol_predicate_constraint right
+  | Open_boundary_constraint left, Open_boundary_constraint right ->
+      equal left right
+  | ( Protocol_constraint
+        {
+          protocol_id = left_id;
+          witness = left_witness;
+          value = left_value;
+          guarded = left_guarded;
+        },
+      Protocol_constraint
+        {
+          protocol_id = right_id;
+          witness = right_witness;
+          value = right_value;
+          guarded = right_guarded;
+        } ) ->
+      Protocol_id.equal left_id right_id
+      && left_guarded = right_guarded
+      && equal left_witness right_witness
+      && equal left_value right_value
   | _ -> false
 
 and equal_fn_arity left right =
@@ -672,6 +726,8 @@ let rec row_compatible ~expected ~actual =
       List.for_all2
         (fun expected actual -> row_compatible ~expected ~actual)
         expected_args actual_args
+  | TConstraint expected, TConstraint actual ->
+      constraint_compatible row_compatible expected actual
   | TTuple expected, TTuple actual
     when List.length expected = List.length actual ->
       List.for_all2
@@ -710,6 +766,34 @@ let rec row_compatible ~expected ~actual =
   | TMap_keys, (TRecord _ | TNamed_record _) -> true
   | _ -> false
 
+and constraint_compatible compatible left right =
+  let compatible_pair left_first left_second right_first right_second =
+    compatible ~expected:left_first ~actual:right_first
+    && compatible ~expected:left_second ~actual:right_second
+  in
+  match (left, right) with
+  | ( Seqable_constraint left,
+      Seqable_constraint right ) ->
+      left.requirement = right.requirement
+      && compatible_pair left.element left.storage right.element right.storage
+  | Contains_constraint left, Contains_constraint right ->
+      compatible_pair left.key left.storage right.key right.storage
+  | Truthy_constraint left, Truthy_constraint right
+  | Nil_predicate_constraint left, Nil_predicate_constraint right
+  | Printable_constraint left, Printable_constraint right
+  | Exception_data_constraint left, Exception_data_constraint right
+  | Hashable_constraint left, Hashable_constraint right
+  | Comparable_constraint left, Comparable_constraint right
+  | Array_index_constraint left, Array_index_constraint right
+  | Symbol_predicate_constraint left, Symbol_predicate_constraint right
+  | Open_boundary_constraint left, Open_boundary_constraint right ->
+      compatible ~expected:left ~actual:right
+  | Protocol_constraint left, Protocol_constraint right ->
+      Protocol_id.equal left.protocol_id right.protocol_id
+      && left.guarded = right.guarded
+      && compatible_pair left.witness left.value right.witness right.value
+  | _ -> false
+
 let same_shape left right =
   equal left right
   || (row_compatible ~expected:left ~actual:right
@@ -746,6 +830,16 @@ let classify_assignability ~expected ~actual =
 let rec assignable ~policy ~expected ~actual =
   match (expected, actual) with
   | expected, actual when is_dynamic expected <> is_dynamic actual -> false
+  | expected, actual
+    when Option.is_some (static_unary_constraint_value expected) ->
+      assignable ~policy
+        ~expected:(Option.get (static_unary_constraint_value expected))
+        ~actual:
+          (Option.value (static_unary_constraint_value actual) ~default:actual)
+  | expected, actual
+    when Option.is_some (static_unary_constraint_value actual) ->
+      assignable ~policy ~expected
+        ~actual:(Option.get (static_unary_constraint_value actual))
   | TNullable _, TNil -> true
   | TNullable expected, TNullable actual ->
       assignable ~policy ~expected ~actual
@@ -821,46 +915,43 @@ let rec source_name = function
   | TBool -> "bool"
   | TUnit -> "unit"
   | TNil -> "nil"
-  | TNullable inner -> "nullable<" ^ source_name inner ^ ">"
+  | TNullable inner -> "option<" ^ source_name inner ^ ">"
   | TUnknown -> "any"
   | TMeta _ -> "inference-variable"
   | TVar name -> "param/" ^ name
   | TOcaml name -> name
-  | TOcaml_app (name, [ inner; _ ]) when name = seqable_constraint_name ->
-      "seqable<" ^ source_name inner ^ ">"
-  | TOcaml_app (name, [ key_ty; _ ]) when name = contains_constraint_name ->
-      "contains<" ^ source_name key_ty ^ ">"
-  | TOcaml_app (name, [ capability ]) when name = dynamic_constraint_name ->
+  | TConstraint (Seqable_constraint { element; _ }) ->
+      "seqable<" ^ source_name element ^ ">"
+  | TConstraint (Contains_constraint { key; _ }) ->
+      "contains<" ^ source_name key ^ ">"
+  | TConstraint (Open_boundary_constraint capability) ->
       "dynamic<" ^ source_name capability ^ ">"
-  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+  | TConstraint (Truthy_constraint value_ty) ->
       "truthy<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ])
-    when name = nil_predicate_constraint_name ->
+  | TConstraint (Nil_predicate_constraint value_ty) ->
       "nil-predicate<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+  | TConstraint (Printable_constraint value_ty) ->
       "printable<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ])
-    when name = exception_data_constraint_name ->
+  | TConstraint (Exception_data_constraint value_ty) ->
       "exception-data<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
+  | TConstraint (Hashable_constraint value_ty) ->
       "hashable<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
+  | TConstraint (Comparable_constraint value_ty) ->
       "comparable<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
+  | TConstraint (Array_index_constraint value_ty) ->
       "array-index<" ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ value_ty ])
-    when name = symbol_predicate_constraint_name ->
+  | TConstraint (Symbol_predicate_constraint value_ty) ->
       "symbol-predicate<" ^ source_name value_ty ^ ">"
-  | (TOcaml_app _ as ty) when Option.is_some (sorted_constraint_info ty) ->
+  | (TConstraint (Protocol_constraint _) as ty)
+    when Option.is_some (sorted_constraint_info ty) ->
       let entry_ty, key_ty, value_ty = Option.get (sorted_constraint_info ty) in
       "sorted<" ^ source_name entry_ty ^ ";" ^ source_name key_ty ^ ";"
       ^ source_name value_ty ^ ">"
-  | TOcaml_app (name, [ _witness_ty; value_ty ])
-    when Option.is_some (protocol_constraint_id name) ->
-      let protocol_name =
-        protocol_constraint_id name |> Option.get |> Protocol_id.to_string
-      in
-      "optional-protocol<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
+  | TConstraint
+      (Protocol_constraint { protocol_id; value = value_ty; guarded; _ }) ->
+      let protocol_name = Protocol_id.to_string protocol_id in
+      let prefix = if guarded then "optional-protocol" else "protocol" in
+      prefix ^ "<" ^ protocol_name ^ ";" ^ source_name value_ty ^ ">"
   | TOcaml_app (name, [ inner ]) when name = weak_type_name ->
       "weak<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name ->
@@ -954,45 +1045,40 @@ let rec ocaml_name = function
       | None -> Names.sanitize_name source_name)
   | TOcaml name -> name
   | TOcaml_app (name, []) -> name
-  | TOcaml_app (name, [ _capability ]) when name = dynamic_constraint_name ->
+  | TConstraint (Open_boundary_constraint _) ->
       "Lg_runtime.Runtime_dynamic.t"
-  | TOcaml_app (name, [ value_ty ]) when name = truthy_constraint_name ->
+  | TConstraint (Truthy_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ])
-    when name = nil_predicate_constraint_name ->
+  | TConstraint (Nil_predicate_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ]) when name = printable_constraint_name ->
+  | TConstraint (Printable_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ])
-    when name = exception_data_constraint_name ->
+  | TConstraint (Exception_data_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> Lg_edn_backend.t) * "
       ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
+  | TConstraint (Hashable_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ]) when name = comparable_constraint_name ->
+  | TConstraint (Comparable_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> " ^ ocaml_name value_ty
       ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ]) when name = array_index_constraint_name ->
+  | TConstraint (Array_index_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ value_ty ])
-    when name = symbol_predicate_constraint_name ->
+  | TConstraint (Symbol_predicate_constraint value_ty) ->
       "((" ^ ocaml_name value_ty ^ " -> string option) * "
       ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ inner; container ]) when name = seqable_constraint_name ->
-      "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
-      ^ ocaml_name inner
-      ^ " Seq.t) * " ^ ocaml_name container ^ ")"
-  | TOcaml_app (name, [ key_ty; value_ty ])
-    when name = contains_constraint_name ->
-      "((" ^ ocaml_name key_ty ^ " -> bool) * " ^ ocaml_name value_ty ^ ")"
-  | TOcaml_app (name, [ inner; container ])
-    when name = optional_seqable_constraint_name
-         || name = optional_sequential_constraint_name ->
-      "((" ^ ocaml_name (constraint_value_type container) ^ " -> "
-      ^ ocaml_name inner ^ " Seq.t) option * " ^ ocaml_name container ^ ")"
-  | TOcaml_app (name, [ witness_ty; value_ty ])
-    when Option.is_some (protocol_constraint_id name) ->
-      "(" ^ ocaml_name witness_ty ^ " option * " ^ ocaml_name value_ty ^ ")"
+  | TConstraint
+      (Seqable_constraint { requirement = Required; element; storage }) ->
+      "((" ^ ocaml_name (constraint_value_type storage) ^ " -> "
+      ^ ocaml_name element ^ " Seq.t) * " ^ ocaml_name storage ^ ")"
+  | TConstraint (Contains_constraint { key; storage }) ->
+      "((" ^ ocaml_name key ^ " -> bool) * " ^ ocaml_name storage ^ ")"
+  | TConstraint
+      (Seqable_constraint
+        { requirement = (Optional | Optional_sequential); element; storage }) ->
+      "((" ^ ocaml_name (constraint_value_type storage) ^ " -> "
+      ^ ocaml_name element ^ " Seq.t) option * " ^ ocaml_name storage ^ ")"
+  | TConstraint (Protocol_constraint { witness; value; _ }) ->
+      "(" ^ ocaml_name witness ^ " option * " ^ ocaml_name value ^ ")"
   | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name ->
       ocaml_name inner ^ " Seq.t"
   | TOcaml_app (name, [ arg ]) ->
@@ -1115,10 +1201,6 @@ and set_module_name = function
   | ty when Option.is_some (seqable_constraint_info ty) ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TSet (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
-  | TVector inner when is_dynamic inner ->
-      Ok "Lg_runtime.Core_set.Dynamic_vector_set"
-  | TVector (TVector inner) when is_dynamic inner ->
-      Ok "Lg_runtime.Core_set.Dynamic_vector_vector_set"
   | TVector (TVector TInt) -> Ok "Lg_runtime.Core_set.Int_vector_vector_set"
   | TVector (TRecord _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector (TNamed_record { nominal = false; _ }) ->
@@ -1220,6 +1302,8 @@ let rec qualify_module_type module_path ty =
   | TNullable inner -> TNullable (qualify_module_type module_path inner)
   | TOcaml_app (name, args) ->
       TOcaml_app (name, List.map (qualify_module_type module_path) args)
+  | TConstraint constraint_ ->
+      TConstraint (map_constraint (qualify_module_type module_path) constraint_)
   | TTuple args -> TTuple (List.map (qualify_module_type module_path) args)
   | TArray inner -> TArray (qualify_module_type module_path inner)
   | TRef inner -> TRef (qualify_module_type module_path inner)
@@ -1287,6 +1371,9 @@ let rec remap_module_type ~from_path ~to_path ty =
       TNullable (remap_module_type ~from_path ~to_path inner)
   | TOcaml_app (name, args) ->
       TOcaml_app (name, List.map (remap_module_type ~from_path ~to_path) args)
+  | TConstraint constraint_ ->
+      TConstraint
+        (map_constraint (remap_module_type ~from_path ~to_path) constraint_)
   | TTuple args -> TTuple (List.map (remap_module_type ~from_path ~to_path) args)
   | TArray inner -> TArray (remap_module_type ~from_path ~to_path inner)
   | TRef inner -> TRef (remap_module_type ~from_path ~to_path inner)
@@ -1338,6 +1425,7 @@ let rec refresh_named_record (fresh : named_record) ty =
       ty
   | TNullable inner -> TNullable (refresh inner)
   | TOcaml_app (name, args) -> TOcaml_app (name, List.map refresh args)
+  | TConstraint constraint_ -> TConstraint (map_constraint refresh constraint_)
   | TTuple args -> TTuple (List.map refresh args)
   | TArray inner -> TArray (refresh inner)
   | TRef inner -> TRef (refresh inner)
@@ -1391,7 +1479,7 @@ let make_field ?location ?(mutable_ = false) ?(runtime_map = false) keyword ty =
 let make_map_field ?location keyword ty =
   make_field ?location ~runtime_map:true keyword ty
 
-let make_record_extension_field ?(ty = record_extension_type) () =
+let make_record_extension_field ~ty () =
   make_field record_extension_keyword ty
 
 let is_record_extension_field field =

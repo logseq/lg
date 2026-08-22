@@ -1,3 +1,13 @@
+(env
+ (_
+  (bin_annot false)
+  (ocamlc_flags
+   (:standard \ -g))
+  (ocamlopt_flags
+   (:standard \ -g))
+  (melange.compile_flags
+   (:standard \ -g))))
+
 (executable
  (name compiler_test_runner)
  (modules compiler_test_runner)
@@ -25,14 +35,11 @@
   ../src/lg.cma
   ../runtime/lg_runtime.cma
   ../vendor/rrbvec/rrbvec.cma)
- (libraries
-  lg
-  lg.runtime
-  lg.edn-backend.native
-  unix
-  rrbvec)
+ (libraries lg lg.runtime lg.edn-backend.native unix rrbvec)
  (action
-  (chdir %{workspace_root} (run %{test}))))
+  (chdir
+   %{workspace_root}
+   (run %{test}))))
 
 (test
  (name compiler_support_performance_tests)
@@ -40,9 +47,20 @@
  (libraries lg.compiler_support))
 
 (test
- (name lgc_target_tests)
- (modules lgc_target_tests)
- (libraries lg))
+ (name compiler_gate_tests)
+ (modules
+  compiler_gate_tests
+  lgc_target_tests
+  compiler_concurrency_tests
+  compiler_fuzz_tests)
+ (libraries lg rrbvec)
+ (action
+  (setenv
+   LG_OCAML_INCLUDE_PATH
+   "src:src/.lg.objs/byte:runtime:runtime/.lg_runtime.objs/byte:vendor/rrbvec:vendor/rrbvec/.rrbvec.objs/byte"
+   (chdir
+    %{workspace_root}
+    (run %{test})))))
 
 (test
  (name runtime_transient_tests)
@@ -67,7 +85,8 @@
 (rule
  (alias runtest)
  (deps no_unsafe_dynamic_casts_test.sh)
- (action (run sh %{dep:no_unsafe_dynamic_casts_test.sh})))
+ (action
+  (run sh %{dep:no_unsafe_dynamic_casts_test.sh})))
 
 (test
  (name runtime_seq_tests)
@@ -140,16 +159,12 @@
 
 (rule
  (target lgc_native.ml)
- (deps
-  cross_runtime.cljc
-  ../stdlib/lg_stdlib_native.ml
-  ../stdlib/lg_stdlib_native.state
-  ../bin/lg_cli.exe)
+ (deps cross_runtime.cljc ../stdlib/lg_stdlib_native.state ../bin/lg_cli.exe)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../stdlib/lg_stdlib_native.ml})
+    (echo "open Lg_stdlib_native\n")
     (run
      %{exe:../bin/lg_cli.exe}
      --target
@@ -163,20 +178,24 @@
  (modules lgc_native)
  (flags
   (:standard -w -27-32))
- (libraries lg.edn-backend.native lg.runtime re rrbvec))
+ (libraries
+  lg_compiled_stdlib_native
+  lg.edn-backend.native
+  lg.runtime
+  re
+  rrbvec))
 
 (rule
  (target lgc_melange.ml)
  (deps
   cross_runtime.cljc
-  ../stdlib/lg_stdlib_melange.ml
   ../stdlib/lg_stdlib_melange.state
   ../bin/lg_cli.exe)
  (action
   (with-stdout-to
    %{target}
    (progn
-    (cat %{dep:../stdlib/lg_stdlib_melange.ml})
+    (echo "open Lg_stdlib_melange\n")
     (run
      %{exe:../bin/lg_cli.exe}
      --target
@@ -191,42 +210,49 @@
  (module_systems es6)
  (modules lgc_melange)
  (compile_flags -w -27-32)
- (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ (libraries
+  lg_compiled_stdlib_melange
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  rrbvec))
 
 (rule
  (target lgc_jsoo.ml)
- (deps cross_runtime.cljc ../bin/lg_cli.exe)
+ (deps
+  cross_runtime.cljc
+  ../stdlib/lg_stdlib_js.ml
+  ../stdlib/lg_stdlib_js.state
+  ../bin/lg_cli.exe)
  (action
-  (run
-   %{exe:../bin/lg_cli.exe}
-   --target
-   js-of-ocaml
-   %{dep:cross_runtime.cljc}
-   -o
-   %{target})))
+  (with-stdout-to
+   %{target}
+   (progn
+    (cat %{dep:../stdlib/lg_stdlib_js.ml})
+    (run
+     %{exe:../bin/lg_cli.exe}
+     --target
+     js-of-ocaml
+     --compile-chunk-from
+     %{dep:../stdlib/lg_stdlib_js.state}
+     %{dep:cross_runtime.cljc})))))
 
 (executable
  (name lgc_jsoo)
  (modes js)
  (modules lgc_jsoo)
- (libraries lg.runtime re rrbvec))
+ (flags
+  (:standard -w -27-32))
+ (js_of_ocaml
+  (flags
+   (:standard --no-source-map)))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
+(rule
+ (target lgc_jsoo.cjs)
+ (deps lgc_jsoo.bc.js)
+ (action
+  (copy %{dep:lgc_jsoo.bc.js} %{target})))
 
 (rule
  (alias runtest)
@@ -245,21 +271,21 @@
    %{dep:cross_runtime_native_melange.expected})))
 
 (rule
- (alias jsoo-cross-runtime)
+ (aliases runtest jsoo-cross-runtime)
  (deps
   cross_runtime_smoke.sh
   cross_runtime.expected
   lgc_native.exe
   (alias lgc-melange)
   lgc-melange/test/lgc_melange.js
-  lgc_jsoo.bc.js)
+  lgc_jsoo.cjs)
  (action
   (run
    sh
    %{dep:cross_runtime_smoke.sh}
    %{exe:lgc_native.exe}
    %{dep:lgc-melange/test/lgc_melange.js}
-   %{dep:lgc_jsoo.bc.js}
+   %{dep:lgc_jsoo.cjs}
    %{dep:cross_runtime.expected})))
 
 (rule
@@ -327,9 +353,6 @@
    %{workspace_root}
    (run sh test/no_legacy_source_backend.sh))))
 
-
-
-
 (rule
  (alias runtest)
  (deps
@@ -343,242 +366,6 @@
   (chdir
    %{workspace_root}
    (run sh test/no_typed_expr_source_code.sh))))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 (rule
  (alias clojure-surface-inventory)
@@ -617,11 +404,9 @@
  (deps
   (alias clojure-surface-inventory)
   (alias logseq-dependency-report)))
+
 (rule
  (alias runtest)
  (deps no_datascript_implementation_test.sh)
  (action
-  (run
-   bash
-   %{dep:no_datascript_implementation_test.sh}
-   %{workspace_root})))
+  (run bash %{dep:no_datascript_implementation_test.sh} %{workspace_root})))

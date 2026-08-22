@@ -29,6 +29,8 @@
 (def regex-matched
   (boolean (re-matches #"(?:([^/]+)/)?_([^/]+)" "user/_friend")))
 
+(def hash-matched (= -68075478 (clojure.core/m3-fmix 651101558 4)))
+
 (println
   (str environment ":" (selected-sum 1 2 3 4) ":" lazy-total ":" stopped ":"
-       (contains? values 3) ":" joined ":" regex-matched))
+       (contains? values 3) ":" joined ":" regex-matched ":" hash-matched))

@@ -25,7 +25,7 @@ let compile_args_for compile_expr scope env arg_forms =
   loop [] arg_forms
 
 let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
-    ~pack_constrained_value ~adapt_value_to_type =
+    ~pack_constrained_value ~plan_and_emit_argument =
   let compile_args_for = compile_args_for compile_expr in
   let overloaded_apply_counter = ref 0 in
   let rec require_callable_value expression =
@@ -829,8 +829,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                            target.semantic_expr;
                                            list_expr;
                                          ]))
-                                  (adapt_value_to_type env resolved_element_ty
-                                     item)
+                                  (plan_and_emit_argument env
+                                     ~expected:resolved_element_ty item)
                             | None ->
                                 Error.error
                                   "apply conj expects a vector target")
@@ -1316,7 +1316,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   Type_solver.apply substitutions return_ty
                                 in
                                 Result.bind
-                                  (adapt_value_to_type env parameter expression)
+                                  (plan_and_emit_argument env
+                                     ~expected:parameter expression)
                                   (fun argument ->
                                     compose
                                       (typed_ir return_ty
@@ -1416,7 +1417,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           let adapted_default =
                             match List.nth_opt parameter_tys index with
                             | Some expected ->
-                                adapt_value_to_type env expected default
+                                plan_and_emit_argument env ~expected default
                                 |> Result.map (typed_ir expected)
                             | None -> Ok default
                           in
@@ -1531,7 +1532,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                   match expected with
                                   | None -> Ok default
                                   | Some expected ->
-                                      adapt_value_to_type env expected default
+                                      plan_and_emit_argument env ~expected default
                                       |> Result.map (typed_ir expected)
                                 in
                                 Result.bind adapted_default (fun default ->
@@ -1814,7 +1815,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     | [], [] -> Ok (List.rev adapted)
                     | expected :: expected_rest, actual :: actual_rest ->
                         Result.bind
-                          (adapt_value_to_type env expected actual)
+                          (plan_and_emit_argument env ~expected actual)
                           (fun expression ->
                             adapt_fixed
                               (typed_ir expected expression :: adapted)
@@ -1913,7 +1914,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           | [], [] -> Ok (List.rev adapted)
                           | expected :: expected_rest, actual :: actual_rest ->
                               Result.bind
-                                (adapt_value_to_type env expected actual)
+                                (plan_and_emit_argument env ~expected actual)
                                 (fun expression ->
                                   adapt_fixed
                                     (typed_ir expected expression :: adapted)

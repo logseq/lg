@@ -28,6 +28,8 @@ type parsetree_result = {
 type diagnostic_severity = [ `Warning ]
 
 type diagnostic = {
+  code : string;
+  phase : Error.phase;
   message : string;
   severity : diagnostic_severity;
   location : Location.t option;
@@ -289,10 +291,12 @@ module Lg_frontend : FRONTEND = struct
         in
         let rec pairs acc = function
           | key :: value :: rest -> pairs ((key, value) :: acc) rest
-          | [] -> List.rev acc
-          | [ _ ] -> assert false
+          | [] -> Some (List.rev acc)
+          | [ _ ] -> None
         in
-        Ast.FMap (pairs [] forms)
+        (match pairs [] forms with
+        | Some entries -> Ast.FMap entries
+        | None -> Ast.FMap entries)
     | form -> form
 
   and normalize_metadata_sequence = function
@@ -907,7 +911,11 @@ module Ocaml_typechecker = struct
             Format.asprintf "%a" Location.print_report report |> String.trim
           in
           diagnostics :=
-            { message; severity = `Warning; location = Some location }
+            { code = "OCAML-WARNING";
+              phase = `Ocaml;
+              message;
+              severity = `Warning;
+              location = Some location }
             :: !diagnostics;
           None
     in
@@ -928,7 +936,8 @@ module Ocaml_typechecker = struct
       in
       Ok { typed_structure; compiler_env; diagnostics = List.rev !diagnostics }
     with exn ->
-      Error.error ?location:(exception_location exn)
+      Error.error ?location:(exception_location exn) ~code:"LG4000"
+        ~phase:`Ocaml
         ("OCaml typecheck failed: " ^ exception_message exn)
 
   let structure structure =
@@ -1232,7 +1241,7 @@ let stabilization_ast ?(signed_names = []) ast =
             in
             Ast.FList (Ast.FSymbol "declare" :: names)
         | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
-        | Some [] -> assert false
+        | Some [] -> form
         | None when ordinary_definition form ->
             if not selected.(index) then
               Ast.FList [ Ast.FSymbol "declare" ]
@@ -1307,7 +1316,7 @@ let recursive_definition_ast ast =
                  (fun member -> normalize_definition (List.nth ast member))
                  indices)
       | Some (_ :: _) -> Ast.FList [ Ast.FSymbol "declare" ]
-      | Some [] -> assert false)
+      | Some [] -> form)
     ast
 
 let affected_stabilization_forms ast evidence_ast changed_names =

@@ -168,7 +168,11 @@ let rec parse_ocaml_type source =
                 match validate_ocaml_type_application name args with
                 | Error _ as err -> err
                 | Ok () ->
-                    if name = "tuple" then Ok (TTuple args)
+                    if name = "option" then
+                      match args with
+                      | [ inner ] -> Ok (TNullable inner)
+                      | _ -> assert false
+                    else if name = "tuple" then Ok (TTuple args)
                     else if name = "array" then
                       match args with
                       | [ inner ] -> Ok (TArray inner)
@@ -358,6 +362,50 @@ let rec resolve_type_parameters parameters = function
             | Ok arg -> resolve_args (arg :: acc) rest)
       in
       resolve_args [] args
+  | TConstraint constraint_ ->
+      let resolve value = resolve_type_parameters parameters value in
+      let resolve_one build value =
+        Result.map (fun value -> TConstraint (build value)) (resolve value)
+      in
+      let resolve_two build left right =
+        Result.bind (resolve left) (fun left ->
+            Result.map
+              (fun right -> TConstraint (build left right))
+              (resolve right))
+      in
+      (match constraint_ with
+      | Seqable_constraint ({ element; storage; _ } as seqable) ->
+          resolve_two
+            (fun element storage ->
+              Seqable_constraint { seqable with element; storage })
+            element storage
+      | Contains_constraint { key; storage } ->
+          resolve_two
+            (fun key storage -> Contains_constraint { key; storage })
+            key storage
+      | Truthy_constraint value ->
+          resolve_one (fun value -> Truthy_constraint value) value
+      | Nil_predicate_constraint value ->
+          resolve_one (fun value -> Nil_predicate_constraint value) value
+      | Printable_constraint value ->
+          resolve_one (fun value -> Printable_constraint value) value
+      | Exception_data_constraint value ->
+          resolve_one (fun value -> Exception_data_constraint value) value
+      | Hashable_constraint value ->
+          resolve_one (fun value -> Hashable_constraint value) value
+      | Comparable_constraint value ->
+          resolve_one (fun value -> Comparable_constraint value) value
+      | Array_index_constraint value ->
+          resolve_one (fun value -> Array_index_constraint value) value
+      | Symbol_predicate_constraint value ->
+          resolve_one (fun value -> Symbol_predicate_constraint value) value
+      | Open_boundary_constraint value ->
+          resolve_one (fun value -> Open_boundary_constraint value) value
+      | Protocol_constraint ({ witness; value; _ } as protocol) ->
+          resolve_two
+            (fun witness value ->
+              Protocol_constraint { protocol with witness; value })
+            witness value)
   | TArray inner ->
       resolve_type_parameters parameters inner |> Result.map (fun inner -> TArray inner)
   | TRef inner ->

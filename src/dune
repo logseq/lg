@@ -1,7 +1,6 @@
 (library
  (name lg)
  (public_name lg)
- (ocamlc_flags :standard -no-g)
  ; The compiler is itself on the cold code-generation path. Classic inlining
  ; without cross-function expansion keeps that path below the 10-second gate.
  (ocamlopt_flags :standard -Oclassic -inline 0 -no-g)

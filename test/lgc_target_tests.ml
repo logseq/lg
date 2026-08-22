@@ -258,6 +258,21 @@ let test_metadata_forms_do_not_break_map_literals () =
   ignore (compile Lg.Target.Native source);
   ignore (compile Lg.Target.Melange source)
 
+let expect_structured_error expected_code expected_phase = function
+  | Error (error : Lg.Compiler.compile_error) ->
+      if error.code <> expected_code then
+        fail
+          (Printf.sprintf "expected diagnostic code %s, got %s" expected_code
+             error.code);
+      if error.phase <> expected_phase then fail "unexpected diagnostic phase"
+  | Ok _ -> fail ("expected structured compiler error " ^ expected_code)
+
+let test_exposes_structured_error_identity () =
+  Lg.Compiler.compile_string "("
+  |> expect_structured_error "LG1002" `Parsing;
+  Lg.Compiler.compile_string "(def value missing-symbol)"
+  |> expect_structured_error "LG2000" `Semantic
+
 let tests =
   [
     ("reader discard omits forms", test_reader_discard_omits_forms);
@@ -287,11 +302,13 @@ let tests =
       test_js_literals_are_single_reader_forms_in_conditionals );
     ( "metadata forms do not break map literals",
       test_metadata_forms_do_not_break_map_literals );
+    ( "exposes structured error identity",
+      test_exposes_structured_error_identity );
     ( "rejects invalid reader conditionals",
       test_rejects_invalid_reader_conditionals );
   ]
 
-let () =
+let run () =
   List.iter
     (fun (name, run) ->
       try run ()

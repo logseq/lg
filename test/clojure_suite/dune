@@ -17,7 +17,7 @@
    %{dep:promotion_exclusions.tsv})))
 
 (rule
- (target clojure_test_suite_smoke_native_chunk.ml)
+ (target clojure_test_suite_smoke_native.ml)
  (deps
   ../../stdlib/lg_stdlib_native.state
   ../../test_runner/clojure/test.cljc
@@ -55,19 +55,9 @@
     --working-directory
     %{workspace_root}
     --output
-    %{target}))))
-
-(rule
- (target clojure_test_suite_smoke_native.ml)
- (deps
-  ../../stdlib/lg_stdlib_native.ml
-  clojure_test_suite_smoke_native_chunk.ml)
- (action
-  (with-stdout-to
-   %{target}
-   (progn
-    (cat %{dep:../../stdlib/lg_stdlib_native.ml})
-    (cat %{dep:clojure_test_suite_smoke_native_chunk.ml})))))
+    %{target}
+    --open-module
+    Lg_stdlib_native))))
 
 (executable
  (name clojure_test_suite_smoke_native)
@@ -75,6 +65,7 @@
  (flags
   (:standard -w -26-27-32-37-69))
  (libraries
+  lg_compiled_stdlib_native
   lg.runtime
   lg.edn-backend.native
   lg-test.runtime
@@ -83,7 +74,7 @@
   rrbvec))
 
 (rule
- (target clojure_test_suite_smoke_melange_chunk.ml)
+ (target clojure_test_suite_smoke_melange.ml)
  (deps
   ../../stdlib/lg_stdlib_melange.state
   ../../test_runner/clojure/test.cljc
@@ -121,29 +112,18 @@
     --working-directory
     %{workspace_root}
     --output
-    %{target}))))
-
-(rule
- (target clojure_test_suite_smoke_melange.ml)
- (deps
-  ../../stdlib/lg_stdlib_melange.ml
-  clojure_test_suite_smoke_melange_chunk.ml)
- (action
-  (with-stdout-to
-   %{target}
-   (progn
-    (cat %{dep:../../stdlib/lg_stdlib_melange.ml})
-    (cat %{dep:clojure_test_suite_smoke_melange_chunk.ml})))))
+    %{target}
+    --open-module
+    Lg_stdlib_melange))))
 
 (melange.emit
  (target clojure-test-suite-smoke-melange)
  (alias clojure-test-suite-smoke-melange)
  (module_systems es6)
  (modules clojure_test_suite_smoke_melange)
- (preprocess
-  (pps melange.ppx))
  (compile_flags -w -26-27-32-37-69)
  (libraries
+  lg_compiled_stdlib_melange
   lg.edn-backend
   lg.edn-backend.melange
   lg.runtime

@@ -271,6 +271,8 @@ let allocate_function_local_records env next_type
     | TSeq ty -> TSeq (materialize_type ty)
     | TOcaml_app (name, arguments) ->
         TOcaml_app (name, List.map materialize_type arguments)
+    | TConstraint constraint_ ->
+        TConstraint (Types.map_constraint materialize_type constraint_)
     | TTuple arguments -> TTuple (List.map materialize_type arguments)
     | TFn (parameters, return_type) ->
         TFn (parameters, materialize_type return_type)
@@ -561,6 +563,9 @@ let rec unresolved_record_hint = function
       unresolved_record_hint ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.find_map unresolved_record_hint arguments
+  | TConstraint constraint_ ->
+      List.find_map unresolved_record_hint
+        (Types.constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.find_map unresolved_record_hint (return_ty :: parameters)
   | TOverloaded_fn arities ->
@@ -696,6 +701,9 @@ let rec contains_unresolved_type = function
       contains_unresolved_type ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists contains_unresolved_type arguments
+  | TConstraint constraint_ ->
+      List.exists contains_unresolved_type
+        (Types.constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.exists contains_unresolved_type (return_ty :: parameters)
   | TOverloaded_fn arities ->
@@ -737,6 +745,9 @@ let predeclare_protocol_groups scope env receiver_form groups =
             protocol_constraints constraints inner
         | TOcaml_app (_, arguments) | TTuple arguments ->
             List.fold_left protocol_constraints constraints arguments
+        | TConstraint constraint_ ->
+            List.fold_left protocol_constraints constraints
+              (Types.constraint_children constraint_)
         | TFn (parameters, return_ty) ->
             List.fold_left protocol_constraints constraints
               (return_ty :: parameters)
@@ -895,7 +906,8 @@ let prepare_function scope env name params body_forms =
                 body = typed_ir return_type semantic_expr;
                 return_param_index_hint = None;
               })
-            (Call_elaborator.adapt_value_to_type env return_type parts.body))
+            (Call_elaborator.plan_and_emit_argument env ~expected:return_type
+               parts.body))
   | Some _ -> Error.error ("function signature expected for " ^ name)
   | None ->
       Result.bind
@@ -983,6 +995,7 @@ let rec concrete_defrecord_field_type = function
             (fun return_ty -> TFn (parameters, return_ty))
             (concrete_defrecord_field_type return_ty))
   | TOverloaded_fn _ -> None
+  | TConstraint _ -> None
   | ( TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol | TKeyword
     | TBool | TUnit | TNil | TOcaml _ | TNamed_record _ ) as ty ->
       Some ty
@@ -1011,6 +1024,8 @@ let rec freshen_unknowns = function
   | TSeq ty -> TSeq (freshen_unknowns ty)
   | TOcaml_app (name, arguments) ->
       TOcaml_app (name, List.map freshen_unknowns arguments)
+  | TConstraint constraint_ ->
+      TConstraint (Types.map_constraint freshen_unknowns constraint_)
   | TTuple arguments -> TTuple (List.map freshen_unknowns arguments)
   | TFn (parameters, return_ty) ->
       TFn (List.map freshen_unknowns parameters, freshen_unknowns return_ty)
@@ -1082,6 +1097,9 @@ let rec type_parameters_of_type = function
       type_parameters_of_type ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.concat_map type_parameters_of_type arguments
+  | TConstraint constraint_ ->
+      List.concat_map type_parameters_of_type
+        (Types.constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.concat_map type_parameters_of_type (return_ty :: parameters)
   | TOverloaded_fn arities ->
@@ -3146,7 +3164,7 @@ and compile_resolved scope env next_type form =
             | Some expected ->
                 Result.map
                   (fun semantic_expr -> typed_ir expected semantic_expr)
-                  (Call_elaborator.adapt_value_to_type env expected expr)
+                  (Call_elaborator.plan_and_emit_argument env ~expected expr)
           in
           Result.bind expr (fun expr ->
           let ocaml_name = Names.ocaml_binding_name scope name in
@@ -3193,7 +3211,7 @@ and compile_resolved scope env next_type form =
             | Some expected ->
                 Result.map
                   (fun semantic_expr -> typed_ir expected semantic_expr)
-                  (Call_elaborator.adapt_value_to_type env expected expr))
+                  (Call_elaborator.plan_and_emit_argument env ~expected expr))
       in
       match expr with
       | Error _ as err -> err

@@ -43,8 +43,6 @@ let write_output output_path contents =
         ~finally:(fun () -> close_out_noerr oc)
         (fun () -> output_string oc contents)
 
-type cached_prefix_state = { state : Lg.Compiler.state }
-
 type cached_prefix_output = {
   source_packages : string list;
   compilation : Lg.Compiler.compilation;
@@ -53,7 +51,7 @@ type cached_prefix_output = {
 type compiler_state =
   | Live of Lg.Compiler.state
   | Restorable of Lg.Compiler.state
-  | Cached of string
+  | Replayed of Lg.Compiler.state
 
 type saved_compilation_state = {
   target : Lg.Target.t;
@@ -61,17 +59,20 @@ type saved_compilation_state = {
   packages : string list;
 }
 
+let compiler_error message =
+  Error
+    { Lg.Compiler.code = "LG9000";
+      phase = `Infrastructure;
+      message;
+      location = None }
+
 let write_saved_compilation_state path saved =
-  let output = open_out_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_out_noerr output)
-    (fun () -> Marshal.to_channel output saved [])
+  Compiler_artifact.write ~kind:"saved-state" ~path saved
 
 let read_saved_compilation_state path =
-  let input = open_in_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_in_noerr input)
-    (fun () -> (Marshal.from_channel input : saved_compilation_state))
+  match Compiler_artifact.read ~kind:"saved-state" ~path with
+  | Ok saved -> Ok (saved : saved_compilation_state)
+  | Error message -> compiler_error message
 
 let compile_cache_enabled () =
   Sys.getenv_opt "LG_DISABLE_COMPILE_CACHE" <> Some "1"
@@ -91,34 +92,49 @@ let compile_cache_max_bytes () =
         ~default:default_compile_cache_max_bytes
   | None -> default_compile_cache_max_bytes
 
-let rec find_repo_root dir =
-  if Sys.file_exists (Filename.concat dir "dune-project") then dir
+let rec find_repo_root_opt dir =
+  if Sys.file_exists (Filename.concat dir "dune-project") then Some dir
   else
     let parent = Filename.dirname dir in
-    if parent = dir then failwith "could not find repo root"
-    else find_repo_root parent
+    if parent = dir then None else find_repo_root_opt parent
 
 let rec ensure_directory path =
   if Sys.file_exists path then ()
   else (
     ensure_directory (Filename.dirname path);
-    Unix.mkdir path 0o755)
+    try Unix.mkdir path 0o755 with
+    | Unix.Unix_error (Unix.EEXIST, _, _) when Sys.is_directory path -> ())
 
 let compile_cache_directory () =
   match Sys.getenv_opt "LG_CACHE_DIR" with
   | Some path -> Filename.concat path "compile-files"
   | None ->
+      let base_directory =
+        Option.value (find_repo_root_opt (Sys.getcwd ())) ~default:(Sys.getcwd ())
+      in
       Filename.concat
-        (find_repo_root (Sys.getcwd ()))
-        ".lg-cache/compile-files"
+        base_directory ".lg-cache/compile-files"
+
+let compile_cache_lock_name = ".lock"
+
+let with_compile_cache_lock action =
+  let directory = compile_cache_directory () in
+  ensure_directory directory;
+  let lock_path = Filename.concat directory compile_cache_lock_name in
+  let descriptor =
+    Unix.openfile lock_path [ Unix.O_CREAT; Unix.O_RDWR ] 0o600
+  in
+  Fun.protect
+    ~finally:(fun () -> Unix.close descriptor)
+    (fun () ->
+      Unix.lockf descriptor Unix.F_LOCK 0;
+      Fun.protect
+        ~finally:(fun () -> Unix.lockf descriptor Unix.F_ULOCK 0)
+        action)
 
 let compute_compiler_cache_identity () =
-  let repo_root = find_repo_root (Sys.getcwd ()) in
   let adjacent_compiler_directory =
     Filename.concat (Filename.dirname Sys.executable_name) "../src"
-  in
-  let workspace_compiler_directory =
-    Filename.concat repo_root "_build/default/src"
   in
   let compiler_artifacts directory =
     [ "lg.cmxa"; "lg.cma" ]
@@ -128,10 +144,15 @@ let compute_compiler_cache_identity () =
   let artifacts =
     match compiler_artifacts adjacent_compiler_directory with
     | _ :: _ as artifacts -> artifacts
-    | [] -> (
-        match compiler_artifacts workspace_compiler_directory with
-        | _ :: _ as artifacts -> artifacts
-        | [] -> [ Sys.executable_name ])
+    | [] ->
+      find_repo_root_opt (Sys.getcwd ())
+      |> Option.map (fun repo_root ->
+             Filename.concat repo_root "_build/default/src")
+      |> Option.map compiler_artifacts
+      |> Option.value ~default:[]
+      |> (function
+           | _ :: _ as artifacts -> artifacts
+           | [] -> [ Sys.executable_name ])
   in
   let artifact_identity path =
     Filename.basename path ^ "\000" ^ Digest.to_hex (Digest.file path)
@@ -175,7 +196,7 @@ type cache_entry_files = {
 }
 
 let cache_entry_key filename =
-  let suffixes = [ ".state.marshal"; ".output.marshal" ] in
+  let suffixes = [ ".output.marshal" ] in
   suffixes
   |> List.find_map (fun suffix ->
          if Filename.check_suffix filename suffix then
@@ -198,12 +219,15 @@ let prune_obsolete_cache_generations () =
     let current = compiler_cache_identity () in
     Sys.readdir root
     |> Array.iter (fun name ->
-           if not (String.equal name current) then
+           if
+             (not (String.equal name current))
+             && not (String.equal name compile_cache_lock_name)
+           then
              let path = Filename.concat root name in
              try remove_cache_tree path with
              | Sys_error _ | Unix.Unix_error _ -> ())
 
-let prune_compile_cache () =
+let prune_compile_cache_unlocked () =
   prune_obsolete_cache_generations ();
   let directory = compile_cache_generation_directory () in
   if Sys.file_exists directory then
@@ -250,69 +274,46 @@ let prune_compile_cache () =
                Int64.sub remaining entry.size))
            total oldest_first)
 
+let prune_compile_cache () =
+  with_compile_cache_lock prune_compile_cache_unlocked
+
 let touch_cache_entry key =
   let now = Unix.gettimeofday () in
-  List.iter
-    (fun suffix ->
-      let path = cache_path key suffix in
-      if Sys.file_exists path then Unix.utimes path now now)
-    [ ".state"; ".output" ]
+  let path = cache_path key ".output" in
+  if Sys.file_exists path then Unix.utimes path now now
 
-let read_marshaled path =
-  let input = open_in_bin path in
-  Fun.protect
-    ~finally:(fun () -> close_in_noerr input)
-    (fun () -> Marshal.from_channel input)
+let report_corrupt_cache_entry key messages =
+  if Sys.getenv_opt "LG_COMPILE_CACHE_DEBUG" = Some "1" then
+    Printf.eprintf "lg: compile cache ignored corrupt entry %s: %s\n%!" key
+      (String.concat "; " messages)
 
 let read_cached_prefix_output key =
   if not (compile_cache_enabled ()) then None
   else
-    let state_path = cache_path key ".state" in
-    let output_path = cache_path key ".output" in
-    if not (Sys.file_exists state_path && Sys.file_exists output_path) then None
-    else
-      try
-        let cached = (read_marshaled output_path : cached_prefix_output) in
-        touch_cache_entry key;
-        Some cached
-      with _ -> None
+    with_compile_cache_lock (fun () ->
+        let output_path = cache_path key ".output" in
+        if not (Sys.file_exists output_path) then None
+        else
+          match
+            Compiler_artifact.read ~kind:"prefix-output" ~path:output_path
+          with
+          | Ok cached_output ->
+            touch_cache_entry key;
+            Some (cached_output : cached_prefix_output)
+          | Error message ->
+            report_corrupt_cache_entry key [ message ];
+            Compiler_artifact.remove_if_present output_path;
+            None)
 
-let read_cached_prefix_state key =
-  let started_at = Sys.time () in
-  try
-    let path = cache_path key ".state" in
-    let cached = (read_marshaled path : cached_prefix_state) in
-    if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
-      Printf.eprintf "lg: read cached state: %.3fs\n%!"
-        (Sys.time () -. started_at);
-    Ok cached.state
-  with exn ->
-    Error
-      {
-        Lg.Compiler.message =
-          "failed to read cached compiler state: " ^ Printexc.to_string exn;
-        location = None;
-      }
-
-let write_marshaled path value =
-  let temporary =
-    Filename.temp_file ~temp_dir:(Filename.dirname path) "prefix-" ".tmp"
-  in
-  let output = open_out_bin temporary in
-  Fun.protect
-    ~finally:(fun () -> close_out_noerr output)
-    (fun () -> Marshal.to_channel output value []);
-  Sys.rename temporary path
-
-let write_cached_prefix key state output =
+let write_cached_prefix key output =
   if compile_cache_enabled () then
     try
       let started_at = Sys.time () in
-      let directory = compile_cache_generation_directory () in
-      ensure_directory directory;
-      write_marshaled (cache_path key ".state")
-        { state = Lg.Compiler.cacheable_state state };
-      write_marshaled (cache_path key ".output") output;
+      with_compile_cache_lock (fun () ->
+          let directory = compile_cache_generation_directory () in
+          ensure_directory directory;
+          Compiler_artifact.write ~kind:"prefix-output"
+            ~path:(cache_path key ".output") output);
       if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
         Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
           (Sys.time () -. started_at)
@@ -481,35 +482,83 @@ let parse_args argv =
   in
   (target, mode)
 
-let rrbvec_build_dir () =
-  Filename.concat
-    (find_repo_root (Sys.getcwd ()))
-    "_build/default/vendor/rrbvec"
+type native_link_layout = {
+  include_directories : string list;
+  archives : string list;
+}
 
-let rrbvec_cmi_dir () =
-  Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
+let development_link_layout executable_directory =
+  let build_directory = Filename.dirname executable_directory in
+  let rrbvec_directory = Filename.concat build_directory "vendor/rrbvec" in
+  let compiler_directory = Filename.concat build_directory "src" in
+  let runtime_directory = Filename.concat build_directory "runtime" in
+  let backend_directory =
+    Filename.concat build_directory "runtime_edn_backend_native"
+  in
+  let compiler_archive = Filename.concat compiler_directory "lg.cmxa" in
+  if not (Sys.file_exists compiler_archive) then None
+  else
+    Some
+      {
+        include_directories =
+          [
+            rrbvec_directory;
+            Filename.concat rrbvec_directory ".rrbvec.objs/byte";
+            compiler_directory;
+            Filename.concat compiler_directory ".lg.objs/byte";
+            Filename.concat compiler_directory ".lg.objs/native";
+            runtime_directory;
+            Filename.concat runtime_directory ".lg_runtime.objs/byte";
+            Filename.concat runtime_directory ".lg_runtime.objs/native";
+            Filename.concat backend_directory
+              ".lg_edn_backend_native.objs/byte";
+          ];
+        archives =
+          [
+            Filename.concat rrbvec_directory "rrbvec.cmxa";
+            Filename.concat backend_directory "lg_edn_backend_native.cmxa";
+            Filename.concat runtime_directory "lg_runtime.cmxa";
+            compiler_archive;
+          ];
+      }
 
-let lg_build_dir () =
-  Filename.concat (find_repo_root (Sys.getcwd ())) "_build/default/src"
+let installed_link_layout executable_directory =
+  let prefix = Filename.dirname executable_directory in
+  let library_directory = Filename.concat prefix "lib/lg" in
+  let rrbvec_directory = Filename.concat library_directory "rrbvec" in
+  let runtime_directory = Filename.concat library_directory "runtime" in
+  let backend_directory = Filename.concat library_directory "edn-backend/native" in
+  let compiler_archive = Filename.concat library_directory "lg.cmxa" in
+  if not (Sys.file_exists compiler_archive) then None
+  else
+    Some
+      {
+        include_directories =
+          [
+            library_directory;
+            rrbvec_directory;
+            runtime_directory;
+            backend_directory;
+          ];
+        archives =
+          [
+            Filename.concat rrbvec_directory "rrbvec.cmxa";
+            Filename.concat backend_directory "lg_edn_backend_native.cmxa";
+            Filename.concat runtime_directory "lg_runtime.cmxa";
+            compiler_archive;
+          ];
+      }
 
-let lg_runtime_build_dir () =
-  Filename.concat (find_repo_root (Sys.getcwd ())) "_build/default/runtime"
-
-let lg_byte_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/byte"
-let lg_native_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/native"
-
-let lg_runtime_byte_cmi_dir () =
-  Filename.concat (lg_runtime_build_dir ()) ".lg_runtime.objs/byte"
-
-let lg_runtime_native_cmi_dir () =
-  Filename.concat (lg_runtime_build_dir ()) ".lg_runtime.objs/native"
-
-let rrbvec_cmxa () = Filename.concat (rrbvec_build_dir ()) "rrbvec.cmxa"
-
-let lg_runtime_cmxa () =
-  Filename.concat (lg_runtime_build_dir ()) "lg_runtime.cmxa"
-
-let lg_cmxa () = Filename.concat (lg_build_dir ()) "lg.cmxa"
+let native_link_layout () =
+  let executable_path =
+    if Filename.is_relative Sys.executable_name then
+      Filename.concat (Sys.getcwd ()) Sys.executable_name
+    else Sys.executable_name
+  in
+  let executable_directory = Filename.dirname executable_path in
+  match development_link_layout executable_directory with
+  | Some _ as layout -> layout
+  | None -> installed_link_layout executable_directory
 
 let run_ocaml_source packages ocaml_source =
   let ml_path = Filename.temp_file "lg" ".ml" in
@@ -517,29 +566,37 @@ let run_ocaml_source packages ocaml_source =
   write_output (Some ml_path) ocaml_source;
   let packages =
     List.sort_uniq String.compare
-      ("lg.edn-backend.native" :: "unix" :: packages)
+      ("melange-edn-native" :: "re" :: "unix" :: packages)
+    |> List.filter (fun package ->
+           not
+             (List.mem package
+                [ "lg";
+                  "lg.runtime";
+                  "lg.rrbvec";
+                  "lg.edn-backend";
+                  "lg.edn-backend.native" ]))
   in
   let package_options =
     "-package " ^ Filename.quote (String.concat "," packages) ^ " -linkpkg "
   in
+  let layout =
+    match native_link_layout () with
+    | Some layout -> layout
+    | None ->
+      prerr_endline "lg: could not locate installed native runtime artifacts";
+      exit 2
+  in
+  let include_options =
+    layout.include_directories
+    |> List.map (fun directory -> "-I " ^ Filename.quote directory)
+    |> String.concat " "
+  in
+  let archives =
+    layout.archives |> List.map Filename.quote |> String.concat " "
+  in
   let compile_cmd =
-    Printf.sprintf
-      "ocamlfind ocamlopt %s-I %s -I %s -I %s -I %s -I %s -I %s -I %s -I %s -o \
-       %s %s %s %s %s"
-      package_options
-      (Filename.quote (rrbvec_build_dir ()))
-      (Filename.quote (rrbvec_cmi_dir ()))
-      (Filename.quote (lg_build_dir ()))
-      (Filename.quote (lg_byte_cmi_dir ()))
-      (Filename.quote (lg_native_cmi_dir ()))
-      (Filename.quote (lg_runtime_build_dir ()))
-      (Filename.quote (lg_runtime_byte_cmi_dir ()))
-      (Filename.quote (lg_runtime_native_cmi_dir ()))
-      (Filename.quote exe_path)
-      (Filename.quote (rrbvec_cmxa ()))
-      (Filename.quote (lg_runtime_cmxa ()))
-      (Filename.quote (lg_cmxa ()))
-      (Filename.quote ml_path)
+    Printf.sprintf "ocamlfind ocamlopt %s%s -o %s %s %s" package_options
+      include_options (Filename.quote exe_path) archives (Filename.quote ml_path)
   in
   match Sys.command compile_cmd with
   | 0 ->
@@ -573,24 +630,23 @@ let concatenate_compilation_outputs outputs =
   outputs |> List.rev |> String.concat "\n"
 
 let read_compiler_state = function
-  | Live state | Restorable state -> Ok state
-  | Cached key -> read_cached_prefix_state key
+  | Live state | Restorable state | Replayed state -> Ok state
 
 let resume_compiler_state ~target ~packages ~sources = function
   | Live state -> Ok state
-  | Restorable state ->
+  | Restorable state | Replayed state ->
       Lg.Compiler.restore_ocaml_environment ~target ~packages state sources
-  | Cached key ->
-      Result.bind (read_cached_prefix_state key) (fun state ->
-          Lg.Compiler.restore_ocaml_environment ~target ~packages state sources)
 
 let resume_saved_compiler_state ~target ~packages = function
-  | Live state -> Ok state
+  | Live state | Replayed state -> Ok state
   | Restorable state ->
       Lg.Compiler.restore_ocaml_environment ~target ~packages state []
-  | Cached key ->
-      Result.bind (read_cached_prefix_state key) (fun state ->
-          Lg.Compiler.restore_ocaml_environment ~target ~packages state [])
+
+let replay_cached_prefix compiler_state prepared =
+  Result.bind (read_compiler_state compiler_state) (fun state ->
+      Lg.Compiler.compile_prepared_chunk_with_diagnostics ~check_ocaml:false
+        state prepared
+      |> Result.map fst)
 
 let compile_files ?(use_cache = true) target input_paths =
   let rec loop prefix_key compiler_state packages outputs diagnostics =
@@ -622,11 +678,14 @@ let compile_files ?(use_cache = true) target input_paths =
             with
             | Some cached ->
                 report_cache_hit input_path;
-                loop prefix_key (Cached prefix_key)
-                  (List.rev_append cached.source_packages packages)
-                  (cached.compilation.ocaml_source :: outputs)
-                  (cached.compilation.diagnostics :: diagnostics)
-                  rest
+                Result.bind
+                  (replay_cached_prefix compiler_state prepared)
+                  (fun state ->
+                    loop prefix_key (Replayed state)
+                      (List.rev_append cached.source_packages packages)
+                      (cached.compilation.ocaml_source :: outputs)
+                      (cached.compilation.diagnostics :: diagnostics)
+                      rest)
             | None ->
                 Result.bind
                   (resume_compiler_state ~target ~packages
@@ -647,7 +706,7 @@ let compile_files ?(use_cache = true) target input_paths =
                           Sys.time () -. started_at
                           >= compile_cache_min_seconds ()
                         then
-                          write_cached_prefix prefix_key state
+                          write_cached_prefix prefix_key
                             { source_packages; compilation };
                         loop prefix_key (Live state)
                           (List.rev_append source_packages packages)
@@ -655,8 +714,11 @@ let compile_files ?(use_cache = true) target input_paths =
                           (compilation.diagnostics :: diagnostics)
                           rest)))
   in
+  let initial_prefix_key =
+    if use_cache then compiler_cache_identity () else "cache-disabled"
+  in
   let result =
-    loop (compiler_cache_identity ()) (Live Lg.Compiler.empty_state) [] [] []
+    loop initial_prefix_key (Live Lg.Compiler.empty_state) [] [] []
       input_paths
   in
   if use_cache then prune_compile_cache ();
@@ -677,43 +739,37 @@ let compile_file target input_path =
       | Ok compilation -> Ok (packages, compilation))
 
 let compile_chunk_from_saved_state target state_path input_path =
-  let saved = read_saved_compilation_state state_path in
-  if saved.target <> target then
-    Error
-      {
-        Lg.Compiler.message =
-          "saved compiler state target does not match --target";
-        location = None;
-      }
-  else
-    let source = read_file input_path in
-    Result.bind (Lg.Compiler.prepare_source ~target ~filename:input_path source)
-      (fun prepared ->
-        let source_packages =
-          Lg.Compiler.prepared_source_required_packages prepared
-        in
-        let packages =
-          List.sort_uniq String.compare (source_packages @ saved.packages)
-        in
+  Result.bind (read_saved_compilation_state state_path) (fun saved ->
+      if saved.target <> target then
+        compiler_error "saved compiler state target does not match --target"
+      else
+        let source = read_file input_path in
         Result.bind
-          (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state [])
-          (fun state ->
-            Lg.Compiler.compile_prepared_chunk_with_diagnostics
-              ~check_ocaml:false state prepared
-            |> Result.map (fun (state, compilation) ->
-                   (state, packages, compilation))))
+          (Lg.Compiler.prepare_source ~target ~filename:input_path source)
+          (fun prepared ->
+            let source_packages =
+              Lg.Compiler.prepared_source_required_packages prepared
+            in
+            let packages =
+              List.sort_uniq String.compare (source_packages @ saved.packages)
+            in
+            Result.bind
+              (Lg.Compiler.restore_ocaml_environment ~target ~packages saved.state
+                 [])
+              (fun state ->
+                Lg.Compiler.compile_prepared_chunk_with_diagnostics
+                  ~check_ocaml:false state prepared
+                |> Result.map (fun (state, compilation) ->
+                       (state, packages, compilation)))))
 
 let compile_files_from_saved_state ?(use_cache = true) target state_path
     input_paths =
-  let saved = read_saved_compilation_state state_path in
-  if saved.target <> target then
-    Error
-      {
-        Lg.Compiler.message =
-          "saved compiler state target does not match --target";
-        location = None;
-      }
-  else
+  match read_saved_compilation_state state_path with
+  | Error _ as error -> error
+  | Ok saved ->
+    if saved.target <> target then
+      compiler_error "saved compiler state target does not match --target"
+    else
     let result =
     let rec read_sources sources packages = function
       | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
@@ -751,10 +807,13 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
               with
               | Some cached ->
                   report_cache_hit input_path;
-                  compile prefix_key (Cached prefix_key)
-                    (cached.compilation.ocaml_source :: outputs)
-                    (cached.compilation.diagnostics :: diagnostics)
-                    rest
+                  Result.bind
+                    (replay_cached_prefix compiler_state prepared)
+                    (fun state ->
+                      compile prefix_key (Replayed state)
+                        (cached.compilation.ocaml_source :: outputs)
+                        (cached.compilation.diagnostics :: diagnostics)
+                        rest)
               | None ->
                   Result.bind
                     (resume_saved_compiler_state ~target ~packages compiler_state)
@@ -774,7 +833,7 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
                             Sys.time () -. started_at
                             >= compile_cache_min_seconds ()
                           then
-                            write_cached_prefix prefix_key state
+                            write_cached_prefix prefix_key
                               {
                                 source_packages = [];
                                 compilation;
@@ -784,9 +843,11 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
                             (compilation.diagnostics :: diagnostics)
                             rest))
         in
-        compile
-          (saved_state_prefix_key ~target state_path)
-          (Restorable saved.state) [] [] sources)
+        let initial_prefix_key =
+          if use_cache then saved_state_prefix_key ~target state_path
+          else "cache-disabled"
+        in
+        compile initial_prefix_key (Restorable saved.state) [] [] sources)
     in
     if use_cache then prune_compile_cache ();
     result
@@ -807,7 +868,9 @@ let report_error (err : Lg.Compiler.compile_error) =
     | None -> ""
     | Some location -> Format.asprintf "%a: " Location.print_loc location
   in
-  prerr_endline (location ^ "lg: " ^ err.Lg.Compiler.message);
+  prerr_endline
+    (location ^ "lg: " ^ err.Lg.Compiler.message ^ " ["
+   ^ err.Lg.Compiler.code ^ "]");
   exit 1
 
 let run_lsp () =

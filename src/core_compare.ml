@@ -38,7 +38,7 @@ let source_equality_class = function
   | ty when Option.is_some (Types.next_seq_element ty) -> Some `Sequential
   | ty when Option.is_some (Types.dynamic_map_types ty) -> Some `Map
   | TUnknown | TMeta _ | TVar _ | TNullable _ | TOcaml _ | TOcaml_app _
-  | TTuple _ | TRef _ | TMap_keys ->
+  | TTuple _ | TRef _ | TMap_keys | TConstraint _ ->
       None
 
 let disjoint_static_equality left_ty right_ty =
@@ -460,6 +460,11 @@ let melange_nil_numeric_args env args =
       else None
   | Some _ | None -> None
 
+let numeric_type_error name args =
+  Error.error
+    (name ^ " numeric arguments must all have the same type: "
+    ^ String.concat ", " (List.map (fun arg -> Types.source_name arg.ty) args))
+
 let compile ?env name args =
   match args with
   | [] | [ _ ] ->
@@ -539,8 +544,6 @@ let compile ?env name args =
                         (pairwise_expressions name
                            (List.map Core_float.widen_to_float args))))
             | Some _ | None ->
-                Error.error
-                  (name ^ " numeric arguments must all have the same type"))
+                numeric_type_error name args)
         | _ ->
-            Error.error
-              (name ^ " numeric arguments must all have the same type"))
+            numeric_type_error name args)

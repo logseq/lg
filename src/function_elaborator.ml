@@ -171,10 +171,9 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | Some (_, _, value_ty) ->
           Types.protocol_constraint_with_value ty
             (infer_named_record ~allow_dynamic_fields:true scope env value_ty))
-  | TOcaml_app (name, [ TRecord fields; container ])
-    when name = Types.seqable_constraint_name
-         || name = Types.optional_seqable_constraint_name
-         || name = Types.optional_sequential_constraint_name ->
+  | TConstraint
+      (Seqable_constraint
+        ({ element = TRecord fields; storage = container; _ } as constraint_)) ->
       let fields =
         List.map
           (fun (field : field) ->
@@ -185,12 +184,14 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             })
           fields
       in
-      TOcaml_app
-        ( name,
-          [
-            TRecord fields;
-            infer_named_record ~allow_dynamic_fields scope env container;
-          ] )
+      TConstraint
+        (Seqable_constraint
+           {
+             constraint_ with
+             element = TRecord fields;
+             storage =
+               infer_named_record ~allow_dynamic_fields scope env container;
+           })
   | TOcaml_app (name, arguments) ->
       let arguments =
         List.map
@@ -344,6 +345,26 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
       | _ -> inferred)
   | inferred -> inferred
 
+let infer_parameter_named_record scope env = function
+  | TConstraint
+      (Seqable_constraint
+        ({
+           element = TRecord (_ :: _ as fields);
+           storage = container;
+           _;
+         } as constraint_))
+    when (match Types.constraint_value_type container with
+         | TUnknown | TMeta _ | TVar _ -> true
+         | _ -> false) ->
+      TConstraint
+        (Seqable_constraint
+           {
+             constraint_ with
+             element = infer_named_record scope env (TRecord fields);
+             storage = infer_named_record scope env container;
+           })
+  | ty -> infer_named_record scope env ty
+
 let rec collapse_static_record_protocols env ty =
   match Types.protocol_constraint_info ty with
   | Some (protocol_id, _, value_ty) ->
@@ -421,14 +442,18 @@ let rec protocol_witness_constraint_type receiver_ty = function
 and pattern_constraint_type = function
   | TUnknown | TMeta _ | TVar _ -> TOcaml "_"
   | TNullable ty -> TNullable (pattern_constraint_type ty)
-  | TOcaml_app (name, [ witness_ty; value_ty ])
-    when Option.is_some (Types.protocol_constraint_id name) ->
-      TOcaml_app
-        ( name,
-          [
-            protocol_witness_constraint_type value_ty witness_ty;
-            pattern_constraint_type value_ty;
-          ] )
+  | TConstraint
+      (Protocol_constraint ({ witness = witness_ty; value = value_ty; _ } as
+       constraint_)) ->
+      TConstraint
+        (Protocol_constraint
+           {
+             constraint_ with
+             witness = protocol_witness_constraint_type value_ty witness_ty;
+             value = pattern_constraint_type value_ty;
+           })
+  | TConstraint constraint_ ->
+      TConstraint (map_constraint pattern_constraint_type constraint_)
   | TOcaml_app (name, arguments) ->
       TOcaml_app (name, List.map pattern_constraint_type arguments)
   | TTuple items -> TTuple (List.map pattern_constraint_type items)
@@ -481,6 +506,8 @@ let rec contains_open_type = function
       contains_open_type ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists contains_open_type arguments
+  | TConstraint constraint_ ->
+      List.exists contains_open_type (constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.exists contains_open_type parameters || contains_open_type return_ty
   | TOverloaded_fn arities ->
@@ -510,6 +537,8 @@ let rec contains_structural_record = function
       contains_structural_record ty
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists contains_structural_record arguments
+  | TConstraint constraint_ ->
+      List.exists contains_structural_record (constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.exists contains_structural_record parameters
       || contains_structural_record return_ty
@@ -558,12 +587,14 @@ let rec apply_row_constraint_type row_type_name = function
   | TRecord _ -> TOcaml (Types.ocaml_record_type_name row_type_name)
   | TNamed_record { nominal = false; _ } ->
       TOcaml (Types.ocaml_record_type_name row_type_name)
-  | TOcaml_app (name, [ TRecord _; container ])
-    when name = Types.seqable_constraint_name
-         || name = Types.optional_seqable_constraint_name
-         || name = Types.optional_sequential_constraint_name ->
-      TOcaml_app
-        (name, [ TOcaml (Types.ocaml_record_type_name row_type_name); container ])
+  | TConstraint
+      (Seqable_constraint ({ element = TRecord _; _ } as constraint_)) ->
+      TConstraint
+        (Seqable_constraint
+           {
+             constraint_ with
+             element = TOcaml (Types.ocaml_record_type_name row_type_name);
+           })
   | TNullable ty -> TNullable (apply_row_constraint_type row_type_name ty)
   | TOcaml_app (name, arguments) ->
       TOcaml_app
@@ -957,7 +988,7 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                          collapse_static_record_protocols env inferred_ty
                        in
                        let inferred_ty =
-                         infer_named_record scope env inferred_ty
+                         infer_parameter_named_record scope env inferred_ty
                        in
                        let inferred_ty =
                          match inferred_ty with
@@ -1187,14 +1218,16 @@ let fn_code ?(row_param_type_names = []) parts =
     | TUnknown, Some arguments ->
         let rec tie index reversed = function
           | [] -> None
-          | TOcaml_app (name, [ TUnknown; value_ty ]) :: rest
-            when name = Types.seqable_constraint_name
-                 || name = Types.optional_seqable_constraint_name
-                 || name = Types.optional_sequential_constraint_name ->
+          | TConstraint
+              (Seqable_constraint ({ element = TUnknown; _ } as constraint_))
+            :: rest ->
               let element_ty = Type_solver.fresh () in
               Some
                 ( List.rev_append reversed
-                    (TOcaml_app (name, [ element_ty; value_ty ]) :: rest),
+                    (TConstraint
+                       (Seqable_constraint
+                          { constraint_ with element = element_ty })
+                    :: rest),
                   element_ty )
           | ty :: rest -> tie (index + 1) (ty :: reversed) rest
         in
@@ -1297,14 +1330,12 @@ let fn_code ?(row_param_type_names = []) parts =
               ]
         | None -> (
         match ty with
-        | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
-          when constraint_name = Types.seqable_constraint_name
-               || constraint_name = Types.optional_seqable_constraint_name
-               || constraint_name = Types.optional_sequential_constraint_name ->
+        | TConstraint
+            (Seqable_constraint { requirement; storage = value_ty; _ }) ->
             Semantic_ir.PTuple
               [
                 Semantic_ir.PVar
-                  (if constraint_name = Types.seqable_constraint_name then
+                  (if requirement = Required then
                      name ^ "__seq"
                    else name ^ "__seq_optional");
                 capability_pattern ?value_type name value_ty;

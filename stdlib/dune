@@ -67,6 +67,14 @@
  (name stdlib-native)
  (deps lg_stdlib_native.ml lg_stdlib_native.state))
 
+(library
+ (name lg_compiled_stdlib_native)
+ (wrapped false)
+ (modules lg_stdlib_native)
+ (flags
+  (:standard -w -26-27-32-37-69))
+ (libraries lg.edn-backend.native lg.runtime re rrbvec))
+
 (rule
  (targets lg_stdlib_melange.ml lg_stdlib_melange.state)
  (deps
@@ -135,6 +143,20 @@
 (alias
  (name stdlib-melange)
  (deps lg_stdlib_melange.ml lg_stdlib_melange.state))
+
+(library
+ (name lg_compiled_stdlib_melange)
+ (wrapped false)
+ (modules lg_stdlib_melange)
+ (modes melange)
+ (flags
+  (:standard -w -26-27-32-37-69))
+ (libraries
+  lg.edn-backend
+  lg.edn-backend.melange
+  lg.runtime
+  lg.runtime-melange-aliases
+  rrbvec))
 
 (rule
  (targets lg_stdlib_js.ml lg_stdlib_js.state)

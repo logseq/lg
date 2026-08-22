@@ -170,34 +170,50 @@ let write_file path contents =
     ~finally:(fun () -> close_out_noerr oc)
     (fun () -> output_string oc contents)
 
-let rec find_repo_root dir =
-  if Sys.file_exists (Filename.concat dir "dune-project") then dir
+let rec find_repo_root_opt dir =
+  if Sys.file_exists (Filename.concat dir "dune-project") then Some dir
   else
     let parent = Filename.dirname dir in
-    if parent = dir then failwith "could not find repo root"
-    else find_repo_root parent
+    if parent = dir then None else find_repo_root_opt parent
 
-let repo_root () = find_repo_root (Sys.getcwd ())
+let repo_root () =
+  let cwd = Sys.getcwd () in
+  match find_repo_root_opt cwd with
+  | Some root -> root
+  | None -> cwd
+
+let build_root () =
+  let root = repo_root () in
+  if Sys.file_exists (Filename.concat root "dune-project") then
+    Filename.concat root "_build/default"
+  else root
 
 let compiler_source_path path = Filename.concat (repo_root ()) path
 
 let rrbvec_build_dir () =
-  Filename.concat (repo_root ()) "_build/default/vendor/rrbvec"
+  Filename.concat (build_root ()) "vendor/rrbvec"
 
 let rrbvec_cmi_dir () =
   Filename.concat (rrbvec_build_dir ()) ".rrbvec.objs/byte"
 
-let lg_build_dir () = Filename.concat (repo_root ()) "_build/default/src"
+let lg_build_dir () = Filename.concat (build_root ()) "src"
 
 let lg_runtime_build_dir () =
-  Filename.concat (repo_root ()) "_build/default/runtime"
+  Filename.concat (build_root ()) "runtime"
+
+let lg_edn_backend_native_build_dir () =
+  Filename.concat (build_root ()) "runtime_edn_backend_native"
 
 let lg_byte_cmi_dir () = Filename.concat (lg_build_dir ()) ".lg.objs/byte"
 let lg_runtime_byte_cmi_dir () =
   Filename.concat (lg_runtime_build_dir ()) ".lg_runtime.objs/byte"
 
+let lg_edn_backend_native_cmi_dir () =
+  Filename.concat (lg_edn_backend_native_build_dir ())
+    ".lg_edn_backend_native.objs/byte"
+
 let compiler_test_runner () =
-  Filename.concat (repo_root ()) "_build/default/test/compiler_test_runner.bc"
+  Filename.concat (build_root ()) "test/compiler_test_runner.bc"
 
 type compile_job = { name : string; ocaml_source : string }
 
@@ -245,8 +261,8 @@ let test_test_directory_avoids_existing_pid_directory () =
 
 let compile_only_command dir ml_path =
   Printf.sprintf
-    "cd %s && ocamlfind ocamlc -package re,unix,lg.edn-backend.native -w -26 -I %s -I %s -I %s -I %s \
-     -I %s -I %s -c %s"
+    "cd %s && ocamlfind ocamlc -package melange-edn-native,re,unix -w -26 -I %s -I %s -I %s -I %s \
+     -I %s -I %s -I %s -c %s"
     (Filename.quote dir)
     (Filename.quote (rrbvec_build_dir ()))
     (Filename.quote (rrbvec_cmi_dir ()))
@@ -254,6 +270,7 @@ let compile_only_command dir ml_path =
     (Filename.quote (lg_byte_cmi_dir ()))
     (Filename.quote (lg_runtime_build_dir ()))
     (Filename.quote (lg_runtime_byte_cmi_dir ()))
+    (Filename.quote (lg_edn_backend_native_cmi_dir ()))
     (Filename.quote (Filename.basename ml_path))
 
 let run_compiled_module_command dir cmo_paths output_path =
@@ -2394,7 +2411,27 @@ let test_type_relations_are_explicit_and_strict () =
     not
       (Lg.Types.defer_to_ocaml ~expected:(Lg.Types.TOcaml "user_id")
          ~actual:Lg.Types.TInt)
-  then failwith "opaque OCaml relationships must be explicitly deferred"
+  then failwith "opaque OCaml relationships must be explicitly deferred";
+  let source_option = Lg.Types.TNullable Lg.Types.TInt in
+  let host_option =
+    Lg.Types.TOcaml_app ("option", [ Lg.Types.TInt ])
+  in
+  if
+    not
+      (Lg.Types.assignable ~policy:Lg.Types.Host_boundary
+         ~expected:source_option ~actual:host_option
+      && Lg.Types.assignable ~policy:Lg.Types.Host_boundary
+           ~expected:host_option ~actual:source_option)
+  then
+    failwith
+      "source nullability and host option must meet explicitly at the host boundary";
+  if
+    Lg.Types.assignable ~policy:Lg.Types.Nominal ~expected:source_option
+      ~actual:host_option
+    || Lg.Types.assignable ~policy:Lg.Types.Nominal ~expected:host_option
+         ~actual:source_option
+  then
+    failwith "source nullability must remain distinct from host option semantics"
 
 let test_type_solver_preserves_shared_and_independent_variables () =
   let open Lg.Types in
@@ -2462,6 +2499,963 @@ let test_type_scheme_instantiation_preserves_shared_identity () =
       if first_parameter.id = second_parameter.id then
         failwith "separate instantiations must use fresh metavariables"
   | _ -> failwith "inferred schemes must instantiate to metavariables"
+
+let test_seqable_constraints_accept_all_sequence_representations () =
+  let open Lg.Types in
+  let required = seqable_constraint_with_value TInt (TSeq TInt) in
+  let same_required = seqable_constraint_with_value TInt (TSeq TInt) in
+  let optional = optional_seqable_constraint TInt (TSeq TInt) in
+  if not (equal required same_required) then
+    failwith "equivalent closed constraints must compare equal";
+  if equal required optional then
+    failwith "different closed constraint requirements must remain distinct";
+  let open_optional = optional_seqable_constraint (Lg.Type_solver.fresh ()) (TVar "left") in
+  let generic_optional = optional_seqable_constraint (TVar "value") (TVar "right") in
+  if
+    not
+      (row_compatible ~expected:open_optional ~actual:generic_optional
+      && assignable ~policy:Host_boundary ~expected:open_optional
+           ~actual:generic_optional)
+  then
+    failwith
+      "closed constraints must recurse through row compatibility and assignability";
+  let unify_sequence actual =
+    let constraint_ =
+      seqable_constraint_with_value (TVar "element") (TVar "storage")
+    in
+    Lg.Type_solver.unify Lg.Type_solver.empty constraint_ actual
+    |> Result.fold ~ok:Fun.id ~error:(fun _ ->
+           failwith
+             ("seqable constraint rejected " ^ source_name actual))
+  in
+  let sequence_substitutions = unify_sequence (TSeq TInt) in
+  if
+    Lg.Type_solver.apply sequence_substitutions (TVar "element") <> TInt
+    || Lg.Type_solver.apply sequence_substitutions (TVar "storage")
+       <> TSeq TInt
+  then failwith "seqable constraint lost ordinary sequence evidence";
+  let nonempty = next_seq TInt in
+  let nonempty_substitutions = unify_sequence nonempty in
+  if
+    Lg.Type_solver.apply nonempty_substitutions (TVar "element") <> TInt
+    || Lg.Type_solver.apply nonempty_substitutions (TVar "storage") <> nonempty
+  then failwith "seqable constraint lost nonempty sequence evidence";
+  let signature =
+    TFn
+      ( [ seqable_constraint_with_value (TVar "value") (TVar "storage") ],
+        next_seq (TVar "value") )
+  in
+  let instantiated = Lg.Type_solver.instantiate (Lg.Type_solver.generalize signature) in
+  let expected_call = TFn ([ nonempty ], Lg.Type_solver.fresh ()) in
+  match Lg.Type_solver.unify Lg.Type_solver.empty instantiated expected_call with
+  | Ok _ -> ()
+  | Error _ ->
+      failwith
+        "generalized seqable function rejected a nonempty sequence argument"
+
+let test_variadic_rest_calls_generic_seqable_function () =
+  let source =
+    {|
+(ns user)
+(signature user/take-seq [value storage]
+  :fn<seqable<value;storage>;int>)
+(defn take-seq [coll]
+  1)
+(defn inspect-rest [& values]
+  (take-seq values))
+|}
+  in
+  ignore (Raw_lg.Compiler.compile_string source |> expect_ok)
+
+let test_argument_adaptation_plans_rows_before_emission () =
+  let open Lg.Types in
+  let name = make_field ":name" TString in
+  let age = make_field ":age" TInt in
+  let nickname = make_field ":nickname" (TNullable TString) in
+  let actual = TRecord [ name; age ] in
+  (match
+     Lg.Adaptation.plan_argument ~expected:TInt ~actual:TInt ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "equal scalar types must plan identity adaptation");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"person_row"
+       ~expected:(TRecord [ name; nickname ]) ~actual ()
+   with
+  | Ok
+      (Lg.Adaptation.Row_projection
+        { type_name; expected_fields; source_ty; field_plans = _ }) ->
+      if type_name <> "person_row" then
+        failwith "row plan lost its allocated OCaml type name";
+      if List.length expected_fields <> 2 || not (equal source_ty actual) then
+        failwith "row plan lost its typed source or target fields"
+  | Ok _ | Error _ ->
+      failwith "record with an omitted optional field must plan a projection");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"person_row"
+       ~expected:(TRecord [ name; age ]) ~actual ()
+   with
+  | Ok (Lg.Adaptation.Row_projection _) -> ()
+  | Ok _ | Error _ ->
+      failwith "an allocated OCaml row must project even equal source records");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"person_row"
+       ~expected:(TRecord [ name; age ]) ~actual:(TRecord [ name ]) ()
+   with
+  | Error (Lg.Adaptation.Missing_row_field ":age") -> ()
+  | Ok _ | Error _ -> failwith "missing required row fields must be rejected");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"person_row"
+       ~expected:(TRecord [ name; age ])
+       ~actual:(TMeta { id = 9000; location = None }) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "unresolved inference rows must remain static planner identities");
+  let inferred_structural =
+    named_record ~type_name:"inferred_structural"
+      ~set_module_name:"inferred_structural_set" [ name; age ]
+  in
+  (match
+     Lg.Adaptation.plan_argument ~expected:inferred_structural
+       ~actual:(TMeta { id = 9002; location = None }) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith
+        "unresolved inference values must not force structural projections");
+  let scores =
+    make_field ":scores"
+      (seqable_constraint_with_value TInt (TVector TInt))
+  in
+  let vector_scores = make_field ":scores" (TVector TInt) in
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"score_row"
+       ~expected:(TRecord [ scores ]) ~actual:(TRecord [ vector_scores ]) ()
+   with
+  | Ok (Lg.Adaptation.Row_projection _) -> ()
+  | Ok _ | Error _ ->
+      failwith "row fields must compose sequence witness plans");
+  let nested_expected =
+    make_field ":nested" (TRecord [ make_field ":value" TInt ])
+  in
+  let nested_actual =
+    make_field ":nested" (TRecord [ make_field ":value" TInt ])
+  in
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"nested_row"
+       ~expected:(TRecord [ nested_expected ])
+       ~actual:(TRecord [ nested_actual ]) ()
+   with
+  | Ok
+      (Lg.Adaptation.Row_projection
+        {
+          field_plans =
+            [
+              Lg.Adaptation.Source_field
+                { adaptation = Lg.Adaptation.Structural_projection _; _ };
+            ];
+          _;
+        }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "nested structural rows must carry an explicit projection plan");
+  let ratio = make_field ":ratio" TFloat in
+  let int_ratio = make_field ":ratio" TInt in
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"ratio_row"
+       ~expected:(TRecord [ ratio ]) ~actual:(TRecord [ int_ratio ]) ()
+   with
+  | Ok (Lg.Adaptation.Row_projection _) -> ()
+  | Ok _ | Error _ -> failwith "row fields must compose numeric plans");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"ratio_row"
+       ~expected:(TRecord [ int_ratio ]) ~actual:(TRecord [ ratio ]) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_row_field { keyword = ":ratio"; _ }) -> ()
+  | Ok _ | Error _ -> failwith "row fields must reject unsafe narrowing");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable TInt) ~actual:TInt ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "concrete values must plan nullable injection before emission");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TTuple [ TInt; TString ])
+       ~actual:(TNullable (TTuple [ TInt; TString ])) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "ordinary arguments must not implicitly unwrap optional values");
+  (match
+     Lg.Adaptation.plan_argument ~allow_optional_unwrap:true
+       ~expected:(TTuple [ TInt; TString ])
+       ~actual:(TNullable (TTuple [ TInt; TString ])) ()
+   with
+  | Ok (Lg.Adaptation.Optional_unwrap Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "narrowed optional arguments must plan an explicit unwrap");
+  (match
+     Lg.Adaptation.plan_argument ~protocol_storage:true
+       ~expected:(TTuple [ TInt; TString ])
+       ~actual:(TNullable (TTuple [ TInt; TString ])) ()
+   with
+  | Ok Lg.Adaptation.Protocol_storage_passthrough -> ()
+  | Ok _ | Error _ ->
+      failwith "protocol storage deferral must use an explicit boundary plan");
+  (match Lg.Adaptation.plan_argument ~expected:TFloat ~actual:TInt () with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "int-to-float adaptation must not be planned as identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "int arguments must plan float conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TOcaml "int") ~actual:TInt ()
+   with
+  | Ok Lg.Adaptation.Host_int_boundary -> ()
+  | Ok _ | Error _ ->
+      failwith "LG int to host int must use an explicit boundary plan");
+  (match
+     Lg.Adaptation.plan_argument ~expected:TInt ~actual:(TOcaml "int") ()
+   with
+  | Ok Lg.Adaptation.Host_int_boundary -> ()
+  | Ok _ | Error _ ->
+      failwith "host int to LG int must use an explicit boundary plan");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TOcaml "Lg_edn_backend.t")
+       ~actual:TKeyword ()
+   with
+  | Ok Lg.Adaptation.Metadata_boundary -> ()
+  | Ok _ | Error _ ->
+      failwith "static EDN values must use an explicit metadata boundary plan");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable TFloat) ~actual:TInt ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable int-to-float adaptation lost its numeric conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ ->
+      failwith "int arguments must compose nullable float conversion");
+  (match Lg.Adaptation.plan_argument ~expected:TInt ~actual:TFloat () with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "float-to-int adaptation must stay explicit");
+  let required_vector = seqable_constraint_with_value TInt (TVector TInt) in
+  (match
+     Lg.Adaptation.plan_argument ~expected:required_vector
+       ~actual:(TVector TInt) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "a concrete vector needs a sequence witness"
+  | Ok _ -> ()
+  | Error _ -> failwith "vectors must plan required sequence witnesses");
+  let optional_vector =
+    optional_seqable_constraint TInt (TNullable (TVector TInt))
+  in
+  (match
+     Lg.Adaptation.plan_argument ~expected:optional_vector ~actual:TNil ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "nil needs an explicit optional sequence witness"
+  | Ok _ -> ()
+  | Error _ -> failwith "nil must plan an absent optional sequence witness");
+  let nested_optional =
+    optional_seqable_constraint
+      (optional_seqable_constraint TInt TUnknown)
+      (TVector TUnknown)
+  in
+  (match
+     Lg.Adaptation.plan_argument ~expected:nested_optional
+       ~actual:(TVector TUnknown) ()
+   with
+  | Ok (Lg.Adaptation.Sequence_witness _) -> ()
+  | Ok _ | Error _ ->
+      failwith
+        "contextual nested sequence constraints must accept open empty elements");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(seqable_constraint_with_value TChar TString)
+       ~actual:TString ()
+   with
+  | Ok Lg.Adaptation.Identity -> failwith "a string needs a sequence witness"
+  | Ok _ -> ()
+  | Error _ -> failwith "strings must plan character sequence witnesses");
+  (match
+     Lg.Adaptation.plan_argument ~expected:required_vector
+       ~actual:required_vector ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "an already packed sequence witness must remain identity");
+  (match
+     Lg.Adaptation.plan_argument ~expected:required_vector ~actual:TInt ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "non-seqable scalar witnesses must be rejected");
+  let callback_with_converted_result = TFn ([ TInt ], TFloat) in
+  let int_callback = TFn ([ TInt ], TInt) in
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([], TVector TInt))
+       ~actual:(TFn ([ TUnit ], TVector TInt)) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "zero-argument and unit-thunk callbacks share one host shape");
+  (match
+     Lg.Adaptation.plan_argument ~expected:callback_with_converted_result
+       ~actual:int_callback ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "callback result conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "callback results must plan int-to-float conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([ TInt ], TFloat))
+       ~actual:(constant_function TInt) ()
+   with
+  | Ok
+      (Lg.Adaptation.Constant_function
+        {
+          result_adaptation =
+            Lg.Adaptation.Numeric_conversion Lg.Adaptation.Int_to_float;
+          _;
+        }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "constant functions must plan their result adaptation");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TFn ([ TInt ], TNullable TString))
+       ~actual:(dynamic_map TFloat TString) ()
+   with
+  | Ok
+      (Lg.Adaptation.Map_callable
+        {
+          key_adaptation =
+            Lg.Adaptation.Numeric_conversion Lg.Adaptation.Int_to_float;
+          truthy_result = false;
+          _;
+        }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "callable maps must plan key and lookup adaptations");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([ TInt ], TBool))
+       ~actual:(dynamic_map TInt TString) ()
+   with
+  | Ok (Lg.Adaptation.Map_callable { truthy_result = true; _ }) -> ()
+  | Ok _ | Error _ ->
+      failwith "boolean callable maps must plan truthiness explicitly");
+  (match
+     Lg.Adaptation.plan_argument ~allow_record_callable:true
+       ~expected:(TFn ([ TKeyword ], TBool))
+       ~actual:
+         (TRecord [ make_field ":enabled" TString ])
+       ()
+   with
+  | Ok (Lg.Adaptation.Record_callable { truthy_result = true; _ }) -> ()
+  | Ok _ | Error _ ->
+      failwith "boolean callable records must plan truthiness explicitly");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([ TInt ], TInt))
+       ~actual:(TFn ([ TFloat ], TInt)) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "callback parameter conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "callback parameters must plan int-to-float conversion");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TNullable callback_with_converted_result)
+       ~actual:int_callback ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable callback lost its result conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ -> failwith "nullable callback plans must compose");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([ TFloat ], TInt))
+       ~actual:(TFn ([ TInt ], TInt)) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "callbacks must reject unsafe float-to-int parameters");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TFn ([ TInt ], truthy_constraint TInt))
+       ~actual:(TFn ([ TInt ], TBool)) ()
+   with
+  | Ok (Lg.Adaptation.Constrained_result_callback _) -> ()
+  | Ok _ | Error _ ->
+      failwith "truthy callback results need an explicit witness plan");
+  let arity params return_ty =
+    { fixed_params = params; rest_param = None; return_ty }
+  in
+  let one_int = arity [ TInt ] TInt in
+  let one_float_result = arity [ TInt ] TFloat in
+  let two_ints = arity [ TInt; TInt ] TInt in
+  let variadic_int =
+    { fixed_params = []; rest_param = Some TInt; return_ty = TInt }
+  in
+  let three_or_more_ints =
+    {
+      fixed_params = [ TInt; TInt; TInt ];
+      rest_param = Some TInt;
+      return_ty = TInt;
+    }
+  in
+  let converted_overload = TOverloaded_fn [ one_float_result ] in
+  let int_overload = TOverloaded_fn [ one_int ] in
+  (match
+     Lg.Adaptation.plan_argument ~expected:int_overload
+       ~actual:(TFn ([ TInt ], TInt)) ()
+   with
+  | Ok (Lg.Adaptation.Function_overload _) -> ()
+  | Ok _ | Error _ ->
+      failwith "a single function must explicitly plan overloaded storage");
+  (match
+     Lg.Adaptation.plan_argument ~expected:converted_overload
+       ~actual:int_overload ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "converted overload arities must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "overload arities must compose callback conversions");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TFn ([ TInt; TInt ], TInt))
+       ~actual:(TOverloaded_fn [ one_int; two_ints ]) ()
+   with
+  | Ok (Lg.Adaptation.Overloaded_callback { actual_index = 1; _ }) -> ()
+  | Ok _ | Error _ ->
+      failwith "fixed callbacks must select a compatible overloaded arity");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:
+         (TFn
+            ( [ TInt; TInt ],
+              TOcaml_app ("__lg_maybe_reduced_callback_result", [ TInt ]) ))
+       ~actual:(TFn ([ TInt; TInt ], TInt)) ()
+   with
+  | Ok (Lg.Adaptation.Reduced_callback { actual_returns_reduced = false; _ }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "reducer callbacks must plan continuation wrapping explicitly");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TOverloaded_fn [ one_int; two_ints ])
+       ~actual:(TOverloaded_fn [ two_ints; one_int ]) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "reordered overload slots must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "overload plans must select slots by arity");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TNullable converted_overload) ~actual:int_overload ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable overload lost its arity conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ -> failwith "nullable overload plans must compose");
+  (match
+     Lg.Adaptation.plan_argument ~expected:int_overload ~actual:int_overload ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "equal overload bundles must remain identity");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TOverloaded_fn [ one_int; two_ints ])
+       ~actual:int_overload ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "missing overload arities must be rejected");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TOverloaded_fn [ variadic_int ])
+       ~actual:
+         (TOverloaded_fn
+            [ arity [] TInt; one_int; two_ints; three_or_more_ints ])
+       ()
+   with
+  | Ok (Lg.Adaptation.Overload_to_variadic _) -> ()
+  | Ok _ | Error _ ->
+      failwith "covered overloads must plan explicit variadic dispatch");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TVector TFloat)
+       ~actual:(TVector TInt) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "vector item conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "vectors must plan homogeneous item conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TTuple [ TFloat; TString ])
+       ~actual:(TTuple [ TInt; TString ]) ()
+   with
+  | Ok
+      (Lg.Adaptation.Tuple_elements
+        [
+          Lg.Adaptation.Numeric_conversion Lg.Adaptation.Int_to_float;
+          Lg.Adaptation.Identity;
+        ]) ->
+      ()
+  | Ok _ | Error _ -> failwith "tuple elements must compose typed plans");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TVector TFloat)
+       ~actual:(TTuple [ TInt; TFloat ]) ()
+   with
+  | Ok
+      (Lg.Adaptation.Tuple_to_vector
+        {
+          element_adaptations =
+            [
+              Lg.Adaptation.Numeric_conversion Lg.Adaptation.Int_to_float;
+              Lg.Adaptation.Identity;
+            ];
+          _;
+        }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "tuple-to-vector conversion must compose typed element plans");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TTuple [ TVector TInt; TVector TInt ])
+       ~actual:(
+         TTuple
+           [
+             TVector (TMeta { id = 9010; location = None });
+             TVector (TMeta { id = 9011; location = None });
+           ])
+       ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "tuple elements with inferred storage must plan identity");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TVector (seqable_constraint_with_value TInt (TVector TInt)))
+       ~actual:(TVector (TVector TInt)) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "nested sequence witnesses must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "collection item plans must compose sequence witnesses");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable (TArray TFloat))
+       ~actual:(TArray TInt) ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable collection lost its item conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ -> failwith "nullable collection plans must compose");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TList TInt) ~actual:(TList TInt) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "equal collection representations stay identity");
+  let inferred = TMeta { id = 9001; location = None } in
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSeq inferred)
+       ~actual:(next_seq (TVar "value")) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith
+        "next-sequence aliases with open elements must plan identity adaptation");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TOcaml_app ("Seq.t", [ TVar "ocaml_value" ]))
+       ~actual:(next_seq (TVar "value")) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith
+        "next-sequence aliases must adapt to the host sequence representation");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:
+         (TOcaml_app
+            ("tx_entry_of", [ TRecord [ make_field ":value" TInt ] ]))
+       ~actual:
+         (TOcaml_app
+            ("tx_entry_of", [ TMeta { id = 9003; location = None } ]))
+       ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "host applications must preserve nested inference identities");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSeq TFloat)
+       ~actual:(next_seq TInt) ()
+   with
+  | Ok (Lg.Adaptation.Collection_representation _) -> ()
+  | Ok _ | Error _ ->
+      failwith "next-sequence aliases must compose element conversions");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TVector TInt)
+       ~actual:(TVector TFloat) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "collection items must reject unsafe narrowing");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TList TInt)
+       ~actual:(TVector TInt) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "cross-representation collection conversion must be explicit");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSeq (TVar "value"))
+       ~actual:(TList inferred) ()
+   with
+  | Ok
+      (Lg.Adaptation.Sequence_representation
+        { source = Lg.Adaptation.List_source; _ }) ->
+      ()
+  | Ok _ -> failwith "list-to-sequence conversion must use a typed plan"
+  | Error _ ->
+      failwith "lists must plan an explicit sequence representation conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSet TFloat) ~actual:(TSet TInt) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "set element conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "sets must plan element and module conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable (TSet TFloat))
+       ~actual:(TSet TInt) ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable set lost its element conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ -> failwith "nullable set plans must compose");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSet TInt) ~actual:(TSet TInt) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "equal set representations stay identity");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSet (TVar "value"))
+       ~actual:(TSet TInt) ()
+   with
+  | Ok (Lg.Adaptation.Collection_representation _) -> ()
+  | Ok _ | Error _ ->
+      failwith "open set elements must still plan concrete module storage");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TSet TInt) ~actual:(TSet TFloat) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "set items must reject unsafe narrowing");
+  let string_float_map = dynamic_map TString TFloat in
+  let string_int_map = dynamic_map TString TInt in
+  (match
+     Lg.Adaptation.plan_argument ~expected:string_float_map
+       ~actual:string_int_map ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "map value conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "maps must plan value conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(dynamic_map TFloat TString)
+       ~actual:(dynamic_map TInt TString) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "map key conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "maps must plan key conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable string_float_map)
+       ~actual:string_int_map ()
+   with
+  | Ok (Lg.Adaptation.Nullable Lg.Adaptation.Identity) ->
+      failwith "nullable map lost its value conversion"
+  | Ok (Lg.Adaptation.Nullable _) -> ()
+  | Ok _ | Error _ -> failwith "nullable map plans must compose");
+  (match
+     Lg.Adaptation.plan_argument ~expected:string_int_map
+       ~actual:string_int_map ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "equal map representations stay identity");
+  (match
+     Lg.Adaptation.plan_argument ~expected:string_int_map
+       ~actual:string_float_map ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "map values must reject unsafe narrowing");
+  let a_int = make_field ":a" TInt in
+  let b_int = make_field ":b" TInt in
+  let b_float = make_field ":b" TFloat in
+  let keyword_float_map = dynamic_map TKeyword TFloat in
+  (match
+     Lg.Adaptation.plan_argument ~expected:keyword_float_map
+       ~actual:(TRecord [ a_int; b_int ]) ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "record-to-map conversion must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "record entries must plan map value conversion");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(dynamic_map TKeyword TInt)
+       ~actual:(TRecord [ a_int; b_float ]) ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "record-to-map fields must reject unsafe narrowing");
+  (match
+     Lg.Adaptation.plan_argument ~expected:keyword_float_map
+       ~actual:
+         (TRecord [ a_int; make_record_extension_field ~ty:(TRecord [ a_int ]) () ])
+       ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "open row extensions need an explicit flattening plan");
+  let extension_source = TRecord [ name ] in
+  let empty_structural_record =
+    named_record ~type_name:"empty_structural_record"
+      ~set_module_name:"empty_structural_record_set" []
+  in
+  (match
+     Lg.Adaptation.plan_argument ~expected:empty_structural_record
+       ~actual:empty_structural_record ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "identical named records must not rebuild an empty record");
+  (match
+     Lg.Adaptation.plan_argument ~expected:empty_structural_record
+       ~actual:(truthy_constraint empty_structural_record) ()
+   with
+  | Ok (Lg.Adaptation.Capability_payload Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "named record capability payloads must preserve identity");
+  let truthy_extension = truthy_constraint extension_source in
+  (match
+     Lg.Adaptation.plan_argument ~expected:truthy_extension
+       ~actual:extension_source ()
+   with
+  | Ok Lg.Adaptation.Identity ->
+      failwith "capability witnesses must not plan identity"
+  | Ok _ -> ()
+  | Error _ -> failwith "closed capabilities must plan witness construction");
+  let extension_field = make_record_extension_field ~ty:truthy_extension () in
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"open_row"
+       ~expected:(TRecord [ name; extension_field ]) ~actual:extension_source ()
+   with
+  | Ok
+      (Lg.Adaptation.Row_projection
+        {
+          field_plans =
+            [
+              Lg.Adaptation.Source_field _;
+              Lg.Adaptation.Missing_extension_field
+                {
+                  adaptation =
+                    Lg.Adaptation.Capability_witness { source_ty; _ };
+                  _;
+                };
+            ];
+          _;
+        })
+    when equal source_ty extension_source -> ()
+  | Ok _ | Error _ ->
+      failwith
+        "missing row extensions must adapt the complete static source row");
+  (match
+     Lg.Adaptation.plan_argument ~expected:truthy_extension
+       ~actual:truthy_extension ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ -> failwith "existing capability witnesses stay identity");
+  (match
+     Lg.Adaptation.plan_argument ~expected:TInt
+       ~actual:(truthy_constraint TInt) ()
+   with
+  | Ok (Lg.Adaptation.Capability_payload Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "concrete consumers must explicitly project capability payloads");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(dynamic_constraint TUnknown) ~actual:TInt ()
+   with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ ->
+      failwith "static scalars need an explicit named dynamic boundary");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:
+         (dynamic_map (TVar "key") (TVar "expected-value"))
+       ~actual:(dynamic_map (TVar "key") (TVar "actual-value")) ()
+   with
+  | Ok Lg.Adaptation.Identity -> ()
+  | Ok _ | Error _ ->
+      failwith "open variables in one runtime representation must plan identity");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable TInt) ~actual:TNil ()
+   with
+  | Ok Lg.Adaptation.Nullable_none -> ()
+  | Ok _ | Error _ -> failwith "nil must plan an explicit absent value");
+  (match Lg.Adaptation.plan_argument ~expected:TUnit ~actual:TNil () with
+  | Ok Lg.Adaptation.Unit_after_effect -> ()
+  | Ok _ ->
+      failwith "nil to unit must preserve evaluation through an explicit plan"
+  | Error _ -> failwith "nil must adapt to a unit return boundary");
+  (match
+     Lg.Adaptation.plan_argument ~expected:TString ~actual:TSymbol ()
+   with
+  | Ok Lg.Adaptation.Symbol_string_boundary -> ()
+  | Ok _ | Error _ ->
+      failwith "symbol-to-host-string conversion must cross a typed boundary");
+  (match
+     Lg.Adaptation.plan_argument ~expected:TSymbol ~actual:TString ()
+   with
+  | Ok Lg.Adaptation.Symbol_string_boundary -> ()
+  | Ok _ | Error _ ->
+      failwith "host-string-to-symbol conversion must cross a typed boundary");
+  (match
+     Lg.Adaptation.plan_argument ~expected:TUnit
+       ~actual:(TNullable TUnit) ()
+   with
+  | Ok Lg.Adaptation.Unit_after_effect -> ()
+  | Ok _ -> failwith "nullable unit must cross an explicit unit return plan"
+  | Error _ -> failwith "nullable unit must adapt to a unit return boundary");
+  (match
+     Lg.Adaptation.plan_argument ~expected:(TNullable TInt)
+       ~actual:(TOcaml_app ("option", [ TInt ])) ()
+   with
+  | Ok (Lg.Adaptation.Option_boundary Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "host option to source nullable must cross an explicit boundary");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TOcaml_app ("option", [ TInt ])) ~actual:(TNullable TInt) ()
+   with
+  | Ok (Lg.Adaptation.Option_boundary Lg.Adaptation.Identity) -> ()
+  | Ok _ | Error _ ->
+      failwith "source nullable to host option must cross an explicit boundary");
+  (match
+     Lg.Adaptation.plan_argument
+       ~expected:(TNullable (truthy_constraint TInt))
+       ~actual:(TOcaml_app ("option", [ TInt ])) ()
+   with
+  | Ok
+      (Lg.Adaptation.Option_boundary
+        (Lg.Adaptation.Capability_witness { source_ty = TInt; _ })) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith
+        "host option payloads must compose explicit static capability plans");
+  (match
+     Lg.Adaptation.plan_argument ~row_type_name:"person_row"
+       ~expected:(TNullable (TRecord [ name; nickname ])) ~actual ()
+   with
+  | Ok (Lg.Adaptation.Nullable (Lg.Adaptation.Row_projection _)) -> ()
+  | Ok _ | Error _ ->
+      failwith "nullable row projection must compose typed adaptation plans");
+  let protocol_id = Lg.Protocol_id.create ~owner:[ "user" ] ~name:"Lookup" in
+  let protocol = protocol_constraint protocol_id [ TFn ([ TUnknown ], TInt) ] TUnknown in
+  (match
+     Lg.Adaptation.plan_argument
+       ~protocol_satisfies:(fun candidate _ ->
+         Lg.Protocol_id.equal candidate protocol_id)
+       ~expected:protocol ~actual:(TRecord []) ()
+   with
+  | Ok
+      (Lg.Adaptation.Protocol_witness
+        {
+          protocol_id = planned_id;
+          expected;
+          source_ty;
+          implementation_available;
+        }) ->
+      if
+        not (Lg.Protocol_id.equal planned_id protocol_id)
+        || not (equal expected protocol)
+        || not (equal source_ty (TRecord []))
+        || not implementation_available
+      then failwith "protocol witness plan lost its closed typed inputs"
+  | Ok _ | Error _ ->
+      failwith "satisfied protocols must plan witness construction");
+  (match
+     Lg.Adaptation.plan_argument
+       ~protocol_satisfies:(fun _ _ -> false)
+       ~expected:protocol ~actual:(TRecord []) ()
+   with
+  | Ok (Lg.Adaptation.Protocol_witness { implementation_available = false; _ }) ->
+      ()
+  | Ok _ | Error _ ->
+      failwith "missing implementations must plan an absent protocol witness");
+  (match
+     Lg.Adaptation.plan_argument
+       ~protocol_satisfies:(fun _ _ -> false)
+       ~expected:(guarded_protocol_constraint protocol) ~actual:(TSeq TInt) ()
+   with
+  | Ok (Lg.Adaptation.Protocol_witness _) -> ()
+  | Ok _ | Error _ ->
+      failwith "guarded protocol witnesses must plan an absent implementation");
+  match Lg.Adaptation.plan_argument ~expected:TString ~actual:TInt () with
+  | Error (Lg.Adaptation.Incompatible_types _) -> ()
+  | Ok _ | Error _ -> failwith "incompatible scalar adaptation must be rejected"
+
+let test_set_arguments_adapt_element_representations () =
+  let source =
+    {|
+(defn float-set-total [^:set<float> values]
+  (reduce + 0.0 values))
+(println (= 6.0 (float-set-total #{1 2 3})))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "set_arguments_adapt_element_representations" "true\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_arguments_adapt_value_representations () =
+  let source =
+    {|
+(defn map-total [^:map<string;float> values]
+  (+ (get values "a") (get values "b")))
+(def ^:map<string;int> input {"a" 1 "b" 2})
+(println (= 3.0 (map-total input)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_arguments_adapt_value_representations" "true\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_sequence_entry_points_accept_nil () =
+  let source =
+    {|
+(println
+  (str
+    (nil? (seq nil)) ":"
+    (nil? (first nil)) ":"
+    (empty? (rest nil)) ":"
+    (nil? (next nil)) ":"
+    (= '(1) (cons 1 nil)) ":"
+    (nil? (second nil)) ":"
+    (nil? (last nil)) ":"
+    (nil? (take-last 2 nil)) ":"
+    (empty? (reverse nil)) ":"
+    (empty? (cycle nil)) ":"
+    (empty? (take 5 nil)) ":"
+    (empty? (take-nth 2 nil)) ":"
+    (empty? (take-while (fn [^:int value] (> value 0)) nil)) ":"
+    (empty? (shuffle nil)) ":"
+    (empty? (group-by (fn [^:int value] value) nil)) ":"
+    (empty? (mapv (fn [^:int value] value) nil))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "sequence_entry_points_accept_nil"
+    "true:true:true:true:true:true:true:true:true:true:true:true:true:true:true:true\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_inferred_type_scheme_names_are_canonical () =
   let open Lg.Types in
@@ -2797,6 +3791,23 @@ let test_generic_record_calls_freshen_callee_type_variables () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "generic_record_calls_freshen_callee_type_variables" "1\n"
     ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_open_seqable_rows_share_unique_named_identity () =
+  let source =
+    {|
+(type-record datom [value]
+  (v :value))
+(defn datom-values [datoms]
+  (mapv (fn [datom] (.-v datom)) datoms))
+(def datoms [(record datom (v 42))])
+(println (first (datom-values datoms)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "open_seqable_rows_share_unique_named_identity" "42\n"
+    native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -4621,7 +5632,7 @@ let test_compiler_phases_have_explicit_boundaries () =
                 Ok value.Lg.Types.semantic_expr)
               ~pack_constrained_value:(fun _env _expected value ->
                 Ok value.Lg.Types.semantic_expr)
-              ~adapt_value_to_type:(fun _env _expected value ->
+              ~plan_and_emit_argument:(fun _env ~expected:_ value ->
                 Ok value.Lg.Types.semantic_expr)
           in
         let comp_env =
@@ -5721,7 +6732,7 @@ let test_reference_validators_are_typed_source_functions () =
 (def value (atom 1))
 (set-validator! value (fn [next] (+ next 1)))
 |}
-  |> expect_error_contains "expected of type\n         bool"
+  |> expect_error_contains "cannot adapt int to bool"
 
 let test_atom_accepts_static_metadata_and_validator_options () =
   let source =
@@ -8854,7 +9865,7 @@ let test_regex_match_alternatives_require_a_closed_sum () =
 |}
   in
   compile_string_with_stdlib source
-  |> expect_error_contains "expected of type string"
+  |> expect_error_contains "cannot adapt Lg_edn_backend.t to string"
 
 let test_source_re_pattern_matches_clojurescript () =
   let static_source =
@@ -9735,6 +10746,54 @@ let test_recursive_record_array_fields_work_with_array_primitives () =
   assert_ocaml_runs "recursive_record_array_fields_work_with_array_primitives"
     "3:2\n" ocaml_source
 
+let test_recursive_named_applications_keep_resolved_identity () =
+  let source =
+    {|
+(type-record tree [value]
+  (children :array<option<tree<value>>>))
+(signature user/make-tree [value]
+  :fn<array<option<tree<value>>>;tree<value>>)
+(defn make-tree [children]
+  (record tree (children children)))
+(defn node-merge [node next]
+  (make-tree
+    (aconcat (:children node) (:children next))))
+(def leaf (make-tree (array nil)))
+(println (alength (:children (node-merge leaf leaf))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "recursive_named_applications_keep_resolved_identity"
+    "2\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_qualified_deftype_annotations_keep_resolved_identity () =
+  let source =
+    {|
+(ns app.entity)
+(deftype Entity [^:int id])
+(signature app.entity/member?
+  :fn<option<app.entity/Entity>;vector<option<app.entity/Entity>>;bool>)
+(defn member?
+  [^:option<app.entity/Entity> target
+   ^:vector<option<app.entity/Entity>> values]
+  (if-some [candidate (first values)]
+    (if-some [left target]
+      (if-some [right candidate]
+        (= (.-id left) (.-id right))
+        false)
+      (nil? candidate))
+    false))
+(println (member? (Some (Entity. 1)) [(Some (Entity. 1))]))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "qualified_deftype_annotations_keep_resolved_identity"
+    "true\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_defrecord_fields_can_reference_the_enclosing_record () =
   let source =
     {|
@@ -9993,6 +11052,44 @@ let test_ocaml_type_application_annotations_compile_through_source_backend () =
   assert_ocaml_runs
     "ocaml_type_application_annotations_compile_through_source_backend"
     "42:0:Ada:bad\n" ocaml_source
+
+let test_source_option_annotations_remain_nullable_until_lowering () =
+  let expect_nullable source =
+    match Lg.Type_annotation.parse_ocaml_type source with
+    | Ok (Lg.Types.TNullable Lg.Types.TInt) -> ()
+    | Ok ty ->
+        failwith
+          ("source option annotation became a host type: "
+          ^ Lg.Types.source_name ty)
+    | Error error -> failwith error.Lg.Error.message
+  in
+  expect_nullable "option<int>";
+  match Lg.Type_annotation.parse_ocaml_type "result<option<int>;string>" with
+  | Ok
+      (Lg.Types.TOcaml_app
+        ("result", [ Lg.Types.TNullable Lg.Types.TInt; Lg.Types.TString ])) ->
+      ()
+  | Ok ty ->
+      failwith
+        ("nested source option annotation became a host type: "
+        ^ Lg.Types.source_name ty)
+  | Error error -> failwith error.Lg.Error.message
+
+let test_nullable_refinement_preserves_the_existing_boundary_identity () =
+  let open Lg.Types in
+  let host_option = TOcaml_app ("option", [ TInt ]) in
+  let source_option = TNullable TInt in
+  let expect expected actual =
+    if not (equal expected actual) then
+      failwith
+        ("option refinement changed boundary identity: expected "
+       ^ source_name expected ^ ", got " ^ source_name actual)
+  in
+  expect source_option
+    (Lg.Type_inference_core.refine_type (TNullable TUnknown) host_option);
+  expect host_option
+    (Lg.Type_inference_core.refine_type
+       (TOcaml_app ("option", [ TUnknown ])) source_option)
 
 let test_ocaml_type_application_annotations_delegate_argument_mismatch_to_ocaml
     () =
@@ -17870,12 +18967,12 @@ let test_defrecord_is_closed_and_rejects_extension_fields () =
 let test_named_record_extensions_require_explicit_fields () =
   let open Lg.Types in
   let value_field = make_field ":value" TInt in
-  let extensible_report =
-    named_record ~type_name:"report" ~set_module_name:"Report_set"
-      [ value_field; make_record_extension_field () ]
-  in
   let structural_report =
     TRecord [ value_field; make_field ":extra" TInt ]
+  in
+  let extensible_report =
+    named_record ~type_name:"report" ~set_module_name:"Report_set"
+      [ value_field; make_record_extension_field ~ty:structural_report () ]
   in
   if
     not
@@ -22886,6 +23983,22 @@ let test_doseq_infers_seqable_parameters () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_doseq_preserves_its_nil_result_at_unit_boundaries () =
+  let source =
+    {|
+(signature discard-values :fn<unit>)
+(defn discard-values []
+  (doseq [value [1 2 3]]
+    value))
+(discard-values)
+(println "ok")
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "doseq_preserves_nil_result" "ok\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_partition_by_keyword_infers_seqable_record_parameters () =
   let source =
     {|
@@ -23405,6 +24518,51 @@ let test_truthy_guards_preserve_static_optional_numeric_parameters () =
   assert_ocaml_runs
     "truthy_guards_preserve_static_optional_numeric_parameters"
     "1\n2\n1\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_if_some_narrows_local_function_optional_numeric_parameters () =
+  let source =
+    {|
+(deftype Item [^int value])
+(signature max-present :fn<vector<Item>;int>)
+(defn max-present [items]
+  (let [max (fn [current candidate]
+              (if-some [candidate candidate]
+                (if (> candidate current) candidate current)
+                current))
+        candidate (some-> items first :value)]
+    (max 1 candidate)))
+(println (max-present [(Item. 2)]))
+(println (max-present []))
+(let [choose max]
+  (println (> (choose 2 1) 0)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "if_some_narrows_local_function_optional_numeric_parameters"
+    "2\n1\ntrue\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_numeric_comparisons_unwrap_static_protocol_constraints () =
+  let source =
+    {|
+(defprotocol NumericValue
+  (-numeric-value [value] :self))
+(extend-type :int
+  NumericValue
+  (-numeric-value [value] value))
+(signature positive-numeric-value? :fn<int;bool>)
+(defn positive-numeric-value? [value]
+  (> (NumericValue/-numeric-value value) 0))
+(println (positive-numeric-value? 1))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "numeric_comparisons_unwrap_static_protocol_constraints"
+    "true\n" ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -33244,6 +34402,8 @@ let test_structural_options_preserve_heterogeneous_fields () =
   |}
   in
   let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "structural option rows must not use a dynamic extension sidecar";
   assert_ocaml_runs "structural_options_preserve_heterogeneous_fields" "3\n"
     native_source;
   ignore
@@ -34144,6 +35304,11 @@ let test_static_tuple_destructuring_uses_nil_for_missing_items () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "fixed sequence destructuring must stay static";
+  if
+    string_contains_substring ocaml_source
+      "(fst __lg_optional_nil_value) (snd __lg_optional_nil_value)"
+  then
+    failwith "known missing tuple item retained a generic nil witness";
   assert_ocaml_runs "static_tuple_destructuring_uses_nil_for_missing_items"
     "1:two:true\n" ocaml_source;
   ignore
@@ -36115,7 +37280,8 @@ let test_source_first_class_every_parameter_is_statically_overloaded () =
 (ns app.first-class-every-parameter)
 
 (defn every-suite [every-fn]
-  (if (every-fn odd? [1 3 5])
+  (if (every-fn identity [:foo])
+    (if (every-fn odd? [1 3 5])
     (if (every-fn even? (hash-set 2 4 6))
       (if (every-fn (hash-set :a :b :c) [:a :b :c])
         (if (every-fn "not-a-fn" [])
@@ -36125,6 +37291,7 @@ let test_source_first_class_every_parameter_is_statically_overloaded () =
           false)
         false)
       false)
+    false)
     false))
 
 (println (every-suite every?))
@@ -37346,7 +38513,8 @@ let test_concat_rejects_nested_heterogeneous_vectors () =
 |}
   in
   compile_string_from_stdlib source
-  |> expect_error_contains "Lg_edn_backend.t Rrbvec.t Seq.t"
+  |> expect_error_contains
+       "cannot adapt Lg_edn_backend.t to vector<Lg_edn_backend.t>"
 
 let test_contains_infers_generic_membership_for_variable_keys () =
   let source =
@@ -37989,6 +39157,10 @@ let test_compile_diagnostics_capture_ocaml_match_warnings () =
   | [ diagnostic ] ->
       if diagnostic.severity <> `Warning then
         failwith "expected an OCaml warning diagnostic";
+      if diagnostic.code <> "OCAML-WARNING" then
+        failwith "expected a stable OCaml warning code";
+      if diagnostic.phase <> `Ocaml then
+        failwith "expected an OCaml diagnostic phase";
       if not (string_contains_substring diagnostic.message "not exhaustive")
       then
         failwith
@@ -41874,6 +43046,18 @@ let tests =
       test_type_schemes_distinguish_declared_and_inferred_variables );
     ( "type scheme instantiation preserves shared identity",
       test_type_scheme_instantiation_preserves_shared_identity );
+    ( "seqable constraints accept all sequence representations",
+      test_seqable_constraints_accept_all_sequence_representations );
+    ( "variadic rest calls generic seqable function",
+      test_variadic_rest_calls_generic_seqable_function );
+    ( "argument adaptation plans rows before emission",
+      test_argument_adaptation_plans_rows_before_emission );
+    ( "set arguments adapt element representations",
+      test_set_arguments_adapt_element_representations );
+    ( "map arguments adapt value representations",
+      test_map_arguments_adapt_value_representations );
+    ( "sequence entry points accept nil",
+      test_sequence_entry_points_accept_nil );
     ( "inferred type scheme names are canonical",
       test_inferred_type_scheme_names_are_canonical );
     ( "inference holes do not collide with declared type names",
@@ -41902,6 +43086,8 @@ let tests =
       test_type_solver_of_list_preserves_first_binding );
     ( "generic record calls freshen callee type variables",
       test_generic_record_calls_freshen_callee_type_variables );
+    ( "open seqable rows share unique named identity",
+      test_open_seqable_rows_share_unique_named_identity );
     ( "static sequences adapt to option callback parameters",
       test_static_sequences_adapt_to_option_callback_parameters );
     ( "keyword lookup constrains first of protocol sequences",
@@ -42532,6 +43718,10 @@ let tests =
       test_parameterized_records_instantiate_field_types );
     ( "recursive record array fields work with array primitives",
       test_recursive_record_array_fields_work_with_array_primitives );
+    ( "recursive named applications keep resolved identity",
+      test_recursive_named_applications_keep_resolved_identity );
+    ( "qualified deftype annotations keep resolved identity",
+      test_qualified_deftype_annotations_keep_resolved_identity );
     ( "defrecord fields can reference the enclosing record",
       test_defrecord_fields_can_reference_the_enclosing_record );
     ( "parameterized types compile inside modules",
@@ -42570,6 +43760,10 @@ let tests =
       test_ocaml_type_application_annotations_reject_bad_forms );
     ( "syntax ergonomics: concise host type annotations compile",
       test_concise_host_type_annotations_compile );
+    ( "source option annotations remain nullable until lowering",
+      test_source_option_annotations_remain_nullable_until_lowering );
+    ( "nullable refinement preserves the existing boundary identity",
+      test_nullable_refinement_preserves_the_existing_boundary_identity );
     ( "syntax ergonomics: threading and option binding forms compile",
       test_threading_and_option_binding_forms_compile );
     ( "syntax ergonomics: combined host package import compiles",
@@ -43588,6 +44782,8 @@ let tests =
       test_batched_predicate_collection_core_functions_reject_bad_run_function
     );
     ("doseq infers seqable parameters", test_doseq_infers_seqable_parameters);
+    ( "doseq preserves its nil result at unit boundaries",
+      test_doseq_preserves_its_nil_result_at_unit_boundaries );
     ( "doseq uses upstream seqable iteration",
       test_doseq_uses_upstream_seqable_iteration );
     ("for supports when clauses", test_for_supports_when_clauses);
@@ -43605,6 +44801,10 @@ let tests =
       test_references_preserve_state_across_typed_fields );
     ( "truthy guards preserve static optional numeric parameters",
       test_truthy_guards_preserve_static_optional_numeric_parameters );
+    ( "if-some narrows local function optional numeric parameters",
+      test_if_some_narrows_local_function_optional_numeric_parameters );
+    ( "numeric comparisons unwrap static protocol constraints",
+      test_numeric_comparisons_unwrap_static_protocol_constraints );
     ( "and truthy guard narrows nullable ints",
       test_and_truthy_guard_narrows_nullable_ints );
     ( "or nil guard narrows nullable records",

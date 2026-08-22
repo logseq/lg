@@ -218,12 +218,28 @@ let diagnostic_range text = function
   | Some location -> range_of_location text location
   | None -> range_of_offsets text 0 (min 1 (String.length text))
 
-let diagnostic text ?(severity = 1) ?location message =
+let diagnostic_phase = function
+  | `Lexing -> "lexing"
+  | `Parsing -> "parsing"
+  | `Semantic -> "semantic"
+  | `Lowering -> "lowering"
+  | `Ocaml -> "ocaml"
+  | `Infrastructure -> "infrastructure"
+
+let diagnostic text ?(severity = 1) ?location ?code ?phase message =
+  let identity =
+    match (code, phase) with
+    | Some code, Some phase ->
+        [ ("code", `String code);
+          ("data", `Assoc [ ("phase", `String (diagnostic_phase phase)) ]) ]
+    | _ -> []
+  in
   `Assoc
-    [ ("range", diagnostic_range text location);
-      ("severity", `Int severity);
-      ("source", `String "lg");
-      ("message", `String message) ]
+    ([ ("range", diagnostic_range text location);
+       ("severity", `Int severity);
+       ("source", `String "lg");
+       ("message", `String message) ]
+    @ identity)
 
 let diagnostics document =
   match document.analysis with
@@ -233,10 +249,11 @@ let diagnostics document =
           match item.severity with
           | `Warning ->
               diagnostic document.text ~severity:2 ?location:item.location
-                item.message)
+                ~code:item.code ~phase:item.phase item.message)
         (Lg.Language_service.diagnostics analysis)
   | Error err ->
-      [ diagnostic document.text ?location:err.location err.message ]
+      [ diagnostic document.text ?location:err.location ~code:err.code
+          ~phase:err.phase err.message ]
 
 let write_packet json =
   let body = Yojson.Safe.to_string json in
@@ -836,7 +853,7 @@ let rec loop shutdown_requested =
                     completion_result document offset
                 | "textDocument/signatureHelp" ->
                     signature_help_result document offset
-                | _ -> assert false)
+                | _ -> `Null)
           in
           response id result;
           loop shutdown_requested
@@ -878,7 +895,7 @@ let rec loop shutdown_requested =
                 | "textDocument/rename" ->
                     let new_name = params |> member "newName" |> to_string in
                     rename_result uri document offset new_name
-                | _ -> assert false)
+                | _ -> `Null)
           in
           response id result;
           loop shutdown_requested

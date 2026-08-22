@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4"
+      - run: npm ci
+      - run: opam install . --deps-only --with-test
+      - run: opam exec -- sh test/compiler_cold_build_performance_gate_test.sh
+      - run: opam exec -- dune build --action-stderr-on-success=must-be-empty @runtest
+      - run: opam exec -- sh test/build_footprint_gate_test.sh _build
+      - run: opam exec -- dune build @jsoo-cross-runtime
+      - run: opam exec -- dune build @test/clojure_suite/clojure-test-suite-smoke
+      - run: opam exec -- dune build @install
+      - run: opam exec -- sh test/install_smoke.sh
+      - run: opam lint .

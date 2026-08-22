@@ -56,6 +56,11 @@ first, then OCaml lowering:
   library API, CLI, and LSP. Incremental compilation preserves locations for
   accumulated chunks. Use
   `compile_string_with_filename` when embedding the compiler with a real path.
+
+- Compiler errors and warnings expose a stable `code`, a closed `phase`, a
+  human-readable `message`, and an optional source `location`. LSP diagnostics
+  publish the same identity as `code` and `data.phase`; callers should branch
+  on the code rather than parse message text.
 - Core lg type shapes remain in `Types`; lowered top-level/module items live
   in `Lowered`, so backend item construction is kept separate from source type
   metadata.
@@ -455,14 +460,19 @@ protocols, inferred OCaml signatures, and package dependencies remain available
 to later files. Package dependencies are unioned for native linking, while
 errors retain the path and line of the owning input file.
 
-Ordinary multi-file compilation caches resumable compiler checkpoints under
-`.lg-cache/compile-files`. Checkpoints are isolated by compiler build identity,
-old compiler generations are removed, and the active generation is limited to
-256 MiB by default. Only prefixes taking at least 100 ms to compile are cached,
-avoiding a full cumulative-state snapshot for every cheap file. Set
+Ordinary multi-file compilation caches versioned generated-output artifacts
+under `.lg-cache/compile-files`; it never stores cumulative compiler-state
+snapshots. Artifacts are isolated by compiler build identity, old compiler
+generations are removed, and the active generation is limited to 256 MiB by
+default. Only prefixes taking at least 100 ms to compile are cached. Set
 `LG_COMPILE_CACHE_MIN_SECONDS` or `LG_COMPILE_CACHE_MAX_BYTES` to tune these
 limits, `LG_CACHE_DIR` to relocate the cache, or
 `LG_DISABLE_COMPILE_CACHE=1` to disable it.
+
+Explicit saved compiler states use the same versioned, checksummed envelope and
+are rejected before deserialization when their payload exceeds 512 MiB. Cache
+reads, writes, access-time updates, and pruning use a process lock; completed
+artifacts are published by atomic rename.
 
 [`examples/multi_file/dune`](examples/multi_file/dune) is an executable Dune
 integration: a rule treats `.cljc` files as dependencies, generates `app.ml`,

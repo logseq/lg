@@ -3,6 +3,5 @@
  (public_name lg.edn-backend.native)
  (implements lg_edn_backend)
  (modes native byte)
- (ocamlc_flags :standard -no-g)
  (ocamlopt_flags :standard -no-g)
  (libraries melange-edn-native re))

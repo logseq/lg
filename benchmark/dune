@@ -7,7 +7,4 @@
  (alias transient-set-probe)
  (module_systems es6)
  (modules transient_set_probe)
- (libraries
-  lg.edn-backend
-  lg.edn-backend.melange
-  lg.runtime))
+ (libraries lg.edn-backend lg.edn-backend.melange lg.runtime))

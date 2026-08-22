@@ -12,6 +12,9 @@ let rec contains_inferred_type = function
       contains_inferred_type ty
   | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
       List.exists contains_inferred_type arguments
+  | Types.TConstraint constraint_ ->
+      List.exists contains_inferred_type
+        (Types.constraint_children constraint_)
   | Types.TFn (parameters, return_ty) ->
       List.exists contains_inferred_type (return_ty :: parameters)
   | Types.TOverloaded_fn arities ->
@@ -41,6 +44,8 @@ let deferred_type_variables ty =
         collect variables ty
     | Types.TOcaml_app (_, arguments) | Types.TTuple arguments ->
         List.fold_left collect variables arguments
+    | Types.TConstraint constraint_ ->
+        List.fold_left collect variables (Types.constraint_children constraint_)
     | Types.TFn (parameters, return_ty) ->
         List.fold_left collect (collect variables return_ty) parameters
     | Types.TOverloaded_fn arities ->
@@ -82,10 +87,9 @@ let freshen_deferred_type ?return_param_index ty =
     | Types.TVector ty -> Types.TVector (freshen ty)
     | Types.TSet ty -> Types.TSet (freshen ty)
     | Types.TSeq ty -> Types.TSeq (freshen ty)
-    | Types.TOcaml_app (name, [ element_ty; value_ty ])
-      when name = Types.seqable_constraint_name
-           || name = Types.optional_seqable_constraint_name
-           || name = Types.optional_sequential_constraint_name ->
+    | Types.TConstraint
+        (Types.Seqable_constraint
+          ({ element = element_ty; storage = value_ty; _ } as constraint_)) ->
         let erased =
           Types.equal element_ty Types.TUnknown
           && Types.equal value_ty Types.TUnknown
@@ -101,10 +105,13 @@ let freshen_deferred_type ?return_param_index ty =
             else fresh_variable ()
           else freshen value_ty
         in
-        Types.TOcaml_app (name, [ element_ty; value_ty ])
-    | Types.TOcaml_app (_, _) as constraint_ty
-      when Option.is_some (Types.protocol_constraint_info constraint_ty) ->
+        Types.TConstraint
+          (Types.Seqable_constraint
+             { constraint_ with element = element_ty; storage = value_ty })
+    | Types.TConstraint (Types.Protocol_constraint _) as constraint_ty ->
         freshen_protocol_constraint constraint_ty
+    | Types.TConstraint constraint_ ->
+        Types.TConstraint (Types.map_constraint freshen constraint_)
     | Types.TOcaml_app (name, arguments) ->
         Types.TOcaml_app (name, List.map freshen arguments)
     | Types.TTuple items -> Types.TTuple (List.map freshen items)
@@ -151,6 +158,9 @@ let freshen_deferred_type ?return_param_index ty =
       | Types.TSeq ty -> Types.TSeq (dynamic_unknowns ty)
       | Types.TOcaml_app (name, arguments) ->
           Types.TOcaml_app (name, List.map dynamic_unknowns arguments)
+      | Types.TConstraint constraint_ ->
+          Types.TConstraint
+            (Types.map_constraint dynamic_unknowns constraint_)
       | Types.TTuple items -> Types.TTuple (List.map dynamic_unknowns items)
       | Types.TFn (parameters, return_ty) ->
           Types.TFn (List.map dynamic_unknowns parameters, dynamic_unknowns return_ty)
@@ -197,7 +207,8 @@ let freshen_deferred_type ?return_param_index ty =
           if dynamic_dispatch then dynamic_unknowns value_ty
           else freshen value_ty
         in
-        (match methods witness_ty with
+        let freshened =
+          match methods witness_ty with
         | None ->
             Types.protocol_constraint protocol_id [] value_ty
         | Some method_tys ->
@@ -215,7 +226,11 @@ let freshen_deferred_type ?return_param_index ty =
                   | method_ty -> freshen method_ty)
                 method_tys
             in
-            Types.protocol_constraint protocol_id method_tys value_ty)
+            Types.protocol_constraint protocol_id method_tys value_ty
+        in
+        if Types.is_guarded_protocol_constraint constraint_ty then
+          Types.guarded_protocol_constraint freshened
+        else freshened
   in
   match ty with
   | Types.TFn (parameters, return_ty) ->

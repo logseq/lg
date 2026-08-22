@@ -73,7 +73,7 @@ let apply substitutions ty =
       let memoized_node = function
         | TNullable _ | TOcaml_app _ | TTuple _ | TArray _ | TRef _ | TList _
         | TVector _ | TSet _ | TSeq _ | TFn _ | TOverloaded_fn _ | TRecord _
-        | TNamed_record _ ->
+        | TNamed_record _ | TConstraint _ ->
             true
         | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
         | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _
@@ -122,6 +122,9 @@ let apply substitutions ty =
         | TOcaml_app (name, arguments) ->
             let mapped = map_preserving_identity apply_ty arguments in
             if mapped == arguments then ty else TOcaml_app (name, mapped)
+        | TConstraint constraint_ ->
+            let mapped = map_constraint apply_ty constraint_ in
+            if mapped == constraint_ then ty else TConstraint mapped
         | TTuple items ->
             let mapped = map_preserving_identity apply_ty items in
             if mapped == items then ty else TTuple mapped
@@ -188,6 +191,8 @@ let rec occurs variable ty =
       occurs variable inner
   | TOcaml_app (_, arguments) | TTuple arguments ->
       List.exists (occurs variable) arguments
+  | TConstraint constraint_ ->
+      List.exists (occurs variable) (constraint_children constraint_)
   | TFn (parameters, return_ty) ->
       List.exists (occurs variable) parameters || occurs variable return_ty
   | TOverloaded_fn arities ->
@@ -247,6 +252,7 @@ let rec variables ty =
   | TSet inner | TSeq inner ->
       variables inner
   | TOcaml_app (_, arguments) | TTuple arguments -> variables_all arguments
+  | TConstraint constraint_ -> variables_all (constraint_children constraint_)
   | TFn (parameters, return_ty) -> variables_all (return_ty :: parameters)
   | TOverloaded_fn arities ->
       arities
@@ -277,6 +283,7 @@ let rec is_open = function
   | TSet inner | TSeq inner ->
       is_open inner
   | TOcaml_app (_, arguments) | TTuple arguments -> List.exists is_open arguments
+  | TConstraint constraint_ -> List.exists is_open (constraint_children constraint_)
   | TFn (parameters, return_ty) -> List.exists is_open (return_ty :: parameters)
   | TOverloaded_fn arities ->
       List.exists
@@ -342,50 +349,50 @@ let rec unify substitutions left right =
     | TMeta meta, ty | ty, TMeta meta -> bind_meta substitutions meta ty
     | TVar name, ty | ty, TVar name ->
         bind substitutions (Declared name) ty
-    | ( TOcaml_app ("__lg_truthy_constraint", [ left ]),
-        TOcaml_app ("__lg_truthy_constraint", [ right ]) ) ->
+    | ( TConstraint (Truthy_constraint left),
+        TConstraint (Truthy_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_truthy_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_truthy_constraint", [ value_ty ]) ->
+    | TConstraint (Truthy_constraint value_ty), ty
+    | ty, TConstraint (Truthy_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_nil_predicate_constraint", [ left ]),
-        TOcaml_app ("__lg_nil_predicate_constraint", [ right ]) ) ->
+    | ( TConstraint (Nil_predicate_constraint left),
+        TConstraint (Nil_predicate_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_nil_predicate_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_nil_predicate_constraint", [ value_ty ]) ->
+    | TConstraint (Nil_predicate_constraint value_ty), ty
+    | ty, TConstraint (Nil_predicate_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_printable_constraint", [ left ]),
-        TOcaml_app ("__lg_printable_constraint", [ right ]) ) ->
+    | ( TConstraint (Printable_constraint left),
+        TConstraint (Printable_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_printable_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_printable_constraint", [ value_ty ]) ->
+    | TConstraint (Printable_constraint value_ty), ty
+    | ty, TConstraint (Printable_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_exception_data_constraint", [ left ]),
-        TOcaml_app ("__lg_exception_data_constraint", [ right ]) ) ->
+    | ( TConstraint (Exception_data_constraint left),
+        TConstraint (Exception_data_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_exception_data_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_exception_data_constraint", [ value_ty ]) ->
+    | TConstraint (Exception_data_constraint value_ty), ty
+    | ty, TConstraint (Exception_data_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_hashable_constraint", [ left ]),
-        TOcaml_app ("__lg_hashable_constraint", [ right ]) ) ->
+    | ( TConstraint (Hashable_constraint left),
+        TConstraint (Hashable_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_hashable_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_hashable_constraint", [ value_ty ]) ->
+    | TConstraint (Hashable_constraint value_ty), ty
+    | ty, TConstraint (Hashable_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_comparable_constraint", [ left ]),
-        TOcaml_app ("__lg_comparable_constraint", [ right ]) ) ->
+    | ( TConstraint (Comparable_constraint left),
+        TConstraint (Comparable_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_comparable_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_comparable_constraint", [ value_ty ]) ->
+    | TConstraint (Comparable_constraint value_ty), ty
+    | ty, TConstraint (Comparable_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_array_index_constraint", [ left ]),
-        TOcaml_app ("__lg_array_index_constraint", [ right ]) ) ->
+    | ( TConstraint (Array_index_constraint left),
+        TConstraint (Array_index_constraint right) ) ->
         unify substitutions left right
-    | TOcaml_app ("__lg_array_index_constraint", [ value_ty ]), ty
-    | ty, TOcaml_app ("__lg_array_index_constraint", [ value_ty ]) ->
+    | TConstraint (Array_index_constraint value_ty), ty
+    | ty, TConstraint (Array_index_constraint value_ty) ->
         unify substitutions value_ty ty
-    | ( TOcaml_app ("__lg_symbol_predicate_constraint", [ left ]),
-        TOcaml_app ("__lg_symbol_predicate_constraint", [ right ]) ) ->
+    | ( TConstraint (Symbol_predicate_constraint left),
+        TConstraint (Symbol_predicate_constraint right) ) ->
         unify substitutions left right
     | TNullable left, TNullable right
     | TArray left, TArray right
@@ -398,37 +405,85 @@ let rec unify substitutions left right =
     | TNullable left, TOcaml_app ("option", [ right ])
     | TOcaml_app ("option", [ left ]), TNullable right ->
         unify substitutions left right
-    | ( TOcaml_app
-          ( ( "__lg_seqable_constraint"
-            | "__lg_optional_seqable_constraint"
-            | "__lg_optional_sequential_constraint" ),
-            [ element_ty; storage_ty ] ),
+    | ( TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
         ((TList actual | TVector actual | TSet actual | TSeq actual
          | TArray actual) as collection_ty) )
     | ( ((TList actual | TVector actual | TSet actual | TSeq actual
          | TArray actual) as collection_ty),
-        TOcaml_app
-          ( ( "__lg_seqable_constraint"
-            | "__lg_optional_seqable_constraint"
-            | "__lg_optional_sequential_constraint" ),
-            [ element_ty; storage_ty ] ) ) ->
+        TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
         Result.bind (unify substitutions element_ty actual)
           (fun substitutions ->
             unify substitutions storage_ty collection_ty)
-    | ( TOcaml_app
-          ( ( "__lg_seqable_constraint"
-            | "__lg_optional_seqable_constraint"
-            | "__lg_optional_sequential_constraint" ),
-            [ element_ty; storage_ty ] ),
+    | ( TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
         TString )
     | ( TString,
-        TOcaml_app
-          ( ( "__lg_seqable_constraint"
-            | "__lg_optional_seqable_constraint"
-            | "__lg_optional_sequential_constraint" ),
-            [ element_ty; storage_ty ] ) ) ->
+        TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
         Result.bind (unify substitutions element_ty TChar)
           (fun substitutions -> unify substitutions storage_ty TString)
+    | ( TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }),
+        (TOcaml_app
+          (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
+          as collection_ty) )
+    | ( (TOcaml_app
+          (("__lg_next_seq" | "__lg_reversible_next_seq"), [ actual ])
+          as collection_ty),
+        TConstraint
+          (Seqable_constraint { element = element_ty; storage = storage_ty; _ }) ) ->
+        Result.bind (unify substitutions element_ty actual)
+          (fun substitutions -> unify substitutions storage_ty collection_ty)
+    | ( TConstraint
+          (Seqable_constraint
+            {
+              requirement = left_requirement;
+              element = left_element;
+              storage = left_storage;
+            }),
+        TConstraint
+          (Seqable_constraint
+            {
+              requirement = right_requirement;
+              element = right_element;
+              storage = right_storage;
+            }) )
+      when left_requirement = right_requirement ->
+        unify_lists substitutions
+          [ left_element; left_storage ]
+          [ right_element; right_storage ]
+    | ( TConstraint
+          (Contains_constraint { key = left_key; storage = left_storage }),
+        TConstraint
+          (Contains_constraint { key = right_key; storage = right_storage }) ) ->
+        unify_lists substitutions
+          [ left_key; left_storage ]
+          [ right_key; right_storage ]
+    | ( TConstraint (Open_boundary_constraint left),
+        TConstraint (Open_boundary_constraint right) ) ->
+        unify substitutions left right
+    | ( TConstraint
+          (Protocol_constraint
+            {
+              protocol_id = left_id;
+              witness = left_witness;
+              value = left_value;
+              guarded = left_guarded;
+            }),
+        TConstraint
+          (Protocol_constraint
+            {
+              protocol_id = right_id;
+              witness = right_witness;
+              value = right_value;
+              guarded = right_guarded;
+            }) )
+      when Protocol_id.equal left_id right_id && left_guarded = right_guarded ->
+        unify_lists substitutions
+          [ left_witness; left_value ]
+          [ right_witness; right_value ]
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
       when left_name = right_name && List.length left_args = List.length right_args
       ->

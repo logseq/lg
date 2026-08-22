@@ -86,20 +86,19 @@ let rec refine_type existing inferred =
         Types.dynamic_constraint_info existing |> Option.value ~default:TUnknown
       in
       Types.dynamic_constraint (refine_type capability inferred)
-  | (TOcaml_app (name, [ element_ty; value_ty ]) as existing), inferred
-    when Types.is_dynamic inferred
-         && (name = Types.seqable_constraint_name
-            || name = Types.optional_seqable_constraint_name
-            || name = Types.optional_sequential_constraint_name) ->
+  | (TConstraint (Seqable_constraint constraint_) as existing), inferred
+    when Types.is_dynamic inferred ->
       (match Types.dynamic_constraint_info inferred with
       | Some
           (TOcaml_app ("Lg_runtime.Runtime_transient.map", [ _; _ ])) ->
           inferred
       | Some _ | None ->
-          let value_ty = refine_type value_ty inferred in
+          let value_ty = refine_type constraint_.storage inferred in
           if Types.equal value_ty (Types.constraint_value_type existing) then
             existing
-          else TOcaml_app (name, [ element_ty; value_ty ]))
+          else
+            TConstraint
+              (Seqable_constraint { constraint_ with storage = value_ty }))
   | existing, inferred when Types.is_dynamic inferred ->
       let capability =
         Types.dynamic_constraint_info inferred |> Option.value ~default:TUnknown
@@ -351,7 +350,8 @@ and refine_nonmatching_type existing inferred =
           Types.optional_sequential_constraint element_ty value_ty)
   | TNullable existing, TNullable inferred ->
       Types.normalize_nullable (TNullable (refine_type existing inferred))
-  | TNullable existing, TOcaml_app ("option", [ inferred ])
+  | TNullable existing, TOcaml_app ("option", [ inferred ]) ->
+      Types.normalize_nullable (TNullable (refine_type existing inferred))
   | TOcaml_app ("option", [ existing ]), TNullable inferred ->
       TOcaml_app ("option", [ refine_type existing inferred ])
   | (TNullable existing | TOcaml_app ("option", [ existing ])), inferred
@@ -493,6 +493,10 @@ let same_refinable_wrapper left right =
       true
   | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args) ->
       left_name = right_name && List.length left_args = List.length right_args
+  | TConstraint left, TConstraint right ->
+      Types.constraint_compatible
+        (fun ~expected:_ ~actual:_ -> true)
+        left right
   | TTuple left, TTuple right -> List.length left = List.length right
   | TFn (left_params, _), TFn (right_params, _) ->
       List.length left_params = List.length right_params

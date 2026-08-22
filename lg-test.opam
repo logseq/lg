@@ -5,6 +5,9 @@ description:
   "A Clojure.test-compatible test runner with Alcotest and Melange backends."
 maintainer: ["Tienson Qin <tiensonqin@gmail.com>"]
 authors: ["Tienson Qin"]
+license: "MIT"
+homepage: "https://github.com/tiensonqin/lg"
+bug-reports: "https://github.com/tiensonqin/lg/issues"
 depends: [
   "ocaml" {>= "5.4"}
   "dune" {>= "3.17" & >= "3.17"}

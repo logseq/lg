@@ -752,16 +752,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                 ]
           | None -> (
               match ty with
-              | TOcaml_app (constraint_name, [ _element_ty; value_ty ])
-                when constraint_name = Types.seqable_constraint_name
-                     || constraint_name
-                        = Types.optional_seqable_constraint_name
-                     || constraint_name
-                        = Types.optional_sequential_constraint_name ->
+              | TConstraint
+                  (Seqable_constraint { requirement; storage = value_ty; _ }) ->
                   Semantic_ir.PTuple
                     [
                       Semantic_ir.PVar
-                        (if constraint_name = Types.seqable_constraint_name then
+                        (if requirement = Required then
                            name ^ "__seq"
                          else name ^ "__seq_optional");
                       capability_pattern name value_ty;

@@ -1,15 +1,14 @@
 let _ensure_edn_backend_linked = Lg_edn_backend.of_edn_string
 
-let repo_root () =
+let build_root () =
   Sys.executable_name |> Filename.dirname |> Filename.dirname
-  |> Filename.dirname |> Filename.dirname
 
 let object_directories () =
-  let root = repo_root () in
+  let root = build_root () in
   [
-    Filename.concat root "_build/default/runtime/.lg_runtime.objs/byte";
-    Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
-    Filename.concat root "_build/default/src/.lg.objs/byte";
+    Filename.concat root "runtime/.lg_runtime.objs/byte";
+    Filename.concat root "vendor/rrbvec/.rrbvec.objs/byte";
+    Filename.concat root "src/.lg.objs/byte";
   ]
 
 let object_path unit_name =

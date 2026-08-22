@@ -13,9 +13,12 @@ test -f "$package"
 
 output=$(mktemp "${TMPDIR:-/tmp}/lg-install-smoke.XXXXXX.ml")
 interface=$(mktemp "${TMPDIR:-/tmp}/lg-install-smoke.XXXXXX.mli")
-trap 'rm -f "$output" "$interface"' EXIT
+test_dir=$(mktemp -d "${TMPDIR:-/tmp}/lg-install-smoke.XXXXXX")
+trap 'rm -f "$output" "$interface"; rm -rf "$test_dir"' EXIT
 
-"$compiler" "$root/examples/person.cljc" -o "$output"
-grep -Fq 'let' "$output"
-"$compiler" --interface "$root/examples/person.cljc" -o "$interface"
-grep -Fq 'val label : string' "$interface"
+cd "$test_dir"
+"$compiler" "$root/test/install_smoke.cljc" -o "$output"
+grep -Fq 'let answer = 42' "$output"
+"$compiler" --interface "$root/test/install_smoke.cljc" -o "$interface"
+grep -Fq 'val answer : int' "$interface"
+"$compiler" --run "$root/test/install_smoke.cljc"

@@ -663,7 +663,9 @@ sed -n \
   $stdlib_sources >"$tmp/stdlib-runtime-aliases"
 
 (
-  grep -rhoE 'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
+  rg -o --no-filename \
+    -g '*.ml' -g '*.mli' -g '*.cljc' -g '*.lgi' \
+    'Lg_runtime\.Runtime_[A-Za-z0-9_]+(\.[a-z][A-Za-z0-9_]*)+' \
     "$lg_root/src" "$lg_root/stdlib"
   while IFS="$(printf '\t')" read -r module alias; do
     rg -o --no-filename "${alias}/[a-z][A-Za-z0-9_!?-]*" \

@@ -70,11 +70,9 @@ let rec core_type ?(type_variables = []) = function
   | Types.TVar name -> Ast_helper.Typ.var ~loc name
   | Types.TOcaml name ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name)) []
-  | Types.TOcaml_app (name, [ _capability ])
-    when name = Types.dynamic_constraint_name ->
+  | Types.TConstraint (Open_boundary_constraint _) ->
       type_constructor "Lg_runtime.Runtime_dynamic.t" []
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.truthy_constraint_name ->
+  | Types.TConstraint (Truthy_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -82,8 +80,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "bool" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.nil_predicate_constraint_name ->
+  | Types.TConstraint (Nil_predicate_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -91,8 +88,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "bool" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.printable_constraint_name ->
+  | Types.TConstraint (Printable_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -106,8 +102,7 @@ let rec core_type ?(type_variables = []) = function
               ] );
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.exception_data_constraint_name ->
+  | Types.TConstraint (Exception_data_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -115,8 +110,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "Lg_edn_backend.t" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.hashable_constraint_name ->
+  | Types.TConstraint (Hashable_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -124,8 +118,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "int" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.comparable_constraint_name ->
+  | Types.TConstraint (Comparable_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       let compare_ty =
         Ast_helper.Typ.arrow ~loc Nolabel value_ty
@@ -133,8 +126,7 @@ let rec core_type ?(type_variables = []) = function
              (type_constructor "int" []))
       in
       Ast_helper.Typ.tuple ~loc [ (None, compare_ty); (None, value_ty) ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.array_index_constraint_name ->
+  | Types.TConstraint (Array_index_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -142,8 +134,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "int" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ value_ty ])
-    when name = Types.symbol_predicate_constraint_name ->
+  | Types.TConstraint (Symbol_predicate_constraint value_ty) ->
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
         [
@@ -151,8 +142,7 @@ let rec core_type ?(type_variables = []) = function
                    (type_constructor "option" [ type_constructor "string" [] ]));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ key_ty; value_ty ])
-    when name = Types.contains_constraint_name ->
+  | Types.TConstraint (Contains_constraint { key = key_ty; storage = value_ty }) ->
       let key_ty = core_type ~type_variables key_ty in
       let value_ty = core_type ~type_variables value_ty in
       Ast_helper.Typ.tuple ~loc
@@ -162,8 +152,9 @@ let rec core_type ?(type_variables = []) = function
              (type_constructor "bool" []));
           (None, value_ty);
         ]
-  | Types.TOcaml_app (name, [ inner; container ])
-    when name = Types.seqable_constraint_name ->
+  | Types.TConstraint
+      (Seqable_constraint
+        { requirement = Required; element = inner; storage = container }) ->
       let element = core_type ~type_variables inner in
       let value =
         core_type ~type_variables (Types.constraint_value_type container)
@@ -174,9 +165,13 @@ let rec core_type ?(type_variables = []) = function
           (type_constructor "Seq.t" [ element ])
       in
       Ast_helper.Typ.tuple ~loc [ (None, adapter); (None, container) ]
-  | Types.TOcaml_app (name, [ inner; container ])
-    when name = Types.optional_seqable_constraint_name
-         || name = Types.optional_sequential_constraint_name ->
+  | Types.TConstraint
+      (Seqable_constraint
+        {
+          requirement = (Optional | Optional_sequential);
+          element = inner;
+          storage = container;
+        }) ->
       let element = core_type ~type_variables inner in
       let value =
         core_type ~type_variables (Types.constraint_value_type container)
@@ -188,8 +183,8 @@ let rec core_type ?(type_variables = []) = function
       in
       Ast_helper.Typ.tuple ~loc
         [ (None, type_constructor "option" [ adapter ]); (None, container) ]
-  | Types.TOcaml_app (name, [ witness_ty; value_ty ])
-    when String.starts_with ~prefix:Types.protocol_constraint_prefix name ->
+  | Types.TConstraint
+      (Protocol_constraint { witness = witness_ty; value = value_ty; _ }) ->
       Ast_helper.Typ.tuple ~loc
         [ (None,
             type_constructor "option"
@@ -301,6 +296,8 @@ let rec type_mentions name = function
   | Types.TOcaml_app (candidate, args) ->
       candidate = name || List.exists (type_mentions name) args
   | Types.TTuple args -> List.exists (type_mentions name) args
+  | Types.TConstraint constraint_ ->
+      List.exists (type_mentions name) (Types.constraint_children constraint_)
   | Types.TArray inner | Types.TRef inner | Types.TList inner
   | Types.TVector inner | Types.TSet inner | Types.TSeq inner
   | Types.TNullable inner ->
@@ -585,6 +582,10 @@ let rec collect_set_modules_from_type module_path modules = function
       List.fold_left
         (collect_set_modules_from_type module_path)
         modules arguments
+  | Types.TConstraint constraint_ ->
+      List.fold_left
+        (collect_set_modules_from_type module_path)
+        modules (Types.constraint_children constraint_)
   | Types.TFn (parameters, return_ty) ->
       List.fold_left
         (collect_set_modules_from_type module_path)
