@@ -53,6 +53,50 @@ let prepare_inferred_recursive_fn =
 let prepare_inferred_recursive_fn_with_return =
   Expression_elaborator.prepare_inferred_recursive_fn_with_return
 
+let mutation_value_type = function
+  | FString _ -> Some TString
+  | FInt _ -> Some TInt
+  | FFloat _ -> Some TFloat
+  | FBool _ -> Some TBool
+  | FChar _ -> Some TChar
+  | FKeyword _ -> Some TKeyword
+  | FList (FSymbol operation :: _)
+    when operation = "str" || operation = "__lg_str"
+         || String.ends_with ~suffix:"/str" operation ->
+      Some TString
+  | _ -> None
+
+let refine_mutable_bindings scope env form =
+  let rec walk env = function
+    | FList
+        (FSymbol operation :: FSymbol reference :: FSymbol updater
+       :: [ value ])
+      when
+        (operation = "swap!" || operation = "__lg_swap!"
+        || String.ends_with ~suffix:"/swap!" operation)
+        && (updater = "conj" || updater = "__lg_conj"
+           || String.ends_with ~suffix:"/conj" updater) ->
+        let env = walk env value in
+        let key = Names.scoped_key scope reference in
+        (match (Env.find_opt key env, mutation_value_type value) with
+        | ( Some binding,
+            Some value_ty ) -> (
+            match binding.ty with
+            | TRef (TVector (TUnknown | TMeta _ | TVar _)) ->
+                Env.add key
+                  { binding with ty = TRef (TVector value_ty); scheme = None }
+                  env
+            | _ -> env)
+        | _ -> env)
+    | FList forms | FVector forms -> List.fold_left walk env forms
+    | FMap pairs ->
+        List.fold_left
+          (fun env (key, value) -> walk (walk env key) value)
+          env pairs
+    | _ -> env
+  in
+  walk env form
+
 let resolve_auto_keywords scope env form =
   let resolve keyword =
     if not (String.starts_with ~prefix:"::" keyword) then Ok keyword
@@ -395,12 +439,14 @@ let compile_multimethod_dispatch scope env dispatch_form =
                       ( Semantic_ir.Ident
                           "Lg_runtime.Runtime_multimethod.dynamic_keyword",
                         [ Semantic_ir.String keyword ] );
-                  ] ) ) )
+                  ] ) ),
+          [ TRecord [ Types.make_field keyword TUnknown ] ] )
   | FSymbol "identity" ->
       Ok
         ( 1,
-          Semantic_ir.Fun ([ Semantic_ir.PVar args_name ], list_nth args_name 0)
-        )
+          Semantic_ir.Fun
+            ([ Semantic_ir.PVar args_name ], list_nth args_name 0),
+          [ TUnknown ] )
   | FSymbol "first" ->
       Ok
         ( 1,
@@ -408,21 +454,29 @@ let compile_multimethod_dispatch scope env dispatch_form =
             ( [ Semantic_ir.PVar args_name ],
               Semantic_ir.Apply
                 ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.first_value",
-                  [ list_nth args_name 0 ] ) ) )
+                  [ list_nth args_name 0 ] ) ),
+          [ TUnknown ] )
   | FList (FSymbol "fn" :: (FVector params as params_form) :: body_forms) ->
       let arity = List.length params in
       let overrides = List.map (fun _ -> Some dynamic_ty) params in
-      Result.bind
-        (Expression_elaborator.compile_fn ~param_type_overrides:overrides scope
-           env params_form body_forms)
-        (fun dispatch ->
-          Ok
-            ( arity,
-              Semantic_ir.Fun
-                ( [ Semantic_ir.PVar args_name ],
-                  Semantic_ir.Apply
-                    ( dispatch.semantic_expr,
-                      List.init arity (list_nth args_name) ) ) ))
+      Result.bind (prepare_fn scope env params_form body_forms)
+        (fun static_dispatch ->
+          let static_parameter_tys =
+            static_dispatch.param_bindings
+            |> List.map (fun (_key, (binding : binding)) -> binding.ty)
+          in
+          Result.bind
+            (Expression_elaborator.compile_fn ~param_type_overrides:overrides
+               scope env params_form body_forms)
+            (fun dispatch ->
+              Ok
+                ( arity,
+                  Semantic_ir.Fun
+                    ( [ Semantic_ir.PVar args_name ],
+                      Semantic_ir.Apply
+                        ( dispatch.semantic_expr,
+                          List.init arity (list_nth args_name) ) ),
+                  static_parameter_tys )))
   | _ ->
       Error.error
         "defmulti currently supports keyword, identity, and fn dispatch forms"
@@ -438,6 +492,31 @@ let compile_multimethod_default scope env = function
         (fun value -> value.Types.semantic_expr)
         (Multimethod_dynamic_boundary.compile_form ~compile_expr scope env value)
   | _ -> Error.error "defmulti options currently support only :default"
+
+let multimethod_dispatch_value_type = function
+  | FKeyword _ -> Some TKeyword
+  | FString _ -> Some TString
+  | FInt _ -> Some TInt
+  | FFloat _ -> Some TFloat
+  | FChar _ -> Some TChar
+  | FBool _ -> Some TBool
+  | FRegex _ -> Some TRegex
+  | FSymbol "nil" -> Some TNil
+  | _ -> None
+
+let refine_multimethod_dispatch_fields dispatch_ty parameter_tys =
+  let refine = function
+    | TRecord fields ->
+        TRecord
+          (List.map
+             (fun (field : field) ->
+               match field.ty with
+               | TUnknown | TMeta _ | TVar _ -> { field with ty = dispatch_ty }
+               | _ -> field)
+             fields)
+    | ty -> ty
+  in
+  List.map refine parameter_tys
 
 let allocate_multi_arity_local_records env next_type
     (prepared : Expression_elaborator.prepared_multi_arity_fn) =
@@ -722,8 +801,40 @@ let deferred_value_type env (expr : Types.typed_expr) =
     expr.semantic_expr
 
 let preserves_required_seqable_protocol_result (expr : Types.typed_expr) =
-  Semantic_ir.exists_identifier (String.equal "__lg_seqable_value")
-    expr.semantic_expr
+  let method_returns_seqable_capability = function
+    | TFn (_, return_ty) -> Option.is_some (Types.seqable_constraint_info return_ty)
+    | TOverloaded_fn arities ->
+        List.exists
+          (fun (arity : fn_arity) ->
+            Option.is_some (Types.seqable_constraint_info arity.return_ty))
+          arities
+    | _ -> false
+  in
+  let rec contains_required_result = function
+    | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
+        match Types.protocol_constraint_info ty with
+        | Some (_, witness_ty, value_ty) ->
+            Option.fold ~none:false
+              ~some:(List.exists method_returns_seqable_capability)
+              (Types.protocol_witness_method_types witness_ty)
+            || contains_required_result value_ty
+        | None -> false)
+    | TFn (parameters, return_ty) ->
+        List.exists contains_required_result parameters
+        || contains_required_result return_ty
+    | TOverloaded_fn arities ->
+        List.exists
+          (fun (arity : fn_arity) ->
+            List.exists contains_required_result arity.fixed_params
+            || Option.fold ~none:false ~some:contains_required_result
+                 arity.rest_param
+            || contains_required_result arity.return_ty)
+          arities
+    | TNullable value_ty | TOcaml_app ("option", [ value_ty ]) ->
+        contains_required_result value_ty
+    | _ -> false
+  in
+  contains_required_result expr.ty
 
 let located_value_pattern form pattern =
   match Source_context.find form with
@@ -779,7 +890,11 @@ let prepare_function scope env name params body_forms =
         (fun (parts : Expression_support.compiled_fn_parts) ->
           Result.map
             (fun semantic_expr ->
-              { parts with body = typed_ir return_type semantic_expr })
+              {
+                parts with
+                body = typed_ir return_type semantic_expr;
+                return_param_index_hint = None;
+              })
             (Call_elaborator.adapt_value_to_type env return_type parts.body))
   | Some _ -> Error.error ("function signature expected for " ^ name)
   | None ->
@@ -1271,6 +1386,7 @@ and compile_resolved scope env next_type form =
         Require.remove_source_core_macro_alias env scope name
     | _ -> env
   in
+  let env = refine_mutable_bindings scope env form in
   match form with
   | FList
       (FSymbol ("defn" | "defn-")
@@ -1991,7 +2107,31 @@ and compile_resolved scope env next_type form =
                       :: List.map
                            (fun _ -> Some (Type_solver.fresh ()))
                            arguments
-                  | _ -> [ Some receiver_ty ]
+                  | Some protocol_name, _, _ -> (
+                      match
+                        Protocol_elaborator.marker scope env protocol_name
+                          method_name
+                      with
+                      | Ok marker ->
+                          let method_ty =
+                            match marker.ty with
+                            | TOverloaded_fn arities ->
+                                arities
+                                |> List.find_opt (fun (candidate : fn_arity) ->
+                                       Option.is_none candidate.rest_param
+                                       && List.length candidate.fixed_params
+                                          = arity)
+                                |> Option.map (fun candidate ->
+                                       TFn
+                                         ( candidate.fixed_params,
+                                           candidate.return_ty ))
+                                |> Option.value ~default:marker.ty
+                            | method_ty -> method_ty
+                          in
+                          Protocol_elaborator.protocol_parameter_overrides
+                            receiver_ty method_ty
+                      | Error _ -> [ Some receiver_ty ])
+                  | None, _, _ -> [ Some receiver_ty ]
                 in
                 if skip_unresolved_print then
                   compile_methods
@@ -2105,23 +2245,57 @@ and compile_resolved scope env next_type form =
         ( compile_multimethod_dispatch scope env dispatch_form,
           compile_multimethod_default scope env option_forms )
       with
-      | Ok (arity, dispatch_fn), Ok default_dispatch ->
+      | Ok (arity, dispatch_fn, parameter_tys), Ok default_dispatch ->
           let source_key = Names.scoped_key scope name in
           let ocaml_name = Names.ocaml_binding_name scope name in
           let dispatch_name = ocaml_name ^ "_dispatch_fn" in
+          let method_table_name = ocaml_name ^ "_method_table" in
+          let method_entries_name = ocaml_name ^ "_method_entries" in
+          let dynamic_args_name = ocaml_name ^ "_dynamic_args" in
+          let selected_method_name = ocaml_name ^ "_selected_method" in
           let arg_names = dynamic_arg_names arity in
+          let arg_values =
+            List.map (fun name -> Semantic_ir.Ident name) arg_names
+          in
+          let method_entries = Semantic_ir.Ident method_entries_name in
           let invoke =
-            Semantic_ir.Apply
-              ( Semantic_ir.Ident "Lg_runtime.Runtime_multimethod.invoke",
-                [
-                  Semantic_ir.String source_key;
-                  Semantic_ir.List
-                    (List.map (fun name -> Semantic_ir.Ident name) arg_names);
+            Semantic_ir.Match
+              ( Semantic_ir.Apply
+                  ( Semantic_ir.Ident
+                      "Lg_runtime.Runtime_multimethod.select_method",
+                    [ Semantic_ir.String source_key;
+                      Semantic_ir.Ident dynamic_args_name;
+                      method_entries;
+                    ] ),
+                [ ( Semantic_ir.PConstructor
+                      ("Some", Some (Semantic_ir.PVar selected_method_name)),
+                    Semantic_ir.Apply
+                      (Semantic_ir.Ident selected_method_name, arg_values) );
+                  ( Semantic_ir.PConstructor ("None", None),
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident
+                          "Lg_runtime.Runtime_multimethod.no_method",
+                        [ Semantic_ir.String source_key ] ) );
                 ] )
+          in
+          let render =
+            Semantic_ir.Fun
+              ( Semantic_ir.PVar dynamic_args_name
+                :: List.map (fun name -> Semantic_ir.PVar name) arg_names,
+                Semantic_ir.Let
+                  ( [ ( Semantic_ir.PVar method_entries_name,
+                        Semantic_ir.Prefix
+                          ("!", Semantic_ir.Ident method_table_name) );
+                    ],
+                    invoke ) )
           in
           let expression =
             Semantic_ir.Let
-              ( [ (Semantic_ir.PVar dispatch_name, dispatch_fn) ],
+              ( [ (Semantic_ir.PVar dispatch_name, dispatch_fn);
+                  ( Semantic_ir.PVar method_table_name,
+                    Semantic_ir.Apply
+                      (Semantic_ir.Ident "ref", [ Semantic_ir.List [] ]) );
+                ],
                 Semantic_ir.Sequence
                   [
                     Semantic_ir.Apply
@@ -2131,20 +2305,21 @@ and compile_resolved scope env next_type form =
                           Semantic_ir.Ident dispatch_name;
                           default_dispatch;
                         ] );
-                    Semantic_ir.Fun
-                      ( List.map (fun name -> Semantic_ir.PVar name) arg_names,
-                        invoke );
+                    Semantic_ir.Tuple
+                      [ Semantic_ir.Ident method_table_name; render ];
                   ] )
           in
           let binding =
-            Types.binding ~multimethod:true ocaml_name
-              (TFn (List.init arity (fun _ -> dynamic_ty), dynamic_ty))
+            Types.binding ~multimethod:true ~multimethod_definition:expression
+              ocaml_name
+              (TFn
+                 (parameter_tys, TUnknown))
           in
           Ok
             ( scope,
               Env.add source_key binding env,
               next_type,
-              Value_binding { pattern = Named ocaml_name; expression } )
+              Comment ("deferred multimethod " ^ source_key) )
       | (Error _ as error), _ | _, (Error _ as error) -> error)
   | FList
       (FSymbol "defmethod"
@@ -2205,7 +2380,7 @@ and compile_resolved scope env next_type form =
                     Semantic_ir.Apply
                       ( Semantic_ir.Ident callback_name,
                         [ Semantic_ir.Ident event_name ] );
-                    Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil";
+                    Semantic_ir.Unit;
                   ] )
           in
           let expression =
@@ -2244,47 +2419,90 @@ and compile_resolved scope env next_type form =
       | Some binding -> (
           match binding.ty with
           | TFn (parameter_tys, _) ->
+              let parameter_tys =
+                match
+                  ( binding.multimethod_method_types,
+                    multimethod_dispatch_value_type dispatch_form )
+                with
+                | [], Some dispatch_ty ->
+                    refine_multimethod_dispatch_fields dispatch_ty parameter_tys
+                | _ -> parameter_tys
+              in
               let arity = List.length parameter_tys in
               if arity <> List.length params then
                 Error.error
                   ("defmethod for " ^ method_name ^ " expects "
                  ^ string_of_int arity ^ " parameters")
               else
-                let overrides = List.map (fun _ -> Some dynamic_ty) params in
-                (match
+                 (match
                    ( Multimethod_dynamic_boundary.compile_form ~compile_expr scope
                        env dispatch_form,
-                     Expression_elaborator.compile_fn
-                       ~param_type_overrides:overrides scope env params_form
+                     prepare_fn
+                       ~param_type_overrides:
+                         (List.map
+                            (function
+                              | TUnknown | TMeta _ | TVar _ -> None
+                              | ty -> Some ty)
+                            parameter_tys)
+                       ~refine_open_overrides:true
+                       ~materialize_open_equality:true scope env params_form
                        body_forms )
                  with
-                 | Ok dispatch, Ok implementation ->
-                     let return_ty =
-                       match implementation.ty with
-                       | TFn (_, return_ty) -> return_ty
-                       | ty -> ty
+                 | Ok dispatch, Ok parts ->
+                     let env, next_type, return_type_items, parts =
+                       allocate_function_return_record env next_type parts
+                     in
+                     let env, next_type, local_type_items, parts =
+                       allocate_function_local_records env next_type parts
                      in
                      let method_name = next_multimethod_method_name () in
-                     let implementation_name = method_name ^ "_implementation" in
-                     let args_name = method_name ^ "_args" in
-                     let raw_call =
-                       Semantic_ir.Apply
-                         ( Semantic_ir.Ident implementation_name,
-                           List.init arity (list_nth args_name) )
+                     let parameter_tys =
+                       parts.param_bindings
+                       |> List.map (fun (_key, (binding : binding)) -> binding.ty)
                      in
-                     (match
-                        Multimethod_dynamic_boundary.convert_type return_ty raw_call
-                      with
+                     let row_param_types =
+                       row_param_type_names ~env binding.ocaml_name parameter_tys
+                     in
+                     let row_type_items =
+                       match binding.multimethod_method_types with
+                       | [] -> row_type_items row_param_types parameter_tys
+                       | _ -> []
+                     in
+                     let implementation =
+                       fn_code ~row_param_type_names:row_param_types parts
+                     in
+                     let method_ty = implementation.ty in
+                     let unified_ty =
+                       match binding.multimethod_method_types with
+                       | [] -> Ok method_ty
+                       | _ -> (
+                           match
+                             Type_solver.unify Type_solver.empty binding.ty
+                               method_ty
+                           with
+                           | Ok substitutions ->
+                               Ok (Type_solver.apply substitutions binding.ty)
+                           | Error _ ->
+                               Error.error
+                                 ("defmethod " ^ method_name
+                                ^ " requires a closed sum type for incompatible method signatures: "
+                                ^ Types.source_name binding.ty ^ " versus "
+                                ^ Types.source_name method_ty))
+                     in
+                     let implementation_name = method_name ^ "_implementation" in
+                     (match unified_ty with
                       | Error _ as error -> error
-                      | Ok dynamic_call ->
-                          let callback =
-                            Semantic_ir.Fun
-                              ( [ Semantic_ir.PVar args_name ],
-                                dynamic_call )
+                      | Ok unified_ty ->
+                          let dispatch_name = method_name ^ "_dispatch" in
+                          let method_table =
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident "fst",
+                                [ Semantic_ir.Ident binding.ocaml_name ] )
                           in
                           let expression =
                             Semantic_ir.Let
                               ( [
+                                  (Semantic_ir.PVar dispatch_name, dispatch.semantic_expr);
                                   ( Semantic_ir.PVar implementation_name,
                                     implementation.semantic_expr );
                                 ],
@@ -2295,18 +2513,61 @@ and compile_resolved scope env next_type form =
                                           "Lg_runtime.Runtime_multimethod.register_method",
                                         [
                                           Semantic_ir.String source_key;
-                                          dispatch.semantic_expr;
-                                          callback;
+                                          Semantic_ir.Ident dispatch_name;
                                         ] );
-                                    Semantic_ir.Unit;
+                                    Semantic_ir.Infix
+                                      ( ":=",
+                                        method_table,
+                                            Semantic_ir.Cons
+                                          ( Semantic_ir.Tuple
+                                              [ Semantic_ir.Ident dispatch_name;
+                                                Semantic_ir.Ident
+                                                  implementation_name;
+                                              ],
+                                            Semantic_ir.Prefix ("!", method_table) ) );
+                                    Semantic_ir.Ident implementation_name;
                                   ] )
+                          in
+                          let definition_items =
+                            match
+                              ( binding.multimethod_method_types,
+                                binding.multimethod_definition )
+                            with
+                            | [], Some definition ->
+                                [
+                                  Value_binding
+                                    {
+                                      pattern = Named binding.ocaml_name;
+                                      expression = definition;
+                                    };
+                                ]
+                            | _ -> []
+                          in
+                          let binding =
+                            {
+                              binding with
+                              ty = unified_ty;
+                              row_param_types =
+                                (match binding.multimethod_method_types with
+                                | [] -> row_param_types
+                                | _ -> binding.row_param_types);
+                              multimethod_method_types =
+                                method_ty :: binding.multimethod_method_types;
+                              multimethod_definition = None;
+                            }
                           in
                           Ok
                             ( scope,
-                              env,
+                              Env.add source_key binding env,
                               next_type,
-                              Value_binding
-                                { pattern = Named method_name; expression } ))
+                              Group
+                                (return_type_items @ local_type_items
+                               @ row_type_items
+                               @ definition_items
+                               @ [
+                                   Value_binding
+                                     { pattern = Named method_name; expression };
+                                 ]) ))
                  | (Error _ as error), _ | _, (Error _ as error) -> error)
           | _ -> Error.error (method_name ^ " is not a multimethod")))
   | FList (FSymbol "defmethod" :: _) ->
@@ -2616,8 +2877,24 @@ and compile_resolved scope env next_type form =
       in
       Result.bind (compile_methods env next_type [] method_definitions)
         (fun (env, next_type, method_bindings) ->
-          compile_definitions env next_type [] method_bindings
-            function_definitions)
+          let rec try_definition_orders first_error prefix = function
+            | [] -> (
+                match first_error with
+                | Some error -> Error error
+                | None ->
+                    compile_definitions env next_type [] method_bindings [])
+            | definition :: rest -> (
+                let ordered = definition :: (rest @ List.rev prefix) in
+                match
+                  compile_definitions env next_type [] method_bindings ordered
+                with
+                | Ok _ as result -> result
+                | Error error ->
+                    try_definition_orders
+                      (Option.value first_error ~default:error |> Option.some)
+                      (definition :: prefix) rest)
+          in
+          try_definition_orders None [] function_definitions)
   | FList
       [
         FSymbol "defn-signature";
@@ -3460,7 +3737,11 @@ and compile_resolved scope env next_type form =
               match expr.ty with
               | TFn _ ->
                   let published_ty =
-                    if preserves_required_seqable_protocol_result expr then
+                    if
+                      Option.is_some
+                        (sidecar_function_signature scope env name)
+                      || preserves_required_seqable_protocol_result expr
+                    then
                       expr.ty
                     else Protocol.refine_source_function_type env expr.ty
                   in
@@ -3812,6 +4093,51 @@ and compile_resolved scope env next_type form =
                 { pattern = Ignore_pattern; expression = expr.semantic_expr } ))
   | FList (FSymbol "recur" :: _) ->
       Error.error "recur is only valid in a loop tail position"
+  | FList
+      [
+        FSymbol operation;
+        FSymbol array_name;
+        _index;
+        value;
+      ] as form
+    when operation = "aset" || operation = "__lg_aset"
+         || operation = "unsafe-aset"
+         || String.ends_with ~suffix:"/aset" operation
+         || String.ends_with ~suffix:"/unsafe-aset" operation -> (
+      match (compile_expr scope env value, compile_expr scope env form) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok value, Ok expr ->
+          let key = Names.scoped_key scope array_name in
+          let env =
+            match Env.find_opt key env with
+            | Some binding ->
+                let element_ty =
+                  match binding.ty with
+                  | TArray
+                      (TNullable (TUnknown | TMeta _ | TVar _)
+                      | TOcaml_app
+                          ("option", [ TUnknown | TMeta _ | TVar _ ])) ->
+                      Some (TNullable value.ty)
+                  | TArray (TUnknown | TMeta _ | TVar _) -> Some value.ty
+                  | _ -> None
+                in
+                Option.fold ~none:env
+                  ~some:(fun element_ty ->
+                    Env.add key
+                      { binding with ty = TArray element_ty; scheme = None }
+                      env)
+                  element_ty
+            | None -> env
+          in
+          Ok
+            ( scope,
+              env,
+              next_type,
+              Value_binding
+                {
+                  pattern = Ignore_pattern;
+                  expression = expr.semantic_expr;
+                } ))
   | FList (FSymbol ("defn" | "defn-") :: _) ->
       Error.error "defn expects a name, parameter vector, and body"
   | FList (FSymbol "defonce" :: _) ->

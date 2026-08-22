@@ -398,6 +398,37 @@ let rec unify substitutions left right =
     | TNullable left, TOcaml_app ("option", [ right ])
     | TOcaml_app ("option", [ left ]), TNullable right ->
         unify substitutions left right
+    | ( TOcaml_app
+          ( ( "__lg_seqable_constraint"
+            | "__lg_optional_seqable_constraint"
+            | "__lg_optional_sequential_constraint" ),
+            [ element_ty; storage_ty ] ),
+        ((TList actual | TVector actual | TSet actual | TSeq actual
+         | TArray actual) as collection_ty) )
+    | ( ((TList actual | TVector actual | TSet actual | TSeq actual
+         | TArray actual) as collection_ty),
+        TOcaml_app
+          ( ( "__lg_seqable_constraint"
+            | "__lg_optional_seqable_constraint"
+            | "__lg_optional_sequential_constraint" ),
+            [ element_ty; storage_ty ] ) ) ->
+        Result.bind (unify substitutions element_ty actual)
+          (fun substitutions ->
+            unify substitutions storage_ty collection_ty)
+    | ( TOcaml_app
+          ( ( "__lg_seqable_constraint"
+            | "__lg_optional_seqable_constraint"
+            | "__lg_optional_sequential_constraint" ),
+            [ element_ty; storage_ty ] ),
+        TString )
+    | ( TString,
+        TOcaml_app
+          ( ( "__lg_seqable_constraint"
+            | "__lg_optional_seqable_constraint"
+            | "__lg_optional_sequential_constraint" ),
+            [ element_ty; storage_ty ] ) ) ->
+        Result.bind (unify substitutions element_ty TChar)
+          (fun substitutions -> unify substitutions storage_ty TString)
     | TOcaml_app (left_name, left_args), TOcaml_app (right_name, right_args)
       when left_name = right_name && List.length left_args = List.length right_args
       ->

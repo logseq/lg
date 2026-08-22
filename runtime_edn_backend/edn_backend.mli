@@ -13,6 +13,7 @@ type t =
   | Ratio of string
   | Regex of string
   | List of t array
+  | Seq of t Seq.t
   | Vector of t array
   | Int4_vector of int * int * t * int
   | Int4_array of int array * int array * t array * int array

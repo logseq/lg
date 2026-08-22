@@ -19,7 +19,7 @@ let of_list convert values =
   Lg_edn_backend.List (Array.of_list (List.map convert values))
 
 let of_seq convert values =
-  Lg_edn_backend.List (Array.of_seq (Seq.map convert values))
+  Lg_edn_backend.Seq (Seq.map convert values)
 
 let of_vector convert values =
   Lg_edn_backend.Vector (Array.map convert (Rrbvec.to_array values))

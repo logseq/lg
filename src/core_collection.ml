@@ -42,12 +42,6 @@ let first env collection =
       Ok
         (typed_ir (TNullable (TTuple [ key_ty; value_ty ]))
            (apply "Lg_runtime.Runtime_map.first_opt" [ collection.semantic_expr ]))
-  | None
-    when Types.equal collection.ty TUnknown
-         || (match collection.ty with TMeta _ | TVar _ -> true | _ -> false) ->
-      Ok
-        (typed_ir (TNullable (TTuple [ TUnknown; TUnknown ]))
-           (apply "Lg_runtime.Runtime_map.first_opt" [ collection.semantic_expr ]))
   | None -> (
       match collection.ty with
       | TTuple (first_type :: remaining_types) ->

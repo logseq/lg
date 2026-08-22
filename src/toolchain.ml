@@ -887,10 +887,11 @@ module Ocaml_typechecker = struct
     | Some (cached_dirs, env) when cached_dirs = include_dirs -> env
     | _ ->
         Ocaml_signature.init ();
-        [ "unix"; "str" ]
-        |> List.map (Filename.concat Config.standard_library)
-        |> List.filter Sys.file_exists
-        |> List.iter (Load_path.add_dir ~hidden:false);
+        if not (Ocaml_signature.is_melange_target ()) then
+          [ "unix"; "str" ]
+          |> List.map (Filename.concat Config.standard_library)
+          |> List.filter Sys.file_exists
+          |> List.iter (Load_path.add_dir ~hidden:false);
         let env = Compmisc.initial_env () in
         initial_env_cache := Some (include_dirs, env);
         env
@@ -959,8 +960,29 @@ let with_source_scope scope state =
     typecheck_state;
   }
 
+let target_include_dirs target include_dirs =
+  match target with
+  | Target.Native | Target.Js_of_ocaml ->
+      List.filter
+        (fun directory -> Filename.basename directory <> "melange")
+        include_dirs
+  | Target.Melange ->
+      let melange_parents =
+        include_dirs
+        |> List.filter (fun directory ->
+               Filename.basename directory = "melange")
+        |> List.map Filename.dirname
+      in
+      List.filter
+        (fun directory ->
+          Filename.basename directory <> "byte"
+          && Filename.basename directory <> "native"
+          && not (List.mem directory melange_parents))
+        include_dirs
+
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
+  Ocaml_signature.set_melange_target (target = Target.Melange);
   let packages =
     match target with
     | Target.Melange -> "melange" :: packages
@@ -970,6 +992,7 @@ let restore_ocaml_environment ?(target = Target.default) ~packages state
   match Ocaml_package.include_dirs packages with
   | Error _ as error -> error
   | Ok include_dirs ->
+      let include_dirs = target_include_dirs target include_dirs in
       Ocaml_signature.add_include_dirs include_dirs;
       let rec restore compiler_env index = function
         | [] -> Ok { state with ocaml_env = compiler_env }
@@ -1001,6 +1024,7 @@ let required_packages_from_ast ast =
   loop [] ast
 
 let prepare_packages target ast =
+  Ocaml_signature.set_melange_target (target = Target.Melange);
   match required_packages_from_ast ast with
   | Error _ as err -> err
   | Ok packages -> (
@@ -1013,6 +1037,7 @@ let prepare_packages target ast =
       match Ocaml_package.include_dirs packages with
       | Error _ as err -> err
       | Ok include_dirs ->
+          let include_dirs = target_include_dirs target include_dirs in
           Ocaml_signature.add_include_dirs include_dirs;
           Ok packages)
 

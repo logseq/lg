@@ -231,18 +231,60 @@ OCaml interop is allowed through declared package modules, signatures, concrete
 host types, and explicit constructors. It must preserve the declared OCaml type
 and must not pass through a universal boxed value.
 
+### Truthiness remains static
+
+Clojure truthiness treats only `nil` and `false` as false. Conditions and
+`not` must preserve that behavior without erasing their operands into a
+universal runtime value. A concrete boolean is negated directly; concrete
+always-truthy values and `nil` may be reduced after preserving operand
+evaluation; options, sequences, closed EDN values, and documented external
+boundaries use their precise static truthiness operation. An unresolved
+function parameter acquires a truthiness capability during inference, and the
+witness remains limited to that generic function boundary. Ordinary inlined
+`not` calls must not allocate a witness pair or callback.
+
+Direct source `compare` calls follow the same boundary rule. When both operands
+have one concrete comparable type, the source wrapper expands to the static
+comparator intrinsic and must not allocate a comparable witness pair. A
+first-class or genuinely generic `compare` value retains its typed capability;
+inlining does not erase that polymorphic boundary.
+
+Direct source `name` calls also specialize at the call site. Concrete keyword,
+symbol, and string operands use their static coercion without a witness;
+unresolved generic operands retain `INameCoercion`, and unsupported concrete
+operands preserve the source function's runtime `Invalid_argument` behavior.
+
 ## DataScript model
 
 DataScript is a known domain and therefore is not an open dynamic boundary.
 Follow the `datascript-ocaml` approach while retaining reusable upstream
 algorithms.
 
+### Repository ownership
+
+The LG repository owns the compiler, runtime, and standard library only. It
+must not contain DataScript or persistent-sorted-set implementation sources or
+their test suites.
+
+The standalone `datascript-lg` project owns the DataScript LG sources, closed
+OCaml runtime types, upstream compatibility tests, differential fixtures,
+audits, and benchmarks. It consumes LG through the installed `lg` and
+`lg-test` packages. The standalone `persistent-sorted-set-lg` project owns the
+persistent sorted set implementation, tests, audits, and benchmarks;
+`datascript-lg` consumes it through the installed
+`persistent-sorted-set-lg` package.
+
+LG keeps a repository-boundary test that verifies no copied implementation
+remains here without introducing a reverse dependency on downstream packages.
+DataScript behavior and performance changes are developed and tested in the
+owning standalone project.
+
 ### Upstream behavior is authoritative
 
 The authoritative compatibility baseline is the Logseq DataScript fork at
 commit `3f141af97b70e1f14c65eaa119acd822ebece37e`. The repository URL, source
 mapping, generated public API manifest, and differential fixture inventory are
-recorded in `test/datascript/UPSTREAM.md`.
+recorded in `datascript-lg/test/datascript/UPSTREAM.md`.
 
 Static typing may change the representation of an upstream value, but it must
 not remove an upstream operation, arity, predicate composition rule, index
@@ -278,6 +320,15 @@ The currently accepted measured representation optimizations are narrow:
 - Pull uses the upstream list-shaped frame stack and caches the current datom
   plus its lazy tail. This preserves upstream cursor movement while avoiding
   repeated evaluation of an unmemoized sequence node.
+- Pull frame dispatch returns the same one- or two-frame sequence as a typed
+  list and prepends it with `List.rev_append`. Frame order and transitions are
+  unchanged; the port does not build a temporary RRB vector merely to fold it
+  back into the list-shaped stack.
+- Direct `lookup-entity` calls inline its typed implementation instead of
+  crossing the forward-declaration cell required by `deftype` protocol methods.
+  Recursive entity benchmark traversal consumes the closed
+  `EntityReferenceSet.items` vector in its existing order, avoiding a generic
+  seq-to-vector round trip without changing the traversed tree.
 - Pull entity accumulators remain persistent typed maps. LG's current
   transient hash builder has a higher fixed cost for the small maps produced
   per entity; restoring it made all three pull benchmarks slower. This changes
@@ -424,7 +475,7 @@ workloads and slower on 7. Melange is faster on 4 and slower on 24. The
 remaining regressions are real acceptance failures, not accepted representation
 differences. Serialization, `init`, predicate queries, and `pull-many` are the
 highest-priority shared failures. Full results and margin reruns are recorded
-in `test/datascript/benchmark/RESULTS.md`.
+in `datascript-lg/test/datascript/benchmark/RESULTS.md`.
 
 When an upstream API accepts several known shapes, LG represents those shapes
 with a closed sum, record, option, or static protocol. It does not make the API
@@ -707,7 +758,7 @@ behavior.
 
 ## Change checklist
 
-Before merging a compiler, runtime, or DataScript change, verify:
+Before merging a compiler or runtime change, verify:
 
 - no new source-level dynamic type or escape hatch was introduced;
 - known heterogeneous values use a closed sum;
@@ -717,4 +768,8 @@ Before merging a compiler, runtime, or DataScript change, verify:
 - generated code does not use `Obj.magic`;
 - generated DataScript hot paths contain no `Runtime_dynamic` references;
 - focused rejection tests cover invalid heterogeneous and interop cases;
-- DataScript runtime tests and the relevant native benchmark pass.
+- when the change affects DataScript, the standalone `datascript-lg` runtime,
+  parity, differential, and relevant benchmark gates pass;
+- when the change affects persistent sorted sets, the standalone
+  `persistent-sorted-set-lg` Native, Melange, js_of_ocaml, audit, and benchmark
+  gates pass.

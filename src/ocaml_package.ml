@@ -57,7 +57,11 @@ let query package =
   if not (valid_name package) then
     Error.error ("invalid OCaml package name " ^ package)
   else
-    match Hashtbl.find_opt query_cache package with
+    let cache_key =
+      package ^ "\000"
+      ^ (Sys.getenv_opt "OCAMLPATH" |> Option.value ~default:"")
+    in
+    match Hashtbl.find_opt query_cache cache_key with
     | Some result -> result
     | None ->
         let argv = [| "ocamlfind"; "query"; "-r"; "-format"; "%d"; package |] in
@@ -71,14 +75,17 @@ let query package =
         let _diagnostic = read_lines stderr in
         let result =
           match Unix.close_process_full (stdout, stdin, stderr) with
-          | WEXITED 0 -> Ok directories
+          | WEXITED 0 ->
+              Ok
+                (List.sort_uniq String.compare
+                   (directories @ direct_ocamlpath_directories package))
           | WEXITED _ | WSIGNALED _ | WSTOPPED _ -> (
               match direct_ocamlpath_directories package with
               | _ :: _ as directories -> Ok directories
               | [] ->
                   Error.error ("OCaml package " ^ package ^ " was not found"))
         in
-        Hashtbl.replace query_cache package result;
+        Hashtbl.replace query_cache cache_key result;
         result
 
 let include_dirs packages =

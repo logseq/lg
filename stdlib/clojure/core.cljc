@@ -4,7 +4,9 @@
 ; This LG port follows ClojureScript's cljs.core source algorithms.
 
 (ns clojure.core
-  (:require [ocaml.Buffer :as buffer]
+  (:require [ocaml.package/lg.runtime]
+            [ocaml.package/lg.rrbvec]
+            [ocaml.Buffer :as buffer]
             [ocaml.Stdlib :as stdlib]
             [ocaml.Rrbvec :as rrb-vector]
             [ocaml.Lg_runtime.Runtime_array :as runtime-array]
@@ -133,7 +135,9 @@
      (-coerce-native-identifier-name [value]
        (invalid-native-identifier-part "identifier"))))
 
-(defn name [value]
+(defn name
+  {:inline (fn [value] (list '__lg_name value))}
+  [value]
   (INameCoercion/-coerce-name value))
 
 (defn- keyword-one [value]
@@ -453,7 +457,9 @@
 (defn hash [value]
   (__lg_hash value))
 
-(defn compare [left right]
+(defn compare
+  {:inline (fn [left right] (list '__lg_compare left right))}
+  [left right]
   (__lg_compare left right))
 
 (defn seq
@@ -2580,7 +2586,9 @@
    (dorun n coll)
    coll))
 
-(defn run! [proc coll]
+(defn run!
+  {:inline (fn [proc coll] (list '__lg_run proc coll))}
+  [proc coll]
   (loop [remaining (seq coll)]
     (if (seq remaining)
       (if-some [input (first remaining)]
@@ -2850,7 +2858,9 @@
   [x]
   (boolean x))
 
-(defn not [x]
+(defn not
+  {:inline (fn [x] (list '__lg_not x))}
+  [x]
   (if x false true))
 
 (defn nil?
@@ -3554,7 +3564,7 @@
    (defn- divide-native-step
      [^:Lg_runtime.Runtime_ratio.t result ^:int input]
      (__lg_divide result input))
-   :melange
+   :cljs
    (defn- divide-melange-step
      [^:float result ^:int input]
      (__lg_divide-melange result input)))
@@ -3566,7 +3576,7 @@
      ([^:int x ^:int y] (__lg_divide x y))
      ([^:int x ^:int y & ^:seq<int> more]
       (__lg_reduce divide-native-step (__lg_divide x y) more)))
-   :melange
+   :cljs
    (defn /
      {:inline (fn [& values] (cons '__lg_divide-melange values))}
      ([^:int x] (__lg_divide-melange x))
@@ -4345,7 +4355,7 @@
     (if (> left right)
       (double left)
       (let [middle (+ left (quot (- right left) 2))]
-        (if (< (compare (aget values middle) key) 0)
+        (if (< (uncurried-compare compare (aget values middle) key) 0)
           (recur (inc middle) right)
           (recur left (dec middle)))))))
 
@@ -4355,7 +4365,7 @@
     (if (> left right)
       (double left)
       (let [middle (+ left (quot (- right left) 2))]
-        (if (> (compare (aget values middle) key) 0)
+        (if (> (uncurried-compare compare (aget values middle) key) 0)
           (recur left (dec middle))
           (recur (inc middle) right))))))
 
@@ -5036,9 +5046,29 @@
   [(take-while pred coll) (drop-while pred coll)])
 
 (defn nthnext [coll n]
-  (drop n coll))
+  (loop [n n xs (seq coll)]
+    (if xs
+      (if (pos? n)
+        (recur (dec n) (next xs))
+        xs)
+      xs)))
 
-(defn nthrest [coll n]
+(defn nthrest
+  {:inline (fn [coll n]
+             ;; Direct calls preserve Clojure/CLJS collection identity for the
+             ;; suite's n<=0 literals, including (nthrest nil 0) => nil.
+             ;; The runtime body stays drop so first-class uses keep a seq type.
+             #?(:cljs
+                (if (nil? coll)
+                  coll
+                  (list 'drop n coll))
+                :default
+                (if (int? n)
+                  (if (pos? n)
+                    (list 'drop n coll)
+                    coll)
+                  (list 'drop n coll))))}
+  [coll n]
   (drop n coll))
 
 (defn bounded-count [n coll]

@@ -707,7 +707,7 @@
   :fn<fn<value;bool>;seqable<value>;vector<seq<value>>>)
 
 (signature clojure.core/nthnext [value]
-  :fn<seqable<value>;int;seq<value>>)
+  :fn<seqable<value>;int;__lg_next_seq<value>>)
 
 (signature clojure.core/nthrest [value]
   :fn<seqable<value>;int;seq<value>>)

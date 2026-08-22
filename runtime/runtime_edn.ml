@@ -29,6 +29,7 @@ let rec apply_tag_parsers value =
   let open Lg_edn_backend in
   match value with
   | List values -> List (Array.map apply_tag_parsers values)
+  | Seq values -> Seq (Stdlib.Seq.map apply_tag_parsers values)
   | Vector values -> Vector (Array.map apply_tag_parsers values)
   | Int4_vector (first, second, third, fourth) ->
       Int4_vector (first, second, apply_tag_parsers third, fourth)
@@ -61,6 +62,49 @@ let read_string source =
   source |> Lg_edn_backend.of_edn_string |> apply_tag_parsers
 
 let write_string = Lg_edn_backend.to_edn_string
+
+let rec pr_str value =
+  let render_array opening closing values =
+    opening
+    ^ (values |> Array.to_list |> List.map pr_str |> String.concat " ")
+    ^ closing
+  in
+  match value with
+  | Lg_edn_backend.List values -> render_array "(" ")" values
+  | Lg_edn_backend.Seq values ->
+      "(" ^ (values |> List.of_seq |> List.map pr_str |> String.concat " ") ^ ")"
+  | Lg_edn_backend.Vector values -> render_array "[" "]" values
+  | Lg_edn_backend.Map entries ->
+      let render_entry (key, value) = pr_str key ^ " " ^ pr_str value in
+      "{"
+      ^ (entries |> Array.to_list |> List.map render_entry
+        |> String.concat ", ")
+      ^ "}"
+  | Lg_edn_backend.Set values -> "#" ^ render_array "{" "}" values
+  | value -> write_string value
+
+let str = function
+  | Lg_edn_backend.Nil -> ""
+  | Lg_edn_backend.String value -> value
+  | value -> pr_str value
+
+let regex_match = function
+  | None -> Lg_edn_backend.Nil
+  | Some [ Some value ] -> Lg_edn_backend.String value
+  | Some captures ->
+      captures
+      |> List.map (function
+           | Some value -> Lg_edn_backend.String value
+           | None -> Lg_edn_backend.Nil)
+      |> Array.of_list |> fun values -> Lg_edn_backend.Vector values
+
+let regex_match_sequence matches =
+  if Array.length matches = 0 then Lg_edn_backend.Nil
+  else
+    matches |> Array.to_seq
+    |> Seq.map (fun captures -> regex_match (Some captures))
+    |> fun values -> Lg_edn_backend.Seq values
+
 let read_json_string = Lg_edn_backend.of_json_string
 let read_json_source = Lg_edn_backend.of_json_source
 let write_json_string = Lg_edn_backend.to_json_string
@@ -73,6 +117,7 @@ let rec to_seq value =
   let open Lg_edn_backend in
   match value with
   | Nil -> Seq.empty
+  | Seq values -> values
   | List values | Vector values | Set values -> Array.to_seq values
   | Int4_vector (first, second, third, fourth) ->
       [|
@@ -197,12 +242,28 @@ let rec equal left right =
                  equal key other_key && equal value other_value)
                right)
            left
+  | Seq left, Seq right -> equal_sequences left right
+  | Seq left, right -> (
+      match sequence_values right with
+      | Some right -> equal_sequences left (Array.to_seq right)
+      | None -> false)
+  | left, Seq right -> (
+      match sequence_values left with
+      | Some left -> equal_sequences (Array.to_seq left) right
+      | None -> false)
   | _ -> (
       match (sequence_values left, sequence_values right) with
       | Some left, Some right ->
           Array.length left = Array.length right
           && Array.for_all2 equal left right
       | _ -> false)
+
+and equal_sequences left right =
+  match (left (), right ()) with
+  | Seq.Nil, Seq.Nil -> true
+  | Seq.Cons (left, left_rest), Seq.Cons (right, right_rest) ->
+      equal left right && equal_sequences left_rest right_rest
+  | Seq.Nil, Seq.Cons _ | Seq.Cons _, Seq.Nil -> false
 
 let equal_sets left right =
   let left = Array.of_seq left in
@@ -221,6 +282,17 @@ let rec contains collection key =
       | Small_int index -> index >= 0 && index < Array.length values
       | Int index ->
           index >= 0L && index < Int64.of_int (Array.length values)
+      | _ -> false)
+  | Seq values -> (
+      match key with
+      | Small_int index when index >= 0 -> (
+          match Stdlib.Seq.drop index values () with
+          | Seq.Nil -> false
+          | Seq.Cons _ -> true)
+      | Int index when index >= 0L && index <= Int64.of_int max_int -> (
+          match Stdlib.Seq.drop (Int64.to_int index) values () with
+          | Seq.Nil -> false
+          | Seq.Cons _ -> true)
       | _ -> false)
   | Int4_vector _ | Int_vector _ | Int4_array _ -> (
       match sequence_values collection with
@@ -250,6 +322,12 @@ let rec get collection key =
         Some values.(index)
     | Some _ | None -> None
   in
+  let seq_value values =
+    match index key with
+    | Some index when index >= 0 ->
+        Stdlib.Seq.uncons (Stdlib.Seq.drop index values) |> Option.map fst
+    | Some _ | None -> None
+  in
   match collection with
   | Nil -> None
   | Map entries ->
@@ -258,6 +336,7 @@ let rec get collection key =
         entries
   | Set values -> Array.find_opt (fun value -> equal value key) values
   | List values | Vector values -> array_value values
+  | Seq values -> seq_value values
   | Int4_vector _ | Int_vector _ | Int4_array _ ->
       Option.bind (sequence_values collection) array_value
   | String value -> (

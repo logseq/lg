@@ -46,6 +46,12 @@ let fold_infix operator first rest =
       Semantic_ir.Infix (operator, expression, int_expression arg))
     (int_expression first) rest
 
+let fold_function function_name first rest =
+  List.fold_left
+    (fun expression arg ->
+      apply function_name [ expression; int_expression arg ])
+    (int_expression first) rest
+
 let expect_int_args name args =
   if List.for_all (fun arg -> accepts_int arg.ty) args then Ok ()
   else Error.error ("expected int arguments for " ^ name)
@@ -68,31 +74,25 @@ let compile_operator ~target name args =
         (typed_ir TInt
            (Semantic_ir.Infix ("/", Semantic_ir.Int 1, int_expression arg)))
   | _, [ arg ] -> Ok (typed_ir TInt (int_expression arg))
+  | ("+" | "-" | "*"), first :: rest when target = Target.Melange ->
+      let function_name =
+        match name with
+        | "+" -> "Lg_runtime.Runtime_int_melange.add"
+        | "-" -> "Lg_runtime.Runtime_int_melange.subtract"
+        | "*" -> "Lg_runtime.Runtime_int_melange.multiply"
+        | _ -> assert false
+      in
+      Ok (typed_ir TInt (fold_function function_name first rest))
   | _, first :: rest ->
-      if target = Target.Melange && name <> "/" then
-        let operation =
-          match name with
-          | "+" -> "Lg_runtime.Runtime_int_melange.add"
-          | "-" -> "Lg_runtime.Runtime_int_melange.subtract"
-          | "*" -> "Lg_runtime.Runtime_int_melange.multiply"
-          | _ -> assert false
-        in
-        Ok
-          (typed_ir TInt
-             (List.fold_left
-                (fun expression arg ->
-                  apply operation [ expression; int_expression arg ])
-                (int_expression first) rest))
-      else
-        let operator =
-          match name with
-          | "+" -> "+"
-          | "-" -> "-"
-          | "*" -> "*"
-          | "/" -> "/"
-          | _ -> assert false
-        in
-        Ok (typed_ir TInt (fold_infix operator first rest))
+      let operator =
+        match name with
+        | "+" -> "+"
+        | "-" -> "-"
+        | "*" -> "*"
+        | "/" -> "/"
+        | _ -> assert false
+      in
+      Ok (typed_ir TInt (fold_infix operator first rest))
 
 let compile_unary name args build_expr =
   match args with

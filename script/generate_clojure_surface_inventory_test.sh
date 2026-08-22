@@ -603,9 +603,11 @@ awk -F '\t' '
   END {exit failed}
 ' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_fn-to-comparator" && $3 == "typed-primitive" && $4 == "typed-return-directed-int-comparator-or-boolean-predicate-normalization-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_not" && $3 == "typed-primitive" && $4 == "typed-static-truthiness-negation-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_get-in-step" && $3 == "typed-primitive" && $4 == "typed-nested-lookup-step-with-closed-edn-and-non-associative-short-circuiting" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-call" && $2 == "__lg_with-precision" && $3 == "typed-primitive" && $4 == "typed-arbitrary-precision-decimal-math-context-thunk-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-form" && $2 == "__lg_defer_seq" && $3 == "typed-primitive" && $4 == "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
+awk -F '\t' '$1 == "compiler-form" && $2 == "__lg_not" && $3 == "typed-primitive" && $4 == "private-typed-static-truthiness-negation-inference-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-form" && $2 == "__lg_dec" && $3 == "typed-primitive" && $4 == "private-typed-static-numeric-decrement-inference-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-form" && $2 == "#inst" && $3 == "typed-primitive" && $4 == "compiler-owned-validated-tagged-instant-reader-literal-elaboration" {found=1} END {exit !found}' "$tmp/inventory.tsv"
 awk -F '\t' '$1 == "compiler-form" && $2 == "__lg_with-precision" && $3 == "typed-primitive" && $4 == "private-typed-arbitrary-precision-decimal-math-context-inference-primitive" {found=1} END {exit !found}' "$tmp/inventory.tsv"

@@ -1,5 +1,9 @@
 open Ast
 open Types
+
+let has_source_name name expected =
+  String.equal name expected
+  || String.ends_with ~suffix:("/" ^ expected) name
 open Expression_support
 module Env = Compiler_environment
 
@@ -301,6 +305,8 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   in
   let adapt_vector_element env target source item =
     match (target, source) with
+    | TOcaml "Lg_edn_backend.t", source ->
+        Edn_value_elaborator.pack_expression source item.semantic_expr
     | TNamed_record record, TRecord _
       when Types.row_compatible ~expected:target ~actual:source ->
         Ok (Structural_map.as_named_record record item).semantic_expr
@@ -410,6 +416,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         Result.map
           (fun adapted -> Semantic_ir.Constructor ("Some", Some adapted))
           (adapt_branch_expression env target_inner branch)
+    | TVector target_inner, TVector (TOcaml "Lg_edn_backend.t" as source_inner)
+      when not (Types.equal target_inner source_inner) ->
+        heterogeneous_collection_type_error "vector"
+          [ target_inner; source_inner ]
     | TVector target_inner, TVector source_inner
       when not (Types.equal target_inner source_inner) ->
         map_vector source_inner
@@ -624,7 +634,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Error.error
                       ("heterogeneous vector has element types "
                       ^ String.concat " | " types
-                      ^ "; define a sum type containing these types")
+                      ^ "; define a closed sum type containing these types")
                   in
                   let edn_vector () =
                     let rec pack packed = function
@@ -794,11 +804,29 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                    [ Semantic_ir.List values ] )))
                           (adapt [] expressions)
                     | Some _ | None ->
-                        if fallback_to_edn then edn_vector ()
-                        else heterogeneous_error ()
-                  in
-                  match element_ty with
+                         if fallback_to_edn then edn_vector ()
+                         else heterogeneous_error ()
+                   in
+                   match element_ty with
                   | None -> homogeneous_map_vector ~fallback_to_edn:true ()
+                  | Some element_ty
+                    when Option.is_some
+                           (Types.capability_constraint_value element_ty)
+                         &&
+                         (match
+                            expressions
+                            |> List.map (fun expression ->
+                                   Types.constraint_value_type expression.ty)
+                          with
+                         | [] | [ _ ] -> false
+                         | first :: rest ->
+                             Option.is_none
+                               (List.fold_left
+                                  (fun merged ty ->
+                                    Option.bind merged (fun merged ->
+                                        merge_branch_types merged ty))
+                                  (Some first) rest)) ->
+                      heterogeneous_error ()
                   | Some element_ty when Types.is_dynamic element_ty ->
                       heterogeneous_error ()
                   | Some
@@ -1576,10 +1604,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                    (Semantic_ir.If
                             (condition_code, then_code, else_code)))
             | None -> (
-                match
-                  ( Collection_capability.to_seq_expr env then_expr,
-                    Collection_capability.to_seq_expr env else_expr )
-                with
+                match (then_expr.ty, else_expr.ty) with
+                | TNamed_record _, _ | _, TNamed_record _ ->
+                    Error.error
+                      "conditional branches have incompatible nominal record types; define a closed sum type containing every branch type"
+                | _ -> (
+                  match
+                    ( Collection_capability.to_seq_expr env then_expr,
+                      Collection_capability.to_seq_expr env else_expr )
+                  with
                     | ( Ok (then_inner, then_sequence),
                         Ok (else_inner, else_sequence) )
                   when Types.equal then_inner else_inner
@@ -1612,6 +1645,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           ^ describe_type then_expr.ty ^ " and "
                           ^ describe_type else_expr.ty
                           ^ "; define a closed sum type containing every branch type"))
+                )
                 )
             )
         )
@@ -2390,12 +2424,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                          (Env.with_expected_type None env)
                          "finally requires a body" finally_forms))))
   and loop_branch_type left right =
+    match (left, right) with
+    | TVector left, TVector right when not (Types.equal left right) ->
+        heterogeneous_collection_type_error "vector" [ left; right ]
+    | _ -> (
     match merge_branch_types left right with
     | Some ty -> Ok ty
     | None ->
         Error.error
           ("loop branches must have same type: " ^ Types.source_name left
-         ^ " and " ^ Types.source_name right)
+         ^ " and " ^ Types.source_name right))
   and compile_recur scope env loop_name param_tys arg_forms =
     if List.length arg_forms <> List.length param_tys then
       Error.error
@@ -2554,16 +2592,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           FList (FSymbol "recur" :: recur_arguments);
           else_form;
         ]
-      when String.equal first_name "first"
-           || String.ends_with ~suffix:"/first" first_name ->
+      when has_source_name first_name "first"
+           || has_source_name first_name "__lg_first" ->
         let tail_name = "__lg_seq_tail" in
         let replaced = ref false in
         let recur_arguments =
           List.map
             (function
               | FList [ FSymbol next_name; FSymbol name ]
-                when (String.equal next_name "next"
-                     || String.ends_with ~suffix:"/next" next_name)
+                when (has_source_name next_name "next"
+                     || has_source_name next_name "__lg_next")
                      && String.equal name collection_name ->
                   replaced := true;
                   FSymbol tail_name
@@ -3217,13 +3255,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               match compile_body loop_env with
               | Error _ as err -> err
               | Ok inferred_body ->
-                  let loop_env =
-                    Env.add loop_name
-                      (Types.binding loop_name
-                         (TFn (param_tys, inferred_body.ty)))
-                      loop_env
+                  let rec stabilize_body remaining return_ty =
+                    let body_env =
+                      Env.add loop_name
+                        (Types.binding loop_name (TFn (param_tys, return_ty)))
+                        loop_env
+                    in
+                    match compile_body body_env with
+                    | Error _ as err -> err
+                    | Ok body
+                      when remaining = 0 || Types.equal body.ty return_ty ->
+                        Ok body
+                    | Ok body ->
+                        stabilize_body (remaining - 1) body.ty
                   in
-                  (match compile_body loop_env with
+                  (match stabilize_body 4 inferred_body.ty with
                   | Error _ as err -> err
                   | Ok body ->
                   let sequence_element_type = function

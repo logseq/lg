@@ -386,7 +386,7 @@ let heterogeneous_collection_type_error collection types =
         " have types "
       else " has element types ")
    ^ String.concat " | " types
-   ^ "; define a sum type containing these types")
+   ^ "; define a closed sum type containing these types")
 
 let heterogeneous_collection_error collection values =
   heterogeneous_collection_type_error collection
@@ -790,11 +790,21 @@ let merge_branch_expressions left right =
       match merge_branch_types left.ty right.ty with
       | None -> None
       | Some result_ty ->
+          let coerce branch =
+            let expression =
+              coerce_expression_to_type result_ty branch.ty
+                branch.semantic_expr
+            in
+            match Semantic_ir.unlocated expression with
+            | Semantic_ir.Ident name
+              when Types.equal result_ty branch.ty
+                   && Option.is_some (protocol_value_type branch.ty)
+                   && not (String.starts_with ~prefix:"__lg_" name) ->
+                capability_storage_expression branch.ty expression
+            | _ -> expression
+          in
           Some
-            ( result_ty,
-              coerce_expression_to_type result_ty left.ty left.semantic_expr,
-                  coerce_expression_to_type result_ty right.ty
-                    right.semantic_expr )))
+            (result_ty, coerce left, coerce right)))
 
 let unresolved_contextual_type = function TList TUnknown -> true | _ -> false
 
@@ -1112,6 +1122,9 @@ let binding_value_expression (binding : Types.binding) =
   | TOverloaded_fn arities
     when List.length binding.overload_targets = List.length arities ->
       overloaded_value binding.overload_targets
+  | _ when binding.multimethod ->
+      Semantic_ir.Apply
+        (Semantic_ir.Ident "snd", [ Semantic_ir.Ident binding.ocaml_name ])
   | _ -> Semantic_ir.Ident binding.ocaml_name
 
 let binding_runtime_value (binding : Types.binding) =

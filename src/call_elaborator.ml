@@ -250,14 +250,46 @@ let weak_referenceable_type = function
   | ty when Types.is_dynamic ty -> true
   | _ -> false
 
-let callback_parameters_compatible expected actual =
+let rec callback_type_compatible expected actual =
+  Types.assignable ~policy:Host_boundary ~expected ~actual
+  || Result.is_ok (Type_solver.unify Type_solver.empty expected actual)
+  ||
+  match Types.capability_constraint_value actual with
+  | Some value_ty -> callback_type_compatible expected value_ty
+  | None -> (
+      match (expected, actual) with
+      | TFn (expected_params, expected_return),
+        TFn (actual_params, actual_return) ->
+          callback_parameters_compatible expected_params actual_params
+          && callback_type_compatible expected_return actual_return
+      | TOverloaded_fn expected_arities, TOverloaded_fn actual_arities ->
+          List.for_all
+            (fun (expected_arity : fn_arity) ->
+              List.exists
+                (fun (actual_arity : fn_arity) ->
+                  List.length expected_arity.fixed_params
+                  = List.length actual_arity.fixed_params
+                  && Option.is_some expected_arity.rest_param
+                     = Option.is_some actual_arity.rest_param
+                  && callback_parameters_compatible expected_arity.fixed_params
+                       actual_arity.fixed_params
+                  && callback_type_compatible expected_arity.return_ty
+                       actual_arity.return_ty
+                  &&
+                  match
+                    (expected_arity.rest_param, actual_arity.rest_param)
+                  with
+                  | Some expected, Some actual ->
+                      callback_type_compatible expected actual
+                  | None, None -> true
+                  | Some _, None | None, Some _ -> false)
+                actual_arities)
+            expected_arities
+      | _ -> false)
+
+and callback_parameters_compatible expected actual =
   List.length expected = List.length actual
-  && List.for_all2
-       (fun expected actual ->
-         Types.assignable ~policy:Host_boundary ~expected ~actual
-         || Result.is_ok
-              (Type_solver.unify Type_solver.empty expected actual))
-       expected actual
+  && List.for_all2 callback_type_compatible expected actual
 
 let unresolved_record_placeholder = function
   | TOcaml name -> String.starts_with ~prefix:"__lg_record:" name
@@ -522,6 +554,7 @@ let rec argument_compatible expected actual =
     | (TNullable expected | TOcaml_app ("option", [ expected ])), actual ->
         argument_compatible expected actual
     | TFloat, TInt -> true
+    | TUnit, TNil -> true
     | TOcaml "int", TInt | TInt, TOcaml "int" -> true
     | TFn ([ TUnit ], expected_return), TFn ([], actual_return)
     | TFn ([], expected_return), TFn ([ TUnit ], actual_return) ->
@@ -587,7 +620,10 @@ let rec argument_compatible expected actual =
           Types.equal expected_return TBool
           && expects_dynamic_value actual_return
         then true
-        else if argument_compatible expected_return actual_return then true
+        else if
+          argument_compatible expected_return actual_return
+          || callback_type_compatible expected_return actual_return
+        then true
         else
         match Types.maybe_reduced_callback_element expected_return with
         | Some expected_inner -> (
@@ -1410,8 +1446,8 @@ let dynamic_boundary_error_message direction ty =
       | "Lg_runtime.Runtime_uuid.t" ) ->
       Some
         (cannot_cross "static values"
-           "keep the value statically typed or define a sum type: use a closed \
-           sum type containing every alternative")
+           "keep the value statically typed or define a closed sum type \
+           containing every alternative")
   | TOcaml "Lg_runtime.Runtime_instant.t" ->
       Some
         (cannot_cross "static instant values"
@@ -1961,32 +1997,6 @@ let rec pack_constrained_value ?row_type_name env expected argument =
         (typed_ir actual_value_ty
            (Semantic_ir.Apply
               (Semantic_ir.Ident "Option.get", [ argument.semantic_expr ])))
-  | ( expected,
-      (TNullable actual_ty | TOcaml_app ("option", [ actual_ty ])) )
-    when (match Types.seqable_constraint_info expected with
-         | Some ((`Optional | `Optional_sequential), _, _) ->
-             argument_compatible expected actual_ty
-         | Some (`Required, _, _) | None -> false) ->
-      let value_name = "__lg_optional_capability_value" in
-      let value = typed_ir actual_ty (Semantic_ir.Ident value_name) in
-      Result.bind
-        (pack_constrained_value ?row_type_name env expected
-           (typed_ir TNil (Semantic_ir.Constructor ("None", None))))
-        (fun absent ->
-          Result.map
-            (fun present ->
-              Semantic_ir.Match
-                ( argument.semantic_expr,
-                  [
-                    (Semantic_ir.PConstructor ("None", None), absent);
-                    ( Semantic_ir.PConstructor
-                        ( "Some",
-                          Some
-                            (constrained_identifier_pattern value_name
-                               actual_ty) ),
-                      present );
-                  ] ))
-            (pack_constrained_value ?row_type_name env expected value))
   | ( TOcaml_app (expected_name, [ expected_element; expected_value ]),
       TOcaml_app (actual_name, [ actual_element; actual_value ]) )
     when expected_name = actual_name
@@ -2132,17 +2142,21 @@ let rec pack_constrained_value ?row_type_name env expected argument =
       in
       let value_name = "__lg_exception_data_value" in
       let value = typed_ir witness_value_ty (Semantic_ir.Ident value_name) in
-      Result.bind
-        (dynamic_scalar_value env
-           (Types.dynamic_constraint TUnknown)
-           value)
-        (fun witness_body ->
-          let witness =
-            Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], witness_body)
-          in
-          Result.map
-            (fun packed -> Semantic_ir.Tuple [ witness; packed ])
-            (pack_constrained_value env value_ty argument))
+      if edn_compatible_static_type witness_value_ty then
+        let witness_body =
+          coerce_expression_to_type (TOcaml "Lg_edn_backend.t")
+            witness_value_ty value.semantic_expr
+        in
+        let witness =
+          Semantic_ir.Fun ([ Semantic_ir.PVar value_name ], witness_body)
+        in
+        Result.map
+          (fun packed -> Semantic_ir.Tuple [ witness; packed ])
+          (pack_constrained_value env value_ty argument)
+      else
+        Error.error
+          ("exception data requires an EDN-compatible value, got "
+         ^ Types.source_name witness_value_ty)
   | expected, actual
     when Option.is_some (Types.hashable_constraint_info expected)
          && Option.is_some (Types.hashable_constraint_info actual) ->
@@ -2373,12 +2387,29 @@ let rec pack_constrained_value ?row_type_name env expected argument =
               | [], [] -> []
               | _ -> expected_params
             in
-            let parameter_names =
-              List.mapi
-                (fun index _ ->
-                  "__lg_protocol_witness_argument_" ^ string_of_int index)
-                expected_params
+            let resolved_expected_return =
+              match expected_return with
+              | TUnknown | TMeta _ | TVar _ -> actual_return
+              | ty -> ty
             in
+            let same_ocaml_type left right =
+              Types.equal left right
+              ||
+              ((not (has_capability_constraint left))
+              && not (has_capability_constraint right)
+              && String.equal (Types.ocaml_name left) (Types.ocaml_name right))
+            in
+            if
+              List.for_all2 same_ocaml_type expected_params actual_params
+              && same_ocaml_type resolved_expected_return actual_return
+            then Ok (Semantic_ir.Ident implementation.ocaml_name)
+            else
+              let parameter_names =
+                List.mapi
+                  (fun index _ ->
+                    "__lg_protocol_witness_argument_" ^ string_of_int index)
+                  expected_params
+              in
             let rec adapt_parameters adapted expected actual names =
               match (expected, actual, names) with
               | [], [], [] -> Ok (List.rev adapted)
@@ -2432,17 +2463,21 @@ let rec pack_constrained_value ?row_type_name env expected argument =
               (adapt_parameters [] expected_params actual_params
                  parameter_names)
               (fun arguments ->
-                let expected_return =
-                  match expected_return with
-                  | TUnknown | TMeta _ | TVar _ -> actual_return
-                  | ty -> ty
-                in
-                let result =
-                  typed_ir actual_return
-                    (Semantic_ir.Apply
-                       ( Semantic_ir.Ident implementation.ocaml_name,
-                         arguments ))
-                in
+                if
+                  Types.equal resolved_expected_return actual_return
+                  && List.for_all2
+                       (fun name argument ->
+                         argument = Semantic_ir.Ident name)
+                       parameter_names arguments
+                then Ok (Semantic_ir.Ident implementation.ocaml_name)
+                else
+                  let expected_return = resolved_expected_return in
+                  let result =
+                    typed_ir actual_return
+                      (Semantic_ir.Apply
+                         ( Semantic_ir.Ident implementation.ocaml_name,
+                           arguments ))
+                  in
                 let adapt_sequence expected_element actual_element sequence =
                   if Types.equal expected_element actual_element then
                     Ok sequence
@@ -2586,8 +2621,8 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                       [
                         Target.to_string (Compiler_environment.target env);
                         Protocol_id.to_string protocol_id;
-                        Types.ocaml_name expected;
-                        Types.ocaml_name argument.ty;
+                        Types.source_name expected;
+                        Types.source_name argument.ty;
                         implementation_key;
                       ]
                   in
@@ -2780,6 +2815,29 @@ let rec pack_constrained_value ?row_type_name env expected argument =
                          (Semantic_ir.Fun
                             ([ Semantic_ir.PVar item_name ], unpacked)))
             | _ -> Ok None
+          in
+          let element_mapper =
+            Result.bind element_mapper (fun mapper ->
+                match (mapper, actual_element) with
+                | None, Some actual_element
+                  when has_capability_constraint expected_element
+                       && not statically_empty_argument
+                       && not
+                            (has_capability_constraint actual_element
+                            || Types.equal expected_element actual_element) ->
+                    let item_name = "__lg_seqable_capability_item" in
+                    let item =
+                      typed_ir actual_element (Semantic_ir.Ident item_name)
+                    in
+                    Result.map
+                      (fun packed ->
+                        Some
+                          (Semantic_ir.Fun
+                             ( [ typed_dynamic_item_pattern env item_name
+                                   actual_element ],
+                               packed )))
+                      (pack_constrained_value env expected_element item)
+                | None, _ | Some _, _ -> Ok mapper)
           in
           match element_mapper with
           | Error _ as error -> error
@@ -3470,7 +3528,21 @@ let rec adapt_value_to_type env expected actual =
     | _ -> true
   in
   if same_concrete_type expected actual.ty && same_representation then
-    Ok actual.semantic_expr
+    Ok
+      (if has_capability_constraint expected then
+         constrained_argument_expression actual
+       else if has_capability_constraint actual.ty then
+         constrained_argument_value actual
+       else actual.semantic_expr)
+  else if
+    not (has_capability_constraint expected)
+    && Option.fold ~none:false
+         ~some:(fun value_ty -> argument_compatible expected value_ty)
+         (Types.capability_constraint_value actual.ty)
+  then
+    let value_ty = Types.capability_constraint_value actual.ty |> Option.get in
+    adapt_value_to_type env expected
+      (typed_ir value_ty (constrained_argument_value actual))
   else if
     match (expected, actual.ty) with
     | TFn (expected_params, expected_return), TFn (actual_params, actual_return)
@@ -3627,7 +3699,8 @@ let rec adapt_value_to_type env expected actual =
         Result.map
           (fun packed ->
             Semantic_ir.Fun
-              ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
+              ( List.map2 constrained_identifier_pattern parameter_names
+                  expected_params,
                 packed ))
           (pack_constrained_value env expected_return result))
   else if
@@ -4861,6 +4934,24 @@ let compile_equality scope env args =
                 ( Semantic_ir.Ident "Lg_runtime.Runtime_instant.equal",
                   [ left.semantic_expr; right.semantic_expr ] )))
       else if Types.equal left.ty ratio_ty || Types.equal right.ty ratio_ty then (
+        let float_value value =
+          if Types.equal value.ty TFloat then Some value.semantic_expr
+          else if Types.equal value.ty ratio_ty then
+            Some
+              (apply "Lg_runtime.Runtime_ratio.to_float"
+                 [ value.semantic_expr ])
+          else
+            match value.ty with
+            | TInt | TOcaml "int" ->
+                Some (apply "float_of_int" [ value.semantic_expr ])
+            | _ -> None
+        in
+        if Types.equal left.ty TFloat || Types.equal right.ty TFloat then
+          match (float_value left, float_value right) with
+          | Some left, Some right ->
+              Ok (typed_ir TBool (Semantic_ir.Infix ("=", left, right)))
+          | None, _ | _, None -> fallback ()
+        else
         match (ratio_value left, ratio_value right) with
         | Some left, Some right ->
             Ok
@@ -4918,6 +5009,7 @@ let compile_equality scope env args =
     let sequence value = Collection_capability.to_seq_expr env value in
     let rec value_compatible left_ty right_ty =
       Types.same_shape left_ty right_ty
+      || Core_compare.nullable_equality_compatible left_ty right_ty
       || map_record_compatible left_ty right_ty
       || map_record_compatible right_ty left_ty
       ||
@@ -4939,11 +5031,13 @@ let compile_equality scope env args =
       with
       | Some (key_ty, value_ty), Some fields
         when fields = []
+             || Type_solver.is_open key_ty
              || Types.equal key_ty TKeyword
              || Types.equal key_ty TString ->
           List.for_all
             (fun (field : field) ->
-              value_compatible value_ty field.ty)
+              Types.is_record_extension_field field
+              || value_compatible value_ty field.ty)
             fields
       | _ -> false
     in
@@ -5659,7 +5753,8 @@ let adapt_truthy_callback expected arg =
           expected_params
       in
       Semantic_ir.Fun
-        ( List.map (fun name -> Semantic_ir.PVar name) parameter_names,
+        ( List.map2 constrained_identifier_pattern parameter_names
+            expected_params,
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.truthy",
               [
@@ -6013,11 +6108,62 @@ let create ~compile_expr =
                   (typed_ir inner (Semantic_ir.Ident value_name)) );
             ] )
     | TNamed_record record -> (
+        let satisfies_source_set =
+          Protocol.satisfied_protocols env value.ty
+          |> List.exists (fun protocol_id ->
+                 String.equal (Protocol_id.name protocol_id) "ISet")
+        in
         let set_rendering =
-          if Protocol.type_satisfies env Core_protocols.set_id value.ty then
-            match Collection_capability.seq_expr env value with
-            | Ok { ty = TSeq element_ty; semantic_expr; _ } ->
-                Some
+          if
+            Protocol.type_satisfies env Core_protocols.set_id value.ty
+            || satisfies_source_set
+          then
+            let sequence =
+              match Collection_capability.seq_expr env value with
+              | Ok sequence -> Some sequence
+              | Error _ ->
+                  let implementation =
+                    match
+                      Protocol.lookup_impl env Core_protocols.seqable_id "-seq"
+                        value.ty
+                    with
+                    | Some implementation -> Some implementation
+                    | None ->
+                        Protocol_registry.declarations (Env.protocols env)
+                        |> List.find_map (fun (protocol_id, _) ->
+                               if
+                                 List.mem (Protocol_id.name protocol_id)
+                                   [ "Seqable"; "ISeqable" ]
+                               then
+                                 Protocol.lookup_impl env protocol_id "-seq"
+                                   value.ty
+                               else None)
+                  in
+                  Option.bind
+                    implementation
+                    (fun implementation ->
+                      match implementation.ty with
+                      | TFn (expected_receiver :: _, return_ty) ->
+                          let receiver =
+                            adapt_value_to_type env expected_receiver value
+                            |> Result.value ~default:value.semantic_expr
+                          in
+                          let result =
+                            typed_ir return_ty
+                              (Semantic_ir.Apply
+                                 ( Semantic_ir.Ident implementation.ocaml_name,
+                                   [ receiver ] ))
+                          in
+                          (match Collection_capability.to_seq_expr env result with
+                          | Ok (element_ty, semantic_expr) ->
+                              Some (typed_ir (TSeq element_ty) semantic_expr)
+                          | Error _ -> None)
+                      | _ -> None)
+            in
+            match sequence with
+            | Some sequence ->
+                Option.map
+                  (fun element_ty ->
                   (Codegen.render_print_level ?print_level
                      (fun child_print_level ->
                        let item_name = "__lg_print_set_item" in
@@ -6041,11 +6187,12 @@ let create ~compile_expr =
                                     Semantic_ir.Apply
                                       ( Semantic_ir.Ident
                                           "Lg_runtime.Runtime_seq.to_list",
-                                        [ semantic_expr ] );
+                                        [ sequence.semantic_expr ] );
                                   ] ));
                            Semantic_ir.String "}";
-                         ]))
-            | Ok _ | Error _ -> None
+                         ])))
+                  (Types.next_seq_element sequence.ty)
+            | None -> None
           else None
         in
         match set_rendering with
@@ -8751,9 +8898,9 @@ let create ~compile_expr =
                               (Semantic_ir.Ident "raise", [ arg.semantic_expr ])))
         | Ok _ -> Error.error "raise expects 1 arguments")
     | "ex-info" ->
-        let dynamic_runtime_call name args =
+        let metadata_runtime_call name args =
           Semantic_ir.Apply
-            (Semantic_ir.Ident ("Lg_runtime.Runtime_dynamic." ^ name), args)
+            (Semantic_ir.Ident ("Lg_runtime.Runtime_metadata." ^ name), args)
         in
         let compile_exception_data_value value =
           match Types.exception_data_constraint_info value.ty with
@@ -8764,39 +8911,41 @@ let create ~compile_expr =
                    ( constrained_witness_projection expression,
                      [ constrained_value_projection expression ] ))
           | None ->
-              dynamic_scalar_value env
-                (Types.dynamic_constraint TUnknown)
-                value
+              if edn_compatible_static_type value.ty then
+                Ok
+                  (coerce_expression_to_type (TOcaml "Lg_edn_backend.t")
+                     value.ty value.semantic_expr)
+              else
+                Error.error
+                  ("exception data requires an EDN-compatible value, got "
+                 ^ Types.source_name value.ty)
         in
         let rec compile_exception_data_literal = function
           | FSymbol "nil" ->
-              Ok (Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.nil")
+              Ok (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil")
           | FBool value ->
-              Ok (dynamic_runtime_call "bool" [ Semantic_ir.Bool value ])
+              Ok (metadata_runtime_call "of_bool" [ Semantic_ir.Bool value ])
           | FInt value ->
-              Ok (dynamic_runtime_call "int" [ Semantic_ir.Int value ])
+              Ok (metadata_runtime_call "of_int" [ Semantic_ir.Int value ])
           | FFloat value ->
-              Ok (dynamic_runtime_call "float" [ Semantic_ir.Float value ])
+              Ok (metadata_runtime_call "of_float" [ Semantic_ir.Float value ])
           | FChar value ->
-              Ok (dynamic_runtime_call "char" [ Semantic_ir.Char value ])
+              Ok (metadata_runtime_call "of_char" [ Semantic_ir.Char value ])
           | FString value ->
-              Ok (dynamic_runtime_call "string" [ Semantic_ir.String value ])
+              Ok (metadata_runtime_call "of_string" [ Semantic_ir.String value ])
           | FRegex value ->
-              Ok (dynamic_runtime_call "regex" [ Semantic_ir.String value ])
+              Ok (metadata_runtime_call "of_regex" [ Semantic_ir.String value ])
           | FKeyword value ->
-              Ok (dynamic_runtime_call "keyword" [ Semantic_ir.String value ])
+              Ok (metadata_runtime_call "of_keyword" [ Semantic_ir.String value ])
           | FList [ FSymbol ("quote" | "clojure.core/quote"); FSymbol value ] ->
-              Ok (dynamic_runtime_call "symbol" [ Semantic_ir.String value ])
+              Ok (metadata_runtime_call "of_symbol" [ Semantic_ir.String value ])
           | FVector values ->
               let rec loop acc = function
                   | [] ->
                     Ok
-                      (dynamic_runtime_call "vector"
-                         [
-                           Semantic_ir.Apply
-                             ( Semantic_ir.Ident "Rrbvec.of_list",
-                               [ Semantic_ir.List (List.rev acc) ] );
-                         ])
+                      (Semantic_ir.Constructor
+                         ( "Lg_edn_backend.Vector",
+                           Some (Semantic_ir.Array (List.rev acc)) ))
                 | value :: rest ->
                     Result.bind
                       (compile_exception_data_literal value)
@@ -8815,7 +8964,7 @@ let create ~compile_expr =
               let rec loop acc = function
                 | [] ->
                     Ok
-                      (dynamic_runtime_call "map"
+                      (metadata_runtime_call "of_entries"
                          [ Semantic_ir.List (List.rev acc) ])
                 | entry :: rest ->
                     Result.bind (compile_entry entry) (fun entry ->
@@ -8824,7 +8973,6 @@ let create ~compile_expr =
               loop [] entries
           | form -> (
               match compile_expr scope env form with
-              | Ok value when Types.is_dynamic value.ty -> Ok value.semantic_expr
               | Ok value -> (
                   match compile_exception_data_value value with
                   | Ok packed -> Ok packed
@@ -8852,10 +9000,8 @@ let create ~compile_expr =
                  boundaries globally. *)
               compile_exception_data_literal data_form
           | _ ->
-              Result.bind (compile_expr scope env data_form) (fun data ->
-                  pack_dynamic_value env
-                    (Types.dynamic_constraint TUnknown)
-                    data)
+              Result.bind (compile_expr scope env data_form)
+                compile_exception_data_value
         in
         let compile_cause form =
           match compile_expr scope env form with
@@ -10271,20 +10417,25 @@ let create ~compile_expr =
         | Ok [ _ ] -> Error.error "double expects a numeric value"
         | Ok _ -> Error.error "double expects 1 argument")
     | "__lg_bigdec" -> (
+        let decimal_ty = TOcaml "Lg_runtime.Runtime_decimal.t" in
         match compile_args () with
         | Error _ as err -> err
         | Ok [ { ty = TInt; semantic_expr; _ } ] ->
-            Ok (typed_ir TFloat (apply "float_of_int" [ semantic_expr ]))
+            Ok
+              (typed_ir decimal_ty
+                 (apply "Lg_runtime.Runtime_decimal.of_int"
+                    [ semantic_expr ]))
         | Ok [ { ty = TFloat; semantic_expr; _ } ] ->
             let value_name = "__lg_bigdec_float" in
             Ok
-              (typed_ir TFloat
+              (typed_ir decimal_ty
                  (Semantic_ir.Let
                     ( [ (Semantic_ir.PVar value_name, semantic_expr) ],
                       Semantic_ir.If
                         ( apply "Float.is_finite"
                             [ Semantic_ir.Ident value_name ],
-                          Semantic_ir.Ident value_name,
+                          apply "Lg_runtime.Runtime_decimal.of_float"
+                            [ Semantic_ir.Ident value_name ],
                           apply "invalid_arg"
                             [
                               Semantic_ir.String
@@ -10292,9 +10443,10 @@ let create ~compile_expr =
                             ] ) )))
         | Ok [ { ty = TString; semantic_expr; _ } ] ->
             Ok
-              (typed_ir TFloat
-                 (apply "Lg_runtime.Runtime_string.parse_decimal_float"
+              (typed_ir decimal_ty
+                 (apply "Lg_runtime.Runtime_decimal.of_string"
                     [ semantic_expr ]))
+        | Ok [ ({ ty; _ } as value) ] when Types.equal ty decimal_ty -> Ok value
         | Ok [ _ ] -> Error.error "bigdec expects a numeric value"
         | Ok _ -> Error.error "bigdec expects 1 argument")
     | "__lg_bigint" -> (
@@ -10334,7 +10486,7 @@ let create ~compile_expr =
         | Error _ as error -> error
         | Ok [ { ty = TOcaml "exn"; semantic_expr; _ } ] ->
             Ok
-              (typed_ir (Types.dynamic_constraint TUnknown)
+              (typed_ir (TOcaml "Lg_edn_backend.t")
                  (apply "Lg_runtime.Runtime_exception.data" [ semantic_expr ]))
         | Ok [ _ ] -> Error.error "ex-data expects an exception"
         | Ok _ -> Error.error "ex-data expects 1 arguments")
@@ -10841,10 +10993,10 @@ let create ~compile_expr =
                     [ arg.semantic_expr ]
               in
               let comparison_operator =
-                match operator with
-                | "==" -> "="
-                | "<" | "<=" | ">" | ">=" -> operator
-                | _ -> assert false
+                if String.equal operator "==" then "="
+                else if List.mem operator [ "<"; "<="; ">"; ">=" ] then
+                  operator
+                else assert false
               in
               let rec comparisons = function
                 | left :: ((right :: _) as rest) ->
@@ -11063,6 +11215,17 @@ let create ~compile_expr =
                   Core_compare.compile ~env
                     (if operator = "==" then "=" else operator)
                     args))
+    | "__lg_not" -> (
+        match compile_args_for scope (Env.with_expected_type None env) arg_forms with
+        | Error _ as error -> error
+        | Ok [ arg ] ->
+            Ok
+              (typed_ir TBool
+                 (Semantic_ir.Prefix
+                    ( "not",
+                      Expression_support.truthiness_expression arg.ty
+                        arg.semantic_expr )))
+        | Ok _ -> Error.error "not expects 1 argument")
     | "__lg_dec" -> (
         match compile_args_for scope (Env.with_expected_type None env) arg_forms with
         | Error _ as err -> err
@@ -11239,6 +11402,34 @@ let create ~compile_expr =
             in
             Ok (typed_ir TBool expression)
         | Ok _ -> Error.error "NaN? expects 1 arguments")
+    | "__lg_name" -> (
+        match arg_forms with
+        | [ _ ] -> (
+            match compile_args_for scope env arg_forms with
+            | Error _ as error -> error
+            | Ok [ arg ] -> (
+                match Types.constraint_value_type arg.ty with
+                | TUnknown | TMeta _ | TVar _ ->
+                    compile_protocol_call scope env
+                      "clojure.core/INameCoercion/-coerce-name" arg_forms
+                | _ -> (
+                    match Core_scalar.compile ~target:(Env.target env) "name" [ arg ] with
+                    | Ok _ as result -> result
+                    | Error _ ->
+                        Ok
+                          (typed_ir TString
+                             (Semantic_ir.Sequence
+                                [
+                                  arg.semantic_expr;
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "invalid_arg",
+                                      [
+                                        Semantic_ir.String
+                                          "name expects keyword, string, or symbol";
+                                      ] );
+                                ]))))
+            | Ok _ -> Error.error "name expects 1 arguments")
+        | _ -> Error.error "name expects 1 arguments")
     | "__lg_namespace" -> (
         match arg_forms with
         | [ _ ] ->
@@ -11297,6 +11488,15 @@ let create ~compile_expr =
                     Semantic_ir.Sequence
                       [ arg.semantic_expr; Semantic_ir.Bool false ]))
         | Ok [ arg ] ->
+            let arg =
+              match Types.truthy_constraint_info arg.ty with
+              | Some (TNullable inner | TOcaml_app ("option", [ inner ])) ->
+                  typed_ir inner
+                    (Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Option.get",
+                         [ constrained_argument_value arg ] ))
+              | Some _ | None -> arg
+            in
             let operator =
               match predicate with
               | "__lg_zero-predicate" -> "="
@@ -11306,7 +11506,7 @@ let create ~compile_expr =
             in
             let zero =
               match arg.ty with
-              | TInt | TUnknown | TOcaml "int" ->
+              | TInt | TUnknown | TMeta _ | TVar _ | TOcaml "int" ->
                   Ok (arg.semantic_expr, Semantic_ir.Int 0)
               | TFloat ->
                   Ok (arg.semantic_expr, Semantic_ir.Float "0.0")
@@ -11330,7 +11530,8 @@ let create ~compile_expr =
                       Semantic_ir.Int 0 )
               | _ ->
                   Error.error
-                    ("expected numeric argument for " ^ source_predicate)
+                    ("expected numeric argument for " ^ source_predicate
+                   ^ ", got " ^ Types.source_name arg.ty)
             in
             Result.map
               (fun (value, zero) ->
@@ -11388,7 +11589,13 @@ let create ~compile_expr =
         let rec compile_printable_args compiled = function
           | [] -> Ok (List.rev compiled)
           | form :: rest -> (
-              match compile_expr scope printable_env form with
+              let plain_argument = compile_expr scope env form in
+              let argument =
+                match plain_argument with
+                | Ok ({ ty = TNamed_record _; _ } as argument) -> Ok argument
+                | Ok _ | Error _ -> compile_expr scope printable_env form
+              in
+              match argument with
               | Error _ as error -> error
               | Ok argument ->
                   compile_printable_args (argument :: compiled) rest)
@@ -11947,10 +12154,10 @@ let create ~compile_expr =
             in
             Result.map
               (fun source ->
-                typed_ir (Types.dynamic_constraint TUnknown)
+                typed_ir (TOcaml "Lg_edn_backend.t")
                   (Semantic_ir.Apply
                      ( Semantic_ir.Ident
-                         "Lg_runtime.Runtime_dynamic.regex_match_sequence",
+                         "Lg_runtime.Runtime_edn.regex_match_sequence",
                        [
                          Semantic_ir.Apply
                            ( Semantic_ir.Ident
@@ -12136,10 +12343,10 @@ let create ~compile_expr =
                && Types.equal matcher.ty
                     (TOcaml "Lg_runtime.Runtime_string.regex_matcher") ->
             Ok
-              (typed_ir (Types.dynamic_constraint TUnknown)
+              (typed_ir (TOcaml "Lg_edn_backend.t")
                  (Semantic_ir.Apply
                     ( Semantic_ir.Ident
-                        "Lg_runtime.Runtime_dynamic.regex_match",
+                        "Lg_runtime.Runtime_edn.regex_match",
                       [
                         Semantic_ir.Apply
                           ( Semantic_ir.Ident
@@ -12191,10 +12398,10 @@ let create ~compile_expr =
                         ( Semantic_ir.Ident matcher,
                           [ expression.semantic_expr; source ] )
                     in
-                    typed_ir (Types.dynamic_constraint TUnknown)
+                    typed_ir (TOcaml "Lg_edn_backend.t")
                       (Semantic_ir.Apply
                          ( Semantic_ir.Ident
-                             "Lg_runtime.Runtime_dynamic.regex_match",
+                             "Lg_runtime.Runtime_edn.regex_match",
                            [ groups ] )))
               source
         | Ok _ ->
@@ -12443,12 +12650,41 @@ let create ~compile_expr =
     | "__lg_transformer_sequence" -> (
         match arg_forms with
         | [ xform_form; collection_form ] -> (
-            match
-              ( compile_function_arg scope env xform_form,
-                compile_expr scope env collection_form )
-            with
-            | (Error _ as error), _ | _, (Error _ as error) -> error
-            | Ok xform, Ok collection -> (
+            match compile_expr scope env collection_form with
+            | Error _ as error -> error
+            | Ok collection ->
+                Result.bind
+                  (compile_function_arg scope env xform_form)
+                  (fun inferred_xform ->
+                    let expected_xform_ty =
+                      match
+                        ( inferred_xform.ty,
+                          Collection_capability.to_seq_expr env collection )
+                      with
+                      | ( TFn
+                            ( _,
+                              TOverloaded_fn transformed_arities ),
+                          Ok (collection_element, _) ) -> (
+                          match
+                            select_overloaded_arity transformed_arities 2
+                          with
+                          | Some (_, { fixed_params = [ _; input_ty ]; _ }) -> (
+                              match
+                                Type_solver.unify Type_solver.empty input_ty
+                                  collection_element
+                              with
+                              | Ok substitutions ->
+                                  Type_solver.apply substitutions
+                                    inferred_xform.ty
+                              | Error _ -> inferred_xform.ty)
+                          | _ -> inferred_xform.ty)
+                      | _ -> inferred_xform.ty
+                    in
+                    Result.bind
+                      (compile_function_arg scope
+                         (Env.with_expected_type (Some expected_xform_ty) env)
+                         xform_form)
+                      (fun xform ->
                 match
                   ( xform.ty,
                     Collection_capability.to_seq_expr env collection )
@@ -12538,7 +12774,7 @@ let create ~compile_expr =
                       "__lg_transformer_sequence expects a seqable collection"
                 | _ ->
                     Error.error
-                      "__lg_transformer_sequence expects a transducer"))
+                      "__lg_transformer_sequence expects a transducer")))
         | _ -> Error.error "__lg_transformer_sequence expects 2 arguments")
     | "__lg_flatten" -> (
         match compile_args () with
@@ -12679,6 +12915,92 @@ let create ~compile_expr =
                     Error.error
                       "__lg_complete_transformed expects an overloaded reducing function"))
         | _ -> Error.error "__lg_complete_transformed expects 2 arguments")
+    | "__lg_run" -> (
+        match arg_forms with
+        | [ proc_form; collection_form ] -> (
+            match compile_expr scope env collection_form with
+            | Error _ as error -> error
+            | Ok collection -> (
+                match Collection_capability.to_seq_expr env collection with
+                | Error _ -> Error.error "run! expects a seqable collection"
+                | Ok (element_ty, sequence) ->
+                    let expected_proc_ty =
+                      TFn ([ element_ty ], Type_solver.fresh ())
+                    in
+                    Result.bind
+                      (compile_function_arg scope
+                         (Env.with_expected_type (Some expected_proc_ty) env)
+                         proc_form)
+                      (fun proc ->
+                        match proc.ty with
+                        | TFn ([ proc_element_ty ], proc_return_ty)
+                          when argument_compatible proc_element_ty element_ty ->
+                            let accumulator_name = "__lg_run_accumulator" in
+                            let item_name = "__lg_run_item" in
+                            let proc_result_name = "__lg_run_proc_result" in
+                            let accumulator =
+                              Semantic_ir.Ident accumulator_name
+                            in
+                            let item = Semantic_ir.Ident item_name in
+                            let proc_call =
+                              Semantic_ir.Apply (proc.semantic_expr, [ item ])
+                            in
+                            let short_circuit =
+                              Option.is_some
+                                (Types.reduced_element proc_return_ty)
+                            in
+                            let reducer_body =
+                              if short_circuit then
+                                let proc_result =
+                                  Semantic_ir.Ident proc_result_name
+                                in
+                                Semantic_ir.Let
+                                  ( [
+                                      ( Semantic_ir.PVar proc_result_name,
+                                        proc_call );
+                                    ],
+                                    Semantic_ir.If
+                                      ( apply
+                                          "Lg_runtime.Runtime_reduced.is_reduced"
+                                          [ proc_result ],
+                                        apply
+                                          "Lg_runtime.Runtime_reduced.reduced"
+                                          [ accumulator ],
+                                        apply
+                                          "Lg_runtime.Runtime_reduced.continue"
+                                          [ accumulator ] ) )
+                              else
+                                Semantic_ir.Sequence [ proc_call; accumulator ]
+                            in
+                            let reducer_return_ty =
+                              if short_circuit then Types.reduced TInt else TInt
+                            in
+                            let reducer =
+                              typed_ir
+                                (TFn
+                                   ([ TInt; element_ty ], reducer_return_ty))
+                                (Semantic_ir.Fun
+                                   ( [
+                                       Semantic_ir.PVar accumulator_name;
+                                       Semantic_ir.PVar item_name;
+                                     ],
+                                     reducer_body ))
+                            in
+                            let reduction =
+                              Collection_capability.reduce_expr env
+                                ~short_circuit reducer
+                                (typed_ir TInt (Semantic_ir.Int 0)) collection
+                                sequence
+                            in
+                            Ok
+                              (typed_ir TNil
+                                 (Semantic_ir.Sequence
+                                    [ reduction; Semantic_ir.Unit ]))
+                        | TFn _ ->
+                            Error.error
+                              "run! called with incompatible arguments: callback argument type does not match collection"
+                        | _ -> Error.error "run! expects a unary function")))
+        | _ -> Error.error "run! expects a function and collection")
     | "__lg_reduce" -> compile_reduce scope env arg_forms
     | "__lg_apply" -> (
         match arg_forms with
@@ -14533,31 +14855,119 @@ let create ~compile_expr =
           else fn
         in
         let fn_expression = fn_value.semantic_expr in
-        if fn.multimethod then
+        if fn.multimethod && fn.multimethod_method_types = [] then
+          Error.error (name ^ " has no methods")
+        else if fn.multimethod then
           match fn.ty with
-          | TFn (parameter_tys, _) when List.length parameter_tys = List.length arg_forms -> (
-              let rec compile_args acc = function
-                | [] -> Ok (List.rev acc)
-                | form :: rest -> (
-                    match compile_expr scope env form with
-                    | Error _ as error -> error
-                    | Ok argument -> (
-                        match
-                          Multimethod_dynamic_boundary.convert_typed_value argument
-                        with
-                        | Error _ as error -> error
-                        | Ok dynamic ->
-                            compile_args (dynamic :: acc) rest))
+          | TFn (parameter_tys, return_ty)
+            when List.length parameter_tys = List.length arg_forms ->
+              let row_param_types =
+                if List.length fn.row_param_types = List.length parameter_tys
+                then fn.row_param_types
+                else List.map (fun _ -> None) parameter_tys
               in
-              match (resolve_multimethod_key scope env (FSymbol name), compile_args [] arg_forms) with
-              | Ok id, Ok args ->
-                  Ok
-                    (typed_ir (Types.dynamic_constraint TUnknown)
-                       (Semantic_ir.Apply
-                          ( Semantic_ir.Ident
-                              "Lg_runtime.Runtime_multimethod.invoke",
-                            [ Semantic_ir.String id; Semantic_ir.List args ] )))
-              | (Error _ as error), _ | _, (Error _ as error) -> error)
+              let rec compile_args acc parameters rows forms =
+                match (parameters, rows, forms) with
+                | [], [], [] -> Ok (List.rev acc)
+                | expected :: parameters, row :: rows, form :: forms -> (
+                    match
+                      compile_expr scope (Env.with_expected_type None env) form
+                    with
+                    | Error _ as error -> error
+                    | Ok argument ->
+                        if argument_compatible expected argument.ty then
+                          compile_args ((expected, row, argument) :: acc)
+                            parameters rows forms
+                        else
+                          Error.error
+                            (name ^ " called with incompatible arguments"))
+                | _ -> assert false
+              in
+              Result.bind
+                (compile_args [] parameter_tys row_param_types arg_forms)
+                (fun arguments ->
+                  let mapped =
+                    arguments
+                    |> List.mapi (fun index (expected, row_type_name, argument) ->
+                           let argument_name =
+                             "__lg_multimethod_call_arg_" ^ string_of_int index
+                           in
+                           let argument_value = Semantic_ir.Ident argument_name in
+                           let argument_bindings, rebound =
+                             match argument.record_values with
+                             | Some values ->
+                                 let bindings, values =
+                                   values
+                                   |> List.mapi (fun field_index (field, value) ->
+                                          let name =
+                                            argument_name ^ "_field_"
+                                            ^ string_of_int field_index
+                                          in
+                                          ( (Semantic_ir.PVar name, value),
+                                            (field, Semantic_ir.Ident name) ))
+                                   |> List.split
+                                 in
+                                 ( bindings,
+                                   {
+                                     argument with
+                                     semantic_expr = Semantic_ir.Unit;
+                                     record_values = Some values;
+                                   } )
+                             | None ->
+                                 ( [
+                                     ( Semantic_ir.PVar argument_name,
+                                       argument.semantic_expr );
+                                   ],
+                                   {
+                                     argument with
+                                     semantic_expr = argument_value;
+                                   } )
+                           in
+                           let static =
+                             match (row_type_name, expected) with
+                             | Some type_name, TRecord fields ->
+                                 project_constraint_row env type_name fields
+                                   rebound
+                             | _, TNamed_record record ->
+                                 typed_row_argument env
+                                   (Structural_map.record_type_application record)
+                                   record.fields rebound
+                             | _ ->
+                                 pack_constrained_value ?row_type_name env
+                                   expected rebound
+                           in
+                           ( argument_bindings,
+                             static,
+                             Multimethod_dynamic_boundary.convert_typed_value
+                               rebound ))
+                  in
+                  let bindings, static_results, dynamic_results =
+                    List.fold_left
+                      (fun (bindings, statics, dynamics)
+                           (argument_bindings, static, dynamic) ->
+                        ( List.rev_append argument_bindings bindings,
+                          static :: statics,
+                          dynamic :: dynamics ))
+                      ([], [], []) mapped
+                  in
+                  let bindings = List.rev bindings in
+                  let static_results = List.rev static_results in
+                  let dynamic_results = List.rev dynamic_results in
+                  let rec collect acc = function
+                    | [] -> Ok (List.rev acc)
+                    | Ok value :: rest -> collect (value :: acc) rest
+                    | (Error _ as error) :: _ -> error
+                  in
+                  Result.bind (collect [] static_results) (fun static_args ->
+                  Result.map
+                    (fun dynamic_args ->
+                      typed_ir return_ty
+                        (Semantic_ir.Let
+                           ( bindings,
+                             Semantic_ir.Apply
+                               ( fn_expression,
+                                 Semantic_ir.List dynamic_args :: static_args ) )))
+                    (collect [] dynamic_results)))
           | TFn (parameter_tys, _) ->
               Error.error
                 (name ^ " called with unsupported arity "
@@ -14565,23 +14975,39 @@ let create ~compile_expr =
                ^ string_of_int (List.length parameter_tys))
           | _ -> Error.error (name ^ " has an invalid multimethod binding")
         else
+        let parameters_from_expected_return parameter_tys return_ty =
+          match Env.expected_type env with
+          | None -> parameter_tys
+          | Some expected_return -> (
+              match
+                Type_solver.unify Type_solver.empty return_ty expected_return
+              with
+              | Ok substitutions ->
+                  List.map (Type_solver.apply substitutions) parameter_tys
+              | Error _ -> parameter_tys)
+        in
         let contextual_parameter_tys =
           match fn.ty with
-          | TFn (parameter_tys, _)
+          | TFn (parameter_tys, return_ty)
             when List.length parameter_tys = List.length arg_forms ->
-              Some parameter_tys
+              Some
+                (parameters_from_expected_return parameter_tys return_ty)
           | TOverloaded_fn arities ->
               select_contextual_overloaded_arity arities (List.length arg_forms)
               |> Option.map (fun (_, arity) ->
-                     arity.fixed_params
-                     @
-                     match arity.rest_param with
-                     | None -> []
-                     | Some rest_ty ->
-                         List.init
-                           (List.length arg_forms
-                           - List.length arity.fixed_params)
-                           (fun _ -> rest_ty))
+                     let parameter_tys =
+                       arity.fixed_params
+                       @
+                       match arity.rest_param with
+                       | None -> []
+                       | Some rest_ty ->
+                           List.init
+                             (List.length arg_forms
+                             - List.length arity.fixed_params)
+                             (fun _ -> rest_ty)
+                     in
+                     parameters_from_expected_return parameter_tys
+                       arity.return_ty)
           | _ -> None
         in
         let arg_forms =
@@ -14598,10 +15024,8 @@ let create ~compile_expr =
               let parameters = Array.of_list parameter_tys in
               let arguments = Array.make (Array.length forms) None in
               let deferred_callback index =
-                match (parameters.(index), forms.(index)) with
-                | (TFn _ | TOverloaded_fn _),
-                  (FList (FSymbol "fn" :: _) | FKeyword _) ->
-                    true
+                match parameters.(index) with
+                | TFn _ | TOverloaded_fn _ -> true
                 | _ -> false
               in
               let compile_argument expected form =
@@ -14794,6 +15218,15 @@ let create ~compile_expr =
                       List.fold_left2
                         (fun candidates expected argument ->
                           match
+                            ( Collection_capability.element_type_of_ty env
+                                expected,
+                              Collection_capability.element_type env argument )
+                          with
+                          | Some (TUnknown | TMeta _ | TVar _),
+                            Some element_ty ->
+                              add_element_candidate candidates element_ty
+                          | _ ->
+                          match
                             Option.map
                               (fun (_, element_ty, _) -> element_ty)
                               (Types.seqable_constraint_info expected)
@@ -14819,6 +15252,44 @@ let create ~compile_expr =
                       match element_candidates with
                       | [ element_ty ] -> Some element_ty
                       | [] | _ :: _ :: _ -> None
+                    in
+                    let sequence_element_candidates =
+                      List.fold_left2
+                        (fun candidates expected argument ->
+                          match
+                            ( Types.seqable_constraint_info expected,
+                              Collection_capability.element_type env argument )
+                          with
+                          | Some _, Some element_ty
+                            when not (contains_unresolved_type element_ty) ->
+                              if
+                                List.exists (Types.equal element_ty) candidates
+                              then candidates
+                              else element_ty :: candidates
+                          | _ -> candidates)
+                        [] arity.fixed_params fixed_args
+                    in
+                    let return_element_ty =
+                      match element_ty with
+                      | Some element_ty
+                        when not (contains_unresolved_type element_ty) ->
+                          Some element_ty
+                      | None -> (
+                          match sequence_element_candidates with
+                          | [ element_ty ] -> Some element_ty
+                          | [] | _ :: _ :: _ -> None)
+                      | Some _ -> (
+                          match sequence_element_candidates with
+                          | [ element_ty ] -> Some element_ty
+                          | [] | _ :: _ :: _ -> None)
+                    in
+                    let callback_accumulator_shape =
+                      List.find_opt
+                        (function
+                          | (TArray _ | TList _ | TVector _ | TSet _ | TSeq _) as ty ->
+                              contains_unresolved_type ty
+                          | _ -> false)
+                        element_candidates
                     in
                     let specialize_expected substitutions expected argument =
                       let expected =
@@ -14856,6 +15327,18 @@ let create ~compile_expr =
                           match element_ty with
                           | Some _ -> argument.ty
                           | None -> expected)
+                      | TFn (parameters, return_ty) -> (
+                          match element_ty with
+                          | Some element_ty ->
+                              TFn
+                                ( List.map
+                                    (function
+                                      | TUnknown | TMeta _ | TVar _ ->
+                                          element_ty
+                                      | parameter -> parameter)
+                                    parameters,
+                                  return_ty )
+                          | None -> expected)
                       | TNamed_record
                           ({ type_arguments = [ (TUnknown | TMeta _ | TVar _) ]; _ } as
                           record) -> (
@@ -14870,10 +15353,114 @@ let create ~compile_expr =
                           Types.instantiate_type ~templates:[ expected ]
                             ~actuals:[ argument.ty ] expected
                     in
+                    let inference_pairs =
+                      List.combine arity.fixed_params fixed_args
+                      |> List.stable_sort (fun (left, _) (right, _) ->
+                             compare
+                               (match left with TFn _ -> 1 | _ -> 0)
+                               (match right with TFn _ -> 1 | _ -> 0))
+                    in
+                    let rec infer_callback_type substitutions template actual =
+                      let resolved_template =
+                        Type_solver.apply substitutions template
+                      in
+                      match (resolved_template, actual) with
+                      | TFn (template_params, template_return),
+                        TFn (actual_params, actual_return)
+                        when List.length template_params
+                             = List.length actual_params ->
+                          Result.bind
+                            (List.fold_left2
+                               (fun result template actual ->
+                                 Result.bind result (fun substitutions ->
+                                     infer_callback_type substitutions template
+                                       actual))
+                               (Ok substitutions) template_params actual_params)
+                            (fun substitutions ->
+                              infer_callback_type substitutions template_return
+                                actual_return)
+                      | TOverloaded_fn template_arities,
+                        TOverloaded_fn actual_arities ->
+                          List.fold_left
+                            (fun result (template_arity : fn_arity) ->
+                              Result.bind result (fun substitutions ->
+                                  match
+                                    List.find_opt
+                                      (fun (actual_arity : fn_arity) ->
+                                        List.length template_arity.fixed_params
+                                        = List.length actual_arity.fixed_params
+                                        && Option.is_some
+                                             template_arity.rest_param
+                                           = Option.is_some
+                                               actual_arity.rest_param)
+                                      actual_arities
+                                  with
+                                  | None ->
+                                      Type_solver.unify substitutions
+                                        (TOverloaded_fn template_arities)
+                                        (TOverloaded_fn actual_arities)
+                                  | Some actual_arity ->
+                                      Result.bind
+                                        (List.fold_left2
+                                           (fun result template actual ->
+                                             Result.bind result
+                                               (fun substitutions ->
+                                                 infer_callback_type
+                                                   substitutions template actual))
+                                           (Ok substitutions)
+                                           template_arity.fixed_params
+                                           actual_arity.fixed_params)
+                                        (fun substitutions ->
+                                          Result.bind
+                                            (match
+                                               ( template_arity.rest_param,
+                                                 actual_arity.rest_param )
+                                             with
+                                            | Some template, Some actual ->
+                                                infer_callback_type substitutions
+                                                  template actual
+                                            | None, None -> Ok substitutions
+                                            | Some _, None | None, Some _ ->
+                                                Type_solver.unify substitutions
+                                                  (TOverloaded_fn
+                                                     template_arities)
+                                                  (TOverloaded_fn
+                                                     actual_arities))
+                                            (fun substitutions ->
+                                              infer_callback_type substitutions
+                                                template_arity.return_ty
+                                                actual_arity.return_ty))))
+                            (Ok substitutions) template_arities
+                      | template, actual
+                        when has_capability_constraint template ->
+                          Type_solver.unify substitutions
+                            (Types.constraint_value_type template)
+                            actual
+                      | template, actual
+                        when Type_solver.is_open template
+                             && has_capability_constraint actual ->
+                          Type_solver.unify substitutions template
+                            (Types.constraint_value_type actual)
+                      | template, actual
+                        when Type_solver.is_open template
+                             && Type_solver.is_open actual ->
+                          Type_solver.unify substitutions actual template
+                      | template, actual -> (
+                          match Types.protocol_constraint_info actual with
+                          | Some _ ->
+                              Ok
+                                (Protocol.infer_constraint_substitutions env
+                                   substitutions actual template)
+                          | None -> Type_solver.unify substitutions template actual)
+                    in
                     let substitutions =
-                      List.fold_left2
-                        (fun result template argument ->
+                      List.fold_left
+                        (fun result (template, argument) ->
                           Result.bind result (fun substitutions ->
+                              let template =
+                                specialize_expected substitutions template
+                                  argument
+                              in
                               let template, actual =
                                 align_optional_inference template argument.ty
                               in
@@ -14889,17 +15476,17 @@ let create ~compile_expr =
                                          (fun result template actual ->
                                            Result.bind result
                                              (fun substitutions ->
-                                               let template =
+                                               let resolved_template =
                                                  Type_solver.apply substitutions
                                                    template
                                                in
                                                if
                                                  callback_record_compatible env
-                                                   template actual
+                                                   resolved_template actual
                                                then Ok substitutions
                                                else
-                                                 Type_solver.unify substitutions
-                                                   template actual))
+                                                 infer_callback_type
+                                                   substitutions template actual))
                                          (Ok substitutions) template_params
                                          actual_params)
                                       (fun substitutions ->
@@ -14944,7 +15531,7 @@ let create ~compile_expr =
                                                  template_return actual_return ->
                                             Ok substitutions
                                         | _ ->
-                                            Type_solver.unify substitutions
+                                            infer_callback_type substitutions
                                               template_return actual_return)
                                 | _ ->
                                 match Types.protocol_constraint_info template with
@@ -15027,7 +15614,7 @@ let create ~compile_expr =
                                       (Type_solver.unify substitutions template
                                          actual
                                       |> Result.value ~default:substitutions)))
-                        (Ok Type_solver.empty) arity.fixed_params fixed_args
+                        (Ok Type_solver.empty) inference_pairs
                     in
                     let seqable_elements_compatible, substitutions =
                       match substitutions with
@@ -15048,9 +15635,12 @@ let create ~compile_expr =
                                   expected_params
                               in
                               let callback_substitutions =
-                                Type_solver.unify_lists substitutions
-                                  actual_params expected_params
-                                |> Result.value ~default:substitutions
+                                List.fold_left2
+                                  (fun substitutions expected actual ->
+                                    infer_callback_type substitutions expected
+                                      actual
+                                    |> Result.value ~default:substitutions)
+                                  substitutions expected_params actual_params
                               in
                               let actual_return =
                                 Type_solver.apply callback_substitutions
@@ -15101,33 +15691,92 @@ let create ~compile_expr =
                           let inferred_return_ty =
                             Type_solver.apply substitutions arity.return_ty
                           in
-                          match element_ty with
-                          | Some element_ty ->
-                          let rec specialize = function
-                            | TOcaml_app (name, _) as constraint_ty
-                              when Option.is_some
-                                     (Types.protocol_constraint_id name) ->
-                                constraint_ty
-                            | TUnknown | TMeta _ -> element_ty
-                            | TVar _ as ty -> ty
-                            | TNullable ty -> TNullable (specialize ty)
-                            | TArray ty -> TArray (specialize ty)
-                            | TRef ty -> TRef (specialize ty)
-                            | TList ty -> TList (specialize ty)
-                            | TVector ty -> TVector (specialize ty)
-                            | TSet ty -> TSet (specialize ty)
-                            | TSeq ty -> TSeq (specialize ty)
-                            | TOcaml_app (name, arguments) ->
-                                TOcaml_app
-                                  (name, List.map specialize arguments)
-                            | TTuple items -> TTuple (List.map specialize items)
-                            | ty -> ty
-                          in
-                              specialize inferred_return_ty
-                          | None -> inferred_return_ty)
+                          match
+                            ( inferred_return_ty,
+                              return_element_ty,
+                              callback_accumulator_shape )
+                          with
+                          | ( inferred_return_ty,
+                              Some element_ty,
+                              Some accumulator_shape )
+                            when (Types.is_dynamic element_ty
+                                 || is_edn_value_type element_ty)
+                                 && contains_unresolved_type inferred_return_ty ->
+                              let rec specialize_open_shape = function
+                                | TUnknown | TMeta _ | TVar _ -> element_ty
+                                | TNullable ty ->
+                                    TNullable (specialize_open_shape ty)
+                                | TArray ty -> TArray (specialize_open_shape ty)
+                                | TRef ty -> TRef (specialize_open_shape ty)
+                                | TList ty -> TList (specialize_open_shape ty)
+                                | TVector ty -> TVector (specialize_open_shape ty)
+                                | TSet ty -> TSet (specialize_open_shape ty)
+                                | TSeq ty -> TSeq (specialize_open_shape ty)
+                                | TOcaml_app (name, arguments) ->
+                                    TOcaml_app
+                                      ( name,
+                                        List.map specialize_open_shape arguments )
+                                | TTuple items ->
+                                    TTuple (List.map specialize_open_shape items)
+                                | ty -> ty
+                              in
+                              specialize_open_shape accumulator_shape
+                          | _, _, _ -> (
+                              match element_ty with
+                              | Some element_ty ->
+                                  let rec specialize = function
+                                    | TOcaml_app (name, _) as constraint_ty
+                                      when Option.is_some
+                                             (Types.protocol_constraint_id name)
+                                      ->
+                                        constraint_ty
+                                    | TUnknown | TMeta _ -> element_ty
+                                    | TVar _ as ty -> ty
+                                    | TNullable ty -> TNullable (specialize ty)
+                                    | TArray ty -> TArray (specialize ty)
+                                    | TRef ty -> TRef (specialize ty)
+                                    | TList ty -> TList (specialize ty)
+                                    | TVector ty -> TVector (specialize ty)
+                                    | TSet ty -> TSet (specialize ty)
+                                    | TSeq ty -> TSeq (specialize ty)
+                                    | TOcaml_app (name, arguments) ->
+                                        TOcaml_app
+                                          (name, List.map specialize arguments)
+                                    | TTuple items ->
+                                        TTuple (List.map specialize items)
+                                    | ty -> ty
+                                  in
+                                  specialize inferred_return_ty
+                              | None -> inferred_return_ty))
                     in
                     let return_ty =
                       Type_solver.apply substitutions return_ty
+                    in
+                    let return_ty =
+                      if not (contains_unresolved_type return_ty) then return_ty
+                      else
+                        List.find_map
+                          (function
+                            | TOverloaded_fn arities ->
+                                arities
+                                |> List.find_map (fun (arity : fn_arity) ->
+                                       match arity.fixed_params with
+                                       | accumulator_ty :: _
+                                         when not
+                                                (contains_unresolved_type
+                                                   accumulator_ty)
+                                              && Types.same_shape return_ty
+                                                   accumulator_ty ->
+                                           Some accumulator_ty
+                                       | _ -> None)
+                            | TFn (accumulator_ty :: _, _)
+                              when not
+                                     (contains_unresolved_type accumulator_ty)
+                                   && Types.same_shape return_ty accumulator_ty ->
+                                Some accumulator_ty
+                            | _ -> None)
+                          fixed_param_tys
+                        |> Option.value ~default:return_ty
                     in
                     let storage_return_ty = arity.return_ty in
                     let return_ty =
@@ -15241,24 +15890,32 @@ let create ~compile_expr =
                              | _ -> None)
                       |> List.find_map Fun.id
                     in
+                    let has_callback_parameter =
+                      List.exists
+                        (function TFn _ | TOverloaded_fn _ -> true | _ -> false)
+                        arity.fixed_params
+                    in
                     if not open_set_elements_compatible then
                       Error.error
                         (name ^ " expects sets with the same element type")
                     else if
                       not seqable_elements_compatible
-                      && Option.is_some invalid_seqable_callback_return
+                      && not has_callback_parameter
                     then
-                      let index, actual_return =
-                        Option.get invalid_seqable_callback_return
-                      in
-                      Error.error
-                        (name ^ " argument " ^ string_of_int index
-                       ^ ": collection value is not seqable: "
-                       ^ Types.source_name actual_return)
+                      (match invalid_seqable_callback_return with
+                      | Some (index, actual_return) ->
+                          Error.error
+                            (name ^ " argument " ^ string_of_int index
+                           ^ ": collection value is not seqable: "
+                           ^ Types.source_name actual_return)
+                      | None ->
+                          Error.error
+                            (name
+                           ^ " called with incompatible arguments: generic "
+                           ^ "type inference failed"))
                     else if
                       not
-                        (seqable_elements_compatible && fixed_compatible
-                       && rest_compatible)
+                        (fixed_compatible && rest_compatible)
                     then
                       Error.error
                         (name ^ " called with incompatible arguments: expected ("
@@ -15283,7 +15940,11 @@ let create ~compile_expr =
                                    | _ ->
                                        compatible expected arg.ty)
                                  fixed_param_tys fixed_args)
-                           |> List.filter_map Fun.id))
+                           |> List.filter_map Fun.id)
+                       ^ "; inference="
+                       ^ string_of_bool seqable_elements_compatible
+                       ^ ", fixed=" ^ string_of_bool fixed_compatible
+                       ^ ", rest=" ^ string_of_bool rest_compatible)
                     else
                       let prepare_argument index expected argument =
                         let storage_expected =
@@ -15606,6 +16267,13 @@ let create ~compile_expr =
                       in
                       unify_callback_parameters substitutions template_params
                         actual_params
+                  | template, actual
+                    when Option.is_some
+                           (Types.protocol_constraint_info template) ->
+                      Ok
+                        (Protocol.infer_constraint_substitutions env
+                           substitutions template
+                           (Types.constraint_value_type actual))
                   | _ -> (
                       match
                         ( Types.seqable_constraint_info template,
@@ -15661,7 +16329,21 @@ let create ~compile_expr =
                             else Error conflict)
                   | _ -> assert false
                 in
-                match infer_arguments Type_solver.empty param_tys actual_tys with
+                let inference_pairs =
+                  List.combine param_tys actual_tys
+                  |> List.stable_sort (fun (left, _) (right, _) ->
+                         compare
+                           (match left with TFn _ | TOverloaded_fn _ -> 1 | _ -> 0)
+                           (match right with
+                           | TFn _ | TOverloaded_fn _ -> 1
+                           | _ -> 0))
+                in
+                let inference_param_tys = List.map fst inference_pairs in
+                let inference_actual_tys = List.map snd inference_pairs in
+                match
+                  infer_arguments Type_solver.empty inference_param_tys
+                    inference_actual_tys
+                with
                 | Error conflict when Type_solver.conflict_is_occurs conflict ->
                     Error.error
                       (name
@@ -15955,7 +16637,8 @@ let create ~compile_expr =
                 let substitutions =
                   match Env.expected_type env with
                   | Some expected
-                    when contains_unresolved_type
+                    when (not (has_capability_constraint expected))
+                         && contains_unresolved_type
                            (Type_solver.apply substitutions ret) ->
                       Type_solver.unify substitutions ret expected
                       |> Result.value ~default:substitutions
@@ -16197,7 +16880,9 @@ let create ~compile_expr =
                 in
                 let ret =
                   match (ret, Env.expected_type env) with
-                  | (TUnknown | TMeta _ | TVar _), Some expected -> expected
+                  | (TUnknown | TMeta _ | TVar _), Some expected
+                    when not (has_capability_constraint expected) ->
+                      expected
                   | _ -> ret
                 in
                 let storage_sequence_elements =
@@ -16779,12 +17464,16 @@ let create ~compile_expr =
                     | TSet (TUnknown | TMeta _ | TVar _) ->
                         storage_ret_template
                     | TUnknown | TMeta _ | TVar _ -> storage_ret_template
+                    | _
+                      when Option.is_some fn.return_param_index
+                           && has_capability_constraint storage_ret_template ->
+                        ret
                     | _ when has_capability_constraint storage_ret_template ->
                         storage_ret_template
                     | _ ->
                         if
                           Option.is_some fn.return_param_index
-                          && Types.is_dynamic storage_ret_template
+                          && uses_dynamic_value_storage storage_ret_template
                         then storage_ret_template
                         else if
                           erased_storage_call

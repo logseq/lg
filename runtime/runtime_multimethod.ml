@@ -1,9 +1,8 @@
 module Dynamic = Runtime_dynamic
 
 type dispatch_fn = Dynamic.t list -> Dynamic.t
-type method_fn = Dynamic.t list -> Dynamic.t
 
-type method_entry = { dispatch : Dynamic.t; fn : method_fn }
+type method_entry = { dispatch : Dynamic.t }
 
 type multifn = {
   id : string;
@@ -66,10 +65,10 @@ let find_multifn id =
   | Some multifn -> multifn
   | None -> invalid_arg ("unknown multimethod " ^ id)
 
-let register_method id dispatch fn =
+let register_method id dispatch =
   let multifn = find_multifn id in
   multifn.methods <-
-    { dispatch; fn }
+    { dispatch }
     :: List.filter
          (fun method_ -> not (Dynamic.equal method_.dispatch dispatch))
          multifn.methods
@@ -145,12 +144,19 @@ let find_method_entry multifn dispatch =
         (fun method_ -> Dynamic.equal multifn.default_dispatch method_.dispatch)
         multifn.methods
 
-let invoke id args =
+let select_method id args methods =
   let multifn = find_multifn id in
   let dispatch = multifn.dispatch_fn args in
   match find_method_entry multifn dispatch with
-  | Some method_ -> method_.fn args
-  | None -> Dynamic.nil
+  | None -> None
+  | Some selected ->
+      methods
+      |> List.find_map (fun (registered_dispatch, method_) ->
+             if Dynamic.equal registered_dispatch selected.dispatch then
+               Some method_
+             else None)
+
+let no_method id = invalid_arg ("no method in multimethod " ^ id)
 
 let methods id =
   let multifn = find_multifn id in

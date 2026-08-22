@@ -239,3 +239,6 @@ clojure.core-test.bound-fn-star
 # Truthy binding and decimal math context.
 clojure.core-test.when-let
 clojure.core-test.with-precision
+
+# Vendor file typechecks on Native. Melange :cljs rows call (nthrest coll nil).
+clojure.core-test.nthrest native

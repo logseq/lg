@@ -38,16 +38,3 @@
   (melange (>= 6.0))
   alcotest
   lg))
-
-(package
- (name datascript)
- (maintainers "Tienson Qin <tiensonqin@gmail.com>")
- (authors "Tienson Qin")
- (synopsis "DataScript runtime support for CljML")
- (description
-  "Closed DataScript domain types and Native/Melange boundary adapters for CljML.")
- (depends
-  (ocaml (>= 5.4))
-  (dune (>= 3.17))
-  (melange (>= 6.0))
-  lg))

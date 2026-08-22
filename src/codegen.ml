@@ -84,9 +84,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
                else "Lg_runtime.Runtime_dynamic.str")
               [ Semantic_ir.Ident "x" ] )
     | TUnknown | TMeta _ | TVar _ ->
-        Semantic_ir.Ident
-          (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
-           else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+        Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],
@@ -95,11 +93,11 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
                  (TOcaml_app ("option", [ inner ]))
                  (Semantic_ir.Ident "value")) )
     | TOcaml "value" ->
-        Semantic_ir.Ident
-          (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
-           else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+        Semantic_ir.Fun ([ Semantic_ir.PAny ], Semantic_ir.String "<value>")
     | TOcaml "Lg_edn_backend.t" ->
-        Semantic_ir.Ident "Lg_runtime.Runtime_edn.write_string"
+        Semantic_ir.Ident
+          (if pr then "Lg_runtime.Runtime_edn.pr_str"
+           else "Lg_runtime.Runtime_edn.str")
     | TList _ | TSeq _ | TVector _ | TSet _ ->
         Semantic_ir.Fun
           ( [ Semantic_ir.PVar "value" ],
@@ -152,10 +150,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
       | _ -> expr.semantic_expr)
   | TMap_keys -> Semantic_ir.String "<map>"
   | TMeta _ | TVar _ ->
-      apply
-        (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
-         else "Lg_runtime.Runtime_dynamic.polymorphic_str")
-        [ expr.semantic_expr ]
+      Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "<value>" ]
   | TOcaml "Lg_runtime.Runtime_uuid.t" ->
       apply "Lg_runtime.Runtime_uuid.to_string" [ expr.semantic_expr ]
   | TOcaml "Lg_runtime.Runtime_instant.t" ->
@@ -171,12 +166,12 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
   | TOcaml "Lg_runtime.Runtime_ratio.t" ->
       apply "Lg_runtime.Runtime_ratio.to_string" [ expr.semantic_expr ]
   | TOcaml "Lg_edn_backend.t" ->
-      apply "Lg_runtime.Runtime_edn.write_string" [ expr.semantic_expr ]
-  | TOcaml "value" ->
       apply
-        (if pr then "Lg_runtime.Runtime_dynamic.polymorphic_pr_str"
-         else "Lg_runtime.Runtime_dynamic.polymorphic_str")
+        (if pr then "Lg_runtime.Runtime_edn.pr_str"
+         else "Lg_runtime.Runtime_edn.str")
         [ expr.semantic_expr ]
+  | TOcaml "value" ->
+      Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "<value>" ]
   | TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
       render_print_level ?print_level (fun child_print_level ->
           Semantic_ir.If

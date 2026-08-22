@@ -604,8 +604,7 @@
                     'clojure.test/invoke-function-fixture!
                     (if (map? fixture)
                       'clojure.test/invoke-map-fixture!
-                      #?(:clj 'clojure.test/invoke-function-fixture!
-                         :cljs 'clojure.test/invoke-map-fixture!)))]
+                      'clojure.test/invoke-fixture!))]
               `(~register
                 ~namespace
                 (fn [^:fn<unit;unit> run#]

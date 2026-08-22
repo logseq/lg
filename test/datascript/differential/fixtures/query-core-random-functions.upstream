@@ -1,9 +1,0 @@
-rand-default-within-range=true
-rand-positive-within-range=true
-rand-zero=0.0
-rand-negative-within-range=true
-rand-int-positive-within-range=true
-rand-int-zero=0
-rand-int-negative-within-range=true
-rand-int-float-within-range=true
-invalid-arities-rejected=true

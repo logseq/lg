@@ -482,10 +482,7 @@ let rec stable_method_return_type = function
 
 let common_method_return env protocol_id method_name =
   let method_id = method_id protocol_id method_name in
-  let registry =
-    Compiler_environment.protocol_evidence env
-    |> Option.value ~default:(Env.protocols env)
-  in
+  let registry = Env.protocols env in
   let return_types =
     Protocol_registry.implementations_for_method protocol_id method_id registry
     |> List.filter_map (fun (implementation : binding) ->
@@ -506,10 +503,7 @@ let common_method_return env protocol_id method_name =
 let common_method_return_for_arity env protocol_id method_name
     (target : fn_arity) =
   let method_id = method_id protocol_id method_name in
-  let registry =
-    Compiler_environment.protocol_evidence env
-    |> Option.value ~default:(Env.protocols env)
-  in
+  let registry = Env.protocols env in
   let same_arity (arity : fn_arity) =
     List.length arity.fixed_params = List.length target.fixed_params
     && Option.is_some arity.rest_param = Option.is_some target.rest_param
@@ -675,16 +669,8 @@ let lookup_marker scope env method_name =
               in
               Option.map
                 (fun target ->
-                  let root_id =
-                    Protocol_id.create ~owner:[] ~name:local_name
-                  in
-                  if
-                    (String.equal target "clojure.core"
-                    || String.equal target "cljs.core")
-                    && Option.is_some
-                         (Protocol_registry.find_protocol root_id registry)
-                  then root_id
-                  else Protocol_id.create ~owner:[ target ] ~name:local_name)
+                  Protocol_id.create ~owner:[ target ] ~name:local_name
+                  |> resolve_protocol_id ~scope env)
                 (Env.resolve_namespace_alias ~scope namespace env)
         in
         let namespace_owner =
@@ -714,10 +700,13 @@ let lookup_marker scope env method_name =
             in
             (match marker_for scoped_id method_name with
             | Some _ as marker -> marker
-            | None ->
-                marker_for
-                  (Protocol_id.create ~owner:[] ~name:protocol_name)
-                  method_name)))
+            | None -> (
+                match find_protocol_id scope env protocol_name with
+                | Some protocol_id -> marker_for protocol_id method_name
+                | None ->
+                    marker_for
+                      (Protocol_id.create ~owner:[] ~name:protocol_name)
+                      method_name))))
     | [ method_name ] ->
         let owner = if scope = "" then [] else [ scope ] in
         let protocols =
@@ -740,7 +729,7 @@ let lookup_marker scope env method_name =
         | _ :: _ :: _ -> None)
     | [] -> None
 
-let constraint_type scope env protocol_or_method_name =
+let raw_constraint_type scope env protocol_or_method_name =
   match find_protocol_id scope env protocol_or_method_name with
   | Some protocol_id -> constraint_type_for_id env protocol_id
   | None -> (
@@ -770,9 +759,8 @@ let lookup_impl env protocol_id method_name receiver_ty =
   match protocol_receiver_id protocol_id receiver_ty with
   | Some receiver_id ->
       let receiver_id =
-        match (Protocol_id.name protocol_id, receiver_ty) with
-        | ("ISeq" | "INext" | "IDrop"), TOcaml_app (name, [ _ ])
-          when Types.is_next_seq_type_name name ->
+        match receiver_ty with
+        | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
             Receiver_id.Seq_receiver
         | _ -> receiver_id
       in
@@ -991,6 +979,10 @@ let refine_constraint_methods env ty =
                       declared_returns_are_open))
             in
             Types.protocol_constraint protocol_id methods value_ty)
+
+let constraint_type scope env protocol_or_method_name =
+  raw_constraint_type scope env protocol_or_method_name
+  |> Option.map (refine_constraint_methods env)
 
 let constraint_return_substitutions env substitutions ty =
   match Types.protocol_constraint_info ty with

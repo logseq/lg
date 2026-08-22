@@ -10,3 +10,4 @@
 .lsp/
 .clj-kondo/
 node_modules/
+/vendor/clojure-test-suite/

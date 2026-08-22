@@ -1,5 +1,0 @@
-named={:name "Ivan"}
-named-has-age=false
-wildcard-has-db-id=true
-wildcard-has-name=true
-wildcard-has-age=true

@@ -32,11 +32,25 @@ if [ -d "$test_dir/state-cache/compile-files" ]; then
   exit 1
 fi
 
+LG_COMPILE_CACHE_MIN_SECONDS=0 \
 LG_CACHE_DIR="$test_dir/output-cache" \
   "$cli" --compile-files-from "$stdlib_state" "$source_file" -o "$test_dir/output.ml"
 
 if ! find "$test_dir/output-cache/compile-files" \
     -name '*.state.marshal' -type f | grep -q .; then
   echo "ordinary multi-file compilation did not retain its prefix cache" >&2
+  exit 1
+fi
+
+LG_COMPILE_CACHE_MAX_BYTES=1 \
+LG_COMPILE_CACHE_MIN_SECONDS=0 \
+LG_CACHE_DIR="$test_dir/bounded-cache" \
+  "$cli" --compile-files-from "$stdlib_state" "$source_file" \
+    -o "$test_dir/bounded.ml"
+
+bounded_size=$(du -sk "$test_dir/bounded-cache/compile-files" \
+  | awk '{print $1 * 1024}')
+if [ "$bounded_size" -gt 1 ]; then
+  echo "compile cache exceeded LG_COMPILE_CACHE_MAX_BYTES" >&2
   exit 1
 fi

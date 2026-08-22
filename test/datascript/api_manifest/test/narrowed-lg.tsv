@@ -1,6 +1,0 @@
-var	datascript.core/q
-arity	datascript.core/q	2	fixed
-protocol	datascript.storage/IStorage	-store
-option	datascript.core/create-conn	:storage
-source-form	query	vector
-tagged-reader	datascript/Datom

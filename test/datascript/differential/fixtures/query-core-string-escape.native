@@ -1,7 +1,0 @@
-mapped="a&lt;b&amp;c"
-nil-and-number="a7c"
-mixed-replacements="false:kx"
-unicode="你好!"
-single-character-string-keys="N好xbc"
-empty=""
-invalid-arguments-rejected=true

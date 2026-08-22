@@ -292,6 +292,12 @@ let add_record_field_constraint name keyword field_ty params =
           true
       | _ -> false
     in
+    let statically_printable = function
+      | TInt | TFloat | TChar | TString | TRegex | TSymbol | TKeyword | TBool
+      | TUnit | TNil | TOcaml "int" | TOcaml "Lg_edn_backend.t" ->
+          true
+      | _ -> false
+    in
     let replace_field_type ty =
       Ok
         (make_constrained_field ty
@@ -311,6 +317,14 @@ let add_record_field_constraint name keyword field_ty params =
                    (fun candidate -> candidate.keyword <> keyword)
                    fields)
         | _, (TUnknown | TMeta _ | TVar _) -> Ok fields
+        | existing, inferred
+          when statically_printable existing
+               && Option.is_some (Types.printable_constraint_info inferred) ->
+            Ok fields
+        | existing, inferred
+          when Option.is_some (Types.printable_constraint_info existing)
+               && statically_printable inferred ->
+            replace_field_type inferred
         | TRef TUnknown, TRef value_ty ->
             Ok
               (make_constrained_field (TRef value_ty)
@@ -620,6 +634,23 @@ let rec inferred_form_type params = function
         (inferred_form_type params then_form)
         TNil
       |> Option.value ~default:TUnknown
+  | FList (FSymbol "match" :: _target :: clauses) ->
+      let rec result_types = function
+        | _pattern :: result :: rest ->
+            inferred_form_type params result :: result_types rest
+        | [] | [ _ ] -> []
+      in
+      result_types clauses
+      |> List.filter (fun ty ->
+             match ty with TUnknown | TMeta _ | TVar _ -> false | _ -> true)
+      |> (function
+           | [] -> TUnknown
+           | first :: rest ->
+               List.fold_left
+                 (fun merged ty ->
+                   Expression_support.merge_branch_types merged ty
+                   |> Option.value ~default:TUnknown)
+                 first rest)
   | FKeyword _ -> TKeyword
   | FList [ FSymbol "#uuid"; FString _ ] ->
       TOcaml "Lg_runtime.Runtime_uuid.t"
@@ -638,7 +669,7 @@ let rec inferred_form_type params = function
       ] ->
       TList TUnknown
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FVector [] ] ->
-      TRef (TVector TUnknown)
+      TRef (TVector (Type_solver.fresh ()))
   | FList [ FSymbol ("__lg_atom" | "__lg_volatile!"); FSymbol "nil" ] ->
       TRef (TNullable TUnknown)
   | FList [ FSymbol "__lg_add-watch"; reference; _key; _callback ] ->
@@ -678,7 +709,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_abs"; value ] -> numeric_form_type params value
   | FList [ FSymbol "__lg_ex-message"; _ ] -> TNullable TString
   | FList [ FSymbol "__lg_ex-cause"; _ ] -> TNullable (TOcaml "exn")
-  | FList [ FSymbol "__lg_ex-data"; _ ] -> Types.dynamic_constraint TUnknown
+  | FList [ FSymbol "__lg_ex-data"; _ ] -> TOcaml "Lg_edn_backend.t"
   | FList [ FSymbol "__lg_exec-tap-fn"; _ ] -> TBool
   | FList [ FSymbol predicate; _ ] when has_source_name predicate "__lg_empty-predicate" ->
       TBool
@@ -712,7 +743,7 @@ let rec inferred_form_type params = function
   | FList [ FSymbol "__lg_re-matcher"; _; _ ] ->
       TOcaml "Lg_runtime.Runtime_string.regex_matcher"
   | FList [ FSymbol "__lg_re-find"; _ ] ->
-      Types.dynamic_constraint TUnknown
+      TOcaml "Lg_edn_backend.t"
   | FList [ FSymbol "__lg_flatten"; collection ] ->
       (match returned_vector_type params collection with
       | Some vector_ty -> vector_ty
@@ -772,6 +803,16 @@ let rec inferred_form_type params = function
       inferred_form_type params value
   | FList
       (FSymbol ("__lg_str" | "__lg_print_str" | "__lg_pr_str") :: _) ->
+      TString
+  | FList
+      (FSymbol "__lg_apply"
+      :: FSymbol operation :: _)
+    when has_source_name operation "str"
+         || has_source_name operation "__lg_str"
+         || has_source_name operation "print-str"
+         || has_source_name operation "__lg_print_str"
+         || has_source_name operation "pr-str"
+         || has_source_name operation "__lg_pr_str" ->
       TString
   | FList [ FSymbol "__lg_first"; FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
@@ -1033,6 +1074,15 @@ let select_fn_arity arities argument_count =
         arities
 
 let rec inferred_call_return_type ~lookup_function_ty params = function
+  | FList
+      (FSymbol "__lg_apply" :: FSymbol operation :: _)
+    when has_source_name operation "str"
+         || has_source_name operation "__lg_str"
+         || has_source_name operation "print-str"
+         || has_source_name operation "__lg_print_str"
+         || has_source_name operation "pr-str"
+         || has_source_name operation "__lg_pr_str" ->
+      TString
   | FList
       [
         FSymbol "__lg_into";
@@ -1879,9 +1929,8 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           [
             FSymbol "__lg_first";
             FSymbol collection;
-          ] -> (
+        ] -> (
         match string_assoc_opt collection params with
-        | Some (TUnknown | TMeta _ | TVar _) -> Ok params
         | Some _ | None -> constrain_seqable expected_ty params collection)
     | FList [ FSymbol "__lg_first"; collection ] ->
         infer_sequence_form expected_ty params collection
@@ -2030,6 +2079,9 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
              (Ok params)
     | (FList [ FSymbol "__lg_contains"; _target; _key ] as form) ->
         infer_form params form
+    | FList (FSymbol method_name :: args)
+      when Option.is_some (lookup_protocol_constraint method_name) ->
+        infer_known_call ~expected_return_ty:expected_ty method_name params args
     | FList (FSymbol name :: args) -> (
         let form = FList (FSymbol name :: args) in
         let infer_call parameter_tys return_ty =
@@ -2197,7 +2249,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FSymbol name -> constrain_truthy_symbol params name
     | FList [ FSymbol predicate; value ]
       when has_source_name predicate "__lg_empty-predicate" ->
-        infer_form params value
+        (match value with
+        | FSymbol name -> constrain_seqable TUnknown params name
+        | form ->
+            infer_expected (Types.seqable_constraint TUnknown) params form)
     | FList (FSymbol name :: args) when string_mem_assoc name params ->
         let parameter_types =
           List.map
@@ -2288,7 +2343,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     match bindings with
     | FVector forms -> infer_bindings params forms
     | _ -> infer_all params body_forms
-  and infer_known_call name params args =
+  and infer_known_call ?expected_return_ty name params args =
     let member_name =
       match String.rindex_opt name '/' with
       | None -> name
@@ -2306,6 +2361,32 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       | Some constraint_ty, FSymbol receiver :: rest ->
           let constraint_ty =
             refine_protocol_call_constraint params constraint_ty rest
+          in
+          let constraint_ty =
+            match
+              ( expected_return_ty,
+                Types.protocol_constraint_info constraint_ty )
+            with
+            | Some expected, Some (protocol_id, witness_ty, value_ty) -> (
+                match Types.seqable_constraint_info expected with
+                | Some _ -> (
+                    match Types.protocol_witness_method_types witness_ty with
+                    | Some methods ->
+                        let refine_method = function
+                          | TFn (parameters, return_ty)
+                            when List.length parameters = List.length args
+                                 && (match return_ty with
+                                    | TUnknown | TMeta _ | TVar _ -> true
+                                    | _ -> false) ->
+                              TFn (parameters, expected)
+                          | method_ty -> method_ty
+                        in
+                        Types.protocol_constraint protocol_id
+                          (List.map refine_method methods)
+                          value_ty
+                    | None -> constraint_ty)
+                | None -> constraint_ty)
+            | None, _ | _, None -> constraint_ty
           in
           Result.bind
             (constrain_protocol_symbol constraint_ty params receiver)
@@ -3781,12 +3862,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_with-meta"; value; metadata ] ->
         Result.bind (infer_form params value) (fun params ->
             infer_form params metadata)
+    | FList [ FSymbol "__lg_not"; value ] -> infer_truthy params value
     | (FList
         (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) as form) ->
         infer_truthy params form
     | FList [ FSymbol predicate; value ]
       when has_source_name predicate "__lg_empty-predicate" ->
-        infer_form params value
+        (match value with
+        | FSymbol name -> constrain_seqable TUnknown params name
+        | form ->
+            infer_expected (Types.seqable_constraint TUnknown) params form)
     | FList [ FSymbol predicate; value ]
       when has_source_name predicate "__lg_true-predicate"
            || has_source_name predicate "__lg_false-predicate" ->
@@ -3799,12 +3884,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
       when has_source_name predicate "__lg_symbol-predicate" ->
         constrain_symbol_predicate params value
     | FList [ FSymbol predicate; FSymbol value ]
+      when has_source_name predicate "__lg_int-predicate" ->
+        constrain_symbol TInt params value
+    | FList [ FSymbol predicate; FSymbol value ]
       when List.exists
              (has_source_name predicate)
              [
                "__lg_keyword-predicate";
                "__lg_string-predicate";
-               "__lg_int-predicate";
                "__lg_decimal-predicate";
                "__lg_number-predicate";
                "__lg_array-predicate";
@@ -4089,20 +4176,54 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_form params reference) (fun params ->
             Result.bind (infer_form params update_fn) (fun params ->
                 let expected = inferred_form_type params reference in
-                let update_ty = inferred_form_type params update_fn in
-                let expected_argument =
-                  match (expected, update_ty) with
-                  | TRef _, TFn _ -> TUnknown
-                  | expected, _ when not (Types.is_dynamic expected) -> TUnknown
-                  | _ -> Types.dynamic_constraint TUnknown
+                let update_ty =
+                  match update_fn with
+                  | FSymbol name -> (
+                      match string_assoc_opt name params with
+                      | Some ty -> ty
+                      | None ->
+                          lookup_function_ty name
+                          |> Result.value ~default:TUnknown)
+                  | form -> inferred_form_type params form
                 in
-                List.fold_left
-                  (fun result argument ->
+                let invocation_parameter_types =
+                  let argument_count = List.length arguments + 1 in
+                  match update_ty with
+                  | TFn (parameter_tys, _)
+                    when List.length parameter_tys = argument_count ->
+                      Some parameter_tys
+                  | TOverloaded_fn arities ->
+                      select_fn_arity arities argument_count
+                      |> Option.map (fun (arity : fn_arity) ->
+                             arity.fixed_params
+                             @
+                             match arity.rest_param with
+                             | None -> []
+                             | Some rest_ty ->
+                                 List.init
+                                   (argument_count
+                                   - List.length arity.fixed_params)
+                                   (fun _ -> rest_ty))
+                  | _ -> None
+                in
+                let expected_arguments =
+                  match invocation_parameter_types with
+                  | Some (_current :: additional) -> additional
+                  | Some [] | None ->
+                      let expected_argument =
+                        if Types.is_dynamic expected then
+                          Types.dynamic_constraint TUnknown
+                        else TUnknown
+                      in
+                      List.init (List.length arguments) (fun _ -> expected_argument)
+                in
+                List.fold_left2
+                  (fun result expected_argument argument ->
                     Result.bind result (fun params ->
                         if Types.equal expected_argument TUnknown then
                           infer_form params argument
                         else infer_expected expected_argument params argument))
-                  (Ok params) arguments))
+                  (Ok params) expected_arguments arguments))
     | FList
         [
           FSymbol "__deftype-field-set!";

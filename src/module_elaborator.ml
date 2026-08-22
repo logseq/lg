@@ -5,6 +5,38 @@ open Lowered
 module Env = Compiler_environment
 
 let compile_expr = Expression_elaborator.compile_expr
+
+let applied_function_name expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Apply (callee, _) -> (
+      match Semantic_ir.unlocated callee with
+      | Semantic_ir.Ident name -> Some name
+      | _ -> None)
+  | _ -> None
+
+let applied_function_return_type env expression =
+  match Semantic_ir.unlocated expression with
+  | Semantic_ir.Apply (callee, arguments) -> (
+      match Semantic_ir.unlocated callee with
+      | Semantic_ir.Ident name ->
+          Env.bindings_emitted_as name env
+          |> List.find_map (fun (_, (binding : Types.binding)) ->
+                 match binding.ty with
+                 | TFn (parameters, return_ty)
+                   when List.length parameters = List.length arguments ->
+                     Some return_ty
+                 | TOverloaded_fn arities ->
+                     arities
+                     |> List.find_map (fun (arity : Types.fn_arity) ->
+                            if
+                              List.length arity.fixed_params
+                              = List.length arguments
+                              && Option.is_none arity.rest_param
+                            then Some arity.return_ty
+                            else None)
+                 | _ -> None)
+      | _ -> None)
+  | _ -> None
 let prepare_fn = Expression_elaborator.prepare_fn
 let prepare_recursive_fn = Expression_elaborator.prepare_recursive_fn
 let fn_code = Expression_elaborator.fn_code
@@ -391,18 +423,14 @@ let rec compile_module ?location ?signature_name ?signature_location
               when (match Semantic_ir.unlocated expr.semantic_expr with
                    | _ when (match expr.ty with TRecord _ -> true | _ -> false) ->
                        true
-                   | Semantic_ir.Apply
-                       (Semantic_ir.Ident function_name, _)
-                     when not
-                            (String.starts_with ~prefix:"Lg_runtime."
-                               function_name) ->
-                       true
-                   | _ -> false) ->
-                let identity =
-                  Source_context.find name_form
-                  |> Option.map (fun location ->
-                         (Source_node_id.of_location location, location))
-                in
+                   | _ -> (
+                       match applied_function_name expr.semantic_expr with
+                       | Some function_name ->
+                           not
+                             (String.starts_with ~prefix:"Lg_runtime."
+                                function_name)
+                       | None -> false)
+                  ) ->
                 let module_name = Names.module_path_to_ocaml module_path in
                 let allocation =
                   allocate_anonymous_record ~owner:module_path env next_type fields
@@ -417,73 +445,60 @@ let rec compile_module ?location ?signature_name ?signature_location
                     public_record_ty
                 in
                 let env = Env.add key local_binding allocation.env in
+                let local_expr =
+                  match expr.record_values with
+                  | Some _ ->
+                      Structural_map.as_named_record allocation.record expr
+                  | None ->
+                      let source_name = "__lg_record_source_" ^ local_name in
+                      let source_ty =
+                        applied_function_return_type env expr.semantic_expr
+                        |> Option.value ~default:expr.ty
+                      in
+                      let source =
+                        {
+                          expr with
+                          ty = source_ty;
+                          semantic_expr = Semantic_ir.Ident source_name;
+                          record_values = None;
+                        }
+                      in
+                      let projected =
+                        Structural_map.as_named_record allocation.record source
+                      in
+                      {
+                        projected with
+                        semantic_expr =
+                          Semantic_ir.Let
+                            ( [
+                                ( Semantic_ir.PVar source_name,
+                                  expr.semantic_expr );
+                              ],
+                              projected.semantic_expr );
+                        record_values = None;
+                      }
+                in
+                let value_item =
+                  Value_binding
+                    { pattern = Named local_name;
+                      expression = local_expr.semantic_expr }
+                in
                 let item =
                   if allocation.fresh then
-                    match expr.record_values with
-                    | Some values ->
-                        Record_def
-                          { var_name = local_name;
-                            identity;
-                            type_id = allocation.record.type_id;
-                            type_name = allocation.record.type_name;
-                            type_parameters = allocation.record.type_parameters;
-                            set_module_name = allocation.record.set_module_name;
-                            fields;
-                            values;
-                          }
-                    | None ->
-                        Projected_record_def
-                          { var_name = local_name;
-                            identity;
-                            type_id = allocation.record.type_id;
-                            type_name = allocation.record.type_name;
-                            type_parameters = allocation.record.type_parameters;
-                            set_module_name = allocation.record.set_module_name;
-                            fields;
-                            source = expr.semantic_expr;
-                          }
-                  else
-                    let local_expr =
-                      match Semantic_ir.unlocated expr.semantic_expr with
-                      | Semantic_ir.Apply
-                          (Semantic_ir.Ident function_name, _)
-                        when not
-                               (String.starts_with ~prefix:"Lg_runtime."
-                                  function_name) ->
-                          let source_name =
-                            "__lg_record_source_" ^ local_name
-                          in
-                          let projected =
-                            Semantic_ir.Record
-                              ( List.map
-                                  (fun (field : field) ->
-                                    ( field.ocaml_name,
-                                      Semantic_ir.Field
-                                        ( Semantic_ir.Ident source_name,
-                                          field.ocaml_name ) ))
-                                  allocation.record.fields,
-                                Some
-                                  (Structural_map.record_type_application
-                                     allocation.record) )
-                          in
+                    Group
+                      [
+                        Type_def
                           {
-                            expr with
-                            ty = TNamed_record allocation.record;
-                            semantic_expr =
-                              Semantic_ir.Let
-                                ( [
-                                    ( Semantic_ir.PVar source_name,
-                                      expr.semantic_expr );
-                                  ],
-                                  projected );
-                            record_values = None;
-                          }
-                      | _ ->
-                          Structural_map.as_named_record allocation.record expr
-                    in
-                    Value_binding
-                      { pattern = Named local_name;
-                        expression = local_expr.semantic_expr }
+                            type_id = allocation.record.type_id;
+                            type_name = allocation.record.type_name;
+                            type_parameters = allocation.record.type_parameters;
+                            fields = allocation.record.fields;
+                            nominal = false;
+                            location = Source_context.find name_form;
+                          };
+                        value_item;
+                      ]
+                  else value_item
                 in
                 Ok
                   ( env,

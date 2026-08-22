@@ -326,6 +326,60 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         ^ ", got "
         ^ Types.source_name argument.ty)
   in
+  let rec infer_apply_type substitutions template actual =
+    match
+      ( Types.seqable_constraint_element template,
+        concrete_sequence_element actual )
+    with
+    | Some template_element, Some actual_element ->
+        Type_solver.infer substitutions ~template:template_element
+          ~actual:actual_element
+        |> Result.value ~default:substitutions
+    | _ -> (
+        match (template, actual) with
+        | TOverloaded_fn [ template_arity ],
+          TOverloaded_fn [ actual_arity ] ->
+            infer_variadic_callback substitutions template_arity actual_arity
+        | TFn (template_params, template_return),
+          TOverloaded_fn [ actual_arity ] -> (
+            match actual_arity.rest_param with
+            | Some actual_rest ->
+                let substitutions =
+                  List.fold_left
+                    (fun substitutions template_parameter ->
+                      infer_apply_type substitutions template_parameter
+                        actual_rest)
+                    substitutions template_params
+                in
+                infer_apply_type substitutions template_return
+                  actual_arity.return_ty
+            | None -> substitutions)
+        | _ ->
+            Type_solver.infer substitutions ~template ~actual
+            |> Result.value ~default:substitutions)
+  and infer_variadic_callback substitutions template_arity actual_arity =
+    let substitutions =
+      match actual_arity.rest_param with
+      | Some actual_rest ->
+          let template_parameters =
+            template_arity.fixed_params
+            @ Option.to_list template_arity.rest_param
+          in
+          List.fold_left
+            (fun substitutions template_parameter ->
+              infer_apply_type substitutions template_parameter actual_rest)
+            substitutions template_parameters
+      | None -> substitutions
+    in
+    infer_apply_type substitutions template_arity.return_ty
+      actual_arity.return_ty
+  in
+  let instantiate_apply_return templates actuals return_ty =
+    let substitutions =
+      List.fold_left2 infer_apply_type Type_solver.empty templates actuals
+    in
+    Type_solver.apply substitutions return_ty
+  in
   let compile_exact_apply env ~fn ~target ~fixed_args ~inner ~parameter_tys
       ~return_ty =
     let fixed_count = List.length fixed_args in
@@ -335,6 +389,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         List.filteri (fun index _ -> index < fixed_count) parameter_tys
       in
       let remaining_parameter_tys = drop fixed_count parameter_tys in
+      let return_ty =
+        instantiate_apply_return parameter_tys
+          (List.map (fun argument -> argument.ty) fixed_args
+          @ List.init (List.length remaining_parameter_tys) (fun _ -> inner))
+          return_ty
+      in
       let argument_names =
         List.mapi
           (fun index _ -> "__lg_apply_argument_" ^ string_of_int index)
@@ -383,6 +443,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | Some rest_ty ->
         let fixed_count = List.length arity.fixed_params in
         let given = List.length fixed_args in
+        let inference_actuals =
+          if given >= fixed_count then
+            fixed_args
+            |> List.filteri (fun index _ -> index < fixed_count)
+            |> List.map (fun argument -> argument.ty)
+          else
+            List.map (fun argument -> argument.ty) fixed_args
+            @ List.init (fixed_count - given) (fun _ -> inner)
+        in
+        let return_ty =
+          instantiate_apply_return arity.fixed_params inference_actuals
+            arity.return_ty
+        in
         let rec prepare_fixed prepared expected arguments =
           match (expected, arguments) with
           | [], [] -> Ok (List.rev prepared)
@@ -435,7 +508,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Result.map
                       (fun rest_list ->
                         ( Semantic_ir.PAny,
-                          typed_ir arity.return_ty
+                          typed_ir return_ty
                             (Semantic_ir.Apply
                                ( target fn.semantic_expr,
                                  fixed_arguments
@@ -477,7 +550,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Result.map
                       (fun rest_list ->
                         ( pattern,
-                          typed_ir arity.return_ty
+                          typed_ir return_ty
                             (Semantic_ir.Apply
                                ( target fn.semantic_expr,
                                  fixed_arguments @ head_arguments
@@ -944,10 +1017,27 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                               collect
                                                 ((pattern, expression) :: cases)
                                                 return_ty rest
-                                        | Some _ ->
-                                            Error.error
-                                                "apply overloads must return \
-                                                 the same type"))
+                                        | Some ty -> (
+                                            match
+                                              Type_solver.unify
+                                                Type_solver.empty ty
+                                                expression.ty
+                                            with
+                                            | Ok substitutions ->
+                                                collect
+                                                  ((pattern, expression)
+                                                  :: cases)
+                                                  (Some
+                                                     (Type_solver.apply
+                                                        substitutions ty))
+                                                  rest
+                                            | Error _ ->
+                                                Error.error
+                                                  ("apply overloads must return the same type, got "
+                                                  ^ Types.source_name ty
+                                                  ^ " and "
+                                                  ^ Types.source_name
+                                                      expression.ty))))
                               in
                               Result.bind (collect [] None compiled)
                                 (fun (cases, return_ty) ->
@@ -1088,6 +1178,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     match (expected, actual) with
                     | expected, actual -> (
                         match
+                          ( concrete_seqable_element expected,
+                            concrete_seqable_element actual )
+                        with
+                        | Some expected_element, Some actual_element ->
+                            (match
+                               Type_solver.unify substitutions expected_element
+                                 actual_element
+                             with
+                            | Ok substitutions -> Ok substitutions
+                            | Error _ ->
+                                Error.error "incompatible sequence elements")
+                        | _ -> (
+                        match
                           ( Types.seqable_constraint_info expected,
                             concrete_seqable_element actual )
                         with
@@ -1123,7 +1226,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                           expected_arity actual_arity))
                                   (Ok substitutions) expected_arities
                                   actual_arities
-                            | _ -> Error.error "incompatible function types")))
+                            | _ -> Error.error "incompatible function types"))))
               and unify_function_parameters substitutions expected actual =
                 List.fold_left2
                   (fun result expected_parameter actual_parameter ->
@@ -1186,6 +1289,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                   | Ok (_, ret_ty), Ok (arg_ty, _) ->
                       let arg_ty = Type_solver.apply substitutions arg_ty in
                       let ret_ty = Type_solver.apply substitutions ret_ty in
+                      let argument_pattern =
+                        match Types.seqable_constraint_info arg_ty with
+                        | Some (`Required, _, _) ->
+                            Semantic_ir.PTuple
+                              [
+                                Semantic_ir.PVar "x__seq";
+                                Semantic_ir.PVar "x";
+                              ]
+                        | Some ((`Optional | `Optional_sequential), _, _) ->
+                            Semantic_ir.PTuple
+                              [
+                                Semantic_ir.PVar "x__seq_optional";
+                                Semantic_ir.PVar "x";
+                              ]
+                        | None -> Semantic_ir.PVar "x"
+                      in
                       let rec compose expression = function
                         | [] -> Ok expression
                         | fn :: rest ->
@@ -1209,7 +1328,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         (fun inner ->
                           typed_ir (TFn ([ arg_ty ], ret_ty))
                             (Semantic_ir.Fun
-                               ( [ Semantic_ir.PVar "x" ],
+                               ( [ argument_pattern ],
                                  inner.semantic_expr )))
                         (compose
                            (typed_ir arg_ty (Semantic_ir.Ident "x"))

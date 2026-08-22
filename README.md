@@ -455,6 +455,15 @@ protocols, inferred OCaml signatures, and package dependencies remain available
 to later files. Package dependencies are unioned for native linking, while
 errors retain the path and line of the owning input file.
 
+Ordinary multi-file compilation caches resumable compiler checkpoints under
+`.lg-cache/compile-files`. Checkpoints are isolated by compiler build identity,
+old compiler generations are removed, and the active generation is limited to
+256 MiB by default. Only prefixes taking at least 100 ms to compile are cached,
+avoiding a full cumulative-state snapshot for every cheap file. Set
+`LG_COMPILE_CACHE_MIN_SECONDS` or `LG_COMPILE_CACHE_MAX_BYTES` to tune these
+limits, `LG_CACHE_DIR` to relocate the cache, or
+`LG_DISABLE_COMPILE_CACHE=1` to disable it.
+
 [`examples/multi_file/dune`](examples/multi_file/dune) is an executable Dune
 integration: a rule treats `.cljc` files as dependencies, generates `app.ml`,
 and compiles it with an ordinary executable stanza.

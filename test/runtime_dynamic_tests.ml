@@ -46,15 +46,15 @@ let test_static_persistent_map_preserves_insertion_order () =
   assert (Persistent_map.get_option replaced ":email" = Some 20);
   assert (List.map fst (Persistent_map.to_list reinserted) = [ ":email"; ":age"; ":name" ])
 
-let test_polymorphic_hash_preserves_dynamic_value_semantics () =
+let test_dynamic_hash_preserves_dynamic_value_semantics () =
   let first =
     Dynamic.vector (Rrbvec.of_list [ Dynamic.int 1; Dynamic.string "value" ])
   in
   let second =
     Dynamic.vector (Rrbvec.of_list [ Dynamic.int 1; Dynamic.string "value" ])
   in
-  assert (Dynamic.polymorphic_equal first second);
-  assert (Dynamic.polymorphic_hash first = Dynamic.hash second)
+  assert (Dynamic.equal first second);
+  assert (Dynamic.hash first = Dynamic.hash second)
 
 let () =
   test_popcount_32 ();
@@ -62,4 +62,4 @@ let () =
   test_identifier_comparison_preserves_namespace_and_name_ordering ();
   test_dynamic_find_returns_a_map_entry_only_for_present_keys ();
   test_static_persistent_map_preserves_insertion_order ();
-  test_polymorphic_hash_preserves_dynamic_value_semantics ()
+  test_dynamic_hash_preserves_dynamic_value_semantics ()

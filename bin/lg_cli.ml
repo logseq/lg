@@ -78,8 +78,18 @@ let compile_cache_enabled () =
 
 let compile_cache_min_seconds () =
   match Sys.getenv_opt "LG_COMPILE_CACHE_MIN_SECONDS" with
-  | Some value -> Option.value (float_of_string_opt value) ~default:0.
-  | None -> 0.
+  | Some value -> Option.value (float_of_string_opt value) ~default:0.1
+  | None -> 0.1
+
+let default_compile_cache_max_bytes =
+  Int64.mul 256L (Int64.mul 1024L 1024L)
+
+let compile_cache_max_bytes () =
+  match Sys.getenv_opt "LG_COMPILE_CACHE_MAX_BYTES" with
+  | Some value ->
+      Option.value (Int64.of_string_opt value)
+        ~default:default_compile_cache_max_bytes
+  | None -> default_compile_cache_max_bytes
 
 let rec find_repo_root dir =
   if Sys.file_exists (Filename.concat dir "dune-project") then dir
@@ -102,7 +112,7 @@ let compile_cache_directory () =
         (find_repo_root (Sys.getcwd ()))
         ".lg-cache/compile-files"
 
-let compiler_cache_identity () =
+let compute_compiler_cache_identity () =
   let repo_root = find_repo_root (Sys.getcwd ()) in
   let adjacent_compiler_directory =
     Filename.concat (Filename.dirname Sys.executable_name) "../src"
@@ -130,6 +140,10 @@ let compiler_cache_identity () =
     (Sys.ocaml_version :: List.map artifact_identity artifacts)
   |> Digest.string |> Digest.to_hex
 
+let compiler_cache_identity =
+  let identity = lazy (compute_compiler_cache_identity ()) in
+  fun () -> Lazy.force identity
+
 let next_prefix_key ~target previous_key input_path source =
   Digest.string
     (String.concat "\000"
@@ -147,8 +161,102 @@ let saved_state_prefix_key ~target state_path =
        ])
   |> Digest.to_hex
 
+let compile_cache_generation_directory () =
+  Filename.concat (compile_cache_directory ()) (compiler_cache_identity ())
+
 let cache_path key suffix =
-  Filename.concat (compile_cache_directory ()) (key ^ suffix ^ ".marshal")
+  Filename.concat (compile_cache_generation_directory ())
+    (key ^ suffix ^ ".marshal")
+
+type cache_entry_files = {
+  paths : string list;
+  size : int64;
+  modified_at : float;
+}
+
+let cache_entry_key filename =
+  let suffixes = [ ".state.marshal"; ".output.marshal" ] in
+  suffixes
+  |> List.find_map (fun suffix ->
+         if Filename.check_suffix filename suffix then
+           Some
+             (String.sub filename 0
+                (String.length filename - String.length suffix))
+         else None)
+
+let rec remove_cache_tree path =
+  match (Unix.lstat path).st_kind with
+  | Unix.S_DIR ->
+      Sys.readdir path
+      |> Array.iter (fun name -> remove_cache_tree (Filename.concat path name));
+      Unix.rmdir path
+  | _ -> Sys.remove path
+
+let prune_obsolete_cache_generations () =
+  let root = compile_cache_directory () in
+  if Sys.file_exists root then
+    let current = compiler_cache_identity () in
+    Sys.readdir root
+    |> Array.iter (fun name ->
+           if not (String.equal name current) then
+             let path = Filename.concat root name in
+             try remove_cache_tree path with
+             | Sys_error _ | Unix.Unix_error _ -> ())
+
+let prune_compile_cache () =
+  prune_obsolete_cache_generations ();
+  let directory = compile_cache_generation_directory () in
+  if Sys.file_exists directory then
+    let entries = Hashtbl.create 128 in
+    Sys.readdir directory
+    |> Array.iter (fun filename ->
+           match cache_entry_key filename with
+           | None -> ()
+           | Some key ->
+               let path = Filename.concat directory filename in
+               let stats = Unix.stat path in
+               let existing =
+                 Hashtbl.find_opt entries key
+                 |> Option.value
+                      ~default:{ paths = []; size = 0L; modified_at = 0. }
+               in
+               Hashtbl.replace entries key
+                 {
+                   paths = path :: existing.paths;
+                   size = Int64.add existing.size (Int64.of_int stats.st_size);
+                   modified_at = max existing.modified_at stats.st_mtime;
+                 });
+    let entries = Hashtbl.to_seq_values entries |> List.of_seq in
+    let total =
+      List.fold_left
+        (fun total entry -> Int64.add total entry.size)
+        0L entries
+    in
+    let maximum = max 0L (compile_cache_max_bytes ()) in
+    if Int64.compare total maximum > 0 then
+      let oldest_first =
+        List.sort
+          (fun left right -> Float.compare left.modified_at right.modified_at)
+          entries
+      in
+      ignore
+        (List.fold_left
+           (fun remaining entry ->
+             if Int64.compare remaining maximum <= 0 then remaining
+             else (
+               List.iter
+                 (fun path -> if Sys.file_exists path then Sys.remove path)
+                 entry.paths;
+               Int64.sub remaining entry.size))
+           total oldest_first)
+
+let touch_cache_entry key =
+  let now = Unix.gettimeofday () in
+  List.iter
+    (fun suffix ->
+      let path = cache_path key suffix in
+      if Sys.file_exists path then Unix.utimes path now now)
+    [ ".state"; ".output" ]
 
 let read_marshaled path =
   let input = open_in_bin path in
@@ -164,7 +272,9 @@ let read_cached_prefix_output key =
     if not (Sys.file_exists state_path && Sys.file_exists output_path) then None
     else
       try
-        Some (read_marshaled output_path : cached_prefix_output)
+        let cached = (read_marshaled output_path : cached_prefix_output) in
+        touch_cache_entry key;
+        Some cached
       with _ -> None
 
 let read_cached_prefix_state key =
@@ -198,7 +308,7 @@ let write_cached_prefix key state output =
   if compile_cache_enabled () then
     try
       let started_at = Sys.time () in
-      let directory = compile_cache_directory () in
+      let directory = compile_cache_generation_directory () in
       ensure_directory directory;
       write_marshaled (cache_path key ".state")
         { state = Lg.Compiler.cacheable_state state };
@@ -545,8 +655,12 @@ let compile_files ?(use_cache = true) target input_paths =
                           (compilation.diagnostics :: diagnostics)
                           rest)))
   in
-  loop (compiler_cache_identity ()) (Live Lg.Compiler.empty_state) [] [] []
-    input_paths
+  let result =
+    loop (compiler_cache_identity ()) (Live Lg.Compiler.empty_state) [] [] []
+      input_paths
+  in
+  if use_cache then prune_compile_cache ();
+  result
 
 let compile_file target input_path =
   let source = read_file input_path in
@@ -600,6 +714,7 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
         location = None;
       }
   else
+    let result =
     let rec read_sources sources packages = function
       | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
       | input_path :: rest ->
@@ -672,6 +787,9 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
         compile
           (saved_state_prefix_key ~target state_path)
           (Restorable saved.state) [] [] sources)
+    in
+    if use_cache then prune_compile_cache ();
+    result
 
 let infer_interface target input_path =
   let source = read_file input_path in

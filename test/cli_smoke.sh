@@ -76,11 +76,11 @@ printf '%s\n' \
 printf '%s\n' \
   '(println (Math/magnitude-plus-two 40))' > "$main_source"
 
-LG_CACHE_DIR="$multi_dir/cache" \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/cache" \
   "$cli" --compile-files-from "$stdlib_state" "$math_source" "$main_source" -o "$multi_output"
 grep -q 'magnitude_plus_two' "$multi_output"
 
-LG_CACHE_DIR="$multi_dir/cache" LG_COMPILE_CACHE_DEBUG=1 \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/cache" LG_COMPILE_CACHE_DEBUG=1 \
   "$cli" --compile-files-from "$stdlib_state" "$math_source" "$main_source" -o "$multi_output" \
   2> "$multi_cache_stderr"
 grep -q "compile cache hit: $math_source" "$multi_cache_stderr"
@@ -101,7 +101,7 @@ partial_cache_stderr="$multi_dir/partial-cache.stderr"
 
 printf '%s\n' '(def continued Math/magnitude-plus-two)' > "$continuation_source"
 
-LG_CACHE_DIR="$multi_dir/state-cache" \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/state-cache" \
   "$cli" --compile-files-from-state "$stdlib_state" "$base_state" "$math_source" -o "$base_output"
 if [ -d "$multi_dir/state-cache/compile-files" ]; then
   echo "state-producing compilation wrote redundant prefix cache" >&2
@@ -129,13 +129,13 @@ printf '%s\n' '(def post continued)' > "$post_source"
   -o "$continuation_output"
 grep -q 'post.*continued' "$continuation_output"
 
-LG_CACHE_DIR="$multi_dir/state-cache" \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/state-cache" \
   "$cli" --compile-files-from "$base_state" "$main_source" \
     "$continuation_source" -o "$partial_output"
 
 printf '%s\n' '(def continued-value Math/magnitude-plus-two)' \
   > "$continuation_source"
-LG_CACHE_DIR="$multi_dir/state-cache" LG_COMPILE_CACHE_DEBUG=1 \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/state-cache" LG_COMPILE_CACHE_DEBUG=1 \
   "$cli" --compile-files-from "$base_state" "$main_source" \
     "$continuation_source" -o "$partial_output" 2> "$partial_cache_stderr"
 grep -q "compile cache hit: $main_source" "$partial_cache_stderr"
@@ -157,21 +157,27 @@ cp "$source_compiler_dir/lg.cmxa" "$cache_compiler_dir/lg.cmxa"
 cp "$source_compiler_dir/lg.a" "$cache_compiler_dir/lg.a"
 chmod u+w "$cache_compiler_dir/lg.cmxa" "$cache_compiler_dir/lg.a"
 
-LG_CACHE_DIR="$multi_dir/artifact-cache" \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/artifact-cache" \
   "$cache_cli" --compile-files-from "$stdlib_state" "$math_source" "$main_source" -o "$multi_output"
 stable_artifact_stderr="$multi_dir/stable-artifact.stderr"
 printf 'changed-native-archive' >> "$cache_compiler_dir/lg.a"
-LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
   "$cache_cli" --compile-files-from "$stdlib_state" "$math_source" "$main_source" -o "$multi_output" \
   2> "$stable_artifact_stderr"
 grep -q "compile cache hit: $main_source" "$stable_artifact_stderr"
 
 printf 'changed-native-compiler' >> "$cache_compiler_dir/lg.cmxa"
-LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
+LG_COMPILE_CACHE_MIN_SECONDS=0 LG_CACHE_DIR="$multi_dir/artifact-cache" LG_COMPILE_CACHE_DEBUG=1 \
   "$cache_cli" --compile-files-from "$stdlib_state" "$math_source" "$main_source" -o "$multi_output" \
   2> "$cache_artifact_stderr"
 if grep -q "compile cache hit:" "$cache_artifact_stderr"; then
   echo "native compiler artifact change reused stale compile cache" >&2
+  exit 1
+fi
+generation_count=$(find "$multi_dir/artifact-cache/compile-files" \
+  -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+if [ "$generation_count" -ne 1 ]; then
+  echo "compile cache retained obsolete compiler generations" >&2
   exit 1
 fi
 

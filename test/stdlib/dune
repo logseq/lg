@@ -500,7 +500,7 @@
  (alias source-core-additions-melange)
  (module_systems es6)
  (modules source_core_additions_melange)
- (compile_flags -w -27-32)
+ (compile_flags -w -27-32 -warn-error +106)
  (libraries lg.edn-backend lg.edn-backend.melange lg.runtime rrbvec))
 
 (rule
@@ -2031,14 +2031,6 @@
   (run sh %{dep:check_aggregate_stdlib_consumer.sh} ../..)))
 
 (rule
- (alias datascript-aggregate-stdlib)
- (deps
-  check_datascript_aggregate_stdlib.sh
-  ../datascript_conn_tests.inc)
- (action
-  (run sh %{dep:check_datascript_aggregate_stdlib.sh} ../..)))
-
-(rule
  (alias compile-files-from-stdlib)
  (targets
   aggregate_files_chunk.ml
@@ -2195,7 +2187,6 @@
  (name runtest)
  (deps
   (alias aggregate-stdlib-consumer)
-  (alias datascript-aggregate-stdlib)
   (alias no-source-core-fallbacks)
   (alias source-namespace-migration)
   (alias source-data-bootstrap)

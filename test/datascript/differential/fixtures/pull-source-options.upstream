@@ -1,1 +1,0 @@
-alias=Ivan default=fallback limit=1 xform=transformed combined=true reverse=2 recursion=bounded cycle=terminated

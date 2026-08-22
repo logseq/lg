@@ -1116,31 +1116,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         (Edn_value_elaborator.pack_expression default.ty
                            default.semantic_expr)
                     else
-                    (match
-                       ( Edn_value_elaborator.mapper inner,
-                         Edn_value_elaborator.pack_expression default.ty
-                           default.semantic_expr )
-                     with
-                    | Ok pack_element, Ok packed_default ->
-                        Ok
-                          (typed_ir Edn_value_elaborator.value_ty
-                             (Semantic_ir.Match
-                                ( apply "Lg_runtime.Runtime_seq.nth_opt"
-                                    [ index.semantic_expr; sequence ],
-                                  [
-                                    ( Semantic_ir.PConstructor
-                                        ( "Some",
-                                          Some (Semantic_ir.PVar "value") ),
-                                      Semantic_ir.Apply
-                                        ( pack_element,
-                                          [ Semantic_ir.Ident "value" ] ) );
-                                    ( Semantic_ir.PConstructor ("None", None),
-                                      packed_default );
-                                  ] )))
-                    | Error _, _ | _, Error _ ->
-                        Error.error
-                          "nth default must match collection element type or \
-                           be closed EDN data")
+                      Error.error
+                        "nth default must match collection element type"
                   else
                     Ok
                       (typed_ir inner
@@ -3049,6 +3026,18 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                     typed_ir (Types.dynamic_map key_ty value_ty) expression)
                   (merge_collection_types "map values" value_types))
     and compile_hash_map scope env arg_forms =
+      let rec closed_edn_literal = function
+        | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FDecimal _
+        | FChar _ | FBool _ | FSymbol "nil" ->
+            true
+        | FVector values -> List.for_all closed_edn_literal values
+        | FMap entries ->
+            List.for_all
+              (fun (key, value) ->
+                closed_edn_literal key && closed_edn_literal value)
+              entries
+        | FSymbol _ | FCoreSymbol _ | FList _ -> false
+      in
       let rec parse_pairs acc = function
         | [] -> Ok (List.rev acc)
       | key_form :: value_form :: rest ->
@@ -3123,6 +3112,12 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                        (fun value ->
                          coerce_expression_to_type value_ty value.ty
                            value.semantic_expr))
+              | (Error _ as error), _
+                when not (List.for_all closed_edn_literal arg_forms) ->
+                  error
+              | _, (Error _ as error)
+                when not (List.for_all closed_edn_literal arg_forms) ->
+                  error
               | Error _, _ | _, Error _ ->
                   let rec pack_values packed = function
                     | [] -> Ok (List.rev packed)
@@ -4467,21 +4462,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
       match compile_args_for scope env arg_forms with
       | Error _ as err -> err
       | Ok [ target ] -> (
-          let map_keys key_type expression =
-            typed_ir (TVector key_type)
+          let seq_of_mapped_entries projector element_ty expression =
+            typed_ir (Types.next_seq element_ty)
               (Semantic_ir.Apply
-                 ( Semantic_ir.Ident "Rrbvec.of_list",
+                 ( Semantic_ir.Ident "Seq.map",
                    [
+                     Semantic_ir.Ident projector;
                      Semantic_ir.Apply
-                       ( Semantic_ir.Ident "List.map",
-                         [
-                           Semantic_ir.Ident "fst";
-                           Semantic_ir.Apply
-                             ( Semantic_ir.Ident
-                                 "Lg_runtime.Runtime_map.to_list",
-                               [ expression ] );
-                         ] );
+                       ( Semantic_ir.Ident "Lg_runtime.Runtime_map.to_seq",
+                         [ expression ] );
                    ] ))
+          in
+          let map_keys key_type expression =
+            seq_of_mapped_entries "fst" key_type expression
           in
           match target.ty with
           | target_ty when Types.is_dynamic target_ty ->
@@ -4564,10 +4557,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         ] )
               in
               Ok
-                (typed_ir (TVector TKeyword)
+                (typed_ir (Types.next_seq TKeyword)
                    (Semantic_ir.Apply
-                      ( Semantic_ir.Ident "Rrbvec.of_list",
-                        [ keys ] )))
+                      ( Semantic_ir.Ident "List.to_seq", [ keys ] )))
                   | _ -> Error.error "keys expects a map")))
       | Ok _ -> Error.error "keys expects 1 arguments"
     and compile_vals scope env arg_forms =
@@ -4596,9 +4588,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             match Types.dynamic_map_types target.ty with
             | Some (_key_type, value_type) ->
                 Ok
-                  (typed_ir (TVector value_type)
+                  (typed_ir (Types.next_seq value_type)
                      (Semantic_ir.Apply
-                        ( Semantic_ir.Ident "Rrbvec.of_list",
+                        ( Semantic_ir.Ident "List.to_seq",
                           [
                             Semantic_ir.Apply
                               ( Semantic_ir.Ident "List.map",
@@ -4613,7 +4605,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
             | None -> (
                 match target.ty with
                 | TRecord [] | TNamed_record { fields = []; _ } ->
-                    Error.error "vals requires a non-empty map"
+                    Ok
+                      (typed_ir (Types.next_seq TUnknown)
+                         (Semantic_ir.Ident "Seq.empty"))
                 | TRecord (first :: rest)
                 | TNamed_record { fields = first :: rest; _ } ->
                     if
@@ -4622,9 +4616,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                         rest
                     then
                       Ok
-                        (typed_ir (TVector first.ty)
+                        (typed_ir (Types.next_seq first.ty)
                            (Semantic_ir.Apply
-                              ( Semantic_ir.Ident "Rrbvec.of_list",
+                              ( Semantic_ir.Ident "List.to_seq",
                                 [
                                   Semantic_ir.List
                                     (first :: rest

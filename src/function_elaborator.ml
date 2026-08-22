@@ -1027,7 +1027,10 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
                                  (spec,
                                   Type_inference.refine_type ty inferred_ty)
                                else if
-                                 (refine_open_overrides
+                                 ((refine_open_overrides
+                                  || Option.is_some
+                                       (Types.protocol_constraint_info
+                                          inferred_ty))
                                  && (contains_open_type ty
                                     || contains_structural_record ty))
                                  || (Option.is_some

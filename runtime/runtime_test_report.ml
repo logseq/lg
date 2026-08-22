@@ -1,6 +1,6 @@
 module Dynamic = Runtime_dynamic
 
-type method_fn = Dynamic.t -> Dynamic.t
+type method_fn = Dynamic.t -> unit
 
 let methods : (Dynamic.t * method_fn) list ref = ref []
 
@@ -82,4 +82,4 @@ let report reporter event =
       !methods
   with
   | Some (_dispatch, fn) -> fn event
-  | None -> Dynamic.nil
+  | None -> ()

@@ -113,19 +113,29 @@ let declare_sequence_protocols registry =
 let add_sequence_protocols registry =
   let element = TVar "sequence_element" in
   let sequence = TSeq element in
-  let add protocol_id method_name ocaml_name method_ty registry =
+  let add receiver protocol_id method_name ocaml_name method_ty registry =
     let binding = Types.binding ~protocol_id ocaml_name method_ty in
     Protocol_registry.add_implementation protocol_id
       (method_id protocol_id method_name)
-      Receiver_id.Seq_receiver binding registry
+      receiver binding registry
     |> add_or_fail
   in
+  let add_all protocol_id method_name ocaml_name method_ty registry =
+    [ Receiver_id.Seq_receiver;
+      Receiver_id.Host_receiver Types.next_seq_type_name;
+      Receiver_id.Host_receiver Types.reversible_next_seq_type_name;
+    ]
+    |> List.fold_left
+         (fun registry receiver ->
+           add receiver protocol_id method_name ocaml_name method_ty registry)
+         registry
+  in
   registry
-  |> add iseq_id "-first" "Lg_runtime.Runtime_seq.first_opt"
+  |> add_all iseq_id "-first" "Lg_runtime.Runtime_seq.first_opt"
        (TFn ([ sequence ], TOcaml_app ("option", [ element ])))
-  |> add iseq_id "-rest" "Lg_runtime.Runtime_seq.rest"
+  |> add_all iseq_id "-rest" "Lg_runtime.Runtime_seq.rest"
        (TFn ([ sequence ], sequence))
-  |> add inext_id "-next" "Lg_runtime.Runtime_seq.next"
+  |> add_all inext_id "-next" "Lg_runtime.Runtime_seq.next"
        (TFn ([ sequence ], Types.next_seq element))
 
 let declare_drop_protocol registry =

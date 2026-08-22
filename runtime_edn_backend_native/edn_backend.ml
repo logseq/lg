@@ -15,6 +15,7 @@ type t =
   | Ratio of string
   | Regex of string
   | List of t array
+  | Seq of t Seq.t
   | Vector of t array
   | Int4_vector of int * int * t * int
   | Int4_array of int array * int array * t array * int array
@@ -180,6 +181,9 @@ let rec to_edn = function
   | Regex value -> Melange_edn.any (Melange_edn.regex value)
   | List values ->
       Melange_edn.any (Melange_edn.list (Array.to_list (Array.map to_edn values)))
+  | Seq values ->
+      Melange_edn.any
+        (Melange_edn.list (List.of_seq (Stdlib.Seq.map to_edn values)))
   | Vector values ->
       Melange_edn.any
         (Melange_edn.vector (Array.to_list (Array.map to_edn values)))
@@ -703,7 +707,7 @@ let rec compact_json_value string_tokens = function
   | Int_vector values when Array.length values = 2 ->
       Some
         ("[" ^ string_of_int values.(0) ^ "," ^ string_of_int values.(1) ^ "]")
-  | Char _ | List _ | Vector _ | Int4_vector _ | Int4_array _ | Int_vector _
+  | Char _ | List _ | Seq _ | Vector _ | Int4_vector _ | Int4_array _ | Int_vector _
   | Map _ | Set _ | Tagged _ | Json_source _ ->
       None
 
@@ -721,6 +725,7 @@ let rec add_json_value buffer = function
   | Float value -> add_json_float buffer value
   | List values | Vector values | Set values ->
       add_json_array buffer values
+  | Seq values -> add_json_array buffer (Array.of_seq values)
   | Int4_vector (first, second, third, fourth) ->
       (match compact_json_value (Hashtbl.create 8) third with
       | Some third ->

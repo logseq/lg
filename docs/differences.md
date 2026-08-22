@@ -330,6 +330,13 @@ flow forward. A Dune rule can list `.cljc` files as dependencies, generate one
 `.ml` target with `--compile-files`, and compile it through an ordinary library
 or executable stanza; see `examples/multi_file/dune`.
 
+The CLI stores resumable compiler checkpoints only for file prefixes whose
+compilation reaches the configured cost threshold (100 ms by default). Cache
+entries are separated by compiler build identity, obsolete generations are
+removed, and the active generation has a 256 MiB default limit. The threshold
+and size limit are configurable with `LG_COMPILE_CACHE_MIN_SECONDS` and
+`LG_COMPILE_CACHE_MAX_BYTES`.
+
 Protocol signatures and implementations are preserved in the same incremental
 compiler state. Module-owned methods use `Module/Protocol/method`, and module
 aliases preserve that protocol identity.

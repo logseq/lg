@@ -31,10 +31,11 @@ different architectural responsibilities:
 - metadata, printing, regex, transient, collection, and scalar behavior;
 - the composition root for several other elaborators.
 
-The largest domain subsystem is the DataScript port. Its complexity is mostly
-inherent: it must preserve a large upstream dynamic API and control flow while
-using closed static representations on Native and Melange. It is difficult,
-but it has a clearer domain boundary than call elaboration.
+The largest downstream domain subsystem is the standalone DataScript port.
+Its complexity is mostly inherent: it must preserve a large upstream dynamic
+API and control flow while using closed static representations on Native and
+Melange. It is difficult, but it has a clearer package and repository boundary
+than call elaboration.
 
 The largest maintenance multiplier is the test/build matrix:
 
@@ -134,7 +135,7 @@ LG has two typechecking authorities, but they own different questions:
 | Runtime | `runtime/`, EDN backends | Typed collections, seqs, refs, weak storage, target-specific primitives |
 | CLI and cache | `bin/lg_cli.ml` | Compile/run modes, incremental states, package linking, Marshal caches |
 | LSP | `language_service.ml`, `bin/lsp_server.ml` | Typedtree-based hover, definition, references, rename, completion, indexing |
-| DataScript | `test/datascript/`, `test/datascript_runtime/`, `datascript/` | Typed upstream port, closed domain values, parity and benchmarks |
+| DataScript integration | external `datascript-lg` package | Repository-boundary validation only; the typed port, tests, parity artifacts, and benchmarks live in the standalone project |
 
 ## Frontend
 
@@ -603,7 +604,10 @@ run correctly.
 
 ## DataScript subsystem
 
-DataScript is the largest domain subsystem.
+DataScript is the largest downstream domain subsystem, but it is not part of
+this repository. The standalone `datascript-lg` project owns its implementation
+and tests. Its persistent index implementation is supplied by the separate
+`persistent-sorted-set-lg` project.
 
 The selected `.cljc` source and test trees contain roughly 43,000 lines. Major
 files include:
@@ -613,7 +617,6 @@ files include:
 - typed query implementation and query type definitions;
 - pull API and parser;
 - connection, storage, serialization, and transaction behavior;
-- persistent sorted set;
 - upstream tests and differential fixtures.
 
 The architecture is:
@@ -621,13 +624,17 @@ The architecture is:
 ```text
 Pinned upstream behavior
     |
+    v
+standalone datascript-lg
     +--> upstream-shaped LG source
     +--> closed DataScript runtime types
-    +--> API manifest
-    +--> upstream test inventory
+    +--> API manifest and upstream test inventory
     +--> differential cases
     +--> Native and Melange builds
     +--> performance/scaling benchmarks
+    |
+    +--> installed lg + lg-test packages
+    +--> installed persistent-sorted-set-lg package
 ```
 
 Known heterogeneous domains are modeled explicitly:
@@ -652,15 +659,17 @@ with general compiler dynamic behavior.
 
 ## Tests and build matrix
 
-The current test architecture includes:
+The LG test architecture includes:
 
 - one large compiler test executable;
 - focused runtime tests;
 - Native and Melange generated programs;
-- upstream DataScript test ports;
-- differential scripts and manifests;
 - native and JavaScript benchmarks;
 - a large Dune rule matrix.
+
+Upstream DataScript test ports, differential scripts, manifests, and DataScript
+benchmarks are part of `datascript-lg`. Persistent sorted set tests and
+benchmarks are part of `persistent-sorted-set-lg`.
 
 Current maintenance hotspots:
 

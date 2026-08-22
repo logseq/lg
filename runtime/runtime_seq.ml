@@ -89,7 +89,7 @@ let rec unfold_chunks step state =
     if index >= until then rest ()
     else
       Seq.Cons
-        (Array.get values index, emit values (index + 1) until rest)
+        (Array.unsafe_get values index, emit values (index + 1) until rest)
   in
   fun () ->
     match Lazy.force chunk with

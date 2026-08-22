@@ -2000,10 +2000,28 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
                     | result :: _ -> recursive_sequence_result result
                     | [] -> None
                   in
-                  match (returned_sequence, returned_vector) with
-                  | Some _ as sequence_ty, _ -> sequence_ty
-                  | None, (Some _ as vector_ty) -> vector_ty
-                  | None, None ->
+                  let returned_value =
+                    match List.rev body_forms with
+                    | result :: _ ->
+                        let ty =
+                          match
+                            Type_inference.inferred_form_type params result
+                          with
+                          | TUnknown ->
+                              Type_inference.inferred_call_return_type
+                                ~lookup_function_ty params result
+                          | ty -> ty
+                        in
+                        (match ty with
+                        | TUnknown | TMeta _ | TVar _ -> None
+                        | ty -> Some ty)
+                    | [] -> None
+                  in
+                  match (returned_sequence, returned_vector, returned_value) with
+                  | Some _ as sequence_ty, _, _ -> sequence_ty
+                  | None, (Some _ as vector_ty), _ -> vector_ty
+                  | None, None, (Some _ as value_ty) -> value_ty
+                  | None, None, None ->
                       List.combine specs self_param_tys
                       |> List.find_map
                            (fun ((spec : Destructure.param_spec), ty) ->

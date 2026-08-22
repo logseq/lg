@@ -335,6 +335,45 @@ let protocol_parameter_overrides receiver_ty = function
         parameter_tys
   | _ -> [ Some receiver_ty ]
 
+let common_implementation_parameter_constraints env protocol_id method_id =
+  let registry =
+    Compiler_environment.protocol_evidence env
+    |> Option.value ~default:(Env.protocols env)
+  in
+  let parameter_lists =
+    Protocol_registry.implementations_for_method protocol_id method_id registry
+    |> List.filter_map (fun (implementation : binding) ->
+           match implementation.ty with
+           | TFn (_receiver :: parameters, _) -> Some parameters
+           | TFn ([], _) | _ -> None)
+  in
+  match parameter_lists with
+  | [] -> []
+  | first :: rest
+    when List.for_all
+           (fun parameters -> List.length parameters = List.length first)
+           rest ->
+      List.mapi
+        (fun index _ ->
+          let candidates =
+            parameter_lists
+            |> List.filter_map (fun parameters ->
+                   match List.nth parameters index with
+                   | TUnknown | TMeta _ | TVar _ -> None
+                   | ty
+                     when Option.is_some
+                            (Types.capability_constraint_value ty) ->
+                       Some ty
+                   | _ -> None)
+          in
+          match candidates with
+          | candidate :: candidates
+            when List.for_all (Types.equal candidate) candidates ->
+              Some candidate
+          | [] | _ :: _ -> None)
+        first
+  | _ -> []
+
 let refine_protocol_implementation_type expected actual =
   let refine_position expected actual =
     match actual with
@@ -525,6 +564,27 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                       | Some marker ->
                         let param_type_overrides =
                           protocol_parameter_overrides receiver_ty marker.ty
+                        in
+                        let param_type_overrides =
+                          match marker.protocol_id with
+                          | None -> param_type_overrides
+                          | Some protocol_id ->
+                              let method_id =
+                                Protocol.method_id protocol_id method_name
+                              in
+                              let inferred =
+                                common_implementation_parameter_constraints env
+                                  protocol_id method_id
+                              in
+                              List.mapi
+                                (fun index override ->
+                                  match (index, override) with
+                                  | 0, _ -> override
+                                  | _, Some _ -> override
+                                  | _, None ->
+                                      List.nth_opt inferred (index - 1)
+                                      |> Option.join)
+                                param_type_overrides
                         in
                         match
                           Expression_elaborator.compile_fn ~param_type_overrides

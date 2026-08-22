@@ -1,16 +1,9 @@
-type _ nominal_tag = ..
-type nominal = Nominal : 'a nominal_tag * 'a * Obj.t option -> nominal
-type _ nominal_tag += Uuid_tag : Runtime_uuid.t nominal_tag
-
-let dynamic_marker = ref ()
-
 type 'a hash_trie =
   | Hash_empty
   | Hash_leaf of int * 'a list
   | Hash_branch of int * 'a hash_trie array
 
 type t = {
-  marker : unit ref;
   payload : payload;
   sequence : (unit -> t Seq.t) option;
   sequential : bool;
@@ -19,6 +12,8 @@ type t = {
   nominal : nominal option;
   cached_hash : int option;
 }
+
+and nominal = Uuid_nominal of Runtime_uuid.t * t option
 
 and payload =
   | Nil
@@ -52,7 +47,6 @@ let map_entries (map : map_payload) = Rrbvec.to_list map.entries
 let make ?sequence ?(sequential = false) ?metadata ?type_name
     ?cached_hash payload =
   {
-    marker = dynamic_marker;
     payload;
     sequence;
     sequential;
@@ -63,27 +57,16 @@ let make ?sequence ?(sequential = false) ?metadata ?type_name
   }
 
 let with_metadata value metadata = { value with metadata = Some metadata }
-let with_nominal tag payload value =
-  let original_metadata = Option.map Obj.repr value.metadata in
-  { value with nominal = Some (Nominal (tag, payload, original_metadata)) }
-
 let with_sequence value sequence = { value with sequence = Some sequence }
 
 let nominal value = value.nominal
 
-let unpack_nominal expected_tag value =
-  match value.nominal with
-  | Some (Nominal (actual_tag, payload, _))
-    when Obj.repr actual_tag = Obj.repr expected_tag ->
-      Some (Obj.obj (Obj.repr payload))
-  | Some _ | None -> None
-
 let nominal_metadata_is_original value =
   match value.nominal with
-  | Some (Nominal (_, _, original_metadata)) -> (
+  | Some (Uuid_nominal (_, original_metadata)) -> (
       match (value.metadata, original_metadata) with
       | None, None -> true
-      | Some metadata, Some original -> Obj.repr metadata == original
+      | Some metadata, Some original -> metadata == original
       | None, Some _ | Some _, None -> false)
   | None -> false
 
@@ -93,11 +76,13 @@ let float value = make (Float value)
 let char value = make (Char value)
 let string value =
   make ~cached_hash:(Runtime_hash.hash_string value) (String value)
-let uuid value = with_nominal Uuid_tag value (string (Runtime_uuid.to_string value))
+let uuid value =
+  let dynamic = string (Runtime_uuid.to_string value) in
+  { dynamic with nominal = Some (Uuid_nominal (value, dynamic.metadata)) }
 
 let as_uuid value : Runtime_uuid.t =
   match nominal value with
-  | Some (Nominal (Uuid_tag, uuid, _)) -> uuid
+  | Some (Uuid_nominal (uuid, _)) -> uuid
   | _ -> invalid_arg "dynamic value is not a UUID"
 
 let symbol value =
@@ -205,25 +190,7 @@ let array_copy value =
   | Array values -> array (Array.copy values)
   | _ -> invalid_arg "aclone expects an array"
 
-let regex_match = function
-  | None -> nil
-  | Some [ Some value ] -> string value
-  | Some captures ->
-      captures
-      |> List.map (function Some value -> string value | None -> nil)
-      |> Rrbvec.of_list |> vector
-
 let regex_group = function None -> nil | Some value -> string value
-
-let regex_match_sequence matches =
-  if Array.length matches = 0 then nil
-  else
-    make ~sequential:true
-      ~sequence:(fun () ->
-        matches
-        |> Array.to_seq
-        |> Seq.map (fun captures -> regex_match (Some captures)))
-      Seq
 
 let seq values =
   make ~sequential:true ~sequence:(fun () -> values) Seq
@@ -233,19 +200,16 @@ let seq_cons value tail =
 
 let nominal_identity_equal left right =
   match (left.nominal, right.nominal) with
-  | Some (Nominal (left_tag, left_payload, _)),
-    Some (Nominal (right_tag, right_payload, _)) ->
-      Obj.repr left_tag = Obj.repr right_tag
-      && Obj.repr left_payload == Obj.repr right_payload
+  | Some (Uuid_nominal (left_uuid, _)), Some (Uuid_nominal (right_uuid, _)) ->
+      left_uuid == right_uuid
   | (Some _ | None), (Some _ | None) -> false
 
 let same_nominal_type left right =
   match left.nominal with
   | None -> true
-  | Some (Nominal (left_tag, _, _)) -> (
+  | Some (Uuid_nominal _) -> (
       match right.nominal with
-      | Some (Nominal (right_tag, _, _)) ->
-          Obj.repr left_tag = Obj.repr right_tag
+      | Some (Uuid_nominal _) -> true
       | None -> false)
 
 let expand_record_extension_entries entries =
@@ -490,58 +454,6 @@ let make_map ?type_name entries index =
     }
 
 let map entries = make_map entries (map_index_of_entries equal entries)
-
-let runtime_dynamic_value value =
-  match Sys.backend_type with
-  | Other "Melange" -> (
-      try
-        let candidate : t = Obj.obj (Obj.repr value) in
-        if candidate.marker == dynamic_marker then Some candidate else None
-      with _ -> None)
-  | Native | Bytecode | Other _ -> (
-      try
-        let representation = Obj.repr value in
-        if
-          (not (Obj.is_int representation))
-          && Obj.tag representation = 0
-          && Obj.field representation 0 == Obj.repr dynamic_marker
-        then Some (Obj.obj representation)
-        else None
-      with Invalid_argument _ -> None)
-
-let is_runtime_dynamic value = Option.is_some (runtime_dynamic_value value)
-
-let polymorphic_equal left right =
-  if left == right then true
-  else
-    match (runtime_dynamic_value left, runtime_dynamic_value right) with
-    | Some left, Some right -> equal left right
-    | Some _, None | None, Some _ -> false
-    | None, None -> (
-        try left = right with Invalid_argument _ -> false)
-
-let polymorphic_hash value =
-  match runtime_dynamic_value value with
-  | Some value -> hash value
-  | None -> Hashtbl.hash value
-
-let polymorphic_str value =
-  match runtime_dynamic_value value with
-  | Some value -> str value
-  | None ->
-    let representation = Obj.repr value in
-    if (not (Obj.is_int representation)) && Obj.tag representation = Obj.string_tag
-    then Obj.obj representation
-    else "<value>"
-
-let polymorphic_pr_str value =
-  match runtime_dynamic_value value with
-  | Some value -> pr_str value
-  | None ->
-    let representation = Obj.repr value in
-    if (not (Obj.is_int representation)) && Obj.tag representation = Obj.string_tag
-    then Obj.obj representation
-    else "<value>"
 
 let equal_arguments = function
   | [] | [ _ ] -> true

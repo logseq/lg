@@ -389,7 +389,13 @@ let update_value_as target fields keyword value_ty value_expr =
   match find_field keyword fields with
   | None -> Error.error ("cannot update unknown field " ^ keyword)
   | Some field ->
-      let updated = { field with ty = value_ty } in
+      let updated =
+        {
+          field with
+          ty = value_ty;
+          runtime_map = field.runtime_map || List.length fields = 1;
+        }
+      in
       let fields =
         List.map
           (fun (candidate : field) ->

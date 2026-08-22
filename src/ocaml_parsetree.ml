@@ -112,7 +112,7 @@ let rec core_type ?(type_variables = []) = function
       Ast_helper.Typ.tuple ~loc
         [
           (None, Ast_helper.Typ.arrow ~loc Nolabel value_ty
-                   (type_constructor "Lg_runtime.Runtime_dynamic.t" []));
+                   (type_constructor "Lg_edn_backend.t" []));
           (None, value_ty);
         ]
   | Types.TOcaml_app (name, [ value_ty ])

@@ -88,6 +88,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     in
     Result.bind compiled adapt_set_callable
   in
+  let rec protocol_capability_pattern name ty =
+    match Types.protocol_constraint_info ty with
+    | Some (protocol_id, _, value_ty) ->
+        Semantic_ir.PTuple
+          [
+            Semantic_ir.PVar
+              (Types.protocol_witness_name name protocol_id);
+            protocol_capability_pattern name value_ty;
+          ]
+    | None -> Semantic_ir.PVar name
+  in
   let compile_contextual_fn scope env ?name ?(refine_open_overrides = false)
       ~param_type_overrides params body_forms =
     let lookup_function_ty name =
@@ -536,7 +547,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                  typed_ir
                    (TFn ([ element_ty ], body.ty))
                    (Semantic_ir.Fun
-                      ([ Semantic_ir.PVar item_name ], body.semantic_expr)))
+                      ( [ protocol_capability_pattern item_name element_ty ],
+                        body.semantic_expr )))
         in
         let function_ = lookup_function scope env name in
         match function_ with

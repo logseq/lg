@@ -1,6 +1,0 @@
-named-database=2
-database-relation-join=3
-relation-relation-join=1
-reordered-source=1
-empty-relation=0
-missing-source=rejected

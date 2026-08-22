@@ -1,15 +1,10 @@
 (** Runtime representation and operations for dynamically typed values. *)
 
-type _ nominal_tag = ..
-type nominal = Nominal : 'a nominal_tag * 'a * Obj.t option -> nominal
-type _ nominal_tag += Uuid_tag : Runtime_uuid.t nominal_tag
-val dynamic_marker : unit ref
 type 'a hash_trie =
   | Hash_empty
   | Hash_leaf of int * 'a list
   | Hash_branch of int * 'a hash_trie array
 type t = {
-  marker : unit ref;
   payload : payload;
   sequence : (unit -> t Seq.t) option;
   sequential : bool;
@@ -18,6 +13,7 @@ type t = {
   nominal : nominal option;
   cached_hash : int option;
 }
+and nominal = Uuid_nominal of Runtime_uuid.t * t option
 and payload =
     Nil
   | Int of int
@@ -46,10 +42,8 @@ val make :
   ?sequential:bool ->
   ?metadata:t -> ?type_name:string -> ?cached_hash:int -> payload -> t
 val with_metadata : t -> t -> t
-val with_nominal : 'a nominal_tag -> 'a -> t -> t
 val with_sequence : t -> (unit -> t Seq.t) -> t
 val nominal : t -> nominal option
-val unpack_nominal : 'a nominal_tag -> t -> 'a option
 val nominal_metadata_is_original : t -> bool
 val nil : t
 val int : int -> t
@@ -80,9 +74,7 @@ val vector : t Rrbvec.t -> t
 val vec_value : t -> t
 val array : t array -> t
 val array_copy : t -> t
-val regex_match : string option list option -> t
 val regex_group : string option -> t
-val regex_match_sequence : string option list array -> t
 val seq : t Seq.t -> t
 val seq_cons : t -> t Seq.t -> t
 val map : (t * t) list -> t
@@ -92,11 +84,6 @@ val same_nominal_type : t -> t -> bool
 val expand_record_extension_entries : (t * t) list -> (t * t) list
 val equal : t -> t -> bool
 val equal_payload : t -> t -> bool
-val is_runtime_dynamic : 'a -> bool
-val polymorphic_equal : 'a -> 'a -> bool
-val polymorphic_hash : 'a -> int
-val polymorphic_str : 'a -> string
-val polymorphic_pr_str : 'a -> string
 val equal_arguments : t list -> bool
 val numeric_equal : t -> t -> bool
 val numeric_equal_arguments : t list -> bool

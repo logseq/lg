@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 244; then
-  echo "compiler call dispatch changed: expected 244 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 247; then
+  echo "compiler call dispatch changed: expected 247 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -90,6 +90,7 @@ awk '
     split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
     for (i in xs) narrowing[xs[i]] = 1
     internal_abi["__lg_ex-message"] = "static-exception-message-extraction-primitive"
+    internal_abi["__lg_not"] = "typed-static-truthiness-negation-primitive"
     internal_abi["__lg_ex-cause"] = "static-optional-exception-cause-primitive"
     internal_abi["__lg_ex-data"] = "documented-exception-info-data-dynamic-boundary"
     internal_abi["__lg_re-pattern"] = "validated-static-regex-construction-primitive"
@@ -116,6 +117,7 @@ awk '
     internal_abi["__lg_reductions"] = "typed-reducer-arity-and-seqable-adaptation-primitive"
     internal_abi["__lg_reduce-kv"] = "typed-empty-accumulator-and-collection-inference-primitive"
     internal_abi["__lg_reduce"] = "typed-reduced-short-circuit-and-collection-specialization-primitive"
+    internal_abi["__lg_run"] = "typed-effectful-sequence-traversal-and-reduced-short-circuit-primitive"
     internal_abi["__lg_unreduced"] = "typed-parameterized-reduced-payload-extraction-primitive"
     internal_abi["__lg_ensure-reduced"] = "typed-conditional-parameterized-reduced-wrapper-primitive"
     internal_abi["__lg_force"] = "typed-lazy-force-or-static-identity-primitive"
@@ -132,6 +134,7 @@ awk '
     internal_abi["__lg_fnil"] = "typed-default-substitution-function-specialization-primitive"
     internal_abi["__lg_bound-fn"] = "typed-dynamic-var-binding-capture-and-function-wrapper-specialization-primitive"
     internal_abi["__lg_partial"] = "typed-fixed-argument-function-specialization-primitive"
+    internal_abi["__lg_name"] = "typed-concrete-name-coercion-and-generic-inamecoercion-protocol-elaboration-primitive"
     internal_abi["__lg_namespace"] = "typed-consumer-state-inamed-protocol-elaboration-primitive"
     internal_abi["__lg_builtin-name"] = "typed-built-in-keyword-and-symbol-name-extraction-primitive"
     internal_abi["__lg_builtin-keyword"] = "typed-string-keyword-symbol-and-optional-namespace-keyword-construction-primitive"
@@ -323,8 +326,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 155; then
-  echo "compiler form dispatch changed: expected 155 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 156; then
+  echo "compiler form dispatch changed: expected 156 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -342,6 +345,7 @@ awk -F '\t' '
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
     form_reason["__lg_defer_seq"] = "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive"
+    form_reason["__lg_not"] = "private-typed-static-truthiness-negation-inference-primitive"
     form_reason["__lg_dec"] = "private-typed-static-numeric-decrement-inference-primitive"
     form_reason["__lg_constantly"] = "private-typed-contextual-constant-function-inference-primitive"
     form_reason["new"] = "typed-host-constructor-application-elaboration"

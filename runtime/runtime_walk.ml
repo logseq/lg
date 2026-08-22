@@ -36,6 +36,7 @@ let rec walk inner form =
   let open Lg_edn_backend in
   match form with
   | List values -> List (Array.map inner values)
+  | Seq values -> Seq (Stdlib.Seq.map inner values)
   | Vector values -> Vector (Array.map inner values)
   | Int4_vector (first, second, third, fourth) ->
       Vector

@@ -181,10 +181,33 @@ let add_implementation ?location protocol_id method_id receiver_id binding
       ^ Protocol_id.to_string protocol_id
      ^ "/" ^ Method_id.name method_id)
   else
+    let add ~track_name =
+      Ok
+        {
+          registry with
+          implementations =
+            Implementation_map.add key binding registry.implementations;
+          implementation_locations =
+            (match location with
+            | Some location ->
+                Implementation_map.add key location
+                  registry.implementation_locations
+            | None -> registry.implementation_locations);
+          implementation_names =
+            if track_name then
+              Emitted_name_map.add binding.ocaml_name key
+                registry.implementation_names
+            else registry.implementation_names;
+        }
+    in
     match
       Emitted_name_map.find_opt binding.Types.ocaml_name
         registry.implementation_names
     with
+    | Some (existing_protocol, existing_method, _existing_receiver)
+      when Protocol_id.equal existing_protocol protocol_id
+           && Method_id.equal existing_method method_id ->
+        add ~track_name:false
     | Some (existing_protocol, existing_method, _existing_receiver) ->
         Error.error
           ("OCaml protocol implementation name collision: "
@@ -195,22 +218,7 @@ let add_implementation ?location protocol_id method_id receiver_id binding
           ^ Protocol_id.to_string protocol_id
           ^ "/" ^ Method_id.name method_id ^ " both emit " ^ binding.ocaml_name
           )
-    | None ->
-        Ok
-          {
-            registry with
-            implementations =
-              Implementation_map.add key binding registry.implementations;
-            implementation_locations =
-              (match location with
-              | Some location ->
-                  Implementation_map.add key location
-                    registry.implementation_locations
-              | None -> registry.implementation_locations);
-            implementation_names =
-              Emitted_name_map.add binding.ocaml_name key
-                registry.implementation_names;
-          }
+    | None -> add ~track_name:true
 
 let find_implementation protocol_id method_id receiver_id registry =
   Implementation_map.find_opt

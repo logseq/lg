@@ -34,8 +34,20 @@ let project_include_dirs () =
 let base_include_dirs = lazy (env_include_dirs () @ project_include_dirs ())
 let include_dirs () = Lazy.force base_include_dirs
 let package_include_dirs = ref []
+let melange_target = ref false
 let initialized_include_dirs = ref None
-let active_include_dirs () = include_dirs () @ !package_include_dirs
+
+let set_melange_target enabled = melange_target := enabled
+let is_melange_target () = !melange_target
+
+let active_include_dirs () =
+  let project_dirs =
+    if !melange_target then
+      include_dirs ()
+      |> List.filter (fun directory -> Filename.basename directory <> "byte")
+    else include_dirs ()
+  in
+  project_dirs @ !package_include_dirs
 
 let ensure_initialized () =
   let dirs = active_include_dirs () in

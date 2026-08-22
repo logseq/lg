@@ -10,8 +10,6 @@ let object_directories () =
     Filename.concat root "_build/default/runtime/.lg_runtime.objs/byte";
     Filename.concat root "_build/default/vendor/rrbvec/.rrbvec.objs/byte";
     Filename.concat root "_build/default/src/.lg.objs/byte";
-    Filename.concat root
-      "_build/default/test/datascript_runtime/.datascript_runtime.objs/byte";
   ]
 
 let object_path unit_name =

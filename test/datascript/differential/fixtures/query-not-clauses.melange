@@ -1,6 +1,0 @@
-simple=3,4
-multi=2,3,4
-local-predicate=1,3
-full-exclude=empty
-empty-exclude=1,2,3,4
-unbound=invalid

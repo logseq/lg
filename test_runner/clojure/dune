@@ -6,3 +6,17 @@
   (test_native.cljc as clojure/test_native.cljc)
   (test_melange.cljc as clojure/test_melange.cljc)
   (run.cljc as clojure/run.cljc)))
+
+(install
+ (section lib)
+ (package lg-test)
+ (files
+  (test.cljc as sources/test.cljc)
+  (test_native.cljc as sources/test_native.cljc)
+  (test_melange.cljc as sources/test_melange.cljc)
+  (run.cljc as sources/run.cljc)))
+
+(library
+ (name lg_test_sources)
+ (public_name lg-test.sources)
+ (modules))

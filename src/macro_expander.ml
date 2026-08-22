@@ -30,7 +30,7 @@ let is_unqualified_compile_time_primitive = function
   | "float?" | "symbol?" | "keyword?" | "vector?" | "map?" | "seq?"
   | "sequential?" | "empty?" | "not-empty" | "reverse" | "concat"
   | "clojure.core/concat" | "count" | "take" | "drop" | "/" | "nil?"
-  | "even?" | "partition" | "name" | "symbol" | "keyword" | "first" | "second" | "last" | "next"
+  | "even?" | "int?" | "pos?" | "partition" | "name" | "symbol" | "keyword" | "first" | "second" | "last" | "next"
   | "nnext" | "butlast" | "=" | "list" | "cons" | "conj" | "assoc"
   | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
   | "filter"
@@ -954,6 +954,14 @@ and eval_builtin context name arg_forms =
       unary (function
         | Form (FInt value) -> Ok (Form (FBool (value mod 2 = 0)))
         | _ -> Error.error "even? expects an integer macro argument")
+  | "int?" ->
+      unary (function
+        | Form (FInt _) -> Ok (Form (FBool true))
+        | _ -> Ok (Form (FBool false)))
+  | "pos?" ->
+      unary (function
+        | Form (FInt value) -> Ok (Form (FBool (value > 0)))
+        | _ -> Ok (Form (FBool false)))
   | "name" ->
       unary (function
         | Form (FSymbol value) ->

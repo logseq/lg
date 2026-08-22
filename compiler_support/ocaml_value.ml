@@ -17,10 +17,19 @@ type constructor_type = {
 
 let initialized = ref false
 let initial_env_cache = ref None
+let configured_melange = ref None
+let known_include_dirs = ref []
 
 let init include_dirs =
-  let uses_melange =
+  let detected_melange =
     List.exists (fun path -> Filename.basename path = "melange") include_dirs
+  in
+  let uses_melange =
+    match !configured_melange with
+    | Some configured -> configured
+    | None ->
+        configured_melange := Some detected_melange;
+        detected_melange
   in
   let standard_include_dirs =
     if uses_melange then []
@@ -29,11 +38,26 @@ let init include_dirs =
       |> List.map (Filename.concat Config.standard_library)
       |> List.filter Sys.file_exists
   in
-  let include_dirs = standard_include_dirs @ include_dirs in
+  let include_dirs =
+    if uses_melange then
+      List.filter
+        (fun path ->
+          Filename.basename path <> "byte"
+          && Filename.basename path <> "native")
+        include_dirs
+    else include_dirs
+  in
+  let include_dirs =
+    List.sort_uniq String.compare
+      (standard_include_dirs @ include_dirs @ !known_include_dirs)
+  in
+  known_include_dirs := include_dirs;
   if not !initialized then (
-    if not uses_melange then
-      Clflags.include_dirs :=
-        List.sort_uniq String.compare (include_dirs @ !Clflags.include_dirs);
+    Clflags.no_std_include := uses_melange;
+    Clflags.include_dirs :=
+      List.sort_uniq String.compare
+        (if uses_melange then include_dirs
+         else include_dirs @ !Clflags.include_dirs);
     Compmisc.init_path ();
     initialized := true);
   match !initial_env_cache with
@@ -59,6 +83,7 @@ let rec normalize type_expr =
   | Ttuple elements -> Tuple (List.map (fun (_, ty) -> normalize ty) elements)
   | Tconstr (path, arguments, _) ->
       Constructor (Path.name path, List.map normalize arguments)
+  | Tpoly (body, _) | Tlink body -> normalize body
   | _ -> Opaque
 
 let exception_message exn =

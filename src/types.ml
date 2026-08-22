@@ -16,6 +16,8 @@ type binding = {
   dynamically_bindable : bool;
   redef_root_name : string option;
   multimethod : bool;
+  multimethod_method_types : ty list;
+  multimethod_definition : Semantic_ir.t option;
   never_returns : bool;
 }
 
@@ -42,7 +44,9 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     ?return_param_index ?(overload_targets = [])
     ?(overload_row_param_types = []) ?(forward_declared = false)
     ?constant_keyword ?(false_non_nil_names = []) ?(dynamically_bindable = false)
-    ?redef_root_name ?(multimethod = false) ?(never_returns = false)
+    ?redef_root_name ?(multimethod = false) ?(multimethod_method_types = [])
+    ?multimethod_definition
+    ?(never_returns = false)
     ocaml_name ty =
   {
     ocaml_name;
@@ -60,6 +64,8 @@ let binding ?(row_param_types = []) ?host_reference ?protocol_id
     dynamically_bindable;
     redef_root_name;
     multimethod;
+    multimethod_method_types;
+    multimethod_definition;
     never_returns;
   }
 
@@ -76,10 +82,13 @@ let runtime_root_name (binding : binding) =
   else binding.redef_root_name
 
 let generalize_binding (binding : binding) =
-  let scheme = Type_solver.generalize binding.ty in
-  match scheme.quantified with
-  | [] -> binding
-  | _ -> { binding with ty = scheme.body; scheme = Some scheme }
+  match binding.ty with
+  | TArray _ | TRef _ -> binding
+  | _ ->
+      let scheme = Type_solver.generalize binding.ty in
+      (match scheme.quantified with
+      | [] -> binding
+      | _ -> { binding with ty = scheme.body; scheme = Some scheme })
 
 let instantiate_binding (binding : binding) =
   match binding.scheme with
@@ -956,7 +965,7 @@ let rec ocaml_name = function
       "((" ^ ocaml_name value_ty ^ " -> string) * " ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ])
     when name = exception_data_constraint_name ->
-      "((" ^ ocaml_name value_ty ^ " -> Lg_runtime.Runtime_dynamic.t) * "
+      "((" ^ ocaml_name value_ty ^ " -> Lg_edn_backend.t) * "
       ^ ocaml_name value_ty ^ ")"
   | TOcaml_app (name, [ value_ty ]) when name = hashable_constraint_name ->
       "((" ^ ocaml_name value_ty ^ " -> int) * " ^ ocaml_name value_ty ^ ")"
@@ -1100,7 +1109,9 @@ and set_module_name = function
   | TVector TBool -> Ok "Lg_runtime.Core_set.Bool_vector_set"
   | TVector (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"
   | TVector (TOcaml "Lg_edn_backend.t") -> Ok "Lg_runtime.Runtime_poly_set"
-  | TSeq _ -> Ok "Lg_runtime.Runtime_poly_set"
+  | TSeq _ -> Ok "Lg_runtime.Runtime_seq_set"
+  | TOcaml_app (name, [ _ ]) when is_next_seq_type_name name ->
+      Ok "Lg_runtime.Runtime_seq_set"
   | ty when Option.is_some (seqable_constraint_info ty) ->
       Ok "Lg_runtime.Runtime_poly_set"
   | TSet (TUnknown | TMeta _ | TVar _) -> Ok "Lg_runtime.Runtime_poly_set"

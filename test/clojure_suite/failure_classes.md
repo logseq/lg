@@ -231,7 +231,7 @@ The promotion runner is manifest-driven by
 does not require editing Dune or a generated runner. A line contains either a
 namespace, or a namespace followed by the explicit `native` or `melange`
 target qualifier. The current manifest contains 176 namespace declarations.
-Native runs 187 tests, while Melange runs 193 tests with 3,027 assertions. Both
+Native runs 188 tests, while Melange runs 193 tests with 3,027 assertions. Both
 targets pass with zero failures and zero errors. The committed compiled-both
 inventory contains 185 namespaces and 370 target pairs: 334 pairs have runtime
 promotion, while `promotion_exclusions.tsv` classifies the other 36 as 18

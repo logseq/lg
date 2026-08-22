@@ -17,7 +17,7 @@ dune clean
 
 if ! /usr/bin/time -p \
   env -u LG_CACHE_DIR -u LG_DISABLE_COMPILE_CACHE \
-    dune build test/datascript_conn_native_runtime.ml \
+    dune build stdlib/lg_stdlib_native.state \
   >"$build_log" 2>"$timing_file"; then
   cat "$build_log" >&2
   cat "$timing_file" >&2

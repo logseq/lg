@@ -1,3 +1,0 @@
-pattern=[:name]
-result-has-name=true
-result-has-age=false

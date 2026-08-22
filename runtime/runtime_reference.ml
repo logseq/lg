@@ -63,7 +63,9 @@ let reset reference value =
   notify reference old_value value;
   value
 
-let vreset reference value = reset reference value
+let vreset reference value =
+  reference.value <- value;
+  value
 
 let swap reference update = reset reference (update reference.value)
 

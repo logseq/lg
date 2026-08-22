@@ -515,7 +515,9 @@ let element_type_of_ty env ty =
 
 let seq_expr env collection =
   match to_seq_expr env collection with
-  | Error _ -> Error.error "seq expects a seqable value"
+  | Error _ ->
+      Error.error
+        ("seq expects a seqable value, got " ^ Types.source_name collection.ty)
   | Ok (inner, sequence) ->
       let sequence_type =
         match (Compiler_environment.target env, collection.ty) with

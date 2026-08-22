@@ -135,3 +135,63 @@
 (alias
  (name stdlib-melange)
  (deps lg_stdlib_melange.ml lg_stdlib_melange.state))
+
+(rule
+ (targets lg_stdlib_js.ml lg_stdlib_js.state)
+ (deps
+  clojure/core.lgi
+  clojure/core.cljc
+  clojure/string.lgi
+  clojure/string.cljc
+  clojure/edn.lgi
+  clojure/edn.cljc
+  cljs/reader.lgi
+  cljs/reader.cljc
+  clojure/set.lgi
+  clojure/set.cljc
+  %{lib:lg.runtime:lg_runtime.cma}
+  ../bin/lg_cli.exe)
+ (action
+  (run
+   %{exe:../bin/lg_cli.exe}
+   --target
+   js
+   --compile-files-state
+   lg_stdlib_js.state
+   %{dep:clojure/core.lgi}
+   %{dep:clojure/core.cljc}
+   %{dep:clojure/string.lgi}
+   %{dep:clojure/string.cljc}
+   %{dep:clojure/edn.lgi}
+   %{dep:clojure/edn.cljc}
+   %{dep:cljs/reader.lgi}
+   %{dep:cljs/reader.cljc}
+   %{dep:clojure/set.lgi}
+   %{dep:clojure/set.cljc}
+   -o
+   lg_stdlib_js.ml)))
+
+(alias
+ (name stdlib-js)
+ (deps lg_stdlib_js.ml lg_stdlib_js.state))
+
+(install
+ (package lg)
+ (section lib)
+ (files
+  (clojure/core.cljc as stdlib/clojure/core.cljc)
+  (clojure/core.lgi as stdlib/clojure/core.lgi)
+  (clojure/string.cljc as stdlib/clojure/string.cljc)
+  (clojure/string.lgi as stdlib/clojure/string.lgi)
+  (clojure/edn.cljc as stdlib/clojure/edn.cljc)
+  (clojure/edn.lgi as stdlib/clojure/edn.lgi)
+  (clojure/set.cljc as stdlib/clojure/set.cljc)
+  (clojure/set.lgi as stdlib/clojure/set.lgi)
+  (cljs/reader.cljc as stdlib/cljs/reader.cljc)
+  (cljs/reader.lgi as stdlib/cljs/reader.lgi)
+  (lg_stdlib_native.ml as stdlib/lg_stdlib_native.ml)
+  (lg_stdlib_native.state as stdlib/lg_stdlib_native.state)
+  (lg_stdlib_melange.ml as stdlib/lg_stdlib_melange.ml)
+  (lg_stdlib_melange.state as stdlib/lg_stdlib_melange.state)
+  (lg_stdlib_js.ml as stdlib/lg_stdlib_js.ml)
+  (lg_stdlib_js.state as stdlib/lg_stdlib_js.state)))

@@ -1,5 +1,0 @@
-tuple=3:4
-collection=:a,:e,:i,:o,:u
-relation=:a::c,:d::f
-ignore=7
-empty-collection=empty
