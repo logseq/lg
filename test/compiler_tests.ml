@@ -9081,6 +9081,31 @@ let test_into_cat_flattens_one_collection_level () =
   assert_ocaml_runs "into_cat_flattens_one_collection_level" "true\n"
     ocaml_source
 
+let test_into_cat_accepts_variadic_seqable_constraints () =
+  let interface =
+    {|
+(ns app.concatv)
+(signature app.concatv/concatv [value storage]
+  :variadic-fn<seqable<value;storage>;vector<value>>)
+|}
+  in
+  let source =
+    {|
+(ns app.concatv)
+(defn concatv [& xs]
+  (into [] cat xs))
+(println (= [1 2 3] (concatv [1 2] [3])))
+|}
+  in
+  let compile target =
+    compile_chunks_with_stdlib target
+      [ ("app/concatv.lgi", interface); ("app/concatv.cljc", source) ]
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "into_cat_accepts_variadic_seqable_constraints" "true\n"
+    native_source;
+  ignore (compile Lg.Target.Melange)
+
 let test_mapv_vector_zips_multiple_collections () =
   let source =
     {|
@@ -22877,6 +22902,26 @@ let test_compile_time_helper_extraction_respects_macro_parameters () =
 |}
   |> expect_ok |> ignore
 
+let test_compile_time_macro_helpers_mutate_volatiles_from_stdlib () =
+  let source =
+    {|
+(ns test.macro-volatile)
+(defn- collect-form [value]
+  (let [values (volatile! [])]
+    (vswap! values conj value)
+    @values))
+(defmacro first-collected [value]
+  (first (collect-form value)))
+(println (first-collected 42))
+|}
+  in
+  assert_ocaml_runs "compile_time_macro_helpers_mutate_volatiles" "42\n"
+    (compile_with_stdlib Lg.Target.Native
+       "test/macro_volatile_helper.cljc" source);
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/macro_volatile_helper.cljc" source)
+
 let test_source_array_and_reference_constructors_are_first_class () =
   let source =
     {|
@@ -27741,6 +27786,41 @@ let test_nil_initialized_reduce_returns_nullable_reduced_value () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "nil_initialized_reduce_returns_nullable_reduced_value"
     "true:true\n" ocaml_source
+
+let test_reduced_predicate_preserves_generic_callback_results () =
+  let source =
+    {|
+(defn reduce-indexed [f init xs]
+  (loop [remaining (seq xs)
+         acc init
+         idx 0]
+    (if-some [x (first remaining)]
+      (let [result (f acc x idx)]
+        (if (reduced? result)
+          result
+          (recur (next remaining) result (inc idx))))
+      acc)))
+(def total
+  (reduce-indexed
+    (fn [acc value index] (+ acc (* value index)))
+    0
+    [2 3 4]))
+(def stopped
+  (reduce-indexed
+    (fn [acc value index]
+      (if (= index 1) (reduced acc) (+ acc value)))
+    0
+    [2 3 4]))
+(println (= 11 total))
+(println (reduced? stopped))
+(println (= 2 (unreduced stopped)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "reduced_predicate_preserves_generic_callback_results"
+    "true\ntrue\ntrue\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
   let source =
@@ -43502,6 +43582,8 @@ let tests =
     ("assert accepts optional message", test_assert_accepts_optional_message);
     ( "into cat flattens one collection level",
       test_into_cat_flattens_one_collection_level );
+    ( "into cat accepts variadic seqable constraints",
+      test_into_cat_accepts_variadic_seqable_constraints );
     ( "mapv vector zips multiple collections",
       test_mapv_vector_zips_multiple_collections );
     ( "map and mapv accept multiple collections",
@@ -45037,6 +45119,8 @@ let tests =
       test_reduce_stops_without_realizing_remaining_values );
     ( "nil initialized reduce returns nullable reduced value",
       test_nil_initialized_reduce_returns_nullable_reduced_value );
+    ( "reduced predicate preserves generic callback results",
+      test_reduced_predicate_preserves_generic_callback_results );
     ( "reduce short-circuits builtin and custom Seqable types",
       test_reduce_short_circuits_builtin_and_custom_seqable_types );
     ( "custom records can implement core Seqable",
@@ -45632,6 +45716,8 @@ let tests =
       test_source_hash_and_compare_reject_invalid_static_domains );
     ( "compile-time helper extraction respects macro parameters",
       test_compile_time_helper_extraction_respects_macro_parameters );
+    ( "compile-time macro helpers mutate volatiles from stdlib",
+      test_compile_time_macro_helpers_mutate_volatiles_from_stdlib );
     ( "source array and reference constructors are first-class",
       test_source_array_and_reference_constructors_are_first_class );
     ( "source array functions reject invalid static arguments",

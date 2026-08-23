@@ -3712,10 +3712,7 @@ let rec adapt_value_to_type env expected actual =
         let body =
           match Types.reduced_element actual_return with
           | Some _ -> call
-          | None ->
-              Semantic_ir.Apply
-                ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
-                  [ call ] )
+          | None -> call
         in
         Semantic_ir.Fun
           (List.map (fun name -> Semantic_ir.PVar name) parameter_names, body))
@@ -6119,12 +6116,7 @@ let rec emit_argument_adaptation env adaptation argument =
           let body =
             if callback.actual_returns_reduced then Ok result.semantic_expr
             else
-              Result.map
-                (fun payload ->
-                  Semantic_ir.Apply
-                    ( Semantic_ir.Ident "Lg_runtime.Runtime_reduced.continue",
-                      [ payload ] ))
-                (emit_argument_adaptation env callback.result_adaptation result)
+              emit_argument_adaptation env callback.result_adaptation result
           in
           Result.map
             (fun body ->
@@ -13812,7 +13804,10 @@ let create ~compile_expr =
                                      apply "Lg_runtime.Runtime_seq.map"
                                        [
                                          Semantic_ir.Fun
-                                           ( [ Semantic_ir.PVar input_name ],
+                                           ( [
+                                               constrained_identifier_pattern
+                                                 input_name collection_element;
+                                             ],
                                              packed );
                                          sequence;
                                        ])
@@ -18350,8 +18345,14 @@ let create ~compile_expr =
                                     TFn (actual_params, _) )
                                   when callback_parameters_compatible
                                          expected_params actual_params ->
-                                    plan_and_emit_argument env
-                                      ~expected:expected_ty arg
+                                    (match
+                                       maybe_reduced_callback_payload
+                                         expected_ty arg.ty
+                                     with
+                                    | Some _ -> Ok (adapt_reduced_callback arg)
+                                    | None ->
+                                        plan_and_emit_argument env
+                                          ~expected:expected_ty arg)
                                 | _ ->
                                     Error.error
                                       (name

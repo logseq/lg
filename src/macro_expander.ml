@@ -35,13 +35,15 @@ let is_unqualified_compile_time_primitive = function
   | "meta" | "with-meta" | "vary-meta" | "vec" | "map" | "mapcat"
   | "filter"
   | "into" | "juxt" | "reduce" | "apply" | "volatile!" | "deref"
-  | "gensym" | "clojure.test/expand-are" ->
+  | "volatile-reset" | "gensym" | "clojure.test/expand-are" ->
       true
   | _ -> false
 
 let compile_time_primitive_name name =
   let unqualified =
-    if String.starts_with ~prefix:"clojure.core/" name then
+    if name = "IDeref/-deref" then "deref"
+    else if name = "IVolatile/-vreset!" then "volatile-reset"
+    else if String.starts_with ~prefix:"clojure.core/" name then
       String.sub name 13 (String.length name - 13)
     else if String.starts_with ~prefix:"cljs.core/" name then
       String.sub name 10 (String.length name - 10)
@@ -1141,6 +1143,14 @@ and eval_builtin context name arg_forms =
       unary (function
         | Volatile value -> Ok !value
         | _ -> Error.error "deref expects a volatile macro value")
+  | "volatile-reset" -> (
+      match eval_args () with
+      | Ok [ Volatile reference; value ] ->
+          reference := value;
+          Ok value
+      | Ok _ ->
+          Error.error "volatile reset expects a volatile and a macro value"
+      | Error _ as error -> error)
   | "gensym" ->
       incr gensym_counter;
       Ok (Form (FSymbol ("G__" ^ string_of_int !gensym_counter)))
