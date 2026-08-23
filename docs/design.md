@@ -42,6 +42,11 @@ result type. It may appear directly or as an item of `overload<...>`. The
 declared rest relationship remains static; it is not an erased sequence of
 dynamic values.
 
+`reducing-callback-result<T>` is a sidecar-only callback result type. It accepts
+either `T` or `reduced<T>` from a reducing callback while preserving `T` as the
+accumulator type. It must not add capability evidence to `T` or expose the
+internal reduced wrapper as the enclosing function's result type.
+
 The host-boundary assignability policy does not make a dynamic constraint
 assignable to a static type, or a static type assignable to a dynamic
 constraint. OCaml ownership is not evidence that an unsafe conversion is
@@ -79,6 +84,16 @@ element type is an explicit sum such as:
 ```
 
 The compiler must not use `Runtime_dynamic.t` as an anonymous sum type.
+
+When an expression has an explicit expected closed-sum type, the compiler may
+insert a unary variant constructor only if exactly one constructor payload is
+statically assignable from the expression type. This contextual injection is
+part of closed-sum elaboration: it emits the constructor directly and never
+boxes through `Runtime_dynamic`. Zero matching constructors is an error, as is
+more than one matching constructor. Unknown, dynamic, and type-variable
+expressions are never candidates for implicit injection. This rule lets a
+typed port preserve upstream branch order and control flow without duplicating
+the algorithm solely to spell constructor wrappers.
 
 A keyword-keyed map literal is not an escape from this rule. If its values have
 different types, compilation fails even when the compiler could represent the
@@ -187,6 +202,13 @@ An arbitrary function value or runtime Var lookup is not such a boundary.
 open; supported Vars must be represented by an explicit closed sum or a
 statically typed registry. The compiler must not enable whole-program runtime
 Var reflection or register every definition as a dynamic value.
+
+An external closed value domain may register an `exception-data-adapter` whose
+exact type is `T -> Lg_edn_backend.t`. The compiler uses that adapter only while
+constructing the documented `ex-info` payload and composes it recursively
+through statically typed collections. Registration does not make `T` dynamic,
+does not create a public pack/unpack API, and does not affect ordinary values or
+collections.
 
 LG source syntax does not expose a universal dynamic type or an escape hatch for
 creating one. Source code also cannot require

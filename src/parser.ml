@@ -28,9 +28,9 @@ let error_at span message =
       }
     message
 
-let rec parse_one ~target = function
+let rec parse_one ~target ~reader_features = function
   | { desc = Symbol "#_"; span = reader_span } :: rest -> (
-      match parse_present ~target rest with
+      match parse_present ~target ~reader_features rest with
       | Error _ -> error_at reader_span "reader discard expects a form"
       | Ok (discarded, rest) ->
           Ok
@@ -43,19 +43,19 @@ let rec parse_one ~target = function
     :: { desc = Lparen; span = open_span }
     :: rest ->
       Result.bind
-        (parse_until ~target Rparen open_span "reader conditional; expected ')'"
+        (parse_until ~target ~reader_features Rparen open_span "reader conditional; expected ')'"
            [] rest) (fun (forms, close_span, rest) ->
-          select_reader_conditional target reader_span close_span forms
+          select_reader_conditional reader_features reader_span close_span forms
           |> Result.map (fun selected -> (selected, rest)))
   | { desc = Symbol "#?@"; span = reader_span }
     :: { desc = Lparen; span = open_span }
     :: rest ->
       Result.bind
-        (parse_until ~target Rparen open_span
+        (parse_until ~target ~reader_features Rparen open_span
            "splicing reader conditional; expected ')'" [] rest)
         (fun (forms, close_span, rest) ->
           Result.bind
-            (select_reader_conditional target reader_span close_span forms)
+            (select_reader_conditional reader_features reader_span close_span forms)
             (fun selected ->
                  let forms =
                    match selected.form with
@@ -79,15 +79,15 @@ let rec parse_one ~target = function
                        rest ))
                    forms))
   | { desc = Quote; span } :: rest ->
-      parse_reader_prefix ~target span "quote" rest
+      parse_reader_prefix ~target ~reader_features span "quote" rest
   | { desc = Syntax_quote; span } :: rest ->
-      parse_reader_prefix ~target span "syntax-quote" rest
+      parse_reader_prefix ~target ~reader_features span "syntax-quote" rest
   | { desc = Unquote; span } :: rest ->
-      parse_reader_prefix ~target span "unquote" rest
+      parse_reader_prefix ~target ~reader_features span "unquote" rest
   | { desc = Unquote_splicing; span } :: rest ->
-      parse_reader_prefix ~target span "unquote-splicing" rest
+      parse_reader_prefix ~target ~reader_features span "unquote-splicing" rest
   | { desc = Deref; span } :: rest ->
-      parse_reader_prefix ~target span "deref" rest
+      parse_reader_prefix ~target ~reader_features span "deref" rest
   | { desc = Var_quote value; span } :: rest ->
       let symbol = located (FSymbol value) span in
       let head = located (FSymbol "__lg-var-quote") span in
@@ -98,7 +98,7 @@ let rec parse_one ~target = function
             span,
           rest )
   | { desc = Symbol "#uuid"; span = prefix_span } :: rest -> (
-      match parse_one ~target rest with
+      match parse_one ~target ~reader_features rest with
       | Error _ -> error_at prefix_span "#uuid literal expects a string"
       | Ok (value, rest) -> (
           match value.form with
@@ -115,7 +115,7 @@ let rec parse_one ~target = function
                   rest )
           | _ -> error_at value.span "#uuid literal expects a string"))
   | { desc = Symbol "#inst"; span = prefix_span } :: rest -> (
-      match parse_one ~target rest with
+      match parse_one ~target ~reader_features rest with
       | Error _ -> error_at prefix_span "#inst literal expects a string"
       | Ok (value, rest) -> (
           match value.form with
@@ -132,7 +132,7 @@ let rec parse_one ~target = function
                   rest )
           | _ -> error_at value.span "#inst literal expects a string"))
   | { desc = Symbol "#js"; span = prefix_span } :: rest -> (
-      match parse_one ~target rest with
+      match parse_one ~target ~reader_features rest with
       | Error _ -> error_at prefix_span "#js literal expects a map or vector"
       | Ok (value, rest) -> (
           match value.form with
@@ -164,7 +164,7 @@ let rec parse_one ~target = function
   | { desc = Char value; span } :: rest -> Ok (located (FChar value) span, rest)
   | { desc = Bool value; span } :: rest -> Ok (located (FBool value) span, rest)
   | { desc = Lparen; span = open_span } :: rest ->
-      parse_until ~target Rparen open_span "list; expected ')'" [] rest
+      parse_until ~target ~reader_features Rparen open_span "list; expected ')'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
           ( located ~children:forms
               (FList (List.map (fun form -> form.form) forms))
@@ -175,13 +175,13 @@ let rec parse_one ~target = function
             rest ))
   | { desc = Anon_lparen; span = open_span } :: rest ->
       Result.bind
-        (parse_until ~target Rparen open_span
+        (parse_until ~target ~reader_features Rparen open_span
            "anonymous function; expected ')'" [] rest)
         (fun (forms, close_span, rest) ->
           anonymous_function open_span close_span forms
           |> Result.map (fun form -> (form, rest)))
   | { desc = Lbracket; span = open_span } :: rest ->
-      parse_until ~target Rbracket open_span "vector; expected ']'" [] rest
+      parse_until ~target ~reader_features Rbracket open_span "vector; expected ']'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
           ( located ~children:forms
               (FVector (List.map (fun form -> form.form) forms))
@@ -192,12 +192,12 @@ let rec parse_one ~target = function
             rest ))
   | { desc = Lbrace; span = open_span } :: rest ->
       Result.bind
-        (parse_until ~target Rbrace open_span "map; expected '}'" [] rest)
+        (parse_until ~target ~reader_features Rbrace open_span "map; expected '}'" [] rest)
         (fun (forms, close_span, rest) ->
           map_of_forms open_span close_span forms
           |> Result.map (fun form -> (form, rest)))
   | { desc = Set_lbrace; span = open_span } :: rest ->
-      parse_until ~target Rbrace open_span "set; expected '}'" [] rest
+      parse_until ~target ~reader_features Rbrace open_span "set; expected '}'" [] rest
       |> Result.map (fun (forms, close_span, rest) ->
           let head = located (FSymbol "__lg_hash-set") open_span in
           let children = head :: forms in
@@ -213,8 +213,8 @@ let rec parse_one ~target = function
   | { desc = Rbracket; span } :: _ -> error_at span "unexpected ']'"
   | { desc = Rbrace; span } :: _ -> error_at span "unexpected '}'"
 
-and parse_reader_prefix ~target prefix_span name tokens =
-  match parse_one ~target tokens with
+and parse_reader_prefix ~target ~reader_features prefix_span name tokens =
+  match parse_one ~target ~reader_features tokens with
   | Error _ as err -> err
   | Ok (value, rest) ->
       let head = located (FSymbol name) prefix_span in
@@ -289,20 +289,20 @@ and anonymous_function open_span close_span forms =
   let children = [ head; params; body ] in
   Ok (located ~children (FList (List.map (fun form -> form.form) children)) span)
 
-and parse_until ~target closing open_span description acc = function
+and parse_until ~target ~reader_features closing open_span description acc = function
   | [] -> error_at open_span ("unterminated " ^ description)
   | { desc; span } :: rest when desc = closing -> Ok (List.rev acc, span, rest)
   | tokens -> (
-      match parse_one ~target tokens with
+      match parse_one ~target ~reader_features tokens with
       | Ok (form, rest) when is_omitted_reader_form form ->
-          parse_until ~target closing open_span description acc rest
+          parse_until ~target ~reader_features closing open_span description acc rest
       | Ok (form, rest) -> (
           match spliced_reader_forms form with
           | Some forms ->
-              parse_until ~target closing open_span description
+              parse_until ~target ~reader_features closing open_span description
                 (List.rev_append forms acc) rest
           | None ->
-              parse_until ~target closing open_span description (form :: acc)
+              parse_until ~target ~reader_features closing open_span description (form :: acc)
                 rest)
       | Error _ as err -> err)
 
@@ -360,13 +360,13 @@ and map_of_forms open_span close_span forms =
             })
         (pairs [] forms))
 
-and parse_present ~target tokens =
-  match parse_one ~target tokens with
+and parse_present ~target ~reader_features tokens =
+  match parse_one ~target ~reader_features tokens with
   | Ok (form, rest) when is_omitted_reader_form form ->
-      parse_present ~target rest
+      parse_present ~target ~reader_features rest
   | result -> result
 
-and select_reader_conditional target reader_span close_span forms =
+and select_reader_conditional reader_features reader_span close_span forms =
   let conditional_span =
     {
       start_offset = reader_span.start_offset;
@@ -426,11 +426,10 @@ and select_reader_conditional target reader_span close_span forms =
                     :: List.map (fun form -> form.form) selected))
                  conditional_span)
       in
-      let selected_features = Target.reader_features target in
       let selected =
         List.find_map
           (fun feature -> List.assoc_opt feature branches)
-          selected_features
+          reader_features
       in
       match selected with
       | Some selected -> selected_form selected
@@ -439,28 +438,34 @@ and select_reader_conditional target reader_span close_span forms =
           | Some selected -> selected_form selected
           | None -> Ok (located (FSymbol omitted_reader_form) conditional_span)))
 
-let parse_located ?(target = Target.default) tokens =
+let parse_located ?(target = Target.default) ?reader_features tokens =
+  let reader_features =
+    Option.value reader_features ~default:(Target.reader_features target)
+  in
   let rec loop forms = function
     | [] -> Ok (List.rev forms)
     | tokens -> (
-        match parse_one ~target tokens with
+        match parse_one ~target ~reader_features tokens with
         | Ok (form, rest) when is_omitted_reader_form form -> loop forms rest
         | Ok (form, rest) -> loop (form :: forms) rest
         | Error _ as err -> err)
   in
   loop [] tokens
 
-let parse_located_recovering ?(target = Target.default) tokens =
+let parse_located_recovering ?(target = Target.default) ?reader_features tokens =
+  let reader_features =
+    Option.value reader_features ~default:(Target.reader_features target)
+  in
   let rec loop forms = function
     | [] -> (List.rev forms, None)
     | tokens -> (
-        match parse_one ~target tokens with
+        match parse_one ~target ~reader_features tokens with
         | Ok (form, rest) when is_omitted_reader_form form -> loop forms rest
         | Ok (form, rest) -> loop (form :: forms) rest
         | Error error -> (List.rev forms, Some error))
   in
   loop [] tokens
 
-let parse ?(target = Target.default) tokens =
-  parse_located ~target tokens
+let parse ?(target = Target.default) ?reader_features tokens =
+  parse_located ~target ?reader_features tokens
   |> Result.map (List.map (fun located -> located.form))

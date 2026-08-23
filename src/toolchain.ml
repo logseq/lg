@@ -56,6 +56,7 @@ module String_set = Set.Make (String)
 module type FRONTEND = sig
   val implementation :
     ?target:Target.t ->
+    ?reader_features:string list ->
     ?filename:string ->
     string ->
     (parser_result, Error.t) result
@@ -557,6 +558,43 @@ module Lg_frontend : FRONTEND = struct
               if List.exists (fun segment -> segment = "") segments then
                 Error.error "ns expects a namespace symbol and optional clauses"
               else
+                let import_require_entry = function
+                  | Ast.FVector (Ast.FSymbol package_name :: _imported_names)
+                    when String.starts_with ~prefix:"clojure." package_name
+                         || String.starts_with ~prefix:"java." package_name ->
+                      Ok None
+                  | Ast.FVector (Ast.FSymbol package_name :: imported_names)
+                    ->
+                      if
+                        List.for_all
+                          (function Ast.FSymbol _ -> true | _ -> false)
+                          imported_names
+                      then
+                        Ok
+                          (Some
+                             (Ast.FVector
+                                [ Ast.FSymbol package_name;
+                                  Ast.FKeyword ":refer";
+                                  Ast.FVector imported_names ]))
+                      else
+                        Error.error
+                          "ns :import class names must be symbols"
+                  | form ->
+                      Error.error
+                        ("lg namespaces do not support :import "
+                        ^ Macro_expander.string_of_form form)
+                in
+                let rec import_require_entries imported = function
+                  | [] -> Ok (List.rev imported)
+                  | entry :: rest -> (
+                      match import_require_entry entry with
+                      | Error _ as err -> err
+                      | Ok None -> import_require_entries imported rest
+                      | Ok (Some require_entry) ->
+                          import_require_entries
+                            (require_entry :: imported)
+                            rest)
+                in
                 let rec parse_clauses require_entries exclusions =
                   function
                   | [] ->
@@ -577,8 +615,13 @@ module Lg_frontend : FRONTEND = struct
                       ]
                     :: rest ->
                       parse_clauses require_entries (names :: exclusions) rest
-                  | Ast.FList (Ast.FKeyword ":import" :: _) :: _ ->
-                      Error.error "lg namespaces do not support :import"
+                  | Ast.FList (Ast.FKeyword ":import" :: entries) :: rest -> (
+                      match import_require_entries [] entries with
+                      | Error _ as err -> err
+                      | Ok imported ->
+                          parse_clauses
+                            (imported :: require_entries)
+                            exclusions rest)
                   | _ ->
                       Error.error
                           "ns supports :require, :require-macros, :refer-clojure \
@@ -662,7 +705,7 @@ module Lg_frontend : FRONTEND = struct
                ]
            | _ -> [ located ])
 
-  let implementation_uncached ?(target = Target.default)
+  let implementation_uncached ?(target = Target.default) ?reader_features
       ?(filename = "<string>") source =
     let line_starts = line_starts source in
     let is_compile_time_form located =
@@ -692,9 +735,16 @@ module Lg_frontend : FRONTEND = struct
       && left.Ast.span.end_offset = right.Ast.span.end_offset
     in
     let add_clj_compile_time_forms tokens located_ast =
-      match target with
-      | Target.Native -> Ok located_ast
-      | Target.Melange | Target.Js_of_ocaml -> (
+      let uses_cljs_reader =
+        Option.fold ~none:false
+          ~some:(List.exists (String.equal ":cljs"))
+          reader_features
+      in
+      match (target, uses_cljs_reader) with
+      | Target.Native, false -> Ok located_ast
+      | (Target.Native, true)
+      | (Target.Melange, _)
+      | (Target.Js_of_ocaml, _) -> (
           match Parser.parse_located ~target:Target.Native tokens with
           | Error _ as error -> error
           | Ok native_original -> (
@@ -729,7 +779,7 @@ module Lg_frontend : FRONTEND = struct
     match Lexer.tokenize source with
     | Error _ as err -> err
     | Ok tokens -> (
-        match Parser.parse_located ~target tokens with
+        match Parser.parse_located ~target ?reader_features tokens with
         | Error error ->
             Error (normalize_error_location filename line_starts error)
         | Ok original_located_ast -> (
@@ -831,15 +881,27 @@ module Lg_frontend : FRONTEND = struct
 
   let parsed_sources = Hashtbl.create 64
 
-  let implementation ?(target = Target.default) ?(filename = "<string>") source =
+  let implementation ?(target = Target.default) ?reader_features
+      ?(filename = "<string>") source =
+    let reader_features_key =
+      Option.value reader_features ~default:(Target.reader_features target)
+      |> String.concat ","
+    in
     let key =
       String.concat "\000"
-        [ Target.to_string target; filename; Digest.to_hex (Digest.string source) ]
+        [
+          Target.to_string target;
+          reader_features_key;
+          filename;
+          Digest.to_hex (Digest.string source);
+        ]
     in
     match Hashtbl.find_opt parsed_sources key with
     | Some parsed -> Ok parsed
     | None -> (
-        match implementation_uncached ~target ~filename source with
+        match
+          implementation_uncached ~target ?reader_features ~filename source
+        with
         | Error _ as error -> error
         | Ok parsed as result ->
             Hashtbl.add parsed_sources key parsed;
@@ -1798,8 +1860,17 @@ let typecheck_incremental state (parsed : parser_result) =
                 typecheck_state;
               } ))
 
-let prepare_source ?(target = Target.default) ?(filename = "<string>") source =
-  match Lg_frontend.implementation ~target ~filename source with
+let prepare_source ?(target = Target.default) ?reader_target
+    ?(filename = "<string>") source =
+  let reader_features =
+    Option.map
+      (fun reader_target ->
+        [ Target.feature target; Target.reader_dialect_feature reader_target ])
+      reader_target
+  in
+  match
+    Lg_frontend.implementation ~target ?reader_features ~filename source
+  with
   | Error _ as err -> err
   | Ok parsed ->
       required_packages_from_ast parsed.ast

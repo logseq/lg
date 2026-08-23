@@ -861,6 +861,16 @@ let compile_module_functor = Module_elaborator.compile_module_functor
 let open_module_bindings = Module_environment.open_bindings
 let parse_type_parameters = Type_parameters.parse
 let compile_type_alias = Type_definition_elaborator.compile_type_alias
+
+let compile_external_record ?location env next_type emitted_name type_parameters
+    field_forms =
+  let scope, source_name =
+    match Resolver.split_qualified_type_name emitted_name with
+    | Some (module_path, local_name) -> (module_path, local_name)
+    | None -> ("", emitted_name)
+  in
+  Type_definition_elaborator.compile_type_record ?location
+    ~emitted_name scope env next_type source_name type_parameters field_forms
 let compile_type_record = Type_definition_elaborator.compile_type_record
 let compile_signature = Signature_elaborator.compile
 
@@ -1746,6 +1756,7 @@ and compile_resolved scope env next_type form =
               in
               let type_parameters =
                 generalized_types |> List.concat_map type_parameters_of_type
+                |> List.sort_uniq String.compare
               in
               compile_type_record_fields
                 ?location:(Source_context.find name_form)
@@ -2996,6 +3007,180 @@ and compile_resolved scope env next_type form =
         scope env next_type signature_name item_forms
   | FList (FSymbol "module-signature" :: _) ->
       Error.error "module-signature expects a name and signature items"
+  | FList
+      [ FSymbol "optional-sequential-adapter";
+        FKeyword storage_annotation;
+        FKeyword element_annotation;
+        FSymbol adapter ] -> (
+      match
+        ( Type_annotation.of_keyword storage_annotation,
+          Type_annotation.of_keyword element_annotation )
+      with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok storage_ty, Ok element_ty ->
+          let storage_ty =
+            Function_elaborator.infer_named_record scope env storage_ty
+          in
+          let element_ty =
+            Function_elaborator.infer_named_record scope env element_ty
+          in
+          let adapter =
+            match Env.find_opt (Names.scoped_key scope adapter) env with
+            | Some binding -> binding.Types.ocaml_name
+            | None -> adapter
+          in
+          Ok
+            ( scope,
+              Env.add_optional_sequential_adapter storage_ty element_ty adapter
+                env,
+              next_type,
+              Comment
+                ("optional sequential adapter " ^ Types.source_name storage_ty)
+            ))
+  | FList (FSymbol "optional-sequential-adapter" :: _) ->
+      Error.error
+        "optional-sequential-adapter expects storage type, element type, and adapter"
+  | FList
+      [ FSymbol "exception-data-adapter";
+        FKeyword value_annotation;
+        FSymbol adapter ] -> (
+      match Type_annotation.of_keyword value_annotation with
+      | Error _ as error -> error
+      | Ok value_ty ->
+          let value_ty =
+            Function_elaborator.infer_named_record scope env value_ty
+          in
+          let adapter_binding =
+            match Env.find_opt (Names.scoped_key scope adapter) env with
+            | Some binding -> Some (binding.ty, binding.ocaml_name)
+            | None ->
+                Signature_overlay.find_value adapter (Env.signatures env)
+                |> Option.map (fun ty -> (ty, adapter))
+          in
+          let field_types =
+            match value_ty with
+            | TRecord fields | TNamed_record { fields; _ } ->
+                Some (List.map (fun (field : field) -> field.ty) fields)
+            | _ -> None
+          in
+          let matches_fields parameter_tys =
+            match field_types with
+            | Some field_tys ->
+                List.length parameter_tys = List.length field_tys
+                && List.for_all2 Types.equal parameter_tys field_tys
+            | None -> false
+          in
+          (match adapter_binding with
+          | Some (TFn (parameter_tys, return_ty), ocaml_name)
+            when Types.equal return_ty (TOcaml "Lg_edn_backend.t")
+                 && (match parameter_tys with
+                    | [ parameter_ty ] -> Types.equal parameter_ty value_ty
+                    | _ -> false) ->
+              Ok
+                ( scope,
+                  Env.add_exception_data_adapter value_ty
+                    (Env.Direct ocaml_name) env,
+                  next_type,
+                  Comment
+                    ("exception data adapter " ^ Types.source_name value_ty) )
+          | Some (TFn (parameter_tys, return_ty), ocaml_name)
+            when Types.equal return_ty (TOcaml "Lg_edn_backend.t")
+                 && matches_fields parameter_tys ->
+              Ok
+                ( scope,
+                  Env.add_exception_data_adapter value_ty
+                    (Env.Fields ocaml_name) env,
+                  next_type,
+                  Comment
+                    ("exception data fields adapter "
+                    ^ Types.source_name value_ty) )
+          | Some (TFn (parameter_tys, _), _)
+            when (match parameter_tys with
+                 | [ parameter_ty ] -> Types.equal parameter_ty value_ty
+                 | _ -> matches_fields parameter_tys) ->
+              Error.error
+                "exception-data-adapter must return Lg_edn_backend.t"
+          | Some _ ->
+              Error.error
+                "exception-data-adapter parameters must match the declared value or its fields"
+          | None ->
+              Error.error
+                ("unknown exception-data-adapter function " ^ adapter)))
+  | FList (FSymbol "exception-data-adapter" :: _) ->
+      Error.error
+        "exception-data-adapter expects value type and adapter"
+  | FList
+      [ FSymbol "empty-map-default";
+        FKeyword target_annotation;
+        FSymbol factory ] -> (
+      match Type_annotation.of_keyword target_annotation with
+      | Error _ as error -> error
+      | Ok target_ty ->
+          let target_ty =
+            Function_elaborator.infer_named_record scope env target_ty
+          in
+          let factory =
+            match Env.find_opt (Names.scoped_key scope factory) env with
+            | Some binding -> binding.Types.ocaml_name
+            | None -> factory
+          in
+          Ok
+            ( scope,
+              Env.add_empty_map_default target_ty factory env,
+              next_type,
+              Comment ("empty map default " ^ Types.source_name target_ty) ))
+  | FList (FSymbol "empty-map-default" :: _) ->
+      Error.error "empty-map-default expects target type and factory"
+  | FList
+      (FSymbol "closed-sum-constructors"
+      :: FKeyword target_annotation
+      :: constructor_forms) -> (
+      let parse_constructor = function
+        | FSymbol constructor -> Ok (constructor, [])
+        | FList (FSymbol constructor :: payload_forms) ->
+            let rec parse_payloads acc = function
+              | [] -> Ok (constructor, List.rev acc)
+              | FKeyword annotation :: rest -> (
+                  match Type_annotation.of_keyword annotation with
+                  | Error _ as error -> error
+                  | Ok ty ->
+                      let ty =
+                        Function_elaborator.infer_named_record scope env ty
+                      in
+                      parse_payloads (ty :: acc) rest)
+              | _ :: _ ->
+                  Error.error
+                    "closed-sum constructor payloads must be type annotations"
+            in
+            parse_payloads [] payload_forms
+        | _ ->
+            Error.error
+              "closed-sum constructors must be symbols or constructor lists"
+      in
+      let rec parse acc = function
+        | [] -> Ok (List.rev acc)
+        | form :: rest -> (
+            match parse_constructor form with
+            | Error _ as error -> error
+            | Ok constructor -> parse (constructor :: acc) rest)
+      in
+      match (Type_annotation.of_keyword target_annotation, parse [] constructor_forms) with
+      | (Error _ as error), _ | _, (Error _ as error) -> error
+      | Ok _, Ok [] ->
+          Error.error "closed-sum-constructors expects at least one constructor"
+      | Ok target_ty, Ok constructors ->
+          let target_ty =
+            Function_elaborator.infer_named_record scope env target_ty
+          in
+          Ok
+            ( scope,
+              Env.add_predicate_sum_constructors target_ty constructors env,
+              next_type,
+              Comment ("closed sum constructors " ^ Types.source_name target_ty)
+            ))
+  | FList (FSymbol "closed-sum-constructors" :: _) ->
+      Error.error
+        "closed-sum-constructors expects a target type and constructors"
   | FList [ FSymbol "signature"; FSymbol name; fields ] ->
       compile_signature scope env next_type name fields
   | FList
@@ -3029,6 +3214,36 @@ and compile_resolved scope env next_type form =
           compile_type_alias
             ?location:(Source_context.find name_form)
             scope env next_type name type_parameters manifest_form)
+  | FList
+      (FSymbol "external-record"
+      :: (FSymbol name as name_form)
+      :: FVector parameter_forms
+      :: field_forms) -> (
+      match parse_type_parameters (FVector parameter_forms) with
+      | Error _ as err -> err
+      | Ok type_parameters ->
+          Result.map
+            (fun (scope, env, next_type, _) ->
+              (scope, env, next_type, Comment ("external record " ^ name)))
+            (compile_external_record
+               ?location:(Source_context.find name_form)
+               env next_type name type_parameters field_forms)
+          |> Result.map (fun (_, env, next_type, item) ->
+                 (scope, env, next_type, item)))
+  | FList
+      (FSymbol "external-record"
+      :: (FSymbol name as name_form)
+      :: field_forms) ->
+      Result.map
+        (fun (scope, env, next_type, _) ->
+          (scope, env, next_type, Comment ("external record " ^ name)))
+        (compile_external_record
+           ?location:(Source_context.find name_form)
+           env next_type name [] field_forms)
+      |> Result.map (fun (_, env, next_type, item) ->
+             (scope, env, next_type, item))
+  | FList (FSymbol "external-record" :: _) ->
+      Error.error "external-record expects a type name and fields"
   | FList
       (FSymbol "type-record"
       :: (FSymbol name as name_form)
@@ -3161,6 +3376,8 @@ and compile_resolved scope env next_type form =
           let expr =
             match expected_ty with
             | None -> Ok expr
+            | Some expected when Types.equal expected expr.ty ->
+                Ok { expr with ty = expected }
             | Some expected ->
                 Result.map
                   (fun semantic_expr -> typed_ir expected semantic_expr)
@@ -3199,15 +3416,91 @@ and compile_resolved scope env next_type form =
   | FList
       [ FSymbol ("def" | "defonce"); (FSymbol name as name_form); expr_form ]
     -> (
+      let expr_form, protocol_alias_ty, protocol_alias_binding_ty =
+        match expr_form with
+        | FSymbol source_name -> (
+            match Protocol.lookup_marker scope env source_name with
+            | Some marker
+              when Option.is_none (Protocol.binding_protocol_id marker) ->
+                let arity_form parameter_tys =
+                  let parameters =
+                    List.mapi
+                      (fun index _ ->
+                        FSymbol
+                          ("__lg_protocol_alias_arg_" ^ string_of_int index))
+                      parameter_tys
+                  in
+                  FList
+                    [ FVector parameters;
+                      FList (FSymbol source_name :: parameters);
+                    ]
+                in
+                let alias_ty =
+                  Env.find_opt (Names.scoped_key scope source_name) env
+                  |> Option.map (fun (binding : Types.binding) -> binding.ty)
+                  |> Option.fold
+                       ~none:
+                         (sidecar_function_signature scope env source_name
+                         |> Option.map
+                              (Function_elaborator.infer_named_record scope env)
+                         |> Option.value ~default:marker.ty)
+                       ~some:Fun.id
+                in
+                let statically_dispatchable = function
+                  | receiver_ty :: _ ->
+                      Option.is_some
+                        (Protocol.lookup_marker_impl env marker source_name
+                           receiver_ty)
+                  | [] -> false
+                in
+                let alias_binding_ty =
+                  match alias_ty with
+                  | TFn (parameter_tys, _)
+                    when statically_dispatchable parameter_tys ->
+                      alias_ty
+                  | TOverloaded_fn arities
+                    when List.for_all
+                           (fun arity ->
+                             statically_dispatchable arity.fixed_params)
+                           arities ->
+                      alias_ty
+                  | _ -> marker.ty
+                in
+                (match marker.ty with
+                | TFn (parameter_tys, _) ->
+                    let arity = arity_form parameter_tys in
+                    (match arity with
+                    | FList [ parameters; body ] ->
+                        ( FList [ FSymbol "fn"; parameters; body ],
+                          Some alias_ty,
+                          Some alias_binding_ty )
+                    | _ -> assert false)
+                | TOverloaded_fn arities ->
+                    ( FList
+                        (FSymbol "fn"
+                        :: List.map
+                             (fun arity -> arity_form arity.fixed_params)
+                             arities),
+                      Some alias_ty,
+                      Some alias_binding_ty )
+                | _ -> (expr_form, None, None))
+            | Some _ | None -> (expr_form, None, None))
+        | _ -> (expr_form, None, None)
+      in
       let expected_ty =
         sidecar_function_signature scope env name
         |> Option.map (Function_elaborator.infer_named_record scope env)
+        |> Option.fold ~none:protocol_alias_ty ~some:Option.some
       in
       let expr_env = Env.with_expected_type expected_ty env in
       let expr =
         Result.bind (compile_source_expr scope expr_env expr_form) (fun expr ->
             match expected_ty with
             | None -> Ok expr
+            | Some _ when Option.is_some protocol_alias_binding_ty ->
+                Ok { expr with ty = Option.get protocol_alias_binding_ty }
+            | Some expected when Types.equal expected expr.ty ->
+                Ok { expr with ty = expected }
             | Some expected ->
                 Result.map
                   (fun semantic_expr -> typed_ir expected semantic_expr)
@@ -3313,6 +3606,11 @@ and compile_resolved scope env next_type form =
                 allocate_top_level_local_records env next_type expr
               in
               let binding =
+                match protocol_alias_binding_ty with
+                | Some binding_ty ->
+                    Types.binding ocaml_name binding_ty
+                    |> Types.generalize_binding
+                | None -> (
                 match expr_form with
                 | FSymbol source_name -> (
                     match Resolver.lookup_binding scope env source_name with
@@ -3326,7 +3624,7 @@ and compile_resolved scope env next_type form =
                           dynamically_bindable = false;
                         }
                     | Error _ -> binding_of_expr ocaml_name expr)
-                | _ -> binding_of_expr ocaml_name expr
+                | _ -> binding_of_expr ocaml_name expr)
               in
               let env = Env.add env_key binding env in
               let env =

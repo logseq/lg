@@ -2273,6 +2273,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                   | Some field
                     when (match (field.ty, value.ty) with
                          | TSeq _, (TList _ | TVector _ | TSeq _) -> true
+                         | TVector expected, (TList actual | TSeq actual) ->
+                             Types.assignable ~policy:Host_boundary
+                               ~expected ~actual
                          | _ -> false) ->
                       let expression =
                         coerce_expression_to_type field.ty value.ty
@@ -2351,6 +2354,13 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
         match compile_expr scope env target_form with
           | Error _ as err -> err
           | Ok target -> (
+              let target =
+                {
+                  target with
+                  ty =
+                    Function_elaborator.infer_named_record scope env target.ty;
+                }
+              in
               let target = unwrap_protocol_value target in
               if pair_forms = [] || List.length pair_forms mod 2 <> 0 then
                 match target.ty with
@@ -4484,7 +4494,9 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                       ( Semantic_ir.Ident "Lg_runtime.Runtime_dynamic.keys",
                         [ target.semantic_expr ] )))
           | target_ty -> (
-              match Types.dynamic_map_types target_ty with
+              match
+                Types.dynamic_map_types (Types.constraint_value_type target_ty)
+              with
               | Some (key_type, _) ->
                   Ok (map_keys key_type target.semantic_expr)
               | None

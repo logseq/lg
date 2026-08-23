@@ -62,6 +62,7 @@ val required_ocaml_packages :
 
 val prepare_source :
   ?target:Target.t ->
+  ?reader_target:Target.t ->
   ?filename:string ->
   string ->
   (prepared_source, compile_error) result

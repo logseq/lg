@@ -927,9 +927,12 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
               form_references_unresolved_declaration scope env form
               || form_references_names unresolved_names form
               || (unresolved_names <> []
-                 && String.starts_with
-                      ~prefix:"missing protocol implementation for "
-                      error.Error.message)
+                 && (String.starts_with
+                       ~prefix:"missing protocol implementation for "
+                       error.Error.message
+                    || String.starts_with
+                         ~prefix:"no protocol implementation for "
+                         error.Error.message))
             in
             if can_defer then
               let first_error =

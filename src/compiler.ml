@@ -55,9 +55,10 @@ let required_ocaml_packages ?(target = Target.default) ?(filename = "<string>")
   Compiler_session.run (fun () ->
       Toolchain.required_ocaml_packages ~target ~filename source)
 
-let prepare_source ?(target = Target.default) ?(filename = "<string>") source =
+let prepare_source ?(target = Target.default) ?reader_target
+    ?(filename = "<string>") source =
   Compiler_session.run (fun () ->
-      Toolchain.prepare_source ~target ~filename source)
+      Toolchain.prepare_source ~target ?reader_target ~filename source)
 
 let prepared_source_required_packages =
   Toolchain.prepared_source_required_packages

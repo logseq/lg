@@ -294,6 +294,8 @@ and compile_expr_unlocated scope (env : Env.t) = function
       compile_multi_arity_fn scope env (first_clause :: remaining_clauses)
   | FList (FSymbol "fn" :: params :: body_forms) ->
       compile_fn scope env params body_forms
+  | FList (FSymbol "__lg_reify_fn" :: params :: body_forms) ->
+      compile_fn ~use_open_context:true scope env params body_forms
   | FList (FSymbol "new" :: FSymbol type_name :: args) ->
       compile_call scope env (type_name ^ ".") args
   | FList [ FSymbol "quote"; value ] -> compile_quoted scope env value
@@ -1735,7 +1737,21 @@ and prepare_recursive_fn ~ocaml_name scope env source_name return_ty params
         List.mapi
           (fun index (spec : Destructure.param_spec) ->
             match spec.explicit_ty with
-            | Some _ as explicit -> explicit
+            | Some explicit ->
+                let explicit =
+                  Function_elaborator.infer_named_record scope env explicit
+                in
+                let declared =
+                  Option.bind declared_param_tys (fun tys ->
+                      List.nth_opt tys index)
+                in
+                (match (explicit, declared) with
+                | TNamed_record explicit_record,
+                  Some (TNamed_record declared_record as declared)
+                  when Type_id.equal explicit_record.type_id
+                         declared_record.type_id ->
+                    Some declared
+                | _ -> Some explicit)
             | None -> Option.bind declared_param_tys (fun tys -> List.nth_opt tys index))
           specs
       in
@@ -2214,7 +2230,8 @@ and compile_multi_arity_fn scope env clauses =
             Semantic_ir.Let (bindings, prepared.expr.semantic_expr);
         }
 
-and compile_fn ?(param_type_overrides = []) scope env params body_forms =
+and compile_fn ?(param_type_overrides = []) ?(use_open_context = false) scope env
+    params body_forms =
   let expected_type = Env.expected_type env in
   let variadic_params =
     match params with
@@ -2273,12 +2290,19 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
     if param_type_overrides <> [] || Option.is_some variadic_rest_index then
       param_type_overrides
     else
+      let contextual_parameter (spec : Destructure.param_spec) = function
+        | ty when use_open_context -> Some ty
+        | TVar _ as ty
+          when String.starts_with ~prefix:"__lg_protocol_alias_arg_"
+                 spec.source_name ->
+            Some ty
+        | TUnknown | TMeta _ | TVar _ -> None
+        | ty -> Some ty
+      in
       match (expected_type, Destructure.parse_param_specs params) with
       | Some (TFn (parameter_tys, _)), Ok specs
         when List.length parameter_tys = List.length specs ->
-          List.map
-            (function TUnknown | TMeta _ | TVar _ -> None | ty -> Some ty)
-            parameter_tys
+          List.map2 contextual_parameter specs parameter_tys
       | Some (TOverloaded_fn arities), Ok specs ->
           let argument_count = List.length specs in
           let parameter_tys =
@@ -2299,16 +2323,15 @@ and compile_fn ?(param_type_overrides = []) scope env params body_forms =
           in
           (match parameter_tys with
           | Some parameter_tys ->
-              List.map
-                (function
-                  | TUnknown | TMeta _ | TVar _ -> None
-                  | ty -> Some ty)
-                parameter_tys
+              List.map2 contextual_parameter specs parameter_tys
           | None -> [])
       | _ -> []
   in
   let expected_return_ty =
     match expected_type with
+    | Some (TFn (_, return_ty)) when use_open_context -> Some return_ty
+    | Some (TOverloaded_fn [ { return_ty; _ } ]) when use_open_context ->
+        Some return_ty
     | Some (TFn (_, ((TRecord _ | TNamed_record _) as return_ty))) ->
         Some return_ty
     | Some

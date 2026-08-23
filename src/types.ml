@@ -473,6 +473,23 @@ let protocol_constraint_with_value constraint_ty value_ty =
       |> deduplicate_protocol_constraints
   | ty -> ty
 
+let reify_protocol_payload_prefix = "__lg_reify_protocol:"
+
+let reify_protocol_payload protocol_id methods rest =
+  TOcaml_app
+    ( reify_protocol_payload_prefix ^ Protocol_id.to_string protocol_id,
+      [ methods; rest ] )
+
+let reify_protocol_payload_info = function
+  | TOcaml_app (name, [ methods; rest ])
+    when String.starts_with ~prefix:reify_protocol_payload_prefix name ->
+      Some
+        ( String.sub name (String.length reify_protocol_payload_prefix)
+            (String.length name - String.length reify_protocol_payload_prefix),
+          methods,
+          rest )
+  | _ -> None
+
 let protocol_witness_name value_name protocol_id =
   value_name ^ "__protocol_"
   ^ String.sub (Digest.to_hex (Digest.string (Protocol_id.to_string protocol_id)))
@@ -958,6 +975,9 @@ let rec source_name = function
       "seq<" ^ source_name inner ^ ">"
   | TOcaml_app (name, [ inner ]) when name = reduced_type_name ->
       "reduced<" ^ source_name inner ^ ">"
+  | TOcaml_app (name, [ inner ])
+    when name = maybe_reduced_callback_type_name ->
+      "maybe-reduced<" ^ source_name inner ^ ">"
   | TOcaml_app (name, args) ->
       name ^ "<"
       ^ (args |> List.map source_name |> String.concat ",")
@@ -1079,8 +1099,14 @@ let rec ocaml_name = function
       ^ ocaml_name element ^ " Seq.t) option * " ^ ocaml_name storage ^ ")"
   | TConstraint (Protocol_constraint { witness; value; _ }) ->
       "(" ^ ocaml_name witness ^ " option * " ^ ocaml_name value ^ ")"
+  | TOcaml_app (name, [ methods; rest ])
+    when String.starts_with ~prefix:reify_protocol_payload_prefix name ->
+      ocaml_name (TTuple [ methods; rest ])
   | TOcaml_app (name, [ inner ]) when is_next_seq_type_name name ->
       ocaml_name inner ^ " Seq.t"
+  | TOcaml_app (name, [ inner ])
+    when name = maybe_reduced_callback_type_name ->
+      ocaml_name (reduced inner)
   | TOcaml_app (name, [ arg ]) ->
       let arg_name =
         match arg with

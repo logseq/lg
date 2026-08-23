@@ -354,6 +354,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   let edn_packable_static_type = Edn_value_elaborator.is_packable in
   let pack_edn_expression = Edn_value_elaborator.pack_expression in
   let rec adapt_branch_expression env result_ty (branch : typed_expr) =
+    match inject_contextual_closed_sum env ~expected:result_ty branch with
+    | Some result -> Result.map (fun value -> value.semantic_expr) result
+    | None -> (
     match (result_ty, branch.ty) with
     | target, source when Types.equal target source ->
         Ok branch.semantic_expr
@@ -513,7 +516,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           (if Types.equal branch.ty TUnknown then branch.semantic_expr
            else
              coerce_expression_to_type result_ty branch.ty
-               branch.semantic_expr)
+               branch.semantic_expr))
   in
   let rec requires_branch_adaptation = function
     | ty when Types.is_dynamic ty -> true
@@ -627,6 +630,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Error.error
                       ("heterogeneous vector has element types "
                       ^ String.concat " | " types
+                      ^ (match Env.expected_type env with
+                        | Some expected ->
+                            "; expected context " ^ Types.source_name expected
+                        | None -> "; no expected context")
                       ^ "; define a closed sum type containing these types")
                   in
                   let edn_vector () =
@@ -942,6 +949,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             in
             loop [ first_expr ] rest))
   and compile_map scope env pairs =
+    match
+      ( pairs,
+        Option.bind (Env.expected_type env) (fun expected ->
+            Option.map
+              (fun factory -> (expected, factory))
+              (Env.find_empty_map_default expected env)) )
+    with
+    | [], Some (expected, factory) ->
+        Ok
+          (typed_ir expected
+             (Semantic_ir.Apply (Semantic_ir.Ident factory, [])))
+    | _ ->
     let expected_map_types =
       match Option.bind (Env.expected_type env) Types.dynamic_map_types with
       | Some _ as map_types -> map_types
@@ -1429,6 +1448,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 compile_bindings env bindings))
     | _ -> Error.error "let-some bindings must be a vector"
   and compile_if scope env condition then_form else_form =
+    let literal_non_boolean_truthy =
+      match condition with
+      | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+      | FKeyword _ ->
+          true
+      | FSymbol _ | FCoreSymbol _ | FBool _ | FList _ | FVector _ | FMap _ ->
+          false
+    in
     let then_form = narrow_type_predicates scope env condition then_form in
     let else_form =
       narrow_false_nil_predicates scope env condition else_form
@@ -1507,7 +1534,25 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | (Error _ as err), _, _ -> err
     | _, (Error _ as err), _ -> err
     | _, _, (Error _ as err) -> err
+    | Ok _, Ok then_expr, Ok _ when literal_non_boolean_truthy -> Ok then_expr
     | Ok condition, Ok then_expr, Ok else_expr -> (
+        let contextual_branches =
+          match Env.expected_type env with
+          | None -> Ok (then_expr, else_expr)
+          | Some expected -> (
+              match
+                ( inject_contextual_closed_sum env ~expected then_expr,
+                  inject_contextual_closed_sum env ~expected else_expr )
+              with
+              | None, None -> Ok (then_expr, else_expr)
+              | Some (Error _ as error), _ -> error
+              | _, Some (Error _ as error) -> error
+              | Some (Ok then_expr), Some (Ok else_expr) ->
+                  Ok (then_expr, else_expr)
+              | Some (Ok _), None | None, Some (Ok _) ->
+                  Ok (then_expr, else_expr))
+        in
+        Result.bind contextual_branches (fun (then_expr, else_expr) ->
         let aligned =
           match (then_expr.ty, else_expr.ty) with
           | TTuple then_types, TTuple else_types
@@ -1641,7 +1686,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 )
                 )
             )
-        )
+        ))
   and compile_logical scope env operator forms =
     let literal_truthiness = function
       | FSymbol "nil" | FBool false -> Some false
@@ -1707,6 +1752,26 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         match compile_args_for scope operand_env forms with
         | Error _ as err -> err
         | Ok expressions -> (
+            let contextual_expressions =
+              match Env.expected_type env with
+              | None -> Ok expressions
+              | Some expected ->
+                  let rec inject injected = function
+                    | [] -> Ok (List.rev injected)
+                    | expression :: rest -> (
+                        match
+                          inject_contextual_closed_sum env ~expected expression
+                        with
+                        | Some (Ok expression) ->
+                            inject (expression :: injected) rest
+                        | Some (Error _ as error) -> error
+                        | None -> Ok expressions)
+                  in
+                  inject [] expressions
+            in
+            match contextual_expressions with
+            | Error _ as error -> error
+            | Ok expressions ->
             if
               match Env.expected_type env with
               | Some ty -> Types.equal ty TBool

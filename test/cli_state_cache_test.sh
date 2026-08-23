@@ -51,7 +51,31 @@ printf 'LG-COMPILER-STATE\n1\n' >"$test_dir/legacy.state"
 expect_state_failure "$test_dir/legacy.state" \
   "unsupported compiler state version 1" "$test_dir/legacy.stderr"
 
-printf 'LG-COMPILER-STATE\n2\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
+printf 'LG-COMPILER-STATE\n2\n' >"$test_dir/previous.state"
+expect_state_failure "$test_dir/previous.state" \
+  "unsupported compiler state version 2" "$test_dir/previous.stderr"
+
+printf 'LG-COMPILER-STATE\n3\n' >"$test_dir/previous-3.state"
+expect_state_failure "$test_dir/previous-3.state" \
+  "unsupported compiler state version 3" "$test_dir/previous-3.stderr"
+
+printf 'LG-COMPILER-STATE\n4\n' >"$test_dir/previous-4.state"
+expect_state_failure "$test_dir/previous-4.state" \
+  "unsupported compiler state version 4" "$test_dir/previous-4.stderr"
+
+printf 'LG-COMPILER-STATE\n5\n' >"$test_dir/previous-5.state"
+expect_state_failure "$test_dir/previous-5.state" \
+  "unsupported compiler state version 5" "$test_dir/previous-5.stderr"
+
+printf 'LG-COMPILER-STATE\n6\n' >"$test_dir/previous-6.state"
+expect_state_failure "$test_dir/previous-6.state" \
+  "unsupported compiler state version 6" "$test_dir/previous-6.stderr"
+
+printf 'LG-COMPILER-STATE\n7\n' >"$test_dir/previous-7.state"
+expect_state_failure "$test_dir/previous-7.state" \
+  "unsupported compiler state version 7" "$test_dir/previous-7.stderr"
+
+printf 'LG-COMPILER-STATE\n8\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
   >"$test_dir/oversized.state"
 expect_state_failure "$test_dir/oversized.state" \
   "compiler state artifact exceeds maximum size" "$test_dir/oversized.stderr"

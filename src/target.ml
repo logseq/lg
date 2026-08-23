@@ -15,6 +15,10 @@ let reader_features target =
   | Melange -> [ feature target; ":cljs" ]
   | Js_of_ocaml -> [ feature target; ":js-of-ocaml"; ":cljs" ]
 
+let reader_dialect_feature = function
+  | Native -> ":clj"
+  | Melange | Js_of_ocaml -> ":cljs"
+
 let of_string = function
   | "native" -> Ok Native
   | "melange" -> Ok Melange

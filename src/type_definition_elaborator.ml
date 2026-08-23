@@ -86,8 +86,8 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
               }
           )
 
-let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)
-    scope env next_type name type_parameters field_forms =
+let compile_type_record ?location ?(allow_empty = false) ?emitted_name
+    ?(nominal = true) scope env next_type name type_parameters field_forms =
   let field_spec = function
     | FList [ (FSymbol field_name as name_form); FKeyword keyword ] -> (
         match
@@ -124,8 +124,8 @@ let compile_type_record ?location ?(allow_empty = false) ?(nominal = true)
   match parse [] field_forms with
   | Error _ as err -> err
   | Ok fields ->
-      compile_type_record_fields ?location ~allow_empty ~nominal scope env
-        next_type name type_parameters fields
+      compile_type_record_fields ?location ~allow_empty ?emitted_name ~nominal
+        scope env next_type name type_parameters fields
 
 let record_type_public_binding module_path name env =
   let key = record_type_key module_path name in
@@ -194,13 +194,13 @@ let compile_type_variant ?location scope env next_type name type_parameters
   | Ok [] -> Error.error "type-variant expects at least one constructor"
   | Ok constructors -> (
       let type_name = Names.sanitize_name name in
+      let result_type =
+        match type_parameters with
+        | [] -> TOcaml type_name
+        | parameters ->
+            TOcaml_app (type_name, List.map (fun name -> TVar name) parameters)
+      in
       let constructor_bindings =
-        let result_type =
-          match type_parameters with
-          | [] -> TOcaml type_name
-          | parameters ->
-              TOcaml_app (type_name, List.map (fun name -> TVar name) parameters)
-        in
         constructors
         |> List.map (fun constructor ->
                ( Names.scoped_key scope constructor.constructor_name,
@@ -210,6 +210,22 @@ let compile_type_variant ?location scope env next_type name type_parameters
       match declare_type scope env name Variant with
       | Error _ as err -> err
       | Ok (_type_id, env) ->
+          let env =
+            Env.add_closed_sum_constructors result_type
+              (List.map
+                 (fun constructor ->
+                   (constructor.constructor_name, constructor.payload_types))
+                 constructors)
+              env
+          in
+          let env =
+            Env.add_predicate_sum_constructors result_type
+              (List.map
+                 (fun constructor ->
+                   (constructor.constructor_name, constructor.payload_types))
+                 constructors)
+              env
+          in
           Ok
             ( scope,
               Env.add_bindings constructor_bindings env,

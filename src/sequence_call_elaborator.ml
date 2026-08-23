@@ -99,8 +99,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
           ]
     | None -> Semantic_ir.PVar name
   in
-  let compile_contextual_fn scope env ?name ?(refine_open_overrides = false)
-      ~param_type_overrides params body_forms =
+  let compile_contextual_fn scope env ?name ?expected_return_ty
+      ?(refine_open_overrides = false) ~param_type_overrides params body_forms =
     let lookup_function_ty name =
       match lookup_function scope env name with
       | Ok fn -> Ok fn.ty
@@ -125,9 +125,19 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         (Env.with_expected_type (Some expected) function_env)
         form
     in
+    let compile_function_body =
+      Option.map
+        (fun expected_return_ty function_env _parameter_tys body_forms ->
+          compile_body scope
+            (function_env
+            |> Env.with_source_macros_expanded true
+            |> Env.with_expected_type (Some expected_return_ty))
+            "function body requires at least one form" body_forms)
+        expected_return_ty
+    in
     Function_elaborator.prepare ~refine_open_overrides ~param_type_overrides
-      ~compile_default ~lookup_function_ty ~compile_body scope function_env params
-      body_forms
+      ?compile_function_body ~compile_default ~lookup_function_ty ~compile_body
+      scope function_env params body_forms
     |> Result.map Function_elaborator.fn_code
     |> fun result ->
     Result.bind result (fun function_ ->
@@ -713,6 +723,17 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                      pattern element_binding element_ty;
                    ],
                    body.semantic_expr )))
+        |> fun result ->
+        Result.bind result (adapt_reducer_return env accumulator_ty)
+    | FList
+        (FSymbol "fn"
+        :: (FVector [ (FVector _ as _accumulator); _element ] as params)
+        :: body_forms) ->
+        compile_contextual_fn scope env
+          ~expected_return_ty:accumulator_ty
+          ~refine_open_overrides:(Type_solver.is_open accumulator_ty)
+          ~param_type_overrides:[ Some accumulator_ty; Some element_ty ]
+          params body_forms
         |> fun result ->
         Result.bind result (adapt_reducer_return env accumulator_ty)
     | FList
@@ -1731,6 +1752,42 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                   | Ok _ -> Error.error "keep expects a function")))
       | _ -> Error.error "keep expects function and collection"
     and compile_reduce scope env arg_forms =
+      let compile_initial fn_form init_form =
+        let fixed_tuple_arity =
+          match fn_form with
+          | FList
+              (FSymbol "fn"
+              :: FVector [ FVector pattern; _element_pattern ]
+              :: _body_forms) -> (
+              match Destructure.parse_sequence_pattern pattern with
+              | Ok
+                  {
+                    item_patterns;
+                    rest_name = None;
+                    sequence_as_name = _;
+                  } ->
+                  Some (List.length item_patterns)
+              | Ok _ | Error _ -> None)
+          | _ -> None
+        in
+        match (fixed_tuple_arity, init_form) with
+        | Some arity, FVector forms
+          when arity > 0 && List.length forms = arity ->
+            let rec compile expressions types = function
+              | [] ->
+                  Ok
+                    (typed_ir (TTuple (List.rev types))
+                       (Semantic_ir.Tuple (List.rev expressions)))
+              | form :: rest ->
+                  Result.bind
+                    (compile_expr scope (Env.with_expected_type None env) form)
+                    (fun expression ->
+                      compile (expression.semantic_expr :: expressions)
+                        (expression.ty :: types) rest)
+            in
+            compile [] [] forms
+        | (Some _, _) | (None, _) -> compile_expr scope env init_form
+      in
       match arg_forms with
       | [
        fn_form;
@@ -1975,7 +2032,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                         reduction))))
       | [ fn_form; init_form; collection_form ] -> (
         match
-          ( compile_expr scope env init_form,
+          ( compile_initial fn_form init_form,
             compile_expr scope env collection_form )
         with
           | (Error _ as err), _ -> err

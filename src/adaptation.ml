@@ -394,6 +394,16 @@ let rec identity_compatible expected actual =
       && List.length expected.type_arguments = List.length actual.type_arguments
       && List.for_all2 identity_compatible expected.type_arguments
            actual.type_arguments
+  | TNamed_record record, TOcaml_app (name, arguments)
+  | TOcaml_app (name, arguments), TNamed_record record ->
+      (String.equal name record.type_name
+      || String.equal name (Type_id.name record.type_id))
+      && List.length record.type_arguments = List.length arguments
+      && List.for_all2 identity_compatible record.type_arguments arguments
+  | TNamed_record record, TOcaml name | TOcaml name, TNamed_record record ->
+      record.type_arguments = []
+      && (String.equal name record.type_name
+         || String.equal name (Type_id.name record.type_id))
   | _ -> false
 
 let overload_covers_variadic_identity expected_arity actual_arities =
@@ -472,6 +482,13 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
             (plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                ~sequence_satisfies expected actual)
       | TOcaml "int", TInt | TInt, TOcaml "int" -> Ok Host_int_boundary
+      | expected, actual
+        when Option.is_some (Types.reduced_element expected)
+             && Option.is_some (Types.maybe_reduced_callback_element actual)
+             && identity_compatible
+                  (Types.reduced_element expected |> Option.get)
+                  (Types.maybe_reduced_callback_element actual |> Option.get) ->
+          Ok Identity
       | _ ->
       if Types.equal expected actual then Ok Identity
       else if
@@ -834,9 +851,12 @@ and plan_reduced_callback ~row_type_name_for ~protocol_satisfies
     | None -> Types.reduced_element expected_return |> Option.get
   in
   let actual_returns_reduced, actual_payload =
-    match Types.reduced_element actual_return with
+    match Types.maybe_reduced_callback_element actual_return with
     | Some payload -> (true, payload)
-    | None -> (false, actual_return)
+    | None -> (
+        match Types.reduced_element actual_return with
+        | Some payload -> (true, payload)
+        | None -> (false, actual_return))
   in
   if List.length expected_params <> List.length actual_params then
     Error (Incompatible_types { expected; actual })

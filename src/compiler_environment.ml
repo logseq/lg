@@ -11,6 +11,8 @@ module String_map = Persistent_hash_map.Make (struct
   let hash = Hashtbl.hash
 end)
 
+type exception_data_adapter = Direct of string | Fields of string
+
 type t = {
   target : Target.t;
   symbols : Types.binding Symbol_map.t;
@@ -37,6 +39,13 @@ type t = {
   macro_values : Ast.form String_map.t;
   expected_type : Types.ty option;
   source_macros_expanded : bool;
+  closed_sum_constructors :
+    (Types.ty * (string * Types.ty list) list) list;
+  predicate_sum_constructors :
+    (Types.ty * (string * Types.ty list) list) list;
+  optional_sequential_adapters : (Types.ty * Types.ty * string) list;
+  exception_data_adapters : (Types.ty * exception_data_adapter) list;
+  empty_map_defaults : (Types.ty * string) list;
 }
 
 let empty =
@@ -66,6 +75,11 @@ let empty =
     macro_values = String_map.empty;
     expected_type = None;
     source_macros_expanded = false;
+    closed_sum_constructors = [];
+    predicate_sum_constructors = [];
+    optional_sequential_adapters = [];
+    exception_data_adapters = [];
+    empty_map_defaults = [];
   }
 
 let target env = env.target
@@ -368,6 +382,68 @@ let find_map f env =
   Symbol_map.find_map
     (fun id binding -> f (Symbol_id.to_string id) binding)
     env.symbols
+
+let add_closed_sum_constructors result_ty constructors env =
+  {
+    env with
+    closed_sum_constructors =
+      (result_ty, constructors) :: env.closed_sum_constructors;
+  }
+
+let variant_constructors result_ty env =
+  env.closed_sum_constructors
+  |> List.filter_map (fun (candidate, constructors) ->
+         if Types.equal result_ty candidate then Some constructors else None)
+  |> List.flatten |> List.sort_uniq compare
+
+let add_predicate_sum_constructors result_ty constructors env =
+  {
+    env with
+    predicate_sum_constructors =
+      (result_ty, constructors) :: env.predicate_sum_constructors;
+  }
+
+let predicate_variant_constructors result_ty env =
+  env.predicate_sum_constructors
+  |> List.filter_map (fun (candidate, constructors) ->
+         if Types.equal result_ty candidate then Some constructors else None)
+  |> List.flatten |> List.sort_uniq compare
+
+let add_optional_sequential_adapter storage_ty element_ty adapter env =
+  {
+    env with
+    optional_sequential_adapters =
+      (storage_ty, element_ty, adapter) :: env.optional_sequential_adapters;
+  }
+
+let find_optional_sequential_adapter storage_ty env =
+  env.optional_sequential_adapters
+  |> List.find_map (fun (candidate, element_ty, adapter) ->
+         if Types.equal storage_ty candidate then Some (element_ty, adapter)
+         else None)
+
+let add_exception_data_adapter value_ty adapter env =
+  {
+    env with
+    exception_data_adapters =
+      (value_ty, adapter) :: env.exception_data_adapters;
+  }
+
+let find_exception_data_adapter value_ty env =
+  env.exception_data_adapters
+  |> List.find_map (fun (candidate, adapter) ->
+         if Types.equal value_ty candidate then Some adapter else None)
+
+let add_empty_map_default target_ty factory env =
+  {
+    env with
+    empty_map_defaults = (target_ty, factory) :: env.empty_map_defaults;
+  }
+
+let find_empty_map_default target_ty env =
+  env.empty_map_defaults
+  |> List.find_map (fun (candidate, factory) ->
+         if Types.equal target_ty candidate then Some factory else None)
 
 let filter_record_bindings f env =
   Symbol_map.fold

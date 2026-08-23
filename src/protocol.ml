@@ -770,8 +770,7 @@ let lookup_impl env protocol_id method_name receiver_ty =
       in
       let method_id = method_id protocol_id method_name in
       let registry = Env.protocols env in
-      Protocol_registry.find_implementation_or_default protocol_id method_id
-        receiver_id registry
+      find_implementation_or_evidence env protocol_id method_id receiver_id
       |> Option.map (fun implementation ->
              let implementation =
                instantiate_receiver_binding receiver_ty implementation

@@ -8,6 +8,68 @@ let is_identity_expr name expression =
   | Semantic_ir.Ident candidate -> String.equal candidate name
   | _ -> false
 
+let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
+  let constructors = Env.variant_constructors expected env in
+  if constructors = [] then
+    match (expected, argument.ty) with
+    | ( (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])),
+        (TNullable actual_inner | TOcaml_app ("option", [ actual_inner ])) ) ->
+        let payload_name = "__lg_closed_sum_payload" in
+        let payload = typed_ir actual_inner (Semantic_ir.Ident payload_name) in
+        Option.map
+          (Result.map (fun injected ->
+               typed_ir expected
+                 (Semantic_ir.Match
+                    ( argument.semantic_expr,
+                      [
+                        ( Semantic_ir.PConstructor ("None", None),
+                          Semantic_ir.Constructor ("None", None) );
+                        ( Semantic_ir.PConstructor
+                            ("Some", Some (Semantic_ir.PVar payload_name)),
+                          Semantic_ir.Constructor
+                            ("Some", Some injected.semantic_expr) );
+                      ] ))))
+          (inject_contextual_closed_sum env ~expected:expected_inner payload)
+    | _ -> None
+  else if
+    Types.is_dynamic argument.ty
+    || match argument.ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false
+  then None
+  else if Types.equal expected argument.ty then Some (Ok argument)
+  else
+    let candidates =
+      List.filter
+        (fun (_, payload_types) ->
+          match payload_types with
+          | [ payload_ty ] ->
+              (match (payload_ty, argument.ty) with
+              | TNamed_record _, _ | _, TNamed_record _ ->
+                  Types.equal payload_ty argument.ty
+              | _ ->
+                  Types.assignable ~policy:Host_boundary ~expected:payload_ty
+                    ~actual:argument.ty)
+          | [] | _ :: _ :: _ -> false)
+        constructors
+    in
+    match candidates with
+    | [ (constructor, [ _ ]) ] ->
+        Some
+          (Ok
+             (typed_ir expected
+                (Semantic_ir.Constructor
+                   (constructor, Some argument.semantic_expr))))
+    | [] ->
+        Some
+          (Error.error
+             ("cannot inject " ^ Types.source_name argument.ty
+            ^ " into closed sum " ^ Types.source_name expected))
+    | candidates ->
+        let names = List.map fst candidates |> String.concat ", " in
+        Some
+          (Error.error
+             ("ambiguous closed sum injection into " ^ Types.source_name expected
+            ^ ": " ^ names))
+
 let adapt_set_callable callable =
   match callable.ty with
   | TSet element_ty ->
@@ -356,6 +418,8 @@ let rec merge_branch_types left right =
         Option.map (fun inner -> TSet inner) (merge_branch_types left right)
     | TSeq left, TSeq right ->
         Option.map (fun inner -> TSeq inner) (merge_branch_types left right)
+    | TSeq left, TList right | TList right, TSeq left ->
+        Option.map (fun inner -> TSeq inner) (merge_branch_types left right)
     | TArray left, TArray right ->
         let merged_element =
           match (left, right) with
@@ -599,6 +663,19 @@ let coerce_expression_to_type ?(stored = false) target_ty source_ty expression =
       in
       let _ = (target_inner, source_inner) in
       sequence
+  | TVector target_inner, TSeq source_inner
+    when Types.assignable ~policy:Host_boundary ~expected:target_inner
+           ~actual:source_inner ->
+      Semantic_ir.Apply
+        ( Semantic_ir.Ident "Rrbvec.of_list",
+          [
+            Semantic_ir.Apply
+              (Semantic_ir.Ident "List.of_seq", [ expression ]);
+          ] )
+  | TVector target_inner, TList source_inner
+    when Types.assignable ~policy:Host_boundary ~expected:target_inner
+           ~actual:source_inner ->
+      Semantic_ir.Apply (Semantic_ir.Ident "Rrbvec.of_list", [ expression ])
   | TSet target_inner, TSet (TUnknown | TMeta _ | TVar _) -> (
       match Types.set_module_name target_inner with
       | Ok set_module ->

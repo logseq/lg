@@ -165,19 +165,30 @@ let compiler_cache_identity =
   let identity = lazy (compute_compiler_cache_identity ()) in
   fun () -> Lazy.force identity
 
-let next_prefix_key ~target previous_key input_path source =
+let reader_target_cache_key = function
+  | None -> "default"
+  | Some target -> Lg.Target.to_string target
+
+let next_prefix_key ~target ?reader_target previous_key input_path source =
   Digest.string
     (String.concat "\000"
-       [ previous_key; Lg.Target.to_string target; input_path; source ])
+       [
+         previous_key;
+         Lg.Target.to_string target;
+         reader_target_cache_key reader_target;
+         input_path;
+         source;
+       ])
   |> Digest.to_hex
 
-let saved_state_prefix_key ~target state_path =
+let saved_state_prefix_key ~target ?reader_target state_path =
   Digest.string
     (String.concat "\000"
        [
          compiler_cache_identity ();
          "saved-state";
          Lg.Target.to_string target;
+         reader_target_cache_key reader_target;
          Digest.to_hex (Digest.file state_path);
        ])
   |> Digest.to_hex
@@ -368,22 +379,36 @@ type mode =
     }
   | Lsp
 
-let extract_target args =
-  let rec loop target reversed = function
-    | [] -> (target, List.rev reversed)
+let extract_compilation_options args =
+  let reader_target_of_string = function
+    | "clj" -> Ok Lg.Target.Native
+    | "cljs" -> Ok Lg.Target.Melange
+    | value -> Error ("unknown reader dialect " ^ value ^ "; expected clj or cljs")
+  in
+  let rec loop target reader_target reversed = function
+    | [] -> (target, reader_target, List.rev reversed)
     | "--target" :: value :: rest -> (
         match Lg.Target.of_string value with
-        | Ok target -> loop target reversed rest
+        | Ok target -> loop target reader_target reversed rest
+        | Error message ->
+            prerr_endline ("lg: " ^ message);
+            exit 2)
+    | "--reader-dialect" :: value :: rest -> (
+        match reader_target_of_string value with
+        | Ok reader_target -> loop target (Some reader_target) reversed rest
         | Error message ->
             prerr_endline ("lg: " ^ message);
             exit 2)
     | [ "--target" ] -> usage ()
-    | argument :: rest -> loop target (argument :: reversed) rest
+    | [ "--reader-dialect" ] -> usage ()
+    | argument :: rest -> loop target reader_target (argument :: reversed) rest
   in
-  loop Lg.Target.default [] args
+  loop Lg.Target.default None [] args
 
 let parse_args argv =
-  let target, args = extract_target (Array.to_list argv) in
+  let target, reader_target, args =
+    extract_compilation_options (Array.to_list argv)
+  in
   let mode =
     match args with
     | [ _program; "--lsp" ] -> Lsp
@@ -480,7 +505,7 @@ let parse_args argv =
         Run_files_from { state_path; implementation_path; input_paths }
     | _ -> usage ()
   in
-  (target, mode)
+  (target, reader_target, mode)
 
 type native_link_layout = {
   include_directories : string list;
@@ -648,7 +673,7 @@ let replay_cached_prefix compiler_state prepared =
         state prepared
       |> Result.map fst)
 
-let compile_files ?(use_cache = true) target input_paths =
+let compile_files ?(use_cache = true) ?reader_target target input_paths =
   let rec loop prefix_key compiler_state packages outputs diagnostics =
     function
     | [] ->
@@ -665,9 +690,12 @@ let compile_files ?(use_cache = true) target input_paths =
     | input_path :: rest -> (
         let source = read_file input_path in
         let prefix_key =
-          next_prefix_key ~target prefix_key input_path source
+          next_prefix_key ~target ?reader_target prefix_key input_path source
         in
-        match Lg.Compiler.prepare_source ~target ~filename:input_path source with
+        match
+          Lg.Compiler.prepare_source ~target ?reader_target
+            ~filename:input_path source
+        with
         | Error _ as err -> err
         | Ok prepared -> (
             let source_packages =
@@ -724,28 +752,27 @@ let compile_files ?(use_cache = true) target input_paths =
   if use_cache then prune_compile_cache ();
   result
 
-let compile_file target input_path =
+let compile_file ?reader_target target input_path =
   let source = read_file input_path in
   match
-    Lg.Compiler.required_ocaml_packages ~target ~filename:input_path source
+    Lg.Compiler.prepare_source ~target ?reader_target ~filename:input_path source
   with
   | Error _ as err -> err
-  | Ok packages -> (
-      match
-        Lg.Compiler.compile_string_with_filename_and_diagnostics ~target
-          ~filename:input_path source
-      with
-      | Error _ as err -> err
-      | Ok compilation -> Ok (packages, compilation))
+  | Ok prepared ->
+      let packages = Lg.Compiler.prepared_source_required_packages prepared in
+      Lg.Compiler.compile_prepared_chunk_with_diagnostics Lg.Compiler.empty_state
+        prepared
+      |> Result.map (fun (_state, compilation) -> (packages, compilation))
 
-let compile_chunk_from_saved_state target state_path input_path =
+let compile_chunk_from_saved_state ?reader_target target state_path input_path =
   Result.bind (read_saved_compilation_state state_path) (fun saved ->
       if saved.target <> target then
         compiler_error "saved compiler state target does not match --target"
       else
         let source = read_file input_path in
         Result.bind
-          (Lg.Compiler.prepare_source ~target ~filename:input_path source)
+          (Lg.Compiler.prepare_source ~target ?reader_target
+             ~filename:input_path source)
           (fun prepared ->
             let source_packages =
               Lg.Compiler.prepared_source_required_packages prepared
@@ -762,8 +789,8 @@ let compile_chunk_from_saved_state target state_path input_path =
                 |> Result.map (fun (state, compilation) ->
                        (state, packages, compilation)))))
 
-let compile_files_from_saved_state ?(use_cache = true) target state_path
-    input_paths =
+let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
+    state_path input_paths =
   match read_saved_compilation_state state_path with
   | Error _ as error -> error
   | Ok saved ->
@@ -776,7 +803,8 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
       | input_path :: rest ->
           let source = read_file input_path in
           Result.bind
-            (Lg.Compiler.prepare_source ~target ~filename:input_path source)
+            (Lg.Compiler.prepare_source ~target ?reader_target
+               ~filename:input_path source)
             (fun prepared ->
               let source_packages =
                 Lg.Compiler.prepared_source_required_packages prepared
@@ -800,7 +828,7 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
                 (read_compiler_state compiler_state)
           | (input_path, source, prepared) :: rest -> (
               let prefix_key =
-                next_prefix_key ~target prefix_key input_path source
+                next_prefix_key ~target ?reader_target prefix_key input_path source
               in
               match
                 if use_cache then read_cached_prefix_output prefix_key else None
@@ -844,7 +872,8 @@ let compile_files_from_saved_state ?(use_cache = true) target state_path
                             rest))
         in
         let initial_prefix_key =
-          if use_cache then saved_state_prefix_key ~target state_path
+          if use_cache then
+            saved_state_prefix_key ~target ?reader_target state_path
           else "cache-disabled"
         in
         compile initial_prefix_key (Restorable saved.state) [] [] sources)
@@ -886,11 +915,11 @@ let run_lsp () =
   | None -> Unix.execvp "lg-lsp" [| "lg-lsp" |]
 
 let () =
-  let target, mode = parse_args Sys.argv in
+  let target, reader_target, mode = parse_args Sys.argv in
   (match mode with Lsp -> () | _ -> tune_compiler_gc ());
   match mode with
   | Compile { input_path; output_path } -> (
-      match compile_file target input_path with
+      match compile_file ?reader_target target input_path with
       | Error err -> report_error err
       | Ok (_packages, compilation) ->
           report_diagnostics compilation.diagnostics;
@@ -900,13 +929,15 @@ let () =
       | Error err -> report_error err
       | Ok interface -> write_output output_path interface)
   | Run { input_path } -> (
-      match compile_file target input_path with
+      match compile_file ?reader_target target input_path with
       | Error err -> report_error err
       | Ok (packages, compilation) ->
           report_diagnostics compilation.diagnostics;
           run_ocaml_source packages compilation.ocaml_source)
   | Run_from { state_path; implementation_path; input_path } -> (
-      match compile_chunk_from_saved_state target state_path input_path with
+      match
+        compile_chunk_from_saved_state ?reader_target target state_path input_path
+      with
       | Error err -> report_error err
       | Ok (_state, packages, compilation) ->
           report_diagnostics compilation.diagnostics;
@@ -914,13 +945,15 @@ let () =
             (concatenate_compilation_outputs
                [ read_file implementation_path; compilation.ocaml_source ]))
   | Compile_files { input_paths; output_path } -> (
-      match compile_files target input_paths with
+      match compile_files ?reader_target target input_paths with
       | Error err -> report_error err
       | Ok (_state, _packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           write_output (Some output_path) ocaml_source)
   | Compile_files_state { state_path; input_paths; output_path } -> (
-      match compile_files ~use_cache:false target input_paths with
+      match
+        compile_files ~use_cache:false ?reader_target target input_paths
+      with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
@@ -932,7 +965,9 @@ let () =
               packages;
             })
   | Compile_files_from { state_path; input_paths; output_path } -> (
-      match compile_files_from_saved_state target state_path input_paths with
+      match
+        compile_files_from_saved_state ?reader_target target state_path input_paths
+      with
       | Error err -> report_error err
       | Ok (_state, _packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
@@ -940,8 +975,8 @@ let () =
   | Compile_files_from_state
       { state_path; output_state_path; input_paths; output_path } -> (
       match
-        compile_files_from_saved_state ~use_cache:false target state_path
-          input_paths
+        compile_files_from_saved_state ~use_cache:false ?reader_target target
+          state_path input_paths
       with
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
@@ -954,14 +989,18 @@ let () =
               packages;
             })
   | Compile_chunk_from { state_path; input_path; output_path } -> (
-      match compile_chunk_from_saved_state target state_path input_path with
+      match
+        compile_chunk_from_saved_state ?reader_target target state_path input_path
+      with
       | Error err -> report_error err
       | Ok (_state, _packages, compilation) ->
           report_diagnostics compilation.diagnostics;
           write_output output_path compilation.ocaml_source)
   | Compile_chunk_state
       { state_path; output_state_path; input_path; output_path } -> (
-      match compile_chunk_from_saved_state target state_path input_path with
+      match
+        compile_chunk_from_saved_state ?reader_target target state_path input_path
+      with
       | Error err -> report_error err
       | Ok (state, packages, compilation) ->
           report_diagnostics compilation.diagnostics;
@@ -973,14 +1012,16 @@ let () =
               packages;
             })
   | Run_files { input_paths } -> (
-      match compile_files target input_paths with
+      match compile_files ?reader_target target input_paths with
       | Error err -> report_error err
       | Ok (_state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
           run_ocaml_source packages ocaml_source)
   | Run_files_from
       { state_path; implementation_path; input_paths } -> (
-      match compile_files_from_saved_state target state_path input_paths with
+      match
+        compile_files_from_saved_state ?reader_target target state_path input_paths
+      with
       | Error err -> report_error err
       | Ok (_state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;

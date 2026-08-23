@@ -1198,8 +1198,8 @@ let inferred_form_or_call_type ~lookup_function_ty params form =
 let rec form_checks_reduced name = function
   | FList [ FSymbol predicate; FSymbol candidate ] ->
       candidate = name
-      && (predicate = "__lg_reduced-predicate"
-         || String.ends_with ~suffix:"/__lg_reduced-predicate" predicate)
+      && (has_source_name predicate "__lg_reduced-predicate"
+         || has_source_name predicate "reduced?")
   | FList forms | FVector forms -> List.exists (form_checks_reduced name) forms
   | FMap pairs ->
       List.exists
@@ -1599,6 +1599,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         Result.bind (infer_expected element_ty params value) (fun params ->
             infer_expected (Types.seqable_constraint element_ty) params
               collection)
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_reduced-predicate"
+           || has_source_name predicate "reduced?" ->
+        infer_form params value
     | FList
         (FSymbol "fn" :: FSymbol _name :: (FVector _ as fn_params)
         :: body_forms) ->
@@ -1618,14 +1622,14 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                   in
                   let destructured =
                     if spec.destructured then
-                      let item_ty =
-                        match parameter_ty with
-                        | TVector item_ty when Types.is_dynamic item_ty ->
-                            item_ty
-                        | _ -> TUnknown
+                      let hints =
+                        Destructure.pattern_type_hints spec.pattern parameter_ty
                       in
                       Destructure.pattern_names spec.pattern
-                      |> List.map (fun name -> (name, item_ty))
+                      |> List.map (fun name ->
+                             ( name,
+                               List.assoc_opt name hints
+                               |> Option.value ~default:TUnknown ))
                     else []
                   in
                   (spec.source_name, parameter_ty) :: destructured)
@@ -2746,6 +2750,24 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             first
         | _ -> TUnknown)
     | _ -> TUnknown
+  and inferred_reduce_initial_type params reducer init =
+    match (reducer, init) with
+    | ( FList
+          (FSymbol "fn"
+          :: FVector [ FVector pattern_forms; _item_pattern ]
+          :: _body_forms),
+        FVector initial_forms ) -> (
+        match Destructure.parse_sequence_pattern pattern_forms with
+        | Ok { item_patterns; rest_name = None; sequence_as_name = _ }
+          when item_patterns <> []
+               && List.length item_patterns = List.length initial_forms ->
+            TTuple (List.map (inferred_form_type params) initial_forms)
+        | Ok _ | Error _ ->
+            returned_vector_type params init
+            |> Option.value ~default:(inferred_form_type params init))
+    | _ ->
+        returned_vector_type params init
+        |> Option.value ~default:(inferred_form_type params init)
   and inferred_reducer_types outer_params accumulator_ty = function
     | FSymbol name -> (
         match lookup_function_ty name with
@@ -3865,6 +3887,10 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "__lg_with-meta"; value; metadata ] ->
         Result.bind (infer_form params value) (fun params ->
             infer_form params metadata)
+    | FList [ FSymbol predicate; value ]
+      when has_source_name predicate "__lg_reduced-predicate"
+           || has_source_name predicate "reduced?" ->
+        infer_form params value
     | FList [ FSymbol "__lg_not"; value ] -> infer_truthy params value
     | (FList
         (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) as form) ->
@@ -5164,9 +5190,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               | FMap [] | FList [ FSymbol "__lg_hash-map" ] ->
                   Types.dynamic_map (Type_solver.fresh ())
                     (Type_solver.fresh ())
-              | _ ->
-                  returned_vector_type params init
-                  |> Option.value ~default:(inferred_form_type params init))
+              | _ -> inferred_reduce_initial_type params reducer init)
           | ty -> ty
         in
         let inferred_accumulator_ty, inferred_element_ty =

@@ -1235,6 +1235,22 @@ let test_homogeneous_hash_maps_flow_through_functions_and_destructuring () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_map_capability_refines_prior_seqable_constraint () =
+  let source =
+    {|
+(defn same-keys? [a b]
+  (and (= (count a) (count b))
+    (every? #(contains? b %) (keys a))
+    (every? #(contains? a %) (keys b))))
+(println (same-keys? {:a 1 :b 2} {:b 3 :a 4}))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_capability_refines_prior_seqable_constraint" "true\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_hash_map_update_preserves_present_and_missing_value_semantics () =
   let source =
     {|
@@ -1408,12 +1424,15 @@ let test_hash_map_is_callable_as_lookup_function () =
 (println
   (str
     (values :answer) ":"
-    (values :missing 7)))
+    (values :missing 7) ":"
+    (nil? (values :missing nil))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "hash_map_is_callable_as_lookup_function" "42:7\n"
-    ocaml_source
+  assert_ocaml_runs "hash_map_is_callable_as_lookup_function" "42:7:true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_map_literals_accept_computed_keys () =
   let source =
@@ -2178,11 +2197,12 @@ let test_cond_uses_clojure_truthiness_and_implicit_nil () =
     {|
 (def selected (cond nil 1 "truthy" 2))
 (def missing (cond false 1 nil 2))
-(println (str selected ":" (nil? missing)))
+(def literal-if (if :else 3 "unreachable"))
+(println (str selected ":" (nil? missing) ":" (+ literal-if 1)))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "cond_uses_clojure_truthiness_and_implicit_nil" "2:true\n"
+  assert_ocaml_runs "cond_uses_clojure_truthiness_and_implicit_nil" "2:true:4\n"
     ocaml_source
 
 let test_if_let_and_if_some_distinguish_false_from_nil () =
@@ -4487,6 +4507,39 @@ let test_generic_function_signatures_preserve_type_parameters () =
   assert_ocaml_runs "generic_function_signatures_preserve_type_parameters"
     "42\nAda\n" ocaml
 
+let test_generic_signature_refines_bare_named_record_parameter_hint () =
+  let source =
+    {|
+(ns user)
+(signature user/LookupState [key value]
+  {:values :map<key;value>
+   :index :clojure.core/persistent-tree-map<int;key>
+   :reverse-index :map<key;int>
+   :generation :int
+   :limit :int})
+(deftype LookupState [values index reverse-index generation limit])
+(signature user/read-value [key value]
+  :fn<user/LookupState<key;value>;key;option<value>>)
+(signature user/empty-state [key value]
+  :fn<int;user/LookupState<key;value>>)
+(defn read-value [^LookupState state key]
+  (get (.-values state) key))
+(defn empty-state [_limit]
+  (LookupState. {} (sorted-map) {} 0 16))
+(println "ok")
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "generic named record signatures must remain static";
+  if string_contains_substring native_source "(int, int) lookupstate" then
+    failwith "generic record constructors must retain contextual type variables";
+  assert_ocaml_runs
+    "generic_signature_refines_bare_named_record_parameter_hint" "ok\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_external_closed_types_use_static_equality_and_hash_witnesses () =
   let source =
     {|
@@ -5319,7 +5372,16 @@ let test_protocol_satisfaction_uses_stabilized_evidence () =
     |> Lg.Compiler_environment.with_protocol_evidence (Some evidence)
   in
   if not (Lg.Protocol.type_satisfies env protocol Lg.Types.TInt) then
-    failwith "protocol satisfaction must use stabilized implementation evidence"
+    failwith "protocol satisfaction must use stabilized implementation evidence";
+  let marker =
+    Lg.Types.binding ~protocol_id:protocol "Domain.Visible/visible"
+      signature.method_ty
+  in
+  match Lg.Protocol.lookup_marker_impl env marker "visible" Lg.Types.TInt with
+  | Some found when found.ocaml_name = "visible_int" -> ()
+  | _ ->
+      failwith
+        "static protocol lookup must use stabilized implementation evidence"
 
 let test_protocol_elaboration_populates_typed_registry () =
   let state =
@@ -5335,6 +5397,35 @@ let test_protocol_elaboration_populates_typed_registry () =
   with
   | Some { method_ty = Lg.Types.TFn (_, Lg.Types.TString); _ } -> ()
   | _ -> failwith "defprotocol must populate the typed protocol registry"
+
+let test_protocol_method_uses_sidecar_signature () =
+  let state =
+    typecheck_state
+      {|
+(namespace-scope app.protocol-sidecar)
+(signature app.protocol-sidecar/value-of :fn<int;string>)
+(defprotocol Value
+  (value-of [this]))
+|}
+  in
+  let protocol =
+    Lg.Protocol_id.create ~owner:[ "app.protocol-sidecar" ] ~name:"Value"
+  in
+  let method_id =
+    Lg.Method_id.create ~owner:[ "app.protocol-sidecar"; "Value" ]
+      ~name:"value-of"
+  in
+  match
+    Lg.Protocol_registry.find_method protocol method_id
+      (Lg.Compiler_environment.protocols state.env)
+  with
+  | Some
+      {
+        method_ty = Lg.Types.TFn ([ Lg.Types.TInt ], Lg.Types.TString);
+        _;
+      } ->
+      ()
+  | _ -> failwith "protocol method must use its sidecar signature"
 
 let test_protocol_implementation_populates_typed_registry () =
   let state =
@@ -6359,7 +6450,42 @@ let test_namespace_rejects_import_clause () =
 (ns app.invalid
   (:import clojure.lang.IFn$OOL))
 |}
-  |> expect_error "lg namespaces do not support :import"
+  |> expect_error_contains "lg namespaces do not support :import"
+
+let test_namespace_imports_lg_closed_sum_constructors () =
+  let provider =
+    {|
+(ns app.parser-types)
+(type-variant binding
+  (BindScalar :int))
+|}
+  in
+  let consumer =
+    {|
+(ns app.query-types
+  (:import
+    [clojure.lang ILookup]
+    [app.parser-types BindScalar]))
+(def value (BindScalar. 42))
+(println
+  (match value
+    (BindScalar number) number))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    (provider_ocaml, consumer_ocaml)
+  in
+  let provider_ocaml, consumer_ocaml = compile Lg.Target.Native in
+  assert_ocaml_runs "namespace_imports_lg_closed_sum_constructors" "42\n"
+    (provider_ocaml ^ "\n" ^ consumer_ocaml);
+  ignore (compile Lg.Target.Melange)
 
 let test_require_refers_lg_record_types () =
   let provider =
@@ -8441,6 +8567,15 @@ let test_javascript_targets_compile_date_and_radix_interop () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
     |> expect_ok)
 
+let test_native_target_compiles_portable_radix_to_string () =
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Native
+       {|
+(def text (.toString 255 16))
+(defn radix-string [n] (.toString n 16))
+|}
+    |> expect_ok)
+
 let test_javascript_targets_compile_error_classes () =
   let source =
     {|
@@ -9009,6 +9144,26 @@ let test_dotimes_evaluates_bounds_once_and_returns_nil () =
     "true:true:true:true:true:true\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reader_dialect_is_independent_from_codegen_target () =
+  let source =
+    {|
+(def selected #?(:clj 1 :cljs 2))
+(println selected)
+|}
+  in
+  let prepared =
+    Lg.Compiler.prepare_source ~target:Lg.Target.Native
+      ~reader_target:Lg.Target.Melange source
+    |> expect_ok
+  in
+  let _, compilation =
+    Lg.Compiler.compile_prepared_chunk_with_diagnostics
+      (stdlib_state Lg.Target.Native) prepared
+    |> expect_ok
+  in
+  assert_ocaml_runs "reader_dialect_is_independent_from_codegen_target" "2\n"
+    compilation.ocaml_source
 
 let test_persistent_transient_map_is_seqable () =
   let source =
@@ -12733,6 +12888,159 @@ let test_ocaml_payload_variants_delegate_payload_typecheck_to_ocaml () =
 (def bad (Named 42))
 |}
   |> expect_error_contains "int"
+
+let test_contextual_closed_sum_injection_is_unique_and_static () =
+  let source =
+    {|
+(type-variant result
+  (Text :string)
+  (Count :int))
+(signature choose :fn<bool;result>)
+(defn choose [flag]
+  (if flag "yes" 42))
+(signature text-option :fn<option<string>>)
+(defn text-option [] (Some "optional"))
+(signature count-option :fn<option<int>>)
+(defn count-option [] (Some 7))
+(signature choose-option :fn<bool;option<result>>)
+(defn choose-option [flag]
+  (if flag (text-option) (count-option)))
+(signature choose-or :fn<option<result>>)
+(defn choose-or []
+  (or (text-option) (count-option)))
+(println
+  (str
+    (match (choose true)
+      (Text value) value
+      (Count value) (str value))
+    ":"
+    (match (choose false)
+      (Text value) value
+      (Count value) (str value))
+    ":"
+    (match (choose-option true)
+      (Some (Text value)) value
+      (Some (Count value)) (str value)
+      None "none")
+    ":"
+    (match (choose-or)
+      (Some (Text value)) value
+      (Some (Count value)) (str value)
+      None "none")))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "contextual closed-sum injection must remain fully static";
+  assert_ocaml_runs "contextual_closed_sum_injection_is_unique_and_static"
+    "yes:42:optional:optional\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange contextual closed-sum injection must remain fully static"
+
+let test_contextual_closed_sum_injection_rejects_ambiguity () =
+  Lg.Compiler.compile_string
+    {|
+(type-variant result
+  (First :string)
+  (Second :string))
+(signature choose :fn<result>)
+(defn choose [] "value")
+|}
+  |> expect_error_contains "ambiguous closed sum injection"
+
+let test_contextual_closed_sum_injection_rejects_missing_constructor () =
+  Lg.Compiler.compile_string
+    {|
+(type-variant result
+  (Text :string))
+(signature choose :fn<result>)
+(defn choose [] 42)
+|}
+  |> expect_error_contains "cannot inject int into closed sum result"
+
+let test_dotted_syntax_resolves_declared_closed_sum_constructors () =
+  let source =
+    {|
+(type-variant binding
+  BindIgnore
+  (BindScalar :int))
+(def ignored (BindIgnore.))
+(def scalar (BindScalar. 42))
+(println
+  (str
+    (match ignored BindIgnore "ignore" (BindScalar value) (str value))
+    ":"
+    (match scalar BindIgnore "ignore" (BindScalar value) (str value))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "dotted closed-sum constructors must remain fully static";
+  assert_ocaml_runs "dotted_syntax_resolves_declared_closed_sum_constructors"
+    "ignore:42\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange dotted closed-sum constructors must remain fully static"
+
+let test_declared_optional_sequential_host_adapter_is_static () =
+  let source =
+    {|
+(type-record box
+  (items :option<vector<int>>))
+(signature box-items :fn<box;option<vector<int>>>)
+(defn box-items [box] (:items box))
+(optional-sequential-adapter :box :int box-items)
+(signature total :fn<box;int>)
+(defn total [box]
+  (if (sequential? box)
+    (reduce + 0 box)
+    -1))
+(def present (record box (items (Some [1 2 3]))))
+(def absent (record box (items None)))
+(println (str (total present) ":" (total absent)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "optional sequential host adapters must remain fully static";
+  assert_ocaml_runs "declared_optional_sequential_host_adapter_is_static"
+    "6:-1\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange optional sequential host adapters must remain fully static"
+
+let test_declared_empty_map_default_is_static () =
+  let source =
+    {|
+(type-record options
+  (value :int))
+(signature default-options :fn<options>)
+(defn default-options []
+  (record options (value 42)))
+(empty-map-default :options default-options)
+(signature option-value :fn<options;int>)
+(defn option-value [options]
+  (:value options))
+(println (option-value {}))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "empty map defaults must remain fully static";
+  assert_ocaml_runs "declared_empty_map_default_is_static" "42\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange empty map defaults must remain fully static"
 
 let test_ocaml_variant_constructors_reject_bad_arity () =
   Lg.Compiler.compile_string
@@ -17314,12 +17622,13 @@ let test_java_interop_is_rejected () =
     1
     (catch ClassCastException _ 0)))
 |};
-  Lg.Compiler.compile_string
-    {|
+  ignore
+    (Lg.Compiler.compile_string
+       {|
 (ns app.invalid
   #?(:clj (:import [java.lang Object])))
 |}
-  |> expect_error_contains "lg namespaces do not support :import"
+    |> expect_ok)
 
 let test_internal_dynamic_escape_forms_are_unavailable () =
   let dynamic_escape = "__lg_" ^ "dynamic" in
@@ -17781,6 +18090,22 @@ let test_static_protocols_work_through_module_aliases () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "static_protocols_work_through_module_aliases" "int:9\n"
+    ocaml_source
+
+let test_protocol_method_defs_create_static_function_aliases () =
+  let source =
+    {|
+(defprotocol Schema
+  (-schema [value] :string))
+(deftype Box [^string value]
+  Schema
+  (-schema [_] value))
+(def schema -schema)
+(println (schema (Box. "ok")))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "protocol_method_defs_create_static_function_aliases" "ok\n"
     ocaml_source
 
 let test_records_implement_namespaced_protocol_aliases () =
@@ -19717,6 +20042,115 @@ let test_seqable_predicate_checks_closed_sum_values () =
   assert_ocaml_runs "seqable_predicate_checks_closed_sum_values"
     "true:false\n" ocaml_source
 
+let test_keyword_predicate_narrows_closed_sum_payload () =
+  let source =
+    {|
+(type-variant identifier-input
+  (KeywordInput :keyword)
+  (StringInput :string))
+(closed-sum-constructors :identifier-input
+  (KeywordInput :keyword)
+  (StringInput :string))
+(defn keyword-name [^identifier-input value]
+  (if (keyword? value)
+    (name value)
+    "not-keyword"))
+(println
+  (str (keyword-name (KeywordInput :user/name)) ":"
+       (keyword-name (StringInput "user/name"))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed-sum predicate narrowing must remain static";
+  assert_ocaml_runs "keyword_predicate_narrows_closed_sum_payload"
+    "name:not-keyword\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_external_record_exposes_static_fields_without_redefinition () =
+  let source =
+    {|
+(external-record Lg_runtime.Runtime_ratio.t
+  (numerator :int)
+  (denominator :int))
+(type-alias ratio :Lg_runtime.Runtime_ratio.t)
+(defn numerator [^:ratio value]
+  (.-numerator (assoc value :numerator 42)))
+(println (numerator (Lg_runtime.Runtime_ratio.of_int 42)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "external_record_exposes_static_fields" "42\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_external_record_alias_survives_incremental_namespaces () =
+  let provider =
+    {|
+(ns app.external-provider)
+(external-record Lg_runtime.Runtime_ratio.t
+  (numerator :int)
+  (denominator :int))
+(type-alias ratio :Lg_runtime.Runtime_ratio.t)
+(signature app.external-provider/make :fn<int;ratio>)
+(defn make [value]
+  (Lg_runtime.Runtime_ratio.of_int value))
+|}
+  in
+  let consumer =
+    {|
+(ns app.external-consumer
+  (:require [app.external-provider :as provider]))
+(defn numerator [^:app.external-provider/ratio value]
+  (.-numerator (assoc value :numerator 42)))
+(println (numerator (provider/make 1)))
+|}
+  in
+  let compile target =
+    let state, provider_ocaml =
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
+      |> expect_ok
+    in
+    let _, consumer_ocaml =
+      Lg.Compiler.compile_chunk ~target state consumer |> expect_ok
+    in
+    provider_ocaml ^ "\n" ^ consumer_ocaml
+  in
+  let native_source = compile Lg.Target.Native in
+  assert_ocaml_runs "external_record_alias_survives_incremental_namespaces"
+    "42\n" native_source;
+  ignore (compile Lg.Target.Melange)
+
+let test_parameterized_external_record_alias_survives_function_signature () =
+  let provider =
+    {|
+(ns app.query-types)
+(external-record Lg_runtime.Runtime_reify.t [value]
+  (payload :value))
+(type-alias relation :Lg_runtime.Runtime_reify.t<int>)
+|}
+  in
+  let consumer =
+    {|
+(ns app.query)
+(signature app.query/limit-rel
+  :fn<app.query-types/relation;int;app.query-types/relation>)
+(defn limit-rel [rel payload]
+  (assoc rel :payload payload))
+|}
+  in
+  let compile target =
+    let state, _ =
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
+      |> expect_ok
+    in
+    ignore (Lg.Compiler.compile_chunk ~target state consumer |> expect_ok)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
 let test_batched_core_functions_reject_non_int_arguments () =
   compile_with_stdlib_result Lg.Target.Native "test/bad_zero.cljc"
     {|(def x (zero? "0"))|}
@@ -21271,19 +21705,112 @@ let test_ex_info_data_literal_accepts_local_static_scalars () =
 (defn boom [x]
   (ex-info "boom" {:x x}))
 
+(type-record item (value :int))
+(defn choose-item [fail?]
+  (if fail?
+    (throw (ex-info "boom" {:x 9}))
+    (record item (value 9))))
+(defn checked-item [fail? value]
+  (do
+    (when fail?
+      (throw (ex-info "boom" {:x 10})))
+    value))
+
 (let [x (+ 3 4)]
   (println (pr-str (ex-data (ex-info "boom" {:x x})))))
 
 (println (pr-str (ex-data (boom 7))))
+(println
+  (pr-str
+    (ex-data
+      (ex-info "boom" {:x (Lg_runtime.Runtime_metadata.of_int 8)}))))
+(println (:value (choose-item false)))
+(println (:value (checked-item false (record item (value 10)))))
 |}
   in
-  let expected = "{:x 7}\n{:x 7}\n" in
+  let expected = "{:x 7}\n{:x 7}\n{:x 8}\n9\n10\n" in
   assert_ocaml_runs "source_ex_data_local_scalar" expected
     (compile_with_stdlib Lg.Target.Native "test/source_ex_data_local_scalar.cljc"
        source);
   ignore
     (compile_with_stdlib Lg.Target.Melange
        "test/source_ex_data_local_scalar.cljc" source)
+
+let test_exception_data_adapter_composes_through_closed_collections () =
+  let source =
+    {|
+(ns source-ex-data-adapter-app
+  (:require [cljs.core :refer [ex-data]]))
+
+(type-record item (value :int))
+(signature item-ex-data :fn<item;Lg_edn_backend.t>)
+(defn item-ex-data [item]
+  (Lg_runtime.Runtime_metadata.of_int (:value item)))
+(exception-data-adapter :item item-ex-data)
+
+(type-record field-item (value :int))
+(signature field-item-ex-data :fn<int;Lg_edn_backend.t>)
+(defn field-item-ex-data [value]
+  (Lg_runtime.Runtime_metadata.of_int value))
+(exception-data-adapter :field-item field-item-ex-data)
+
+(signature boom :fn<map<keyword;item>;exn>)
+(defn boom [entity]
+  (ex-info "boom" {:entity entity :items [entity]}))
+
+(def entity {:db/ident (record item (value 7))})
+(println (pr-str (ex-data (boom entity))))
+(println (pr-str (ex-data (ex-info "direct" (record item (value 8))))))
+(println
+  (pr-str
+    (ex-data (ex-info "fields" (record field-item (value 11))))))
+|}
+  in
+  let expected =
+    "{:entity {:db/ident 7}, :items [{:db/ident 7}]}\n8\n11\n"
+  in
+  let native =
+    compile_with_stdlib Lg.Target.Native
+      "test/source_ex_data_adapter.cljc" source
+  in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "exception-data adapters must remain fully static";
+  assert_ocaml_runs "exception_data_adapter_composes_through_closed_collections"
+    expected native;
+  let melange =
+    compile_with_stdlib Lg.Target.Melange
+      "test/source_ex_data_adapter.cljc" source
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange exception-data adapters must remain fully static";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_ex_data_adapter_missing.cljc"
+    {|
+(type-record item (value :int))
+(def result (ex-info "boom" {:item (record item (value 1))}))
+|}
+  |> expect_error_contains "ex-info data literal cannot contain item";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_ex_data_adapter_bad_result.cljc"
+    {|
+(type-record item (value :int))
+(signature bad-adapter :fn<item;int>)
+(defn bad-adapter [item] (:value item))
+(exception-data-adapter :item bad-adapter)
+|}
+  |> expect_error_contains
+       "exception-data-adapter must return Lg_edn_backend.t";
+  compile_with_stdlib_result Lg.Target.Native
+    "test/source_ex_data_adapter_bad_fields.cljc"
+    {|
+(type-record item (value :int))
+(signature bad-fields :fn<string;Lg_edn_backend.t>)
+(defn bad-fields [value]
+  (Lg_runtime.Runtime_metadata.of_string value))
+(exception-data-adapter :item bad-fields)
+|}
+  |> expect_error_contains
+       "exception-data-adapter parameters must match the declared value or its fields"
 
 let test_exception_data_uses_a_closed_runtime_value () =
   let source =
@@ -24480,6 +25007,53 @@ let test_reify_preserves_static_protocol_payload () =
     failwith "statically dispatched reify must not emit dynamic protocol adapters";
   assert_ocaml_runs "reify_preserves_static_protocol_payload" "42\n"
     ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reify_supports_multiple_static_protocols () =
+  let source =
+    {|
+(defprotocol LeftValue
+  (-left [this]))
+(defprotocol RightValue
+  (-right [this]))
+(def value
+  (reify
+    LeftValue
+    (-left [_] 20)
+    RightValue
+    (-right [_] 22)))
+(println (+ (-left value) (-right value)))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "multi-protocol reify must not emit dynamic protocol adapters";
+  assert_ocaml_runs "reify_supports_multiple_static_protocols" "42\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reify_uses_contextual_generic_method_payload () =
+  let source =
+    {|
+(type-alias cache [key value]
+  :Lg_runtime.Runtime_reify.t<fn<key;fn<value>;value>>)
+(signature user/-get [key value]
+  :fn<cache<key;value>;key;fn<value>;value>)
+(defprotocol Cache
+  (-get [this key compute]))
+(signature user/make-cache [key value]
+  :fn<int;cache<key;value>>)
+(defn make-cache [_limit]
+  (reify Cache
+    (-get [_ _key compute]
+      (compute))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "contextual generic reify payload must remain static";
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -27822,6 +28396,45 @@ let test_reduced_predicate_preserves_generic_callback_results () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_generic_reduce_indexed_signature_keeps_rigid_accumulator () =
+  let source =
+    {|
+(ns app.reduce-indexed)
+(signature app.reduce-indexed/reduce-indexed [value accumulator storage]
+  :fn<fn<accumulator;value;int;reducing-callback-result<accumulator>>;accumulator;seqable<value;storage>;accumulator>)
+(defn reduce-indexed [f init xs]
+  (first
+    (reduce
+      (fn [[acc idx] x]
+        (let [res (f acc x idx)]
+          (if (reduced? res)
+            (reduced [res idx])
+            [res (inc idx)])))
+      [init 0]
+      xs)))
+(println
+  (= 11 (reduce-indexed
+          (fn [acc value index] (+ acc (* value index)))
+          0
+          [2 3 4])))
+(println
+  (str
+    (reduced?
+      (reduce-indexed
+        (fn [acc value index]
+          (if (= index 1) (reduced acc) (+ acc value)))
+        0
+        [2 3 4]))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "generic reduce-indexed must not materialize dynamic storage";
+  assert_ocaml_runs "generic_reduce_indexed_signature_keeps_rigid_accumulator"
+    "true\ntrue\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_reduce_short_circuits_builtin_and_custom_seqable_types () =
   let source =
     {|
@@ -30782,6 +31395,39 @@ let test_deftype_protocol_methods_support_multiple_arities () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_generic_deftype_keeps_protocol_implementation_after_deref () =
+  let source =
+    {|
+(ns test.lookup)
+(declare update-box)
+(deftype LookupBox [values index reverse-index generation limit]
+  IAssociative
+  (-assoc [this key value] (update-box this key value))
+  (-contains-key? [_ _key] false)
+  ILookup
+  (-lookup
+    ([_ key] (get values key))
+    ([_ key not-found] (get values key not-found))))
+(type-alias lookup-box-state [key value]
+  :test.lookup/LookupBox<map<key;value>;clojure.core/persistent-tree-map<int;key>;map<key;int>;int;int>)
+(signature test.lookup/make-box [key value]
+  :fn<map<key;value>;lookup-box-state<key;value>>)
+(defn make-box [values]
+  (LookupBox. values (sorted-map) {} 0 16))
+(def implementation (volatile! (make-box {:answer 42})))
+(defn cache-get [key]
+  (get @implementation key 0))
+(println (cache-get :answer))
+(defn update-box [box _key _value]
+  box)
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "generic_deftype_keeps_protocol_implementation_after_deref"
+    "42\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_declared_protocol_methods_support_multiple_arities () =
   let source =
     {|
@@ -33201,6 +33847,51 @@ let test_reduce_rejects_heterogeneous_vector_accumulator_slots () =
   compile_string_with_stdlib source
   |> expect_error_contains "heterogeneous vector"
 
+let test_reduce_infers_fixed_tuple_accumulator_from_destructuring () =
+  let source =
+    {|
+(defn distinct-values [values]
+  (->>
+    (reduce
+      (fn [[seen result :as acc] value]
+        (if (contains? seen value)
+          acc
+          [(conj! seen value) (conj! result value)]))
+      [(transient #{}) (transient [])]
+      values)
+    second
+    persistent!))
+(println (= 3 (count (distinct-values [1 2 1 3 2]))))
+(defn indexed-until-stop [values]
+  (second
+    (reduce
+      (fn [[result index] value]
+        (let [next-result (str result value)]
+          (if (= value "stop")
+            (reduced [next-result index])
+            [next-result (inc index)])))
+      ["" 0]
+      values)))
+(println (= 2 (indexed-until-stop ["a" "b" "stop" "ignored"])))
+(defn reduce-indexed-static [f init values]
+  (first
+    (reduce
+      (fn [[acc index] value]
+        (let [result (f acc value index)]
+          (if (reduced? result)
+            (reduced [result index])
+            [result (inc index)])))
+      [init 0]
+      values)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "reduce_infers_fixed_tuple_accumulator_from_destructuring"
+    "true\ntrue\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_conj_requires_source_stdlib_state () =
   let source =
     {|
@@ -35409,6 +36100,24 @@ let test_let_bindings_support_value_type_hints () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
 
+let test_bare_seq_type_hint_denotes_static_sequence () =
+  let source =
+    {|
+(defn first-seq [^seq xs]
+  (if (nil? xs)
+    nil
+    (first xs)))
+(println (first-seq [1 2]))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/bare_seq_hint.cljc" source
+  in
+  assert_ocaml_runs "bare_seq_type_hint_denotes_static_sequence" "1\n"
+    native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange "test/bare_seq_hint.cljc" source)
+
 let test_value_type_hints_preserve_nullable_record_values () =
   let source =
     {|
@@ -36429,6 +37138,27 @@ let test_mapcat_infers_unannotated_collection_parameters () =
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/mapcat_unannotated.cljc"
        source)
+
+let test_core_mapcat_preserves_record_callback_result_type () =
+  let source =
+    {|
+(deftype Relation [^:map<string;int> attrs])
+(signature user/bound-vars :fn<vector<Relation>;set<string>>)
+(defn bound-vars [relations]
+  (into #{} (mapcat #(keys (:attrs %)) relations)))
+(def vars (bound-vars [(Relation. {"?e" 0 "?a" 1})]))
+(println (str (count vars) ":" (contains? vars "?e")))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native "test/mapcat_record_callback.cljc"
+      source
+  in
+  assert_ocaml_runs "core_mapcat_preserves_record_callback_result_type"
+    "2:true\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/mapcat_record_callback.cljc" source)
 
 let test_mapcat_specializes_identity_collection_return () =
   let source =
@@ -38864,14 +39594,18 @@ let test_empty_lists_infer_type_from_branch_context () =
     false (__lg_list)))
 (defn literal-values [^:bool enabled]
   (if enabled (__lg_list 42) ()))
+(defn optional-values [^:option<seq<int>> values]
+  (or values ()))
 (println
   (str (count (values true)) ":" (count (values false)) ":"
        (count (matched-values true)) ":" (count (matched-values false)) ":"
-       (count (literal-values true)) ":" (count (literal-values false))))
+       (count (literal-values true)) ":" (count (literal-values false)) ":"
+       (count (optional-values nil))))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
-  assert_ocaml_runs "empty_lists_infer_type_from_branch_context" "1:0:1:0:1:0\n"
+  assert_ocaml_runs "empty_lists_infer_type_from_branch_context"
+    "1:0:1:0:1:0:0\n"
     ocaml_source;
   compile_string_with_stdlib {|(def values (__lg_list))|}
   |> expect_error "empty list requires a contextual element type";
@@ -43000,6 +43734,8 @@ let tests =
       test_homogeneous_map_literals_default_to_hash_maps );
     ( "homogeneous hash maps flow through functions and destructuring",
       test_homogeneous_hash_maps_flow_through_functions_and_destructuring );
+    ( "map capability refines prior seqable constraint",
+      test_map_capability_refines_prior_seqable_constraint );
     ( "hash map update preserves present and missing value semantics",
       test_hash_map_update_preserves_present_and_missing_value_semantics );
     ( "hash-map empty preserves metadata",
@@ -43214,6 +43950,8 @@ let tests =
       test_sidecar_map_returns_do_not_reuse_closed_argument_shapes );
     ( "generic function signatures preserve type parameters",
       test_generic_function_signatures_preserve_type_parameters );
+    ( "generic signature refines bare named record parameter hint",
+      test_generic_signature_refines_bare_named_record_parameter_hint );
     ( "external closed types use static equality and hash witnesses",
       test_external_closed_types_use_static_equality_and_hash_witnesses );
     ( "external closed types use static comparison witnesses",
@@ -43282,6 +44020,8 @@ let tests =
       test_protocol_satisfaction_uses_stabilized_evidence );
     ( "protocol elaboration populates typed registry",
       test_protocol_elaboration_populates_typed_registry );
+    ( "protocol method uses sidecar signature",
+      test_protocol_method_uses_sidecar_signature );
     ( "protocol implementation populates typed registry",
       test_protocol_implementation_populates_typed_registry );
     ( "closed variants implement protocols without dynamic dispatch",
@@ -43381,6 +44121,8 @@ let tests =
       test_namespace_refer_clojure_exclude_hides_core_binding );
     ( "namespace rejects import clauses",
       test_namespace_rejects_import_clause );
+    ( "namespace imports LG closed sum constructors",
+      test_namespace_imports_lg_closed_sum_constructors );
     ( "require refers LG record types",
       test_require_refers_lg_record_types );
     ( "empty defrecord suppresses unused type warning",
@@ -43459,6 +44201,8 @@ let tests =
       test_bare_symbol_require_entry_loads_namespace );
     ( "reader conditional accepts metadata branch values",
       test_reader_conditional_accepts_metadata_branch_values );
+    ( "reader dialect is independent from codegen target",
+      test_reader_dialect_is_independent_from_codegen_target );
     ( "metadata map prefixes compile without Java types",
       test_metadata_map_prefixes_compile_without_java_types );
     ( "keyword reader metadata preserves collection types",
@@ -43541,6 +44285,8 @@ let tests =
       test_runtime_protocol_extension_forms_are_host_boundaries );
     ( "JavaScript targets compile Date and radix interop",
       test_javascript_targets_compile_date_and_radix_interop );
+    ( "Native target compiles portable radix toString",
+      test_native_target_compiles_portable_radix_to_string );
     ( "JavaScript targets compile error classes",
       test_javascript_targets_compile_error_classes );
     ( "CLJS writer functions compile", test_cljs_writer_functions_compile );
@@ -43989,6 +44735,18 @@ let tests =
       test_ocaml_payload_variants_compile_through_source_backend );
     ( "OCaml payload variants delegate payload typecheck to OCaml",
       test_ocaml_payload_variants_delegate_payload_typecheck_to_ocaml );
+    ( "contextual closed sum injection is unique and static",
+      test_contextual_closed_sum_injection_is_unique_and_static );
+    ( "contextual closed sum injection rejects ambiguity",
+      test_contextual_closed_sum_injection_rejects_ambiguity );
+    ( "contextual closed sum injection rejects missing constructor",
+      test_contextual_closed_sum_injection_rejects_missing_constructor );
+    ( "dotted syntax resolves declared closed sum constructors",
+      test_dotted_syntax_resolves_declared_closed_sum_constructors );
+    ( "declared optional sequential host adapter is static",
+      test_declared_optional_sequential_host_adapter_is_static );
+    ( "declared empty map default is static",
+      test_declared_empty_map_default_is_static );
     ( "OCaml variant constructors reject bad arity",
       test_ocaml_variant_constructors_reject_bad_arity );
     ( "OCaml variants reject bad declarations",
@@ -44439,6 +45197,8 @@ let tests =
       test_static_protocols_reject_return_type_mismatch );
     ( "static protocols work through module aliases",
       test_static_protocols_work_through_module_aliases );
+    ( "protocol method defs create static function aliases",
+      test_protocol_method_defs_create_static_function_aliases );
     ( "records implement namespaced protocol aliases",
       test_records_implement_namespaced_protocol_aliases );
     ( "protocols work through chained module aliases",
@@ -44656,6 +45416,14 @@ let tests =
       test_unsafe_bit_and_is_source_owned_static_int_function );
     ( "seqable predicate checks closed sum values",
       test_seqable_predicate_checks_closed_sum_values );
+    ( "keyword predicate narrows closed sum payload",
+      test_keyword_predicate_narrows_closed_sum_payload );
+    ( "external record exposes static fields without redefinition",
+      test_external_record_exposes_static_fields_without_redefinition );
+    ( "external record alias survives incremental namespaces",
+      test_external_record_alias_survives_incremental_namespaces );
+    ( "parameterized external record alias survives function signature",
+      test_parameterized_external_record_alias_survives_function_signature );
     ( "batched core functions reject non-int arguments",
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
@@ -44738,6 +45506,8 @@ let tests =
       test_source_ex_data_matches_clojurescript );
     ( "ex-info data literal accepts local static scalars",
       test_ex_info_data_literal_accepts_local_static_scalars );
+    ( "exception data adapter composes through closed collections",
+      test_exception_data_adapter_composes_through_closed_collections );
     ( "exception data uses a closed runtime value",
       test_exception_data_uses_a_closed_runtime_value );
     ( "ex-info supports ClojureScript cause arity",
@@ -44875,6 +45645,10 @@ let tests =
       test_record_arguments_fill_missing_optional_fields );
     ( "reify preserves static protocol payload",
       test_reify_preserves_static_protocol_payload );
+    ( "reify supports multiple static protocols",
+      test_reify_supports_multiple_static_protocols );
+    ( "reify uses contextual generic method payload",
+      test_reify_uses_contextual_generic_method_payload );
     ( "parameters preserve multiple protocol constraints",
       test_parameters_preserve_multiple_protocol_constraints );
     ( "forwarded parameters deduplicate protocol constraints",
@@ -45121,6 +45895,8 @@ let tests =
       test_nil_initialized_reduce_returns_nullable_reduced_value );
     ( "reduced predicate preserves generic callback results",
       test_reduced_predicate_preserves_generic_callback_results );
+    ( "generic reduce-indexed signature keeps rigid accumulator",
+      test_generic_reduce_indexed_signature_keeps_rigid_accumulator );
     ( "reduce short-circuits builtin and custom Seqable types",
       test_reduce_short_circuits_builtin_and_custom_seqable_types );
     ( "custom records can implement core Seqable",
@@ -45324,6 +46100,8 @@ let tests =
       test_collection_lifecycle_family_has_no_public_name_dispatch );
     ( "deftype protocol methods support multiple arities",
       test_deftype_protocol_methods_support_multiple_arities );
+    ( "generic deftype keeps protocol implementation after deref",
+      test_generic_deftype_keeps_protocol_implementation_after_deref );
     ( "declared protocol methods support multiple arities",
       test_declared_protocol_methods_support_multiple_arities );
     ( "declared protocol methods reject unsupported arity",
@@ -45477,6 +46255,8 @@ let tests =
       test_nested_assoc_reads_static_records );
     ( "reduce rejects heterogeneous vector accumulator slots",
       test_reduce_rejects_heterogeneous_vector_accumulator_slots );
+    ( "reduce infers fixed tuple accumulator from destructuring",
+      test_reduce_infers_fixed_tuple_accumulator_from_destructuring );
     ( "conj requires source stdlib state",
       test_conj_requires_source_stdlib_state );
     ( "conj uses a statically typed first-class wrapper",
@@ -45670,6 +46450,8 @@ let tests =
       test_static_tuple_destructuring_uses_nil_for_missing_items );
     ( "let bindings support value type hints",
       test_let_bindings_support_value_type_hints );
+    ( "bare seq type hint denotes static sequence",
+      test_bare_seq_type_hint_denotes_static_sequence );
     ( "value type hints preserve nullable record values",
       test_value_type_hints_preserve_nullable_record_values );
     ( "defrecord field hints preserve inferred nullability",
@@ -45763,6 +46545,8 @@ let tests =
       test_source_predicate_combinators_reject_mismatched_predicates );
     ( "mapcat infers unannotated collection parameters",
       test_mapcat_infers_unannotated_collection_parameters );
+    ( "core mapcat preserves record callback result type",
+      test_core_mapcat_preserves_record_callback_result_type );
     ( "mapcat specializes identity collection return",
       test_mapcat_specializes_identity_collection_return );
     ( "mapcat matches multiple collection arities",

@@ -378,10 +378,29 @@ let rec to_seq_expr env collection =
                   Core_protocols.find_seqable collection.ty
                     (Compiler_environment.protocols env)
                 with
-  | None ->
-      Error.error
-                      ("collection value is not seqable: "
-                      ^ Types.source_name collection.ty)
+  | None -> (
+      match
+        Compiler_environment.find_optional_sequential_adapter collection.ty env
+      with
+      | None ->
+          Error.error
+            ("collection value is not seqable: "
+            ^ Types.source_name collection.ty)
+      | Some (element_ty, adapter) ->
+          let items_name = "__lg_optional_sequential_items" in
+          Ok
+            ( element_ty,
+              Semantic_ir.Match
+                ( apply adapter [ collection.semantic_expr ],
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      apply "Stdlib.invalid_arg"
+                        [ Semantic_ir.String "value is not sequential" ] );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar items_name)),
+                      apply "Rrbvec.to_seq"
+                        [ Semantic_ir.Ident items_name ] );
+                  ] ) ))
   | Some implementation -> (
                     match implementation.ty with
                     | TFn ([ receiver_ty ], TSeq element_ty)

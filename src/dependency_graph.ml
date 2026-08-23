@@ -160,6 +160,30 @@ let require_referred_symbols entries =
 
 let dependency_symbols = function
   | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
+  | FList (FSymbol "optional-sequential-adapter" :: _) -> []
+  | FList (FSymbol "exception-data-adapter" :: _) -> []
+  | FList (FSymbol "empty-map-default" :: _) -> []
+  | FList (FSymbol "closed-sum-constructors" :: _) -> []
+  | FList
+      (FSymbol "external-record" :: _name :: FVector parameters :: field_forms)
+    ->
+      let parameters =
+        parameters
+        |> List.filter_map (function FSymbol name -> Some name | _ -> None)
+        |> String_set.of_list
+      in
+      field_forms
+      |> List.concat_map (function
+           | FList (_field_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | form -> type_annotation_symbols form)
+      |> List.filter (fun name -> not (String_set.mem name parameters))
+  | FList (FSymbol "external-record" :: _name :: field_forms) ->
+      field_forms
+      |> List.concat_map (function
+           | FList (_field_name :: annotations) ->
+               List.concat_map type_annotation_symbols annotations
+           | form -> type_annotation_symbols form)
   | FList [ FSymbol "signature"; _name; _annotation ] ->
       (* Signatures are forward declarations. Named record references remain
          placeholders until the corresponding record definition is available. *)
@@ -320,7 +344,8 @@ let rec provided_names = function
       in
       name :: constructors
   | FList
-      (FSymbol ("type-alias" | "type-record") :: FSymbol name :: _) ->
+      (FSymbol ("type-alias" | "type-record" | "external-record")
+      :: FSymbol name :: _) ->
       [ name ]
   | FList
       (FSymbol ("def" | "defonce") :: FSymbol "^:dynamic" :: FSymbol name

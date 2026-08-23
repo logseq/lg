@@ -106,6 +106,7 @@ let lookup_record_type scope env type_name =
   match split_qualified_type_name type_name with
   | Some (module_path, local_name) -> (
       match local_lookup (Names.module_path_to_ocaml module_path) local_name with
+      | Ok record when String.contains record.type_name '.' -> Ok record
       | Ok record -> Ok (qualify_record_type module_path record)
       | Error _ as err -> err)
   | None -> local_lookup scope type_name

@@ -742,7 +742,16 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
             let param_ty =
               match spec.explicit_ty with
               | Some ty when not (Types.equal ty TUnknown) ->
-                  infer_named_record scope env ty
+                  let explicit_ty = infer_named_record scope env ty in
+                  (match List.nth_opt param_type_overrides index with
+                  | Some (Some override_ty) -> (
+                      let override_ty = infer_named_record scope env override_ty in
+                      match (explicit_ty, override_ty) with
+                      | TNamed_record explicit, TNamed_record override
+                        when Type_id.equal explicit.type_id override.type_id ->
+                          override_ty
+                      | _ -> explicit_ty)
+                  | Some None | None -> explicit_ty)
               | _ -> (
                   match List.nth_opt param_type_overrides index with
                   | Some (Some ty) when not (Types.equal ty TUnknown) -> ty
@@ -758,8 +767,14 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
             in
                let destructured =
                  if spec.destructured then
+                   let hints =
+                     Destructure.pattern_type_hints spec.pattern param_ty
+                   in
                    Destructure.pattern_names spec.pattern
-                   |> List.map (fun name -> (name, TUnknown))
+                   |> List.map (fun name ->
+                          ( name,
+                            List.assoc_opt name hints
+                            |> Option.value ~default:TUnknown ))
                  else []
                in
                (spec.source_name, param_ty) :: destructured)

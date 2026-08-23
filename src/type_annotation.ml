@@ -201,6 +201,13 @@ let rec parse_ocaml_type source =
                       | _ ->
                           Error.error
                             "reducing-function result expects one type argument"
+                    else if name = "reducing-callback-result" then
+                      match args with
+                      | [ inner ] ->
+                          Ok (Types.maybe_reduced_callback_result inner)
+                      | _ ->
+                          Error.error
+                            "reducing-callback-result expects one type argument"
                     else if name = "seqable" then
                       match args with
                       | [ inner ] -> Ok (Types.seqable_constraint inner)
@@ -524,6 +531,7 @@ let of_param_annotation annotation =
     | "boolean" -> Ok TBool
     | "double" | "float" -> Ok TFloat
     | "bytes" -> Ok TString
+    | "seq" -> Ok (Types.optional_seqable_constraint TUnknown TUnknown)
     | type_name when String.contains type_name '<' ->
         parse_ocaml_type type_name
     | _ -> (

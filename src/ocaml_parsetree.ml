@@ -193,6 +193,10 @@ let rec core_type ?(type_variables = []) = function
         ]
   | Types.TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
       type_constructor "Seq.t" [ core_type ~type_variables inner ]
+  | Types.TOcaml_app (name, [ inner ])
+    when name = Types.maybe_reduced_callback_type_name ->
+      type_constructor Types.reduced_type_name
+        [ core_type ~type_variables inner ]
   | Types.TOcaml_app (name, args) ->
       Ast_helper.Typ.constr ~loc (lid (longident_of_string name))
         (List.map (core_type ~type_variables) args)

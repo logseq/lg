@@ -56,6 +56,24 @@ let first env collection =
                         Semantic_ir.Ident "first" ) ] )))
       | _ -> Collection_capability.first_expr env collection)
 
+let second collection =
+  match collection.ty with
+  | TTuple (_first_type :: second_type :: remaining_types) ->
+      let patterns =
+        Semantic_ir.PAny :: Semantic_ir.PVar "second"
+        :: List.map (fun _ -> Semantic_ir.PAny) remaining_types
+      in
+      Ok
+        (typed_ir second_type
+           (Semantic_ir.Match
+              ( collection.semantic_expr,
+                [
+                  ( Semantic_ir.PTuple patterns,
+                    Semantic_ir.Ident "second" );
+                ] )))
+  | TTuple _ -> Error.error "second expects at least two tuple elements"
+  | _ -> Error.error "second expects a tuple"
+
 let peek collection =
   match collection.ty with
   | TList inner -> Ok (typed_ir inner (apply "List.hd" [ collection.semantic_expr ]))

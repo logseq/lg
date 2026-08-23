@@ -431,6 +431,40 @@ and infer_pattern_type pattern lookup_local_ty =
   | FVector forms -> infer_sequence_type forms lookup_local_ty
   | _ -> Error.error "unsupported destructuring pattern"
 
+let rec pattern_type_hints pattern ty =
+  match (pattern, ty) with
+  | FSymbol name, ty when not (ignore_name name) -> [ (name, ty) ]
+  | FList [ FSymbol "__type-hint"; FSymbol _; pattern ], ty ->
+      pattern_type_hints pattern ty
+  | FVector forms, TTuple item_tys -> (
+      match parse_sequence_pattern forms with
+      | Error _ -> []
+      | Ok pattern ->
+          let rec pair_items acc patterns tys =
+            match (patterns, tys) with
+            | pattern :: patterns, ty :: tys ->
+                pair_items
+                  (List.rev_append (pattern_type_hints pattern ty) acc)
+                  patterns tys
+            | _ -> List.rev acc
+          in
+          let item_hints = pair_items [] pattern.item_patterns item_tys in
+          (match pattern.sequence_as_name with
+          | None -> item_hints
+          | Some name -> (name, ty) :: item_hints))
+  | FVector forms, (TVector item_ty | TList item_ty | TSeq item_ty) -> (
+      match parse_sequence_pattern forms with
+      | Error _ -> []
+      | Ok pattern ->
+          let item_hints =
+            pattern.item_patterns
+            |> List.concat_map (fun pattern -> pattern_type_hints pattern item_ty)
+          in
+          (match pattern.sequence_as_name with
+          | None -> item_hints
+          | Some name -> (name, ty) :: item_hints))
+  | _ -> []
+
 let infer_generator_pattern_type pattern lookup_local_ty =
   match pattern with
   | FVector forms -> (

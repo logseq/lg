@@ -45,6 +45,12 @@ variants; readers reject version 1 rather than unmarshalling its incompatible
 type layout. Readers must never attempt compatibility recovery across an
 unknown envelope version.
 
+Version 7 adds registered exception-data adapters to the compiler environment.
+Readers reject version 6 before unmarshalling because OCaml record layout
+changes are not Marshal-compatible and can otherwise crash the process.
+Version 8 distinguishes direct adapters from record-field adapters; readers
+likewise reject version 7 before unmarshalling the changed adapter payload.
+
 ## Checkpoint ownership
 
 Explicit saved states are versioned full checkpoints. They are requested by the

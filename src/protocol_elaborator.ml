@@ -99,9 +99,16 @@ let define ?location scope env protocol_name method_forms =
       let signatures =
         List.map
           (fun (signature : Protocol_registry.method_signature) ->
+            let method_name = Method_id.name signature.method_id in
+            let method_ty =
+              Signature_overlay.find_value
+                (Names.scoped_key scope method_name)
+                (Env.signatures env)
+              |> Option.value ~default:signature.method_ty
+            in
             {
               signature with
-              method_ty = resolve_type signature.method_ty;
+              method_ty = resolve_type method_ty;
             })
           signatures
       in
