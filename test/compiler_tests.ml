@@ -13180,6 +13180,125 @@ let test_contextual_closed_sum_injection_rejects_missing_constructor () =
 |}
   |> expect_error_contains "cannot inject int into closed sum result"
 
+let test_equality_injects_unique_contextual_closed_sum_operands () =
+  let source =
+    {|
+(type-variant value
+  (IntValue :int)
+  (SymbolValue :symbol))
+(signature placeholder? :fn<value;bool>)
+(defn placeholder? [form]
+  (= '_ form))
+(signature placeholder-right? :fn<value;bool>)
+(defn placeholder-right? [form]
+  (= form '_))
+(signature placeholder-chain? :fn<value;bool>)
+(defn placeholder-chain? [form]
+  (= '_ form '_))
+(signature ellipsis-second? :fn<vector<value>;bool>)
+(defn ellipsis-second? [forms]
+  (= (second forms) '...))
+(println
+  (str
+    (placeholder? (SymbolValue '_)) ":"
+    (placeholder-right? (SymbolValue '_)) ":"
+    (placeholder-chain? (SymbolValue '_)) ":"
+    (placeholder? (IntValue 1)) ":"
+    (ellipsis-second? [(IntValue 1) (SymbolValue '...)])))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "closed-sum equality injection must remain fully static";
+  assert_ocaml_runs "equality_injects_unique_contextual_closed_sum_operands"
+    "true:true:true:false:true\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum equality injection must remain fully static"
+
+let test_equality_rejects_ambiguous_contextual_closed_sum_operand () =
+  compile_string_with_stdlib
+    {|
+(type-variant value
+  (FirstSymbol :symbol)
+  (SecondSymbol :symbol))
+(signature same-symbol? :fn<value;bool>)
+(defn same-symbol? [form]
+  (= '_ form))
+|}
+  |> expect_error_contains "ambiguous closed sum injection"
+
+let test_equality_injects_external_closed_sum_operand_across_chunks () =
+  let provider =
+    {|
+(ns app.annotations)
+(contextual-closed-sum-constructors :External.Value.t
+  (External.Value.Int :int)
+  (External.Value.Symbol :symbol))
+|}
+  in
+  let consumer =
+    {|
+(ns app.parser)
+(signature app.parser/placeholder? :fn<External.Value.t;bool>)
+(defn placeholder? [form]
+  (= '_ form))
+|}
+  in
+  let state, _ =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/annotations.lgi" (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
+  in
+  let _, compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/parser.cljc" state consumer
+    |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring compilation.ocaml_source
+         {|External.Value.Symbol "_"|})
+  then
+    failwith
+      ("external closed-sum equality operand was not injected:\n"
+      ^ compilation.ocaml_source)
+
+let test_symbol_predicate_dispatches_over_closed_sum_constructors () =
+  let source =
+    {|
+(type-variant value
+  (IntValue :int)
+  (SymbolValue :symbol))
+(signature symbol-value? :fn<value;bool>)
+(defn symbol-value? [value]
+  (symbol? value))
+(signature symbol-name :fn<value;string>)
+(defn symbol-name [value]
+  (if (symbol? value)
+    (name value)
+    "not-symbol"))
+(println
+  (str
+    (symbol-value? (SymbolValue 'item)) ":"
+    (symbol-value? (IntValue 1)) ":"
+    (symbol-name (SymbolValue 'item)) ":"
+    (symbol-name (IntValue 1))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "closed-sum symbol predicate must remain fully static";
+  assert_ocaml_runs "symbol_predicate_dispatches_over_closed_sum_constructors"
+    "true:false:item:not-symbol\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum symbol predicate must remain fully static"
+
 let test_declared_external_closed_sum_injects_across_chunks () =
   let provider =
     {|
@@ -18961,6 +19080,22 @@ let test_keyword_access_reads_nominal_record_fields () =
 (def missing (:missing ada))
 |}
   |> expect_error "unknown record field missing"
+
+let test_native_field_access_preserves_explicit_ref_record_field () =
+  let source =
+    {|
+(defrecord Counter [^:ref<int> value])
+(signature read-counter :fn<Counter;int>)
+(defn read-counter [^Counter counter]
+  @(.-value counter))
+(println (read-counter (Counter. (atom 42))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "native_field_access_preserves_explicit_ref_record_field"
+    "42\n" native;
+  compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  |> ignore
 
 let test_concise_external_type_paths_defer_to_ocaml () =
   Lg.Compiler.compile_string
@@ -46014,6 +46149,14 @@ let tests =
       test_contextual_closed_sum_injection_rejects_ambiguity );
     ( "contextual closed sum injection rejects missing constructor",
       test_contextual_closed_sum_injection_rejects_missing_constructor );
+    ( "equality injects unique contextual closed sum operands",
+      test_equality_injects_unique_contextual_closed_sum_operands );
+    ( "equality rejects ambiguous contextual closed sum operand",
+      test_equality_rejects_ambiguous_contextual_closed_sum_operand );
+    ( "equality injects external closed sum operand across chunks",
+      test_equality_injects_external_closed_sum_operand_across_chunks );
+    ( "symbol predicate dispatches over closed sum constructors",
+      test_symbol_predicate_dispatches_over_closed_sum_constructors );
     ( "declared external closed sum injects across chunks",
       test_declared_external_closed_sum_injects_across_chunks );
     ( "declared external closed sum preserves optional match result",
@@ -46534,6 +46677,8 @@ let tests =
       test_named_record_updates_preserve_protocol_identity );
     ( "syntax convergence: keyword access reads nominal record fields",
       test_keyword_access_reads_nominal_record_fields );
+    ( "native field access preserves explicit ref record fields",
+      test_native_field_access_preserves_explicit_ref_record_field );
     ( "syntax convergence: concise external type paths defer to OCaml",
       test_concise_external_type_paths_defer_to_ocaml );
     ( "named record parameters are inferred for record updates",

@@ -317,3 +317,46 @@ types during compilation, so source `try`/`catch` could not observe the required
 runtime invalid-argument exception. Preserve static result typing while emitting
 an evaluated runtime failure for known non-keyword, non-string, and non-symbol
 arguments on both Native and Melange.
+
+FIXED: Equality did not use a closed operand as contextual type evidence for a
+scalar operand. Comparing the parser's closed Data_value domain with a symbol
+literal therefore emitted an invalid bare string-versus-variant OCaml equality.
+Each adjacent equality pair now injects the scalar through the unique declared
+closed-sum constructor, symmetrically and without dynamic boxing; ambiguous
+constructors are rejected by the LG type checker. Nullable closed-sum operands
+provide the same payload context, so comparisons such as `(second forms)` with
+a scalar literal inject into the inner sum before static option equality.
+
+FIXED: The `symbol?` primitive bypassed the closed-sum predicate dispatcher,
+so a declared Data_value Symbol constructor was folded to false. Its guarded
+symbol-value narrowing also lacked the corresponding constructor projection.
+Route symbol predicates through the closed-sum match when available, retain the
+generic static predicate fallback otherwise, and project the symbol payload in
+guarded branches on both Native and Melange.
+
+FIXED: Melange OCaml interface lookup could load a Native package CMI when both
+target-specific and installed package directories exported the same module.
+Two alphabetical deduplication steps discarded explicit include precedence, so
+an installed Native directory could precede the local Melange object directory.
+Preserve declaration order and prioritize Melange-specific directories so the
+target CMI remains authoritative; the cold DataScript parser Native/Melange
+build covers the mixed-CMI failure.
+
+FIXED: Native `.-field` access could lose an explicit `ref` field type on a
+nominal `defrecord`. DataScript `@(.-hash db)` is inferred as dereferencing an
+`int`, while the declared DB field is `^:ref<int> hash` and keyword access
+preserves that type. Field access now returns the declared field value unchanged;
+explicit source dereference remains explicit, with nested field inference
+preserving the reference type on Native and Melange.
+
+NOT A COMPILER BUG: DataScript's persistent sorted set does not implement
+`IHash`; `ITransientSet` does not define immutable hash semantics and cannot be
+used as a substitute across a compiled package boundary. The typed DataScript
+port calls `hash-unordered-coll` explicitly for this set, preserving upstream
+behavior without dynamic dispatch.
+
+OPEN: Equality over `option<Datom>` uses OCaml structural equality instead of
+the registered Datom `IEquiv` implementation. Upstream DataScript's
+`equiv-db-index` therefore fails `test-diff` when written as
+`(= (first xs) (first ys))`; the typed port currently unwraps both values and
+calls `equiv-datom` explicitly.

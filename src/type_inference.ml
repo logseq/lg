@@ -691,6 +691,17 @@ let rec inferred_form_type params = function
       | result :: _ ->
           TOcaml_app ("Lazy.t", [ inferred_form_type params result ])
       | [] -> TOcaml_app ("Lazy.t", [ TUnknown ]))
+  | FList
+      [
+        FSymbol "IDeref/-deref";
+        FList [ FSymbol field_access; FSymbol receiver ];
+      ]
+    when String.starts_with ~prefix:".-" field_access ->
+      let keyword =
+        ":" ^ String.sub field_access 2 (String.length field_access - 2)
+      in
+      record_ref_field_value_type params receiver keyword
+      |> Option.value ~default:TUnknown
   | FList [ FSymbol "IDeref/-deref"; FSymbol reference ] -> (
       match string_assoc_opt reference params with
       | Some (TRef value_ty) -> value_ty
@@ -1779,6 +1790,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
             Result.bind (infer_all params (List.rev reversed_prefix)) (fun params ->
                 infer_expected expected_ty params result)
         | [] -> Ok params)
+    | FList
+        [
+          FSymbol "IDeref/-deref";
+          FList [ FSymbol field_access; FSymbol name ];
+        ]
+      when String.starts_with ~prefix:".-" field_access ->
+        let keyword =
+          ":" ^ String.sub field_access 2 (String.length field_access - 2)
+        in
+        add_record_field_constraint name keyword (TRef expected_ty) params
     | FList [ FSymbol "IDeref/-deref"; FSymbol reference ] -> (
         match string_assoc_opt reference params with
         | Some (TOcaml_app ("Lazy.t", [ _ ])) ->
@@ -4099,6 +4120,16 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (Ok params) parameter_tys arguments)
     | FList
         [ FSymbol "IDeref/-deref"; FList [ FKeyword keyword; FSymbol name ] ] ->
+        add_record_field_constraint name keyword (TRef TUnknown) params
+    | FList
+        [
+          FSymbol "IDeref/-deref";
+          FList [ FSymbol field_access; FSymbol name ];
+        ]
+      when String.starts_with ~prefix:".-" field_access ->
+        let keyword =
+          ":" ^ String.sub field_access 2 (String.length field_access - 2)
+        in
         add_record_field_constraint name keyword (TRef TUnknown) params
     | FList
         [

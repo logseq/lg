@@ -1,4 +1,5 @@
 open Types
+module String_set = Set.Make (String)
 
 let rec find_project_root dir =
   if Sys.file_exists (Filename.concat dir "dune-project") then Some dir
@@ -40,18 +41,65 @@ let include_dirs () = Lazy.force base_include_dirs
 let package_include_dirs = ref []
 let melange_target = ref false
 let initialized_include_dirs = ref None
+let active_include_dirs_cache = ref None
+let compiled_interfaces_cache = Hashtbl.create 32
 
-let set_melange_target enabled = melange_target := enabled
+let set_melange_target enabled =
+  if !melange_target <> enabled then (
+    melange_target := enabled;
+    active_include_dirs_cache := None)
+
 let is_melange_target () = !melange_target
 
+let compiled_interfaces directory =
+  match Hashtbl.find_opt compiled_interfaces_cache directory with
+  | Some interfaces -> interfaces
+  | None ->
+      let interfaces =
+        if Sys.file_exists directory && Sys.is_directory directory then
+          Sys.readdir directory |> Array.to_list
+          |> List.filter (String.ends_with ~suffix:".cmi")
+          |> String_set.of_list
+        else String_set.empty
+      in
+      Hashtbl.replace compiled_interfaces_cache directory interfaces;
+      interfaces
+
+let unique_interface_directories directories =
+  List.fold_left
+    (fun (directories, interfaces) directory ->
+      let directory_interfaces = compiled_interfaces directory in
+      if String_set.disjoint interfaces directory_interfaces then
+        ( directories @ [ directory ],
+          String_set.union interfaces directory_interfaces )
+      else (directories, interfaces))
+    ([], String_set.empty) directories
+  |> fst
+
 let active_include_dirs () =
-  let project_dirs =
-    if !melange_target then
-      include_dirs ()
-      |> List.filter (fun directory -> Filename.basename directory <> "byte")
-    else include_dirs ()
-  in
-  project_dirs @ !package_include_dirs
+  match !active_include_dirs_cache with
+  | Some directories -> directories
+  | None ->
+      let project_dirs =
+        if !melange_target then
+          include_dirs ()
+          |> List.filter (fun directory ->
+                 Filename.basename directory <> "byte")
+        else include_dirs ()
+      in
+      let directories = project_dirs @ !package_include_dirs in
+      let directories =
+        if !melange_target then unique_interface_directories directories
+        else directories
+      in
+      active_include_dirs_cache := Some directories;
+      directories
+
+let unique_directories directories =
+  List.fold_left
+    (fun unique directory ->
+      if List.mem directory unique then unique else unique @ [ directory ])
+    [] directories
 
 let ensure_initialized () =
   let dirs = active_include_dirs () in
@@ -60,8 +108,10 @@ let ensure_initialized () =
     initialized_include_dirs := Some dirs)
 
 let add_include_dirs dirs =
-  let updated = List.sort_uniq String.compare (dirs @ !package_include_dirs) in
-  if updated <> !package_include_dirs then package_include_dirs := updated;
+  let updated = unique_directories (dirs @ !package_include_dirs) in
+  if updated <> !package_include_dirs then (
+    package_include_dirs := updated;
+    active_include_dirs_cache := None);
   ensure_initialized ()
 
 let init () = ensure_initialized ()

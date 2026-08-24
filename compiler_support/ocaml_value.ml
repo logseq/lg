@@ -20,6 +20,12 @@ let initial_env_cache = ref None
 let configured_melange = ref None
 let known_include_dirs = ref []
 
+let unique_directories directories =
+  List.fold_left
+    (fun unique directory ->
+      if List.mem directory unique then unique else unique @ [ directory ])
+    [] directories
+
 let init include_dirs =
   let detected_melange =
     List.exists (fun path -> Filename.basename path = "melange") include_dirs
@@ -48,12 +54,12 @@ let init include_dirs =
     else include_dirs
   in
   let include_dirs =
-    List.sort_uniq String.compare
+    unique_directories
       (standard_include_dirs @ include_dirs @ !known_include_dirs)
   in
   known_include_dirs := include_dirs;
   Clflags.include_dirs :=
-    List.sort_uniq String.compare
+    unique_directories
       (if uses_melange then include_dirs
        else include_dirs @ !Clflags.include_dirs);
   if not !initialized then (

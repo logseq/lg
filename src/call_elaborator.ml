@@ -4938,6 +4938,27 @@ let rec compile_record_iequiv_pair scope env left right =
   | None -> Ok None
 
 let compile_equality scope env args =
+  let closed_sum_target ty =
+    if Env.variant_constructors ty env <> [] then Some ty
+    else
+      match ty with
+      | TNullable inner | TOcaml_app ("option", [ inner ])
+        when Env.variant_constructors inner env <> [] ->
+          Some inner
+      | _ -> None
+  in
+  let inject_pair left right =
+    match (closed_sum_target left.ty, closed_sum_target right.ty) with
+    | Some expected, None -> (
+      match inject_contextual_closed_sum env ~expected right with
+      | Some result -> Result.map (fun right -> (left, right)) result
+      | None -> Ok (left, right))
+    | None, Some expected -> (
+      match inject_contextual_closed_sum env ~expected left with
+      | Some result -> Result.map (fun left -> (left, right)) result
+      | None -> Ok (left, right))
+    | Some _, Some _ | None, None -> Ok (left, right)
+  in
   let rec pack_metadata_value value =
     match value.record_values with
     | Some values ->
@@ -5303,18 +5324,22 @@ let compile_equality scope env args =
   in
   let rec pairs expressions = function
     | left :: ((right :: _) as rest) ->
-        (match compile_collection_pair left right with
-        | Some result ->
-            Result.bind result (fun expression ->
-                pairs (expression :: expressions) rest)
-        | None ->
-            Result.bind (compile_record_iequiv_pair scope env left right)
-              (function
-                | Some expression -> pairs (expression :: expressions) rest
-                | None ->
-                    Result.bind (compile_pair left right)
-                      (fun expression ->
-                        pairs (expression.semantic_expr :: expressions) rest)))
+        Result.bind (inject_pair left right) (fun (left, right) ->
+            match compile_collection_pair left right with
+            | Some result ->
+                Result.bind result (fun expression ->
+                    pairs (expression :: expressions) rest)
+            | None ->
+                Result.bind (compile_record_iequiv_pair scope env left right)
+                  (function
+                    | Some expression ->
+                        pairs (expression :: expressions) rest
+                    | None ->
+                        Result.bind (compile_pair left right)
+                          (fun expression ->
+                            pairs
+                              (expression.semantic_expr :: expressions)
+                              rest)))
     | _ -> Ok (List.rev expressions)
   in
   match args with
@@ -10113,13 +10138,6 @@ let create ~compile_expr =
             | (TRecord _ | TNamed_record _), Some fields -> (
                 match find_field keyword fields with
                 | None -> Error.error ("unknown field " ^ keyword)
-                | Some ({ ty = TRef value_ty; _ } as field) ->
-                    Ok
-                      (typed_ir value_ty
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident
-                                "Lg_runtime.Runtime_reference.deref",
-                              [ Structural_map.field_expr target field ] )))
                 | Some field ->
                     Ok
                       (typed_ir field.ty
@@ -13014,7 +13032,8 @@ let create ~compile_expr =
               | "__lg_nil-predicate" | "__lg_true-predicate"
               | "__lg_false-predicate" | "__lg_int-predicate"
               | "__lg_number-predicate" | "__lg_string-predicate"
-              | "__lg_keyword-predicate" | "__lg_list-predicate"
+              | "__lg_keyword-predicate" | "__lg_symbol-predicate"
+              | "__lg_list-predicate"
               | "__lg_seq-predicate"
               | "__lg_fn-predicate" | "__lg_uuid-predicate"
               | "__lg_delay-predicate" ->
@@ -13272,7 +13291,6 @@ let create ~compile_expr =
     | "__lg_ratio-predicate" | "__lg_rational-predicate"
     | "__lg_decimal-predicate"
     | "__lg_float-predicate" | "__lg_double-predicate"
-    | "__lg_symbol-predicate"
     | "__lg_char-predicate" | "__lg_regex-predicate" -> (
         match compile_args () with
         | Error _ as err -> err
@@ -13636,6 +13654,34 @@ let create ~compile_expr =
     | "__lg_symbol-value" -> (
         match compile_args () with
         | Error _ as error -> error
+        | Ok [ value ]
+          when closed_sum_unary_constructors env value.ty TSymbol <> [] ->
+            let payload_name = "__lg_symbol_payload" in
+            let constructors =
+              closed_sum_unary_constructors env value.ty TSymbol
+            in
+            let cases =
+              List.map
+                (fun constructor ->
+                  ( Semantic_ir.PConstructor
+                      (constructor, Some (Semantic_ir.PVar payload_name)),
+                    Semantic_ir.Ident payload_name ))
+                constructors
+            in
+            Ok
+              (typed_ir TSymbol
+                 (Semantic_ir.Match
+                    ( value.semantic_expr,
+                      cases
+                      @ [
+                          ( Semantic_ir.PAny,
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident "invalid_arg",
+                                [
+                                  Semantic_ir.String
+                                    "unreachable symbol branch";
+                                ] ) );
+                        ] )))
         | Ok [ value ]
           when Option.is_some
                  (Types.symbol_predicate_constraint_info value.ty) ->
@@ -15201,6 +15247,8 @@ let create ~compile_expr =
             match
               closed_sum_unary_constructors env argument.ty payload_ty
             with
+            | [] when String.equal name "__lg_symbol-predicate" ->
+                Core_predicate.compile ~target:(Env.target env) name args
             | [] ->
                 Core_boolean.compile ~target:(Env.target env) name args
             | constructors ->

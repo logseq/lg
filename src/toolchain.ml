@@ -52,6 +52,7 @@ type state = {
 }
 
 module String_set = Set.Make (String)
+let compiled_interface_cache = Hashtbl.create 32
 
 module type FRONTEND = sig
   val implementation :
@@ -1044,12 +1045,52 @@ let target_include_dirs target include_dirs =
                Filename.basename directory = "melange")
         |> List.map Filename.dirname
       in
-      List.filter
-        (fun directory ->
-          Filename.basename directory <> "byte"
-          && Filename.basename directory <> "native"
-          && not (List.mem directory melange_parents))
-        include_dirs
+      let include_dirs =
+        List.filter
+          (fun directory ->
+            Filename.basename directory <> "byte"
+            && Filename.basename directory <> "native"
+            && not (List.mem directory melange_parents))
+          include_dirs
+      in
+      let target_specific, generic =
+        List.partition
+          (fun directory -> Filename.basename directory = "melange")
+          include_dirs
+      in
+      let compiled_interfaces directory =
+        let cache = compiled_interface_cache in
+        match Hashtbl.find_opt cache directory with
+        | Some interfaces -> interfaces
+        | None ->
+            let interfaces =
+              if Sys.file_exists directory && Sys.is_directory directory then
+                Sys.readdir directory |> Array.to_list
+                |> List.filter (String.ends_with ~suffix:".cmi")
+                |> String_set.of_list
+              else String_set.empty
+            in
+            Hashtbl.replace cache directory interfaces;
+            interfaces
+      in
+      let target_specific, target_interfaces =
+        List.fold_left
+          (fun (directories, interfaces) directory ->
+            let directory_interfaces = compiled_interfaces directory in
+            if String_set.disjoint interfaces directory_interfaces then
+              ( directories @ [ directory ],
+                String_set.union interfaces directory_interfaces )
+            else (directories, interfaces))
+          ([], String_set.empty) target_specific
+      in
+      let generic =
+        List.filter
+          (fun directory ->
+            String_set.disjoint target_interfaces
+              (compiled_interfaces directory))
+          generic
+      in
+      target_specific @ generic
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
