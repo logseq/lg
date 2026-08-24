@@ -57,7 +57,7 @@ let expand_input_path path =
     if sources = [] then [ path ] else sources
 
 let expand_input_paths paths =
-  let paths = if paths = [] then [ Sys.getcwd () ] else paths in
+  let paths = if paths = [] then [ "." ] else paths in
   List.concat_map expand_input_path paths
 
 let write_output output_path contents =
