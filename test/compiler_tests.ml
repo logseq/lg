@@ -35518,6 +35518,35 @@ let test_loop_and_recur_are_tail_recursive () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "loop_and_recur_are_tail_recursive" "15\n" ocaml_source
 
+let test_nullable_loop_recur_stays_in_tail_position () =
+  let source =
+    {|
+(ns compiler.tail-loop)
+(type-variant result-value (ResultValue :int))
+(type-record Step
+  (done :bool)
+  (value :option<result-value>)
+  (next :int))
+(defn make-step [remaining]
+  (if (zero? remaining)
+    (record Step (done true) (value (Some (ResultValue 42))) (next 0))
+    (record Step (done false) (value None) (next (dec remaining)))))
+(signature compiler.tail-loop/run
+  :fn<int;option<compiler.tail-loop/result-value>>)
+(defn run [remaining]
+  (loop [remaining remaining]
+    (let [step (make-step remaining)]
+      (if (.-done step)
+        (.-value step)
+        (recur (.-next step))))))
+|}
+  in
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "match __lg_loop_" then
+    failwith "nullable loop/recur emitted a non-tail recursive call"
+
 let test_nested_loops_keep_recur_return_types_scoped () =
   let source =
     {|
@@ -46586,6 +46615,8 @@ let tests =
       test_additional_sequence_helpers_reject_bad_reductions_arity );
     ("let, defn, and fn values work", test_let_defn_and_fn_values);
     ("loop and recur are tail-recursive", test_loop_and_recur_are_tail_recursive);
+    ( "nullable loop/recur stays in tail position",
+      test_nullable_loop_recur_stays_in_tail_position );
     ( "nested loops keep recur return types scoped",
       test_nested_loops_keep_recur_return_types_scoped );
     ( "loop/recur remains tail through let and cond",

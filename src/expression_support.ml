@@ -9,6 +9,18 @@ let is_identity_expr name expression =
   | _ -> false
 
 let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
+  let identical_closed_sum_option =
+    match (expected, argument.ty) with
+    | ( (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])),
+        (TNullable actual_inner | TOcaml_app ("option", [ actual_inner ])) ) ->
+        (Types.equal expected_inner actual_inner
+        || String.equal (Types.ocaml_name expected_inner)
+             (Types.ocaml_name actual_inner))
+        && Env.variant_constructors expected_inner env <> []
+    | _ -> false
+  in
+  if identical_closed_sum_option then Some (Ok argument)
+  else
   let constructors = Env.variant_constructors expected env in
   if constructors = [] then
     match (expected, argument.ty) with
