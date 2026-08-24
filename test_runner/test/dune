@@ -18,7 +18,7 @@
    %{exe:../../bin/lg_cli.exe}
    --target
    native
-   --compile-files-from
+   --compile-files-chunk-from
    %{dep:../../stdlib/lg_stdlib_native.state}
    %{dep:../clojure/test.cljc}
    %{dep:../clojure/test_native.cljc}
@@ -63,7 +63,7 @@
    %{exe:../../bin/lg_cli.exe}
    --target
    melange
-   --compile-files-from
+   --compile-files-chunk-from
    %{dep:../../stdlib/lg_stdlib_melange.state}
    %{dep:../clojure/test.cljc}
    %{dep:../clojure/test_melange.cljc}

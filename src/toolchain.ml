@@ -1917,6 +1917,83 @@ let interface ?(target = Target.default) ?(filename = "<string>") source =
              Format.asprintf "%a@." Printtyp.signature
                analysis.typed_structure.str_type))
 
+let order_workspace_from_state ?(target = Target.default) ?reader_target
+    initial_state sources =
+  let reader_features =
+    Option.map
+      (fun reader_target ->
+        [ Target.feature target; Target.reader_dialect_feature reader_target ])
+      reader_target
+  in
+  let rec parse parsed = function
+    | [] -> Ok (List.rev parsed)
+    | (filename, source) :: rest -> (
+        match
+          Lg_frontend.implementation ~target ?reader_features ~filename source
+        with
+        | Error _ as error -> error
+        | Ok result -> parse ((filename, result) :: parsed) rest)
+  in
+  let source_stem filename =
+    [ ".lgi"; ".clj"; ".cljc"; ".cljs" ]
+    |> List.find_map (fun extension ->
+           if Filename.check_suffix filename extension then
+             Some (Filename.chop_suffix filename extension)
+           else None)
+    |> Option.value ~default:filename
+  in
+  let rec group_sources = function
+    | [] -> []
+    | ((filename, _) as source) :: rest ->
+        let stem = source_stem filename in
+        let matching, remaining =
+          List.partition
+            (fun (candidate, _) -> source_stem candidate = stem)
+            rest
+        in
+        let group =
+          source :: matching
+          |> List.stable_sort (fun (left, _) (right, _) ->
+                 Bool.compare
+                   (not (Filename.check_suffix left ".lgi"))
+                   (not (Filename.check_suffix right ".lgi")))
+        in
+        group :: group_sources remaining
+  in
+  let rec typecheck_group state = function
+    | [] -> Ok state
+    | (_filename, parsed) :: rest ->
+        Result.bind (typecheck_incremental state parsed) (fun (state, _typed) ->
+            typecheck_group state rest)
+  in
+  let rec order state ordered pending =
+    match pending with
+    | [] -> Ok (List.rev ordered)
+    | _ ->
+        let rec try_pending deferred first_error = function
+          | [] -> (
+              match first_error with
+              | Some error -> Error error
+              | None -> Error.error "unable to order workspace sources")
+          | group :: rest -> (
+              match typecheck_group state group with
+              | Error error ->
+                  try_pending
+                    (group :: deferred)
+                    (match first_error with
+                    | Some _ -> first_error
+                    | None -> Some error)
+                    rest
+              | Ok next_state ->
+                  let filenames = List.map fst group in
+                  order next_state (List.rev_append filenames ordered)
+                    (List.rev_append deferred rest))
+        in
+        try_pending [] None pending
+  in
+  Result.bind (parse [] sources) (fun sources ->
+      order initial_state [] (group_sources sources))
+
 let analyze_workspace_with_errors_from_state ?(target = Target.default)
     initial_state sources =
   let validate_ocaml state =
