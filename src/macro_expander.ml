@@ -304,6 +304,7 @@ let rec eval context = function
                 when List.mem name
                        [
                          "assoc";
+                         "clojure.lang.RT/assoc";
                          "conj";
                          "concat";
                          "clojure.core/concat";
@@ -716,7 +717,7 @@ and apply_value context callable args =
           | _, (Error _ as error) -> error
           | _ -> Error.error "conj expects a macro vector or list")
       | _ -> Error.error "conj expects two macro arguments")
-  | Builtin "assoc" -> assoc_macro_values args
+  | Builtin ("assoc" | "clojure.lang.RT/assoc") -> assoc_macro_values args
   | Builtin "list" ->
       let rec collect forms = function
         | [] -> Ok (Form (FList (List.rev forms)))

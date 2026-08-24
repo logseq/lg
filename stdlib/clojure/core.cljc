@@ -159,7 +159,7 @@
              ([value]
               (if (= value nil)
                 nil
-                (list 'keyword-one value)))
+                (list '__lg_builtin-keyword value)))
              ([namespace value]
               (list 'keyword-two namespace value)))}
   ([value]

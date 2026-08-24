@@ -210,6 +210,12 @@ through statically typed collections. Registration does not make `T` dynamic,
 does not create a public pack/unpack API, and does not affect ordinary values or
 collections.
 
+An external closed value domain may likewise register a `truthiness-adapter`
+whose exact type is `T -> bool`. Conditional lowering calls that adapter instead
+of assuming every value of `T` is truthy. This preserves Clojure `nil` and
+`false` semantics for a statically modeled external sum without exposing a
+dynamic representation or changing the stored type.
+
 LG source syntax does not expose a universal dynamic type or an escape hatch for
 creating one. Source code also cannot require
 `ocaml.Lg_runtime.Runtime_dynamic`; that module is a compiler implementation

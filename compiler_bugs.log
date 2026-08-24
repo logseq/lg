@@ -300,3 +300,15 @@
   signature pass without `Runtime_dynamic` on Native and Melange.
 FIXED: Restoring a saved compiler state could intermittently lose package include directories after OCaml lookup had already initialized. Ocaml_value.init added later directories only to Load_path, while a subsequent Compmisc.init_path rebuilt Load_path from stale Clflags.include_dirs, producing false "Unbound module Lg_runtime" failures. Keep Clflags.include_dirs synchronized without reinitializing an already-active target environment.
 FIXED: Direct pr-str on a non-nullable deftype with a custom IPrintWithWriter implementation passed Runtime_dynamic.unit to the statically nil printer-options slot. Honor the source protocol contract and pass None.
+
+OPEN: Protocol method receiver inference loses the nominal DB type in
+clojure.data/Diff.diff-similar. Without an explicit `^DB` hint, a concrete
+btset record field is treated as a seqable capability tuple and packed again.
+The receiver's protocol implementation should preserve the enclosing nominal
+record type and its concrete field types.
+
+OPEN: Local callback receiver inference conflates Datom with SearchPattern in
+the check-value-tempids reducer. Without an explicit `^Datom` hint, calling
+datom-added selects an incompatible protocol witness. Protocol dispatch inside
+a locally inferred callback should retain the receiver type established by the
+collection element and surrounding reducer context.

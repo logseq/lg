@@ -231,6 +231,7 @@ let dependency_symbols = function
     ->
       []
   | FList (FSymbol "exception-data-adapter" :: _) -> []
+  | FList (FSymbol "truthiness-adapter" :: _) -> []
   | FList (FSymbol "empty-map-default" :: _) -> []
   | FList (FSymbol "closed-sum-constructors" :: _) -> []
   | FList (FSymbol "contextual-closed-sum-constructors" :: _) -> []

@@ -1602,7 +1602,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                         (fn.semantic_expr, [ item_argument ]) );
                                   ],
                                 Semantic_ir.If
-                                  ( truthiness_expression
+                                  ( truthiness_expression ~env
                                       ~constrained_identifier:false return_ty
                                       (Semantic_ir.Ident "result"),
                                     present_result,
@@ -1688,7 +1688,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                                   let item_name = "__lg_filter_item" in
                                   Semantic_ir.Fun
                                     ( [ Semantic_ir.PVar item_name ],
-                                      truthiness_expression return_ty
+                                      truthiness_expression ~env return_ty
                                         (Semantic_ir.Apply
                                            ( fn.semantic_expr,
                                              [

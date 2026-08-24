@@ -2207,14 +2207,14 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
       let value_name = "__lg_truthy_value" in
       let value = Semantic_ir.Ident value_name in
       let pattern =
-        if Expression_support.truthiness_needs_value witness_value_ty then
+        if Expression_support.truthiness_needs_value ~env witness_value_ty then
           Semantic_ir.PVar value_name
         else Semantic_ir.PAny
       in
       let witness =
         Semantic_ir.Fun
           ( [ pattern ],
-            Expression_support.truthiness_expression witness_value_ty value )
+            Expression_support.truthiness_expression ~env witness_value_ty value )
       in
       Result.map
         (fun packed -> Semantic_ir.Tuple [ witness; packed ])
@@ -3967,7 +3967,7 @@ let rec adapt_value_to_type env expected actual =
           let adapted =
             if Types.equal expected_return TBool then
               Ok
-                (Expression_support.truthiness_expression field.ty
+                (Expression_support.truthiness_expression ~env field.ty
                    field_value.semantic_expr)
             else adapt_value_to_type env expected_return field_value
           in
@@ -4048,7 +4048,7 @@ let rec adapt_value_to_type env expected actual =
         let result =
           if Types.equal expected_return TBool then
             Ok
-              (Expression_support.truthiness_expression lookup.ty
+              (Expression_support.truthiness_expression ~env lookup.ty
                  lookup.semantic_expr)
           else adapt_value_to_type env expected_return lookup
         in
@@ -5828,7 +5828,7 @@ let rec emit_argument_adaptation env adaptation argument =
           let result =
             if callable.truthy_result then
               Ok
-                (Expression_support.truthiness_expression lookup.ty
+                (Expression_support.truthiness_expression ~env lookup.ty
                    lookup.semantic_expr)
             else
               match callable.result_adaptation with
@@ -5867,7 +5867,7 @@ let rec emit_argument_adaptation env adaptation argument =
                     let result =
                       if callable.truthy_result then
                         Ok
-                          (Expression_support.truthiness_expression field.ty
+                          (Expression_support.truthiness_expression ~env field.ty
                              typed_value.semantic_expr)
                       else emit_argument_adaptation env adaptation typed_value
                     in
@@ -8478,6 +8478,9 @@ let create ~compile_expr =
         | _ -> Error.error "mutable field assignment expects a deftype value")
   and compile_call scope env name arg_forms =
     let name = Resolver.canonical_core_binding_name scope env name in
+    let name =
+      if String.equal name "clojure.lang.RT/assoc" then "assoc" else name
+    in
     let member_name =
       match String.rindex_opt name '/' with
       | None -> name
@@ -9020,7 +9023,7 @@ let create ~compile_expr =
                       [ source.semantic_expr; radix.semantic_expr ] )))
         | Ok _ -> Error.error "js/parseInt expects a string and radix"
         | Error _ as error -> error)
-    | "js/Error." -> (
+    | "js/Error." | "IllegalArgumentException." -> (
         match compile_args () with
         | Ok [ message ] when Types.equal message.ty TString ->
             Ok
@@ -12962,7 +12965,7 @@ let create ~compile_expr =
               (typed_ir TBool
                  (Semantic_ir.Prefix
                     ( "not",
-                      Expression_support.truthiness_expression arg.ty
+                      Expression_support.truthiness_expression ~env arg.ty
                         arg.semantic_expr )))
         | Ok _ -> Error.error "not expects 1 argument")
     | "__lg_dec" -> (
@@ -13098,6 +13101,66 @@ let create ~compile_expr =
     | "__lg_builtin-keyword" -> (
         match compile_args () with
         | Error _ as err -> err
+        | Ok ([ argument ] as args) ->
+            let payload_types = [ TKeyword; TString; TSymbol ] in
+            let branches =
+              payload_types
+              |> List.concat_map (fun payload_ty ->
+                     closed_sum_unary_constructors env argument.ty payload_ty
+                     |> List.map (fun constructor -> (constructor, payload_ty)))
+            in
+            if branches = [] then
+              Core_scalar.compile ~target:(Env.target env) Builtin_id.Keyword
+                args
+            else
+              let payload_name = "__lg_keyword_payload" in
+              let rec compile_branches compiled = function
+                | [] ->
+                    let branch_names =
+                      branches |> List.map fst |> List.sort_uniq String.compare
+                    in
+                    let all_constructor_names =
+                      Env.variant_constructors argument.ty env
+                      |> List.map fst |> List.sort_uniq String.compare
+                    in
+                    let fallback =
+                      if
+                        all_constructor_names <> []
+                        && all_constructor_names = branch_names
+                      then []
+                      else
+                        [
+                          ( Semantic_ir.PAny,
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident "invalid_arg",
+                                [
+                                  Semantic_ir.String
+                                    "keyword expects keyword, string, or symbol";
+                                ] ) );
+                        ]
+                    in
+                    Ok
+                      (typed_ir TKeyword
+                         (Semantic_ir.Match
+                            ( argument.semantic_expr,
+                              List.rev compiled @ fallback )))
+                | (constructor, payload_ty) :: rest ->
+                    let payload =
+                      typed_ir payload_ty (Semantic_ir.Ident payload_name)
+                    in
+                    Result.bind
+                      (Core_scalar.compile ~target:(Env.target env)
+                         Builtin_id.Keyword [ payload ])
+                      (fun converted ->
+                        compile_branches
+                          (( Semantic_ir.PConstructor
+                               ( constructor,
+                                 Some (Semantic_ir.PVar payload_name) ),
+                             converted.semantic_expr )
+                          :: compiled)
+                          rest)
+              in
+              compile_branches [] branches
         | Ok args ->
             Core_scalar.compile ~target:(Env.target env) Builtin_id.Keyword args)
     | "__lg_builtin-symbol" -> (
@@ -16537,7 +16600,7 @@ let create ~compile_expr =
                 in
                 let body =
                   Semantic_ir.If
-                    ( Expression_support.truthiness_expression return_ty call,
+                    ( Expression_support.truthiness_expression ~env return_ty call,
                       Semantic_ir.Bool false,
                       Semantic_ir.Bool true )
                 in

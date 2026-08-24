@@ -18248,7 +18248,6 @@ let test_java_interop_is_rejected () =
          "Java interop is not supported; use static LG types and functions"
   in
   reject {|(def value (java.io.ByteArrayOutputStream.))|};
-  reject {|(def value (clojure.lang.RT/assoc {:a 1} :b 2))|};
   reject {|(def value (instance? java.lang.Number 1))|};
   reject {|(def value (.equals 1 1))|};
   reject {|(defn value [^Object input] input)|};
@@ -18272,6 +18271,23 @@ let test_java_interop_is_rejected () =
   #?(:clj (:import [java.lang Object])))
 |}
     |> expect_ok)
+
+let test_portable_clojure_runtime_aliases_are_static () =
+  let source =
+    {|
+(def value (clojure.lang.RT/assoc {:a 1} :b 2))
+(defn fail []
+  (throw (IllegalArgumentException. "bad argument")))
+(println (:b value))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "portable Clojure runtime aliases must remain static";
+  assert_ocaml_runs "portable_clojure_runtime_aliases_are_static" "2\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_internal_dynamic_escape_forms_are_unavailable () =
   let dynamic_escape = "__lg_" ^ "dynamic" in
@@ -20643,6 +20659,24 @@ let test_conditional_forms_accept_truthy_params () =
   assert_ocaml_runs "conditional_forms_accept_truthy_params" "open:closed\n"
     ocaml_source
 
+let test_external_truthiness_adapter_preserves_closed_value_semantics () =
+  let source =
+    {|
+(defn nonzero? [^:int value]
+  (not (zero? value)))
+(truthiness-adapter :int nonzero?)
+(defn status [^:int value]
+  (if value "truthy" "falsey"))
+(println (str (status 0) ":" (status 1)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "external_truthiness_adapter_preserves_closed_value_semantics"
+    "falsey:truthy\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_batched_core_functions_work () =
   let source =
     {|
@@ -20748,16 +20782,22 @@ let test_keyword_predicate_narrows_closed_sum_payload () =
   (if (keyword? value)
     (name value)
     "not-keyword"))
+(defn keyword-value [^identifier-input value]
+  (if (or (keyword? value) (string? value))
+    (keyword value)
+    :missing))
 (println
   (str (keyword-name (KeywordInput :user/name)) ":"
-       (keyword-name (StringInput "user/name"))))
+       (keyword-name (StringInput "user/name")) ":"
+       (keyword-value (KeywordInput :user/name)) ":"
+       (keyword-value (StringInput "user/name"))))
 |}
   in
   let native_source = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "closed-sum predicate narrowing must remain static";
   assert_ocaml_runs "keyword_predicate_narrows_closed_sum_payload"
-    "name:not-keyword\n" native_source;
+    "name:not-keyword::user/name::user/name\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -46348,6 +46388,8 @@ let tests =
       test_class_and_type_require_static_sum_matching );
     ( "java interop is rejected",
       test_java_interop_is_rejected );
+    ( "portable Clojure runtime aliases are static",
+      test_portable_clojure_runtime_aliases_are_static );
     ( "internal dynamic escape forms are unavailable",
       test_internal_dynamic_escape_forms_are_unavailable );
     ("macros can clear form metadata", test_macros_can_clear_form_metadata);
@@ -46615,6 +46657,8 @@ let tests =
     ("when-not negates the condition", test_when_not_negates_the_condition);
     ( "conditional forms accept truthy params",
       test_conditional_forms_accept_truthy_params );
+    ( "external truthiness adapter preserves closed value semantics",
+      test_external_truthiness_adapter_preserves_closed_value_semantics );
     ("batched core functions work", test_batched_core_functions_work);
     ( "unsafe-bit-and is source-owned static int function",
       test_unsafe_bit_and_is_source_owned_static_int_function );

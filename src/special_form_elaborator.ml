@@ -1355,7 +1355,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                               ],
                               Semantic_ir.If
                                 ( (if require_truthy then
-                                     truthiness_expression option_expr.ty
+                                     truthiness_expression ~env option_expr.ty
                                        (Semantic_ir.Ident payload_name)
                                    else
                                      Semantic_ir.Apply
@@ -1392,7 +1392,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     let body =
                       if require_truthy then
                         Semantic_ir.If
-                          ( truthiness_expression option_expr.ty
+                          ( truthiness_expression ~env option_expr.ty
                               (Semantic_ir.Ident payload_name),
                             some_code,
                             none_code )
@@ -1431,7 +1431,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         let some_code =
                           if require_truthy then
                             Semantic_ir.If
-                              ( truthiness_expression payload_ty
+                              ( truthiness_expression ~env payload_ty
                                   (Semantic_ir.Ident payload_name),
                                 some_code,
                                 none_code )
@@ -1577,7 +1577,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | Some take_then ->
           let branch_form = if take_then then then_form else else_form in
           Some
-            (Result.bind (condition_expression condition) (fun condition_code ->
+            (Result.bind (condition_expression ~env condition) (fun condition_code ->
                  Result.map
                    (fun branch ->
                      match Semantic_ir.unlocated condition_code with
@@ -1720,7 +1720,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         match aligned with
         | Error _ as error -> error
         | Ok (then_expr, else_expr) -> (
-        match condition_expression condition with
+        match condition_expression ~env condition with
         | Error _ as err -> err
             | Ok condition_code -> (
             match merge_branch_expressions then_expr else_expr with
@@ -1920,7 +1920,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                         Semantic_ir.Infix
                           ( operator_name,
                             result,
-                            truthiness_expression expression.ty
+                            truthiness_expression ~env expression.ty
                               expression.semantic_expr ))
                       (Semantic_ir.Bool identity) expressions))
             else
@@ -1959,7 +1959,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       else Semantic_ir.Ident value_name
                     in
                     let condition =
-                      truthiness_expression
+                      truthiness_expression ~env
                         ~constrained_identifier:direct_constrained_identifier
                         expression.ty raw_value
                     in
@@ -2753,7 +2753,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         | _, _, (Error _ as err) -> err
         | Ok condition, Ok then_expr, Ok else_expr -> (
             match
-              ( condition_expression condition,
+              ( condition_expression ~env condition,
                 loop_branch_type then_expr.ty else_expr.ty )
             with
             | (Error _ as err), _ -> err

@@ -3038,6 +3038,39 @@ and compile_resolved scope env next_type form =
       Error.error
         "optional-map-adapter expects storage, key, value types, and adapter"
   | FList
+      [ FSymbol "truthiness-adapter";
+        FKeyword value_annotation;
+        FSymbol adapter ] -> (
+      match Type_annotation.of_keyword value_annotation with
+      | Error _ as error -> error
+      | Ok value_ty ->
+          let value_ty =
+            Function_elaborator.infer_named_record scope env value_ty
+          in
+          let adapter_binding =
+            match Env.find_opt (Names.scoped_key scope adapter) env with
+            | Some binding -> Some (binding.ty, binding.ocaml_name)
+            | None ->
+                Signature_overlay.find_value adapter (Env.signatures env)
+                |> Option.map (fun ty -> (ty, adapter))
+          in
+          (match adapter_binding with
+          | Some (TFn ([ parameter_ty ], TBool), ocaml_name)
+            when Types.equal parameter_ty value_ty ->
+              Ok
+                ( scope,
+                  Env.add_truthiness_adapter value_ty ocaml_name env,
+                  next_type,
+                  Comment ("truthiness adapter " ^ Types.source_name value_ty)
+                )
+          | Some _ ->
+              Error.error
+                "truthiness-adapter must have the exact type T -> bool"
+          | None ->
+              Error.error ("unknown truthiness-adapter function " ^ adapter)))
+  | FList (FSymbol "truthiness-adapter" :: _) ->
+      Error.error "truthiness-adapter expects value type and adapter"
+  | FList
       [ FSymbol "exception-data-adapter";
         FKeyword value_annotation;
         FSymbol adapter ] -> (

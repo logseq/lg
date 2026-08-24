@@ -44,6 +44,7 @@ type t = {
   predicate_sum_constructors :
     (Types.ty * (string * Types.ty list) list) list;
   optional_sequential_adapters : (Types.ty * Types.ty * string) list;
+  truthiness_adapters : (Types.ty * string) list;
   exception_data_adapters : (Types.ty * exception_data_adapter) list;
   empty_map_defaults : (Types.ty * string) list;
 }
@@ -78,6 +79,7 @@ let empty =
     closed_sum_constructors = [];
     predicate_sum_constructors = [];
     optional_sequential_adapters = [];
+    truthiness_adapters = [];
     exception_data_adapters = [];
     empty_map_defaults = [];
   }
@@ -446,6 +448,17 @@ let find_optional_map_adapter storage_ty env =
                Some (key_ty, value_ty, adapter)
            | _ -> None
          else None)
+
+let add_truthiness_adapter value_ty adapter env =
+  {
+    env with
+    truthiness_adapters = (value_ty, adapter) :: env.truthiness_adapters;
+  }
+
+let find_truthiness_adapter value_ty env =
+  env.truthiness_adapters
+  |> List.find_map (fun (candidate, adapter) ->
+         if Types.equal value_ty candidate then Some adapter else None)
 
 let add_exception_data_adapter value_ty adapter env =
   {

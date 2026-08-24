@@ -133,7 +133,11 @@ let adapt_set_callable callable =
         (Types.set_module_name element_ty)
   | _ -> Ok callable
 
-let rec truthiness_expression ?(constrained_identifier = true) ty expression =
+let rec truthiness_expression ?(constrained_identifier = true) ?env ty
+    expression =
+  match Option.bind env (Env.find_truthiness_adapter ty) with
+  | Some adapter -> Semantic_ir.Apply (Semantic_ir.Ident adapter, [ expression ])
+  | None -> (
   match ty with
   | ty when Edn_value_elaborator.is_value_type ty ->
       Semantic_ir.Apply
@@ -166,7 +170,7 @@ let rec truthiness_expression ?(constrained_identifier = true) ty expression =
               ( Semantic_ir.Apply
                   (Semantic_ir.Ident "fst", [ payload ]),
                 [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ payload ]) ] )
-        | None -> truthiness_expression payload_ty payload
+        | None -> truthiness_expression ?env payload_ty payload
       in
       Semantic_ir.Match
         ( expression,
@@ -200,10 +204,13 @@ let rec truthiness_expression ?(constrained_identifier = true) ty expression =
               ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.is_empty",
                 [ expression ] );
           ] )
-  | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ]
+  | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool true ])
 
-let truthiness_needs_value ty =
-  Types.is_dynamic ty
+let truthiness_needs_value ?env ty =
+  Option.fold ~none:false
+    ~some:(fun env -> Option.is_some (Env.find_truthiness_adapter ty env))
+    env
+  || Types.is_dynamic ty
   || Option.is_some (Types.truthy_constraint_info ty)
   || Edn_value_elaborator.is_value_type ty
   ||
@@ -297,8 +304,8 @@ let rec nil_predicate_expression ty expression =
               [ expression ] )
       | _ -> Semantic_ir.Sequence [ expression; Semantic_ir.Bool false ]))
 
-let condition_expression expr =
-  Ok (truthiness_expression expr.ty expr.semantic_expr)
+let condition_expression ~env expr =
+  Ok (truthiness_expression ~env expr.ty expr.semantic_expr)
 
 let apply name args = Semantic_ir.Apply (Semantic_ir.Ident name, args)
 
