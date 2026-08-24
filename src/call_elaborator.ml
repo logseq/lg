@@ -8574,15 +8574,45 @@ let create ~compile_expr =
           || String.starts_with ~prefix:"cljs_core_mapcat"
                binding.ocaml_name)
     in
+    let core_alength =
+      String.equal name "alength"
+      &&
+      (qualified_core
+      ||
+      match lookup_binding scope env name with
+      | Error _ -> false
+      | Ok binding ->
+          String.starts_with ~prefix:"clojure_core_alength"
+            binding.ocaml_name
+          || String.starts_with ~prefix:"cljs_core_alength"
+               binding.ocaml_name)
+    in
     if cljs_test_report_call_symbol scope env name then
       compile_cljs_test_report_call scope env arg_forms
     else if core_mapcat then (
       match compile_mapcat scope env arg_forms with
       | Ok _ as result -> result
       | Error _ -> compile_named_function_call scope env name arg_forms)
+    else if core_alength then (
+      match compile_args_for scope env arg_forms with
+      | Ok
+          [
+            {
+              ty =
+                TOcaml_app
+                  ("Lg_runtime.Runtime_transient.vector", [ _ ]);
+              semantic_expr;
+              _;
+            };
+          ] ->
+          Ok
+            (typed_ir TInt
+               (apply "Lg_runtime.Runtime_transient.vector_count"
+                  [ semantic_expr ]))
+      | Ok _ | Error _ -> compile_named_function_call scope env name arg_forms)
     else
     match lookup_binding scope env name with
-    | Ok _ when not (Resolver.starts_with_uppercase name) ->
+    | Ok _ when not (is_constructor_name name) ->
         compile_named_function_call scope env name arg_forms
           | Error _
             when (not qualified_core) && Env.core_excluded ~scope name env ->
@@ -8712,7 +8742,10 @@ let create ~compile_expr =
                         dynamically_bindable = true;
                         _;
                       } ->
-                      Result.bind (compile_expr scope env value_form)
+                      Result.bind
+                        (compile_expr scope
+                           (Env.with_expected_type (Some value_ty) env)
+                           value_form)
                         (fun value ->
                           if
                             argument_compatible value_ty value.ty
@@ -10001,6 +10034,25 @@ let create ~compile_expr =
                           Error.error
                             (method_name ^ " expects a host receiver, got "
                            ^ source_name receiver.ty))
+                  | Ok
+                      [
+                        ({
+                           ty =
+                             TOcaml_app
+                               ( "Lg_runtime.Runtime_transient.vector",
+                                 [ element_ty ] );
+                           _;
+                         } as receiver);
+                        value;
+                      ]
+                    when String.equal method_name ".push" ->
+                      Result.map
+                        (fun value ->
+                          typed_ir TInt
+                            (apply
+                               "Lg_runtime.Runtime_transient.vector_push"
+                               [ receiver.semantic_expr; value ]))
+                        (plan_and_emit_argument env ~expected:element_ty value)
                   | Ok ({ ty = TNamed_record record; _ } :: _ as args) -> (
             let source_method_name =
               String.sub method_name 1 (String.length method_name - 1)
@@ -10695,6 +10747,16 @@ let create ~compile_expr =
                              [ array; index ]))
                       (compile_index index))
             else
+              match array.ty with
+              | TOcaml_app
+                  ("Lg_runtime.Runtime_transient.vector", [ element_ty ]) ->
+                  Result.map
+                    (fun index ->
+                      typed_ir element_ty
+                        (apply "Lg_runtime.Runtime_transient.vector_nth"
+                           [ array.semantic_expr; index ]))
+                    (compile_index index)
+              | _ -> (
               match array_element_type array.ty with
               | Some element_ty ->
                 let element_ty = Types.constraint_value_type element_ty in
@@ -10709,7 +10771,7 @@ let create ~compile_expr =
               | None ->
                   Error.error
                     ((if name = "__lg_aget" then "array read" else name)
-                   ^ " expects an OCaml array"))
+                   ^ " expects an OCaml array")))
         | Ok _ ->
             Error.error
               ((if name = "__lg_aget" then "array read" else name)
@@ -11805,11 +11867,55 @@ let create ~compile_expr =
                 "reify expects protocol names followed by method implementations"
         in
         let compile_protocol (protocol_name, method_forms) =
+          let rec form_mentions_symbol name = function
+            | FSymbol candidate -> String.equal name candidate
+            | FCoreSymbol _ -> false
+            | FList forms | FVector forms ->
+                List.exists (form_mentions_symbol name) forms
+            | FMap entries ->
+                List.exists
+                  (fun (key, value) ->
+                    form_mentions_symbol name key
+                    || form_mentions_symbol name value)
+                  entries
+            | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
+            | FDecimal _ | FChar _ | FBool _ ->
+                false
+          in
           let compile_method = function
             | FList (FSymbol method_name :: params :: body_forms) -> (
+                let receiver_is_ignored =
+                  match params with
+                  | FVector (FSymbol "_" :: _) -> true
+                  | _ -> false
+                in
+                let self_returning =
+                  match (params, List.rev body_forms) with
+                  | ( FVector (FSymbol receiver :: _),
+                      FSymbol result :: reversed_effects )
+                    when not (String.equal receiver "_")
+                         && String.equal receiver result
+                         && not
+                              (List.exists
+                                 (form_mentions_symbol receiver)
+                                 reversed_effects) ->
+                      true
+                  | _ -> false
+                in
+                let params, body_forms =
+                  if self_returning then
+                    match (params, List.rev body_forms) with
+                    | FVector (_receiver :: remaining), _result :: effects ->
+                        (FVector remaining, List.rev (FSymbol "nil" :: effects))
+                    | _ -> assert false
+                  else (params, body_forms)
+                in
+                let omits_runtime_receiver =
+                  receiver_is_ignored || self_returning
+                in
                 match
-                  Protocol.lookup_protocol_marker scope env protocol_name
-                    method_name
+                  Protocol.lookup_protocol_marker ~refine:false scope env
+                    protocol_name method_name
                 with
                 | None ->
                     Error.error
@@ -11850,7 +11956,9 @@ let create ~compile_expr =
                           in
                           (match marker.ty with
                           | TFn (parameters, return_ty) ->
-                              without_receiver parameters return_ty
+                              if omits_runtime_receiver then
+                                without_receiver parameters return_ty
+                              else Some (TFn (parameters, return_ty))
                           | TOverloaded_fn arities ->
                               Option.bind
                                 (List.find_opt
@@ -11860,8 +11968,14 @@ let create ~compile_expr =
                                         = source_arity)
                                    arities)
                                 (fun arity ->
-                                  without_receiver arity.fixed_params
-                                    arity.return_ty)
+                                  if omits_runtime_receiver then
+                                    without_receiver arity.fixed_params
+                                      arity.return_ty
+                                  else
+                                    Some
+                                      (TFn
+                                         ( arity.fixed_params,
+                                           arity.return_ty )))
                           | _ -> None)
                     in
                     let method_env = Env.with_expected_type implementation_ty env in
@@ -11881,6 +11995,14 @@ let create ~compile_expr =
                     with
                     | Error _ as error -> error
                     | Ok implementation ->
+                        let implementation =
+                          if self_returning then
+                            {
+                              implementation with
+                              ty = Types.reify_self_method implementation.ty;
+                            }
+                          else implementation
+                        in
                         Ok (position, marker, implementation)) )
             | _ ->
                 Error.error
@@ -14563,12 +14685,7 @@ let create ~compile_expr =
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
         | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
-            let constructor_name =
-              if String.contains name '/' then
-                resolve_ocaml_constructor_target scope env name
-              else ocaml_name
-            in
-            constructor ~constructor_name
+            constructor ~constructor_name:ocaml_name
               (fun args ->
                 Types.instantiate_type ~templates:payload_tys
                   ~actuals:(List.map (fun arg -> arg.ty) args)
@@ -14598,6 +14715,23 @@ let create ~compile_expr =
               ("Lg_runtime.Runtime_array_melange.map", [ array; fn ])
           | _ -> (function_name, arguments)
         in
+        match (function_name, arguments) with
+        | ( "Array.length",
+            [
+              ( None,
+                {
+                  ty =
+                    TOcaml_app
+                      ("Lg_runtime.Runtime_transient.vector", [ _ ]);
+                  semantic_expr;
+                  _;
+                } );
+            ] ) ->
+            Ok
+              (typed_ir TInt
+                 (apply "Lg_runtime.Runtime_transient.vector_count"
+                    [ semantic_expr ]))
+        | _ -> (
         match Ocaml_signature.value_signature function_name with
         | Error _ as err -> err
         | Ok signature -> (
@@ -14720,7 +14854,7 @@ let create ~compile_expr =
                             | TOcaml "int" -> typed_ir TInt expression
                             | _ -> typed_ir return_ty expression)
                           (Ocaml_signature.result_after_application signature
-                             argument_types)))))
+                             argument_types))))))
   and compile_boolean_call scope env name arg_forms =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
@@ -14758,6 +14892,18 @@ let create ~compile_expr =
         | None -> Core_boolean.compile ~target:(Env.target env) name args)
     | Ok args -> Core_boolean.compile ~target:(Env.target env) name args
   and compile_collection_call scope env name arg_forms =
+    let reify_has_protocol protocol_id = function
+      | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]) ->
+          let rec contains ty =
+            match Types.reify_protocol_payload_info ty with
+            | Some (candidate, _, rest_ty) ->
+                String.equal candidate (Protocol_id.to_string protocol_id)
+                || contains rest_ty
+            | None -> false
+          in
+          contains payload_ty
+      | _ -> false
+    in
     let argument_env =
       match (name, Env.expected_type env) with
       | "__lg_first", Some expected ->
@@ -14771,6 +14917,17 @@ let create ~compile_expr =
     in
     match compile_args_for scope argument_env arg_forms with
     | Error _ as err -> err
+    | Ok [ argument ]
+      when (String.equal name "__lg_count"
+           || String.equal name "__lg_empty-predicate")
+           && reify_has_protocol Core_protocols.counted_id argument.ty ->
+        let count_form =
+          FList [ FSymbol "ICounted/-count"; List.hd arg_forms ]
+        in
+        if String.equal name "__lg_count" then
+          compile_expr scope env count_form
+        else
+          compile_expr scope env (FList [ FSymbol "zero?"; count_form ])
     | Ok args ->
         let args =
           List.map
@@ -15158,12 +15315,63 @@ let create ~compile_expr =
     | _ -> assert false
   and compile_into scope env target_form source_form =
     let expression_env = Env.with_expected_type None env in
+    let reify_self_into_target = function
+      | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]) ->
+          let rec protocol_methods protocol_id ty =
+            match Types.reify_protocol_payload_info ty with
+            | Some (candidate, methods_ty, rest_ty) ->
+                if String.equal candidate (Protocol_id.to_string protocol_id)
+                then Some methods_ty
+                else protocol_methods protocol_id rest_ty
+            | None -> None
+          in
+          let self_method = function
+            | method_ty -> Option.is_some (Types.reify_self_method_type method_ty)
+          in
+          Option.fold ~none:false ~some:self_method
+            (protocol_methods Core_protocols.editable_id payload_ty)
+          &&
+          Option.fold ~none:false
+            ~some:(function
+              | TTuple (conj_method :: _) -> self_method conj_method
+              | _ -> false)
+            (protocol_methods Core_protocols.transient_collection_id payload_ty)
+      | _ -> false
+    in
     let adapt_result result =
       match Env.expected_type env with
+      | Some expected
+        when (match (expected, result.ty) with
+             | ( TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]),
+                 TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) ) ->
+                 false
+             | _, TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) -> true
+             | _ -> false) ->
+          Ok result
       | Some expected when not (Types.equal expected result.ty) ->
-          Result.map
-            (fun semantic_expr -> typed_ir expected semantic_expr)
-            (plan_and_emit_argument env ~expected result)
+          if
+            (Type_solver.is_open expected || Type_solver.is_open result.ty)
+            &&
+            match (expected, result.ty) with
+            | ( TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]),
+                TOcaml_app ("Lg_runtime.Runtime_reify.t", [ _ ]) ) ->
+                true
+            | _ -> false
+          then
+            match Type_solver.unify Type_solver.empty expected result.ty with
+            | Ok substitutions ->
+                Ok
+                  (typed_ir
+                     (Type_solver.apply substitutions expected)
+                     result.semantic_expr)
+            | Error _ ->
+                Result.map
+                  (fun semantic_expr -> typed_ir expected semantic_expr)
+                  (plan_and_emit_argument env ~expected result)
+          else
+            Result.map
+              (fun semantic_expr -> typed_ir expected semantic_expr)
+              (plan_and_emit_argument env ~expected result)
       | Some _ | None -> Ok result
     in
     match
@@ -15211,6 +15419,85 @@ let create ~compile_expr =
     | Ok target, Ok source -> (
         match Core_sequence_transform.compile "__lg_into" [ target; source ] with
         | Ok result -> adapt_result result
+        | Error _ when reify_self_into_target target.ty ->
+            let target_name = "__lg_into_reify_target" in
+            let item_name = "__lg_into_reify_item" in
+            let accumulator_name = "__lg_into_reify_accumulator" in
+            let sequence_name = "__lg_into_reify_sequence" in
+            Result.bind
+              (Collection_capability.to_seq_expr env source)
+              (fun (element_ty, sequence) ->
+                let protocol_env =
+                  env
+                  |> Env.add (Names.scoped_key scope target_name)
+                       (Types.binding target_name target.ty)
+                  |> Env.add (Names.scoped_key scope item_name)
+                       (Types.binding item_name element_ty)
+                in
+                Result.bind
+                  (compile_expr scope protocol_env
+                     (FList
+                        [
+                          FSymbol "IEditableCollection/-as-transient";
+                          FSymbol target_name;
+                        ]))
+                  (fun transient_effect ->
+                    Result.bind
+                      (compile_expr scope protocol_env
+                         (FList
+                            [
+                              FSymbol "ITransientCollection/-conj!";
+                              FSymbol target_name;
+                              FSymbol item_name;
+                            ]))
+                      (fun conj_effect ->
+                        Result.map
+                          (fun persistent ->
+                            let result_ty =
+                              match persistent.ty with
+                              | TVector inner when Type_solver.is_open inner ->
+                                  TVector element_ty
+                              | ty -> ty
+                            in
+                            typed_ir result_ty
+                              (Semantic_ir.Let
+                                 ( [
+                                     ( Semantic_ir.PVar target_name,
+                                       target.semantic_expr );
+                                     ( Semantic_ir.PVar sequence_name,
+                                       sequence );
+                                   ],
+                                   Semantic_ir.Sequence
+                                     [
+                                       transient_effect.semantic_expr;
+                                       Semantic_ir.Apply
+                                         ( Semantic_ir.Ident
+                                             "Lg_runtime.Runtime_seq.fold_left",
+                                           [
+                                             Semantic_ir.Fun
+                                               ( [
+                                                   Semantic_ir.PVar
+                                                     accumulator_name;
+                                                   Semantic_ir.PVar item_name;
+                                                 ],
+                                                 Semantic_ir.Sequence
+                                                   [
+                                                     conj_effect.semantic_expr;
+                                                     Semantic_ir.Ident
+                                                       accumulator_name;
+                                                   ] );
+                                             Semantic_ir.Ident target_name;
+                                             Semantic_ir.Ident sequence_name;
+                                           ] );
+                                       persistent.semantic_expr;
+                                     ] )))
+                          (compile_expr scope protocol_env
+                             (FList
+                                [
+                                  FSymbol "ITransientCollection/-persistent!";
+                                  FSymbol target_name;
+                                ])))))
+              |> fun result -> Result.bind result adapt_result
         | Error _
           when (match target.ty with
                | TNamed_record { nominal = true; _ } -> true
@@ -19765,6 +20052,14 @@ let create ~compile_expr =
                                     |> Option.value ~default:TUnknown
                                 | method_ty -> method_ty
                               in
+                              let self_returning_method =
+                                Option.is_some
+                                  (Types.reify_self_method_type method_ty)
+                              in
+                              let method_ty =
+                                Types.reify_self_method_type method_ty
+                                |> Option.value ~default:method_ty
+                              in
                               let call_args =
                                 match method_ty with
                                 | TFn (params, _)
@@ -19773,11 +20068,31 @@ let create ~compile_expr =
                                     List.tl args
                                 | _ -> args
                               in
-                              let return_ty =
+                              let method_substitutions =
                                 match method_ty with
-                                | TFn (_, (TUnknown | TMeta _ | TVar _)) ->
-                                    contextual_return_ty TUnknown
-                                | TFn (_, return_ty) -> return_ty
+                                | TFn (params, _)
+                                  when List.length params
+                                       = List.length call_args ->
+                                    List.fold_left2
+                                      (fun substitutions parameter argument ->
+                                        Type_solver.unify substitutions parameter
+                                          argument.ty
+                                        |> Result.value ~default:substitutions)
+                                      Type_solver.empty params call_args
+                                | _ -> Type_solver.empty
+                              in
+                              let return_ty =
+                                if self_returning_method then receiver.ty
+                                else
+                                match method_ty with
+                                | TFn (_, return_ty) ->
+                                    let return_ty =
+                                      Type_solver.apply method_substitutions
+                                        return_ty
+                                    in
+                                    if contains_unresolved_type return_ty then
+                                      contextual_return_ty return_ty
+                                    else return_ty
                                 | _ -> TUnknown
                               in
                               let expected_params =
@@ -19785,7 +20100,9 @@ let create ~compile_expr =
                                 | TFn (params, _)
                                   when List.length params
                                        = List.length call_args ->
-                                    params
+                                    List.map
+                                      (Type_solver.apply method_substitutions)
+                                      params
                                 | _ -> List.map (fun arg -> arg.ty) call_args
                               in
                               let rec prepare prepared expected arguments =
@@ -19821,8 +20138,19 @@ let create ~compile_expr =
                               in
                               Result.map
                                 (fun arguments ->
-                                  typed_ir return_ty
-                                    (Semantic_ir.Apply (method_expr, arguments)))
+                                  let arguments =
+                                    match arguments with
+                                    | [] -> [ Semantic_ir.Unit ]
+                                    | _ -> arguments
+                                  in
+                                  let call =
+                                    Semantic_ir.Apply (method_expr, arguments)
+                                  in
+                                  if self_returning_method then
+                                    typed_ir return_ty
+                                      (Semantic_ir.Sequence
+                                         [ call; receiver.semantic_expr ])
+                                  else typed_ir return_ty call)
                                 (prepare [] expected_params call_args))
                       | _ -> (
                           let typed_primitive =

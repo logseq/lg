@@ -1,5 +1,6 @@
 open Ast
 module Env = Compiler_environment
+module String_map = Map.Make (String)
 
 type value =
   | Form of form
@@ -18,7 +19,7 @@ and closure = {
   namespace : string;
 }
 
-and locals = (string * value) list
+and locals = value String_map.t
 
 type context = { compiler_env : Env.t; namespace : string; locals : locals }
 
@@ -160,7 +161,7 @@ let rec split_params fixed = function
 let rec bind_pattern locals pattern value =
   match pattern with
   | FSymbol "_" -> Ok locals
-  | FSymbol name -> Ok ((name, value) :: locals)
+  | FSymbol name -> Ok (String_map.add name value locals)
   | FVector patterns -> (
       match sequence_forms value with
       | Error error ->
@@ -265,7 +266,7 @@ let bind_value_params locals params args =
                       | [] -> nil
                       | forms -> Form (FList forms)))))
 
-let lookup_local name locals = List.assoc_opt name locals
+let lookup_local name locals = String_map.find_opt name locals
 
 let rec eval context = function
   | FSymbol "nil" as form -> Ok (Form form)
@@ -543,7 +544,10 @@ and eval_condp context predicate target clauses =
   | FSymbol predicate_name, Ok target ->
       let target_name = "\000lg-condp-target" in
       let context =
-        { context with locals = (target_name, target) :: context.locals }
+        {
+          context with
+          locals = String_map.add target_name target context.locals;
+        }
       in
       let rec select = function
         | [] -> Error.error "macro condp requires a default expression"
@@ -654,7 +658,7 @@ and apply_value context callable args =
           let closure_locals =
             match closure.name with
             | None -> closure.locals
-            | Some name -> (name, callable) :: closure.locals
+            | Some name -> String_map.add name callable closure.locals
           in
           match bind_params closure_locals closure.params arg_forms with
           | Error _ as err -> err
@@ -860,7 +864,16 @@ and eval_builtin context name arg_forms =
             match String.index_opt value '/' with
             | Some index -> Ok (Form (FString (String.sub value 0 index)))
             | None -> Ok nil)
-        | _ -> Error.error "namespace expects a macro symbol")
+        | Form (FKeyword value) ->
+            let value =
+              if String.starts_with ~prefix:":" value then
+                String.sub value 1 (String.length value - 1)
+              else value
+            in
+            (match String.index_opt value '/' with
+            | Some index -> Ok (Form (FString (String.sub value 0 index)))
+            | None -> Ok nil)
+        | _ -> Error.error "namespace expects a macro symbol or keyword")
   | "identity" | "num" -> unary (fun value -> Ok value)
   | "boolean" -> unary (fun value -> Ok (Form (FBool (truthy value))))
   | "string?" ->
@@ -1481,7 +1494,7 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
         {
           compiler_env;
           namespace = definition.namespace;
-          locals = [ ("&env", macro_environment) ];
+          locals = String_map.singleton "&env" macro_environment;
         }
       in
       (match invoke_definition context definition args with

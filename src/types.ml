@@ -102,6 +102,14 @@ let constant_function_result = function
       Some result_ty
   | _ -> None
 
+let reify_self_method_name = "__lg_self_returning_method"
+let reify_self_method method_ty = TOcaml_app (reify_self_method_name, [ method_ty ])
+
+let reify_self_method_type = function
+  | TOcaml_app (name, [ method_ty ]) when name = reify_self_method_name ->
+      Some method_ty
+  | _ -> None
+
 let seqable_constraint element_ty =
   TConstraint
     (Seqable_constraint
@@ -1099,6 +1107,8 @@ let rec ocaml_name = function
       ^ ocaml_name element ^ " Seq.t) option * " ^ ocaml_name storage ^ ")"
   | TConstraint (Protocol_constraint { witness; value; _ }) ->
       "(" ^ ocaml_name witness ^ " option * " ^ ocaml_name value ^ ")"
+  | TOcaml_app (name, [ method_ty ]) when name = reify_self_method_name ->
+      ocaml_name method_ty
   | TOcaml_app (name, [ methods; rest ])
     when String.starts_with ~prefix:reify_protocol_payload_prefix name ->
       ocaml_name (TTuple [ methods; rest ])

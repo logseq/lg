@@ -372,7 +372,8 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
     | _ -> false
   in
   let adapt_protocol_argument env expected argument =
-    if Types.is_dynamic expected then
+    if Type_solver.is_open expected then Ok argument.semantic_expr
+    else if Types.is_dynamic expected then
       pack_dynamic_value env expected argument
     else if
       Types.equal expected argument.ty
@@ -382,6 +383,26 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
       dynamic_unpack env expected argument.semantic_expr
     else Error.error "protocol argument type does not match implementation"
   in
+  let reify_reducible_method collection =
+    match collection.ty with
+    | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]) ->
+        let payload =
+          apply "Lg_runtime.Runtime_reify.payload"
+            [ collection.semantic_expr ]
+        in
+        let rec select ty expression =
+          match Types.reify_protocol_payload_info ty with
+          | Some (candidate, methods_ty, rest_ty) ->
+              if
+                String.equal candidate
+                  (Protocol_id.to_string Core_protocols.reducible_id)
+              then Some (methods_ty, apply "fst" [ expression ])
+              else select rest_ty (apply "snd" [ expression ])
+          | None -> None
+        in
+        select payload_ty payload
+    | _ -> None
+  in
   let reduce_expression env ?(short_circuit = false) ~result_ty fn init
       collection sequence =
     if short_circuit || uses_builtin_reducible collection.ty then
@@ -389,6 +410,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
         (Collection_capability.reduce_expr env ~short_circuit fn init collection
            sequence)
     else
+      match reify_reducible_method collection with
+      | Some (TFn ([ reducer_ty; initial_ty ], _), method_expr) ->
+          Result.bind (adapt_protocol_argument env reducer_ty fn) (fun reducer ->
+              Result.map
+                (fun initial ->
+                  Semantic_ir.Apply (method_expr, [ reducer; initial ]))
+                (adapt_protocol_argument env initial_ty init))
+      | Some _ -> Error.error "Reducible reify method has an invalid type"
+      | None ->
       match
         Core_protocols.find_reducible collection.ty
           (Compiler_environment.protocols env)
@@ -2042,6 +2072,15 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack
                 match Collection_capability.to_seq_expr env collection with
                 | Ok input -> Ok input
                 | Error _ -> (
+                    match reify_reducible_method collection with
+                    | Some
+                        ( TFn
+                            ([ TFn ([ _accumulator; item ], _); _initial ], _),
+                          _ ) ->
+                        Ok (item, Semantic_ir.Ident "Seq.empty")
+                    | Some _ ->
+                        Error.error "Reducible reify method has an invalid type"
+                    | None ->
                     match
                       Core_protocols.find_reducible collection.ty
                         (Compiler_environment.protocols env)

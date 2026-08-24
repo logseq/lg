@@ -3657,6 +3657,18 @@ and compile_resolved scope env next_type form =
               Ok (scope, env, next_type, item))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
+      :: (FSymbol _ as name_form)
+      :: FSymbol annotation
+      :: FString _docstring
+      :: (FMap _ as attributes)
+      :: forms)
+    when String.starts_with ~prefix:"^" annotation ->
+      compile scope env next_type
+        (FList
+           (FSymbol definition :: name_form :: attributes :: FSymbol annotation
+          :: forms))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol name as name_form)
       :: FMap attributes
       :: rest) ->

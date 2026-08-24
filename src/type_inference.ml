@@ -462,7 +462,10 @@ let add_record_field_constraint name keyword field_ty params =
     | TRecord fields ->
         Result.map (fun fields -> TRecord fields) (merge_fields fields)
     | TNamed_record record as record_ty -> (
-        match Types.find_field keyword record.fields with
+        let fields =
+          Types.record_fields record_ty |> Option.value ~default:record.fields
+        in
+        match Types.find_field keyword fields with
         | None -> Ok record_ty
         | Some field -> (
             let constrained_parameters =
@@ -4965,7 +4968,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                              match arity.return_ty with
                              | TVector _ -> true
                              | _ -> false)
-                           arities
+                         arities
                          && is_variadic_vector_constructor params constructor ->
                       let element_ty = fresh_type_variable "zip_element" in
                       Result.bind

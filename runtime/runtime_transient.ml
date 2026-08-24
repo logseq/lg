@@ -158,6 +158,10 @@ let vector_add vector value =
   vector.reversed <- value :: vector.reversed;
   vector
 
+let vector_push vector value =
+  ignore (vector_add vector value);
+  List.length vector.reversed
+
 let vector_assoc vector index value =
   ensure_active vector.active;
   let length = List.length vector.reversed in

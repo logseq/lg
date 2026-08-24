@@ -8773,6 +8773,25 @@ let test_nth_supports_active_transient_vectors () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_array_interop_supports_growable_transient_vectors () =
+  let source =
+    {|
+(def values (transient [1]))
+(def first-length (.push values 2))
+(def second-length (.push values 3))
+(println
+  (str first-length ":" second-length ":"
+       (alength values) ":" (aget values 1) ":" (aget values 2)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "growable transient arrays must remain static";
+  assert_ocaml_runs "array_interop_supports_growable_transient_vectors"
+    "2:3:3:2:3\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_volatile_transient_maps_specialize_from_vswap () =
   let source =
     {|
@@ -9274,6 +9293,22 @@ let test_mapv_vector_zips_multiple_collections () =
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "mapv_vector_zips_multiple_collections" "true:true\n"
     ocaml_source
+
+let test_map_vector_apply_preserves_variadic_collection_adapters () =
+  let source =
+    {|
+(signature user/zip [value storage]
+  :variadic-fn<seqable<value;storage>;seqable<value;storage>;seqable<value;storage>;seq<vector<value>>>)
+(defn zip [a b & more]
+  (apply map vector a b more))
+(println (= [[1 4 7] [2 5 8]] (vec (zip [1 2] [4 5] [7 8]))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_vector_apply_preserves_variadic_collection_adapters"
+    "true\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_map_and_mapv_accept_multiple_collections () =
   let source =
@@ -10687,6 +10722,17 @@ let test_direct_ocaml_calls_use_qualified_values () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "direct_ocaml_calls_use_qualified_values" "ADA:42\n"
+    ocaml_source
+
+let test_direct_ocaml_calls_preserve_operator_names () =
+  let source =
+    {|
+(require [ocaml.Stdlib :as std])
+(println (= (list 1 2) (std/@ (list 1) (list 2))))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "direct_ocaml_calls_preserve_operator_names" "true\n"
     ocaml_source
 
 let test_direct_ocaml_calls_use_aliases_and_refers () =
@@ -12880,6 +12926,53 @@ let test_ocaml_payload_variants_compile_through_source_backend () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "ocaml_payload_variants_compile_through_source_backend"
     "Ada:Ada:42\n" ocaml_source
+
+let test_referred_multi_payload_variant_constructor_keeps_tuple_payload () =
+  let provider =
+    {|
+(ns app.events)
+(type-variant event (Changed :int :string))
+|}
+  in
+  let consumer =
+    {|
+(ns app.consumer
+  (:require [app.events :as events :refer [Changed]]))
+(def referred-event (Changed 42 "Ada"))
+(def qualified-event (events/Changed 7 "Grace"))
+(println
+  (str
+    (match referred-event
+      (Changed id name) (str name ":" id))
+    ":"
+    (match qualified-event
+      (Changed id name) (str name ":" id))))
+|}
+  in
+  let state, _provider =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/events.cljc" (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
+  in
+  let _, consumer_compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/consumer.cljc" state consumer
+    |> expect_ok
+  in
+  let consumer_ocaml = consumer_compilation.ocaml_source in
+  if
+    not
+      (string_contains_substring consumer_ocaml
+         {|Changed (42, "Ada")|})
+  then failwith "referred constructor must emit one tuple payload";
+  if
+    not
+      (string_contains_substring consumer_ocaml
+         {|Changed (7, "Grace")|})
+  then
+    failwith
+      ("qualified constructor must emit one tuple payload:\n"
+      ^ consumer_ocaml)
 
 let test_ocaml_payload_variants_delegate_payload_typecheck_to_ocaml () =
   Lg.Compiler.compile_string
@@ -17419,6 +17512,28 @@ let test_defn_accepts_attribute_maps_and_return_hints () =
   assert_ocaml_runs "defn_accepts_attribute_maps_and_return_hints" "42\n"
     ocaml_source
 
+let test_typed_multi_arity_defn_accepts_docstring_and_inline_attributes () =
+  let source =
+    {|
+(defn ^int answer
+  "Returns an inline integer answer."
+  {:inline
+   (fn [& args]
+     (if (= 0 (count args))
+       42
+       (list '+ (first args) 2)))}
+  ([] 0)
+  ([value] value))
+(println (str (answer) ":" (answer 40)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs
+    "typed_multi_arity_defn_accepts_docstring_and_inline_attributes"
+    "42:42\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_inline_macros_can_distinguish_float_literals () =
   let source =
     {|
@@ -17574,6 +17689,20 @@ let test_macros_iterate_literal_map_entries () =
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "macros_iterate_literal_map_entries" "42\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_macro_namespace_accepts_qualified_keywords () =
+  let source =
+    {|
+(defmacro keyword-namespace [value]
+  `(println ~(namespace value)))
+(keyword-namespace :widgets/card)
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "macro_namespace_accepts_qualified_keywords" "widgets\n"
+    native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -20147,6 +20276,36 @@ let test_parameterized_external_record_alias_survives_function_signature () =
       |> expect_ok
     in
     ignore (Lg.Compiler.compile_chunk ~target state consumer |> expect_ok)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
+let test_some_contextualizes_parameterized_external_record_predicates () =
+  let source =
+    {|
+(external-record Lg_runtime.Runtime_reify.t [db]
+  (payload :map<string;int>))
+(type-alias relation [db]
+  :Lg_runtime.Runtime_reify.t<db>)
+(external-record Lg_runtime.Runtime_cache.lru [db rules]
+  (items :vector<relation<db>>))
+(type-alias lookup-context
+  :Lg_runtime.Runtime_cache.lru<int;string>)
+(signature user/find-item
+  :fn<lookup-context;string;option<relation<int>>> )
+(defn find-item [context key]
+  (some #(when (contains? (:payload %) key) %) (:items context)))
+|}
+  in
+  let compile target =
+    let _, compilation =
+      Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+        ~check_ocaml:false ~filename:"test/external_record_some.cljc"
+        (stdlib_state target) source
+      |> expect_ok
+    in
+    if string_contains_substring compilation.ocaml_source "Runtime_dynamic" then
+      failwith "typed external-record predicates must remain static"
   in
   compile Lg.Target.Native;
   compile Lg.Target.Melange
@@ -25049,11 +25208,17 @@ let test_reify_uses_contextual_generic_method_payload () =
   (reify Cache
     (-get [_ _key compute]
       (compute))))
+(signature user/*cache* :cache<int;int>)
+(def ^:dynamic *cache* (make-cache 1))
+(binding [*cache* (make-cache 2)]
+  (println (-get *cache* 7 (fn [] 42))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "contextual generic reify payload must remain static";
+  assert_ocaml_runs "reify_uses_contextual_generic_method_payload" "42\n"
+    ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -38415,6 +38580,37 @@ let test_into_core_api () =
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "into_core_api" "[1 2 3]:(3 2 1):#{1 2 3}\n" ocaml_source
 
+let test_into_uses_editable_reify_protocols () =
+  let source =
+    {|
+(def target
+  (let [values (transient [])]
+    (reify
+      IEditableCollection
+      (-as-transient [this] this)
+      ITransientCollection
+      (-conj! [this value]
+        (conj! values value)
+        this)
+      (-persistent! [this] this)
+      ICounted
+      (-count [_]
+        (count values))
+      IReduce
+      (-reduce [_ reducer initial]
+        (reduce reducer initial (persistent! values))))))
+(let [was-empty (empty? target)
+      appended (into target [1 2 3])]
+  (println
+    (str was-empty ":" (count appended) ":" (reduce + 0 appended))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "into_uses_editable_reify_protocols" "true:3:6\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_into_supports_typed_map_targets () =
   let source =
     {|
@@ -44302,6 +44498,8 @@ let tests =
       test_count_supports_transient_collections );
     ( "nth supports active transient vectors",
       test_nth_supports_active_transient_vectors );
+    ( "array interop supports growable transient vectors",
+      test_array_interop_supports_growable_transient_vectors );
     ( "volatile transient maps specialize from vswap",
       test_volatile_transient_maps_specialize_from_vswap );
     ( "nth rejects non-integer indexes",
@@ -44332,6 +44530,8 @@ let tests =
       test_into_cat_accepts_variadic_seqable_constraints );
     ( "mapv vector zips multiple collections",
       test_mapv_vector_zips_multiple_collections );
+    ( "map vector apply preserves variadic collection adapters",
+      test_map_vector_apply_preserves_variadic_collection_adapters );
     ( "map and mapv accept multiple collections",
       test_map_and_mapv_accept_multiple_collections );
     ( "map vector requires sum elements",
@@ -44507,6 +44707,8 @@ let tests =
       test_ocaml_package_requires_reject_invalid_package_names );
     ( "direct OCaml calls use qualified values",
       test_direct_ocaml_calls_use_qualified_values );
+    ( "direct OCaml calls preserve operator names",
+      test_direct_ocaml_calls_preserve_operator_names );
     ( "direct OCaml calls use aliases and refers",
       test_direct_ocaml_calls_use_aliases_and_refers );
     ( "direct OCaml calls support labels and optional arguments",
@@ -44733,6 +44935,8 @@ let tests =
       test_ocaml_variants_compile_through_source_backend );
     ( "OCaml payload variants compile through source backend",
       test_ocaml_payload_variants_compile_through_source_backend );
+    ( "referred multi-payload variant constructor keeps tuple payload",
+      test_referred_multi_payload_variant_constructor_keeps_tuple_payload );
     ( "OCaml payload variants delegate payload typecheck to OCaml",
       test_ocaml_payload_variants_delegate_payload_typecheck_to_ocaml );
     ( "contextual closed sum injection is unique and static",
@@ -45128,6 +45332,8 @@ let tests =
       test_protocol_witness_results_reject_dynamic_sequence_returns );
     ( "defn accepts attribute maps and return hints",
       test_defn_accepts_attribute_maps_and_return_hints );
+    ( "typed multi-arity defn accepts docstring and inline attributes",
+      test_typed_multi_arity_defn_accepts_docstring_and_inline_attributes );
     ( "inline macros can distinguish float literals",
       test_inline_macros_can_distinguish_float_literals );
     ( "macro assert validates expansion inputs",
@@ -45140,6 +45346,8 @@ let tests =
       test_inline_attributes_flow_through_public_def_aliases );
     ( "macros iterate literal map entries",
       test_macros_iterate_literal_map_entries );
+    ( "macro namespace accepts qualified keywords",
+      test_macro_namespace_accepts_qualified_keywords );
     ( "compare rejects dynamic scalar domains",
       test_compare_rejects_dynamic_scalar_domains );
     ( "class and type require static sum matching",
@@ -45424,6 +45632,8 @@ let tests =
       test_external_record_alias_survives_incremental_namespaces );
     ( "parameterized external record alias survives function signature",
       test_parameterized_external_record_alias_survives_function_signature );
+    ( "some contextualizes parameterized external record predicates",
+      test_some_contextualizes_parameterized_external_record_predicates );
     ( "batched core functions reject non-int arguments",
       test_batched_core_functions_reject_non_int_arguments );
     ( "batched core functions reject bad arities",
@@ -46676,6 +46886,8 @@ let tests =
     ( "empty returns nil for non-emptyable values",
       test_empty_returns_nil_for_non_emptyable_values );
     ("into core api works", test_into_core_api);
+    ( "into uses editable reify protocols",
+      test_into_uses_editable_reify_protocols );
     ("into supports typed map targets", test_into_supports_typed_map_targets);
     ( "into roundtrips closed EDN map sequences",
       test_into_roundtrips_closed_edn_map_sequences );

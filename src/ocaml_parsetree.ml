@@ -191,6 +191,9 @@ let rec core_type ?(type_variables = []) = function
               [ core_type ~type_variables witness_ty ]);
           (None, core_type ~type_variables value_ty);
         ]
+  | Types.TOcaml_app (name, [ method_ty ])
+    when name = Types.reify_self_method_name ->
+      core_type ~type_variables method_ty
   | Types.TOcaml_app (name, [ inner ]) when Types.is_next_seq_type_name name ->
       type_constructor "Seq.t" [ core_type ~type_variables inner ]
   | Types.TOcaml_app (name, [ inner ])
