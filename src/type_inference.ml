@@ -1890,6 +1890,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         let parameter_types =
           specialize_accumulating_hof_parameter_types name parameter_types
+          |> List.map resolve_named_record
         in
         match
           constrain_symbol (TFn (parameter_types, expected_ty)) params name
@@ -4082,6 +4083,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         in
         let parameter_tys =
           specialize_accumulating_hof_parameter_types name parameter_tys
+          |> List.map resolve_named_record
         in
         match constrain_symbol (TFn (parameter_tys, TUnknown)) params name with
         | Error _ as err -> err

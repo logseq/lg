@@ -33072,6 +33072,62 @@ let test_nested_simple_let_inference_visits_body_linearly () =
       ^ string_of_int !known_lookups
       ^ " known-function lookups")
 
+let test_local_callback_resolves_deferred_record_arguments () =
+  let open Lg.Types in
+  let generic =
+    named_record ~type_parameters:[ "left"; "right" ] ~type_name:"datom"
+      ~set_module_name:"datom_set" []
+  in
+  let expected, resolved =
+    match generic with
+    | TNamed_record record ->
+        ( TNamed_record
+            {
+              record with
+              type_arguments =
+                [ Lg.Type_solver.fresh (); Lg.Type_solver.fresh () ];
+            },
+          TNamed_record
+            {
+              record with
+              type_parameters = [];
+              type_arguments = [];
+            } )
+    | _ -> failwith "expected a named record"
+  in
+  let params =
+    [
+      ("cmp", TFn ([ expected; expected ], TInt));
+      ("left", TOcaml "__lg_record:Datom");
+      ("right", TOcaml "__lg_record:Datom");
+    ]
+  in
+  let resolved_arguments = ref 0 in
+  ignore
+    (Lg.Type_inference.infer_params
+       ~expected_return_ty:(dynamic_constraint TUnknown)
+       ~lookup_function_ty:(fun name ->
+         Lg.Error.error ("unknown function " ^ name))
+       ~lookup_protocol_constraint:(fun _ -> None)
+       ~lookup_dynamic_key_record_type:(fun _ -> None)
+       ~resolve_named_record:(function
+         | TOcaml "__lg_record:Datom" ->
+             incr resolved_arguments;
+             resolved
+         | ty -> ty)
+       params
+       [
+         Lg.Ast.FList
+           [
+             Lg.Ast.FSymbol "cmp";
+             Lg.Ast.FSymbol "left";
+             Lg.Ast.FSymbol "right";
+           ];
+       ]
+    |> expect_ok);
+  if !resolved_arguments < 2 then
+    failwith "local callback arguments must resolve deferred record types"
+
 let test_unobserved_calls_do_not_precompute_argument_types () =
   let open Lg.Ast in
   let lookup_function_ty name =
@@ -46747,6 +46803,8 @@ let tests =
       test_typecheck_validates_full_compile_after_evidence_stabilizes );
     ( "nested simple let inference visits body linearly",
       test_nested_simple_let_inference_visits_body_linearly );
+    ( "local callback resolves deferred record arguments",
+      test_local_callback_resolves_deferred_record_arguments );
     ( "unobserved calls do not precompute argument types",
       test_unobserved_calls_do_not_precompute_argument_types );
     ( "call observer receives static argument types",
