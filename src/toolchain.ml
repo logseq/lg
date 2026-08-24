@@ -1123,8 +1123,11 @@ let checked_parsetree (typed : typed_result) =
       | Error _ as err -> err
       | Ok diagnostics -> Ok (result, diagnostics))
 
-let stabilize_dependencies (parsed : parser_result) =
-  let order = Dependency_graph.stable_order parsed.ast in
+let stabilize_dependencies ?(external_signature_dependencies = [])
+    (parsed : parser_result) =
+  let order =
+    Dependency_graph.stable_order ~external_signature_dependencies parsed.ast
+  in
   {
     parsed with
     ast = List.map (List.nth parsed.ast) order;
@@ -1793,7 +1796,13 @@ let typecheck (parsed : parser_result) =
             } )
 
 let typecheck_incremental state (parsed : parser_result) =
-  let parsed = stabilize_dependencies parsed in
+  let external_signature_dependencies =
+    state.typecheck_state.env |> Compiler_environment.signatures
+    |> Signature_overlay.value_type_dependencies
+  in
+  let parsed =
+    stabilize_dependencies ~external_signature_dependencies parsed
+  in
   match prepare_packages parsed.target parsed.ast with
   | Error _ as err -> err
   | Ok _ -> (

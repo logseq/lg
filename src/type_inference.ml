@@ -173,7 +173,7 @@ let constrain_optional_sequential element_ty params name =
   | Some existing -> Ok (replace_param name (add_constraint existing) params)
 
 let constrain_contains key_ty params name =
-  let add_constraint = function
+  let rec add_constraint = function
     | TUnknown | TMeta _ | TVar _ -> Types.contains_constraint key_ty
     | existing -> (
         match Types.contains_constraint_info existing with
@@ -181,8 +181,12 @@ let constrain_contains key_ty params name =
             Types.contains_constraint_with_value
               (refine_type existing_key key_ty)
               value_ty
-        | None ->
-            Types.contains_constraint_with_value key_ty existing)
+        | None -> (
+            match Types.protocol_constraint_info existing with
+            | Some (_, _, value_ty) ->
+                Types.protocol_constraint_with_value existing
+                  (add_constraint value_ty)
+            | None -> Types.contains_constraint_with_value key_ty existing))
   in
   match string_assoc_opt name params with
   | None -> Ok params
@@ -818,7 +822,7 @@ let rec inferred_form_type params = function
          || has_source_name operation "pr-str"
          || has_source_name operation "__lg_pr_str" ->
       TString
-  | FList [ FSymbol "__lg_first"; FSymbol receiver ] -> (
+  | FList [ FSymbol ("__lg_first" | "__lg_second"); FSymbol receiver ] -> (
       match string_assoc_opt receiver params with
       | Some ty -> (
           match Types.seqable_constraint_element ty with
@@ -4726,7 +4730,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next")
+            (("__lg_first" | "__lg_second" | "__lg_seq" | "__lg_rest" | "__lg_next")
               as operation);
           FSymbol collection;
         ] ->
@@ -4737,7 +4741,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            ("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next");
+            ("__lg_first" | "__lg_second" | "__lg_seq" | "__lg_rest" | "__lg_next");
           FList [ FKeyword keyword; FSymbol record ];
         ] ->
         add_record_field_constraint record keyword
@@ -4748,7 +4752,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList
         [
           FSymbol
-            (("__lg_first" | "__lg_seq" | "__lg_rest" | "__lg_next")
+            (("__lg_first" | "__lg_second" | "__lg_seq" | "__lg_rest" | "__lg_next")
               as operation);
           collection;
         ] ->

@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 247; then
-  echo "compiler call dispatch changed: expected 247 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 248; then
+  echo "compiler call dispatch changed: expected 248 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -103,6 +103,8 @@ awk '
     internal_abi["__lg_remove-tap"] = "documented-tap-registry-callback-dynamic-boundary"
     internal_abi["__lg_tap"] = "documented-tap-value-dynamic-boundary"
     internal_abi["__lg_flatten"] = "typed-homogeneous-seqable-layer-flatten-primitive"
+    internal_abi["__lg_protocol-value"] = "typed-closed-protocol-witness-narrowing-primitive"
+    internal_abi["__lg_reify_fn"] = "typed-reified-function-closure-construction-primitive"
     internal_abi["__lg_cljs-test-report"] = "documented-cljs-test-multimethod-report-event-dynamic-boundary"
     internal_abi["__lg_multimethod-methods"] = "documented-runtime-multifn-dynamic-method-table-introspection-boundary"
     internal_abi["__lg_multimethod-get-method"] = "documented-runtime-multifn-dynamic-method-handle-introspection-boundary"
@@ -326,8 +328,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-forms"
 
 form_dispatch_count=$(wc -l <"$tmp/compiler-forms" | tr -d ' ')
-if test "$form_dispatch_count" -ne 156; then
-  echo "compiler form dispatch changed: expected 156 names, found $form_dispatch_count" >&2
+if test "$form_dispatch_count" -ne 158; then
+  echo "compiler form dispatch changed: expected 158 names, found $form_dispatch_count" >&2
   echo "review and classify every added or removed form before updating the count" >&2
   exit 1
 fi
@@ -344,6 +346,8 @@ awk -F '\t' '
     form_reason["__lg_when-some"] = "private-source-static-non-nil-binding-expansion"
     form_reason["__lg_logical-and"] = "private-source-static-short-circuit-and-expansion"
     form_reason["__lg_logical-or"] = "private-source-static-short-circuit-or-expansion"
+    form_reason["__lg_second"] = "private-source-static-tuple-or-seqable-second-element-elaboration"
+    form_reason["__lg_reify_fn"] = "private-typed-reified-function-closure-inference-primitive"
     form_reason["__lg_defer_seq"] = "private-typed-lazy-sequence-thunk-and-recursive-result-inference-primitive"
     form_reason["__lg_not"] = "private-typed-static-truthiness-negation-inference-primitive"
     form_reason["__lg_dec"] = "private-typed-static-numeric-decrement-inference-primitive"

@@ -505,6 +505,12 @@ let same_refinable_wrapper left right =
 let is_edn_value_type = Edn_value_elaborator.is_value_type
 
 let edn_function_argument_compatible expected actual =
+  let sequence_element = function
+    | TSeq element | TList element | TVector element | TSet element
+    | TArray element ->
+        Some element
+    | ty -> Types.next_seq_element ty
+  in
   let directly_seqable = function
     | TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TString -> true
     | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) -> true
@@ -512,13 +518,19 @@ let edn_function_argument_compatible expected actual =
         is_edn_value_type ty
         || Option.is_some (Types.seqable_constraint_info ty)
   in
+  match (Types.next_seq_element expected, sequence_element expected, sequence_element actual) with
+  | _, Some expected_element, Some actual_element
+    when (match expected with TSeq _ -> true | _ -> Option.is_some (Types.next_seq_element expected)) ->
+      Types.assignable ~policy:Host_boundary ~expected:expected_element
+        ~actual:actual_element
+  | _ -> (
   match (Types.seqable_constraint_info expected, actual) with
   | Some ((`Optional | `Optional_sequential), _, _), TNil -> true
   | ( Some ((`Optional | `Optional_sequential), _, _),
       (TNullable inner | TOcaml_app ("option", [ inner ])) ) ->
       directly_seqable inner
   | Some _, actual -> directly_seqable actual
-  | None, _ -> false
+  | None, _ -> false)
 
 let edn_function_call_compatible callee call =
   match (callee, call) with

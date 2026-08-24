@@ -6,6 +6,11 @@ cli="$1"
 source_file="$2"
 continuation_file="$3"
 stdlib_state="$4"
+runtime_package_source="$5"
+runtime_package_interface="$6"
+cli_absolute=$(cd "$(dirname "$cli")" && pwd)/$(basename "$cli")
+runtime_package_source_absolute=$(cd "$(dirname "$runtime_package_source")" && pwd)/$(basename "$runtime_package_source")
+runtime_package_interface_absolute=$(cd "$(dirname "$runtime_package_interface")" && pwd)/$(basename "$runtime_package_interface")
 test_dir=$(mktemp -d "${TMPDIR:-/tmp}/lg-state-cache-test.XXXXXX")
 
 cleanup() {
@@ -16,6 +21,25 @@ trap cleanup EXIT HUP INT TERM
 LG_CACHE_DIR="$test_dir/state-cache" \
   "$cli" --compile-files-from-state "$stdlib_state" "$test_dir/base.state" \
     "$source_file" -o "$test_dir/base.ml"
+
+if grep -q 'clojure_core_trampoline' "$test_dir/base.ml"; then
+  echo "state-producing compilation repeated the saved OCaml prefix" >&2
+  exit 1
+fi
+
+(
+  cd "$test_dir"
+  LG_CACHE_DIR="$test_dir/state-cache" \
+    "$cli_absolute" --compile-files-from-state "$test_dir/base.state" \
+      "$test_dir/runtime-package.state" "$runtime_package_interface_absolute" \
+      "$runtime_package_source_absolute" \
+      -o "$test_dir/runtime-package.ml"
+)
+
+if grep -q 'math_magnitude_plus_two' "$test_dir/runtime-package.ml"; then
+  echo "state-producing continuation repeated the saved OCaml prefix" >&2
+  exit 1
+fi
 
 expect_state_failure() {
   state_path=$1
@@ -75,7 +99,15 @@ printf 'LG-COMPILER-STATE\n7\n' >"$test_dir/previous-7.state"
 expect_state_failure "$test_dir/previous-7.state" \
   "unsupported compiler state version 7" "$test_dir/previous-7.stderr"
 
-printf 'LG-COMPILER-STATE\n8\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
+printf 'LG-COMPILER-STATE\n8\n' >"$test_dir/previous-8.state"
+expect_state_failure "$test_dir/previous-8.state" \
+  "unsupported compiler state version 8" "$test_dir/previous-8.stderr"
+
+printf 'LG-COMPILER-STATE\n9\n' >"$test_dir/previous-9.state"
+expect_state_failure "$test_dir/previous-9.state" \
+  "unsupported compiler state version 9" "$test_dir/previous-9.stderr"
+
+printf 'LG-COMPILER-STATE\n10\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
   >"$test_dir/oversized.state"
 expect_state_failure "$test_dir/oversized.state" \
   "compiler state artifact exceeds maximum size" "$test_dir/oversized.stderr"

@@ -173,6 +173,17 @@ let narrow_type_predicates scope env condition body =
         List.concat_map symbols_known_non_nil forms
     | _ -> []
   in
+  let rec guarded_protocol_symbols = function
+    | FList
+        [ FSymbol predicate; FSymbol protocol_name; FSymbol receiver ]
+      when is_core_symbol "satisfies?" predicate ->
+        [ (protocol_name, receiver) ]
+    | FList (FSymbol name :: forms)
+      when name = "__lg_logical-and"
+           || String.ends_with ~suffix:"/__lg_logical-and" name ->
+        List.concat_map guarded_protocol_symbols forms
+    | _ -> []
+  in
   let nullable_names =
     (narrowed_symbols condition @ symbols_known_non_nil condition)
     |> List.sort_uniq String.compare
@@ -198,6 +209,29 @@ let narrow_type_predicates scope env condition body =
             body;
           ])
       nullable_names body
+  in
+  let body =
+    let guarded =
+      guarded_protocol_symbols condition |> List.sort_uniq compare
+    in
+    List.fold_right
+      (fun (protocol_name, receiver) body ->
+        FList
+          [
+            FSymbol "let";
+            FVector
+              [
+                FSymbol receiver;
+                FList
+                  [
+                    FSymbol "__lg_protocol-value";
+                    FSymbol protocol_name;
+                    FSymbol receiver;
+                  ];
+              ];
+            body;
+          ])
+      guarded body
   in
   let narrow predicate helper body =
     let names =
@@ -425,6 +459,35 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         map_array source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
+    | TSeq _, (TUnknown | TMeta _ | TVar _) -> Ok branch.semantic_expr
+    | target, (TUnknown | TMeta _ | TVar _)
+      when Option.is_some (Types.next_seq_element target) ->
+        Ok branch.semantic_expr
+    | target, _ when Option.is_some (Types.next_seq_element target) -> (
+        let target_inner = Option.get (Types.next_seq_element target) in
+        match Collection_capability.to_seq_expr env branch with
+        | Ok (source_inner, sequence)
+          when Option.is_some
+                 (merge_branch_types target_inner source_inner) ->
+            Ok sequence
+        | Ok (source_inner, _) ->
+            Error.error
+              ("cannot adapt lazy sequence branch element "
+              ^ Types.source_name source_inner ^ " to "
+              ^ Types.source_name target_inner)
+        | Error _ as error -> error)
+    | TSeq target_inner, _ -> (
+        match Collection_capability.to_seq_expr env branch with
+        | Ok (source_inner, sequence)
+          when Option.is_some
+                 (merge_branch_types target_inner source_inner) ->
+            Ok sequence
+        | Ok (source_inner, _) ->
+            Error.error
+              ("cannot adapt sequence branch element "
+              ^ Types.source_name source_inner ^ " to "
+              ^ Types.source_name target_inner)
+        | Error _ as error -> error)
     | TNamed_record record, TRecord _
       when Types.row_compatible ~expected:result_ty ~actual:branch.ty ->
         let branch = { branch with record_values = None } in
@@ -521,9 +584,11 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
   let rec requires_branch_adaptation = function
     | ty when Types.is_dynamic ty -> true
     | ty when Option.is_some (Types.reduced_element ty) -> true
+    | ty when Option.is_some (Types.next_seq_element ty) -> true
     | TFn _ -> true
     | TVector _ -> true
     | TArray _ -> true
+    | TSeq _ -> true
     | TRecord _ -> true
     | TNullable inner | TOcaml_app ("option", [ inner ]) ->
         requires_branch_adaptation inner
@@ -1466,6 +1531,50 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           Env.with_expected_type (Some TBool) env
       | _ -> env
     in
+    let rec terminal_boolean_expression expression =
+      match Semantic_ir.unlocated expression with
+      | Semantic_ir.Bool value -> Some value
+      | Semantic_ir.Typed (_, expression) ->
+          terminal_boolean_expression expression
+      | _ -> None
+    in
+    let rec evaluated_static_boolean expression =
+      match Semantic_ir.unlocated expression with
+      | Semantic_ir.Typed (_, expression) ->
+          evaluated_static_boolean expression
+      | Semantic_ir.Sequence expressions -> (
+          match List.rev expressions with
+          | expression :: _ -> terminal_boolean_expression expression
+          | [] -> None)
+      | _ -> None
+    in
+    let static_protocol_condition =
+      match condition with
+      | FList [ FSymbol predicate; _protocol; _receiver ] ->
+          has_source_name predicate "satisfies?"
+      | _ -> false
+    in
+    let compile_static_branch condition =
+      match
+        if static_protocol_condition then
+          evaluated_static_boolean condition.semantic_expr
+        else None
+      with
+      | None -> None
+      | Some take_then ->
+          let branch_form = if take_then then then_form else else_form in
+          Some
+            (Result.bind (condition_expression condition) (fun condition_code ->
+                 Result.map
+                   (fun branch ->
+                     match Semantic_ir.unlocated condition_code with
+                     | Semantic_ir.Bool _ -> branch
+                     | _ ->
+                         typed_ir branch.ty
+                           (Semantic_ir.Sequence
+                              [ condition_code; branch.semantic_expr ]))
+                   (compile_expr scope env branch_form)))
+    in
     let compile_tuple_branch expected_types = function
       | FVector forms when List.length expected_types = List.length forms ->
           let rec compile values expected_types forms =
@@ -1526,16 +1635,17 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             result
       | _ -> Error.error "if tuple branch must be a vector"
     in
-    match
-      ( compile_expr scope condition_env condition,
-        compile_expr scope env then_form,
-        compile_expr scope env else_form )
-    with
-    | (Error _ as err), _, _ -> err
-    | _, (Error _ as err), _ -> err
-    | _, _, (Error _ as err) -> err
-    | Ok _, Ok then_expr, Ok _ when literal_non_boolean_truthy -> Ok then_expr
-    | Ok condition, Ok then_expr, Ok else_expr -> (
+    match compile_expr scope condition_env condition with
+    | Error _ as error -> error
+    | Ok condition -> (
+        match compile_static_branch condition with
+        | Some result -> result
+        | None -> (
+    match (compile_expr scope env then_form, compile_expr scope env else_form) with
+    | (Error _ as err), _ -> err
+    | _, (Error _ as err) -> err
+    | Ok then_expr, Ok _ when literal_non_boolean_truthy -> Ok then_expr
+    | Ok then_expr, Ok else_expr -> (
         let contextual_branches =
           match Env.expected_type env with
           | None -> Ok (then_expr, else_expr)
@@ -1642,22 +1752,22 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                    (Semantic_ir.If
                             (condition_code, then_code, else_code)))
             | None -> (
-                match (then_expr.ty, else_expr.ty) with
-                | TNamed_record _, _ | _, TNamed_record _ ->
-                    Error.error
-                      "conditional branches have incompatible nominal record types; define a closed sum type containing every branch type"
-                | _ -> (
-                  match
-                    ( Collection_capability.to_seq_expr env then_expr,
-                      Collection_capability.to_seq_expr env else_expr )
-                  with
-                    | ( Ok (then_inner, then_sequence),
-                        Ok (else_inner, else_sequence) )
-                  when Types.equal then_inner else_inner
-                       || Types.equal then_inner TUnknown
-                       || Types.equal else_inner TUnknown
-                       || Types.is_dynamic then_inner
-                       || Types.is_dynamic else_inner ->
+                let has_concrete_sequence_representation = function
+                  | TSeq _ | TList _ | TVector _ | TSet _ | TArray _ -> true
+                  | ty -> Option.is_some (Types.next_seq_element ty)
+                in
+                match
+                  ( Collection_capability.to_seq_expr env then_expr,
+                    Collection_capability.to_seq_expr env else_expr )
+                with
+                | ( Ok (then_inner, then_sequence),
+                    Ok (else_inner, else_sequence) )
+                  when
+                    (Types.equal then_inner else_inner
+                    || Types.equal then_inner TUnknown
+                    || Types.equal else_inner TUnknown)
+                    && (has_concrete_sequence_representation then_expr.ty
+                       || has_concrete_sequence_representation else_expr.ty) ->
                     let inner =
                       if Types.equal then_inner TUnknown then else_inner
                       else then_inner
@@ -1666,6 +1776,14 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       (typed_ir (TSeq inner)
                          (Semantic_ir.If
                             (condition_code, then_sequence, else_sequence)))
+                | _ -> (
+                    match (then_expr.ty, else_expr.ty) with
+                    | TNamed_record _, _ | _, TNamed_record _ ->
+                        Error.error
+                          ("conditional branches have incompatible nominal record types ("
+                          ^ Types.source_name then_expr.ty ^ " and "
+                          ^ Types.source_name else_expr.ty
+                          ^ "); define a closed sum type containing every branch type")
                     | _ ->
                         let describe_type = function
                           | TRecord fields ->
@@ -1684,9 +1802,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                           ^ describe_type else_expr.ty
                           ^ "; define a closed sum type containing every branch type"))
                 )
-                )
             )
-        ))
+        )
+        ))))
   and compile_logical scope env operator forms =
     let literal_truthiness = function
       | FSymbol "nil" | FBool false -> Some false

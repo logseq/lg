@@ -1,0 +1,5 @@
+(ns saved-state-runtime-package)
+
+(type-record holder [value]
+  (value :value)
+  (ref-type :Lg_runtime.Runtime_ref_type.t))

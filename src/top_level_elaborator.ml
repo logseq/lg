@@ -734,76 +734,18 @@ let source_scope_redefable_roots scope =
     || String.starts_with ~prefix:"me.tonsky." scope)
 
 let predeclare_protocol_groups scope env receiver_form groups =
-  let rec protocol_constraints constraints ty =
-    match Types.protocol_constraint_info ty with
-    | Some (protocol_id, _witness_ty, value_ty) ->
-        protocol_constraints (protocol_id :: constraints) value_ty
-    | None -> (
-        match ty with
-        | TNullable inner | TArray inner | TRef inner | TList inner
-        | TVector inner | TSet inner | TSeq inner ->
-            protocol_constraints constraints inner
-        | TOcaml_app (_, arguments) | TTuple arguments ->
-            List.fold_left protocol_constraints constraints arguments
-        | TConstraint constraint_ ->
-            List.fold_left protocol_constraints constraints
-              (Types.constraint_children constraint_)
-        | TFn (parameters, return_ty) ->
-            List.fold_left protocol_constraints constraints
-              (return_ty :: parameters)
-        | TOverloaded_fn arities ->
-            List.fold_left
-              (fun constraints (arity : fn_arity) ->
-                let types =
-                  arity.return_ty :: arity.fixed_params
-                  @ Option.to_list arity.rest_param
-                in
-                List.fold_left protocol_constraints constraints types)
-              constraints arities
-        | TRecord _ | TNamed_record _ -> constraints
-        | TInt | TFloat | TChar | TString | TRegex | TMap_keys | TSymbol
-        | TKeyword | TBool | TUnit | TNil | TUnknown | TMeta _ | TVar _ | TOcaml _ ->
-            constraints)
-  in
-  let required_protocols =
-    groups
-    |> List.fold_left
-         (fun protocols (consumer_name, methods) ->
-           let consumer_id =
-             Protocol.find_protocol_id scope env consumer_name
-           in
-           methods
-           |> List.concat_map Dependency_graph.symbols
-           |> List.fold_left
-                (fun protocols name ->
-                  match Resolver.lookup_binding scope env name with
-                  | Ok (binding : binding) when binding.forward_declared ->
-                      protocol_constraints [] binding.ty
-                      |> List.fold_left
-                           (fun protocols required_id ->
-                             if
-                               match consumer_id with
-                               | Some consumer_id ->
-                                   Protocol_id.equal required_id consumer_id
-                               | None -> false
-                             then protocols
-                             else required_id :: protocols)
-                           protocols
-                  | Ok _ | Error _ -> protocols)
-                protocols)
-         []
-    |> List.sort_uniq Protocol_id.compare
-  in
   List.fold_left
     (fun result (protocol_name, methods) ->
       Result.bind result (fun env ->
           match Protocol.find_protocol_id scope env protocol_name with
-          | Some protocol_id
-            when List.exists (Protocol_id.equal protocol_id)
-                   required_protocols ->
-              Protocol_elaborator.predeclare_implementations_from_evidence
-                scope env receiver_form protocol_name methods
-          | Some _ | None -> Ok env))
+          | Some _ ->
+              Result.bind
+                (Protocol_elaborator.predeclare_implementations_from_evidence
+                   scope env receiver_form protocol_name methods)
+                (fun env ->
+                  Protocol_elaborator.predeclare_implementations scope env
+                    receiver_form protocol_name methods)
+          | None -> Ok env))
     (Ok env) groups
 
 let deferred_value_type env (expr : Types.typed_expr) =
@@ -1535,6 +1477,26 @@ and compile_resolved scope env next_type form =
       in
       let items_of = function Group items -> items | item -> [ item ] in
       Result.bind (field_specs [] None raw_fields) (fun field_specs ->
+          let signature_fields =
+            Signature_overlay.find_record (Names.scoped_key scope name)
+              (Env.signatures env)
+          in
+          let signature_field_type field_name =
+            Option.bind signature_fields (fun fields ->
+                fields
+                |> List.find_opt (fun (field : Types.field) ->
+                       field.keyword = ":" ^ field_name)
+                |> Option.map (fun (field : Types.field) -> field.ty))
+          in
+          let field_specs =
+            List.map
+              (fun (field_name, metadata_type) ->
+                ( field_name,
+                  match signature_field_type field_name with
+                  | Some ty -> Some ty
+                  | None -> metadata_type ))
+              field_specs
+          in
           let fields = List.map fst field_specs in
           let inferred_field_types =
             infer_defrecord_field_types scope env name fields interface_forms
@@ -3041,6 +3003,41 @@ and compile_resolved scope env next_type form =
       Error.error
         "optional-sequential-adapter expects storage type, element type, and adapter"
   | FList
+      [ FSymbol "optional-map-adapter";
+        FKeyword storage_annotation;
+        FKeyword key_annotation;
+        FKeyword value_annotation;
+        FSymbol adapter ] -> (
+      match
+        ( Type_annotation.of_keyword storage_annotation,
+          Type_annotation.of_keyword key_annotation,
+          Type_annotation.of_keyword value_annotation )
+      with
+      | (Error _ as error), _, _
+      | _, (Error _ as error), _
+      | _, _, (Error _ as error) ->
+          error
+      | Ok storage_ty, Ok key_ty, Ok value_ty ->
+          let infer = Function_elaborator.infer_named_record scope env in
+          let storage_ty = infer storage_ty in
+          let key_ty = infer key_ty in
+          let value_ty = infer value_ty in
+          let adapter =
+            match Env.find_opt (Names.scoped_key scope adapter) env with
+            | Some binding -> binding.Types.ocaml_name
+            | None -> adapter
+          in
+          Ok
+            ( scope,
+              Env.add_optional_map_adapter storage_ty key_ty value_ty adapter
+                env,
+              next_type,
+              Comment ("optional map adapter " ^ Types.source_name storage_ty)
+            ))
+  | FList (FSymbol "optional-map-adapter" :: _) ->
+      Error.error
+        "optional-map-adapter expects storage, key, value types, and adapter"
+  | FList
       [ FSymbol "exception-data-adapter";
         FKeyword value_annotation;
         FSymbol adapter ] -> (
@@ -4193,6 +4190,7 @@ and compile_resolved scope env next_type form =
       in
       let items_of = function Group items -> items | item -> [ item ] in
       Result.bind (groups [] None implementations) (fun groups ->
+          let groups = order_protocol_groups groups in
           Result.bind
             (predeclare_protocol_groups scope env receiver_form groups)
             (fun env ->

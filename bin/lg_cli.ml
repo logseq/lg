@@ -870,9 +870,6 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
     if saved.target <> target then
       compiler_error "saved compiler state target does not match --target"
     else
-    Result.bind
-      (order_input_paths ?reader_target target saved.state input_paths)
-      (fun input_paths ->
     let result =
     let rec read_sources sources packages = function
       | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
@@ -961,7 +958,7 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
         compile initial_prefix_key (Live initial_state) [] [] sources)))
     in
     if use_cache then prune_compile_cache ();
-    result)
+    result
 
 let infer_interface target input_path =
   let source = read_file input_path in
@@ -1076,6 +1073,7 @@ let () =
       | Error err -> report_error err
       | Ok (state, packages, ocaml_source, diagnostics) ->
           report_diagnostics diagnostics;
+          write_output (Some output_path) ocaml_source;
           let saved =
             match read_saved_compilation_state state_path with
             | Ok saved -> saved
@@ -1085,7 +1083,6 @@ let () =
             concatenate_compilation_outputs
               [ saved.ocaml_source; ocaml_source ]
           in
-          write_output (Some output_path) ocaml_source;
           write_saved_compilation_state output_state_path
             {
               target;

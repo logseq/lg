@@ -1168,6 +1168,13 @@ and eval_builtin context name arg_forms =
       | Ok _ ->
           Error.error "volatile reset expects a volatile and a macro value"
       | Error _ as error -> error)
+  | "System/getProperty" -> (
+      match eval_args () with
+      | Ok [ Form (FString "line.separator") ] ->
+          Ok (Form (FString (if Sys.win32 then "\r\n" else "\n")))
+      | Ok [ Form (FString _property) ] -> Ok nil
+      | Ok _ -> Error.error "System/getProperty expects a string property name"
+      | Error _ as error -> error)
   | "gensym" ->
       incr gensym_counter;
       Ok (Form (FSymbol ("G__" ^ string_of_int !gensym_counter)))

@@ -60,7 +60,7 @@ let second collection =
   match collection.ty with
   | TTuple (_first_type :: second_type :: remaining_types) ->
       let patterns =
-        Semantic_ir.PAny :: Semantic_ir.PVar "second"
+        Semantic_ir.PAny :: Semantic_ir.PVar "__lg_tuple_second"
         :: List.map (fun _ -> Semantic_ir.PAny) remaining_types
       in
       Ok
@@ -69,7 +69,7 @@ let second collection =
               ( collection.semantic_expr,
                 [
                   ( Semantic_ir.PTuple patterns,
-                    Semantic_ir.Ident "second" );
+                    Semantic_ir.Ident "__lg_tuple_second" );
                 ] )))
   | TTuple _ -> Error.error "second expects at least two tuple elements"
   | _ -> Error.error "second expects a tuple"

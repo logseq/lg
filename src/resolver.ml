@@ -160,7 +160,7 @@ let opened_ocaml_call_target scope env function_name =
   |> List.find_map (fun (binding : binding) ->
          match binding.host_reference with
          | Some (Ocaml_module module_path) ->
-             let target = module_path ^ "." ^ Names.sanitize_name function_name in
+             let target = module_path ^ "." ^ Names.ocaml_member_name function_name in
              (match Ocaml_signature.value_signature target with
              | Ok _ -> Some target
              | Error _ -> None)
@@ -175,6 +175,12 @@ let ocaml_alias_module_path scope env alias =
            (String.length module_name - prefix_length))
   | Some _ | None -> None
 
+let ocaml_module_member module_path member_name =
+  let exact = module_path ^ "." ^ member_name in
+  let sanitized = module_path ^ "." ^ Names.ocaml_member_name member_name in
+  if String.exists (fun ch -> ch >= 'A' && ch <= 'Z') member_name then exact
+  else sanitized
+
 let ocaml_call_target scope env function_name =
   match lookup_host_reference scope env function_name with
   | Some { host_reference = Some (Ocaml_value ocaml_name); _ } -> Some ocaml_name
@@ -183,20 +189,20 @@ let ocaml_call_target scope env function_name =
       | [ alias; member_name ] -> (
           match ocaml_alias_module_path scope env alias with
           | Some module_path ->
-              Some (module_path ^ "." ^ Names.sanitize_name member_name)
+              Some (ocaml_module_member module_path member_name)
           | None -> (
               match lookup_host_reference scope env alias with
           | Some { host_reference = Some (Ocaml_module module_path); _ } ->
-              Some (module_path ^ "." ^ Names.sanitize_name member_name)
+              Some (ocaml_module_member module_path member_name)
           | None -> (
               match Host_interop.implicit_module alias with
               | Some module_path ->
-                  Some (module_path ^ "." ^ Names.sanitize_name member_name)
+                  Some (module_path ^ "." ^ Names.ocaml_member_name member_name)
               | None when String.length alias > 0 && starts_with_uppercase alias ->
-                  Some (alias ^ "." ^ Names.sanitize_name member_name)
+                  Some (alias ^ "." ^ Names.ocaml_member_name member_name)
               | None -> None)
           | _ when String.length alias > 0 && starts_with_uppercase alias ->
-              Some (alias ^ "." ^ Names.sanitize_name member_name)
+              Some (alias ^ "." ^ Names.ocaml_member_name member_name)
           | _ -> None))
       | _ ->
           let first_segment =

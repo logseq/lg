@@ -90,6 +90,17 @@ let sanitize_name name =
       Hashtbl.add sanitized_names name sanitized;
       sanitized
 
+let is_ocaml_operator_name name =
+  let is_operator_character = function
+    | '=' | '<' | '>' | '@' | '^' | '|' | '&' | '+' | '-' | '*' | '/'
+    | '$' | '%' | '#' | '!' | '?' | '~' | ':' | '.' -> true
+    | _ -> false
+  in
+  String.length name > 0 && String.for_all is_operator_character name
+
+let ocaml_member_name name =
+  if is_ocaml_operator_name name then name else sanitize_name name
+
 let keyword_source_name keyword =
   if String.length keyword > 0 && keyword.[0] = ':' then
     String.sub keyword 1 (String.length keyword - 1)

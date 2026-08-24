@@ -37,7 +37,7 @@ let rec contains_inferred_type = function
 
 let deferred_type_variables ty =
   let rec collect variables = function
-    | Types.TUnknown | Types.TMeta _ -> "a" :: variables
+    | Types.TUnknown | Types.TMeta _ | Types.TNil -> "a" :: variables
     | Types.TVar name -> name :: variables
     | Types.TNullable ty | Types.TArray ty | Types.TRef ty | Types.TList ty
     | Types.TVector ty | Types.TSet ty | Types.TSeq ty ->
@@ -64,7 +64,7 @@ let deferred_type_variables ty =
         List.rev_append record.type_parameters variables
     | Types.TInt | Types.TFloat | Types.TChar | Types.TString | Types.TRegex
     | Types.TMap_keys | Types.TSymbol | Types.TKeyword | Types.TBool
-    | Types.TUnit | Types.TNil | Types.TOcaml _ ->
+    | Types.TUnit | Types.TOcaml _ ->
         variables
   in
   collect [] ty |> List.sort_uniq String.compare

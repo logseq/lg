@@ -313,7 +313,9 @@
   ../bin/lg_cli.exe
   ../stdlib/lg_stdlib_native.state
   ../examples/multi_file/math.cljc
-  ../examples/multi_file/main.cljc)
+  ../examples/multi_file/main.cljc
+  saved_state_runtime_package.lgi
+  saved_state_runtime_package.cljc)
  (action
   (run
    sh
@@ -321,7 +323,9 @@
    %{exe:../bin/lg_cli.exe}
    %{dep:../examples/multi_file/math.cljc}
    %{dep:../examples/multi_file/main.cljc}
-   %{dep:../stdlib/lg_stdlib_native.state})))
+   %{dep:../stdlib/lg_stdlib_native.state}
+   %{dep:saved_state_runtime_package.cljc}
+   %{dep:saved_state_runtime_package.lgi})))
 
 (rule
  (alias runtest)

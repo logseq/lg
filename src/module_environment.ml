@@ -5,7 +5,7 @@ module Env = Compiler_environment
 let binding_key module_path name = module_path ^ "/" ^ name
 
 let binding_ocaml_name module_path name =
-  Names.module_path_to_ocaml module_path ^ "." ^ Names.sanitize_name name
+  Names.module_path_to_ocaml module_path ^ "." ^ Names.ocaml_member_name name
 
 let remap_binding_module_path module_path (binding : binding) =
   let member_name =

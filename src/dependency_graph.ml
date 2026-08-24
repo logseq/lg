@@ -73,6 +73,44 @@ let rec symbols form =
   | FChar _ | FBool _ ->
       []
 
+let rec value_symbols form =
+  match form with
+  | FList (FSymbol "record" :: FSymbol _ :: fields) ->
+      fields
+      |> List.concat_map (function
+           | FList (_field_name :: values) -> List.concat_map value_symbols values
+           | field -> value_symbols field)
+  | FSymbol name -> [ name ]
+  | FCoreSymbol core -> [ core_symbol_qualified_name core ]
+  | FList forms | FVector forms -> List.concat_map value_symbols forms
+  | FMap pairs ->
+      List.concat_map
+        (fun (key, value) -> value_symbols key @ value_symbols value)
+        pairs
+  | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _ | FDecimal _
+  | FChar _ | FBool _ ->
+      []
+
+let rec record_type_symbols form =
+  match form with
+  | FList (FSymbol "record" :: FSymbol name :: fields) ->
+      name
+      :: List.concat_map
+           (function
+             | FList (_field_name :: values) ->
+                 List.concat_map record_type_symbols values
+             | field -> record_type_symbols field)
+           fields
+  | FList forms | FVector forms -> List.concat_map record_type_symbols forms
+  | FMap pairs ->
+      List.concat_map
+        (fun (key, value) ->
+          record_type_symbols key @ record_type_symbols value)
+        pairs
+  | FSymbol _ | FCoreSymbol _ | FKeyword _ | FString _ | FRegex _ | FInt _
+  | FFloat _ | FDecimal _ | FChar _ | FBool _ ->
+      []
+
 let type_annotation_builtins =
   String_set.of_list
     [
@@ -88,6 +126,8 @@ let type_annotation_builtins =
       "hashable";
       "int";
       "int64";
+      "long";
+      "number";
       "keyword";
       "list";
       "map";
@@ -143,6 +183,32 @@ let type_annotation_symbols = function
       scan 0 0 []
   | form -> symbols form
 
+let inline_type_hint_symbols forms =
+  let metadata_flags =
+    String_set.of_list
+      [
+        ":const";
+        ":dynamic";
+        ":inline";
+        ":macro";
+        ":mutable";
+        ":no-doc";
+        ":once";
+        ":private";
+        ":unsynchronized-mutable";
+        ":volatile-mutable";
+      ]
+  in
+  forms
+  |> List.concat_map (function
+       | FSymbol annotation when String.starts_with ~prefix:"^" annotation ->
+           let annotation =
+             String.sub annotation 1 (String.length annotation - 1)
+           in
+           if String_set.mem annotation metadata_flags then []
+           else type_annotation_symbols (FKeyword annotation)
+       | _ -> [])
+
 let require_referred_symbols entries =
   let rec options = function
     | FKeyword (":refer" | ":refer-macros") :: FVector names :: rest ->
@@ -160,7 +226,10 @@ let require_referred_symbols entries =
 
 let dependency_symbols = function
   | FList (FSymbol "require" :: entries) -> require_referred_symbols entries
-  | FList (FSymbol "optional-sequential-adapter" :: _) -> []
+  | FList
+      (FSymbol ("optional-sequential-adapter" | "optional-map-adapter") :: _)
+    ->
+      []
   | FList (FSymbol "exception-data-adapter" :: _) -> []
   | FList (FSymbol "empty-map-default" :: _) -> []
   | FList (FSymbol "closed-sum-constructors" :: _) -> []
@@ -268,6 +337,9 @@ let dependency_symbols = function
               Some name
           | _ -> None)
         names
+  | (FList
+      (FSymbol ("def" | "defonce") :: forms) as form) ->
+      value_symbols form @ inline_type_hint_symbols forms
   | FList (FSymbol "defprotocol" :: _name :: method_forms) ->
       let rec type_dependencies = function
         | FKeyword _ as annotation -> type_annotation_symbols annotation
@@ -292,7 +364,7 @@ let dependency_symbols = function
         | form -> symbols form
       in
       symbols fields @ List.concat_map implementation_symbols implementations
-  | form -> symbols form
+  | form -> value_symbols form
 
 let direct_method_names forms =
   List.filter_map
@@ -443,6 +515,28 @@ let provider_indices ?(ignore_declarations = false) indexed =
             (provided_names form @ implementation_method_names form))
     String_map.empty indexed
 
+let type_provider_indices indexed =
+  List.fold_left
+    (fun providers (index, form) ->
+      let names =
+        match form with
+        | FList
+            (FSymbol
+              ( "type-variant" | "type-alias" | "type-record"
+              | "external-record" | "deftype" | "defrecord" | "defprotocol" )
+            :: FSymbol name :: _) ->
+            [ name ]
+        | _ -> []
+      in
+      List.fold_left
+        (fun providers name ->
+          let existing =
+            String_map.find_opt name providers |> Option.value ~default:[]
+          in
+          String_map.add name (index :: existing) providers)
+        providers names)
+    String_map.empty indexed
+
 let declaration_provider_indices indexed =
   List.fold_left
     (fun providers (index, form) ->
@@ -524,7 +618,8 @@ let signature_type_dependencies scope forms =
     String_map.empty forms
 
 let form_dependencies ?(ignore_declarations = false) ~scope
-    ~signature_dependencies providers declaration_providers index form =
+    ~signature_dependencies providers type_providers declaration_providers index
+    form =
   let prefer_declarations =
     match form with
     | FList (FSymbol ("deftype" | "defrecord") :: _) -> true
@@ -548,8 +643,9 @@ let form_dependencies ?(ignore_declarations = false) ~scope
             |> Option.value ~default:[]
         | _ -> []
       in
-      dependency_symbols form @ signed_dependencies
-      |> List.concat_map (fun name ->
+      let resolve_dependencies ~prefer_declarations provider_map dependencies =
+        dependencies
+        |> List.concat_map (fun name ->
              let candidates =
                let candidates = [ name ] in
                let candidates =
@@ -579,7 +675,7 @@ let form_dependencies ?(ignore_declarations = false) ~scope
               List.concat_map
                 (fun candidate ->
                   let all =
-                    String_map.find_opt candidate providers
+                    String_map.find_opt candidate provider_map
                     |> Option.value ~default:[]
                   in
                   if
@@ -593,15 +689,28 @@ let form_dependencies ?(ignore_declarations = false) ~scope
                     | None -> all
                   else all)
                candidates)
+      in
+      (resolve_dependencies ~prefer_declarations providers
+         (dependency_symbols form)
+      @ resolve_dependencies ~prefer_declarations:false type_providers
+          (record_type_symbols form @ signed_dependencies))
       |> List.filter (fun dependency -> dependency <> index)
       |> List.sort_uniq Int.compare
 
-let dependency_components ?(ignore_declarations = false) forms =
+let dependency_components ?(ignore_declarations = false)
+    ?(external_signature_dependencies = []) forms =
   let indexed = indexed_forms forms in
   let providers = provider_indices ~ignore_declarations indexed in
+  let type_providers = type_provider_indices indexed in
   let declaration_providers = declaration_provider_indices indexed in
   let scope = graph_scope forms in
-  let signature_dependencies = signature_type_dependencies scope forms in
+  let signature_dependencies =
+    List.fold_left
+      (fun dependencies (name, type_dependencies) ->
+        String_map.add name type_dependencies dependencies)
+      (signature_type_dependencies scope forms)
+      external_signature_dependencies
+  in
   let components =
     indexed
     |> List.map (fun (index, form) ->
@@ -609,12 +718,12 @@ let dependency_components ?(ignore_declarations = false) forms =
              name = string_of_int index;
              dependencies =
            form_dependencies ~ignore_declarations ~scope ~signature_dependencies
-             providers declaration_providers index form
+             providers type_providers declaration_providers index form
                |> List.map string_of_int;
            })
     |> strongly_connected_components
   in
-  (providers, components)
+  (providers, type_providers, components)
 
 let recursive_group_supported forms indices =
   List.for_all
@@ -625,7 +734,7 @@ let recursive_group_supported forms indices =
     indices
 
 let recursive_groups forms =
-  let _, components =
+  let _, _, components =
     dependency_components ~ignore_declarations:true forms
   in
   components
@@ -635,13 +744,21 @@ let recursive_groups forms =
        | _ -> false)
   |> List.map (List.sort Int.compare)
 
-let stable_order forms =
-  let providers, component_lists = dependency_components forms in
+let stable_order ?(external_signature_dependencies = []) forms =
+  let providers, type_providers, component_lists =
+    dependency_components ~external_signature_dependencies forms
+  in
   let declaration_providers =
     declaration_provider_indices (indexed_forms forms)
   in
   let scope = graph_scope forms in
-  let signature_dependencies = signature_type_dependencies scope forms in
+  let signature_dependencies =
+    List.fold_left
+      (fun dependencies (name, type_dependencies) ->
+        String_map.add name type_dependencies dependencies)
+      (signature_type_dependencies scope forms)
+      external_signature_dependencies
+  in
   let forms = Array.of_list forms in
   let components =
     component_lists
@@ -661,7 +778,7 @@ let stable_order forms =
         List.fold_left
           (fun dependencies index ->
             form_dependencies ~scope ~signature_dependencies providers
-              declaration_providers index forms.(index)
+              type_providers declaration_providers index forms.(index)
             |> List.fold_left
                  (fun dependencies dependency ->
                    let dependency_component = component_of.(dependency) in

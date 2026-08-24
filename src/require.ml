@@ -274,6 +274,42 @@ let add_ocaml_alias_bindings env module_name alias =
 let add_ocaml_refer_bindings env scope module_name names =
   let host_functions = ocaml_host_functions module_name in
   let module_path = ocaml_module_path module_name in
+  let source_function_type (signature : Ocaml_signature.value_signature) =
+    let rec source_type = function
+      | TFn ([ TUnit ], return_ty) -> TFn ([], source_type return_ty)
+      | TFn (parameters, return_ty) ->
+          TFn (List.map source_type parameters, source_type return_ty)
+      | ty -> ty
+    in
+    let parameters =
+      List.map
+        (fun (parameter : Ocaml_signature.parameter) ->
+          source_type parameter.ty)
+        signature.parameters
+    in
+    let parameters = match parameters with [ TUnit ] -> [] | _ -> parameters in
+    let return_type = source_type signature.return_type in
+    match signature.parameters with
+    | [] -> return_type
+    | _ -> TFn (parameters, return_type)
+  in
+  let external_value name =
+    let exact = module_path ^ "." ^ name in
+    let sanitized = module_path ^ "." ^ Names.ocaml_member_name name in
+    let candidates = if exact = sanitized then [ exact ] else [ exact; sanitized ] in
+    let rec find = function
+      | [] ->
+          Types.binding ~host_reference:(Ocaml_value sanitized) sanitized
+            (TOcaml "__value")
+      | candidate :: rest -> (
+          match Ocaml_signature.value_signature candidate with
+          | Ok signature ->
+              Types.binding ~host_reference:(Ocaml_value candidate) candidate
+                (source_function_type signature)
+          | Error _ -> find rest)
+    in
+    find candidates
+  in
   let rec loop acc = function
     | [] -> Ok acc
     | name :: rest -> (
@@ -283,12 +319,7 @@ let add_ocaml_refer_bindings env scope module_name names =
             loop (Env.add target_key binding acc) rest
         | None ->
             let target_key = Names.scoped_key scope name in
-            let ocaml_name = module_path ^ "." ^ Names.sanitize_name name in
-            let binding =
-              Types.binding ~host_reference:(Ocaml_value ocaml_name) ocaml_name
-                (TOcaml "__value")
-            in
-            loop (Env.add target_key binding acc) rest)
+            loop (Env.add target_key (external_value name) acc) rest)
   in
   loop env names
 

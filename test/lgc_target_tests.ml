@@ -258,6 +258,22 @@ let test_metadata_forms_do_not_break_map_literals () =
   ignore (compile Lg.Target.Native source);
   ignore (compile Lg.Target.Melange source)
 
+let test_melange_host_calls_preserve_case_sensitive_members () =
+  ignore
+    (compile Lg.Target.Melange
+       {|
+(require [ocaml.Js.Json :as json])
+(def result (json/parseExn "{}"))
+|})
+
+let test_ocaml_refer_preserves_external_value_types () =
+  ignore
+    (compile Lg.Target.Native
+       {|
+(require [ocaml.Stdlib :refer [max_int]])
+(def answer (Stdlib.succ max_int))
+|})
+
 let expect_structured_error expected_code expected_phase = function
   | Error (error : Lg.Compiler.compile_error) ->
       if error.code <> expected_code then
@@ -302,6 +318,10 @@ let tests =
       test_js_literals_are_single_reader_forms_in_conditionals );
     ( "metadata forms do not break map literals",
       test_metadata_forms_do_not_break_map_literals );
+    ( "Melange host calls preserve case-sensitive members",
+      test_melange_host_calls_preserve_case_sensitive_members );
+    ( "OCaml refer preserves external value types",
+      test_ocaml_refer_preserves_external_value_types );
     ( "exposes structured error identity",
       test_exposes_structured_error_identity );
     ( "rejects invalid reader conditionals",

@@ -4540,6 +4540,48 @@ let test_generic_signature_refines_bare_named_record_parameter_hint () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_macro_generated_defrecord_uses_sidecar_field_types () =
+  let source =
+    {|
+(ns user)
+(defmacro deftrecord [name fields]
+  `(do
+     (defrecord ~name ~fields)
+     (extend-type ~name
+       ICounted
+       (-count [record] (count (.-items record))))))
+(signature user/Box
+  {:items :vector<int>})
+(deftrecord Box [items])
+(defn first-item [^Box box]
+  (first (.-items box)))
+(println (str (first-item (Box. [42])) ":" (count (Box. [1 2]))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "macro-generated record sidecar fields must remain static";
+  assert_ocaml_runs "macro_generated_defrecord_uses_sidecar_field_types"
+    "42:2\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_explicit_function_shadows_implicit_record_constructor () =
+  let source =
+    {|
+(ns report.model)
+(defrecord Report [^int left ^int right ^int internal])
+(defn ->Report [left right]
+  (Report. left right 42))
+(println (:internal (report.model/->Report 1 2)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "explicit_function_shadows_implicit_record_constructor"
+    "42\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_external_closed_types_use_static_equality_and_hash_witnesses () =
   let source =
     {|
@@ -7769,6 +7811,12 @@ let test_source_inline_macros_respect_lexical_shadowing () =
 let test_loop_keeps_protocol_evidence_with_nominal_state () =
   let source =
     {|
+(defmacro declare+ [name args]
+  `(defn ~name ~args))
+(defmacro defn+ [name args & body]
+  `(do
+     (defn ~(vary-meta name assoc :declared true) ~args)
+     (defn ~name ~args ~@body)))
 (defprotocol Searchable
   (search-value [database] :int))
 (deftype Database [^int value])
@@ -7990,6 +8038,21 @@ let test_system_get_property_line_separator_matches_native_runtime () =
     "true\ntrue\n" native_source;
   compile_string_with_stdlib ~target:Lg.Target.Melange source
   |> expect_error_contains "System/getProperty is only available on Native"
+
+let test_macro_system_get_property_returns_nil_for_missing_property () =
+  let source =
+    {|
+(defmacro compile-debug []
+  (when (System/getProperty "datascript.debug")
+    true))
+(println (nil? (compile-debug)))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "macro_system_get_property_returns_nil_for_missing_property"
+    "true\n" native;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_source_uuid_wrapper_matches_clojurescript () =
   let source =
@@ -8595,7 +8658,8 @@ let test_javascript_targets_compile_error_classes () =
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Js_of_ocaml source
-    |> expect_ok)
+    |> expect_ok);
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Native source |> expect_ok)
 
 let test_cljs_writer_functions_compile () =
   let source =
@@ -9516,6 +9580,34 @@ let test_forward_declared_non_recursive_implementation_keeps_stable_binding () =
   then failwith "forward declaration must emit a stable implementation holder";
   assert_ocaml_runs
     "forward_declared_non_recursive_implementation_keeps_stable_binding"
+    "42\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_forward_declared_nil_parameter_has_valid_holder_type () =
+  let source =
+    {|
+(ns test.forward-nil)
+(defprotocol IValue
+  (-value [item]))
+(declare write-item)
+(defrecord Item [^int value]
+  IValue
+  (-value [item] (.-value item))
+  IPrintWithWriter
+  (-pr-writer [item writer opts]
+    (write-item item writer opts)))
+(defn write-item [item ^:Buffer.t writer opts]
+  (pr-writer (-value item) writer opts))
+(def writer (Buffer.create 16))
+(write-item (Item. 42) writer nil)
+(println (Buffer.contents writer))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "_ option" then
+    failwith "deferred nil parameter must not emit an OCaml type wildcard";
+  assert_ocaml_runs "forward_declared_nil_parameter_has_valid_holder_type"
     "42\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
@@ -11509,6 +11601,18 @@ let test_combined_host_package_import_compiles () =
     failwith "combined host import should report its findlib package";
   Lg.Compiler.compile_string source |> expect_ok |> ignore
 
+let test_namespace_host_package_import_is_saved () =
+  let source =
+    {|
+(ns app.core
+  (:require [ocaml.package/lg.runtime]
+            [ocaml.package/lg.rrbvec]))
+|}
+  in
+  let packages = Lg.Compiler.required_ocaml_packages source |> expect_ok in
+  if packages <> [ "lg.rrbvec"; "lg.runtime" ] then
+    failwith "namespace host imports must be retained for saved compiler state"
+
 let test_ocaml_tuple_values_compile_through_source_backend () =
   let source =
     {|
@@ -13406,6 +13510,35 @@ let test_declared_optional_sequential_host_adapter_is_static () =
   if string_contains_substring melange "Runtime_dynamic" then
     failwith
       "Melange optional sequential host adapters must remain fully static"
+
+let test_declared_optional_map_host_adapter_is_static () =
+  let source =
+    {|
+(type-record box
+  (items :option<map<keyword;int>>))
+(signature box-items :fn<box;option<map<keyword;int>>>)
+(defn box-items [box] (:items box))
+(optional-map-adapter :box :keyword :int box-items)
+(signature value-or :fn<box;int;int>)
+(defn value-or [box fallback]
+  (if (map? box)
+    (if (contains? box :value) (get box :value fallback) fallback)
+    fallback))
+(def present (record box (items (Some {:value 42}))))
+(def absent (record box (items None)))
+(println (str (value-or present -1) ":" (value-or absent -1)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "optional map host adapters must remain fully static";
+  assert_ocaml_runs "declared_optional_map_host_adapter_is_static" "42:-1\n"
+    native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange optional map host adapters must remain fully static"
 
 let test_declared_empty_map_default_is_static () =
   let source =
@@ -15514,6 +15647,30 @@ let test_extend_type_predeclares_all_static_receiver_methods () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_extend_type_predeclares_later_protocol_groups () =
+  let source =
+    {|
+(type-record item-value (value :int))
+(defprotocol Summary
+  (summary [value] :int))
+(defprotocol Primary
+  (primary [value] :int))
+(extend-type item-value
+  Summary
+  (summary [item]
+    (primary item))
+  Primary
+  (primary [item]
+    (:value item)))
+(println (summary (record item-value (value 42))))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "extend_type_predeclares_later_protocol_groups" "42\n"
+    native;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_satisfies_question_guards_generic_protocol_dispatch () =
   let source =
     {|
@@ -15920,6 +16077,25 @@ let test_nullable_deftype_uses_custom_printer () =
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "nullable_deftype_uses_custom_printer" "<7>\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_non_nullable_deftype_printer_accepts_unused_nil_options () =
+  let source =
+    {|
+(declare render-printed)
+(deftype Printed [^int value]
+  IPrintWithWriter
+  (-pr-writer [_ writer _opts]
+    (-write writer (render-printed value))))
+(defn render-printed [value]
+  (str "<" value ">"))
+(println (pr-str (Printed. 7)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "non_nullable_deftype_printer_accepts_unused_nil_options"
+    "<7>\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -23853,7 +24029,7 @@ let test_source_array_helpers_preserve_generic_array_types () =
        source);
   compile_with_stdlib_result Lg.Target.Native
     "test/source_array_helpers_bad.cljc" {|(clojure.core/alength)|}
-  |> expect_error_contains "called with incompatible arguments"
+  |> expect_error_contains "alength called with unsupported macro arity 0"
 
 let test_source_array_map_and_sort_preserve_upstream_contracts () =
   let source =
@@ -32462,6 +32638,110 @@ let test_dependency_graph_orders_sidecar_signature_before_value () =
   | 1 :: 0 :: _ -> ()
   | _ -> failwith "sidecar signature must precede its value definition"
 
+let test_dependency_graph_orders_external_signature_type_dependencies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "namespace-scope"; FSymbol "model" ];
+      FList
+        [ FSymbol "type-variant";
+          FSymbol "tx-entry";
+          FList [ FSymbol "TxCall"; FKeyword ":fn<DB;tx-entry>" ];
+        ];
+      FList
+        [ FSymbol "type-record";
+          FSymbol "DB";
+          FList [ FSymbol "later"; FKeyword ":Late" ];
+        ];
+      FList [ FSymbol "def"; FSymbol "registry"; FMap [] ];
+      FList
+        [ FSymbol "type-record";
+          FSymbol "Late";
+          FList [ FSymbol "value"; FKeyword ":int" ];
+        ];
+    ]
+  in
+  let order =
+    Lg.Dependency_graph.stable_order
+      ~external_signature_dependencies:
+        [ ("model/registry", [ "DB"; "tx-entry" ]) ]
+      forms
+  in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if
+    not
+      (position 4 < position 2 && position 2 < position 1
+      && position 1 < position 3)
+  then failwith "external signature type dependencies must order their value"
+
+let test_external_signature_type_dependency_ignores_same_named_value () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList [ FSymbol "namespace-scope"; FSymbol "signal.core" ];
+      FList
+        [ FSymbol "type-record";
+          FSymbol "scope";
+          FList [ FSymbol "id"; FKeyword ":int" ];
+        ];
+      FList
+        [ FSymbol "defn";
+          FSymbol "own!";
+          FVector [ FSymbol "value" ];
+          FSymbol "value";
+        ];
+      FList
+        [ FSymbol "defn-";
+          FSymbol "child-scope";
+          FVector [ FSymbol "value" ];
+          FList [ FSymbol "own!"; FSymbol "value" ];
+        ];
+      FList
+        [ FSymbol "defn";
+          FSymbol "scope";
+          FVector [ FSymbol "value" ];
+          FList [ FSymbol "child-scope"; FSymbol "value" ];
+        ];
+    ]
+  in
+  let order =
+    Lg.Dependency_graph.stable_order
+      ~external_signature_dependencies:
+        [ ("signal.core/own!", [ "scope" ]) ]
+      forms
+  in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 1 < position 2 && position 2 < position 3) then
+    failwith
+      "a signature type must depend on the type declaration, not a same-named value"
+
+let test_sidecar_type_name_collision_keeps_forward_function_available () =
+  let interface =
+    {|
+(ns signal.core)
+(type-record scope (id :int))
+(signature signal.core/make-scope :fn<int;scope>)
+(signature signal.core/own! :fn<scope;scope>)
+(signature signal.core/scope :fn<int;scope>)
+|}
+  in
+  let source =
+    {|
+(ns signal.core)
+(defn- make-scope [id] (record scope (id id)))
+(defn own! [value] value)
+(defn- child-scope [id] (own! (make-scope id)))
+(defn scope [id] (child-scope id))
+|}
+  in
+  ignore
+    (compile_chunks_with_stdlib Lg.Target.Native
+       [ ("signal/core.lgi", interface); ("signal/core.cljc", source) ])
+
 let test_dependency_graph_uses_signature_to_break_record_function_cycle () =
   let open Lg.Ast in
   let forms =
@@ -32590,6 +32870,36 @@ let test_dependency_graph_orders_nested_type_annotation_dependencies () =
   if not (position 1 < position 0) then
     failwith
       "nested type annotations must follow their nominal record dependencies"
+
+let test_dependency_graph_orders_inline_def_type_hint_dependencies () =
+  let open Lg.Ast in
+  let forms =
+    [
+      FList
+        [ FSymbol "def";
+          FSymbol "^:ref<map<int;fn<DB;vector<tx-entry>>>>";
+          FSymbol "registry";
+          FList [ FSymbol "atom"; FMap [] ];
+        ];
+      FList
+        [ FSymbol "type-variant";
+          FSymbol "tx-entry";
+          FList [ FSymbol "Call"; FKeyword ":fn<DB;vector<tx-entry>>" ];
+        ];
+      FList
+        [ FSymbol "defrecord";
+          FSymbol "DB";
+          FVector [ FSymbol "^int"; FSymbol "value" ];
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 2 < position 1 && position 1 < position 0) then
+    failwith
+      "an inline def type hint must follow all nested nominal type dependencies"
 
 let test_dependency_graph_orders_protocol_return_type_dependencies () =
   let open Lg.Ast in
@@ -34457,7 +34767,98 @@ let test_occurrence_type_hints_require_closed_record_sums () =
   in
   Lg.Compiler.compile_string source
   |> expect_error_contains
-       "conditional branches have incompatible nominal record types; define a closed sum type containing every branch type"
+       "conditional branches have incompatible nominal record types ("
+
+let test_conditional_adapts_nominal_seqable_branch () =
+  let source =
+    {|
+(deftype Bag [^:list<int> values]
+  ISeqable
+  (-seq [_] values))
+(def bag (Bag. (list 3 4)))
+(defn choose [flag]
+  (if flag
+    (seq [1 2])
+    bag))
+(println (reduce + 0 (choose false)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "conditional_adapts_nominal_seqable_branch" "7\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_eduction_filter_preserves_nominal_sequence_elements () =
+  let source =
+    {|
+(deftype Item [^:int value])
+(def values [(Item. 1) (Item. 2) (Item. 3)])
+(def selected
+  (->Eduction
+    (filter (fn [^Item item] (odd? (.-value item))))
+    values))
+(println (reduce + 0 (map (fn [^Item item] (.-value item)) selected)))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "Eduction filter erased nominal sequence elements";
+  if string_contains_substring ocaml_source "transformer_sequence" then
+    failwith "Eduction filter kept an unnecessary generic transducer boundary";
+  assert_ocaml_runs "eduction_filter_preserves_nominal_sequence_elements" "4\n"
+    ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_map_predicate_narrows_optional_protocol_constraint () =
+  let source =
+    {|
+(defn prepare [entities]
+  (for [entity entities]
+    (cond
+      (map? entity) (contains? entity :db/id)
+      (sequential? entity) false
+      :else false)))
+(println (pr-str (vec (prepare [(hash-map :db/id 1)]))))
+(println (pr-str (vec (prepare [(hash-map :other 2)]))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "map_predicate_narrows_optional_protocol_constraint"
+    "[true]\n[false]\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_static_protocol_predicate_skips_unreachable_branch () =
+  let source =
+    {|
+(defn transaction-op? [^:tuple<keyword;vector<int>> entity]
+  (if (map? entity)
+    (contains? entity :db/id)
+    false))
+(println "compiled")
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "static_protocol_predicate_skips_unreachable_branch"
+    "compiled\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_declared_sequence_parameter_accepts_vector_argument () =
+  let source =
+    {|
+(signature total :fn<seq<int>;int>)
+(defn total [values] (reduce + 0 values))
+(println (total [1 2 3]))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "declared_sequence_parameter_accepts_vector_argument"
+    "6\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_nested_assoc_reads_static_records () =
   let source =
@@ -44681,6 +45082,10 @@ let tests =
       test_generic_function_signatures_preserve_type_parameters );
     ( "generic signature refines bare named record parameter hint",
       test_generic_signature_refines_bare_named_record_parameter_hint );
+    ( "macro-generated defrecord uses sidecar field types",
+      test_macro_generated_defrecord_uses_sidecar_field_types );
+    ( "explicit function shadows implicit record constructor",
+      test_explicit_function_shadows_implicit_record_constructor );
     ( "external closed types use static equality and hash witnesses",
       test_external_closed_types_use_static_equality_and_hash_witnesses );
     ( "external closed types use static comparison witnesses",
@@ -44975,6 +45380,8 @@ let tests =
       test_system_current_time_millis_compiles_for_native );
     ( "System getProperty line separator matches native runtime",
       test_system_get_property_line_separator_matches_native_runtime );
+    ( "macro System getProperty returns nil for missing property",
+      test_macro_system_get_property_returns_nil_for_missing_property );
     ( "source UUID wrapper matches ClojureScript",
       test_source_uuid_wrapper_matches_clojurescript );
     ( "source UUID wrapper rejects invalid calls",
@@ -45333,6 +45740,8 @@ let tests =
       test_threading_and_option_binding_forms_compile );
     ( "syntax ergonomics: combined host package import compiles",
       test_combined_host_package_import_compiles );
+    ( "syntax ergonomics: namespace host package import is saved",
+      test_namespace_host_package_import_is_saved );
     ( "OCaml tuple values compile through source backend",
       test_ocaml_tuple_values_compile_through_source_backend );
     ( "OCaml tuple values delegate argument mismatch to OCaml",
@@ -45506,6 +45915,8 @@ let tests =
       test_dotted_syntax_resolves_declared_closed_sum_constructors );
     ( "declared optional sequential host adapter is static",
       test_declared_optional_sequential_host_adapter_is_static );
+    ( "declared optional map host adapter is static",
+      test_declared_optional_map_host_adapter_is_static );
     ( "declared empty map default is static",
       test_declared_empty_map_default_is_static );
     ( "OCaml variant constructors reject bad arity",
@@ -45715,6 +46126,8 @@ let tests =
       test_extend_type_methods_use_their_static_receiver_witnesses );
     ( "extend-type predeclares all static receiver methods",
       test_extend_type_predeclares_all_static_receiver_methods );
+    ( "extend-type predeclares later protocol groups",
+      test_extend_type_predeclares_later_protocol_groups );
     ( "satisfies? guards generic protocol dispatch",
       test_satisfies_question_guards_generic_protocol_dispatch );
     ( "generic protocol witness supports multiple methods",
@@ -45753,6 +46166,8 @@ let tests =
       test_if_heterogeneous_nominal_branches_require_sum_type );
     ( "nullable deftype uses its custom printer",
       test_nullable_deftype_uses_custom_printer );
+    ( "non-nullable deftype printer accepts unused nil options",
+      test_non_nullable_deftype_printer_accepts_unused_nil_options );
     ( "cross-namespace deftype uses its custom printer",
       test_cross_namespace_deftype_uses_custom_printer );
     ( "require aliases resolve variant constructor patterns",
@@ -46901,12 +47316,20 @@ let tests =
       test_deferred_initializers_run_before_first_ready_use );
     ( "deferred recursive calls bypass the holder wrapper",
       test_deferred_recursive_calls_bypass_the_holder_wrapper );
+    ( "forward declared nil parameter has valid holder type",
+      test_forward_declared_nil_parameter_has_valid_holder_type );
     ( "declared record constructors follow record dependencies",
       test_declared_record_constructors_follow_record_dependencies );
     ( "dependency graph orders declared protocol dependencies",
       test_dependency_graph_orders_declared_protocol_dependencies );
     ( "dependency graph orders sidecar signature before value",
       test_dependency_graph_orders_sidecar_signature_before_value );
+    ( "dependency graph orders external signature type dependencies",
+      test_dependency_graph_orders_external_signature_type_dependencies );
+    ( "external signature type dependency ignores same-named value",
+      test_external_signature_type_dependency_ignores_same_named_value );
+    ( "sidecar type-name collision keeps forward function available",
+      test_sidecar_type_name_collision_keeps_forward_function_available );
     ( "dependency graph uses signature to break record function cycle",
       test_dependency_graph_uses_signature_to_break_record_function_cycle );
     ( "typed defrecord registers before dependent protocol methods",
@@ -46915,6 +47338,8 @@ let tests =
       test_dependency_graph_ignores_type_record_field_names );
     ( "dependency graph orders nested type annotation dependencies",
       test_dependency_graph_orders_nested_type_annotation_dependencies );
+    ( "dependency graph orders inline def type hint dependencies",
+      test_dependency_graph_orders_inline_def_type_hint_dependencies );
     ( "dependency graph orders protocol return type dependencies",
       test_dependency_graph_orders_protocol_return_type_dependencies );
     ( "dependency graph treats declare macro as declaration",
@@ -47028,6 +47453,16 @@ let tests =
       test_namespaced_array_macros_preserve_closed_sources );
     ( "occurrence type hints require closed record sums",
       test_occurrence_type_hints_require_closed_record_sums );
+    ( "conditional adapts nominal seqable branch",
+      test_conditional_adapts_nominal_seqable_branch );
+    ( "Eduction filter preserves nominal sequence elements",
+      test_eduction_filter_preserves_nominal_sequence_elements );
+    ( "map predicate narrows optional protocol constraint",
+      test_map_predicate_narrows_optional_protocol_constraint );
+    ( "static protocol predicate skips unreachable branch",
+      test_static_protocol_predicate_skips_unreachable_branch );
+    ( "declared sequence parameter accepts vector argument",
+      test_declared_sequence_parameter_accepts_vector_argument );
     ( "nested assoc reads static records",
       test_nested_assoc_reads_static_records );
     ( "reduce rejects heterogeneous vector accumulator slots",

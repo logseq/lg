@@ -3855,7 +3855,9 @@
              (next coll))
       (mix-collection-hash hash-code n))))
 
-(defn reduced [x]
+(defn reduced
+  {:inline (fn [x] (list '__lg_reduced x))}
+  [x]
   (runtime-reduced/reduced x))
 
 (defn unreduced
@@ -4141,7 +4143,9 @@
 (defn shuffle [coll]
   (runtime-random/shuffle-seq (seq coll)))
 
-(defn alength [values]
+(defn alength
+  {:inline (fn [values] (list '__lg_alength values))}
+  [values]
   (runtime-array/length values))
 
 (defn aclone [arr]
@@ -4586,7 +4590,9 @@
 (defn hash-long [high low]
   (bit-xor high low))
 
-(defn second [coll]
+(defn second
+  {:inline (fn [coll] (list '__lg_second coll))}
+  [coll]
   (first (next coll)))
 
 (defn last [coll]

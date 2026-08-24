@@ -443,11 +443,17 @@ let accepts_contains = function
   | ty when Option.is_some (Types.dynamic_map_types ty) -> true
   | ty -> Option.is_some (Types.contains_constraint_info ty)
 
-let contains_adapter argument =
+let contains_adapter ?key_ty argument =
   let key_name = "__lg_contains_key" in
   let key = Semantic_ir.Ident key_name in
   let witness body =
     Ok (Semantic_ir.Fun ([ Semantic_ir.PVar key_name ], body))
+  in
+  let key_ty =
+    match key_ty with
+    | Some _ as key_ty -> key_ty
+    | None ->
+        Option.map fst (Types.contains_constraint_info argument.ty)
   in
   match Types.contains_constraint_info argument.ty with
   | Some _ -> (
@@ -490,6 +496,38 @@ let contains_adapter argument =
           in
           witness
             (apply "Lg_runtime.Core_set.String_set.mem" [ key; keys ])
+      | TOcaml "Lg_edn_backend.t" -> (
+          let packed_key =
+            match key_ty with
+            | Some (TOcaml "Lg_edn_backend.t") -> Some key
+            | Some TNil ->
+                Some (Semantic_ir.Ident "Lg_runtime.Runtime_metadata.nil")
+            | Some TBool ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_bool" [ key ])
+            | Some TInt ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_int" [ key ])
+            | Some TFloat ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_float" [ key ])
+            | Some TString ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_string" [ key ])
+            | Some TChar ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_char" [ key ])
+            | Some TSymbol ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_symbol" [ key ])
+            | Some TKeyword ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_keyword" [ key ])
+            | Some TRegex ->
+                Some (apply "Lg_runtime.Runtime_metadata.of_regex" [ key ])
+            | Some _ | None -> None
+          in
+          match packed_key with
+          | Some packed_key ->
+              witness
+                (apply "Lg_runtime.Runtime_edn.contains"
+                   [ argument.semantic_expr; packed_key ])
+          | None ->
+              Error.error
+                "contains? cannot encode the key as a closed EDN value")
       | map_ty when Option.is_some (Types.dynamic_map_types map_ty) ->
           let key_ty, _ = Option.get (Types.dynamic_map_types map_ty) in
           let operation =

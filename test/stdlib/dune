@@ -2076,17 +2076,14 @@
  (action
   (with-stdout-to
    %{target}
-   (progn
-    (echo "open Lg_stdlib_native\n")
-    (cat %{dep:aggregate_files_chunk.ml})))))
+   (cat %{dep:aggregate_files_chunk.ml}))))
 
 (executable
  (name aggregate_files_native)
  (modules aggregate_files_native)
  (flags
-  (:standard -w -27-32))
+ (:standard -w -27-32))
  (libraries
-  lg_compiled_stdlib_native
   lg.edn-backend.native
   lg.runtime
   re

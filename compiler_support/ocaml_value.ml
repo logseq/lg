@@ -52,12 +52,12 @@ let init include_dirs =
       (standard_include_dirs @ include_dirs @ !known_include_dirs)
   in
   known_include_dirs := include_dirs;
+  Clflags.include_dirs :=
+    List.sort_uniq String.compare
+      (if uses_melange then include_dirs
+       else include_dirs @ !Clflags.include_dirs);
   if not !initialized then (
     Clflags.no_std_include := uses_melange;
-    Clflags.include_dirs :=
-      List.sort_uniq String.compare
-        (if uses_melange then include_dirs
-         else include_dirs @ !Clflags.include_dirs);
     Compmisc.init_path ();
     initialized := true);
   match !initial_env_cache with

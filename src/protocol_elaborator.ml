@@ -398,6 +398,94 @@ let refine_protocol_implementation_type expected actual =
           refine_position expected_return actual_return )
   | _, actual -> actual
 
+let predeclare_implementations scope env receiver_form protocol_name method_forms =
+  Result.bind (protocol_receiver_type scope env receiver_form) (fun receiver_ty ->
+      let implementation_name method_name argument_count overloaded =
+        let base =
+          Protocol.impl_ocaml_name scope protocol_name method_name receiver_ty
+        in
+        if overloaded then base ^ "_" ^ string_of_int argument_count else base
+      in
+      let select_method_arity (marker : binding) argument_count =
+        match marker.ty with
+        | TOverloaded_fn arities ->
+            arities
+            |> List.find_opt (fun arity ->
+                   Option.is_none arity.rest_param
+                   && List.length arity.fixed_params = argument_count)
+            |> Option.map (fun arity ->
+                   {
+                     marker with
+                     ty = TFn (arity.fixed_params, arity.return_ty);
+                   })
+        | TFn (parameters, _) when List.length parameters = argument_count ->
+            Some marker
+        | _ -> None
+      in
+      let overloaded_binding (marker : binding) method_name =
+        match marker.ty with
+        | TOverloaded_fn arities ->
+            let overload_targets =
+              List.map
+                (fun arity ->
+                  implementation_name method_name
+                    (List.length arity.fixed_params)
+                    true)
+                arities
+            in
+            let ocaml_name =
+              match overload_targets with
+              | ocaml_name :: _ -> ocaml_name
+              | [] ->
+                  Protocol.impl_ocaml_name scope protocol_name method_name
+                    receiver_ty
+            in
+            Some
+              (Types.binding ~forward_declared:true ~overload_targets ocaml_name
+                 (Types.instantiate_receiver_method_type receiver_ty marker.ty))
+        | _ -> None
+      in
+      let rec loop env = function
+        | [] -> Ok env
+        | FList (FSymbol method_name :: (FVector _ as params) :: _) :: rest ->
+            Result.bind (marker scope env protocol_name method_name)
+              (fun protocol_marker ->
+                Result.bind (Type_annotation.parse_params params)
+                  (fun parsed_params ->
+                    let argument_count = List.length parsed_params in
+                    match select_method_arity protocol_marker argument_count with
+                    | None ->
+                        Error.error
+                          (method_name
+                         ^ " called with unsupported protocol method arity "
+                         ^ string_of_int argument_count)
+                    | Some selected_marker ->
+                        let binding =
+                          match
+                            overloaded_binding protocol_marker method_name
+                          with
+                          | Some binding -> binding
+                          | None ->
+                              Types.binding ~forward_declared:true
+                                (implementation_name method_name argument_count
+                                   false)
+                                (Types.instantiate_receiver_method_type receiver_ty
+                                   selected_marker.ty)
+                        in
+                        (match
+                           Protocol.lookup_marker_impl env protocol_marker
+                             method_name receiver_ty
+                         with
+                        | Some _ -> loop env rest
+                        | None ->
+                            Result.bind
+                              (add_implementation env method_name receiver_ty
+                                 protocol_marker binding)
+                              (fun env -> loop env rest))))
+        | _ :: rest -> loop env rest
+      in
+      loop env method_forms)
+
 let predeclare_implementations_from_evidence scope env receiver_form
     protocol_name method_forms =
   match

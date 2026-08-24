@@ -316,6 +316,22 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
     let ty, semantic_expr = unwrap value.ty value.semantic_expr in
     { value with ty; semantic_expr }
   in
+  let unwrap_protocol_constraints value =
+    let rec unwrap ty expression =
+      match Types.protocol_constraint_info ty with
+      | Some (_, _, value_ty) ->
+          let expression =
+            match Semantic_ir.unlocated expression with
+            | Semantic_ir.Ident _ -> expression
+            | _ ->
+                Semantic_ir.Apply (Semantic_ir.Ident "snd", [ expression ])
+          in
+          unwrap value_ty expression
+      | None -> (ty, expression)
+    in
+    let ty, semantic_expr = unwrap value.ty value.semantic_expr in
+    { value with ty; semantic_expr }
+  in
   let dynamic_constraint_value value =
     let rec unwrap ty expression =
       match Types.protocol_constraint_info ty with
@@ -4257,6 +4273,7 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               (pack_dynamic_value env dynamic target)
       in
       let compile_collection_contains target value =
+        let target = unwrap_protocol_constraints target in
         match (target.ty, value.ty) with
         | target_ty, _
           when Option.is_some (Types.contains_constraint_info target_ty) ->

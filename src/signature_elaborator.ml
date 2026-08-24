@@ -58,12 +58,18 @@ let compile ?(type_parameters = []) scope env next_type name fields_form =
       | Ok ty ->
           let ty = Function_elaborator.infer_named_record scope env ty in
           let name = qualified_name scope name in
+          let type_dependencies =
+            Dependency_graph.type_annotation_symbols (FKeyword keyword)
+            |> List.filter (fun dependency ->
+                   not (List.mem dependency type_parameters))
+          in
           Result.map
             (fun signatures ->
               ( scope,
                 Env.with_signatures signatures env,
                 next_type,
                 Comment ("signature " ^ name) ))
-            (Signature_overlay.add name (Signature_overlay.Value ty)
+            (Signature_overlay.add name
+               (Signature_overlay.Value { ty; type_dependencies })
                (Env.signatures env)))
   | _ -> Error.error "signature expects a type keyword or record field map"

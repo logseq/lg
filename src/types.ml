@@ -441,7 +441,54 @@ let rec remove_protocol_constraint protocol_id ty =
                  value = remove_protocol_constraint protocol_id value_ty;
                })
       | _ -> ty)
-  | None -> ty
+  | None -> (
+      match ty with
+      | TConstraint (Seqable_constraint constraint_) ->
+          TConstraint
+            (Seqable_constraint
+               {
+                 constraint_ with
+                 storage =
+                   remove_protocol_constraint protocol_id constraint_.storage;
+               })
+      | TConstraint (Contains_constraint constraint_) ->
+          TConstraint
+            (Contains_constraint
+               {
+                 constraint_ with
+                 storage =
+                   remove_protocol_constraint protocol_id constraint_.storage;
+               })
+      | TConstraint (Truthy_constraint value) ->
+          TConstraint
+            (Truthy_constraint (remove_protocol_constraint protocol_id value))
+      | TConstraint (Nil_predicate_constraint value) ->
+          TConstraint
+            (Nil_predicate_constraint
+               (remove_protocol_constraint protocol_id value))
+      | TConstraint (Printable_constraint value) ->
+          TConstraint
+            (Printable_constraint (remove_protocol_constraint protocol_id value))
+      | TConstraint (Exception_data_constraint value) ->
+          TConstraint
+            (Exception_data_constraint
+               (remove_protocol_constraint protocol_id value))
+      | TConstraint (Hashable_constraint value) ->
+          TConstraint
+            (Hashable_constraint (remove_protocol_constraint protocol_id value))
+      | TConstraint (Comparable_constraint value) ->
+          TConstraint
+            (Comparable_constraint
+               (remove_protocol_constraint protocol_id value))
+      | TConstraint (Array_index_constraint value) ->
+          TConstraint
+            (Array_index_constraint
+               (remove_protocol_constraint protocol_id value))
+      | TConstraint (Symbol_predicate_constraint value) ->
+          TConstraint
+            (Symbol_predicate_constraint
+               (remove_protocol_constraint protocol_id value))
+      | TConstraint (Open_boundary_constraint _) | _ -> ty)
 
 let protocol_witness_with_receiver value_ty witness_ty =
   let receiver_ty = constraint_value_type value_ty in
@@ -481,6 +528,22 @@ let rec deduplicate_protocol_constraints ty =
                { constraint_ with witness = witness_ty; value = value_ty })
       | _ -> ty)
   | None -> ty
+
+let rec require_guarded_protocol_constraint protocol_id = function
+  | TConstraint
+      (Protocol_constraint ({ protocol_id = candidate; _ } as constraint_))
+    when Protocol_id.equal protocol_id candidate ->
+      Some
+        (TConstraint
+           (Protocol_constraint { constraint_ with guarded = false })
+        |> deduplicate_protocol_constraints)
+  | TConstraint (Protocol_constraint constraint_) ->
+      Option.map
+        (fun value ->
+          TConstraint (Protocol_constraint { constraint_ with value })
+          |> deduplicate_protocol_constraints)
+        (require_guarded_protocol_constraint protocol_id constraint_.value)
+  | _ -> None
 
 let protocol_constraint_with_value constraint_ty value_ty =
   match constraint_ty with

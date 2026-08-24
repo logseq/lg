@@ -419,7 +419,32 @@ let add_optional_sequential_adapter storage_ty element_ty adapter env =
 let find_optional_sequential_adapter storage_ty env =
   env.optional_sequential_adapters
   |> List.find_map (fun (candidate, element_ty, adapter) ->
-         if Types.equal storage_ty candidate then Some (element_ty, adapter)
+         if Types.equal storage_ty candidate then
+           match element_ty with
+           | Types.TOcaml_app ("__lg_optional_map_adapter", _) -> None
+           | _ -> Some (element_ty, adapter)
+         else None)
+
+let add_optional_map_adapter storage_ty key_ty value_ty adapter env =
+  {
+    env with
+    optional_sequential_adapters =
+      ( storage_ty,
+        Types.TOcaml_app
+          ("__lg_optional_map_adapter", [ key_ty; value_ty ]),
+        adapter )
+      :: env.optional_sequential_adapters;
+  }
+
+let find_optional_map_adapter storage_ty env =
+  env.optional_sequential_adapters
+  |> List.find_map (fun (candidate, payload_ty, adapter) ->
+         if Types.equal storage_ty candidate then
+           match payload_ty with
+           | Types.TOcaml_app
+               ("__lg_optional_map_adapter", [ key_ty; value_ty ]) ->
+               Some (key_ty, value_ty, adapter)
+           | _ -> None
          else None)
 
 let add_exception_data_adapter value_ty adapter env =
