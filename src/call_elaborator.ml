@@ -14645,7 +14645,8 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as error -> error
         | Ok [ left; right ]
-          when Option.is_some (Types.comparable_constraint_info left.ty) ->
+          when Option.is_some
+                 (Types.nested_comparable_constraint_info left.ty) ->
             let left_value = constrained_argument_value left in
             let right_value = constrained_argument_value right in
             let witness =

@@ -3940,24 +3940,56 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         [ FSymbol "__lg_compare"; FSymbol left; FSymbol right ] -> (
         match (string_assoc_opt left params, string_assoc_opt right params) with
         | Some left_ty, _
-          when Option.is_some (Types.comparable_constraint_info left_ty) ->
+          when Option.is_some
+                 (Types.nested_comparable_constraint_info left_ty) ->
             constrain_symbol
-              (Types.comparable_constraint_info left_ty |> Option.get)
+              (Types.nested_comparable_constraint_info left_ty |> Option.get)
               params right
         | _, Some right_ty
-          when Option.is_some (Types.comparable_constraint_info right_ty) ->
+          when Option.is_some
+                 (Types.nested_comparable_constraint_info right_ty) ->
             constrain_symbol
               (Types.comparable_constraint
-                 (Types.comparable_constraint_info right_ty |> Option.get))
+                 (Types.nested_comparable_constraint_info right_ty |> Option.get))
               params left
-        | Some (TUnknown | TMeta _ | TVar _),
-          Some (TUnknown | TMeta _ | TVar _) ->
+        | Some left_ty, Some right_ty
+          when Type_solver.is_open (Types.constraint_value_type left_ty)
+               && Type_solver.is_open (Types.constraint_value_type right_ty) ->
             let comparison = fresh_type_variable "comparison" in
-            Result.bind
-              (constrain_symbol
-                 (Types.comparable_constraint comparison)
-                 params left)
-              (fun params -> constrain_symbol comparison params right)
+            let unify_value params ty =
+              match
+                Type_solver.unify Type_solver.empty
+                  (Types.constraint_value_type ty)
+                  comparison
+              with
+              | Ok substitutions ->
+                  Ok
+                    (List.map
+                       (fun (name, ty) ->
+                         (name, Type_solver.apply substitutions ty))
+                       params)
+              | Error _ ->
+                  Error.error "compare arguments must have the same type"
+            in
+            let rec add_comparable = function
+              | TConstraint (Truthy_constraint value_ty) ->
+                  Types.truthy_constraint (add_comparable value_ty)
+              | TConstraint (Nil_predicate_constraint value_ty) ->
+                  Types.nil_predicate_constraint (add_comparable value_ty)
+              | value_ty -> Types.comparable_constraint value_ty
+            in
+            Result.bind (unify_value params left_ty) (fun params ->
+                let right_ty =
+                  string_assoc_opt right params |> Option.value ~default:right_ty
+                in
+                Result.map
+                  (fun params ->
+                    let left_ty =
+                      string_assoc_opt left params
+                      |> Option.value ~default:left_ty
+                    in
+                    replace_param left (add_comparable left_ty) params)
+                  (unify_value params right_ty))
         | _ -> (
             match constrain_comparable_symbol params left with
             | Error _ as error -> error
@@ -4327,6 +4359,12 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
               (replace_param name
                  (Option.get nil_predicate_optional_seqable)
                  params)
+        | FSymbol _, ty
+          when Option.bind
+                 (Types.nil_predicate_constraint_info ty)
+                 Types.nested_comparable_constraint_info
+               |> Option.is_some ->
+            Ok params
         | FSymbol name, ty
           when (match Types.seqable_constraint_info ty with
                | Some ((`Optional | `Optional_sequential), _, _) -> true

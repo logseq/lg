@@ -367,6 +367,18 @@ let capability_constraint_value ty =
                           | None ->
                               Option.map snd (contains_constraint_info ty)))))))))
 
+let rec nested_comparable_constraint_info ty =
+  match comparable_constraint_info ty with
+  | Some value_ty -> Some value_ty
+  | None -> (
+      match capability_constraint_value ty with
+      | Some value_ty -> nested_comparable_constraint_info value_ty
+      | None -> (
+          match ty with
+          | TConstraint (Seqable_constraint { storage; _ }) ->
+              nested_comparable_constraint_info storage
+          | _ -> None))
+
 let rec seqable_constraint_element = function
   | TConstraint (Seqable_constraint { element; _ }) -> Some element
   | ty -> (

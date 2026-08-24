@@ -14629,6 +14629,29 @@ let test_unannotated_compare_parameters_share_one_inferred_type () =
 |}
   |> expect_error_contains "compare-values called with incompatible arguments"
 
+let test_nil_guarded_compare_parameters_share_one_inferred_type () =
+  let source =
+    {|
+(defn ^long compare-values [left right]
+  (if (nil? left)
+    0
+    (if (nil? right)
+      0
+      (long (compare left right)))))
+(println (compare-values 1 2))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "nil_guarded_compare_parameters_share_one_inferred_type"
+    "-1\n" ocaml_source;
+  compile_string_with_stdlib
+    {|
+(defn ^long compare-values [left right]
+  (long (compare left right)))
+(def invalid (compare-values 1 "2"))
+|}
+  |> expect_error_contains "compare-values called with incompatible arguments"
+
 let test_mapv_vector_shares_one_inferred_element_type () =
   let source =
     {|
@@ -17988,15 +18011,19 @@ let test_macro_namespace_accepts_qualified_keywords () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
-let test_compare_rejects_dynamic_scalar_domains () =
-  compile_string_with_stdlib
+let test_nil_guarded_compare_remains_statically_polymorphic () =
+  let source =
     {|
 (defn cmp [x y]
   (if (nil? x) 0 (if (nil? y) 0 (compare x y))))
-(def int-result (cmp 1 2))
-(def string-result (cmp "b" "a"))
+(println (str (cmp 1 2) ":" (cmp "b" "a")))
   |}
-  |> expect_error_contains "compare arguments must have the same type"
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring ocaml_source "Runtime_dynamic" then
+    failwith "generic compare must retain a static capability boundary";
+  assert_ocaml_runs "nil_guarded_compare_remains_statically_polymorphic"
+    "-1:1\n" ocaml_source
 
 let test_class_and_type_require_static_sum_matching () =
   let reject source =
@@ -45405,6 +45432,8 @@ let tests =
       test_unannotated_function_parameters_infer_from_body );
     ( "unannotated compare parameters share one inferred type",
       test_unannotated_compare_parameters_share_one_inferred_type );
+    ( "nil guarded compare parameters share one inferred type",
+      test_nil_guarded_compare_parameters_share_one_inferred_type );
     ( "mapv vector shares one inferred element type",
       test_mapv_vector_shares_one_inferred_element_type );
     ( "identity function is polymorphic at call sites",
@@ -45682,8 +45711,8 @@ let tests =
       test_macros_iterate_literal_map_entries );
     ( "macro namespace accepts qualified keywords",
       test_macro_namespace_accepts_qualified_keywords );
-    ( "compare rejects dynamic scalar domains",
-      test_compare_rejects_dynamic_scalar_domains );
+    ( "nil guarded compare remains statically polymorphic",
+      test_nil_guarded_compare_remains_statically_polymorphic );
     ( "class and type require static sum matching",
       test_class_and_type_require_static_sum_matching );
     ( "java interop is rejected",
