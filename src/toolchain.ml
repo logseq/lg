@@ -1148,6 +1148,13 @@ let declaration_bindings ast env =
       :: rest ->
         declared_names (name :: declared) rest
     | Ast.FList
+        (Ast.FSymbol "declare+"
+        :: Ast.FList
+             [ Ast.FSymbol "__type-hint"; _; Ast.FSymbol name ]
+        :: _signature)
+      :: rest ->
+        declared_names (name :: declared) rest
+    | Ast.FList
         [
           Ast.FSymbol "defn-signature";
           Ast.FList

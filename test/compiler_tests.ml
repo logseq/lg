@@ -20022,6 +20022,56 @@ let test_inline_update_rejects_unconstrained_transient_boundaries () =
            "transient expects a set, vector, or map, got")
     [ Lg.Target.Native; Lg.Target.Melange ]
 
+let test_inline_transient_uses_static_protocol_implementations () =
+  let source =
+    {|
+(ns model.database)
+(type-record tree [value owner write]
+  (item :value))
+(extend-type tree
+  IEditableCollection
+  (-as-transient [value] value)
+  ITransientCollection
+  (-conj! [value _item] value)
+  (-persistent! [value] value))
+(type-record database
+  (eavt :tree<int;unit;unit>)
+  (aevt :tree<int;unit;unit>)
+  (avet :tree<int;unit;unit>))
+(signature model.database/db-transient
+  :fn<model.database/database;model.database/database>)
+(defn db-transient [db]
+  (-> db
+      (update :eavt transient)
+      (update :aevt transient)
+      (update :avet transient)))
+(signature model.database/db-persistent!
+  :fn<model.database/database;model.database/database>)
+(defn db-persistent! [db]
+  (-> db
+      (update :eavt persistent!)
+      (update :aevt persistent!)
+      (update :avet persistent!)))
+(def result
+  (db-persistent!
+    (db-transient
+      (record database
+        (eavt (record tree (item 13)))
+        (aevt (record tree (item 14)))
+        (avet (record tree (item 15)))))))
+(println (+ (:item (:eavt result))
+            (:item (:aevt result))
+            (:item (:avet result))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "inline_transient_uses_static_protocol_implementations"
+    "42\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Js_of_ocaml source |> expect_ok)
+
 let test_nested_update_infers_optional_map_value_collections () =
   let util_source =
     {|
@@ -32616,6 +32666,65 @@ let test_dependency_graph_treats_declare_macro_as_declaration () =
   in
   if not (position 0 < position 1 && position 1 < position 2) then
     failwith "declare+ must follow its macro and precede declared consumers"
+
+let test_dependency_graph_treats_typed_declare_macro_as_declaration () =
+  let open Lg.Ast in
+  let declaration =
+    FList
+      [
+        FSymbol "declare+";
+        FList
+          [
+            FSymbol "__type-hint";
+            FSymbol "boolean";
+            FSymbol "indexing?";
+          ];
+        FVector [ FSymbol "database"; FSymbol "attr" ];
+      ]
+  in
+  if Lg.Dependency_graph.provided_names declaration <> [ "indexing?" ] then
+    failwith "typed declare+ must provide its declared name";
+  if not (Lg.Dependency_graph.has_declarations [ declaration ]) then
+    failwith "typed declare+ must participate in declaration stabilization";
+  let forms =
+    [
+      FList
+        [
+          FSymbol "defmacro";
+          FSymbol "declare+";
+          FVector [ FSymbol "name"; FSymbol "&"; FSymbol "arglists" ];
+          FList [ FSymbol "list"; FString "declare"; FSymbol "name" ];
+        ];
+      declaration;
+      FList
+        [
+          FSymbol "defn";
+          FSymbol "validate-indexed";
+          FVector [ FSymbol "database"; FSymbol "attr" ];
+          FList
+            [ FSymbol "indexing?"; FSymbol "database"; FSymbol "attr" ];
+        ];
+      FList
+        [
+          FSymbol "defn+";
+          FList
+            [
+              FSymbol "__type-hint";
+              FSymbol "boolean";
+              FSymbol "indexing?";
+            ];
+          FVector [ FSymbol "database"; FSymbol "attr" ];
+          FBool true;
+        ];
+    ]
+  in
+  let order = Lg.Dependency_graph.stable_order forms in
+  let position index =
+    List.find_index (( = ) index) order |> Option.value ~default:max_int
+  in
+  if not (position 0 < position 1 && position 1 < position 2) then
+    failwith
+      "typed declare+ must follow its macro and precede declared consumers"
 
 let test_dependency_graph_orders_non_dash_protocol_methods_before_consumers () =
   let open Lg.Ast in
@@ -46011,6 +46120,8 @@ let tests =
       test_inline_update_refines_protocol_collection_elements );
     ( "inline update rejects unconstrained transient boundaries",
       test_inline_update_rejects_unconstrained_transient_boundaries );
+    ( "inline transient uses static protocol implementations",
+      test_inline_transient_uses_static_protocol_implementations );
     ( "nested update infers optional map value collections",
       test_nested_update_infers_optional_map_value_collections );
     ( "if-some get keeps map storage non-nullable",
@@ -46792,6 +46903,8 @@ let tests =
       test_dependency_graph_orders_protocol_return_type_dependencies );
     ( "dependency graph treats declare macro as declaration",
       test_dependency_graph_treats_declare_macro_as_declaration );
+    ( "dependency graph treats typed declare macro as declaration",
+      test_dependency_graph_treats_typed_declare_macro_as_declaration );
     ( "dependency graph orders non-dash protocol methods before consumers",
       test_dependency_graph_orders_non_dash_protocol_methods_before_consumers );
     ( "dependency graph keeps declarations before macro consumers",

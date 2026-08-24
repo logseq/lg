@@ -7830,9 +7830,16 @@ let create ~compile_expr =
                                ] )))
                       persistent_map
                 | None ->
-                    Error.error
-                      ("transient expects a set, vector, or map, got "
-                     ^ source_name map_type))
+                    (match
+                       compile_protocol_call scope env
+                         "IEditableCollection/-as-transient"
+                         [ collection_form ]
+                     with
+                    | Ok _ as result -> result
+                    | Error _ ->
+                        Error.error
+                          ("transient expects a set, vector, or map, got "
+                         ^ source_name map_type)))
             ))
     | _ -> Error.error "transient expects 1 argument"
   and compile_conj_bang scope env = function
@@ -8326,7 +8333,17 @@ let create ~compile_expr =
                                  [ collection.semantic_expr ] );
                            ] )))
                   (Types.set_module_name element_type)
-            | _ -> Error.error "persistent! expects a transient collection"))
+            | other_type -> (
+                match
+                  compile_protocol_call scope env
+                    "ITransientCollection/-persistent!"
+                    [ collection_form ]
+                with
+                | Ok _ as result -> result
+                | Error _ ->
+                    Error.error
+                      ("persistent! expects a transient collection, got "
+                     ^ Types.source_name other_type))))
     | _ -> Error.error "persistent! expects 1 argument"
   and compile_apply_zip_vectors scope env constructor_form fixed_forms rest_form =
     match

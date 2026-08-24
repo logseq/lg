@@ -254,6 +254,11 @@ let dependency_symbols = function
   | FList [ FSymbol "type-alias"; _name; manifest ] ->
       type_annotation_symbols manifest
   | FList (FSymbol "declare+" :: FSymbol name :: _) -> [ "declare+"; name ]
+  | FList
+      (FSymbol "declare+"
+      :: FList [ FSymbol "__type-hint"; _; FSymbol name ]
+      :: _) ->
+      [ "declare+"; name ]
   | FList (FSymbol "declare" :: names) ->
       List.filter_map
         (function
@@ -323,6 +328,11 @@ let rec provided_names = function
           ]
       | None -> [ name ])
   | FList (FSymbol "declare+" :: FSymbol name :: _) -> [ name ]
+  | FList
+      (FSymbol "declare+"
+      :: FList [ FSymbol "__type-hint"; _; FSymbol name ]
+      :: _) ->
+      [ name ]
   | FList (FSymbol "declare" :: names) ->
       List.filter_map (function FSymbol name -> Some name | _ -> None) names
   | FList (FSymbol "recursive-definition-group" :: definitions) ->
@@ -380,6 +390,10 @@ let has_declarations forms =
     (function
       | FList (FSymbol "declare" :: _)
       | FList (FSymbol "declare+" :: FSymbol _ :: _)
+      | FList
+          (FSymbol "declare+"
+          :: FList [ FSymbol "__type-hint"; _; FSymbol _ ]
+          :: _)
       | FList [ FSymbol "defn-signature"; _ ] ->
           true
       | _ -> false)
@@ -434,6 +448,14 @@ let declaration_provider_indices indexed =
     (fun providers (index, form) ->
       match form with
       | FList (FSymbol "declare+" :: FSymbol name :: _) ->
+          let existing =
+            String_map.find_opt name providers |> Option.value ~default:[]
+          in
+          String_map.add name (index :: existing) providers
+      | FList
+          (FSymbol "declare+"
+          :: FList [ FSymbol "__type-hint"; _; FSymbol name ]
+          :: _) ->
           let existing =
             String_map.find_opt name providers |> Option.value ~default:[]
           in

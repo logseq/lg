@@ -421,6 +421,10 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
                })
     | FSymbol name when core_function_symbol scope env name "identity" ->
         compile_identity ()
+    | FSymbol name
+      when core_function_symbol scope env name "transient"
+           || core_function_symbol scope env name "persistent!" ->
+        compile_contextual_call ()
     | FSymbol _ -> (
         match compile_function_arg scope env form with
         | Ok ({ ty = TFn _; _ } as fn) -> Ok fn
