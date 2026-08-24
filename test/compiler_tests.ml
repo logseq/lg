@@ -32307,6 +32307,73 @@ let test_protocol_calls_recover_structurally_inferred_named_records () =
   assert_ocaml_runs "protocol_calls_recover_structurally_inferred_named_records"
     "42\n" ocaml_source
 
+let test_protocol_peer_record_field_drops_redundant_seqable_witness () =
+  let source =
+    {|
+(defprotocol DiffLike
+  (diff-like [left right] :int))
+(type-record bag
+  (values :vector<int>))
+(signature seq-bag :fn<bag;seq<int>>)
+(defn seq-bag [bag]
+  (seq (:values bag)))
+(extend-type bag Seqable
+  (-seq [bag] (seq-bag bag)))
+(defn sum-values [items]
+  (reduce + 0 items))
+(type-record database
+  (values :bag))
+(extend-type database
+  DiffLike
+  (diff-like [left right]
+    (+ (sum-values (:values left))
+       (sum-values (:values right)))))
+(println
+  (diff-like
+    (record database (values (record bag (values [1 2]))))
+    (record database (values (record bag (values [3 4]))))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_peer_record_field_drops_redundant_seqable_witness"
+    "10\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_constraint_disambiguates_callback_record_receiver () =
+  let source =
+    {|
+(defprotocol IDatom
+  (datom-added [datom] :bool))
+(deftype Datom [^int e ^boolean added]
+  IDatom
+  (datom-added [datom] (.-added datom)))
+(signature datom-added :fn<Datom;bool>)
+(type-record search-pattern
+  (e :int))
+(type-record report
+  (tx-data :vector<Datom>))
+(defn added-entities [report]
+  (let [reduce-fn
+        (fn [entities datom]
+          (if (datom-added datom)
+            (+ entities (.-e datom))
+            entities))]
+    (reduce reduce-fn 0 (:tx-data report))))
+(println
+  (added-entities
+    (record report
+      (tx-data [(Datom. 1 true) (Datom. 2 false)]))))
+|}
+  in
+  let ocaml_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs
+    "protocol_constraint_disambiguates_callback_record_receiver"
+    "1\n" ocaml_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_transducer_type_hints_infer_closed_nominal_record_fields () =
   let source =
     {|
@@ -47364,6 +47431,10 @@ let tests =
       test_macros_preserve_nested_parameter_type_hints );
     ( "protocol calls recover structurally inferred named records",
       test_protocol_calls_recover_structurally_inferred_named_records );
+    ( "protocol peer record field drops redundant seqable witness",
+      test_protocol_peer_record_field_drops_redundant_seqable_witness );
+    ( "protocol constraint disambiguates callback record receiver",
+      test_protocol_constraint_disambiguates_callback_record_receiver );
     ( "transducer type hints infer closed nominal record fields",
       test_transducer_type_hints_infer_closed_nominal_record_fields );
     ( "deftype methods flush after their declared dependencies",

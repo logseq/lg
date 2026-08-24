@@ -13110,8 +13110,23 @@ let create ~compile_expr =
                      |> List.map (fun constructor -> (constructor, payload_ty)))
             in
             if branches = [] then
-              Core_scalar.compile ~target:(Env.target env) Builtin_id.Keyword
-                args
+              (match Types.constraint_value_type argument.ty with
+              | TKeyword | TString | TSymbol ->
+                  Core_scalar.compile ~target:(Env.target env)
+                    Builtin_id.Keyword args
+              | _ ->
+                  Ok
+                    (typed_ir TKeyword
+                       (Semantic_ir.Sequence
+                          [
+                            argument.semantic_expr;
+                            Semantic_ir.Apply
+                              ( Semantic_ir.Ident "invalid_arg",
+                                [
+                                  Semantic_ir.String
+                                    "keyword expects keyword, string, or symbol";
+                                ] );
+                          ])))
             else
               let payload_name = "__lg_keyword_payload" in
               let rec compile_branches compiled = function

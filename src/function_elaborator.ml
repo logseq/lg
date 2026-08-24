@@ -76,7 +76,8 @@ let record_inference_compatible env ~allow_expected_dynamic expected_fields
              || same_host_wrapper expected.ty actual.ty
              || Types.row_compatible ~expected:expected.ty ~actual:actual.ty)
 
-let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
+let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
+    ?(required_protocols = []) scope env = function
   | TNamed_record record as ty -> (
       match
         Resolver.lookup_record_type scope env (Type_id.to_string record.type_id)
@@ -168,9 +169,11 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
   | ty when Option.is_some (Types.protocol_constraint_info ty) -> (
       match Types.protocol_constraint_info ty with
       | None -> assert false
-      | Some (_, _, value_ty) ->
+      | Some (protocol_id, _, value_ty) ->
           Types.protocol_constraint_with_value ty
-            (infer_named_record ~allow_dynamic_fields:true scope env value_ty))
+            (infer_named_record ~allow_dynamic_fields:true ?preferred_record
+               ~required_protocols:(protocol_id :: required_protocols)
+               scope env value_ty))
   | TConstraint
       (Seqable_constraint
         ({ element = TRecord fields; storage = container; _ } as constraint_)) ->
@@ -305,6 +308,12 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             else None)
           env
         |> unique_named_records
+        |> List.filter (fun record ->
+               List.for_all
+                 (fun protocol_id ->
+                   Protocol.type_satisfies env protocol_id
+                     (TNamed_record record))
+                 required_protocols)
       in
       let direct_match_count record =
         fields
@@ -329,8 +338,19 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
             (fun record -> direct_match_count record = best_direct_matches)
             candidates
       in
-      match candidates with
-      | [ record ] ->
+      let selected =
+        match candidates with
+        | [ record ] -> Some record
+        | _ -> (
+            match preferred_record with
+            | Some (TNamed_record preferred) ->
+                List.find_opt
+                  (fun record -> Type_id.equal record.type_id preferred.type_id)
+                  candidates
+            | Some _ | None -> None)
+      in
+      match selected with
+      | Some record ->
           let matched_fields =
             record.fields
             |> List.filter_map (fun (template : field) ->
@@ -342,7 +362,7 @@ let rec infer_named_record ?(allow_dynamic_fields = false) scope env = function
           in
           let templates, actuals = List.split matched_fields in
           Types.instantiate_type ~templates ~actuals (TNamed_record record)
-      | _ -> inferred)
+      | None -> inferred)
   | inferred -> inferred
 
 let infer_parameter_named_record scope env = function
@@ -723,7 +743,7 @@ let lexical_parameter_names specs =
          spec.source_name :: Destructure.pattern_names spec.pattern)
   |> List.sort_uniq String.compare
 
-let prepare ?(param_type_overrides = []) ?variadic_rest_index
+let prepare ?(param_type_overrides = []) ?preferred_record ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?compile_function_body ?compile_default
     ~lookup_function_ty ~compile_body scope env params body_forms =
@@ -892,15 +912,17 @@ let prepare ?(param_type_overrides = []) ?variadic_rest_index
               | TNullable (TRecord fields) ->
                   let structural = infer_structural_fields fields in
                   if List.mem name directly_accessed_parameters then
-                    TNullable (infer_named_record scope env structural)
+                    TNullable
+                      (infer_named_record ?preferred_record scope env structural)
                   else TNullable structural
               | TOcaml_app ("option", [ TRecord fields ]) ->
                   let structural = infer_structural_fields fields in
                   if List.mem name directly_accessed_parameters then
                     TOcaml_app
-                      ("option", [ infer_named_record scope env structural ])
+                      ( "option",
+                        [ infer_named_record ?preferred_record scope env structural ] )
                   else TOcaml_app ("option", [ structural ])
-              | ty -> infer_named_record scope env ty
+              | ty -> infer_named_record ?preferred_record scope env ty
           in
           let resolved_inferred =
             List.map

@@ -683,7 +683,8 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                         in
                         match
                           Expression_elaborator.compile_fn ~param_type_overrides
-                            scope env params body_forms
+                            ~preferred_record:receiver_ty scope env params
+                            body_forms
                         with
                         | Error _ as err -> err
                         | Ok expr -> (

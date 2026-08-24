@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 248; then
-  echo "compiler call dispatch changed: expected 248 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 249; then
+  echo "compiler call dispatch changed: expected 249 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -252,6 +252,7 @@ awk '
     split("seq-flat-map seq-flat-map-rev seq-uncons seq-unfold seq-unfold-chunks seq-unfold-unmemoized", xs)
     for (i in xs) typed_reason[xs[i]] = "typed-lazy-sequence-construction-primitive"
     typed_reason["uncurried-call"] = "typed-static-uncurried-callback-application-primitive"
+    typed_reason["IllegalArgumentException."] = "typed-native-invalid-argument-compatibility-constructor"
     split("unsafe-aget unsafe-aset", xs)
     for (i in xs) typed_reason[xs[i]] = "typed-host-array-index-access-primitive"
     host_reason["."] = "host-member-invocation-syntax-boundary"

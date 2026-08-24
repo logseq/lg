@@ -847,7 +847,8 @@ and compile_letfn scope env bindings body_forms =
   | _, [] -> Error.error "letfn requires a body"
   | _ -> Error.error "letfn expects a vector of local function bindings"
 
-and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
+and prepare_fn ?(param_type_overrides = []) ?preferred_record
+    ?variadic_rest_index
     ?(materialize_open_equality = false) ?(refine_open_overrides = false)
     ?recur_target ?expected_return_ty scope env params body_forms =
   let lookup_function_ty = lookup_function_ty scope env in
@@ -921,7 +922,8 @@ and prepare_fn ?(param_type_overrides = []) ?variadic_rest_index
             (compile_expr scope (Env.with_expected_type (Some expected) env) form)
             adapt
     in
-    Function_elaborator.prepare ~param_type_overrides ?variadic_rest_index
+    Function_elaborator.prepare ~param_type_overrides ?preferred_record
+      ?variadic_rest_index
       ~materialize_open_equality ~refine_open_overrides ?compile_function_body
       ~lookup_function_ty ~compile_default ~compile_body scope env params
       body_forms
@@ -2230,8 +2232,8 @@ and compile_multi_arity_fn scope env clauses =
             Semantic_ir.Let (bindings, prepared.expr.semantic_expr);
         }
 
-and compile_fn ?(param_type_overrides = []) ?(use_open_context = false) scope env
-    params body_forms =
+and compile_fn ?(param_type_overrides = []) ?preferred_record
+    ?(use_open_context = false) scope env params body_forms =
   let expected_type = Env.expected_type env in
   let variadic_params =
     match params with
@@ -2343,8 +2345,8 @@ and compile_fn ?(param_type_overrides = []) ?(use_open_context = false) scope en
   in
   let env = Env.with_expected_type None env in
   match
-    prepare_fn ~param_type_overrides ?variadic_rest_index ?expected_return_ty
-      ~refine_open_overrides:true scope env params body_forms
+    prepare_fn ~param_type_overrides ?preferred_record ?variadic_rest_index
+      ?expected_return_ty ~refine_open_overrides:true scope env params body_forms
   with
   | Error _ as err -> err
   | Ok parts when unresolved_contextual_type parts.body.ty ->
