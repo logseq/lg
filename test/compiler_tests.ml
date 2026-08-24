@@ -18012,6 +18012,20 @@ let test_macros_iterate_literal_map_entries () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_macro_assoc_accepts_multiple_key_value_pairs () =
+  let source =
+    {|
+(defmacro decorate [attrs]
+  (assoc attrs :left 20 :right 22))
+(println (+ (:left (decorate {})) (:right (decorate {}))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "macro_assoc_accepts_multiple_key_value_pairs" "42\n"
+    native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_macro_namespace_accepts_qualified_keywords () =
   let source =
     {|
@@ -45891,6 +45905,8 @@ let tests =
       test_inline_attributes_flow_through_public_def_aliases );
     ( "macros iterate literal map entries",
       test_macros_iterate_literal_map_entries );
+    ( "macro assoc accepts multiple key value pairs",
+      test_macro_assoc_accepts_multiple_key_value_pairs );
     ( "macro namespace accepts qualified keywords",
       test_macro_namespace_accepts_qualified_keywords );
     ( "nil guarded compare remains statically polymorphic",

@@ -137,6 +137,20 @@ let concat_sequence_values values =
   in
   concat [] values
 
+let assoc_macro_values = function
+  | Form (FMap entries) :: (_ :: _ as pairs) ->
+      let rec associate entries = function
+        | [] -> Ok (Form (FMap entries))
+        | Form key :: Form value :: rest ->
+            associate ((key, value) :: List.remove_assoc key entries) rest
+        | _ ->
+            Error.error
+              "assoc expects a macro map followed by key/value pairs"
+      in
+      associate entries pairs
+  | _ ->
+      Error.error "assoc expects a macro map followed by key/value pairs"
+
 let truthy = function
   | Form (FSymbol "nil" | FBool false) -> false
   | Form _ | Closure _ | Macro_function _ | Builtin _ | Juxt _ | Volatile _
@@ -702,12 +716,7 @@ and apply_value context callable args =
           | _, (Error _ as error) -> error
           | _ -> Error.error "conj expects a macro vector or list")
       | _ -> Error.error "conj expects two macro arguments")
-  | Builtin "assoc" -> (
-      match args with
-      | [ Form (FMap entries); Form key; Form value ] ->
-          let entries = (key, value) :: List.remove_assoc key entries in
-          Ok (Form (FMap entries))
-      | _ -> Error.error "assoc expects a macro map, key, and value")
+  | Builtin "assoc" -> assoc_macro_values args
   | Builtin "list" ->
       let rec collect forms = function
         | [] -> Ok (Form (FList (List.rev forms)))
@@ -1114,12 +1123,7 @@ and eval_builtin context name arg_forms =
           | _ -> Error.error "conj expects a macro vector or list")
       | Ok _ -> Error.error "conj expects two macro arguments"
       | Error _ as err -> err)
-  | "assoc" -> (
-      match eval_args () with
-      | Ok [ Form (FMap entries); Form key; Form value ] ->
-          Ok (Form (FMap ((key, value) :: List.remove_assoc key entries)))
-      | Ok _ -> Error.error "assoc expects a macro map, key, and value"
-      | Error _ as error -> error)
+  | "assoc" -> Result.bind (eval_args ()) assoc_macro_values
   | "meta" ->
       unary (function
         | Form
