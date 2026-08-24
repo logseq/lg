@@ -7673,7 +7673,7 @@ let create ~compile_expr =
                               [ metadata ] ) ) ))))
     | _ -> Error.error "print-meta? expects options and value"
   in
-  let rec compile_ocaml_arguments scope env forms =
+  let rec parse_ocaml_argument_forms forms =
     let rec parse acc = function
       | [] -> Ok (List.rev acc)
       | FKeyword label :: [] ->
@@ -7683,16 +7683,35 @@ let create ~compile_expr =
           parse ((Some label, value_form) :: acc) rest
       | value_form :: rest -> parse ((None, value_form) :: acc) rest
     in
-    let rec compile acc = function
-      | [] -> Ok (List.rev acc)
-      | (label, form) :: rest -> (
-          match compile_expr scope env form with
+    parse [] forms
+  and compile_ocaml_arguments ?expected_types scope env forms =
+    let rec compile acc arguments expected_types =
+      match (arguments, expected_types) with
+      | [], [] -> Ok (List.rev acc)
+      | (label, form) :: rest, expected_type :: expected_rest -> (
+          let expected_type =
+            Option.bind expected_type (fun ty ->
+                if Type_solver.is_open ty then None else Some ty)
+          in
+          match
+            compile_expr scope (Env.with_expected_type expected_type env) form
+          with
           | Error _ as err -> err
-          | Ok argument -> compile ((label, argument) :: acc) rest)
+          | Ok argument ->
+              compile ((label, argument) :: acc) rest expected_rest)
+      | _ -> Error.error "internal OCaml argument context mismatch"
     in
-    match parse [] forms with
+    match parse_ocaml_argument_forms forms with
     | Error _ as err -> err
-    | Ok arguments -> compile [] arguments
+    | Ok arguments ->
+        let expected_types =
+          match expected_types with
+          | Some expected_types
+            when List.length expected_types = List.length arguments ->
+              List.map Option.some expected_types
+          | Some _ | None -> List.map (fun _ -> None) arguments
+        in
+        compile [] arguments expected_types
   and ocaml_apply function_name arguments =
     if List.exists (fun (label, _) -> Option.is_some label) arguments then
       Semantic_ir.Labelled_apply
@@ -14749,8 +14768,88 @@ let create ~compile_expr =
                   (List.length signature.payload_types)))
               | _ -> compile_named_function_call scope env name arg_forms)
   and compile_inferred_ocaml_call scope env function_name value_forms =
+    let expected_argument_types signature arguments =
+      let named_labels = List.filter_map fst arguments in
+      let remaining =
+        List.filter
+          (fun (parameter : Ocaml_signature.parameter) ->
+            match parameter.label with
+            | Ocaml_signature.Labelled label
+            | Ocaml_signature.Optional label ->
+                not (List.mem label named_labels)
+            | Ocaml_signature.Positional -> true)
+          signature.Ocaml_signature.parameters
+      in
+      let find_named label =
+        signature.parameters
+        |> List.find_opt (fun (parameter : Ocaml_signature.parameter) ->
+               match parameter.label with
+               | Ocaml_signature.Labelled name
+               | Ocaml_signature.Optional name ->
+                   String.equal name label
+               | Ocaml_signature.Positional -> false)
+        |> Option.map (fun (parameter : Ocaml_signature.parameter) ->
+               match (parameter.label, optional_payload parameter.ty) with
+               | Ocaml_signature.Optional _, Some ty -> ty
+               | _ -> parameter.ty)
+      in
+      let rec consume_positional prefix = function
+        | [] -> None
+        | { Ocaml_signature.label = Ocaml_signature.Optional _; _ }
+          :: parameters ->
+            consume_positional prefix parameters
+        | ({ label = Ocaml_signature.Labelled _; _ } as parameter)
+          :: parameters ->
+            consume_positional (parameter :: prefix) parameters
+        | { label = Ocaml_signature.Positional; ty } :: parameters ->
+            Some (ty, List.rev_append prefix parameters)
+      in
+      let rec collect collected remaining = function
+        | [] -> Some (List.rev collected)
+        | (Some label, _) :: rest -> (
+            match find_named label with
+            | Some ty -> collect (ty :: collected) remaining rest
+            | None -> None)
+        | (None, _) :: rest -> (
+            match consume_positional [] remaining with
+            | Some (ty, remaining) ->
+                collect (ty :: collected) remaining rest
+            | None -> None)
+      in
+      collect [] remaining arguments
+    in
+    let resolved_function_name =
+      resolve_ocaml_call_target scope env function_name
+    in
+    let contextual_expected_types =
+      match
+        ( Ocaml_signature.value_signature resolved_function_name,
+          parse_ocaml_argument_forms value_forms )
+      with
+      | Ok signature, Ok arguments ->
+          let signature =
+            match Env.expected_type env with
+            | None -> signature
+            | Some expected ->
+                let instantiate ty =
+                  Types.instantiate_type ~templates:[ signature.return_type ]
+                    ~actuals:[ expected ] ty
+                in
+                {
+                  Ocaml_signature.parameters =
+                    List.map
+                      (fun (parameter : Ocaml_signature.parameter) ->
+                        { parameter with ty = instantiate parameter.ty })
+                      signature.parameters;
+                  return_type = instantiate signature.return_type;
+                }
+          in
+          expected_argument_types signature arguments
+      | _ -> None
+    in
     match
-      compile_ocaml_arguments scope (Env.with_expected_type None env) value_forms
+      compile_ocaml_arguments ?expected_types:contextual_expected_types scope
+        (Env.with_expected_type None env) value_forms
     with
     | Error _ as err -> err
     | Ok arguments -> (
@@ -14792,58 +14891,6 @@ let create ~compile_expr =
                   ] ) ->
                   [ (None, typed_ir TUnit Semantic_ir.Unit) ]
               | _ -> arguments
-            in
-            let expected_argument_types () =
-              let named_labels = List.filter_map fst arguments in
-              let remaining =
-                List.filter
-                  (fun (parameter : Ocaml_signature.parameter) ->
-                    match parameter.label with
-                    | Ocaml_signature.Labelled label
-                    | Ocaml_signature.Optional label ->
-                        not (List.mem label named_labels)
-                    | Ocaml_signature.Positional -> true)
-                  signature.parameters
-              in
-              let find_named label =
-                signature.parameters
-                |> List.find_opt
-                     (fun (parameter : Ocaml_signature.parameter) ->
-                       match parameter.label with
-                       | Ocaml_signature.Labelled name
-                       | Ocaml_signature.Optional name ->
-                           String.equal name label
-                       | Ocaml_signature.Positional -> false)
-                |> Option.map
-                     (fun (parameter : Ocaml_signature.parameter) ->
-                       match (parameter.label, optional_payload parameter.ty) with
-                       | Ocaml_signature.Optional _, Some ty -> ty
-                       | _ -> parameter.ty)
-              in
-              let rec consume_positional prefix = function
-                | [] -> None
-                | { Ocaml_signature.label = Ocaml_signature.Optional _; _ }
-                  :: parameters ->
-                    consume_positional prefix parameters
-                | ({ label = Ocaml_signature.Labelled _; _ } as parameter)
-                  :: parameters ->
-                    consume_positional (parameter :: prefix) parameters
-                | { label = Ocaml_signature.Positional; ty } :: parameters ->
-                    Some (ty, List.rev_append prefix parameters)
-              in
-              let rec collect collected remaining = function
-                | [] -> Some (List.rev collected)
-                | (Some label, _) :: rest -> (
-                    match find_named label with
-                    | Some ty -> collect (ty :: collected) remaining rest
-                    | None -> None)
-                | (None, _) :: rest -> (
-                    match consume_positional [] remaining with
-                    | Some (ty, remaining) ->
-                        collect (ty :: collected) remaining rest
-                    | None -> None)
-              in
-              collect [] remaining arguments
             in
             let adapt_arguments expected_types =
               let actual_types =
@@ -14887,7 +14934,7 @@ let create ~compile_expr =
             with
             | Error _ as err -> err
             | Ok _ -> (
-                match expected_argument_types () with
+                match expected_argument_types signature arguments with
                 | None -> Error.error "invalid OCaml argument application"
                 | Some expected_types -> (
                     match adapt_arguments expected_types with
