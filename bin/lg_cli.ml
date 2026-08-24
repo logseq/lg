@@ -870,6 +870,9 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
     if saved.target <> target then
       compiler_error "saved compiler state target does not match --target"
     else
+    Result.bind
+      (order_input_paths ?reader_target target saved.state input_paths)
+      (fun input_paths ->
     let result =
     let rec read_sources sources packages = function
       | [] -> Ok (List.rev sources, List.sort_uniq String.compare packages)
@@ -958,7 +961,7 @@ let compile_files_from_saved_state ?(use_cache = true) ?reader_target target
         compile initial_prefix_key (Live initial_state) [] [] sources)))
     in
     if use_cache then prune_compile_cache ();
-    result
+    result)
 
 let infer_interface target input_path =
   let source = read_file input_path in
