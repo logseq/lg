@@ -8620,8 +8620,30 @@ let create ~compile_expr =
           | Ok _ | Error _ -> (
     let compile_args () = compile_args_for scope env arg_forms in
               let constructor ?(display_name = name) ?(constructor_name = name)
-                  return_ty expected_arity =
-      match compile_args () with
+                  ?payload_tys return_ty expected_arity =
+                let rec compile_payloads compiled forms payloads =
+                  match (forms, payloads) with
+                  | [], [] -> Ok (List.rev compiled)
+                  | form :: forms, payload_ty :: payloads ->
+                      let expected_type =
+                        if Type_solver.is_open payload_ty then None
+                        else Some payload_ty
+                      in
+                      Result.bind
+                        (compile_expr scope
+                           (Env.with_expected_type expected_type env)
+                           form)
+                        (fun value ->
+                          compile_payloads (value :: compiled) forms payloads)
+                  | _ -> compile_args ()
+                in
+                let args =
+                  match payload_tys with
+                  | Some payload_tys ->
+                      compile_payloads [] arg_forms payload_tys
+                  | None -> compile_args ()
+                in
+      match args with
       | Error _ as err -> err
       | Ok args when List.length args <> expected_arity ->
           Error.error
@@ -10354,12 +10376,22 @@ let create ~compile_expr =
                       [ exception_.semantic_expr ] )))
         | Ok [ _ ] -> Error.error "throw expects an exception"
         | Ok _ -> Error.error "throw expects 1 arguments")
-    | "Some" ->
-        constructor
-                    (function
-                      | [ value ] -> TOcaml_app ("option", [ value.ty ])
-                      | _ -> TUnknown)
-          1
+    | "Some" -> (
+        match arg_forms with
+        | [ value_form ] ->
+            let value_expected =
+              match Env.expected_type env with
+              | Some (TNullable value_ty | TOcaml_app ("option", [ value_ty ])) ->
+                  Some value_ty
+              | Some _ | None -> None
+            in
+            Result.map
+              (fun value ->
+                typed_ir (TOcaml_app ("option", [ value.ty ]))
+                  (Semantic_ir.Constructor ("Some", Some value.semantic_expr)))
+              (compile_expr scope (Env.with_expected_type value_expected env)
+                 value_form)
+        | _ -> Error.error "Some expects 1 arguments")
               | "None" ->
                   constructor (fun _ -> TOcaml_app ("option", [ TUnknown ])) 0
     | "Ok" ->
@@ -14696,7 +14728,7 @@ let create ~compile_expr =
     | _ when is_constructor_name name -> (
         match lookup_binding scope env name with
         | Ok { ty = TFn (payload_tys, return_ty); ocaml_name; _ } ->
-            constructor ~constructor_name:ocaml_name
+            constructor ~constructor_name:ocaml_name ~payload_tys
               (fun args ->
                 Types.instantiate_type ~templates:payload_tys
                   ~actuals:(List.map (fun arg -> arg.ty) args)
@@ -14712,11 +14744,14 @@ let create ~compile_expr =
             | Error _ as err -> err
             | Ok signature ->
                 constructor ~constructor_name
+                  ~payload_tys:signature.payload_types
                   (fun _ -> signature.result_type)
                   (List.length signature.payload_types)))
               | _ -> compile_named_function_call scope env name arg_forms)
   and compile_inferred_ocaml_call scope env function_name value_forms =
-    match compile_ocaml_arguments scope env value_forms with
+    match
+      compile_ocaml_arguments scope (Env.with_expected_type None env) value_forms
+    with
     | Error _ as err -> err
     | Ok arguments -> (
         let function_name = resolve_ocaml_call_target scope env function_name in

@@ -20,7 +20,16 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
     | _ -> false
   in
   if identical_closed_sum_option then Some (Ok argument)
-  else if Option.is_some (Types.protocol_constraint_info argument.ty) then None
+  else if
+    not (Types.equal argument.ty (Types.constraint_value_type argument.ty))
+    && Types.equal expected (Types.constraint_value_type argument.ty)
+  then None
+  else if
+    Option.fold ~none:false ~some:(Types.equal expected)
+      (Types.reduced_element argument.ty)
+    || Option.fold ~none:false ~some:(Types.equal expected)
+         (Types.maybe_reduced_callback_element argument.ty)
+  then None
   else if
     match (expected, argument.ty) with
     | ( (TNullable _ | TOcaml_app ("option", [ _ ])),
@@ -97,7 +106,7 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
         Some
           (Error.error
              ("ambiguous closed sum injection into " ^ Types.source_name expected
-            ^ ": " ^ names))
+            ^ ": " ^ names ^ " from " ^ Types.source_name argument.ty))
 
 let adapt_set_callable callable =
   match callable.ty with

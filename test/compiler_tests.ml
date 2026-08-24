@@ -13100,6 +13100,242 @@ let test_declared_external_closed_sum_injects_across_chunks () =
       ^ provider_compilation.ocaml_source ^ "\n--- consumer ---\n"
       ^ compilation.ocaml_source)
 
+let test_declared_external_closed_sum_preserves_optional_match_result () =
+  let source =
+    {|
+(type-variant operation Identity Add)
+(contextual-closed-sum-constructors :External.Value.t
+  (External.Value.Int :int))
+(signature user/add :fn<option<External.Value.t>>)
+(defn add [] None)
+(signature user/apply-operation :fn<operation;option<External.Value.t>>)
+(defn apply-operation [operation]
+  (match operation
+    Identity (Some 1)
+    Add (add)))
+|}
+  in
+  let _, compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"external_optional_match.cljc"
+      (stdlib_state Lg.Target.Native) source
+    |> expect_ok
+  in
+  let compilation = compilation.ocaml_source in
+  if
+    not
+      (string_contains_substring compilation
+         "External.Value.Int __lg_closed_sum_payload")
+  then
+    failwith
+      ("external closed sum changed the optional match result:\n"
+      ^ compilation)
+
+let test_contextual_closed_sum_preserves_same_domain_truthy_constraint () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  DataNil)
+(signature user/unwrap [value]
+  :fn<truthy<data-value>;data-value>)
+(defn unwrap [value] value)
+(println
+  (match (unwrap (BoolValue true))
+    (BoolValue value) value
+    DataNil false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "a constrained closed-sum value must remain fully static";
+  assert_ocaml_runs
+    "contextual_closed_sum_preserves_same_domain_truthy_constraint" "true\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_preserves_optional_constrained_payload () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  DataNil)
+(signature user/wrap [value]
+  :fn<truthy<data-value>;option<data-value>>)
+(defn wrap [value] (Some value))
+(println
+  (match (wrap (BoolValue true))
+    (Some (BoolValue value)) value
+    _ false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "an optional constrained closed-sum value must remain fully static";
+  assert_ocaml_runs
+    "contextual_closed_sum_preserves_optional_constrained_payload" "true\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_preserves_some_conditional_payload () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  DataNil)
+(signature user/wrap
+  :fn<bool;data-value;option<data-value>>)
+(defn wrap [empty value]
+  (Some
+    (if empty
+      DataNil
+      value)))
+(println
+  (match (wrap false (BoolValue true))
+    (Some (BoolValue value)) value
+    _ false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "a Some conditional payload must remain fully static";
+  assert_ocaml_runs "contextual_closed_sum_preserves_some_conditional_payload"
+    "true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_uses_callee_parameter_for_conditional_argument () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  DataNil)
+(signature user/optional-value
+  :fn<data-value;option<data-value>>)
+(defn optional-value [value] (Some value))
+(signature user/apply-value
+  :fn<bool;data-value;option<data-value>>)
+(defn apply-value [empty value]
+  (optional-value
+    (if empty
+      DataNil
+      value)))
+(println
+  (match (apply-value false (BoolValue true))
+    (Some (BoolValue value)) value
+    _ false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "a conditional call argument must remain fully static";
+  assert_ocaml_runs
+    "contextual_closed_sum_uses_callee_parameter_for_conditional_argument"
+    "true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_does_not_leak_result_context_into_ocaml_argument () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  DataNil)
+(signature user/wrap
+  :fn<bool;data-value;option<data-value>>)
+(defn wrap [empty value]
+  (Option.some
+    (if empty
+      DataNil
+      value)))
+(println
+  (match (wrap false (BoolValue true))
+    (Some (BoolValue value)) value
+    _ false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "an inferred OCaml call argument must remain fully static";
+  assert_ocaml_runs
+    "contextual_closed_sum_does_not_leak_result_context_into_ocaml_argument"
+    "true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_uses_constructor_payload_context () =
+  let source =
+    {|
+(type-variant data-value
+  (StringValue :string)
+  (KeywordValue :keyword))
+(signature user/value
+  :fn<bool;data-value>)
+(defn value [keyword]
+  (KeywordValue
+    (if keyword
+      :db/add
+      :db/retract)))
+(println
+  (match (value true)
+    (KeywordValue value) (= value :db/add)
+    _ false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "a constructor conditional payload must remain fully static";
+  assert_ocaml_runs "contextual_closed_sum_uses_constructor_payload_context"
+    "true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_preserves_reduced_constrained_accumulator () =
+  let source =
+    {|
+(type-variant data-value
+  (BoolValue :bool)
+  (IntValue :int)
+  DataNil)
+(signature user/and-value
+  :fn<vector<data-value>;data-value>)
+(defn and-value [values]
+  (reduce
+    (fn [_ value]
+      (if value
+        value
+        (reduced value)))
+    (BoolValue true)
+    values))
+(println
+  (match (and-value [(IntValue 1) DataNil])
+    (BoolValue value) value
+    (IntValue value) (= value 1)
+    DataNil false))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "a reduced constrained accumulator must remain fully static";
+  assert_ocaml_runs
+    "contextual_closed_sum_preserves_reduced_constrained_accumulator" "false\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_contextual_closed_sum_rejects_unrelated_truthy_constraint () =
+  compile_string_with_stdlib
+    {|
+(type-variant data-value
+  (IntValue :int))
+(signature user/bad [value]
+  :fn<truthy<string>;data-value>)
+(defn bad [value] value)
+|}
+  |> expect_error_contains "cannot inject truthy<string> into closed sum data_value"
+
 let test_dotted_syntax_resolves_declared_closed_sum_constructors () =
   let source =
     {|
@@ -45023,6 +45259,26 @@ let tests =
       test_contextual_closed_sum_injection_rejects_missing_constructor );
     ( "declared external closed sum injects across chunks",
       test_declared_external_closed_sum_injects_across_chunks );
+    ( "declared external closed sum preserves optional match result",
+      test_declared_external_closed_sum_preserves_optional_match_result );
+    ( "contextual closed sum preserves same-domain truthy constraint",
+      test_contextual_closed_sum_preserves_same_domain_truthy_constraint );
+    ( "contextual closed sum preserves optional constrained payload",
+      test_contextual_closed_sum_preserves_optional_constrained_payload );
+    ( "contextual closed sum preserves Some conditional payload",
+      test_contextual_closed_sum_preserves_some_conditional_payload );
+    ( "contextual closed sum uses callee parameter for conditional argument",
+      test_contextual_closed_sum_uses_callee_parameter_for_conditional_argument
+    );
+    ( "contextual closed sum does not leak result context into OCaml argument",
+      test_contextual_closed_sum_does_not_leak_result_context_into_ocaml_argument
+    );
+    ( "contextual closed sum uses constructor payload context",
+      test_contextual_closed_sum_uses_constructor_payload_context );
+    ( "contextual closed sum preserves reduced constrained accumulator",
+      test_contextual_closed_sum_preserves_reduced_constrained_accumulator );
+    ( "contextual closed sum rejects unrelated truthy constraint",
+      test_contextual_closed_sum_rejects_unrelated_truthy_constraint );
     ( "dotted syntax resolves declared closed sum constructors",
       test_dotted_syntax_resolves_declared_closed_sum_constructors );
     ( "declared optional sequential host adapter is static",
