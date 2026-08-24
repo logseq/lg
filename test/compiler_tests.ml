@@ -25159,12 +25159,13 @@ let test_reify_preserves_static_protocol_payload () =
     (-value [_] 42)))
 (def value (make-value))
 (println (-value value))
+(println (satisfies? Value value))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "statically dispatched reify must not emit dynamic protocol adapters";
-  assert_ocaml_runs "reify_preserves_static_protocol_payload" "42\n"
+  assert_ocaml_runs "reify_preserves_static_protocol_payload" "42\ntrue\n"
     ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)

@@ -9054,7 +9054,9 @@ let create ~compile_expr =
                     &&
                     match ty with TVector _ -> true | _ -> false
                   then false
-                  else Protocol.type_satisfies env protocol_id ty
+                  else
+                    has_protocol_constraint protocol_id ty
+                    || Protocol.type_satisfies env protocol_id ty
                 in
                 let expression =
                   if
@@ -12083,8 +12085,17 @@ let create ~compile_expr =
                   else
                     let payload_ty, payload_expr =
                       match payloads with
-                      | [ (_, payload_ty, payload_expr) ] ->
-                          (payload_ty, payload_expr)
+                      | [ (protocol_id, methods_ty, methods_expr) ] -> (
+                          match contextual_payload with
+                          | Some payload_ty
+                            when Option.is_none
+                                   (Types.reify_protocol_payload_info payload_ty) ->
+                              (methods_ty, methods_expr)
+                          | Some _ | None ->
+                              ( Types.reify_protocol_payload protocol_id methods_ty
+                                  TUnit,
+                                Semantic_ir.Tuple
+                                  [ methods_expr; Semantic_ir.Unit ] ))
                       | _ ->
                           List.fold_right
                             (fun (protocol_id, methods_ty, methods_expr)

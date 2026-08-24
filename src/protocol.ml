@@ -184,6 +184,18 @@ let source_type_implicitly_satisfies protocol_id receiver_ty =
       true
   | _ -> false
 
+let reify_type_satisfies protocol_id = function
+  | TOcaml_app ("Lg_runtime.Runtime_reify.t", [ payload_ty ]) ->
+      let rec contains ty =
+        match Types.reify_protocol_payload_info ty with
+        | Some (candidate, _, rest_ty) ->
+            String.equal candidate (Protocol_id.to_string protocol_id)
+            || contains rest_ty
+        | None -> false
+      in
+      contains payload_ty
+  | _ -> false
+
 let type_satisfies env protocol_id receiver_ty =
   let satisfies registry =
     match
@@ -204,6 +216,7 @@ let type_satisfies env protocol_id receiver_ty =
     | None, _ | _, None -> false
   in
   source_type_implicitly_satisfies protocol_id receiver_ty
+  || reify_type_satisfies protocol_id receiver_ty
   || satisfies (Env.protocols env)
   ||
   match Env.protocol_evidence env with
