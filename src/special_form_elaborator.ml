@@ -213,6 +213,18 @@ let narrow_type_predicates scope env condition body =
   let body =
     let guarded =
       guarded_protocol_symbols condition |> List.sort_uniq compare
+      |> List.filter (fun (protocol_name, receiver) ->
+             match
+               ( Protocol.find_protocol_id scope env protocol_name,
+                 Resolver.lookup_binding scope env receiver )
+             with
+             | Some protocol_id, Ok (binding : Types.binding) -> (
+                 match Types.constraint_value_type binding.ty with
+                 | TNamed_record _ ->
+                     not
+                       (Protocol.type_satisfies env protocol_id binding.ty)
+                 | _ -> true)
+             | _ -> true)
     in
     List.fold_right
       (fun (protocol_name, receiver) body ->
@@ -1540,6 +1552,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     in
     let rec evaluated_static_boolean expression =
       match Semantic_ir.unlocated expression with
+      | Semantic_ir.Bool value -> Some value
       | Semantic_ir.Typed (_, expression) ->
           evaluated_static_boolean expression
       | Semantic_ir.Sequence expressions -> (

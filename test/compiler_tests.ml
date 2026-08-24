@@ -25758,6 +25758,24 @@ let test_reify_supports_multiple_static_protocols () =
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_satisfies_recognizes_reify_protocol_payload () =
+  let source =
+    {|
+(defprotocol Cache
+  (-get [this key]))
+(defn make-cache []
+  (reify Cache
+    (-get [_ key] key)))
+(def cache (make-cache))
+(println (satisfies? Cache cache))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "satisfies_recognizes_reify_protocol_payload" "true\n"
+    ocaml_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_reify_uses_contextual_generic_method_payload () =
   let source =
     {|
@@ -46835,6 +46853,8 @@ let tests =
       test_reify_preserves_static_protocol_payload );
     ( "reify supports multiple static protocols",
       test_reify_supports_multiple_static_protocols );
+    ( "satisfies? recognizes reify protocol payload",
+      test_satisfies_recognizes_reify_protocol_payload );
     ( "reify uses contextual generic method payload",
       test_reify_uses_contextual_generic_method_payload );
     ( "parameters preserve multiple protocol constraints",

@@ -1,0 +1,302 @@
+# LG Compiler Bugs
+
+# Record compiler defects encountered while compiling DataScript.
+# DataScript source errors and expected static type errors are excluded.
+
+## 2026-08-25 - Static satisfies? re-evaluates a pure identifier
+
+- Status: Fixed
+- Trigger: `(satisfies? ICache cache)` where `cache` has a nominal type that
+  statically implements `ICache`.
+- Symptom: The compiler emits the equivalent of `let cache = cache in true`;
+  OCaml rejects the generated module with warning 26 (unused variable).
+- Root cause: Static predicate lowering always preserved receiver evaluation,
+  including for pure identifier expressions, and `if` branch narrowing then
+  rebound the same nominal receiver even though no guarded witness was needed.
+  After removing that redundant evaluation, static branch selection still
+  recognized only the old sequence-shaped result and compiled unreachable
+  branches for direct boolean results.
+- Fix: Emit the constant boolean directly for identifiers, retain evaluation
+  for expressions that may have effects, and skip guarded-protocol rebinding
+  when the nominal receiver already implements the protocol. Static `if`
+  selection now recognizes both direct booleans and effect-preserving
+  sequences.
+- Regression coverage: the DataScript LRU Native and Melange targets compile
+  `(satisfies? ICache cache)` under warnings-as-errors, and a statically false
+  protocol predicate skips an ill-typed unreachable branch.
+
+## 2026-08-25 - Imported reify return type loses protocol identity
+
+- Status: Open
+- Trigger: `datascript.lru/cache` returns a value created by `(reify ICache ...)`
+  and a separately compiled test calls `(satisfies? ICache cache)`.
+- Symptom: The implementation is emitted as `Runtime_reify.t` with only the
+  method payload type. At the module boundary the `ICache` protocol tag is
+  lost, so `satisfies?` is incorrectly constant-folded to `false`, although
+  direct `ICache/-get` dispatch works.
+- Expected: Saved compiler state and emitted module signatures must preserve
+  the closed list of protocols implemented by a reify value.
+- Current evidence: `datascript.test.lru/test-cache`; generated code contains
+  `let __d = false` for the `satisfies?` assertion.
+
+## 2026-08-24 - Macro-generated record loses sidecar field types
+
+- Status: Fixed
+- Trigger: `datascript.parser/Query` and `RuleVars` are declared with a
+  `(signature ...)` immediately before a `deftrecord` macro expansion.
+- Symptom: Accesses such as `(.-qin query)` and `(:required vars)` retain an
+  inference variable instead of the declared vector/option field type. Valid
+  `first`, `mapv`, `into`, and `concat` calls are then rejected as non-collection
+  operations.
+- Expected: A record signature must apply equally to a direct `defrecord` and a
+  macro-expanded `defrecord`, and field projections must retain the declared
+  closed static type.
+- Current evidence: `lg/datascript/parser.cljc` around
+  `static-query-value-bindings` (previously also `rule-vars-values` and static
+  query constructor helpers).
+- Root cause: The `defrecord` elaborator ignored `Signature_overlay` record
+  fields even though the parallel `deftype` elaborator consumed them.
+- Fix: Apply sidecar record field types before defrecord field inference for
+  both direct and macro-expanded forms.
+- Regression test: `macro-generated defrecord uses sidecar field types`
+  compiles and runs on Native and compiles on Melange.
+
+## 2026-08-24 - Rigid accumulator rejected inside reduced vector state
+
+- Status: Open
+- Trigger: `generic reduce-indexed signature keeps rigid accumulator`, where a
+  reduce frame is `[accumulator int]` and its early-exit branch constructs
+  `(reduced [res idx])`.
+- Symptom: The compiler rejects the frame as a heterogeneous vector with
+  element types `int | param/accumulator` after removing the public-name
+  `reduced` compiler special case.
+- Expected: The implementation must use a closed, statically typed frame (or
+  preserve equivalent generic evidence) without dispatching on the public
+  function name and without introducing `Runtime_dynamic`.
+- Current evidence: `test/compiler_tests.ml`, test
+  `generic reduce-indexed signature keeps rigid accumulator`.
+
+## 2026-08-24 - Sidecar-typed macro record with protocol methods is not registered
+
+- Status: Open
+- Trigger: A sidecar `(signature .../FilteredDB {...})` is applied to
+  DataScript's macro-generated `defrecord` plus its full protocol method set.
+- Symptom: The same macro expansion registers `FilteredDB` without the sidecar,
+  but with the sidecar a later `(FilteredDB. ...)` constructor is rejected as
+  `unknown record type FilteredDB`.
+- Expected: Applying closed sidecar field types must not prevent a
+  macro-generated record with protocol methods from being registered.
+- Current evidence: Reproduced while restoring `FilteredDB` view APIs in
+  `lg/datascript/db.cljc`; removing the newly introduced redundant sidecar
+  allows the original record definition to register. The upstream form itself
+  does not require that sidecar, so DataScript compilation can continue while
+  this compiler defect remains open.
+
+## 2026-08-24 - Explicit constructor-name function cannot shadow record constructor
+
+- Status: Fixed
+- Trigger: `TxReport` has 11 physical fields, then DataScript explicitly
+  defines an 8-argument `->TxReport` function that supplies the three internal
+  fields.
+- Symptom: A later `db/->TxReport` call is resolved as the generated record
+  constructor and rejected with `db/TxReport. expects 11 arguments`.
+- Expected: A source-level function binding named `->Record` must take
+  precedence over the implicit record constructor at call sites after that
+  binding is defined, including namespace-qualified calls.
+- Current evidence: `lg/datascript/storage.cljc` in `db-with-tail-datoms`,
+  reached by the Native and Melange `@datascript-transact` build.
+- Root cause: Call elaboration normalized every `->Record` spelling to
+  `Record.` before checking whether a source binding with the original name
+  existed.
+- Fix: Preserve `->Record` and namespace-qualified `ns/->Record` spellings when
+  normal binding lookup succeeds; use the implicit constructor only when no
+  explicit binding exists.
+- Regression test: `explicit function shadows implicit record constructor`
+  compiles and runs on Native and compiles on Melange.
+
+## 2026-08-24 - Empty map cannot use concrete record-field context
+
+- Status: Open
+- Trigger: `db/with-schema` associates `{}` into `DB.schema-idents`, whose
+  declared type is `map<int;keyword>`.
+- Symptom: The compiler reports that `record<{ }>` cannot adapt to
+  `Lg_runtime.Runtime_map.t<int,keyword>` instead of instantiating the empty
+  map from the concrete field context.
+- Expected: An empty persistent map used as a concrete record field or assoc
+  value must adopt that field's key/value types without dynamic storage.
+- Current evidence: `lg/datascript/db.cljc` reached through `reset-schema!` in
+  the Native and Melange transaction build. Named typed empty-map constants
+  allow DataScript compilation to proceed while preserving the closed types.
+
+## 2026-08-24 - Concrete DB loses declared protocol evidence
+
+- Status: Open
+- Trigger: `with-schema` has a concrete `datascript.db/DB` parameter and its
+  upstream precondition calls `db?`, which checks `ISearch`, `IIndexAccess`, and
+  `IDB`; the `DB` record implements all three in its declaration.
+- Symptom: Static checking reports `missing protocol implementation for
+  datascript.db/ISearch on datascript.db/DB`.
+- Expected: Protocol implementations declared on a record must remain attached
+  to its named type in later concrete function signatures and `satisfies?`
+  checks.
+- Current evidence: `lg/datascript/db.cljc`, `with-schema`, during the Native
+  and Melange transaction build. The redundant runtime `db?` precondition can
+  be omitted because the rigid function signature already requires `DB`.
+
+## 2026-08-24 - Nested update loses namespaced record-field map key type
+
+- Status: Open
+- Trigger: `TxReport.reverse-tempids` is a
+  `map<int;set<Data_value.t>>`, updated as
+  `(update report ::reverse-tempids update eid util/conjs entity-ref)`.
+- Symptom: Generated OCaml expects the integer `eid` update argument to be a
+  `Data_value.t` (`__lg_update_arg_1`), indicating that nested update lost or
+  swapped the concrete map key evidence from the namespaced record field.
+- Expected: Nested `update` must preserve the selected field's key/value types
+  independently of the other heterogeneous map fields in the same record.
+- Current evidence: `lg/datascript/db.cljc`, `allocate-eid`, during final OCaml
+  checking of the transaction build. A small typed map updater preserves the
+  same algorithm and lets compilation continue without dynamic values.
+
+## 2026-08-24 - Deferred nil parameter emits wildcard in holder type
+
+- Status: Fixed
+- Trigger: A `declare+` function is implemented later with an argument that is
+  constrained to static `nil`, and the compiler stores the delayed
+  implementation in a generated record field.
+- Symptom: The generated holder field contains `_ option` and OCaml rejects the
+  type declaration with `A type wildcard _ is not allowed in this type
+  declaration`.
+- Expected: Static `nil` in a generated type declaration must use a valid closed
+  OCaml representation; it must not leave a wildcard in a record field type.
+- Current evidence: `datascript.db/pr-db` is declared before `DB` and
+  `FilteredDB`, then implemented with its `opts` argument constrained by
+  `pr-writer` and `pr-sequential-writer`. Both Native and Melange transaction
+  builds fail in the `extend-type DB` chunk.
+- Fix: Deferred holder quantification now includes the polymorphic payload used
+  by `nil`, so generated record fields use `'a option` under an explicit
+  locally quantified `'a` instead of `_ option`.
+- Regression: `forward declared nil parameter has valid holder type` passes on
+  Native and compiles on Melange.
+
+## 2026-08-24 - Cross-chunk sidecar ref signature loses type dependencies
+
+- Status: Fixed
+- Trigger: A top-level value has the concrete type
+  `ref<map<int;fn<DB;Data_value.t;vector<tx-entry>>>>`, where `DB` and
+  `tx-entry` are declared in the same namespace.
+- Symptom: When the signature lives in `db.lgi`, dependency stabilization of
+  the following `db.cljc` does not see its nested `DB` and `tx-entry`
+  dependencies. The signed value can therefore be checked before those local
+  types and OCaml rejects them as unbound type constructors.
+- Expected: Sidecar value signatures must contribute all nested nominal type
+  dependencies when ordering definitions in a later compilation chunk.
+- Current evidence: DataScript's statically typed installed-transaction-function
+  registry in `lg/datascript/db.cljc`. The callback registry requires no dynamic
+  values and both referenced types are declared before the value binding.
+- Fix: Signature overlays now retain their raw nominal type dependencies, and
+  incremental chunk compilation supplies those dependencies to the current
+  chunk's stable dependency order.
+- Regressions: `dependency graph orders external signature type dependencies`
+  covers the cross-chunk ordering path. The DataScript transaction suite passes
+  on Native and Melange with the registry signature in `lg/datascript/db.lgi`.
+
+## 2026-08-24 - Inline ref annotation qualifies same-namespace variant
+
+- Status: Open
+- Trigger: The same nested registry type is written as an inline annotation on
+  a top-level `def` instead of as a sidecar signature.
+- Symptom: Annotation emission names the same-namespace closed variant
+  `datascript_db_tx_entry`, while the emitted OCaml type is `tx_entry`.
+- Expected: An inline annotation must resolve same-namespace record and variant
+  names to the declarations used by the generated OCaml structure.
+- Current evidence: Nested inline annotations are ordered correctly after the
+  dependency tokenization fix, but the emitted nominal name still differs.
+- Regression: `dependency graph orders inline def type hint dependencies`
+  covers the fixed ordering layer; a type-name resolution regression remains
+  to be added with the eventual fix.
+
+## 2026-08-25 - Saved-state workspace ordering runs before package restoration
+
+- Status: Fixed
+- Trigger: `--compile-files-from-state` is invoked outside the LG source tree
+  with multiple inputs whose interface or implementation references an OCaml
+  module supplied by a package recorded in the saved compiler state.
+- Symptom: Workspace dependency analysis runs against the deserialized state
+  before restoring its OCaml package include paths and reports `Unbound module
+  Lg_runtime`.
+- Expected: Saved and newly discovered packages must be restored before any
+  source preparation or dependency ordering that can invoke OCaml checking.
+- Current evidence: The installed DataScript connection build failed while
+  ordering persistent-sorted-set's sidecar and implementation, even after a
+  forced stdlib rebuild and install.
+- Fix: Removed the premature raw-path ordering pass. Inputs are prepared first,
+  saved and source package requirements are combined, the OCaml environment is
+  restored, and the existing prepared-source ordering pass runs exactly once.
+- Regression: `cli_state_cache_test.sh` changes to an external temporary
+  directory before compiling a sidecar and implementation that use
+  `Lg_runtime`, reproducing the installed-package boundary.
+
+## 2026-08-25 - State-producing CLI output repeats the saved OCaml prefix
+
+- Status: Fixed
+- Trigger: `--compile-files-from-state` resumes a saved stdlib or library state
+  and writes both a successor state and an `.ml` output chunk.
+- Symptom: The command writes `saved.ocaml_source ^ current_chunk` to the output
+  file. Build rules already concatenate stdlib, runtime, and test chunks, so
+  every stage repeats all preceding OCaml code. DataScript consequently emits
+  duplicate types such as `trampoline_step` and inflates generated and
+  preprocessed files.
+- Expected: The output file contains only the current input chunk. The successor
+  state may retain the cumulative source required by prefix-including CLI modes.
+- Fix: Write the current compilation result before constructing the cumulative
+  source stored in the successor state.
+- Regression: `cli_state_cache_test.sh` rejects stdlib declarations in the first
+  resumed output and rejects the base module in the next resumed output.
+
+## 2026-08-25 - Forward declarations shadow implicit record constructors
+
+- Status: Fixed
+- Trigger: `declare` names `->Record` before a function uses that constructor,
+  while the record type is defined later in the same source unit.
+- Symptom: Constructor call elaboration treats the unresolved declaration as an
+  implemented function and emits a call to a deferred value whose implementation
+  is never installed.
+- Expected: Only a concrete user definition may shadow an implicit record
+  constructor; a declaration must continue to resolve to the constructor.
+- Fix: Explicit constructor shadowing now excludes forward declarations and the
+  unresolved declaration placeholder.
+- Regressions: Forward-constructed deftypes, declared record dependencies, and
+  heterogeneous nominal branch diagnostics pass on Native and Melange.
+
+## 2026-08-25 - Uppercase source function is mistaken for a host constructor
+
+- Status: Fixed
+- Trigger: A normal source function has an uppercase member name, such as
+  `cljs.math/IEEE-remainder`.
+- Symptom: Call elaboration emits tupled constructor application instead of a
+  curried function call.
+- Expected: A resolved lowercase OCaml value binding remains a function even if
+  its Clojure source member begins with an uppercase letter. Registered and
+  opaque constructors retain constructor application.
+- Fix: Constructor dispatch now considers the resolved emitted binding name.
+- Regressions: Native and Melange lazy-transducer stdlib applications pass, as
+  do module, functor, recursive variant, opaque-constructor, and language-server
+  constructor tests.
+
+## 2026-08-25 - Reduced heterogeneous accumulator vector loses tuple context
+
+- Status: Fixed
+- Trigger: A reducer with a destructured fixed tuple accumulator returns
+  `(reduced [value index])` where the tuple elements have different types.
+- Symptom: The vector literal is checked without its accumulator context and is
+  rejected as an unsupported heterogeneous vector.
+- Expected: Fixed accumulator shapes remain tuples through both continuing and
+  reduced reducer branches, including rigid generic accumulator elements.
+- Fix: The source `reduced` function expands to a private typed primitive that
+  preserves heterogeneous vector literals as tuples and keeps homogeneous
+  vectors as vectors.
+- Regressions: Fixed destructured reducers and the generic `reduce-indexed`
+  signature pass without `Runtime_dynamic` on Native and Melange.
+FIXED: Restoring a saved compiler state could intermittently lose package include directories after OCaml lookup had already initialized. Ocaml_value.init added later directories only to Load_path, while a subsequent Compmisc.init_path rebuilt Load_path from stale Clflags.include_dirs, producing false "Unbound module Lg_runtime" failures. Keep Clflags.include_dirs synchronized without reinitializing an already-active target environment.
+FIXED: Direct pr-str on a non-nullable deftype with a custom IPrintWithWriter implementation passed Runtime_dynamic.unit to the statically nil printer-options slot. Honor the source protocol contract and pass None.

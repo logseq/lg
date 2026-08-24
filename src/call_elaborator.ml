@@ -9389,12 +9389,17 @@ let create ~compile_expr =
                         Semantic_ir.Sequence
                           [ receiver.semantic_expr; Semantic_ir.Bool false ]
                     | _ ->
-                        Semantic_ir.Sequence
-                          [
-                            receiver.semantic_expr;
-                            Semantic_ir.Bool
-                              (statically_satisfies receiver.ty);
-                          ]
+                        let result =
+                          Semantic_ir.Bool
+                            (statically_satisfies receiver.ty)
+                        in
+                        (match
+                           Semantic_ir.unlocated receiver.semantic_expr
+                         with
+                        | Semantic_ir.Ident _ -> result
+                        | _ ->
+                            Semantic_ir.Sequence
+                              [ receiver.semantic_expr; result ])
                 in
                 Ok (typed_ir TBool expression))
         | _ -> Error.error "satisfies? expects a protocol and value")
