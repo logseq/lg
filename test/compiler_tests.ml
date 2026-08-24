@@ -9843,6 +9843,21 @@ let test_user_macros_can_emit_top_level_do_definitions () =
   assert_ocaml_runs "user_macros_can_emit_top_level_do_definitions" "42\n"
     ocaml_source
 
+let test_defn_plus_preserves_symbol_type_hints () =
+  let source =
+    {|
+(defmacro defn+ [name & body]
+  `(do
+     (defn ~name [value])
+     (defn ~name ~@body)))
+(defn+ ^boolean always-true [value] true)
+(println (always-true 42))
+|}
+  in
+  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "defn_plus_preserves_symbol_type_hints" "true\n"
+    ocaml_source
+
 let test_rand_int_uses_exclusive_positive_bound () =
   let source = {|(println (rand-int 1))|} in
   let ocaml_source =
@@ -44986,6 +45001,8 @@ let tests =
       test_user_macros_support_collection_type_predicates );
     ( "user macros can emit top-level do definitions",
       test_user_macros_can_emit_top_level_do_definitions );
+    ( "defn+ preserves symbol type hints",
+      test_defn_plus_preserves_symbol_type_hints );
     ( "rand-int uses an exclusive positive bound",
       test_rand_int_uses_exclusive_positive_bound );
     ( "int coerces float and preserves int",

@@ -3670,6 +3670,14 @@ and compile_resolved scope env next_type form =
               Ok (scope, env, next_type, item))))
   | FList
       (FSymbol (("defn" | "defn-") as definition)
+      :: FList
+           [ FSymbol "__type-hint"; FSymbol annotation; FSymbol name ]
+      :: forms) ->
+      compile scope env next_type
+        (FList
+           (FSymbol definition :: FSymbol name :: FSymbol annotation :: forms))
+  | FList
+      (FSymbol (("defn" | "defn-") as definition)
       :: (FSymbol _ as name_form)
       :: FSymbol annotation
       :: FString _docstring

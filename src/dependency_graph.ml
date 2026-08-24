@@ -361,6 +361,11 @@ let rec provided_names = function
     ->
       [ name ]
   | FList
+      (FSymbol definition
+      :: FList [ FSymbol "__type-hint"; _; FSymbol name ] :: _)
+    when String.starts_with ~prefix:"def" definition ->
+      [ name ]
+  | FList
       (FSymbol ("extend-type" | "deftype-methods") :: _ as forms) ->
       method_names (FList forms)
   | FList (FSymbol "extend-protocol" :: _ as forms) ->

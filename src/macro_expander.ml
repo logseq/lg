@@ -1475,6 +1475,10 @@ let expand ~scope ~compiler_env (definition : Macro_definition.t) args =
   in
   match direct_unary_expansion with
   | Some expanded -> Ok expanded
+  | None when definition.name = "defn+" -> (
+      match args with
+      | name :: forms -> Ok (FList (FSymbol "defn" :: name :: forms))
+      | [] -> Error.error "defn+ expects a function name")
   | None when definition.name = "declare+" ->
     let rec declared_name = function
       | FList [ FSymbol "__type-hint"; _; FSymbol name ] :: _ -> Ok name
