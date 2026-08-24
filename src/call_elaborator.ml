@@ -19091,6 +19091,16 @@ let create ~compile_expr =
                                    | _ -> false ->
                               plan_and_emit_argument env ~expected:expected_ty
                                 arg
+                            | _
+                              when Env.variant_constructors expected_ty env
+                                   <> []
+                                   && Option.is_none
+                                        (optional_payload arg.ty)
+                                   && Option.is_none
+                                        (Types.protocol_constraint_info arg.ty)
+                              ->
+                              plan_and_emit_argument env ~expected:expected_ty
+                                arg
                             | _ -> (
                                 match
                                   maybe_reduced_callback_payload expected_ty

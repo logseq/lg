@@ -3132,9 +3132,12 @@ and compile_resolved scope env next_type form =
   | FList (FSymbol "empty-map-default" :: _) ->
       Error.error "empty-map-default expects target type and factory"
   | FList
-      (FSymbol "closed-sum-constructors"
+      (FSymbol constructor_directive
       :: FKeyword target_annotation
-      :: constructor_forms) -> (
+      :: constructor_forms)
+    when String.equal constructor_directive "closed-sum-constructors"
+         || String.equal constructor_directive
+              "contextual-closed-sum-constructors" -> (
       let parse_constructor = function
         | FSymbol constructor -> Ok (constructor, [])
         | FList (FSymbol constructor :: payload_forms) ->
@@ -3172,15 +3175,25 @@ and compile_resolved scope env next_type form =
           let target_ty =
             Function_elaborator.infer_named_record scope env target_ty
           in
+          let env =
+            if
+              String.equal constructor_directive
+                "contextual-closed-sum-constructors"
+            then Env.add_closed_sum_constructors target_ty constructors env
+            else Env.add_predicate_sum_constructors target_ty constructors env
+          in
           Ok
             ( scope,
-              Env.add_predicate_sum_constructors target_ty constructors env,
+              env,
               next_type,
               Comment ("closed sum constructors " ^ Types.source_name target_ty)
             ))
   | FList (FSymbol "closed-sum-constructors" :: _) ->
       Error.error
         "closed-sum-constructors expects a target type and constructors"
+  | FList (FSymbol "contextual-closed-sum-constructors" :: _) ->
+      Error.error
+        "contextual-closed-sum-constructors expects a target type and constructors"
   | FList [ FSymbol "signature"; FSymbol name; fields ] ->
       compile_signature scope env next_type name fields
   | FList

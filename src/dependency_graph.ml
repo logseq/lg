@@ -164,6 +164,7 @@ let dependency_symbols = function
   | FList (FSymbol "exception-data-adapter" :: _) -> []
   | FList (FSymbol "empty-map-default" :: _) -> []
   | FList (FSymbol "closed-sum-constructors" :: _) -> []
+  | FList (FSymbol "contextual-closed-sum-constructors" :: _) -> []
   | FList
       (FSymbol "external-record" :: _name :: FVector parameters :: field_forms)
     ->

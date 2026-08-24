@@ -20,6 +20,15 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
     | _ -> false
   in
   if identical_closed_sum_option then Some (Ok argument)
+  else if Option.is_some (Types.protocol_constraint_info argument.ty) then None
+  else if
+    match (expected, argument.ty) with
+    | ( (TNullable _ | TOcaml_app ("option", [ _ ])),
+        (TNullable _ | TOcaml_app ("option", [ _ ])) ) ->
+        false
+    | _, (TNullable _ | TOcaml_app ("option", [ _ ])) -> true
+    | _ -> false
+  then None
   else
   let constructors = Env.variant_constructors expected env in
   if constructors = [] then
@@ -42,6 +51,14 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
                             ("Some", Some injected.semantic_expr) );
                       ] ))))
           (inject_contextual_closed_sum env ~expected:expected_inner payload)
+    | (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])), _
+      when not (Types.equal argument.ty TNil) ->
+        Option.map
+          (Result.map (fun injected ->
+               typed_ir expected
+                 (Semantic_ir.Constructor
+                    ("Some", Some injected.semantic_expr))))
+          (inject_contextual_closed_sum env ~expected:expected_inner argument)
     | _ -> None
   else if
     Types.is_dynamic argument.ty

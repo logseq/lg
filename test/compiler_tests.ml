@@ -13001,6 +13001,8 @@ let test_contextual_closed_sum_injection_is_unique_and_static () =
 (signature choose-or :fn<option<result>>)
 (defn choose-or []
   (or (text-option) (count-option)))
+(signature direct-option :fn<option<result>>)
+(defn direct-option [] 9)
 (println
   (str
     (match (choose true)
@@ -13019,6 +13021,11 @@ let test_contextual_closed_sum_injection_is_unique_and_static () =
     (match (choose-or)
       (Some (Text value)) value
       (Some (Count value)) (str value)
+      None "none")
+    ":"
+    (match (direct-option)
+      (Some (Text value)) value
+      (Some (Count value)) (str value)
       None "none")))
 |}
   in
@@ -13026,7 +13033,7 @@ let test_contextual_closed_sum_injection_is_unique_and_static () =
   if string_contains_substring native "Runtime_dynamic" then
     failwith "contextual closed-sum injection must remain fully static";
   assert_ocaml_runs "contextual_closed_sum_injection_is_unique_and_static"
-    "yes:42:optional:optional\n" native;
+    "yes:42:optional:optional:9\n" native;
   let melange =
     compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
@@ -13053,6 +13060,45 @@ let test_contextual_closed_sum_injection_rejects_missing_constructor () =
 (defn choose [] 42)
 |}
   |> expect_error_contains "cannot inject int into closed sum result"
+
+let test_declared_external_closed_sum_injects_across_chunks () =
+  let provider =
+    {|
+(ns app.provider)
+(contextual-closed-sum-constructors :External.Value.t
+  (External.Value.Int :int)
+  (External.Value.String :string))
+(signature app.provider/accept :fn<External.Value.t;int>)
+(defn accept [_value] 42)
+(def within (accept 7))
+|}
+  in
+  let consumer =
+    {|
+(ns app.consumer
+  (:require [app.provider :as provider]))
+(def result (provider/accept 7))
+|}
+  in
+  let state, provider_compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/provider.cljc" (stdlib_state Lg.Target.Native) provider
+    |> expect_ok
+  in
+  let _, compilation =
+    Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~check_ocaml:false
+      ~filename:"app/consumer.cljc" state consumer
+    |> expect_ok
+  in
+  if
+    not
+      (string_contains_substring compilation.ocaml_source
+         "External.Value.Int 7")
+  then
+    failwith
+      ("external closed-sum argument was not injected:\n"
+      ^ provider_compilation.ocaml_source ^ "\n--- consumer ---\n"
+      ^ compilation.ocaml_source)
 
 let test_dotted_syntax_resolves_declared_closed_sum_constructors () =
   let source =
@@ -44975,6 +45021,8 @@ let tests =
       test_contextual_closed_sum_injection_rejects_ambiguity );
     ( "contextual closed sum injection rejects missing constructor",
       test_contextual_closed_sum_injection_rejects_missing_constructor );
+    ( "declared external closed sum injects across chunks",
+      test_declared_external_closed_sum_injects_across_chunks );
     ( "dotted syntax resolves declared closed sum constructors",
       test_dotted_syntax_resolves_declared_closed_sum_constructors );
     ( "declared optional sequential host adapter is static",
