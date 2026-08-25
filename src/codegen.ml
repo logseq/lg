@@ -123,7 +123,7 @@ let rec stringify_expr_ir ?(pr = false) ?print_length ?print_level expr =
       else expr.semantic_expr
   | TSymbol | TKeyword -> expr.semantic_expr
   | TBool -> apply "string_of_bool" [ expr.semantic_expr ]
-  | TUnit -> Semantic_ir.String ""
+  | TUnit -> Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "" ]
   | TNil ->
       Semantic_ir.Sequence [ expr.semantic_expr; Semantic_ir.String "nil" ]
   | ty when Types.is_dynamic ty ->

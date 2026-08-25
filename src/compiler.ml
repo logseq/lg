@@ -130,9 +130,10 @@ let compile_chunk_parsetree_with_filename ?(target = Target.default) ~filename
   Compiler_session.run (fun () ->
       Toolchain.compile_chunk_parsetree ~target ~filename state source)
 
-let compile_repl_form ?(target = Target.default) state source =
+let compile_repl_form ?(target = Target.default) ?(filename = "<string>") state
+    source =
   Compiler_session.run (fun () ->
-      Toolchain.compile_repl_form ~target state source)
+      Toolchain.compile_repl_form ~target ~filename state source)
 
 let infer_repl_type ?(target = Target.default) state source =
   Compiler_session.run (fun () ->

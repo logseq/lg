@@ -55,6 +55,32 @@
  (action
   (run %{test} %{dep:../stdlib/lg_stdlib_native.state})))
 
+(test
+ (name repl_protocol_tests)
+ (modules repl_protocol_tests)
+ (modes byte)
+ (libraries lg.repl unix yojson))
+
+(test
+ (name repl_nrepl_protocol_tests)
+ (modules repl_nrepl_protocol_tests)
+ (modes byte)
+ (libraries lg.repl unix))
+
+(test
+ (name repl_nrepl_cli_tests)
+ (modules repl_nrepl_cli_tests)
+ (modes byte)
+ (deps
+  ../bin/lg_repl_worker.bc
+  ../stdlib/lg_stdlib_native.state)
+ (libraries lg.repl unix)
+ (action
+  (run
+   %{test}
+   %{dep:../bin/lg_repl_worker.bc}
+   %{dep:../stdlib/lg_stdlib_native.state})))
+
 (rule
  (alias runtest)
  (deps
@@ -66,6 +92,21 @@
   (run
    bash
    %{dep:repl_cli_test.sh}
+   %{exe:../bin/lg_cli.exe}
+   %{dep:../bin/lg_repl_worker.bc}
+   %{dep:../stdlib/lg_stdlib_native.state})))
+
+(rule
+ (alias runtest)
+ (deps
+  repl_socket_cli_test.sh
+  ../bin/lg_cli.exe
+  ../bin/lg_repl_worker.bc
+  ../stdlib/lg_stdlib_native.state)
+ (action
+  (run
+   bash
+   %{dep:repl_socket_cli_test.sh}
    %{exe:../bin/lg_cli.exe}
    %{dep:../bin/lg_repl_worker.bc}
    %{dep:../stdlib/lg_stdlib_native.state})))

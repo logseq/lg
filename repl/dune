@@ -9,4 +9,5 @@
   lg.edn-backend.native
   lg.stdlib.native
   rrbvec
+  yojson
   unix))

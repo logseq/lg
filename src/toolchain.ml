@@ -2385,7 +2385,8 @@ let repl_definition_type state name =
       in
       Ok (Types.source_name ty)
 
-let compile_repl_form ?(target = Target.default) state source =
+let compile_repl_form ?(target = Target.default) ?(filename = "<string>") state
+    source =
   match parse_single_repl_form ~target source with
   | Error _ as error -> error
   | Ok form -> (
@@ -2398,7 +2399,9 @@ let compile_repl_form ?(target = Target.default) state source =
             | Pending_definition _ | Pending_namespace | Pending_summary _ ->
                 source
           in
-          match compile_chunk_parsetree ~target state compiled_source with
+          match
+            compile_chunk_parsetree ~target ~filename state compiled_source
+          with
           | Error _ as error -> error
           | Ok (next_state, structure) -> (
               match pending with

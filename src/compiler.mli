@@ -149,6 +149,7 @@ val compile_chunk_parsetree_with_filename :
 
 val compile_repl_form :
   ?target:Target.t ->
+  ?filename:string ->
   state ->
   string ->
   (state * repl_compilation, compile_error) result

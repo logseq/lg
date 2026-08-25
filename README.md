@@ -502,9 +502,41 @@ demo.app=> answer
 
 The REPL keeps definitions, macros, namespaces, atoms, and other runtime state
 between forms. It accepts multiline forms, `:type` inspects a form without
-executing it, and `:quit` or `:q` exits. The current implementation is a local
-Native bytecode REPL; Socket REPL is planned separately. Application hot reload
-is outside the current scope, and nREPL is not supported.
+executing it, and `:quit` or `:q` exits.
+
+Start the structured, loopback-only Socket REPL on an OS-assigned port:
+
+```sh
+dune exec lg -- repl --listen 127.0.0.1:0
+```
+
+The server prints the selected port. Attach the bundled terminal client with:
+
+```sh
+dune exec lg -- repl --connect 127.0.0.1:PORT
+```
+
+Each connection owns an isolated Native bytecode worker. The transport uses a
+versioned, length-prefixed JSON protocol; it is not a raw text socket and it is
+not nREPL.
+
+For language-agnostic nREPL clients such as
+[`neat`](https://github.com/nrepl/neat), start the separate bencode endpoint:
+
+```sh
+dune exec lg -- repl --nrepl-listen 127.0.0.1:0 \
+  --port-file .nrepl-port
+```
+
+The nREPL endpoint supports `describe`, `clone`, `eval`, `load-file`, `lookup`,
+`completions`, `close`, and a defined unsupported response for `stdin`. It
+preserves namespaces, definitions, runtime state, stdout/stderr, static result
+types, and loaded-file source locations per session. Lookup and completion are
+non-executing queries backed by the current incremental compiler state, and
+completion candidates include static types. It does not advertise interruption
+or `cider-nrepl` middleware. CIDER's advanced Clojure-specific features are
+therefore not a compatibility promise. All listeners reject non-loopback bind
+addresses; application hot reload remains outside this REPL scope.
 
 Compile or run several lg files in one incremental compiler state:
 

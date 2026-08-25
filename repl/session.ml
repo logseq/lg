@@ -19,6 +19,20 @@ type evaluation = {
   namespace : string;
 }
 
+type completion = {
+  candidate : string;
+  type_name : string option;
+}
+
+type lookup = {
+  name : string;
+  namespace : string;
+  type_name : string option;
+  file : string option;
+  line : int option;
+  column : int option;
+}
+
 type t = { mutable compiler_state : Lg.Compiler.state }
 
 type saved_compilation_state = {
@@ -160,8 +174,10 @@ let create_from_stdlib ~state_path =
 let namespace session = Lg.Compiler.source_scope session.compiler_state
 let prompt session = namespace session ^ "=> "
 
-let eval session source =
-  match Lg.Compiler.compile_repl_form session.compiler_state source with
+let eval ?(filename = "<string>") session source =
+  match
+    Lg.Compiler.compile_repl_form ~filename session.compiler_state source
+  with
   | Error _ as error -> error
   | Ok (candidate_state, compilation) ->
       Lg_runtime.Runtime_repl.clear ();
@@ -198,3 +214,73 @@ let eval session source =
 
 let type_of session source =
   Lg.Compiler.infer_repl_type session.compiler_state source
+
+let analyze_symbol session symbol =
+  Lg.Language_service.analyze_from_state ~filename:"<repl-query>"
+    session.compiler_state symbol
+
+let symbol_name symbol =
+  match String.rindex_opt symbol '/' with
+  | Some index when index + 1 < String.length symbol ->
+      String.sub symbol (index + 1) (String.length symbol - index - 1)
+  | Some _ | None -> symbol
+
+let symbol_namespace session symbol =
+  match String.rindex_opt symbol '/' with
+  | Some index when index > 0 -> String.sub symbol 0 index
+  | Some _ | None -> namespace session
+
+let source_location location =
+  let position = location.Location.loc_start in
+  let file =
+    match position.Lexing.pos_fname with
+    | "" | "<string>" | "<repl-query>" -> None
+    | filename -> Some filename
+  in
+  let line = if location.Location.loc_ghost then None else Some position.pos_lnum in
+  let column =
+    if location.Location.loc_ghost then None
+    else Some (position.pos_cnum - position.pos_bol + 1)
+  in
+  (file, line, column)
+
+let lookup session symbol =
+  match analyze_symbol session symbol with
+  | Error _ -> Ok None
+  | Ok analysis ->
+      let type_name =
+        match type_of session symbol with
+        | Ok type_name -> Some type_name
+        | Error _ ->
+            Lg.Language_service.hover analysis ~offset:0
+            |> Option.map (fun hover -> hover.Lg.Language_service.contents)
+      in
+      let location = Lg.Language_service.definition analysis ~offset:0 in
+      Ok
+        (match (type_name, location) with
+      | None, None -> None
+      | _ ->
+          let file, line, column =
+            location
+            |> Option.map source_location
+            |> Option.value ~default:(None, None, None)
+          in
+          Some
+            {
+              name = symbol_name symbol;
+              namespace = symbol_namespace session symbol;
+              type_name;
+              file;
+              line;
+              column;
+            })
+
+let completions session prefix =
+  Lg.Language_service.repl_completions session.compiler_state
+  |> List.filter_map (fun (item : Lg.Language_service.completion_item) ->
+         if String.starts_with ~prefix item.label then
+           Some { candidate = item.label; type_name = Some item.detail }
+         else None)
+  |> List.sort_uniq (fun left right ->
+         String.compare left.candidate right.candidate)
+  |> Result.ok

@@ -19,6 +19,20 @@ type evaluation = {
   namespace : string;
 }
 
+type completion = {
+  candidate : string;
+  type_name : string option;
+}
+
+type lookup = {
+  name : string;
+  namespace : string;
+  type_name : string option;
+  file : string option;
+  line : int option;
+  column : int option;
+}
+
 type t
 
 val create_from_stdlib :
@@ -26,5 +40,16 @@ val create_from_stdlib :
 
 val namespace : t -> string
 val prompt : t -> string
-val eval : t -> string -> (evaluation, Lg.Compiler.compile_error) result
+val eval :
+  ?filename:string ->
+  t ->
+  string ->
+  (evaluation, Lg.Compiler.compile_error) result
+
 val type_of : t -> string -> (string, Lg.Compiler.compile_error) result
+
+val lookup :
+  t -> string -> (lookup option, Lg.Compiler.compile_error) result
+
+val completions :
+  t -> string -> (completion list, Lg.Compiler.compile_error) result

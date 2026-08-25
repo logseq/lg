@@ -1595,6 +1595,32 @@ let completion_source_names analysis =
          if String.starts_with ~prefix:"__" key then None
          else Some (binding.ocaml_name, key))
 
+let completions_from_state state : completion_item list =
+  Compiler_session.run (fun () ->
+      let scope = Toolchain.source_scope state in
+      let label key =
+        match String.rindex_opt key '/' with
+        | Some index
+          when String.equal (String.sub key 0 index) scope
+               && index + 1 < String.length key ->
+            String.sub key (index + 1) (String.length key - index - 1)
+        | Some _ | None -> key
+      in
+      state.Toolchain.typecheck_state.env
+      |> Compiler_environment.filter_map
+           (fun key (binding : Types.binding) ->
+             if String.starts_with ~prefix:"__" key then None
+             else
+               let binding = Types.instantiate_binding binding in
+               let ty =
+                 Types.runtime_root_value_type binding
+                 |> Option.value ~default:binding.ty
+               in
+               Some { label = label key; detail = Types.source_name ty })
+      |> List.sort_uniq
+           (fun (left : completion_item) (right : completion_item) ->
+             String.compare left.label right.label))
+
 let completion_field_source_names analysis =
   analysis.compiler.typecheck_state.env
   |> Compiler_environment.filter_map (fun _ (binding : Types.binding) ->
@@ -1736,6 +1762,21 @@ let completions analysis ~offset : completion_item list =
            declaration.methods items)
        module_types
   |> List.sort_uniq (fun (left : completion_item) (right : completion_item) ->
+         String.compare left.label right.label)
+
+let repl_completions state : completion_item list =
+  let source = "nil" in
+  let state_items = completions_from_state state in
+  let analyzed_items =
+    match analyze_from_state ~filename:"<repl-completion>" state source with
+    | Error _ -> []
+    | Ok analysis ->
+        Compiler_session.run (fun () ->
+            completions analysis ~offset:(String.length source))
+  in
+  state_items @ analyzed_items
+  |> List.sort_uniq
+       (fun (left : completion_item) (right : completion_item) ->
          String.compare left.label right.label)
 
 module String_map = Map.Make (String)
