@@ -1,0 +1,21 @@
+(library
+ (name repl_prototype)
+ (modules repl_prototype)
+ (modes byte)
+ (libraries
+  compiler-libs.toplevel
+  lg
+  lg.runtime
+  lg.edn-backend.native
+  lg_compiled_stdlib_native
+  rrbvec
+  unix))
+
+(test
+ (name repl_prototype_test)
+ (modules repl_prototype_test)
+ (modes byte)
+ (deps ../../stdlib/lg_stdlib_native.state)
+ (libraries repl_prototype)
+ (action
+  (run %{test} %{dep:../../stdlib/lg_stdlib_native.state})))

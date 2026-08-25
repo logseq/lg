@@ -37,6 +37,20 @@ type diagnostic = {
 
 type compilation = { ocaml_source : string; diagnostics : diagnostic list }
 
+type repl_form_kind =
+  | Repl_value
+  | Repl_definition of {
+      name : string;
+      type_name : string;
+    }
+  | Repl_namespace of string
+  | Repl_summary of string
+
+type repl_compilation = {
+  structure : Parsetree.structure;
+  kind : repl_form_kind;
+}
+
 type language_analysis = {
   typed_structure : Typedtree.structure;
   compiler_env : Env.t;
@@ -1047,6 +1061,8 @@ let with_source_scope scope state =
     state with
     typecheck_state;
   }
+
+let source_scope state = state.typecheck_state.scope
 
 let target_include_dirs target include_dirs =
   match target with
@@ -2309,3 +2325,155 @@ let compile_chunk_parsetree ?(target = Target.default) ?(filename = "<string>")
                     { state with ocaml_env = Some analysis.compiler_env }
                   in
                   Ok (state, result.structure))))
+
+type pending_repl_kind =
+  | Pending_value
+  | Pending_definition of string
+  | Pending_namespace
+  | Pending_summary of string
+
+let repl_form_error ?location message =
+  Error.error ?location ~code:"LG5001" ~phase:`Semantic message
+
+let rec first_source_name = function
+  | Ast.FSymbol name :: _ when not (String.starts_with ~prefix:"^" name) ->
+      Some name
+  | _ :: rest -> first_source_name rest
+  | [] -> None
+
+let classify_repl_form form =
+  match form with
+  | Ast.FList (Ast.FSymbol "ns" :: _) -> Ok Pending_namespace
+  | Ast.FList
+      (Ast.FSymbol ("def" | "defonce" | "defn" | "defn-") :: rest) -> (
+      match first_source_name rest with
+      | Some name -> Ok (Pending_definition name)
+      | None -> repl_form_error "REPL definition is missing its name")
+  | Ast.FList (Ast.FSymbol "defmacro" :: rest) -> (
+      match first_source_name rest with
+      | Some name -> Ok (Pending_summary ("macro " ^ name))
+      | None -> repl_form_error "REPL macro definition is missing its name")
+  | Ast.FList
+      (Ast.FSymbol
+        (( "type" | "type-record" | "type-variant" | "defrecord"
+         | "deftype" | "defprotocol" | "module" | "module-signature" ) as
+        head)
+      :: rest) ->
+      let name = first_source_name rest |> Option.value ~default:"<anonymous>" in
+      Ok (Pending_summary (head ^ " " ^ name))
+  | _ -> Ok Pending_value
+
+let parse_single_repl_form ?(target = Target.default) source =
+  match Lexer.tokenize source with
+  | Error _ as error -> error
+  | Ok tokens -> (
+      match Parser.parse ~target tokens with
+      | Error _ as error -> error
+      | Ok [ form ] -> Ok form
+      | Ok [] -> repl_form_error "REPL input contains no form"
+      | Ok _ -> repl_form_error "REPL evaluation expects exactly one form")
+
+let repl_definition_type state name =
+  let scope = source_scope state in
+  match Resolver.lookup_binding scope state.typecheck_state.env name with
+  | Error _ -> repl_form_error ("unable to resolve REPL definition " ^ name)
+  | Ok binding ->
+      let binding = Types.instantiate_binding binding in
+      let ty =
+        Types.runtime_root_value_type binding
+        |> Option.value ~default:binding.ty
+      in
+      Ok (Types.source_name ty)
+
+let compile_repl_form ?(target = Target.default) state source =
+  match parse_single_repl_form ~target source with
+  | Error _ as error -> error
+  | Ok form -> (
+      match classify_repl_form form with
+      | Error _ as error -> error
+      | Ok pending ->
+          let compiled_source =
+            match pending with
+            | Pending_value -> "(__lg_repl-result " ^ source ^ "\n)"
+            | Pending_definition _ | Pending_namespace | Pending_summary _ ->
+                source
+          in
+          match compile_chunk_parsetree ~target state compiled_source with
+          | Error _ as error -> error
+          | Ok (next_state, structure) -> (
+              match pending with
+              | Pending_value ->
+                  Ok (next_state, { structure; kind = Repl_value })
+              | Pending_namespace ->
+                  Ok
+                    ( next_state,
+                      {
+                        structure;
+                        kind = Repl_namespace (source_scope next_state);
+                      } )
+              | Pending_summary summary ->
+                  Ok (next_state, { structure; kind = Repl_summary summary })
+              | Pending_definition name ->
+                  Result.map
+                    (fun type_name ->
+                      ( next_state,
+                        {
+                          structure;
+                          kind = Repl_definition { name; type_name };
+                        } ))
+                    (repl_definition_type next_state name)))
+
+let rec semantic_expression_type = function
+  | Semantic_ir.Typed (ty, _) -> Some ty
+  | Semantic_ir.Located (_, _, expression)
+  | Semantic_ir.SharedValue (_, expression) ->
+      semantic_expression_type expression
+  | _ -> None
+
+let rec repl_item_type = function
+  | Lowered.Value_binding { expression; _ }
+  | Lowered.Recursive_value_binding { expression; _ }
+  | Lowered.Deferred_value_binding { expression; _ } ->
+      semantic_expression_type expression
+  | Lowered.Recursive_value_bindings bindings ->
+      List.find_map
+        (fun (binding : Lowered.recursive_value) ->
+          semantic_expression_type binding.expression)
+        (List.rev bindings)
+  | Lowered.Group items -> List.find_map repl_item_type (List.rev items)
+  | Lowered.Polymorphic_holder_type _ | Lowered.Comment _
+  | Lowered.Type_def _ | Lowered.Type_alias _ | Lowered.Type_variant _
+  | Lowered.Module_def _ | Lowered.Module_alias _ | Lowered.Module_functor _
+  | Lowered.Module_apply _ | Lowered.Module_signature _
+  | Lowered.Open_module _ | Lowered.Include_module _ | Lowered.Record_def _
+  | Lowered.Projected_record_def _ ->
+      None
+
+let rec drop count values =
+  if count <= 0 then values
+  else match values with [] -> [] | _ :: rest -> drop (count - 1) rest
+
+let infer_repl_type ?(target = Target.default) state source =
+  match parse_single_repl_form ~target source with
+  | Error _ as error -> error
+  | Ok form -> (
+      match classify_repl_form form with
+      | Error _ as error -> error
+      | Ok Pending_namespace | Ok (Pending_summary _) ->
+          repl_form_error "REPL form does not have a value type"
+      | Ok (Pending_definition name) -> (
+          match compile_chunk_parsetree ~target state source with
+          | Error _ as error -> error
+          | Ok (candidate_state, _) -> repl_definition_type candidate_state name)
+      | Ok Pending_value ->
+          let previous_count = List.length state.located_items in
+          match compile_chunk_parsetree ~target state source with
+          | Error _ as error -> error
+          | Ok (candidate_state, _) ->
+              let current_items =
+                candidate_state.located_items
+                |> drop previous_count |> List.map snd |> List.rev
+              in
+              (match List.find_map repl_item_type current_items with
+              | Some ty -> Ok (Types.source_name ty)
+              | None -> repl_form_error "unable to determine REPL form type"))

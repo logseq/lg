@@ -22,12 +22,27 @@ type compilation = Toolchain.compilation = {
   diagnostics : diagnostic list;
 }
 
+type repl_form_kind = Toolchain.repl_form_kind =
+  | Repl_value
+  | Repl_definition of {
+      name : string;
+      type_name : string;
+    }
+  | Repl_namespace of string
+  | Repl_summary of string
+
+type repl_compilation = Toolchain.repl_compilation = {
+  structure : Parsetree.structure;
+  kind : repl_form_kind;
+}
+
 type state = Toolchain.state
 type prepared_source = Toolchain.prepared_source
 
 let empty_state = Toolchain.empty_state
 let cacheable_state = Toolchain.cacheable_state
 let with_source_scope = Toolchain.with_source_scope
+let source_scope = Toolchain.source_scope
 
 let restore_ocaml_environment ?(target = Target.default) ~packages state
     sources =
@@ -114,3 +129,11 @@ let compile_chunk_parsetree_with_filename ?(target = Target.default) ~filename
     state source =
   Compiler_session.run (fun () ->
       Toolchain.compile_chunk_parsetree ~target ~filename state source)
+
+let compile_repl_form ?(target = Target.default) state source =
+  Compiler_session.run (fun () ->
+      Toolchain.compile_repl_form ~target state source)
+
+let infer_repl_type ?(target = Target.default) state source =
+  Compiler_session.run (fun () ->
+      Toolchain.infer_repl_type ~target state source)

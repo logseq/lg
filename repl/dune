@@ -1,0 +1,12 @@
+(library
+ (name lg_repl)
+ (public_name lg.repl)
+ (modes byte)
+ (libraries
+  compiler-libs.toplevel
+  lg
+  lg.runtime
+  lg.edn-backend.native
+  lg.stdlib.native
+  rrbvec
+  unix))

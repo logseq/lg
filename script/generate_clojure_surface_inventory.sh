@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 259; then
-  echo "compiler call dispatch changed: expected 259 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 260; then
+  echo "compiler call dispatch changed: expected 260 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -158,6 +158,7 @@ awk '
     internal_abi["__lg_print-map"] = "typed-static-map-printer-with-independent-key-value-witnesses-and-namespace-lifting"
     internal_abi["__lg_print-prefix-map"] = "typed-static-prefix-map-printer-with-independent-key-value-witnesses"
     internal_abi["__lg_print-meta?"] = "typed-closed-edn-metadata-presence-and-meta-option-primitive"
+    internal_abi["__lg_repl-result"] = "typed-repl-static-result-rendering-and-publication-primitive"
     internal_abi["__lg_equal"] = "typed-static-generic-equality-primitive"
     internal_abi["__lg_add"] = "typed-static-numeric-addition-primitive"
     internal_abi["__lg_subtract"] = "typed-static-numeric-subtraction-primitive"

@@ -80,8 +80,7 @@ let read ~kind ~path =
                             Error "invalid compiler state artifact length"
                         | Some payload_length
                           when payload_length > maximum_payload_bytes ->
-                            Error
-                              "compiler state artifact exceeds maximum size"
+                            Error "compiler state artifact exceeds maximum size"
                         | Some payload_length ->
                             let payload_start = pos_in input_channel in
                             let remaining =

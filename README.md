@@ -481,6 +481,31 @@ Run the example:
 dune exec lg -- --run examples/person.cljc
 ```
 
+Start the persistent Native bytecode REPL:
+
+```sh
+dune exec lg -- repl
+```
+
+```clojure
+user=> (+ 40 2)
+42 : int
+user=> :type [1 2]
+vector<int>
+user=> (ns demo.app)
+namespace demo.app
+demo.app=> (def answer 42)
+answer : int
+demo.app=> answer
+42 : int
+```
+
+The REPL keeps definitions, macros, namespaces, atoms, and other runtime state
+between forms. It accepts multiline forms, `:type` inspects a form without
+executing it, and `:quit` or `:q` exits. The current implementation is a local
+Native bytecode REPL; Socket REPL is planned separately. Application hot reload
+is outside the current scope, and nREPL is not supported.
+
 Compile or run several lg files in one incremental compiler state:
 
 ```sh

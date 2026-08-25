@@ -47,6 +47,30 @@
  (libraries lg.compiler_support))
 
 (test
+ (name repl_session_tests)
+ (modules repl_session_tests)
+ (modes byte)
+ (deps ../stdlib/lg_stdlib_native.state)
+ (libraries lg.repl)
+ (action
+  (run %{test} %{dep:../stdlib/lg_stdlib_native.state})))
+
+(rule
+ (alias runtest)
+ (deps
+  repl_cli_test.sh
+  ../bin/lg_cli.exe
+  ../bin/lg_repl_worker.bc
+  ../stdlib/lg_stdlib_native.state)
+ (action
+  (run
+   bash
+   %{dep:repl_cli_test.sh}
+   %{exe:../bin/lg_cli.exe}
+   %{dep:../bin/lg_repl_worker.bc}
+   %{dep:../stdlib/lg_stdlib_native.state})))
+
+(test
  (name compiler_gate_tests)
  (modules
   compiler_gate_tests

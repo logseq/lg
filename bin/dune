@@ -1,10 +1,17 @@
 (executable
  (name lg_cli)
- (modules lg_cli compiler_artifact)
+ (modules lg_cli)
  (public_name lg)
  (package lg)
  (ocamlopt_flags :standard -no-g)
  (libraries lg lg.edn-backend.native rrbvec unix))
+
+(executable
+ (name lg_repl_worker)
+ (public_name lg-repl)
+ (package lg)
+ (modes byte)
+ (libraries lg.repl unix))
 
 (executable
  (name lg_lsp)

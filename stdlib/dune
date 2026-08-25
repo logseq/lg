@@ -69,6 +69,7 @@
 
 (library
  (name lg_compiled_stdlib_native)
+ (public_name lg.stdlib.native)
  (wrapped false)
  (modules lg_stdlib_native)
  (flags

@@ -13786,6 +13786,25 @@ let create ~compile_expr =
                         [ arg.semantic_expr ]))
             | _ -> Error.error "abs expects a numeric argument")
         | Ok _ -> Error.error "abs expects 1 argument")
+    | "__lg_repl-result" -> (
+        match arg_forms with
+        | [ form ] -> (
+            match compile_expr scope env form with
+            | Error _ as error -> error
+            | Ok value ->
+                let rendered =
+                  stringify_value scope env ~pr:true value
+                in
+                Ok
+                  (typed_ir TUnit
+                     (Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            "Lg_runtime.Runtime_repl.publish",
+                          [
+                            Semantic_ir.String (Types.source_name value.ty);
+                            rendered;
+                          ] ))))
+        | _ -> Error.error "internal REPL result expects one argument")
     | ("__lg_str" | "__lg_print_str" | "__lg_pr_str") as render_name -> (
         let readable = render_name = "__lg_pr_str" in
         let separator = if render_name = "__lg_str" then "" else " " in

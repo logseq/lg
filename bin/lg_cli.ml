@@ -12,8 +12,9 @@ let usage () =
      output.ml] | \
      --run-from <state> <implementation.ml> <input.cljc> | \
      --run-files <input.cljc>... | \
-     --run-files-from <state> <implementation.ml> <input.cljc>... | mobile \
-     build [options] [paths...] | --lsp. \
+     --run-files-from <state> <implementation.ml> <input.cljc>... | repl \
+     [--state <lg_stdlib_native.state>] | mobile build [options] [paths...] | \
+     --lsp. \
      Batch commands default to all .clj, .cljc, .cljs, and .lgi files in the \
      current directory.";
   exit 2
@@ -94,10 +95,10 @@ let compiler_error message =
       location = None }
 
 let write_saved_compilation_state path saved =
-  Compiler_artifact.write ~kind:"saved-state" ~path saved
+  Lg.Compiler_artifact.write ~kind:"saved-state" ~path saved
 
 let read_saved_compilation_state path =
-  match Compiler_artifact.read ~kind:"saved-state" ~path with
+  match Lg.Compiler_artifact.read ~kind:"saved-state" ~path with
   | Ok saved -> Ok (saved : saved_compilation_state)
   | Error message -> compiler_error message
 
@@ -333,14 +334,14 @@ let read_cached_prefix_output key =
         if not (Sys.file_exists output_path) then None
         else
           match
-            Compiler_artifact.read ~kind:"prefix-output" ~path:output_path
+            Lg.Compiler_artifact.read ~kind:"prefix-output" ~path:output_path
           with
           | Ok cached_output ->
             touch_cache_entry key;
             Some (cached_output : cached_prefix_output)
           | Error message ->
             report_corrupt_cache_entry key [ message ];
-            Compiler_artifact.remove_if_present output_path;
+            Lg.Compiler_artifact.remove_if_present output_path;
             None)
 
 let write_cached_prefix key output =
@@ -350,7 +351,7 @@ let write_cached_prefix key output =
       with_compile_cache_lock (fun () ->
           let directory = compile_cache_generation_directory () in
           ensure_directory directory;
-          Compiler_artifact.write ~kind:"prefix-output"
+          Lg.Compiler_artifact.write ~kind:"prefix-output"
             ~path:(cache_path key ".output") output);
       if Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" then
         Printf.eprintf "lg: wrote cached prefix: %.3fs\n%!"
@@ -1017,9 +1018,32 @@ let run_mobile argv =
   then Unix.execvp executable arguments
   else Unix.execv executable arguments
 
+let run_repl argv =
+  let executable_directory = Filename.dirname Sys.executable_name in
+  let candidates =
+    [
+      Filename.concat executable_directory "lg_repl_worker.bc";
+      Filename.concat executable_directory "lg-repl";
+    ]
+  in
+  let executable =
+    Option.value (List.find_opt Sys.file_exists candidates) ~default:"lg-repl"
+  in
+  let arguments =
+    Array.to_list argv
+    |> function
+    | _program :: "repl" :: rest -> Array.of_list (executable :: rest)
+    | _ -> assert false
+  in
+  if Filename.is_relative executable && not (String.contains executable '/')
+  then Unix.execvp executable arguments
+  else Unix.execv executable arguments
+
 let () =
   if Array.length Sys.argv > 1 && Sys.argv.(1) = "mobile" then
     run_mobile Sys.argv;
+  if Array.length Sys.argv > 1 && Sys.argv.(1) = "repl" then
+    run_repl Sys.argv;
   let target, reader_target, mode = parse_args Sys.argv in
   (match mode with Lsp -> () | _ -> tune_compiler_gc ());
   match mode with
