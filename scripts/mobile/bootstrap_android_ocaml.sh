@@ -36,11 +36,11 @@ case "$(uname -s)" in
 esac
 
 ndk_root=
-if [[ -n ${ANDROID_NDK_HOME:-} ]]; then
-  [[ -x $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$ndk_host/bin/clang ]] \
-    || die "ANDROID_NDK_HOME does not contain a complete NDK toolchain"
+if [[ -n ${ANDROID_NDK_HOME:-} \
+      && -x $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$ndk_host/bin/clang ]]; then
   ndk_root=$ANDROID_NDK_HOME
-else
+fi
+if [[ -z $ndk_root ]]; then
   for candidate in "$android_home"/ndk/*; do
     [[ -x $candidate/toolchains/llvm/prebuilt/$ndk_host/bin/clang ]] \
       && ndk_root=$candidate

@@ -4,6 +4,12 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mobile="$repo_root/scripts/lg-mobile"
+android_setup="$repo_root/scripts/mobile/bootstrap_android_ocaml.sh"
+
+if grep -Fq 'ANDROID_NDK_HOME does not contain a complete NDK toolchain' "$android_setup"; then
+  echo "Android setup does not fall back from an incomplete NDK override" >&2
+  exit 1
+fi
 
 development=$($mobile build --profile development --dry-run)
 grep -Fq 'ios-simulator arm64-apple-ios17.0-simulator' <<<"$development"
