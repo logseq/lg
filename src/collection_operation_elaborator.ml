@@ -3,6 +3,8 @@ open Types
 open Expression_support
 module Env = Compiler_environment
 
+let dissoc_expansion_counter = ref 0
+
 type expression_result = (typed_expr, Error.t) result
 type call = string -> Env.t -> Ast.form list -> expression_result
 type forms = Ast.form list -> expression_result
@@ -2033,23 +2035,25 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | TString, TInt ->
                   Error.error "get default for string must be char or nil"
               | TString, _ -> Error.error "get string index must be int"
-              | TVector inner, TInt when Types.equal inner default.ty ->
+              | TVector inner, TInt
+                when Types.equal inner default.ty
+                     || (Types.equal inner (TOcaml "Lg_edn_backend.t")
+                        && Edn_value_elaborator.is_packable default.ty) ->
                   Ok
                     (typed_ir inner
                        (Semantic_ir.Match
-                        ( apply "Rrbvec.nth_opt"
-                            [ target.semantic_expr;
-                              index.semantic_expr;
-                            ],
-                          [
-                            ( Semantic_ir.PConstructor
-                                ("Some", Some (Semantic_ir.PVar "value")),
+                          ( apply "Rrbvec.nth_opt"
+                              [ target.semantic_expr; index.semantic_expr ],
+                            [
+                              ( Semantic_ir.PConstructor
+                                  ("Some", Some (Semantic_ir.PVar "value")),
                                 Semantic_ir.Ident "value" );
-                            ( Semantic_ir.PConstructor ("None", None),
-                              default.semantic_expr );
-                          ] )))
-            | TVector _, TInt ->
-                Error.error "get default for vector must match element type"
+                              ( Semantic_ir.PConstructor ("None", None),
+                                coerce_expression_to_type inner default.ty
+                                  default.semantic_expr );
+                            ] )))
+              | TVector _, TInt ->
+                  Error.error "get default for vector must match element type"
               | TVector _, _ -> Error.error "get vector index must be int"
               | TNamed_record { nominal = true; _ }, _
                 when (match index_form with FKeyword _ -> false | _ -> true) ->
@@ -2873,13 +2877,58 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               match target.ty with
               | TNamed_record { nominal = true; _ }
                 when Protocol.type_satisfies env Core_protocols.map_id target.ty ->
-                  let form =
-                    List.fold_left
-                      (fun current key ->
-                        FList [ FSymbol "IMap/-dissoc"; current; key ])
-                      target_form key_forms
-                  in
-                  compile_expr scope env form
+                  Result.bind (compile_args_for scope env key_forms) (fun keys ->
+                      let form =
+                        List.fold_left2
+                          (fun current key_form (key : typed_expr) ->
+                            match key.ty with
+                            | TNullable _ | TOcaml_app ("option", [ _ ]) ->
+                                incr dissoc_expansion_counter;
+                                let suffix =
+                                  string_of_int !dissoc_expansion_counter
+                                in
+                                let target_name =
+                                  "__lg_dissoc_target_" ^ suffix
+                                in
+                                let option_name =
+                                  "__lg_dissoc_option_" ^ suffix
+                                in
+                                let payload_name =
+                                  "__lg_dissoc_payload_" ^ suffix
+                                in
+                                FList
+                                  [ FSymbol "let";
+                                    FVector
+                                      [ FSymbol target_name;
+                                        current;
+                                        FSymbol option_name;
+                                        key_form;
+                                      ];
+                                    FList
+                                      [ FSymbol "match";
+                                        FSymbol option_name;
+                                        FList
+                                          [ FSymbol "Some";
+                                            FSymbol payload_name;
+                                          ];
+                                        FList
+                                          [ FSymbol "IMap/-dissoc";
+                                            FSymbol target_name;
+                                            FSymbol payload_name;
+                                          ];
+                                        FSymbol "None";
+                                        FSymbol target_name;
+                                      ];
+                                  ]
+                            | _ ->
+                                FList
+                                  [ FSymbol "IMap/-dissoc";
+                                    current;
+                                    key_form;
+                                  ])
+                          target_form key_forms keys
+                      in
+                      compile_expr scope env form)
               | TRecord _ | TNamed_record _ ->
                   let rec parse_keywords acc = function
                     | [] -> Ok (List.rev acc)

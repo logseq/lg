@@ -9538,11 +9538,15 @@ let create ~compile_expr =
                   match receiver.ty with
                   | TNullable inner | TOcaml_app ("option", [ inner ]) -> (
                       let payload_name = "__lg_optional_protocol_sum" in
-                      match
-                        closed_sum_protocol_expression inner
-                          (Semantic_ir.Ident payload_name)
-                      with
-                      | Some payload_expression ->
+                      if
+                        Protocol_id.name protocol_id = "ISequential"
+                        && Option.is_some
+                             (Env.find_optional_sequential_adapter inner env)
+                      then
+                        let _, adapter =
+                          Env.find_optional_sequential_adapter inner env
+                          |> Option.get
+                        in
                           Semantic_ir.Match
                             ( receiver.semantic_expr,
                               [
@@ -9551,19 +9555,43 @@ let create ~compile_expr =
                                 ( Semantic_ir.PConstructor
                                     ( "Some",
                                       Some (Semantic_ir.PVar payload_name) ),
-                                  payload_expression );
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "Option.is_some",
+                                      [
+                                        Semantic_ir.Apply
+                                          ( Semantic_ir.Ident adapter,
+                                            [
+                                              Semantic_ir.Ident payload_name;
+                                            ] );
+                                      ] ) );
                               ] )
-                      | None ->
-                          Semantic_ir.Match
-                            ( receiver.semantic_expr,
-                              [
-                                ( Semantic_ir.PConstructor ("None", None),
-                                  Semantic_ir.Bool false );
-                                ( Semantic_ir.PConstructor
-                                    ("Some", Some Semantic_ir.PAny),
-                                  Semantic_ir.Bool
-                                    (statically_satisfies inner) );
-                              ] ))
+                      else
+                        match
+                          closed_sum_protocol_expression inner
+                            (Semantic_ir.Ident payload_name)
+                        with
+                        | Some payload_expression ->
+                            Semantic_ir.Match
+                              ( receiver.semantic_expr,
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Bool false );
+                                  ( Semantic_ir.PConstructor
+                                      ( "Some",
+                                        Some (Semantic_ir.PVar payload_name) ),
+                                    payload_expression );
+                                ] )
+                        | None ->
+                            Semantic_ir.Match
+                              ( receiver.semantic_expr,
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Bool false );
+                                  ( Semantic_ir.PConstructor
+                                      ("Some", Some Semantic_ir.PAny),
+                                    Semantic_ir.Bool
+                                      (statically_satisfies inner) );
+                                ] ))
                   | receiver_ty -> (
                       match
                         closed_sum_protocol_expression receiver_ty
@@ -9571,47 +9599,7 @@ let create ~compile_expr =
                       with
                       | Some expression -> expression
                       | None ->
-                  if
-                    Protocol_id.name protocol_id = "ISequential"
-                    &&
-                    match receiver.ty with
-                    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
-                        Option.is_some
-                          (Env.find_optional_sequential_adapter inner env)
-                    | _ -> false
-                  then
-                    let inner =
-                      match receiver.ty with
-                      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
-                          inner
-                      | _ -> assert false
-                    in
-                    let _, adapter =
-                      Env.find_optional_sequential_adapter inner env
-                      |> Option.get
-                    in
-                    let value_name = "__lg_optional_sequential_payload" in
-                    Semantic_ir.Match
-                      ( receiver.semantic_expr,
-                        [
-                          ( Semantic_ir.PConstructor ("None", None),
-                            Semantic_ir.Bool false );
-                          ( Semantic_ir.PConstructor
-                              ("Some", Some (Semantic_ir.PVar value_name)),
-                            Semantic_ir.Match
-                              ( Semantic_ir.Apply
-                                  ( Semantic_ir.Ident adapter,
-                                    [ Semantic_ir.Ident value_name ] ),
-                                [
-                                  ( Semantic_ir.PConstructor ("None", None),
-                                    Semantic_ir.Bool false );
-                                  ( Semantic_ir.PConstructor
-                                      ("Some", Some Semantic_ir.PAny),
-                                    Semantic_ir.Bool true );
-                                ] ) );
-                        ] )
-                  else if
-                    protocol_basename = "IMap"
+                  if protocol_basename = "IMap"
                     && Option.is_some
                          (Env.find_optional_map_adapter
                             (Types.constraint_value_type receiver.ty)
@@ -21616,13 +21604,9 @@ let create ~compile_expr =
                                         argument.semantic_expr
                                     else
                                       match optional_payload expected with
-                                      | Some payload
+                                      | Some _
                                         when (method_name = "-reset!"
-                                             || method_name = "-vreset!")
-                                             && Types.assignable
-                                               ~policy:Host_boundary
-                                               ~expected:payload
-                                               ~actual:argument.ty ->
+                                             || method_name = "-vreset!") ->
                                           plan_and_emit_argument env ~expected
                                             argument
                                       | Some _ | None ->

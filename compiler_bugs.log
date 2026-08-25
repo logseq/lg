@@ -865,3 +865,63 @@ record descriptors were not structurally assignable even though they emitted
 the same OCaml type. Direct `Some` wrapping now also accepts identical emitted
 type names, while different host-owned collection representations still go
 through explicit adaptation.
+
+FIXED: The nullable receiver branch of `satisfies?` bypassed registered
+optional sequential adapters. The adapter check existed inside the
+non-nullable branch and was therefore unreachable, so `Some` records whose
+adapter returned a sequence were reported as non-sequential. The check now
+runs while the nullable payload is in scope, and the dead branch was removed.
+
+FIXED: Destructuring an absent `option<tuple<...>>` raised an exception for
+payload types without a nil-value adapter. Clojure sequential destructuring
+instead binds nil for every missing position. Nullable tuple fields now retain
+that fact as `option<T>`; a regression covers both present and absent tuples
+without dynamic values.
+
+FIXED: Nullable `reset!` arguments could bypass the normal adaptation planner,
+and direct option wrapping treated structural assignability as identical OCaml
+storage. A nominal record was consequently stored unchanged in a reference
+typed as an optional homogeneous map, then read through map operations.
+Nullable resets now always use the existing planner, and direct wrapping is
+limited to values with the same emitted OCaml representation.
+
+FIXED: Branch merging treated a named record as an ordinary implicit EDN
+payload. A non-nullable protocol result could therefore merge
+`vector<Record>` with an already closed `vector<EDN>` and lose the required
+sum boundary. Implicit EDN branch promotion now excludes named records, while
+an explicitly nullable closed-EDN vector can still absorb a packable vector
+branch and preserve the existing recursive frame behavior.
+
+FIXED: Three-argument vector `get` required the default value to have exactly
+the stored element type. A scalar default for `vector<Lg_edn_backend.t>` was
+therefore rejected even though it has a closed EDN conversion. Vector lookup
+now accepts and emits that validated conversion while preserving the existing
+type error for incompatible defaults.
+
+FIXED: Implicit branch merging treated a nested collection such as
+`vector<EDN>` as one packable EDN value. `concat` could therefore reverse its
+source-directed element adaptation and attempt to erase pair vectors into the
+scalar EDN domain. Implicit EDN branch promotion now excludes collection and
+map payloads; explicit EDN contexts still support recursive packing.
+
+FIXED: Successful-call refinement inspected unexpanded source forms and
+therefore made `when`, `and`, and public predicate names compiler-owned again.
+The refinement analysis now runs on macro-expanded forms and recognizes only
+the internal static predicate primitives. Cross-chunk parser refinement remains
+fully static on Native and Melange without adding public-name dispatch.
+
+FIXED: An `if` guarded by the internal static integer predicate compiled both
+branches even when the argument was already known to be an integer. Source
+integer helpers consequently emitted unreachable branches with unused
+narrowing bindings, which failed warning-as-error builds. Statically decided
+`__lg_int-predicate` conditions now select only their reachable branch while
+still preserving condition evaluation and side effects; arbitrary truthiness
+expressions are not folded.
+
+FIXED: `dissoc` handled nullable keys for runtime HAMTs but forwarded the same
+key unchanged when the map was a nominal `IMap` implementation such as a
+persistent tree map. Tuple destructuring correctly exposed a possibly absent
+key as `option<T>`, then the protocol call rejected it against `T`. Nominal map
+dissociation now evaluates the map and key once, returns the original map for
+`None`, and calls `IMap/-dissoc` with the payload for `Some`. Native and Melange
+regressions cover absent and present integer keys.

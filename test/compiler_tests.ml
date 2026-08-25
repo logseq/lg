@@ -1463,6 +1463,22 @@ let test_dissoc_nil_is_nil () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_generic_imap_dissoc_preserves_key_and_value_parameters () =
+  let source =
+    {|
+(signature remove-index [value]
+  :fn<clojure.core/persistent-tree-map<int;value>;int;clojure.core/persistent-tree-map<int;value>>)
+(defn remove-index [mapping index]
+  (IMap/-dissoc mapping index))
+(println (count (remove-index (sorted-map 1 :one) 1)))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "generic_imap_dissoc_preserves_key_and_value_parameters"
+    "0\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_dissoc_accepts_nullable_keys () =
   let source =
     {|
@@ -1470,10 +1486,19 @@ let test_dissoc_accepts_nullable_keys () =
 (def answer-key :answer)
 (def values (__lg_hash-map answer-key 42))
 (println (get (dissoc values maybe-key) :answer))
+(def maybe-index (if false 1 nil))
+(def sorted-values (sorted-map 1 "one" 2 "two"))
+(println (count (dissoc sorted-values maybe-index)))
+(println (count (dissoc sorted-values (Some 1))))
+(signature remove-optional-index [value]
+  :fn<clojure.core/persistent-tree-map<int;value>;option<int>;clojure.core/persistent-tree-map<int;value>>)
+(defn remove-optional-index [mapping index]
+  (dissoc mapping index))
+(println (count (remove-optional-index (sorted-map 1 :one) None)))
 |}
   in
   let native_source = Lg.Compiler.compile_string source |> expect_ok in
-  assert_ocaml_runs "dissoc_accepts_nullable_keys" "42\n" native_source;
+  assert_ocaml_runs "dissoc_accepts_nullable_keys" "42\n2\n1\n1\n" native_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -9408,12 +9433,12 @@ let test_cross_module_extend_protocol_preserves_record_extension_field () =
 |}
   in
   let compile target =
+    let stdlib = compiled_stdlib target in
     let sources =
-      stdlib_sources ()
-      @ [
-          ("test/protocol_records.cljc", record_source);
-          ("test/protocol_extension.cljc", extension_source);
-        ]
+      [
+        ("test/protocol_records.cljc", record_source);
+        ("test/protocol_extension.cljc", extension_source);
+      ]
     in
     let _, outputs =
       List.fold_left
@@ -9424,7 +9449,7 @@ let test_cross_module_extend_protocol_preserves_record_extension_field () =
             |> expect_ok
           in
           (state, output :: outputs))
-        (Lg.Compiler.empty_state, []) sources
+        (stdlib.state, [ stdlib.ocaml_source ]) sources
     in
     outputs |> List.rev |> String.concat "\n"
   in
@@ -14463,25 +14488,31 @@ let test_runtime_vector_destructuring_uses_declared_nil_value () =
     failwith
       "Melange declared nil-value destructuring must remain fully static"
 
-let test_optional_tuple_destructuring_uses_checked_static_payload () =
+let test_optional_tuple_destructuring_preserves_absent_values () =
   let source =
     {|
 (signature head-pair [key]
-  :fn<vector<tuple<int;key>>;tuple<int;key>>)
+  :fn<vector<tuple<int;key>>;tuple<option<int>;option<key>>>)
 (signature pair [key] :fn<int;key;tuple<int;key>>)
 (defn pair [generation key] [generation key])
 (defn head-pair [entries]
   (let [[generation key] (first entries)]
     [generation key]))
-(let [[generation key] (head-pair [(pair 7 "entry")])]
-  (println (str generation ":" key)))
+(let [[present-generation present-key] (head-pair [(pair 7 "entry")])
+      [missing-generation missing-key] (head-pair [])]
+  (println
+    (str
+      (match present-generation (Some value) value None -1) ":"
+      (match present-key (Some value) value None "missing") ":"
+      (= None missing-generation) ":"
+      (= None missing-key))))
 |}
   in
   let native = compile_string_with_stdlib source |> expect_ok in
   if string_contains_substring native "Runtime_dynamic" then
     failwith "optional tuple destructuring must remain fully static";
-  assert_ocaml_runs "optional_tuple_destructuring_uses_checked_static_payload"
-    "7:entry\n" native;
+  assert_ocaml_runs "optional_tuple_destructuring_preserves_absent_values"
+    "7:entry:true:true\n" native;
   let melange =
     compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in
@@ -27838,19 +27869,8 @@ let test_generic_clojure_set_subset_constrains_parameters () =
 |}
   in
   let compile_sequence target =
-    let state, _ =
-      List.fold_left
-        (fun (state, ()) (filename, source_text) ->
-          let state, _ =
-            Lg.Compiler.compile_chunk_with_filename ~target ~filename state
-              source_text
-            |> expect_ok
-          in
-          (state, ()))
-        (Lg.Compiler.empty_state, ()) (stdlib_sources ())
-    in
     Lg.Compiler.compile_chunk_with_filename ~target
-      ~filename:"app/sequence_subset.cljc" state sequence_source
+      ~filename:"app/sequence_subset.cljc" (stdlib_state target) sequence_source
     |> expect_error_contains "called with incompatible arguments"
   in
   compile_sequence Lg.Target.Native;
@@ -28627,8 +28647,7 @@ let test_source_iseq_and_inext_protocols_match_clojurescript () =
     compile_with_stdlib Lg.Target.Native "test/source_sequence_protocols.cljc"
       source
   in
-  let native_consumer = compile_string_from_stdlib source |> expect_ok in
-  if string_contains_substring native_consumer "Runtime_dynamic" then
+  if string_contains_substring native_source "Runtime_dynamic" then
     failwith "ISeq and INext protocol dispatch must remain statically typed";
   assert_ocaml_runs "source_iseq_and_inext_protocols_match_clojurescript"
     "true\ntrue\n" native_source;
@@ -46768,6 +46787,8 @@ let tests =
       test_assoc_rejects_type_changes );
     ("dissoc missing fields is a no-op", test_dissoc_missing_fields_is_noop);
     ("dissoc nil is nil", test_dissoc_nil_is_nil);
+    ( "generic IMap dissoc preserves key and value parameters",
+      test_generic_imap_dissoc_preserves_key_and_value_parameters );
     ("dissoc accepts nullable keys", test_dissoc_accepts_nullable_keys);
     ("map literals reject duplicate fields", test_map_rejects_duplicate_fields);
     ( "hash-map constructs structural maps",
@@ -47875,8 +47896,8 @@ let tests =
       test_sequential_predicate_unwraps_optional_adapted_payload );
     ( "runtime vector destructuring uses declared nil value",
       test_runtime_vector_destructuring_uses_declared_nil_value );
-    ( "optional tuple destructuring uses checked static payload",
-      test_optional_tuple_destructuring_uses_checked_static_payload );
+    ( "optional tuple destructuring preserves absent values",
+      test_optional_tuple_destructuring_preserves_absent_values );
     ( "mapv keyword function accepts optional record sequence",
       test_mapv_keyword_function_accepts_optional_record_sequence );
     ( "if tuple joins optional seqable storage without losing next nil",
@@ -50451,6 +50472,9 @@ let shard_tests index count tests =
          if test_index mod count = index then Some test else None)
 
 let run_tests_in_workers worker_count tests =
+  compiled_stdlib Lg.Target.Native |> ignore;
+  compiled_stdlib Lg.Target.Melange |> ignore;
+  compiled_stdlib Lg.Target.Js_of_ocaml |> ignore;
   flush_all ();
   let pids =
     List.init worker_count (fun index ->

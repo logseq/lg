@@ -838,21 +838,10 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                       Semantic_ir.Ident value_name,
                       Semantic_ir.Constructor ("None", None) )
                 | ty ->
-                    let none_value =
-                      match
-                        Compiler_environment.find_nil_value_adapter ty env
-                      with
-                      | Some adapter ->
-                          Semantic_ir.Apply (Semantic_ir.Ident adapter, [])
-                      | None ->
-                          Semantic_ir.Apply
-                            ( Semantic_ir.Ident "invalid_arg",
-                              [
-                                Semantic_ir.String
-                                  "cannot destructure an absent tuple";
-                              ] )
-                    in
-                    (ty, Semantic_ir.Ident value_name, none_value)
+                    ( TNullable ty,
+                      Semantic_ir.Constructor
+                        ("Some", Some (Semantic_ir.Ident value_name)),
+                      Semantic_ir.Constructor ("None", None) )
               in
               typed_ir ty
                 (Semantic_ir.Match

@@ -892,30 +892,34 @@ let prepare_function scope env name params body_forms =
                       ~materialize_open_equality:true scope env params
                       body_forms))
 
-let successful_call_refinement params body_forms =
-  let source_name_is expected actual =
+let successful_call_refinement scope env params body_forms =
+  let body_forms =
+    List.map
+      (fun form ->
+        Macro_expander.expand_all ~scope ~compiler_env:env form
+        |> Result.value ~default:form)
+      body_forms
+  in
+  let internal_name_is expected actual =
     String.equal expected actual
     || String.ends_with ~suffix:("/" ^ expected) actual
   in
   let rec positive_refinements parameter_name = function
     | FList [ FSymbol predicate; FSymbol argument ]
       when String.equal parameter_name argument ->
-        if source_name_is "symbol?" predicate then [ TSymbol ]
-        else if source_name_is "keyword?" predicate then [ TKeyword ]
-        else if source_name_is "int?" predicate then [ TInt ]
+        if internal_name_is "__lg_symbol-predicate" predicate then [ TSymbol ]
+        else if internal_name_is "__lg_keyword-predicate" predicate then
+          [ TKeyword ]
+        else if internal_name_is "__lg_int-predicate" predicate then [ TInt ]
         else []
     | FList (FSymbol conjunction :: conditions)
-      when source_name_is "and" conjunction
-           || source_name_is "__lg_logical-and" conjunction ->
+      when internal_name_is "__lg_logical-and" conjunction ->
         List.concat_map (positive_refinements parameter_name) conditions
     | _ -> []
   in
   let successful_condition = function
-    | FList (FSymbol when_name :: condition :: _)
-      when source_name_is "when" when_name ->
-        Some condition
     | FList [ FSymbol if_name; condition; _; FSymbol nil_name ]
-      when source_name_is "if" if_name && source_name_is "nil" nil_name ->
+      when String.equal "if" if_name && String.equal "nil" nil_name ->
         Some condition
     | _ -> None
   in
@@ -938,12 +942,12 @@ let successful_call_refinement params body_forms =
                  | _ -> None))
   | _ -> None
 
-let add_defined_function env_key binding params body_forms env =
+let add_defined_function scope env_key binding params body_forms env =
   let env = Env.add env_key binding env in
   let env =
     Env.remove_successful_call_refinement binding.ocaml_name env
   in
-  match successful_call_refinement params body_forms with
+  match successful_call_refinement scope env params body_forms with
   | Some (parameter_index, refined_ty) ->
       Env.add_successful_call_refinement binding.ocaml_name parameter_index
         refined_ty env
@@ -4110,7 +4114,8 @@ and compile_resolved scope env next_type form =
                   in
                   Ok
                     ( scope,
-                      add_defined_function env_key binding params body_forms env,
+                      add_defined_function scope env_key binding params body_forms
+                        env,
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
   | FList
@@ -4194,7 +4199,7 @@ and compile_resolved scope env next_type form =
               in
               Ok
                 ( scope,
-                  add_defined_function env_key binding params body_forms env,
+                  add_defined_function scope env_key binding params body_forms env,
                   next_type,
                   Group (type_items @ [ value_item ]) )))
   | FList
@@ -4296,7 +4301,8 @@ and compile_resolved scope env next_type form =
                   in
                   Ok
                     ( scope,
-                      add_defined_function env_key binding params body_forms env,
+                      add_defined_function scope env_key binding params body_forms
+                        env,
                       next_type,
                       Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))

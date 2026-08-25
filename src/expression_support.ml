@@ -126,10 +126,8 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
         | None
           when Types.equal expected_inner
                  (Types.constraint_value_type expected_inner)
-               && (Types.assignable ~policy:Structural
-                     ~expected:expected_inner ~actual:argument.ty
-                  || String.equal (Types.ocaml_name expected_inner)
-                       (Types.ocaml_name argument.ty)) ->
+               && String.equal (Types.ocaml_name expected_inner)
+                    (Types.ocaml_name argument.ty) ->
             Some
               (Ok
                  (typed_ir expected
@@ -583,6 +581,15 @@ let protocol_has_value expected ty =
   | Some value_ty -> Types.equal expected value_ty
   | None -> false
 
+let rec implicit_edn_branch_value ty =
+  match Types.constraint_value_type ty with
+  | TNamed_record _ -> false
+  | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+      implicit_edn_branch_value inner
+  | (TList _ | TVector _ | TSet _ | TSeq _ | TArray _ | TTuple _) -> false
+  | ty when Option.is_some (Types.dynamic_map_types ty) -> false
+  | ty -> Edn_value_elaborator.is_packable ty
+
 let rec merge_branch_types left right =
   match (left, right) with
   | TNamed_record left_record, TNamed_record right_record
@@ -652,6 +659,18 @@ let rec merge_branch_types left right =
         Some option_ty
     | TNil, TNullable inner | TNullable inner, TNil -> Some (TNullable inner)
     | TNil, ty | ty, TNil -> Some (TNullable ty)
+    | ( TNullable (TVector (TOcaml "Lg_edn_backend.t") as vector_ty),
+        TVector actual )
+    | ( TVector actual,
+        TNullable (TVector (TOcaml "Lg_edn_backend.t") as vector_ty) )
+    | ( TOcaml_app
+          ("option", [ (TVector (TOcaml "Lg_edn_backend.t") as vector_ty) ]),
+        TVector actual )
+    | ( TVector actual,
+        TOcaml_app
+          ("option", [ (TVector (TOcaml "Lg_edn_backend.t") as vector_ty) ]) )
+      when Edn_value_elaborator.is_packable actual ->
+        Some (TNullable vector_ty)
     | TNullable left, TNullable right -> (
         match merge_branch_types left right with
         | Some inner -> Some (TNullable inner)
@@ -715,10 +734,10 @@ let rec merge_branch_types left right =
         in
         Option.map (fun inner -> TArray inner) merged_element
     | (TOcaml "Lg_edn_backend.t" as edn), ty
-      when Edn_value_elaborator.is_packable ty ->
+      when implicit_edn_branch_value ty ->
         Some edn
     | ty, (TOcaml "Lg_edn_backend.t" as edn)
-      when Edn_value_elaborator.is_packable ty ->
+      when implicit_edn_branch_value ty ->
         Some edn
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty

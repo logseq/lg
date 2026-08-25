@@ -52,8 +52,8 @@ ocaml -I +compiler-libs ocamlcommon.cma \
   >"$tmp/compiler-calls"
 
 dispatch_count=$(wc -l <"$tmp/compiler-calls" | tr -d ' ')
-if test "$dispatch_count" -ne 249; then
-  echo "compiler call dispatch changed: expected 249 names, found $dispatch_count" >&2
+if test "$dispatch_count" -ne 259; then
+  echo "compiler call dispatch changed: expected 259 names, found $dispatch_count" >&2
   echo "review and classify every added or removed name before updating the count" >&2
   exit 1
 fi
@@ -87,7 +87,7 @@ awk '
     for (i in xs) host[xs[i]] = 1
     split("inc dec __lg_int __lg_long __lg_double quot rem mod bit-and bit-or bit-xor bit-not bit-shift-left bit-shift-right", xs)
     for (i in xs) primitive[xs[i]] = 1
-    split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value", xs)
+    split("__lg_nullable-value __lg_symbol-value __lg_keyword-value __lg_int-value __lg_string-value __lg_number-value __lg_fn-value __lg_instance-value __lg_not-symbol-value __lg_not-keyword-value __lg_not-string-value __lg_not-int-value __lg_not-fn-value __lg_not-instance-value", xs)
     for (i in xs) narrowing[xs[i]] = 1
     internal_abi["__lg_ex-message"] = "static-exception-message-extraction-primitive"
     internal_abi["__lg_not"] = "typed-static-truthiness-negation-primitive"

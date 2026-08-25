@@ -1972,15 +1972,17 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           | [] -> None)
       | _ -> None
     in
-    let static_protocol_condition =
+    let statically_decidable_condition =
       match condition with
       | FList [ FSymbol predicate; _protocol; _receiver ] ->
           has_source_name predicate "satisfies?"
+      | FList [ FSymbol predicate; _argument ] ->
+          has_source_name predicate "__lg_int-predicate"
       | _ -> false
     in
     let compile_static_branch condition =
       match
-        if static_protocol_condition then
+        if statically_decidable_condition then
           evaluated_static_boolean condition.semantic_expr
         else None
       with
