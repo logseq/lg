@@ -26,6 +26,12 @@ grep -Fq 'ios-simulator arm64-apple-ios17.0-simulator' <<<"$all_targets"
 grep -Fq 'ios-device arm64-apple-ios17.0' <<<"$all_targets"
 grep -Fq 'android arm64-v8a aarch64-linux-android21' <<<"$all_targets"
 
+ios_only=$($mobile build --target ios-simulator --dry-run)
+[[ $ios_only == 'ios-simulator arm64-apple-ios17.0-simulator' ]]
+
+android_only=$($mobile build --target android --dry-run)
+[[ $android_only == 'android arm64-v8a aarch64-linux-android21' ]]
+
 help=$($mobile --help)
 grep -Fq 'lg mobile build' <<<"$help"
 grep -Fq 'development' <<<"$help"

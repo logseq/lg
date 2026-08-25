@@ -19,6 +19,7 @@ Profiles:
   all          iOS Simulator, iOS device, and Android arm64
 
 Build options:
+  --target TARGET              Build one resolved target; may be repeated
   --output-dir DIR             Output root (default: _build/lg-mobile)
   --dry-run                    Print resolved targets without building
 
@@ -48,6 +49,7 @@ state_path=
 output_dir=_build/lg-mobile
 dry_run=0
 inputs=()
+selected_targets=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,6 +68,14 @@ while [[ $# -gt 0 ]]; do
       [[ $command == build ]] || die "--output-dir is valid only for build"
       [[ $# -ge 2 ]] || die "--output-dir requires a path"
       output_dir=$2
+      shift 2
+      ;;
+    --target)
+      [[ $# -ge 2 ]] || die "--target requires a value"
+      case "$2" in
+        ios-simulator|ios-device|android) selected_targets+=("$2") ;;
+        *) die "unsupported mobile target: $2" ;;
+      esac
       shift 2
       ;;
     --dry-run)
@@ -107,6 +117,7 @@ case "$profile" in
   all) targets=(ios-simulator ios-device android) ;;
   *) die "unsupported mobile profile: $profile" ;;
 esac
+[[ ${#selected_targets[@]} -eq 0 ]] || targets=("${selected_targets[@]}")
 
 print_plan() {
   local target
