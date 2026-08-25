@@ -107,7 +107,11 @@ printf 'LG-COMPILER-STATE\n9\n' >"$test_dir/previous-9.state"
 expect_state_failure "$test_dir/previous-9.state" \
   "unsupported compiler state version 9" "$test_dir/previous-9.stderr"
 
-printf 'LG-COMPILER-STATE\n10\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
+printf 'LG-COMPILER-STATE\n10\n' >"$test_dir/previous-10.state"
+expect_state_failure "$test_dir/previous-10.state" \
+  "unsupported compiler state version 10" "$test_dir/previous-10.stderr"
+
+printf 'LG-COMPILER-STATE\n11\nsaved-state\n536870913\n00000000000000000000000000000000\n' \
   >"$test_dir/oversized.state"
 expect_state_failure "$test_dir/oversized.state" \
   "compiler state artifact exceeds maximum size" "$test_dir/oversized.stderr"

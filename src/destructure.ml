@@ -694,9 +694,12 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
     | ty -> ty
   in
   let item_at inner index =
+    let nil_value_adapter =
+      Compiler_environment.find_nil_value_adapter inner env
+    in
     let semantic_expr =
-      match (target.ty, Types.is_dynamic inner) with
-      | TList _, true ->
+      match (target.ty, Types.is_dynamic inner, nil_value_adapter) with
+      | TList _, true, _ ->
           Semantic_ir.Match
             ( Semantic_ir.Apply
                 ( Semantic_ir.Ident "List.nth_opt",
@@ -708,7 +711,7 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                     ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
                   Semantic_ir.Ident "__lg_destructure_item" );
               ] )
-      | TVector _, true ->
+      | TVector _, true, _ ->
           Semantic_ir.Match
             ( Semantic_ir.Apply
                 ( Semantic_ir.Ident "Rrbvec.nth_opt",
@@ -720,15 +723,39 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                     ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
                   Semantic_ir.Ident "__lg_destructure_item" );
               ] )
-      | TList _, false ->
+      | TList _, false, Some adapter ->
+          Semantic_ir.Match
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "List.nth_opt",
+                  [ target.semantic_expr; Semantic_ir.Int index ] ),
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Apply (Semantic_ir.Ident adapter, []) );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
+                  Semantic_ir.Ident "__lg_destructure_item" );
+              ] )
+      | TVector _, false, Some adapter ->
+          Semantic_ir.Match
+            ( Semantic_ir.Apply
+                ( Semantic_ir.Ident "Rrbvec.nth_opt",
+                  [ target.semantic_expr; Semantic_ir.Int index ] ),
+              [
+                ( Semantic_ir.PConstructor ("None", None),
+                  Semantic_ir.Apply (Semantic_ir.Ident adapter, []) );
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar "__lg_destructure_item")),
+                  Semantic_ir.Ident "__lg_destructure_item" );
+              ] )
+      | TList _, false, None ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "List.nth",
               [ target.semantic_expr; Semantic_ir.Int index ] )
-      | TVector _, false ->
+      | TVector _, false, None ->
           Semantic_ir.Apply
             ( Semantic_ir.Ident "Rrbvec.nth",
               [ target.semantic_expr; Semantic_ir.Int index ] )
-      | _ -> target.semantic_expr
+      | _, _, _ -> target.semantic_expr
     in
     typed_ir inner semantic_expr
   in
@@ -811,10 +838,21 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                       Semantic_ir.Ident value_name,
                       Semantic_ir.Constructor ("None", None) )
                 | ty ->
-                    ( TNullable ty,
-                      Semantic_ir.Constructor
-                        ("Some", Some (Semantic_ir.Ident value_name)),
-                      Semantic_ir.Constructor ("None", None) )
+                    let none_value =
+                      match
+                        Compiler_environment.find_nil_value_adapter ty env
+                      with
+                      | Some adapter ->
+                          Semantic_ir.Apply (Semantic_ir.Ident adapter, [])
+                      | None ->
+                          Semantic_ir.Apply
+                            ( Semantic_ir.Ident "invalid_arg",
+                              [
+                                Semantic_ir.String
+                                  "cannot destructure an absent tuple";
+                              ] )
+                    in
+                    (ty, Semantic_ir.Ident value_name, none_value)
               in
               typed_ir ty
                 (Semantic_ir.Match
@@ -902,8 +940,24 @@ and bind_sequence ?compile_default env (target : typed_expr) forms =
                         Semantic_ir.Ident item_name );
                     ] )
               else
-                Semantic_ir.Apply
-                  (Semantic_ir.Ident "Option.get", [ item ])
+                match
+                  Compiler_environment.find_nil_value_adapter inner env
+                with
+                | Some adapter ->
+                    let item_name = "__lg_destructure_item" in
+                    Semantic_ir.Match
+                      ( item,
+                        [
+                          ( Semantic_ir.PConstructor ("None", None),
+                            Semantic_ir.Apply
+                              (Semantic_ir.Ident adapter, []) );
+                          ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar item_name)),
+                            Semantic_ir.Ident item_name );
+                        ] )
+                | None ->
+                    Semantic_ir.Apply
+                      (Semantic_ir.Ident "Option.get", [ item ])
             in
             typed_ir inner expression
           in

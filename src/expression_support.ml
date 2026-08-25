@@ -8,6 +8,17 @@ let is_identity_expr name expression =
   | Semantic_ir.Ident candidate -> String.equal candidate name
   | _ -> false
 
+let resolve_forward_record env = function
+  | TOcaml name as ty when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      (match Resolver.lookup_record_type "" env source_name with
+      | Ok record -> TNamed_record record
+      | Error _ -> ty)
+  | ty -> ty
+
 let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
   let identical_closed_sum_option =
     match (expected, argument.ty) with
@@ -31,6 +42,38 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
          (Types.maybe_reduced_callback_element argument.ty)
   then None
   else if
+    Env.variant_constructors expected env <> []
+    && Option.is_some (Env.find_nil_value_adapter expected env)
+    &&
+    match argument.ty with
+    | TNullable _ | TOcaml_app ("option", [ _ ]) -> true
+    | _ -> false
+  then
+    let actual_inner =
+      match argument.ty with
+      | TNullable inner | TOcaml_app ("option", [ inner ]) -> inner
+      | _ -> assert false
+    in
+    let payload_name = "__lg_optional_closed_sum_payload" in
+    let payload = typed_ir actual_inner (Semantic_ir.Ident payload_name) in
+    Option.map
+      (Result.map (fun injected ->
+           typed_ir expected
+             (Semantic_ir.Match
+                ( argument.semantic_expr,
+                  [
+                    ( Semantic_ir.PConstructor ("None", None),
+                      Semantic_ir.Apply
+                        ( Semantic_ir.Ident
+                            (Option.get
+                               (Env.find_nil_value_adapter expected env)),
+                          [] ) );
+                    ( Semantic_ir.PConstructor
+                        ("Some", Some (Semantic_ir.PVar payload_name)),
+                      injected.semantic_expr );
+                  ] ))))
+      (inject_contextual_closed_sum env ~expected payload)
+  else if
     match (expected, argument.ty) with
     | ( (TNullable _ | TOcaml_app ("option", [ _ ])),
         (TNullable _ | TOcaml_app ("option", [ _ ])) ) ->
@@ -39,7 +82,11 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
     | _ -> false
   then None
   else
-  let constructors = Env.variant_constructors expected env in
+  let constructors =
+    Env.variant_constructors expected env
+    |> List.map (fun (constructor, payload_types) ->
+           (constructor, List.map (resolve_forward_record env) payload_types))
+  in
   if constructors = [] then
     match (expected, argument.ty) with
     | ( (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])),
@@ -75,38 +122,126 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
   then None
   else if Types.equal expected argument.ty then Some (Ok argument)
   else
+    let source_constructors =
+      Env.variant_constructors argument.ty env
+      |> List.map (fun (constructor, payload_types) ->
+             (constructor, List.map (resolve_forward_record env) payload_types))
+    in
+    let rec inject_source_sum branches = function
+      | [] when branches <> [] ->
+          Some
+            (Ok
+               (typed_ir expected
+                  (Semantic_ir.Match
+                     (argument.semantic_expr, List.rev branches))))
+      | [] -> None
+      | (constructor, [ payload_ty ]) :: rest ->
+          let payload_name = "__lg_source_sum_payload" in
+          let payload = typed_ir payload_ty (Semantic_ir.Ident payload_name) in
+          (match inject_contextual_closed_sum env ~expected payload with
+          | None -> None
+          | Some (Error _ as error) -> Some error
+          | Some (Ok injected) ->
+              inject_source_sum
+                (( Semantic_ir.PConstructor
+                     (constructor, Some (Semantic_ir.PVar payload_name)),
+                   injected.semantic_expr )
+                :: branches)
+                rest)
+      | _ -> None
+    in
+    match inject_source_sum [] source_constructors with
+    | Some _ as injected -> injected
+    | None ->
+    let directly_assignable expected (argument : typed_expr) =
+      let directly_assignable =
+        match (expected, argument.ty) with
+        | TNamed_record _, _ | _, TNamed_record _ ->
+            Types.equal expected argument.ty
+        | ( TOcaml_app ("Lg_runtime.Runtime_map.t", _),
+            TOcaml_app ("Lg_runtime.Runtime_map.t", _) ) ->
+            Types.assignable ~policy:Host_boundary ~expected
+              ~actual:argument.ty
+        | TOcaml_app ("Lg_runtime.Runtime_map.t", _), _
+        | _, TOcaml_app ("Lg_runtime.Runtime_map.t", _) ->
+            false
+        | _ ->
+            Types.assignable ~policy:Host_boundary ~expected
+              ~actual:argument.ty
+      in
+      if directly_assignable then Some (Ok { argument with ty = expected })
+      else None
+    in
+    let adapt_payload expected (argument : typed_expr) =
+      if Types.equal expected argument.ty then Some (Ok argument)
+      else
+        match (expected, argument.ty) with
+        | TVector expected_item, TVector actual_item -> (
+            let item_name = "__lg_closed_sum_vector_item" in
+            let item = typed_ir actual_item (Semantic_ir.Ident item_name) in
+            match inject_contextual_closed_sum env ~expected:expected_item item with
+            | Some injected ->
+                Some
+                  (Result.map
+                     (fun injected ->
+                       typed_ir expected
+                         (Semantic_ir.Apply
+                            ( Semantic_ir.Ident "Rrbvec.map",
+                              [
+                                Semantic_ir.Fun
+                                  ( [ Semantic_ir.PVar item_name ],
+                                    injected.semantic_expr );
+                                argument.semantic_expr;
+                              ] )))
+                     injected)
+            | None -> directly_assignable expected argument)
+        | _ -> directly_assignable expected argument
+    in
     let candidates =
-      List.filter
-        (fun (_, payload_types) ->
+      List.filter_map
+        (fun ((_, payload_types) as constructor) ->
           match payload_types with
           | [ payload_ty ] ->
-              (match (payload_ty, argument.ty) with
-              | TNamed_record _, _ | _, TNamed_record _ ->
-                  Types.equal payload_ty argument.ty
-              | _ ->
-                  Types.assignable ~policy:Host_boundary ~expected:payload_ty
-                    ~actual:argument.ty)
-          | [] | _ :: _ :: _ -> false)
+              Option.map
+                (fun payload -> (constructor, payload))
+                (adapt_payload payload_ty argument)
+          | [] | _ :: _ :: _ -> None)
         constructors
     in
-    match candidates with
-    | [ (constructor, [ _ ]) ] ->
+    let exact_candidates =
+      List.filter
+        (fun ((_, payload_types), _) ->
+          match payload_types with
+          | [ payload_ty ] -> Types.equal payload_ty argument.ty
+          | [] | _ :: _ :: _ -> false)
+        candidates
+    in
+    let candidates =
+      if exact_candidates = [] then candidates else exact_candidates
+    in
+    (match candidates with
+    | [ ((constructor, [ _ ]), payload) ] ->
         Some
-          (Ok
-             (typed_ir expected
-                (Semantic_ir.Constructor
-                   (constructor, Some argument.semantic_expr))))
+          (Result.map
+             (fun payload ->
+               typed_ir expected
+                 (Semantic_ir.Constructor
+                    (constructor, Some payload.semantic_expr)))
+             payload)
     | [] ->
         Some
           (Error.error
              ("cannot inject " ^ Types.source_name argument.ty
             ^ " into closed sum " ^ Types.source_name expected))
     | candidates ->
-        let names = List.map fst candidates |> String.concat ", " in
+        let names =
+          List.map (fun ((name, _), _) -> name) candidates
+          |> String.concat ", "
+        in
         Some
           (Error.error
              ("ambiguous closed sum injection into " ^ Types.source_name expected
-            ^ ": " ^ names ^ " from " ^ Types.source_name argument.ty))
+            ^ ": " ^ names ^ " from " ^ Types.source_name argument.ty)))
 
 let adapt_set_callable callable =
   match callable.ty with

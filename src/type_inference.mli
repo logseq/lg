@@ -18,6 +18,9 @@ val infer_params :
   ?expected_return_ty:Types.ty ->
   ?materialize_open_equality:bool ->
   ?observe_call:(string -> Ast.form list -> Types.ty list -> unit) ->
+  ?lookup_closed_sum_candidates:(Types.ty list -> Types.ty list) ->
+  ?lookup_closed_sum_constructors:(Types.ty -> (string * Types.ty list) list) ->
+  ?lookup_successful_call_refinement:(string -> (int * Types.ty) option) ->
   lookup_function_ty:(string -> (Types.ty, 'error) result) ->
   lookup_protocol_constraint:(string -> Types.ty option) ->
   lookup_dynamic_key_record_type:(Types.ty -> Types.ty option) ->

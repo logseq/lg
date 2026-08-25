@@ -15,7 +15,10 @@ type sequence_witness = {
   row_type_name : string option;
 }
 
-type sequence_representation_source = List_source | Vector_source
+type sequence_representation_source =
+  | List_source
+  | Vector_source
+  | Sequence_source
 
 type t =
   | Identity
@@ -50,6 +53,7 @@ type t =
   | Overloaded_callback of overloaded_callback
   | Reduced_callback of reduced_callback
   | Sequence_representation of sequence_representation
+  | Vector_from_sequence of sequence_representation
   | Collection_representation of collection_representation
   | Map_representation of map_representation
   | Record_to_map of record_to_map

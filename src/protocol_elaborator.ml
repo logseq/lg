@@ -681,10 +681,44 @@ let compile_extend_type scope env next_type receiver_form protocol_name method_f
                                       |> Option.join)
                                 param_type_overrides
                         in
+                        let expected_method_ty =
+                          Types.instantiate_receiver_method_type receiver_ty
+                            marker.ty
+                        in
+                        let rec contains_contextual_closed_sum ty =
+                          Env.variant_constructors ty env <> []
+                          ||
+                          match ty with
+                          | TNullable inner | TArray inner | TRef inner
+                          | TList inner | TVector inner | TSet inner | TSeq inner
+                            ->
+                              contains_contextual_closed_sum inner
+                          | TOcaml_app (_, arguments) | TTuple arguments ->
+                              List.exists contains_contextual_closed_sum
+                                arguments
+                          | _ -> false
+                        in
+                        let expected_return_ty =
+                          match expected_method_ty with
+                          | TFn (_, return_ty) -> Some return_ty
+                          | TOverloaded_fn [ arity ] -> Some arity.return_ty
+                          | _ -> None
+                        in
+                        let use_return_context =
+                          Option.fold ~none:false
+                            ~some:contains_contextual_closed_sum
+                            expected_return_ty
+                        in
+                        let method_env =
+                          if use_return_context then
+                            Env.with_expected_type (Some expected_method_ty) env
+                          else env
+                        in
                         match
                           Expression_elaborator.compile_fn ~param_type_overrides
-                            ~preferred_record:receiver_ty scope env params
-                            body_forms
+                            ~preferred_record:receiver_ty
+                            ~use_open_context:use_return_context scope method_env
+                            params body_forms
                         with
                         | Error _ as err -> err
                         | Ok expr -> (

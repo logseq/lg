@@ -44,7 +44,9 @@ type t = {
   predicate_sum_constructors :
     (Types.ty * (string * Types.ty list) list) list;
   optional_sequential_adapters : (Types.ty * Types.ty * string) list;
+  nil_value_adapters : (Types.ty * string) list;
   truthiness_adapters : (Types.ty * string) list;
+  successful_call_refinements : (string * (int * Types.ty)) list;
   exception_data_adapters : (Types.ty * exception_data_adapter) list;
   empty_map_defaults : (Types.ty * string) list;
 }
@@ -79,7 +81,9 @@ let empty =
     closed_sum_constructors = [];
     predicate_sum_constructors = [];
     optional_sequential_adapters = [];
+    nil_value_adapters = [];
     truthiness_adapters = [];
+    successful_call_refinements = [];
     exception_data_adapters = [];
     empty_map_defaults = [];
   }
@@ -398,6 +402,61 @@ let variant_constructors result_ty env =
          if Types.equal result_ty candidate then Some constructors else None)
   |> List.flatten |> List.sort_uniq compare
 
+let closed_sum_candidates_for_payloads payload_types env =
+  let rec compatible visited expected actual =
+    if Types.equal expected actual then true
+    else
+      let key = (Types.ocaml_name expected, Types.ocaml_name actual) in
+      if List.mem key visited then false
+      else
+        let visited = key :: visited in
+        match (expected, actual) with
+        | Types.TVector expected, Types.TVector actual
+        | Types.TList expected, Types.TList actual
+        | Types.TSeq expected, Types.TSeq actual
+        | Types.TArray expected, Types.TArray actual ->
+            compatible visited expected actual
+        | _ ->
+            env.closed_sum_constructors
+            |> List.find_map (fun (candidate, constructors) ->
+                   if Types.equal candidate expected then Some constructors
+                   else None)
+            |> Option.fold ~none:false ~some:(fun constructors ->
+                   List.exists
+                     (fun (_, payloads) ->
+                       match payloads with
+                       | [ payload ] -> compatible visited payload actual
+                       | [] | _ :: _ :: _ -> false)
+                     constructors)
+  in
+  let contains_payload constructors payload_ty =
+    List.exists
+      (fun (_, constructor_payloads) ->
+        match constructor_payloads with
+        | [ candidate ] -> compatible [] candidate payload_ty
+        | [] | _ :: _ :: _ -> false)
+      constructors
+  in
+  let candidates =
+    env.closed_sum_constructors
+    |> List.filter_map (fun (candidate, constructors) ->
+           if List.for_all (contains_payload constructors) payload_types then
+             Some (candidate, List.length constructors)
+           else None)
+  in
+  match candidates with
+  | [] -> []
+  | (_, first_size) :: rest ->
+      let minimum_size =
+        List.fold_left
+          (fun minimum (_, size) -> min minimum size)
+          first_size rest
+      in
+      candidates
+      |> List.filter_map (fun (candidate, size) ->
+             if size = minimum_size then Some candidate else None)
+      |> List.sort_uniq compare
+
 let add_predicate_sum_constructors result_ty constructors env =
   {
     env with
@@ -449,6 +508,17 @@ let find_optional_map_adapter storage_ty env =
            | _ -> None
          else None)
 
+let add_nil_value_adapter value_ty adapter env =
+  {
+    env with
+    nil_value_adapters = (value_ty, adapter) :: env.nil_value_adapters;
+  }
+
+let find_nil_value_adapter value_ty env =
+  env.nil_value_adapters
+  |> List.find_map (fun (candidate, adapter) ->
+         if Types.equal value_ty candidate then Some adapter else None)
+
 let add_truthiness_adapter value_ty adapter env =
   {
     env with
@@ -459,6 +529,24 @@ let find_truthiness_adapter value_ty env =
   env.truthiness_adapters
   |> List.find_map (fun (candidate, adapter) ->
          if Types.equal value_ty candidate then Some adapter else None)
+
+let add_successful_call_refinement function_name parameter_index refined_ty env =
+  {
+    env with
+    successful_call_refinements =
+      (function_name, (parameter_index, refined_ty))
+      :: List.remove_assoc function_name env.successful_call_refinements;
+  }
+
+let find_successful_call_refinement function_name env =
+  List.assoc_opt function_name env.successful_call_refinements
+
+let remove_successful_call_refinement function_name env =
+  {
+    env with
+    successful_call_refinements =
+      List.remove_assoc function_name env.successful_call_refinements;
+  }
 
 let add_exception_data_adapter value_ty adapter env =
   {

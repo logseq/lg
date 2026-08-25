@@ -1920,9 +1920,17 @@ and prepare_inferred_recursive_fn ?explicit_return_ty ~ocaml_name scope env
       let resolve_named_record =
         Function_elaborator.infer_named_record scope provisional_env
       in
+      let lookup_closed_sum_candidates payload_types =
+        Env.closed_sum_candidates_for_payloads payload_types provisional_env
+      in
+      let lookup_closed_sum_constructors ty =
+        Env.predicate_variant_constructors ty provisional_env
+      in
       match
         Type_inference.infer_params ~materialize_open_equality:true
           ~lookup_function_ty
+          ~lookup_closed_sum_candidates
+          ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
           inference_params body_forms

@@ -218,14 +218,18 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
           }
         when List.length type_parameters = List.length arguments ->
           let substitutions = List.combine type_parameters arguments in
-          Types.substitute_type_variables
-            (Type_solver.of_list
-               (List.map
-               (fun (parameter, argument) ->
-                 (Type_solver.Declared parameter, argument))
-               substitutions))
-            manifest
-          |> infer_named_record ~allow_dynamic_fields scope env
+          let resolved =
+            Types.substitute_type_variables
+              (Type_solver.of_list
+                 (List.map
+                    (fun (parameter, argument) ->
+                      (Type_solver.Declared parameter, argument))
+                    substitutions))
+              manifest
+          in
+          if Types.equal resolved (TOcaml_app (name, arguments)) then
+            TOcaml_app (name, arguments)
+          else infer_named_record ~allow_dynamic_fields scope env resolved
       | Some { kind = Alias; _ } -> TOcaml_app (name, arguments)
       | Some { kind = (Record | Variant); _ } | None ->
       (match Resolver.lookup_record_type scope env record_name with
@@ -251,7 +255,8 @@ let rec infer_named_record ?(allow_dynamic_fields = false) ?preferred_record
                 type_parameters = [];
                 manifest = Some manifest;
                 _;
-              } ->
+              }
+            when not (Types.equal manifest ty) ->
               infer_named_record ~allow_dynamic_fields scope env manifest
           | Some { kind = Alias; _ } -> ty
           | Some { kind = Variant; type_id; _ } ->
@@ -805,12 +810,27 @@ let prepare ?(param_type_overrides = []) ?preferred_record ?variadic_rest_index
         Expression_support.dynamic_key_record_type env
       in
       let resolve_named_record = infer_named_record scope env in
+      let lookup_closed_sum_candidates payload_types =
+        Env.closed_sum_candidates_for_payloads payload_types env
+      in
+      let lookup_closed_sum_constructors ty =
+        Env.predicate_variant_constructors ty env
+      in
+      let lookup_successful_call_refinement name =
+        match Resolver.lookup_binding scope env name with
+        | Ok (binding : Types.binding) ->
+            Env.find_successful_call_refinement binding.ocaml_name env
+        | Error _ -> None
+      in
       let lookup_function_ty name =
         Result.map resolve_named_record (lookup_function_ty name)
       in
       match
         Type_inference.infer_params ~materialize_open_equality
           ~lookup_function_ty
+          ~lookup_closed_sum_candidates
+          ~lookup_closed_sum_constructors
+          ~lookup_successful_call_refinement
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record
           inference_params body_forms

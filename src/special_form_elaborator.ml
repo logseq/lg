@@ -139,7 +139,19 @@ let has_capability ty =
   || Option.is_some (Types.symbol_predicate_constraint_info ty)
   || Option.is_some (Types.contains_constraint_info ty)
 
+let rec has_protocol_constraint protocol_id ty =
+  match Types.protocol_constraint_info ty with
+  | Some (candidate, _, value_ty) ->
+      (Protocol_id.equal candidate protocol_id
+      && not (Types.is_guarded_protocol_constraint ty))
+      || has_protocol_constraint protocol_id value_ty
+  | None -> false
+
 let narrow_type_predicates scope env condition body =
+  let condition =
+    Macro_expander.expand_all ~scope ~compiler_env:env condition
+    |> Result.value ~default:condition
+  in
   let rec narrowed_symbols = function
     | FSymbol name -> [ name ]
     | FList (FSymbol name :: forms)
@@ -159,6 +171,28 @@ let narrow_type_predicates scope env condition body =
       when name = "__lg_logical-and"
            || String.ends_with ~suffix:"/__lg_logical-and" name ->
         List.concat_map (symbols_matching predicate_name) forms
+    | _ -> []
+  in
+  let rec instance_symbols = function
+    | FList
+        [
+          FSymbol predicate;
+          FSymbol record_name;
+          FSymbol value_name;
+        ]
+      when is_core_symbol "instance?" predicate ->
+        [ (record_name, value_name) ]
+    | FList (FSymbol name :: forms)
+      when name = "__lg_logical-and"
+           || String.ends_with ~suffix:("/" ^ "__lg_logical-and") name ->
+        List.concat_map instance_symbols forms
+    | _ -> []
+  in
+  let negated_instance_symbols = function
+    | FList [ FSymbol negation; predicate ]
+      when is_core_symbol "not" negation
+           || is_core_symbol "__lg_not" negation ->
+        instance_symbols predicate
     | _ -> []
   in
   let rec symbols_known_non_nil = function
@@ -184,8 +218,35 @@ let narrow_type_predicates scope env condition body =
         List.concat_map guarded_protocol_symbols forms
     | _ -> []
   in
+  let rec successful_call_narrowings = function
+    | FList (FSymbol function_name :: arguments) -> (
+        match Resolver.lookup_binding scope env function_name with
+        | Ok (binding : Types.binding) -> (
+            match
+              Env.find_successful_call_refinement binding.ocaml_name env
+            with
+            | Some (parameter_index, refined_ty) -> (
+                match List.nth_opt arguments parameter_index with
+                | Some (FSymbol value_name) -> [ (value_name, refined_ty) ]
+                | Some _ | None -> [])
+            | None ->
+                if
+                  function_name = "__lg_logical-and"
+                  || String.ends_with ~suffix:"/__lg_logical-and"
+                       function_name
+                then List.concat_map successful_call_narrowings arguments
+                else [])
+        | Error _ ->
+            if
+              function_name = "__lg_logical-and"
+              || String.ends_with ~suffix:"/__lg_logical-and" function_name
+            then List.concat_map successful_call_narrowings arguments
+            else [])
+    | _ -> []
+  in
   let nullable_names =
-    (narrowed_symbols condition @ symbols_known_non_nil condition)
+    (narrowed_symbols condition @ symbols_known_non_nil condition
+    @ symbols_matching "__lg_number-predicate" condition)
     |> List.sort_uniq String.compare
     |> List.filter (fun name ->
            match Resolver.lookup_binding scope env name with
@@ -218,12 +279,10 @@ let narrow_type_predicates scope env condition body =
                ( Protocol.find_protocol_id scope env protocol_name,
                  Resolver.lookup_binding scope env receiver )
              with
-             | Some protocol_id, Ok (binding : Types.binding) -> (
-                 match Types.constraint_value_type binding.ty with
-                 | TNamed_record _ ->
-                     not
-                       (Protocol.type_satisfies env protocol_id binding.ty)
-                 | _ -> true)
+             | Some protocol_id, Ok (binding : Types.binding) ->
+                 not
+                   (has_protocol_constraint protocol_id binding.ty
+                   || Protocol.type_satisfies env protocol_id binding.ty)
              | _ -> true)
     in
     List.fold_right
@@ -248,6 +307,15 @@ let narrow_type_predicates scope env condition body =
   let narrow predicate helper body =
     let names =
       symbols_matching predicate condition |> List.sort_uniq String.compare
+      |> List.filter (fun name ->
+             if not (String.equal helper "__lg_number-value") then true
+             else
+               match Resolver.lookup_binding scope env name with
+               | Ok (binding : Types.binding) -> (
+                   match Types.constraint_value_type binding.ty with
+                   | TNullable _ | TOcaml_app ("option", [ _ ]) -> false
+                   | _ -> true)
+               | Error _ -> true)
     in
     List.fold_right
       (fun name body ->
@@ -263,10 +331,243 @@ let narrow_type_predicates scope env condition body =
           ])
       names body
   in
+  let body =
+    List.fold_right
+      (fun (record_name, value_name) body ->
+        FList
+          [
+            FSymbol "let";
+            FVector
+              [
+                FSymbol value_name;
+                FList
+                  [
+                    FSymbol "__lg_instance-value";
+                    FSymbol record_name;
+                    FSymbol value_name;
+                  ];
+              ];
+            body;
+          ])
+      (instance_symbols condition |> List.sort_uniq compare)
+      body
+  in
+  let body =
+    List.fold_right
+      (fun (record_name, value_name) body ->
+        FList
+          [
+            FSymbol "let";
+            FVector
+              [
+                FSymbol value_name;
+                FList
+                  [
+                    FSymbol "__lg_not-instance-value";
+                    FSymbol record_name;
+                    FSymbol value_name;
+                  ];
+              ];
+            body;
+          ])
+      (negated_instance_symbols condition |> List.sort_uniq compare)
+      body
+  in
+  let body =
+    List.fold_right
+         (fun (name, refined_ty) body ->
+           let helper =
+             match Types.constraint_value_type refined_ty with
+             | TSymbol -> Some "__lg_symbol-value"
+             | TKeyword -> Some "__lg_keyword-value"
+             | TInt -> Some "__lg_int-value"
+             | _ -> None
+           in
+           match helper with
+           | None -> body
+           | Some helper ->
+               FList
+                 [
+                   FSymbol "let";
+                   FVector
+                     [
+                       FSymbol name;
+                       FList [ FSymbol helper; FSymbol name ];
+                     ];
+                   body;
+                 ])
+      (successful_call_narrowings condition |> List.sort_uniq compare)
+      body
+  in
   body
   |> narrow "__lg_symbol-predicate" "__lg_symbol-value"
   |> narrow "__lg_keyword-predicate" "__lg_keyword-value"
+  |> narrow "__lg_string-predicate" "__lg_string-value"
   |> narrow "__lg_int-predicate" "__lg_int-value"
+  |> narrow "__lg_number-predicate" "__lg_number-value"
+  |> narrow "__lg_fn-predicate" "__lg_fn-value"
+
+let narrow_false_scalar_predicates scope env condition body =
+  let condition =
+    Macro_expander.expand_all ~scope ~compiler_env:env condition
+    |> Result.value ~default:condition
+  in
+  let is_core_symbol expected actual =
+    actual = expected || String.ends_with ~suffix:("/" ^ expected) actual
+  in
+  let symbols_matching predicate_name = function
+    | FList [ FSymbol predicate; FSymbol value_name ]
+      when is_core_symbol predicate_name predicate ->
+        [ value_name ]
+    | _ -> []
+  in
+  let narrow predicate helper body =
+    let names =
+      symbols_matching predicate condition |> List.sort_uniq String.compare
+    in
+    List.fold_right
+      (fun value_name body ->
+        FList
+          [
+            FSymbol "let";
+            FVector
+              [
+                FSymbol value_name;
+                FList [ FSymbol helper; FSymbol value_name ];
+              ];
+            body;
+          ])
+      names body
+  in
+  body
+  |> narrow "__lg_keyword-predicate" "__lg_not-keyword-value"
+  |> narrow "__lg_string-predicate" "__lg_not-string-value"
+  |> narrow "__lg_symbol-predicate" "__lg_not-symbol-value"
+  |> narrow "__lg_int-predicate" "__lg_not-int-value"
+
+let narrow_false_fn_predicates scope env condition body =
+  let expanded_condition =
+    Macro_expander.expand_all ~scope ~compiler_env:env condition
+    |> Result.value ~default:condition
+  in
+  let is_core_symbol expected actual =
+    actual = expected || String.ends_with ~suffix:("/" ^ expected) actual
+  in
+  let direct_fn_symbol = function
+    | FList [ FSymbol predicate; FSymbol value_name ]
+      when is_core_symbol "__lg_fn-predicate" predicate ->
+        Some value_name
+    | _ -> None
+  in
+  let returns_symbol value_name = function
+    | FSymbol returned_name -> String.equal value_name returned_name
+    | FList [ FSymbol do_name; FSymbol returned_name ] ->
+        is_core_symbol "do" do_name && String.equal value_name returned_name
+    | _ -> false
+  in
+  let fn_symbols = function
+    | condition -> (
+        match direct_fn_symbol condition with
+        | Some value_name -> [ value_name ]
+        | None -> (
+            match condition with
+            | FList
+                [
+                  FSymbol if_name;
+                  predicate;
+                  then_form;
+                  FSymbol nil_name;
+                ]
+              when is_core_symbol "if" if_name
+                   && is_core_symbol "nil" nil_name -> (
+                match direct_fn_symbol predicate with
+                | Some value_name when returns_symbol value_name then_form ->
+                    [ value_name ]
+                | Some _ | None -> [])
+            | _ -> []))
+  in
+  List.fold_right
+    (fun value_name body ->
+      FList
+        [
+          FSymbol "let";
+          FVector
+            [
+              FSymbol value_name;
+              FList [ FSymbol "__lg_not-fn-value"; FSymbol value_name ];
+            ];
+          body;
+        ])
+    (fn_symbols condition @ fn_symbols expanded_condition
+    |> List.sort_uniq String.compare)
+    body
+
+let narrow_false_instance_predicates scope env condition body =
+  let condition =
+    Macro_expander.expand_all ~scope ~compiler_env:env condition
+    |> Result.value ~default:condition
+  in
+  let is_core_symbol expected actual =
+    actual = expected || String.ends_with ~suffix:("/" ^ expected) actual
+  in
+  let instance_symbols = function
+    | FList
+        [
+          FSymbol predicate;
+          FSymbol record_name;
+          FSymbol value_name;
+        ]
+      when is_core_symbol "instance?" predicate ->
+        [ (record_name, value_name) ]
+    | _ -> []
+  in
+  let negated_instance_symbols = function
+    | FList [ FSymbol negation; predicate ]
+      when is_core_symbol "not" negation
+           || is_core_symbol "__lg_not" negation ->
+        instance_symbols predicate
+    | _ -> []
+  in
+  let body =
+    List.fold_right
+    (fun (record_name, value_name) body ->
+      FList
+        [
+          FSymbol "let";
+          FVector
+            [
+              FSymbol value_name;
+              FList
+                [
+                  FSymbol "__lg_not-instance-value";
+                  FSymbol record_name;
+                  FSymbol value_name;
+                ];
+            ];
+          body;
+        ])
+    (instance_symbols condition |> List.sort_uniq compare)
+    body
+  in
+  List.fold_right
+    (fun (record_name, value_name) body ->
+      FList
+        [
+          FSymbol "let";
+          FVector
+            [
+              FSymbol value_name;
+              FList
+                [
+                  FSymbol "__lg_instance-value";
+                  FSymbol record_name;
+                  FSymbol value_name;
+                ];
+            ];
+          body;
+        ])
+    (negated_instance_symbols condition |> List.sort_uniq compare)
+    body
 
 let rec false_nil_predicate_names = function
   | FList [ FSymbol predicate; FSymbol name ]
@@ -342,6 +643,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       (body item)
   in
   let adapt_vector_element env target source item =
+    match inject_contextual_closed_sum env ~expected:target item with
+    | Some result -> Result.map (fun value -> value.semantic_expr) result
+    | None -> (
     match (target, source) with
     | TOcaml "Lg_edn_backend.t", source ->
         Edn_value_elaborator.pack_expression source item.semantic_expr
@@ -391,7 +695,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       when Types.is_dynamic target && not (Types.is_dynamic source) ->
         pack_dynamic_value env target item
     | _ ->
-        Ok (coerce_expression_to_type target source item.semantic_expr)
+        Ok (coerce_expression_to_type target source item.semantic_expr))
   in
   let optional_payload = function
     | TNullable inner | TOcaml_app ("option", [ inner ]) -> Some inner
@@ -457,6 +761,35 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         Result.map
           (fun adapted -> Semantic_ir.Constructor ("Some", Some adapted))
           (adapt_branch_expression env target_inner branch)
+    | TTuple target_items, TTuple source_items
+      when List.length target_items = List.length source_items ->
+        let names =
+          List.mapi
+            (fun index _ -> "__lg_branch_tuple_item_" ^ string_of_int index)
+            source_items
+        in
+        let rec adapt_items adapted targets sources names =
+          match (targets, sources, names) with
+          | [], [], [] -> Ok (List.rev adapted)
+          | target :: target_rest, source :: source_rest, name :: name_rest ->
+              let item = typed_ir source (Semantic_ir.Ident name) in
+              Result.bind
+                (adapt_branch_expression env target item)
+                (fun adapted_item ->
+                  adapt_items (adapted_item :: adapted) target_rest source_rest
+                    name_rest)
+          | _ -> Error.error "internal tuple branch adaptation arity mismatch"
+        in
+        Result.map
+          (fun items ->
+            Semantic_ir.Match
+              ( branch.semantic_expr,
+                [
+                  ( Semantic_ir.PTuple
+                      (List.map (fun name -> Semantic_ir.PVar name) names),
+                    Semantic_ir.Tuple items );
+                ] ))
+          (adapt_items [] target_items source_items names)
     | TVector target_inner, TVector (TOcaml "Lg_edn_backend.t" as source_inner)
       when not (Types.equal target_inner source_inner) ->
         heterogeneous_collection_type_error "vector"
@@ -466,6 +799,45 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         map_vector source_inner
           (adapt_vector_element env target_inner source_inner)
           branch.semantic_expr
+    | TVector target_inner, source
+      when (match source with TUnknown | TMeta _ | TVar _ -> false | _ -> true) -> (
+        match Collection_capability.to_seq_expr env branch with
+        | Ok (source_inner, sequence)
+          when Option.is_some
+                 (merge_branch_types target_inner source_inner) ->
+            let sequence =
+              if Types.equal target_inner source_inner then Ok sequence
+              else
+                let item_name = "__lg_vector_sequence_item" in
+                let item =
+                  typed_ir source_inner (Semantic_ir.Ident item_name)
+                in
+                Result.map
+                  (fun adapted ->
+                    Semantic_ir.Apply
+                      ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                        [
+                          Semantic_ir.Fun
+                            ([ Semantic_ir.PVar item_name ], adapted);
+                          sequence;
+                        ] ))
+                  (adapt_vector_element env target_inner source_inner item)
+            in
+            Result.map
+              (fun sequence ->
+                Semantic_ir.Apply
+                  ( Semantic_ir.Ident "Rrbvec.of_list",
+                    [
+                      Semantic_ir.Apply
+                        (Semantic_ir.Ident "List.of_seq", [ sequence ]);
+                    ] ))
+              sequence
+        | Ok (source_inner, _) ->
+            Error.error
+              ("cannot adapt sequence element "
+              ^ Types.source_name source_inner ^ " to vector element "
+              ^ Types.source_name target_inner)
+        | Error _ as error -> error)
     | TArray target_inner, TArray source_inner
       when not (Types.equal target_inner source_inner) ->
         map_array source_inner
@@ -598,6 +970,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | ty when Option.is_some (Types.reduced_element ty) -> true
     | ty when Option.is_some (Types.next_seq_element ty) -> true
     | TFn _ -> true
+    | TTuple items -> List.exists requires_branch_adaptation items
     | TVector _ -> true
     | TArray _ -> true
     | TSeq _ -> true
@@ -1536,6 +1909,9 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     let then_form = narrow_type_predicates scope env condition then_form in
     let else_form =
       narrow_false_nil_predicates scope env condition else_form
+      |> narrow_false_instance_predicates scope env condition
+      |> narrow_false_fn_predicates scope env condition
+      |> narrow_false_scalar_predicates scope env condition
     in
     let condition_env =
       match condition with
@@ -1600,10 +1976,136 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 match compile_expr scope env form with
                 | Error _ as error -> error
                 | Ok value -> (
+                    let next_form =
+                      match form with
+                      | FList [ FSymbol name; _ ] ->
+                          has_source_name name "__lg_next"
+                          || has_source_name name "next"
+                      | FList [ FCoreSymbol symbol; _ ] ->
+                          let name = Ast.core_symbol_name symbol in
+                          has_source_name name "__lg_next"
+                          || has_source_name name "next"
+                      | _ -> false
+                    in
                     let expression =
                       if Types.is_dynamic expected then
                         pack_plain_dynamic_value value
                       else
+                        match
+                          ( expected,
+                            Types.seqable_constraint_info value.ty )
+                        with
+                        | ( (TNullable (TSeq _)
+                            | TOcaml_app ("option", [ TSeq _ ])),
+                            None )
+                          when Types.equal value.ty TNil ->
+                            Some (Semantic_ir.Constructor ("None", None))
+                        | ( (TNullable (TSeq expected_inner)
+                            | TOcaml_app
+                                ("option", [ TSeq expected_inner ])),
+                            Some
+                              ( requirement,
+                                actual_inner,
+                                _storage_ty ) )
+                          when Types.assignable ~policy:Host_boundary
+                                 ~expected:expected_inner
+                                 ~actual:actual_inner ->
+                            let packed_name =
+                              "__lg_optional_sequence_branch"
+                            in
+                            let packed = Semantic_ir.Ident packed_name in
+                            let sequence adapter =
+                              Semantic_ir.Apply
+                                ( adapter,
+                                  [
+                                    Semantic_ir.Apply
+                                      (Semantic_ir.Ident "snd", [ packed ]);
+                                  ] )
+                            in
+                            let converted =
+                              match requirement with
+                              | `Required ->
+                                  Semantic_ir.Constructor
+                                    ( "Some",
+                                      Some
+                                        (sequence
+                                           (Semantic_ir.Apply
+                                              ( Semantic_ir.Ident "fst",
+                                                [ packed ] ))) )
+                              | `Optional | `Optional_sequential ->
+                                  let adapter_name =
+                                    "__lg_optional_sequence_adapter"
+                                  in
+                                  Semantic_ir.Match
+                                    ( Semantic_ir.Apply
+                                        (Semantic_ir.Ident "fst", [ packed ]),
+                                      [
+                                        ( Semantic_ir.PConstructor
+                                            ("None", None),
+                                          Semantic_ir.Constructor
+                                            ("None", None) );
+                                        ( Semantic_ir.PConstructor
+                                            ( "Some",
+                                              Some
+                                                (Semantic_ir.PVar
+                                                   adapter_name) ),
+                                          (if next_form then
+                                             Semantic_ir.Apply
+                                               ( Semantic_ir.Ident
+                                                   "Lg_runtime.Runtime_seq.non_empty",
+                                                 [
+                                                   sequence
+                                                     (Semantic_ir.Ident
+                                                        adapter_name);
+                                                 ] )
+                                           else
+                                             Semantic_ir.Constructor
+                                               ( "Some",
+                                                 Some
+                                                   (sequence
+                                                      (Semantic_ir.Ident
+                                                         adapter_name)) )) );
+                                      ] )
+                            in
+                            Some
+                              (Semantic_ir.Let
+                                 ( [
+                                     ( Semantic_ir.PVar packed_name,
+                                       value.semantic_expr );
+                                   ],
+                                   converted ))
+                        | ( (TNullable (TSeq expected_inner)
+                            | TOcaml_app
+                                ("option", [ TSeq expected_inner ])),
+                            None ) -> (
+                            match Collection_capability.to_seq_expr env value with
+                            | Ok (actual_inner, sequence)
+                              when Types.assignable ~policy:Host_boundary
+                                     ~expected:expected_inner
+                                     ~actual:actual_inner ->
+                                Some
+                                  (if
+                                     next_form
+                                     || Option.is_some
+                                          (Types.next_seq_element value.ty)
+                                   then
+                                     Semantic_ir.Apply
+                                       ( Semantic_ir.Ident
+                                           "Lg_runtime.Runtime_seq.non_empty",
+                                         [ sequence ] )
+                                   else
+                                     Semantic_ir.Constructor
+                                       ("Some", Some sequence))
+                            | Ok _ | Error _ -> None)
+                        | _ -> (
+                        match Types.seqable_constraint_info expected with
+                        | Some _ -> (
+                            match
+                              pack_constrained_value env expected value
+                            with
+                            | Ok packed -> Some packed
+                            | Error _ -> None)
+                        | None -> (
                         match Types.next_seq_element expected with
                         | Some expected_inner -> (
                             match
@@ -1633,7 +2135,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 Some
                                   (coerce_expression_to_type expected value.ty
                                      value.semantic_expr)
-                            | _ -> None)
+                            | _ -> None)))
                     in
                     match expression with
                     | None ->
@@ -1680,7 +2182,12 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           match (then_expr.ty, else_expr.ty) with
           | TTuple then_types, TTuple else_types
             when List.length then_types = List.length else_types
-                 && (not (Types.equal then_expr.ty else_expr.ty))
+                 && ((not (Types.equal then_expr.ty else_expr.ty))
+                    || List.exists
+                         (fun ty ->
+                           Option.is_some
+                             (Types.seqable_constraint_info ty))
+                         then_types)
                  &&
                  match (then_form, else_form) with
                     | FVector _, FVector _ -> true
@@ -1688,9 +2195,26 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
               let merged_types =
                 List.map2
                   (fun left right ->
-                    match merge_branch_types left right with
-                    | Some ty -> Some ty
-                    | None -> None)
+                    match
+                      ( Types.seqable_constraint_info left,
+                        Types.seqable_constraint_info right )
+                    with
+                    | ( Some (left_requirement, left_element, _),
+                        Some (right_requirement, right_element, _) ) -> (
+                        match merge_branch_types left_element right_element with
+                        | None -> None
+                        | Some element ->
+                            Some
+                              (match (left_requirement, right_requirement) with
+                              | `Required, `Required ->
+                                  TSeq element
+                              | `Optional_sequential, _
+                              | _, `Optional_sequential ->
+                                  TNullable (TSeq element)
+                              | (`Optional | `Required),
+                                (`Optional | `Required) ->
+                                  TNullable (TSeq element)))
+                    | _ -> merge_branch_types left right)
                   then_types else_types
               in
               if List.for_all Option.is_some merged_types then
@@ -1846,7 +2370,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 let narrowed =
                   List.fold_left
                     (fun body condition ->
-                      narrow_false_nil_predicates scope env condition body)
+                      narrow_false_nil_predicates scope env condition body
+                      |> narrow_false_instance_predicates scope env condition
+                      |> narrow_false_fn_predicates scope env condition
+                      |> narrow_false_scalar_predicates scope env condition)
                     form conditions
                 in
                 narrowed :: narrow_later (form :: conditions) rest
@@ -2066,14 +2593,47 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
             match result_ty with
             | Some result_ty ->
                 lower result_ty expressions
-            | None ->
-                Error.error
-                  ("conditional branches have incompatible types: "
-                  ^ String.concat ", "
-                      (List.map
-                         (fun expression -> Types.source_name expression.ty)
-                         expressions)
-                  ^ "; define a closed sum type containing every branch type")))
+            | None -> (
+                let optional_payloads =
+                  List.filter_map
+                    (fun expression -> optional_payload expression.ty)
+                    expressions
+                in
+                let distinct_payloads =
+                  List.fold_left
+                    (fun payloads payload ->
+                      if List.exists (Types.equal payload) payloads then payloads
+                      else payload :: payloads)
+                    [] optional_payloads
+                in
+                match
+                  ( List.length optional_payloads = List.length expressions,
+                    distinct_payloads,
+                    Env.closed_sum_candidates_for_payloads distinct_payloads env )
+                with
+                | true, _ :: _ :: _, [ sum_ty ] ->
+                    let result_ty = TOcaml_app ("option", [ sum_ty ]) in
+                    let rec adapt adapted = function
+                      | [] -> lower result_ty (List.rev adapted)
+                      | expression :: rest ->
+                          Result.bind
+                            (adapt_branch_expression env result_ty expression)
+                            (fun semantic_expr ->
+                              adapt
+                                ({ expression with ty = result_ty; semantic_expr }
+                                :: adapted)
+                                rest)
+                    in
+                    adapt [] expressions
+                | _ ->
+                    Error.error
+                      ("conditional branches have incompatible types: "
+                      ^ String.concat ", "
+                          (List.map
+                             (fun expression -> Types.source_name expression.ty)
+                             expressions)
+                      ^ "; define a closed sum type containing every branch type")))
+                )
   and compile_match scope env target_form clauses =
     let rec parse_pairs acc = function
       | [] -> Ok (List.rev acc)
@@ -2737,21 +3297,37 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | FList (FSymbol "recur" :: arg_forms) ->
         compile_recur scope env loop_name param_tys arg_forms
     | FList [ FSymbol "if"; condition_form; then_form; else_form ] -> (
+        let literal_truthiness =
+          match condition_form with
+          | FBool value -> Some value
+          | FSymbol "nil" -> Some false
+          | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+          | FKeyword _ ->
+              Some true
+          | FSymbol _ | FCoreSymbol _ | FList _ | FVector _ | FMap _ -> None
+        in
         let then_form =
           narrow_type_predicates scope env condition_form then_form
         in
         let else_form =
           narrow_false_nil_predicates scope env condition_form else_form
+          |> narrow_false_instance_predicates scope env condition_form
+          |> narrow_false_fn_predicates scope env condition_form
+          |> narrow_false_scalar_predicates scope env condition_form
         in
-        match
-          ( compile_expr scope env condition_form,
-            compile_loop_tail scope env loop_name param_tys then_form,
-            compile_loop_tail scope env loop_name param_tys else_form )
-        with
-        | (Error _ as err), _, _ -> err
-        | _, (Error _ as err), _ -> err
-        | _, _, (Error _ as err) -> err
-        | Ok condition, Ok then_expr, Ok else_expr -> (
+        match literal_truthiness with
+        | Some true -> compile_loop_tail scope env loop_name param_tys then_form
+        | Some false -> compile_loop_tail scope env loop_name param_tys else_form
+        | None -> (
+            match
+              ( compile_expr scope env condition_form,
+                compile_loop_tail scope env loop_name param_tys then_form,
+                compile_loop_tail scope env loop_name param_tys else_form )
+            with
+            | (Error _ as err), _, _ -> err
+            | _, (Error _ as err), _ -> err
+            | _, _, (Error _ as err) -> err
+            | Ok condition, Ok then_expr, Ok else_expr -> (
             match
               ( condition_expression ~env condition,
                 loop_branch_type then_expr.ty else_expr.ty )
@@ -2769,7 +3345,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                     Ok
                       (typed_ir result_ty
                          (Semantic_ir.If
-                            (condition_code, then_expr, else_expr))))))
+                            (condition_code, then_expr, else_expr)))))))
     | FList
         [
           FSymbol "__lg_if-some";
@@ -3405,10 +3981,18 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 let resolve_named_record =
                   Function_elaborator.infer_named_record scope env
                 in
+                let lookup_closed_sum_candidates payload_types =
+                  Env.closed_sum_candidates_for_payloads payload_types env
+                in
+                let lookup_closed_sum_constructors ty =
+                  Env.predicate_variant_constructors ty env
+                in
                 match
                   Type_inference.infer_params
                     ?expected_return_ty:(Env.expected_type env)
                     ~lookup_function_ty
+                    ~lookup_closed_sum_candidates
+                    ~lookup_closed_sum_constructors
                     ~lookup_protocol_constraint
                     ~lookup_dynamic_key_record_type ~resolve_named_record
                     (List.combine names inferred_param_tys)
@@ -3674,8 +4258,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       let resolve_named_record =
         Function_elaborator.infer_named_record scope env
       in
+      let lookup_closed_sum_candidates payload_types =
+        Env.closed_sum_candidates_for_payloads payload_types env
+      in
+      let lookup_closed_sum_constructors ty =
+        Env.predicate_variant_constructors ty env
+      in
       match
         Type_inference.infer_params ~lookup_function_ty
+          ~lookup_closed_sum_candidates
+          ~lookup_closed_sum_constructors
           ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
           ~resolve_named_record params forms
       with
@@ -3712,8 +4304,16 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
           let resolve_named_record =
             Function_elaborator.infer_named_record scope env
           in
+          let lookup_closed_sum_candidates payload_types =
+            Env.closed_sum_candidates_for_payloads payload_types env
+          in
+          let lookup_closed_sum_constructors ty =
+            Env.predicate_variant_constructors ty env
+          in
           let inferred =
             Type_inference.infer_params ~lookup_function_ty
+              ~lookup_closed_sum_candidates
+              ~lookup_closed_sum_constructors
               ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
               ~resolve_named_record params forms
             |> Result.value ~default:params

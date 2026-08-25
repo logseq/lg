@@ -54,6 +54,29 @@ let compile_runtime_type_predicate name runtime_function predicate args =
         (typed_ir TBool
            (Semantic_ir.Apply
               (Semantic_ir.Ident runtime_function, [ arg.semantic_expr ])))
+  | Ok ({ ty = (TNullable inner | TOcaml_app ("option", [ inner ])); _ } as arg)
+    ->
+      let expression =
+        if Types.is_dynamic inner then
+          let payload_name = "__lg_type_predicate_payload" in
+          Semantic_ir.Match
+            ( arg.semantic_expr,
+              [
+                (Semantic_ir.PConstructor ("None", None), Semantic_ir.Bool false);
+                ( Semantic_ir.PConstructor
+                    ("Some", Some (Semantic_ir.PVar payload_name)),
+                  Semantic_ir.Apply
+                    ( Semantic_ir.Ident runtime_function,
+                      [ Semantic_ir.Ident payload_name ] ) );
+              ] )
+        else if predicate inner then
+          Semantic_ir.Apply
+            (Semantic_ir.Ident "Option.is_some", [ arg.semantic_expr ])
+        else
+          Semantic_ir.Sequence
+            [ evaluated_argument arg; Semantic_ir.Bool false ]
+      in
+      Ok (typed_ir TBool expression)
   | Ok arg ->
       Ok
         (typed_ir TBool

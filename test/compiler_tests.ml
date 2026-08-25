@@ -4566,6 +4566,52 @@ let test_macro_generated_defrecord_uses_sidecar_field_types () =
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
+let test_cross_chunk_record_sidecar_references_use_declared_record_identity () =
+  let sidecar =
+    {|
+(ns user)
+(signature user/Box {:value :int})
+(signature user/Holder {:boxes :vector<user/Box>})
+(signature user/add-box :fn<user/Holder;user/Box;user/Holder>)
+|}
+  in
+  let implementation =
+    {|
+(ns user)
+(defrecord Box [value])
+(defrecord Holder [boxes])
+(defn add-box [holder box]
+  (assoc holder :boxes (conj (:boxes holder) box)))
+(def result (add-box (map->Holder {:boxes []}) (map->Box {:value 42})))
+(println (:value (first (:boxes result))))
+|}
+  in
+  let compile target =
+    let stdlib = compiled_stdlib target in
+    let state, sidecar_source =
+      Lg.Compiler.compile_chunk_with_filename ~target ~filename:"user.lgi"
+        stdlib.state sidecar
+      |> expect_ok
+    in
+    let _, implementation_source =
+      Lg.Compiler.compile_chunk_with_filename ~target ~filename:"user.cljc"
+        state implementation
+      |> expect_ok
+    in
+    ( stdlib.ocaml_source ^ "\n" ^ sidecar_source ^ "\n"
+      ^ implementation_source,
+      implementation_source )
+  in
+  let native_source, native_implementation = compile Lg.Target.Native in
+  if string_contains_substring native_implementation "Runtime_dynamic" then
+    failwith "cross-chunk record sidecars must remain fully static";
+  assert_ocaml_runs
+    "cross_chunk_record_sidecar_references_use_declared_record_identity"
+    "42\n" native_source;
+  let _, melange_implementation = compile Lg.Target.Melange in
+  if string_contains_substring melange_implementation "Runtime_dynamic" then
+    failwith "Melange cross-chunk record sidecars must remain fully static"
+
 let test_explicit_function_shadows_implicit_record_constructor () =
   let source =
     {|
@@ -5513,6 +5559,130 @@ let test_closed_variants_implement_protocols_without_dynamic_dispatch () =
     failwith "closed variant protocol dispatch must remain static";
   assert_ocaml_runs "closed_variants_implement_protocols_without_dynamic_dispatch"
     "42:true\n" ocaml_source
+
+let test_partial_closed_sum_protocol_dispatch_preserves_runtime_semantics () =
+  let source =
+    {|
+(type-record result-frame (value :int))
+(type-record first-frame (value :int))
+(type-record second-frame (value :int))
+(type-variant frame
+  (ResultFrame :result-frame)
+  (FirstFrame :first-frame)
+  (SecondFrame :second-frame))
+(defprotocol IFrame
+  (-run [frame] :int))
+(extend-type first-frame
+  IFrame
+  (-run [frame] (:value frame)))
+(extend-type second-frame
+  IFrame
+  (-run [frame] (+ 10 (:value frame))))
+(defn run-unless-result [^frame frame]
+  (if (not (instance? result-frame frame))
+    (-run frame)
+    0))
+(println
+  (str
+    (run-unless-result (ResultFrame (result-frame. 1))) ":"
+    (run-unless-result (FirstFrame (first-frame. 2))) ":"
+    (run-unless-result (SecondFrame (second-frame. 3)))))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "partial closed-sum protocol dispatch must remain fully static";
+  assert_ocaml_runs
+    "partial_closed_sum_protocol_dispatch_preserves_runtime_semantics"
+    "0:2:13\n" native;
+  let melange =
+    Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange partial closed-sum protocol dispatch must remain fully static"
+
+let test_closed_sum_sequence_binding_ignores_later_branch_payload_context () =
+  let source =
+    {|
+(type-record result-frame (value :int))
+(type-record runnable-frame (value :int))
+(type-record other-frame (value :int))
+(type-variant frame
+  (ResultFrame :result-frame)
+  (RunnableFrame :runnable-frame)
+  (OtherFrame :other-frame))
+(defprotocol IFrame
+  (-run [frame] :int)
+  (-merge [frame ^result-frame result] :frame))
+(extend-type runnable-frame
+  IFrame
+  (-run [frame] (:value frame))
+  (-merge [_ result] (ResultFrame result)))
+(extend-type other-frame
+  IFrame
+  (-run [frame] (+ 10 (:value frame)))
+  (-merge [_ result] (ResultFrame result)))
+(defn run-first [^:list<frame> frames]
+  (let [frame (Option.get (first frames))]
+    (if (not (instance? result-frame frame))
+      (-run frame)
+      (.-value ^result-frame frame))))
+(defn run-loop [^:list<frame> initial]
+  (loop [frames initial]
+    (let [frame (Option.get (first frames))]
+      (if (not (instance? result-frame frame))
+        (do
+          (-run frame)
+          (recur (list (ResultFrame (result-frame. 4)))))
+        (.-value ^result-frame frame)))))
+(defn run-inferred-loop []
+  (loop [frames (list (RunnableFrame (runnable-frame. 6)))]
+    (let [frame (Option.get (first frames))]
+      (if (not (instance? result-frame frame))
+        (do
+          (-run frame)
+          (recur (list (ResultFrame (result-frame. 7)))))
+        (.-value ^result-frame frame)))))
+(signature first-frame [value storage]
+  :fn<optional-seqable<value;storage>;option<value>>)
+(defn first-frame [frames]
+  (if (nil? frames) nil (first frames)))
+(signature next-frames [value storage]
+  :fn<optional-seqable<value;storage>;option<seq<value>>>)
+(defn next-frames [frames]
+  (if (nil? frames) nil (next frames)))
+(signature conj-frame [value storage]
+  :fn<optional-seqable<value;storage>;value;seq<value>>)
+(defn conj-frame [frames frame]
+  (if (nil? frames) (list frame) (cons frame frames)))
+(defn pull-loop []
+  (loop [stack (list (RunnableFrame (runnable-frame. 8)))]
+    (let [last (Option.get (first-frame stack))
+          stack' (next-frames stack)]
+      (if (not (instance? result-frame last))
+        (recur (conj-frame stack' (ResultFrame (result-frame. (-run last)))))
+        (if (nil? stack')
+          (.-value ^result-frame last)
+          (let [penultimate (Option.get (first-frame stack'))
+                stack'' (next-frames stack')]
+            (recur (conj-frame stack'' (-merge penultimate last)))))))))
+(println
+  (str
+    (run-first (list (ResultFrame (result-frame. 1)))) ":"
+    (run-first (list (RunnableFrame (runnable-frame. 2)))) ":"
+    (run-first (list (OtherFrame (other-frame. 3)))) ":"
+    (run-loop (list (RunnableFrame (runnable-frame. 5)))) ":"
+    (run-inferred-loop)))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "branch payload context must not erase a closed-sum sequence item";
+  assert_ocaml_runs
+    "closed_sum_sequence_binding_ignores_later_branch_payload_context"
+    "1:2:13:4:7\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_module_protocols_preserve_typed_registry_state () =
   let state =
@@ -10988,6 +11158,34 @@ let test_type_aliases_are_transparent_to_static_collection_checks () =
     "type_aliases_are_transparent_to_static_collection_checks"
     "3\n" ocaml_source
 
+let test_cross_namespace_same_name_alias_terminates () =
+  let provider =
+    {|
+(ns parser.types)
+(type-variant attr-name
+  (KeywordAttr :keyword)
+  (StringAttr :string))
+|}
+  in
+  let consumer =
+    {|
+(ns api.types)
+(type-alias attr-name :parser.types/attr-name)
+(signature api.types/Context
+  {:visitor :option<fn<option<attr-name>;unit>>})
+(defrecord Context [visitor])
+|}
+  in
+  let compile target =
+    let state, _ =
+      Lg.Compiler.compile_chunk ~target (stdlib_state target) provider
+      |> expect_ok
+    in
+    ignore (Lg.Compiler.compile_chunk ~target state consumer |> expect_ok)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
 let test_parameterized_and_module_aliases_are_statically_transparent () =
   let source =
     {|
@@ -13180,6 +13378,182 @@ let test_contextual_closed_sum_injection_rejects_missing_constructor () =
 |}
   |> expect_error_contains "cannot inject int into closed sum result"
 
+let test_contextual_closed_sum_prefers_exact_payload () =
+  let source =
+    {|
+(type-variant data-value
+  (DataInt :int)
+  (DataVector :vector<data-value>))
+(contextual-closed-sum-constructors :data-value
+  (DataInt :int)
+  (DataVector :vector<data-value>))
+(type-variant pulled-value
+  (PulledScalar :data-value)
+  (PulledMany :vector<data-value>))
+(signature collect :fn<vector<data-value>;pulled-value>)
+(defn collect [values] values)
+(println
+  (match (collect [(DataInt 1)])
+    (PulledMany values) (count values)
+    (PulledScalar _) 0))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "contextual_closed_sum_prefers_exact_payload" "1\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_transient_vector_injects_closed_sum_element () =
+  let source =
+    {|
+(type-variant data-value
+  (DataInt :int)
+  (DataVector :vector<data-value>))
+(contextual-closed-sum-constructors :data-value
+  (DataInt :int)
+  (DataVector :vector<data-value>))
+(type-variant pulled-value
+  (PulledScalar :data-value)
+  (PulledMany :vector<data-value>))
+(signature append-value
+  :fn<Lg_runtime.Runtime_transient.vector<data-value>;pulled-value;Lg_runtime.Runtime_transient.vector<data-value>>)
+(defn append-value [values value]
+  (conj! values value))
+(def result
+  (persistent!
+    (append-value
+      (transient [])
+      (PulledMany [(DataInt 1)]))))
+(println (count result))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if not (string_contains_substring native "DataVector") then
+    failwith "closed-sum element must be converted before transient insertion";
+  assert_ocaml_runs "transient_vector_injects_closed_sum_element" "1\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_transient_map_injects_optional_closed_sum_value () =
+  let source =
+    {|
+(type-variant data-value
+  DataNil
+  (DataInt :int))
+(contextual-closed-sum-constructors :data-value
+  (DataInt :int))
+(signature data-nil :fn<data-value>)
+(defn data-nil [] DataNil)
+(nil-value-adapter :data-value data-nil)
+(signature put-value
+  :fn<Lg_runtime.Runtime_transient.map<string;data-value>;string;option<int>;Lg_runtime.Runtime_transient.map<string;data-value>>)
+(defn put-value [values key value]
+  (assoc! values key value))
+(def result
+  (persistent!
+    (put-value
+      (put-value (transient {}) "some" (Some 1))
+      "none"
+      None)))
+(println (count result))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if
+    not
+      (string_contains_substring native "DataNil"
+      && string_contains_substring native "DataInt")
+  then failwith "optional values must be converted before transient insertion";
+  assert_ocaml_runs "transient_map_injects_optional_closed_sum_value"
+    "2\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_protocol_method_uses_declared_return_context () =
+  let source =
+    {|
+(type-variant frame-value
+  (IntFrame :int)
+  (StringFrame :string))
+(type-variant unrelated-value
+  (IntUnrelated :int)
+  (StringUnrelated :string))
+(defprotocol Runner
+  (-run [this] :vector<frame-value>))
+(defrecord Program []
+  Runner
+  (-run [_] [1 "next"]))
+(println (count (-run (map->Program {}))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "protocol_method_uses_declared_return_context" "2\n"
+    native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_cross_chunk_closed_sum_resolves_forward_record_payload () =
+  let provider =
+    {|
+(ns app.frames)
+(signature app.frames/Item {:value :int})
+(type-variant frame
+  (ItemFrame :app.frames/Item))
+(contextual-closed-sum-constructors :frame
+  (ItemFrame :app.frames/Item))
+|}
+  in
+  let consumer =
+    {|
+(ns app.frames)
+(defrecord Item [value])
+(signature app.frames/make-frame :fn<frame>)
+(defn make-frame []
+  (map->Item {:value 1}))
+|}
+  in
+  let compile target =
+    let state, _ =
+      Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+        ~check_ocaml:false ~filename:"app/frames.lgi" (stdlib_state target)
+        provider
+      |> expect_ok
+    in
+    ignore
+      (Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
+         ~check_ocaml:false ~filename:"app/frames.cljc" state consumer
+      |> expect_ok)
+  in
+  compile Lg.Target.Native;
+  compile Lg.Target.Melange
+
+let test_negated_instance_predicate_narrows_both_branches () =
+  let source =
+    {|
+(defrecord Result [^int value])
+(defrecord Work [^int step])
+(type-variant frame
+  (ResultFrame :Result)
+  (WorkFrame :Work))
+(signature render-frame :fn<frame;string>)
+(defn render-frame [frame]
+  (if (not (instance? Result frame))
+    (str "work:" (:step frame))
+    (str "result:" (:value frame))))
+(println
+  (str
+    (render-frame (WorkFrame (map->Work {:step 2})))
+    ":"
+    (render-frame (ResultFrame (map->Result {:value 7})))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "negated_instance_predicate_narrows_both_branches"
+    "work:2:result:7\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_equality_injects_unique_contextual_closed_sum_operands () =
   let source =
     {|
@@ -13298,6 +13672,125 @@ let test_symbol_predicate_dispatches_over_closed_sum_constructors () =
   in
   if string_contains_substring melange "Runtime_dynamic" then
     failwith "Melange closed-sum symbol predicate must remain fully static"
+
+let test_successful_parser_predicate_refines_argument_across_chunks () =
+  let provider =
+    {|
+(ns parser.provider)
+(type-variant data-value
+  (IntValue :int)
+  (SymbolValue :symbol))
+(type-record ParsedSymbol (symbol :symbol))
+(signature parser.provider/parse-symbol
+  :fn<data-value;option<ParsedSymbol>>)
+(defn parse-symbol [form]
+  (when (symbol? form)
+    (ParsedSymbol. form)))
+|}
+  in
+  let consumer =
+    {|
+(ns parser.provider)
+(type-record Variable (symbol :symbol))
+(signature parser.provider/parse-variable
+  :fn<data-value;option<Variable>>)
+(defn parse-variable [form]
+  (when (parse-symbol form)
+    (Variable. form)))
+(println
+  (str
+    (some? (parse-variable (SymbolValue 'item))) ":"
+    (some? (parse-variable (IntValue 1)))))
+|}
+  in
+  let compile target =
+    compile_chunks_with_stdlib target
+      [ ("parser/provider.cljc", provider); ("parser/consumer.cljc", consumer) ]
+  in
+  let native = compile Lg.Target.Native in
+  let consumer_native =
+    substring_from native "type nonrec variable" |> Option.value ~default:native
+  in
+  if string_contains_substring consumer_native "Runtime_dynamic" then
+    failwith
+      ("successful parser predicates must remain fully static:\n"
+      ^ consumer_native);
+  assert_ocaml_runs "successful_parser_predicate_refines_argument_across_chunks"
+    "true:false\n" native;
+  let melange = compile Lg.Target.Melange in
+  let consumer_melange =
+    substring_from melange "type nonrec variable" |> Option.value ~default:melange
+  in
+  if string_contains_substring consumer_melange "Runtime_dynamic" then
+    failwith
+      ("Melange successful parser predicates must remain fully static:\n"
+      ^ consumer_melange)
+
+let test_concat_injects_nested_collection_elements_into_recursive_sum () =
+  let source =
+    {|
+(type-variant value
+  (SymbolValue :symbol)
+  (VectorValue :vector<value>))
+(type-variant distractor
+  (DistractorSymbol :symbol)
+  (DistractorVector :vector<distractor>))
+(signature flatten
+  :fn<vector<symbol>;vector<symbol>;seq<value>>)
+(defn flatten [^:vector<symbol> required ^:vector<symbol> free]
+  (concat [required] free))
+(signature render :fn<value;string>)
+(defn render [value]
+  (match value
+    (SymbolValue symbol) (str symbol)
+    (VectorValue symbols) (str (count symbols))))
+(let [values (vec (flatten ['a 'b] ['c]))]
+  (println (str (render (nth values 0)) ":" (render (nth values 1)))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "recursive closed-sum concat injection must remain fully static";
+  assert_ocaml_runs
+    "concat_injects_nested_collection_elements_into_recursive_sum" "2:c\n"
+    native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange recursive closed-sum concat injection must remain fully static"
+
+let test_optional_payload_injects_into_closed_sum_with_nil_adapter () =
+  let source =
+    {|
+(type-variant value
+  (IntValue :int)
+  NilValue)
+(signature nil-value :fn<value>)
+(defn nil-value [] NilValue)
+(nil-value-adapter :value nil-value)
+(signature render :fn<value;string>)
+(defn render [value]
+  (match value
+    (IntValue number) (str number)
+    NilValue "nil"))
+(signature render-optional :fn<option<int>;string>)
+(defn render-optional [value]
+  (render value))
+(println (str (render-optional (Some 3)) ":" (render-optional None)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "optional closed-sum injection must remain fully static";
+  assert_ocaml_runs "optional_payload_injects_into_closed_sum_with_nil_adapter"
+    "3:nil\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange optional closed-sum injection must remain fully static"
 
 let test_declared_external_closed_sum_injects_across_chunks () =
   let provider =
@@ -13574,6 +14067,167 @@ let test_contextual_closed_sum_rejects_unrelated_truthy_constraint () =
 |}
   |> expect_error_contains "cannot inject truthy<string> into closed sum data_value"
 
+let test_local_or_infers_unique_closed_sum () =
+  let source =
+    {|
+(ns local-or)
+(signature local-or/StaticCallableRecord {:name :string})
+(signature local-or/VariableCallableRecord {:name :string})
+(defrecord StaticCallableRecord [name])
+(defrecord VariableCallableRecord [name])
+(type-variant callable
+  (StaticCallable :local-or/StaticCallableRecord)
+  (VariableCallable :local-or/VariableCallableRecord))
+(signature parse-static :fn<int;option<local-or/StaticCallableRecord>>)
+(defn parse-static [value]
+  (if (= value 1)
+    (Some (StaticCallableRecord. "static"))
+    None))
+(signature parse-variable :fn<int;option<local-or/VariableCallableRecord>>)
+(defn parse-variable [value]
+  (if (= value 2)
+    (Some (VariableCallableRecord. "variable"))
+    None))
+(signature choose :fn<int;option<callable>>)
+(defn choose [value]
+  (let [callable (or (parse-static value)
+                     (parse-variable value))]
+    callable))
+(defn display [value]
+  (match (choose value)
+    None "missing"
+    (Some (StaticCallable callable)) (:name callable)
+    (Some (VariableCallable callable)) (:name callable)))
+(println (str (display 1) ":" (display 2) ":" (display 3)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "unique local closed-sum inference must remain fully static";
+  assert_ocaml_runs "local_or_infers_unique_closed_sum"
+    "static:variable:missing\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange unique local closed-sum inference must remain fully static";
+  compile_string_with_stdlib
+    {|
+(type-record left-value (value :int))
+(type-record right-value (value :string))
+(type-variant first-choice
+  (FirstLeft :left-value)
+  (FirstRight :right-value))
+(type-variant second-choice
+  (SecondLeft :left-value)
+  (SecondRight :right-value))
+(signature left :fn<bool;option<left-value>>)
+(defn left [enabled]
+  (if enabled (Some (record left-value (value 1))) None))
+(signature right :fn<bool;option<right-value>>)
+(defn right [enabled]
+  (if enabled (Some (record right-value (value "right"))) None))
+(defn ambiguous [enabled]
+  (or (left enabled) (right enabled)))
+|}
+  |> expect_error_contains "define a closed sum type containing every branch type"
+
+let test_instance_predicate_checks_closed_sum_record_payload () =
+  let provider =
+    {|
+(ns test.parser)
+(signature Aggregate {:name :string})
+(defrecord Aggregate [name])
+(signature Variable {:name :string})
+(defrecord Variable [name])
+(type-variant find-element
+  (FindAggregate :test.parser/Aggregate)
+  (FindVariable :test.parser/Variable))
+(defn aggregate? [element]
+  (instance? Aggregate element))
+|}
+  in
+  let consumer =
+    {|
+(ns test.query
+  (:require [test.parser :as parser]))
+(println
+  (str
+    (parser/aggregate?
+      (parser/FindAggregate (parser/Aggregate. "sum"))) ":"
+    (parser/aggregate?
+      (parser/FindVariable (parser/Variable. "x")))))
+|}
+  in
+  let compile target =
+    let state, provider_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"test/parser.cljc" (stdlib_state target) provider
+      |> expect_ok
+    in
+    let _, consumer_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"test/query.cljc" state consumer
+      |> expect_ok
+    in
+    provider_output ^ "\n" ^ consumer_output
+  in
+  let native = compile Lg.Target.Native in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "closed-sum record instance checks must remain fully static";
+  assert_ocaml_runs "instance_predicate_checks_closed_sum_record_payload"
+    "true:false\n" native;
+  let melange = compile Lg.Target.Melange in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange closed-sum record instance checks must remain fully static"
+
+let test_instance_predicate_narrows_protocol_wrapped_closed_sum () =
+  let source =
+    {|
+(signature Base {:value :int})
+(defrecord Base [value])
+(signature Wrapped {:base :Base})
+(defrecord Wrapped [base])
+(type-variant view
+  (BaseView :Base)
+  (WrappedView :Wrapped))
+(defprotocol Kind
+  (-kind [value]))
+(extend-type view
+  Kind
+  (-kind [_] 0))
+(defn wrapped?
+  {:inline
+   (fn [value]
+     (list 'instance? 'Wrapped value))}
+  [value]
+  (instance? Wrapped value))
+(defn wrapped-value [value]
+  (-kind value)
+  (if (wrapped? value)
+    (let [^Wrapped wrapped value]
+      (:value (:base wrapped)))
+    (let [^Base base value]
+      (:value base))))
+(println
+  (str
+    (wrapped-value (WrappedView (Wrapped. (Base. 7)))) ":"
+    (wrapped-value (BaseView (Base. 3)))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "instance narrowing over protocol sums must remain fully static";
+  assert_ocaml_runs "instance_predicate_narrows_protocol_wrapped_closed_sum"
+    "7:3\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange instance narrowing over protocol sums must remain fully static"
+
 let test_dotted_syntax_resolves_declared_closed_sum_constructors () =
   let source =
     {|
@@ -13629,6 +14283,245 @@ let test_declared_optional_sequential_host_adapter_is_static () =
   if string_contains_substring melange "Runtime_dynamic" then
     failwith
       "Melange optional sequential host adapters must remain fully static"
+
+let test_sequential_predicate_unwraps_optional_adapted_payload () =
+  let source =
+    {|
+(type-record box
+  (items :option<vector<int>>))
+(signature box-items :fn<box;option<vector<int>>>)
+(defn box-items [box] (:items box))
+(optional-sequential-adapter :box :int box-items)
+(signature first-sequential? :fn<vector<box>;bool>)
+(defn first-sequential? [boxes]
+  (sequential? (first boxes)))
+(def present (record box (items (Some [1 2 3]))))
+(def absent (record box (items None)))
+(println
+  (str
+    (first-sequential? [present]) ":"
+    (first-sequential? [absent]) ":"
+    (first-sequential? [])))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "optional adapted predicate payloads must remain fully static";
+  assert_ocaml_runs "sequential_predicate_unwraps_optional_adapted_payload"
+    "true:false:false\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange optional adapted predicate payloads must remain fully static"
+
+let test_runtime_vector_destructuring_uses_declared_nil_value () =
+  let source =
+    {|
+(type-variant data-value
+  (IntValue :int)
+  NilValue)
+(signature nil-data-value :fn<data-value>)
+(defn nil-data-value [] NilValue)
+(nil-value-adapter :data-value nil-data-value)
+(signature missing-first? :fn<vector<data-value>;bool>)
+(defn missing-first? [values]
+  (let [[value & _rest] values]
+    (match value
+      NilValue true
+      (IntValue _) false)))
+(signature data-value-missing? :fn<data-value;bool>)
+(defn data-value-missing? [value]
+  (match value
+    NilValue true
+    (IntValue _) false))
+(signature first-is-missing? :fn<vector<data-value>;bool>)
+(defn first-is-missing? [values]
+  (data-value-missing? (first values)))
+(println
+  (str
+    (missing-first? []) ":"
+    (missing-first? [(IntValue 1)]) ":"
+    (first-is-missing? []) ":"
+    (first-is-missing? [(IntValue 1)])))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "declared nil-value destructuring must remain fully static";
+  assert_ocaml_runs "runtime_vector_destructuring_uses_declared_nil_value"
+    "true:false:true:false\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange declared nil-value destructuring must remain fully static"
+
+let test_optional_tuple_destructuring_uses_checked_static_payload () =
+  let source =
+    {|
+(signature head-pair [key]
+  :fn<vector<tuple<int;key>>;tuple<int;key>>)
+(signature pair [key] :fn<int;key;tuple<int;key>>)
+(defn pair [generation key] [generation key])
+(defn head-pair [entries]
+  (let [[generation key] (first entries)]
+    [generation key]))
+(let [[generation key] (head-pair [(pair 7 "entry")])]
+  (println (str generation ":" key)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "optional tuple destructuring must remain fully static";
+  assert_ocaml_runs "optional_tuple_destructuring_uses_checked_static_payload"
+    "7:entry\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange optional tuple destructuring must remain fully static"
+
+let test_mapv_keyword_function_accepts_optional_record_sequence () =
+  let source =
+    {|
+(ns parser.model)
+(signature parser.model/Variable {:symbol :symbol})
+(defrecord Variable [symbol])
+(signature parser.model/RuleVars
+  {:required :option<vector<parser.model/Variable>>})
+(defrecord RuleVars [required])
+(signature symbols :fn<parser.model/RuleVars;vector<symbol>>)
+(defn symbols [vars]
+  (mapv :symbol (:required vars)))
+(def present
+  (RuleVars. (Some [(Variable. '?x)])))
+(def absent (RuleVars. None))
+(println
+  (str
+    (count (symbols present)) ":"
+    (count (symbols absent))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "mapv over an optional record sequence must remain fully static";
+  assert_ocaml_runs "mapv_keyword_function_accepts_optional_record_sequence"
+    "1:0\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange mapv over an optional record sequence must remain fully static"
+
+let test_if_tuple_joins_optional_seqable_storage_without_losing_next_nil () =
+  let source =
+    {|
+(type-variant data-value
+  NilValue
+  (IntValue :int)
+  (VectorValue :vector<data-value>))
+(signature data-items :fn<data-value;option<vector<data-value>>>)
+(defn data-items [value]
+  (match value
+    (VectorValue values) (Some values)
+    _ None))
+(optional-sequential-adapter :data-value :data-value data-items)
+(signature parse-items [storage]
+  :fn<optional-seqable<data-value;storage>;option<vector<data-value>>>)
+(defn parse-items [values]
+  (when (sequential? values)
+    (vec values)))
+(signature split-items
+  :fn<data-value;tuple<option<vector<data-value>>;option<vector<data-value>>>>)
+(defn split-items [form]
+  (if (sequential? form)
+    (let [[required rest]
+          (if (sequential? (first form))
+            [(first form) (next form)]
+            [nil form])]
+      (tuple (parse-items required) (parse-items rest)))
+    (tuple None None)))
+(def required-only
+  (VectorValue [(VectorValue [(IntValue 1)])]))
+(def free-only
+  (VectorValue [(IntValue 1)]))
+(def required-only-items (split-items required-only))
+(def free-only-items (split-items free-only))
+(println
+  (str
+    (nil? (tuple-get free-only-items 0)) ":"
+    (nil? (tuple-get required-only-items 1)) ":"
+    (count (tuple-get free-only-items 1))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "joined optional seqable tuple storage must remain fully static";
+  assert_ocaml_runs
+    "if_tuple_joins_optional_seqable_storage_without_losing_next_nil"
+    "true:true:1\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange joined optional seqable tuple storage must remain fully static"
+
+let test_sequence_result_adapts_to_declared_vector () =
+  let source =
+    {|
+(signature tail-vector :fn<vector<int>;vector<int>>)
+(defn tail-vector [values]
+  (next values))
+(println (pr-str (tail-vector [1 2 3])))
+(println (pr-str (tail-vector [])))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "sequence-to-vector result adaptation must remain fully static";
+  assert_ocaml_runs "sequence_result_adapts_to_declared_vector"
+    "[2 3]\n[]\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange sequence-to-vector result adaptation must remain fully static"
+
+let test_tuple_branches_adapt_sequence_representation () =
+  let source =
+    {|
+(signature choose-tail
+  :fn<bool;vector<int>;tuple<int;vector<int>>>)
+(defn choose-tail [drop-first? values]
+  (if drop-first?
+    (tuple 1 (next values))
+    (tuple 1 values)))
+(def dropped (choose-tail true [1 2 3]))
+(def retained (choose-tail false [1 2 3]))
+(println
+  (str
+    (pr-str (tuple-get dropped 1)) ":"
+    (pr-str (tuple-get retained 1))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "tuple sequence branch adaptation must remain fully static";
+  assert_ocaml_runs "tuple_branches_adapt_sequence_representation"
+    "[2 3]:[1 2 3]\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange tuple sequence branch adaptation must remain fully static"
 
 let test_declared_optional_map_host_adapter_is_static () =
   let source =
@@ -16956,26 +17849,76 @@ let test_equality_unwraps_protocol_constrained_records () =
 let test_record_iequiv_refreshes_forward_protocol_dependencies () =
   let source =
     {|
+(ns parity.sample)
 (defprotocol Identified
   (-id [value] :int))
-(declare equivalent-item?)
+(defprotocol Deferred
+  (-deferred [value] :int))
+  (declare equivalent-item?)
 (defrecord EquivItem [^int id ^:string cache]
-  IEquiv
-  (-equiv [left right]
-    (equivalent-item? left right))
+  #?@(:cljs
+      [IEquiv
+       (-equiv [left right]
+         (equivalent-item? left right))])
   Identified
   (-id [item]
-    (.-id item)))
-(defn equivalent-item? [left right]
-  (= (-id left) (-id right)))
+    (.-id item))
+  Deferred
+  (-deferred [item]
+    (late-id item)))
+  (defn same-first?
+  [left right]
+  (= (first left) (first right)))
+  (defrecord LaterEquivItem [^int id]
+    IEquiv
+    (-equiv [left right]
+      (= (.-id left) (.-id right))))
+  (defn equivalent-item? [left right]
+    (= (.-id left) (.-id right)))
+(defn late-id [item]
+  (.-id item))
 (println (= (EquivItem. 1 "left") (EquivItem. 1 "right")))
+(println
+  (same-first? [(EquivItem. 2 "left")] [(EquivItem. 2 "right")]))
+(println (same-first? [] []))
+(println (same-first? [(EquivItem. 3 "left")] []))
 |}
   in
-  let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
+  let compile target =
+    let signature_source =
+      {|
+(ns parity.sample)
+(signature parity.sample/same-first?
+  :fn<seqable<EquivItem>;seqable<EquivItem>;bool>)
+(signature parity.sample/equivalent-item?
+  :fn<EquivItem;EquivItem;bool>)
+|}
+    in
+    let signature =
+      Lg.Compiler.prepare_source ~target ~reader_target:Lg.Target.Melange
+        ~filename:"parity/sample.lgi" signature_source
+      |> expect_ok
+    in
+    let state, _ =
+      Lg.Compiler.compile_prepared_chunk_with_diagnostics
+        (stdlib_state target) signature
+      |> expect_ok
+    in
+    let prepared =
+      Lg.Compiler.prepare_source ~target ~reader_target:Lg.Target.Melange source
+      |> expect_ok
+    in
+    let _, compilation =
+      Lg.Compiler.compile_prepared_chunk_with_diagnostics
+        state prepared
+      |> expect_ok
+    in
+    compilation.ocaml_source
+  in
+  let ocaml_source = compile Lg.Target.Native in
   assert_ocaml_runs "record_iequiv_refreshes_forward_protocol_dependencies"
-    "true\n" ocaml_source;
-  ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    "true\ntrue\ntrue\nfalse\n" ocaml_source;
+  ignore (compile Lg.Target.Melange)
 
 let test_defrecord_host_methods_support_declared_helpers () =
   let source =
@@ -19430,6 +20373,43 @@ let test_get_supports_default_values () =
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   assert_ocaml_runs "get_supports_default_values" "36:false\n" ocaml_source
+
+let test_generic_get_with_nil_default_preserves_map_value_type () =
+  let source =
+    {|
+(signature CacheMap [key value]
+  {:key-value :map<key;value>})
+(deftype CacheMap [key-value]
+  ILookup
+  (-lookup [_ key] (-lookup key-value key nil))
+  (-lookup [_ key not-found] (get key-value key not-found))
+  IAssociative
+  (-assoc [_ key value]
+    (CacheMap. (assoc key-value key value))))
+(type-record cache-state [key value]
+  (items :ref<CacheMap<key;value>>))
+(signature touch-cache [key value]
+  :fn<cache-state<key;value>;key;fn<value>;value>)
+(defn touch-cache [state key compute]
+  (let [items (:items state)]
+    (if-some [cached (get @items key nil)]
+      (do
+        (reset! items (assoc @items key cached))
+        cached)
+      (let [computed (compute)]
+        (reset! items (assoc @items key computed))
+        computed))))
+(def state
+  (record cache-state
+    (items (atom (CacheMap. {:answer 42})))))
+(println (touch-cache state :answer (fn [] 0)))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "generic_get_with_nil_default_preserves_map_value_type"
+    "42\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_get_rejects_default_type_mismatch_for_known_fields () =
   Lg.Compiler.compile_string {|(def x (get {:age 36} :age "unknown"))|}
@@ -24317,6 +25297,30 @@ let test_source_hash_and_compare_reject_invalid_static_domains () =
     {|(def compare-values compare) (def invalid (compare-values 1 "2"))|}
   |> expect_error_contains "compare arguments must have the same type"
 
+let test_hash_uses_unordered_semantics_for_static_transient_sets () =
+  let source =
+    {|
+(type-record sorted-set [value]
+  (items :vector<value>))
+(extend-type sorted-set Seqable
+  (-seq [set]
+    (seq (:items set))))
+(extend-type sorted-set ITransientSet
+  (-disjoin! [set _value] set))
+(signature user/hash-values :fn<sorted-set<int>;int>)
+(defn hash-values [values] (hash values))
+(def values (record sorted-set (items [1 3 5 7 9])))
+(println (= (hash-values values) (hash #{1 3 5 7 9})))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "static transient-set hashing must not use Runtime_dynamic";
+  assert_ocaml_runs "hash_uses_unordered_semantics_for_static_transient_sets"
+    "true\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_compile_time_helper_extraction_respects_macro_parameters () =
   Lg.Compiler.compile_string
     {|
@@ -25955,7 +26959,7 @@ let test_reify_uses_contextual_generic_method_payload () =
   let source =
     {|
 (type-alias cache [key value]
-  :Lg_runtime.Runtime_reify.t<fn<key;fn<value>;value>>)
+  :reify<Cache;fn<key;fn<value>;value>>)
 (signature user/-get [key value]
   :fn<cache<key;value>;key;fn<value>;value>)
 (defprotocol Cache
@@ -25969,16 +26973,62 @@ let test_reify_uses_contextual_generic_method_payload () =
 (signature user/*cache* :cache<int;int>)
 (def ^:dynamic *cache* (make-cache 1))
 (binding [*cache* (make-cache 2)]
+  (println (satisfies? Cache *cache*))
   (println (-get *cache* 7 (fn [] 42))))
 |}
   in
   let ocaml_source = Lg.Compiler.compile_string source |> expect_ok in
   if string_contains_substring ocaml_source "Runtime_dynamic" then
     failwith "contextual generic reify payload must remain static";
-  assert_ocaml_runs "reify_uses_contextual_generic_method_payload" "42\n"
-    ocaml_source;
+  assert_ocaml_runs "reify_uses_contextual_generic_method_payload"
+    "true\n42\n" ocaml_source;
   ignore
     (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_reify_infers_zero_arity_callback_result () =
+  let provider =
+    {|
+(ns test.cache)
+(defprotocol Cache
+  (-get [this key compute]))
+(defn make-cache []
+  (reify Cache
+    (-get [_ _key compute]
+      (compute))))
+|}
+  in
+  let consumer =
+    {|
+(ns test.cache-user
+  (:require
+    [cljs.test :refer [is]]
+    [test.cache :as cache]))
+(let [value-cache (cache/make-cache)]
+  (is (satisfies? cache/Cache value-cache))
+  (println (cache/-get value-cache :answer (fn [] 42))))
+|}
+  in
+  let compile target =
+    let state, provider_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"test/cache.cljc" (stdlib_state target) provider
+      |> expect_ok
+    in
+    let _, consumer_output =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"test/cache_user.cljc" state consumer
+      |> expect_ok
+    in
+    provider_output ^ "\n" ^ consumer_output
+  in
+  let native = compile Lg.Target.Native in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "generic reify callback results must remain fully static";
+  assert_ocaml_runs "reify_infers_zero_arity_callback_result" "42\n" native;
+  let melange = compile Lg.Target.Melange in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith
+      "Melange generic reify callback results must remain fully static"
 
 let test_parameters_preserve_multiple_protocol_constraints () =
   let source =
@@ -34447,6 +35497,158 @@ let test_symbol_predicate_narrows_later_and_operands () =
   in
   assert_ocaml_runs "symbol_predicate_narrows_later_and_operands"
     "true:false\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_false_fn_predicate_narrows_closed_sum_in_later_or_operand () =
+  let source =
+    {|
+(type-variant callable-or-symbol
+  (CallableValue :fn<int;int>)
+  (SymbolValue :symbol))
+(signature known-symbol? :fn<symbol;bool>)
+(defn known-symbol? [value]
+  (= value 'identity))
+(signature resolves? :fn<callable-or-symbol;bool>)
+(defn resolves? [value]
+  (or (fn? value)
+      (known-symbol? value)))
+(signature apply-if-callable :fn<callable-or-symbol;int>)
+(defn apply-if-callable [value]
+  (if (fn? value)
+    (value 7)
+    0))
+(signature resolve-like
+  :fn<callable-or-symbol;option<fn<int;int>>>)
+(defn resolve-like [value]
+  (or (when (fn? value)
+        value)
+      (when (known-symbol? value)
+        (fn [argument] argument))))
+(println
+  (str
+    (resolves? (CallableValue (fn [value] value))) ":"
+    (resolves? (SymbolValue 'identity)) ":"
+    (resolves? (SymbolValue 'missing)) ":"
+    (apply-if-callable (CallableValue (fn [value] value))) ":"
+    (apply-if-callable (SymbolValue 'identity))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed-sum fn? refinement must remain fully static";
+  assert_ocaml_runs
+    "false_fn_predicate_narrows_closed_sum_in_later_or_operand"
+    "true:true:false:7:0\n" native_source;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum fn? refinement must remain fully static"
+
+let test_false_scalar_predicate_narrows_closed_sum_in_else_branch () =
+  let source =
+    {|
+(type-variant keyword-or-string
+  (KeywordValue :keyword)
+  (StringValue :string))
+(signature render :fn<keyword-or-string;string>)
+(defn render [value]
+  (if (keyword? value)
+    (name value)
+    (str "string:" (subs value 0))))
+(println (str (render (KeywordValue :name)) ":"
+              (render (StringValue "value"))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed-sum scalar refinement must remain fully static";
+  assert_ocaml_runs
+    "false_scalar_predicate_narrows_closed_sum_in_else_branch"
+    "name:string:value\n" native_source;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum scalar refinement must remain fully static"
+
+let test_closed_sum_payloads_inject_into_another_closed_sum () =
+  let source =
+    {|
+(type-variant source-value
+  (SourceKeyword :keyword)
+  (SourceString :string))
+(type-variant target-value
+  (TargetKeyword :keyword)
+  (TargetString :string)
+  (TargetMap :map<target-value;target-value>))
+(signature convert :fn<source-value;target-value>)
+(defn convert [value] value)
+(defn render [value]
+  (match value
+    (TargetKeyword keyword) (name keyword)
+    (TargetString string) string
+    (TargetMap _) "map"))
+(println (str (render (convert (SourceKeyword :name))) ":"
+              (render (convert (SourceString "value")))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed-sum-to-closed-sum injection must remain fully static";
+  assert_ocaml_runs "closed_sum_payloads_inject_into_another_closed_sum"
+    "name:value\n" native_source;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum-to-closed-sum injection must remain static"
+
+let test_number_predicate_narrows_optional_value_in_later_and_operand () =
+  let source =
+    {|
+(type-variant number-or-string
+  (NumberValue :int)
+  (StringValue :string))
+(signature valid-limit? :fn<option<int>;bool>)
+(defn valid-limit? [limit]
+  (or (and (number? limit) (pos? limit))
+      (nil? limit)))
+(signature positive-number-value? :fn<number-or-string;bool>)
+(defn positive-number-value? [value]
+  (and (number? value) (pos? value)))
+(println (str (valid-limit? (Some 3)) ":"
+              (valid-limit? None) ":"
+              (valid-limit? (Some 0)) ":"
+              (positive-number-value? (NumberValue 3)) ":"
+              (positive-number-value? (StringValue "3"))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "number? optional refinement must remain fully static";
+  assert_ocaml_runs
+    "number_predicate_narrows_optional_value_in_later_and_operand"
+    "true:true:false:true:false\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_literal_truthy_if_ignores_unreachable_nil_branch () =
+  let source =
+    {|
+(signature choose :fn<int>)
+(defn choose []
+  (loop [value 0]
+    (if (= value 0)
+      (if :else (recur 1) nil)
+      value)))
+(println (choose))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "literal_truthy_if_ignores_unreachable_nil_branch" "1\n"
+    native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -45344,6 +46546,8 @@ let tests =
       test_generic_signature_refines_bare_named_record_parameter_hint );
     ( "macro-generated defrecord uses sidecar field types",
       test_macro_generated_defrecord_uses_sidecar_field_types );
+    ( "cross-chunk record sidecar references use declared record identity",
+      test_cross_chunk_record_sidecar_references_use_declared_record_identity );
     ( "explicit function shadows implicit record constructor",
       test_explicit_function_shadows_implicit_record_constructor );
     ( "external closed types use static equality and hash witnesses",
@@ -45420,6 +46624,10 @@ let tests =
       test_protocol_implementation_populates_typed_registry );
     ( "closed variants implement protocols without dynamic dispatch",
       test_closed_variants_implement_protocols_without_dynamic_dispatch );
+    ( "partial closed sum protocol dispatch preserves runtime semantics",
+      test_partial_closed_sum_protocol_dispatch_preserves_runtime_semantics );
+    ( "closed sum sequence binding ignores later branch payload context",
+      test_closed_sum_sequence_binding_ignores_later_branch_payload_context );
     ( "module protocols preserve typed registry state",
       test_module_protocols_preserve_typed_registry_state );
     ( "module elaboration populates typed registry",
@@ -45940,6 +47148,8 @@ let tests =
       test_type_aliases_compile_through_source_backend );
     ( "type aliases are transparent to static collection checks",
       test_type_aliases_are_transparent_to_static_collection_checks );
+    ( "cross namespace same name alias terminates",
+      test_cross_namespace_same_name_alias_terminates );
     ( "parameterized and module aliases are statically transparent",
       test_parameterized_and_module_aliases_are_statically_transparent );
     ( "parameterized type declarations compile",
@@ -46149,6 +47359,18 @@ let tests =
       test_contextual_closed_sum_injection_rejects_ambiguity );
     ( "contextual closed sum injection rejects missing constructor",
       test_contextual_closed_sum_injection_rejects_missing_constructor );
+    ( "contextual closed sum prefers exact payload",
+      test_contextual_closed_sum_prefers_exact_payload );
+    ( "transient vector injects closed sum element",
+      test_transient_vector_injects_closed_sum_element );
+    ( "transient map injects optional closed sum value",
+      test_transient_map_injects_optional_closed_sum_value );
+    ( "protocol method uses declared return context",
+      test_protocol_method_uses_declared_return_context );
+    ( "cross chunk closed sum resolves forward record payload",
+      test_cross_chunk_closed_sum_resolves_forward_record_payload );
+    ( "negated instance predicate narrows both branches",
+      test_negated_instance_predicate_narrows_both_branches );
     ( "equality injects unique contextual closed sum operands",
       test_equality_injects_unique_contextual_closed_sum_operands );
     ( "equality rejects ambiguous contextual closed sum operand",
@@ -46157,6 +47379,12 @@ let tests =
       test_equality_injects_external_closed_sum_operand_across_chunks );
     ( "symbol predicate dispatches over closed sum constructors",
       test_symbol_predicate_dispatches_over_closed_sum_constructors );
+    ( "successful parser predicate refines argument across chunks",
+      test_successful_parser_predicate_refines_argument_across_chunks );
+    ( "concat injects nested collection elements into recursive sum",
+      test_concat_injects_nested_collection_elements_into_recursive_sum );
+    ( "optional payload injects into closed sum with nil adapter",
+      test_optional_payload_injects_into_closed_sum_with_nil_adapter );
     ( "declared external closed sum injects across chunks",
       test_declared_external_closed_sum_injects_across_chunks );
     ( "declared external closed sum preserves optional match result",
@@ -46179,10 +47407,30 @@ let tests =
       test_contextual_closed_sum_preserves_reduced_constrained_accumulator );
     ( "contextual closed sum rejects unrelated truthy constraint",
       test_contextual_closed_sum_rejects_unrelated_truthy_constraint );
+    ( "local or infers unique closed sum",
+      test_local_or_infers_unique_closed_sum );
+    ( "instance predicate checks closed sum record payload",
+      test_instance_predicate_checks_closed_sum_record_payload );
+    ( "instance predicate narrows protocol wrapped closed sum",
+      test_instance_predicate_narrows_protocol_wrapped_closed_sum );
     ( "dotted syntax resolves declared closed sum constructors",
       test_dotted_syntax_resolves_declared_closed_sum_constructors );
     ( "declared optional sequential host adapter is static",
       test_declared_optional_sequential_host_adapter_is_static );
+    ( "sequential predicate unwraps optional adapted payload",
+      test_sequential_predicate_unwraps_optional_adapted_payload );
+    ( "runtime vector destructuring uses declared nil value",
+      test_runtime_vector_destructuring_uses_declared_nil_value );
+    ( "optional tuple destructuring uses checked static payload",
+      test_optional_tuple_destructuring_uses_checked_static_payload );
+    ( "mapv keyword function accepts optional record sequence",
+      test_mapv_keyword_function_accepts_optional_record_sequence );
+    ( "if tuple joins optional seqable storage without losing next nil",
+      test_if_tuple_joins_optional_seqable_storage_without_losing_next_nil );
+    ( "sequence result adapts to declared vector",
+      test_sequence_result_adapts_to_declared_vector );
+    ( "tuple branches adapt sequence representation",
+      test_tuple_branches_adapt_sequence_representation );
     ( "declared optional map host adapter is static",
       test_declared_optional_map_host_adapter_is_static );
     ( "declared empty map default is static",
@@ -46735,6 +47983,8 @@ let tests =
     ("get returns nil for unknown map fields",
       test_get_returns_nil_for_unknown_map_fields );
     ("get supports default values", test_get_supports_default_values);
+    ( "generic get with nil default preserves map value type",
+      test_generic_get_with_nil_default_preserves_map_value_type );
     ( "get rejects default type mismatch for known fields",
       test_get_rejects_default_type_mismatch_for_known_fields );
     ("get supports vectors", test_get_supports_vectors);
@@ -47113,6 +48363,8 @@ let tests =
       test_satisfies_recognizes_reify_protocol_payload );
     ( "reify uses contextual generic method payload",
       test_reify_uses_contextual_generic_method_payload );
+    ( "reify infers zero arity callback result",
+      test_reify_infers_zero_arity_callback_result );
     ( "parameters preserve multiple protocol constraints",
       test_parameters_preserve_multiple_protocol_constraints );
     ( "forwarded parameters deduplicate protocol constraints",
@@ -47688,6 +48940,16 @@ let tests =
       test_for_let_shadowing_replaces_nominal_collection_type );
     ( "symbol predicate narrows later and operands",
       test_symbol_predicate_narrows_later_and_operands );
+    ( "false fn predicate narrows closed sum in later or operand",
+      test_false_fn_predicate_narrows_closed_sum_in_later_or_operand );
+    ( "false scalar predicate narrows closed sum in else branch",
+      test_false_scalar_predicate_narrows_closed_sum_in_else_branch );
+    ( "closed sum payloads inject into another closed sum",
+      test_closed_sum_payloads_inject_into_another_closed_sum );
+    ( "number predicate narrows optional value in later and operand",
+      test_number_predicate_narrows_optional_value_in_later_and_operand );
+    ( "literal truthy if ignores unreachable nil branch",
+      test_literal_truthy_if_ignores_unreachable_nil_branch );
     ( "nested sequential destructuring preserves static values",
       test_nested_sequential_destructuring_preserves_static_values );
     ( "if-let callback accepts optional and required results",
@@ -47990,6 +49252,8 @@ let tests =
       test_source_hash_and_compare_are_first_class_static_capabilities );
     ( "source hash and compare reject invalid static domains",
       test_source_hash_and_compare_reject_invalid_static_domains );
+    ( "hash uses unordered semantics for static transient sets",
+      test_hash_uses_unordered_semantics_for_static_transient_sets );
     ( "compile-time helper extraction respects macro parameters",
       test_compile_time_helper_extraction_respects_macro_parameters );
     ( "compile-time macro helpers mutate volatiles from stdlib",

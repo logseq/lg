@@ -2053,14 +2053,14 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | TVector _, _ -> Error.error "get vector index must be int"
               | TNamed_record { nominal = true; _ }, _
                 when (match index_form with FKeyword _ -> false | _ -> true) ->
+                  let lookup_arguments =
+                    if default_form = FSymbol "nil" then
+                      [ target_form; index_form ]
+                    else [ target_form; index_form; default_form ]
+                  in
                   compile_expr scope env
                     (FList
-                       [
-                         FSymbol "ILookup/-lookup";
-                         target_form;
-                         index_form;
-                         default_form;
-                       ])
+                       (FSymbol "ILookup/-lookup" :: lookup_arguments))
               | TNamed_record record, _ -> (
                   match
                   match

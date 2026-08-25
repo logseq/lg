@@ -27,7 +27,7 @@
 
 ## 2026-08-25 - Imported reify return type loses protocol identity
 
-- Status: Open
+- Status: Fixed
 - Trigger: `datascript.lru/cache` returns a value created by `(reify ICache ...)`
   and a separately compiled test calls `(satisfies? ICache cache)`.
 - Symptom: The implementation is emitted as `Runtime_reify.t` with only the
@@ -36,8 +36,13 @@
   direct `ICache/-get` dispatch works.
 - Expected: Saved compiler state and emitted module signatures must preserve
   the closed list of protocols implemented by a reify value.
-- Current evidence: `datascript.test.lru/test-cache`; generated code contains
-  `let __d = false` for the `satisfies?` assertion.
+- Fix: Imported reify results retain a required protocol constraint. Branch
+  narrowing now recognizes an existing non-guarded protocol constraint as
+  sufficient evidence and does not emit a redundant receiver rebind. Guarded
+  constraints still narrow through their witness.
+- Regression coverage: the cross-chunk generic reify regression and exact
+  `datascript.test.lru/test-cache` pass on Native and Melange under
+  warnings-as-errors.
 
 ## 2026-08-24 - Macro-generated record loses sidecar field types
 
@@ -355,8 +360,337 @@ used as a substitute across a compiled package boundary. The typed DataScript
 port calls `hash-unordered-coll` explicitly for this set, preserving upstream
 behavior without dynamic dispatch.
 
-OPEN: Equality over `option<Datom>` uses OCaml structural equality instead of
+FIXED: Equality over `option<Datom>` used OCaml structural equality instead of
 the registered Datom `IEquiv` implementation. Upstream DataScript's
-`equiv-db-index` therefore fails `test-diff` when written as
-`(= (first xs) (first ys))`; the typed port currently unwraps both values and
-calls `equiv-datom` explicitly.
+`equiv-db-index` therefore failed `test-diff` when written as
+`(= (first xs) (first ys))`. The `Datom` payload in the earlier `db.lgi`
+signature remained an unresolved named-record placeholder when optional static
+dispatch was selected. In addition, methods were emitted in one monolithic
+`deftype-methods` form, and the split form's dependency scan treated a method
+binder such as `-equiv` as a referenced value. Datom's `IEquiv` implementation
+therefore depended on every later `-equiv` implementation and moved after
+`equiv-db-index`. Optional equality now resolves named-record applications before
+selecting the implementation. Deftype methods are emitted as one dependency unit
+per protocol, and their dependency scan excludes method binders while retaining
+the type, protocol, and method-body dependencies.
+
+FIXED: `get` with a `nil` default on a generic nominal `ILookup` receiver
+invoked the three-argument method and unified the receiver's value parameter
+with `option<value>`. Code that read a cached value and associated it back into
+the same generic receiver then failed OCaml typechecking with the recursive
+constraint `'a = 'a option`. A `nil` default has the same lookup semantics as
+the two-argument nullable arity, so both `get` on a nominal receiver and direct
+core `ILookup/-lookup` calls now invoke that arity and preserve the receiver's
+rigid value parameter.
+
+FIXED: Sequential destructuring of `option<tuple<A,B>>`, such as upstream
+DataScript LRU's `[generation key] (first generation-map)`, no longer lifts
+non-nullable bindings to `option<A>` and `option<B>`. The emitted code matches
+the outer option and either uses a declared nil-value adapter or raises an
+explicit checked-boundary error when the tuple is absent. Present payloads keep
+their exact element types, including rigid generic keys, without dynamic casts.
+Native and Melange regressions cover a generic tuple returned by `first`.
+
+FIXED: A generic `reify` protocol method whose result is the return type of a
+zero-argument callback now retains that relationship across compiler chunks.
+Local-call inference resolves local function parameters before global vars and
+uses one fresh result metavariable instead of unrelated `any` placeholders.
+The reify payload therefore preserves the same static variable for the
+callback result and method result. Upstream DataScript LRU's `ICache/-get`
+remains fully static on Native and Melange; no dynamic reify table is used.
+
+FIXED: Upstream DataScript's `filter` accepts either `DB` or `FilteredDB`, tests
+that receiver with `instance?`, and gives the true branch an explicit
+`^FilteredDB` local hint. Compiler inference and elaboration now narrow both
+the matching record payload and the unique complementary payload of a closed
+sum, including values wrapped in static protocol constraints and inline
+predicate expansion. The original `DB | FilteredDB` branch order and repeated
+filter composition are restored. Its higher-order boundary is declared in the
+sidecar as `(DB, Datom) -> bool`, matching upstream's unfiltered callback
+receiver. Native and Melange core tests pass without dynamic conversion.
+
+FIXED: Sidecars could express only a bare `Runtime_reify.t` method payload, so
+concretizing a mutable generic cache either lost its implemented protocol or
+left OCaml weak type variables. The closed source type
+`reify<qualified-protocol;methods>` now retains the protocol identifier and
+method type in compiler state while emitting the existing nested static tuple
+payload. DataScript query caches can therefore fix key/value types without a
+nominal compatibility wrapper.
+
+OPEN: Upstream parser helpers use a successful predicate parser as a type
+refinement, for example `(when (parse-plain-symbol form) (Variable. form))`.
+LG retains `form` as the full closed `Data_value.t`, even though the successful
+parser result proves its `Symbol` constructor, and rejects the `symbol` record
+field. Preserving this source shape requires a statically declared predicate
+refinement contract or equivalent option-payload narrowing; it must not add a
+general closed-sum-to-payload coercion.
+
+NOT A COMPILER BUG: An unannotated parser function that only passes its input
+to a generic `optional-seqable` function does not contain enough local evidence
+to infer that the original storage is the closed Data_value domain. If the same
+input is later included as `:form` in `ex-info`, accepting it as arbitrary
+seqable exception data would require an implicit open boundary. Declare the
+Data_value input at the parser API boundary; the upstream `parse-where` body can
+then remain exact while the existing optional-seqable adapter supplies static
+iteration on Native and Melange.
+
+FIXED: `sequential?` on an `option<T>` returned by safe sequence navigation did
+not inspect `T`'s registered optional-sequential adapter. The fallback tested
+only whether the outer option type statically implemented `ISequential`, so a
+present Data_value vector from `(first forms)` was folded to false. Predicate
+dispatch now matches the option once, returns false for `None`, and applies the
+closed payload adapter for `Some` on Native and Melange. This preserves the
+upstream parser's nested sequential checks without unsafe option extraction.
+
+FIXED: A local `let` binding whose `or` branches returned several named record
+types was rejected before a later constructor use could provide a closed sum.
+LG now considers declared closed sums containing every optional branch payload
+and selects a unique smallest domain, adapting each present branch without
+dynamic storage. Equally small candidates remain an intentional ambiguity and
+require an explicit typed boundary; the negative regression verifies that LG
+does not guess between unrelated closed domains.
+
+FIXED: Upstream `parse-rule-vars` constructs tuple fields from different
+optional-seqable storage representations: `(next form)` is a lazy sequence,
+the alternative `form` is a DataValue-backed vector, and the first field may be
+literal nil. Tuple branch merging previously unified only their static labels
+while leaving incompatible OCaml storage in the emitted branches. It also
+turned a missing optional sequence into a present empty sequence when packing a
+capability witness. Tuple branches now normalize optional sequence values to
+`option<seq<T>>`, preserve empty `next` and literal nil as `None`, and forward
+the absence of an optional storage value into the witness. The exact upstream
+`parse-rule-vars` control flow and its `RuleVars.free` optional domain now pass
+the Native and Melange parser rules/where suites without dynamic storage.
+
+FIXED: Sequential destructuring of a runtime homogeneous vector used unchecked
+`List.nth`/`Rrbvec.nth` for statically typed elements, so a missing fixed item
+raised an index exception instead of receiving Clojure nil. Closed external
+domains such as DataScript values cannot represent that absence as `option<T>`
+because nil is already a constructor of `T`. A validated `nil-value-adapter`
+now declares the exact `() -> T` boundary factory. Destructuring uses `nth_opt`
+and maps only the missing case through that factory, preserving the closed type
+and generated static code on Native and Melange. When a `first` result crosses
+an explicit `option<T> -> T` call boundary, optional unwrapping uses the same
+adapter for `None` instead of emitting `Option.get`; `if-some` still retains the
+option needed to distinguish an empty collection. DataScript registers its
+`Data_value.Nil`; the empty pattern parser regression now raises the intended
+upstream parser error rather than leaking an index exception.
+
+FIXED: A function with a declared `vector<T>` return type could not return a
+statically typed sequence such as `(next values)`, even though the sequence
+element type matched exactly. The argument adaptation planner now represents
+this conversion explicitly and emits an element-preserving materialization
+through `Rrbvec.of_list`. This also handles LG's internal non-empty/reversible
+sequence representations and remains fully static on Native and Melange.
+
+FIXED: Conditional tuple branches merged element types but previously emitted
+the original tuple payloads unchanged. A lazy sequence payload could therefore
+be labeled as the merged sequence type while the other branch still stored an
+RRB vector, producing invalid OCaml in upstream `take-source`. Branch adaptation
+now recursively adapts every tuple element after choosing the merged closed
+type, preserving evaluation order and the concrete representation on both
+Native and Melange.
+
+NOT A COMPILER BUG: An unqualified closed-sum constructor used from a namespace
+that only requires the provider under an alias is not imported into local
+scope. The old opaque-constructor fallback made the pattern appear to resolve
+but necessarily bound its payload as `any`. Qualifying the constructor through
+the declared alias preserves the named-record payload across compiler chunks;
+the typed DataScript clause wrappers now use that explicit namespace boundary.
+
+FIXED: `instance?` with a named record target now accepts a closed sum that
+contains that record as a constructor payload. The compiler emits a static
+constructor match for the finite sum, returning false for all other
+constructors, without runtime class dispatch or dynamic conversion. This keeps
+upstream DataScript parser predicates such as `aggregate?` and `pull?` intact.
+For unannotated predicate parameters, inference selects the unique smallest
+closed sum containing the target record; direct-record inference remains the
+fallback when there is no unique sum. The regression covers both matching and
+non-matching payloads, without a declared function signature, on Native and
+Melange and rejects generated `Runtime_dynamic` references.
+
+NOT A COMPILER BUG: Compiling the complete DataScript dependency chunk for the final
+`datascript-filter` test rejects upstream `check-schema-update` in `db.cljc`.
+The diagnostic reports that an `option<Datascript_runtime.Data_value.t>` is
+being packed across a dynamic boundary (LG2000) while checking the nested
+`when` forms containing keyword map lookups. A focused local closed-sum
+truthiness example does not reproduce the failure, so the trigger includes
+cross-file external `Data_value.t` state. The compile manifest loaded
+`annotations.lgi` after `schema.cljc`, so calls observed the implementation's
+inferred open-record parameter instead of its declared closed map signature.
+Loading the annotation sidecar before the implementation fixes both Native and
+Melange without changing compiler semantics.
+
+FIXED: Static `hash` supported built-in sets and maps but rejected an external
+set implementation represented by a named record, even when that type
+implemented both `ITransientSet` and `Seqable`. LG now recognizes that closed
+protocol evidence and emits the same unordered element hash used for built-in
+sets. This lets upstream DataScript keep `(hash (.-eavt db))` for the
+persistent sorted set and makes DB and FilteredDB hashes agree on Native and
+Melange without dynamic dispatch.
+
+FIXED: A parser helper whose successful result structurally proves a parameter
+predicate, such as `(when (symbol? form) ...)`, previously lost that proof at
+the function boundary. A later parser could test the helper successfully but
+still see the original closed-sum parameter instead of `symbol` in its true
+branch. LG now records this verified success refinement in compiler state,
+resolves it across namespaces and compilation chunks, and narrows both type
+inference and emitted branch code. The regression covers the upstream parser
+shape on Native and Melange without `Runtime_dynamic`.
+
+FIXED: Adding a field to the marshalled compiler environment changed the state
+payload layout while compiler artifacts still advertised format version 10.
+A newly installed compiler could therefore accept an older stdlib state and
+misread its environment, surfacing unrelated missing-signature errors such as
+an unknown `nil-value-adapter` function. Compiler state artifacts now use
+version 11, so stale layout-incompatible states are rejected and regenerated;
+the CLI state-cache regression verifies version 10 rejection and version 11
+size validation.
+
+OPEN: Source `defrecord` values do not implement Clojure's `IMeta` and
+`IWithMeta` protocols. The upstream DataScript `deftrecord` macro preserves
+record metadata during `postwalk`, but compiling its exact body currently
+fails on `(meta this)` for a statically known record. Supporting hidden record
+metadata without changing equality, hashing, visible fields, or constructor
+arity is required to retain this upstream behavior on Native and Melange.
+
+OPEN: Macro-generated parser protocol methods can call a later function whose
+declared argument is a later closed sum, but dependency ordering does not make
+that sum available while compiling the earlier record. In the upstream
+`deftrecord` traversal method, a symbol field passed to `collect` therefore
+cannot be injected into the later `traversable` sum even though it has a unique
+`TraversalSymbol` constructor. The closed type declaration or equivalent
+proof must be available before compiling the generated method.
+
+FIXED: Recursive closed-sum payload injection treated a nested collection as
+directly host-assignable before adapting its elements. For a sum containing
+`VectorValue : vector<value>`, this relabeled `vector<symbol>` as
+`vector<value>` and emitted an invalid constructor payload. LG now recursively
+injects vector elements before falling back to host-boundary assignability, so
+heterogeneous `concat` inputs produce the required outer and inner closed-sum
+constructors on Native and Melange. When multiple closed sums could contain
+the heterogeneous inputs, `concat` now honors its declared result element type
+instead of selecting an unrelated globally visible sum.
+
+FIXED: `number?` on an optional numeric value was compiled as the constant
+false, and its successful branch did not unwrap the payload for later `and`
+operands. Runtime type predicates now preserve option semantics, while
+successful numeric guards expose the statically known payload to subsequent
+expressions. Native and Melange regressions cover the upstream pull-parser
+limit check shape.
+
+FIXED: Passing an optional static payload to a closed-sum parameter with a
+registered nil-value adapter previously tried to adapt only the payload and
+lost the `None` case. LG now emits a closed match: `None` uses the declared nil
+value and `Some payload` performs normal contextual constructor injection.
+This keeps nullable Clojure values closed and static without dynamic boxing.
+
+FIXED: `fn?` treated a closed sum containing a statically typed function as a
+non-function and did not refine either control-flow branch. LG now emits a
+constructor match for the predicate, extracts the function payload in the true
+branch, and extracts a unique non-function payload in the false branch. Native
+and Melange regressions verify direct invocation after a successful guard and
+symbol use in a later `or` operand without `Runtime_dynamic`.
+
+FIXED: Scalar predicates such as `keyword?` narrowed only their true branch.
+For a closed sum such as `keyword | string`, the false branch therefore kept
+the entire sum and could not call a string-only function. LG now extracts a
+unique remaining payload for false keyword, string, symbol, and int guards and
+also supports string extraction in true branches. The regression covers both
+Native and Melange without dynamic conversion.
+
+FIXED: Contextual closed-sum injection only considered the enclosing source
+sum as one value. Converting `keyword | string` into another declared closed
+sum therefore reported every target constructor as ambiguous. LG now performs
+a total constructor match and recursively injects each source payload into the
+target sum. The conversion stays static and preserves source constructor order
+on Native and Melange.
+
+FIXED: A record type referenced by a sidecar record field before the source
+`defrecord` was compiled remained a structural placeholder across compiler
+chunks. This produced two incompatible identities for the same record when a
+later vector update combined the declared field element with the implemented
+record. Defrecord elaboration now resolves every sidecar field type against
+the current canonical record registry before fixing the record layout. The
+cross-chunk Native and Melange regression also verifies no dynamic fallback.
+
+FIXED: `number?` treated a closed sum containing an integer or float payload as
+non-numeric, so a later numeric operation still received the whole sum. LG now
+dispatches the predicate by constructor and exposes a unique numeric payload in
+the successful branch. Native and Melange regressions cover the closed-sum
+guard without dynamic conversion.
+
+FIXED: Host-boundary assignability accepted a scalar value as the payload of a
+closed-sum constructor whose declared payload was a runtime map. That bypassed
+recursive constructor selection and could choose an invalid target
+constructor. Runtime maps are now directly assignable only from compatible map
+shapes; scalar payloads continue through normal closed-sum adaptation.
+
+FIXED: Tail-position `if` compilation inside `loop` merged an unreachable `nil`
+branch even when the condition was a statically truthy literal. Macro-expanded
+`cond+` consequently inferred `option<result>` for its final `:else` clause and
+could not satisfy the loop's declared result type. Type inference and loop-tail
+elaboration now select the reachable literal branch. The focused Native and
+Melange regression reproduces the `loop`/`recur` shape, and the pinned upstream
+DataScript pull parser compiles successfully.
+
+FIXED: A cross-namespace type alias whose source name had the same final
+segment as its target generated a self-looking OCaml manifest and recursively
+expanded forever during named-record inference. Alias expansion now stops when
+the resolved manifest is the current alias type. The regression verifies that
+the cross-chunk sidecar shape terminates on Native and Melange.
+
+FIXED: Contextual closed-sum injection reported an ambiguity when one
+constructor payload exactly matched the argument and another accepted it only
+through a nested contextual adapter. Exact payload matches now take precedence,
+which keeps DataScript pull scalar, entity, and many results deterministic.
+
+FIXED: `conj!` and `assoc!` did not apply contextual closed-sum conversion to
+typed transient collection elements. Transient vectors now inject their
+declared element sum, and transient maps use the normal argument adaptation
+plan, including optional payload nil adapters. Native and Melange regressions
+cover both paths without dynamic storage.
+
+FIXED: A protocol implementation body was compiled without its declared return
+context even when that return contained a closed sum. LG now enables return
+context only for protocol methods whose declared return recursively contains a
+registered closed sum, avoiding the broader open-context behavior that changes
+ordinary collection inference.
+
+FIXED: Closed-sum constructors declared in a sidecar before their record payload
+definitions retained forward `__lg_record` placeholders. Contextual injection
+and constructor lookup now resolve those payloads through the canonical record
+registry before comparing them. The cross-chunk regression covers both Native
+and Melange.
+
+FIXED: A typed forward declaration for a record constructor was excluded from
+explicit constructor binding lookup and rewritten as an unqualified direct
+OCaml constructor. Typed forward declarations now remain valid explicit
+constructor bindings; only the internal untyped declaration marker is excluded.
+
+FIXED: Negated record instance predicates did not narrow either branch of a
+closed sum. LG now extracts the excluded record in the false branch and removes
+it in the true branch when the remainder has a unique payload, preserving
+static record access on Native and Melange.
+
+FIXED: Calling a protocol method on a closed sum was rejected unless every
+constructor payload implemented that method. Clojure records may implement
+only part of a protocol, and missing methods fail only when dispatched. LG now
+emits one exhaustive static constructor match: implemented payloads call their
+typed implementation and missing payloads raise the protocol error at runtime.
+Arguments are bound once before dispatch, and no dynamic representation is
+introduced. This restores the upstream DataScript frame protocol semantics.
+
+OPEN: During repeated loop-body stabilization across compiler chunks, a later
+branch that consumes one record payload can occasionally constrain an earlier
+binding of the enclosing closed sum to that payload. The pinned pull loop needs
+explicit `frame` hints on `last` and `penultimate` until branch-local evidence
+is prevented from flowing backward through the generic sequence helpers. A
+same-chunk loop regression does not reproduce the identity-sensitive trigger.
+
+OPEN: Collection metadata is stored as `Lg_edn_backend.t`, so an upstream
+metadata map containing typed protocol callbacks such as `clojure.core.protocols/nav`
+or `datafy` is rejected as non-EDN. Restoring pinned DataScript `datafy.cljc`
+requires a closed, statically typed metadata representation for these callback
+slots without widening collection metadata or source values to
+`Runtime_dynamic.t`.

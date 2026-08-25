@@ -210,12 +210,38 @@ let unreachable_narrowed_value ty kind =
        ( Semantic_ir.Ident "invalid_arg",
          [ Semantic_ir.String ("unreachable " ^ kind ^ " branch") ] ))
 
+let resolve_closed_sum_payload env = function
+  | TOcaml name as ty when String.starts_with ~prefix:"__lg_record:" name ->
+      let source_name =
+        String.sub name (String.length "__lg_record:")
+          (String.length name - String.length "__lg_record:")
+      in
+      (match Resolver.lookup_record_type "" env source_name with
+      | Ok record -> TNamed_record record
+      | Error _ -> ty)
+  | ty -> ty
+
 let closed_sum_unary_constructors env sum_ty payload_ty =
   Env.predicate_variant_constructors sum_ty env
   |> List.filter_map (fun (constructor, payload_types) ->
          match payload_types with
-         | [ actual ] when Types.equal actual payload_ty -> Some constructor
+         | [ actual ]
+           when Types.equal (resolve_closed_sum_payload env actual) payload_ty ->
+             Some constructor
          | _ -> None)
+
+let is_function_payload ty =
+  match Types.constraint_value_type ty with
+  | TFn _ | TOverloaded_fn _ -> true
+  | _ -> false
+
+let closed_sum_unary_function_constructors env sum_ty =
+  Env.predicate_variant_constructors sum_ty env
+  |> List.filter_map (fun (constructor, payload_types) ->
+         match payload_types with
+         | [ payload_ty ] when is_function_payload payload_ty ->
+             Some (constructor, payload_ty)
+         | [] | [ _ ] | _ :: _ :: _ -> None)
 
 let array_element_type = function
   | TArray element_ty -> Some element_ty
@@ -1412,6 +1438,10 @@ let rec compile_static_hash_capability env value =
           compile_static_collection_hash_capability env
             "Lg_runtime.Runtime_hash.hash_ordered" value
       | TSet _ | TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ->
+          compile_static_collection_hash_capability env
+            "Lg_runtime.Runtime_hash.hash_unordered" value
+      | ty
+        when Protocol.type_satisfies env Core_protocols.transient_set_id ty ->
           compile_static_collection_hash_capability env
             "Lg_runtime.Runtime_hash.hash_unordered" value
       | _ ->
@@ -3202,7 +3232,23 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                   if can_adapt then
                     captured_adapter ()
                     |> Result.map (fun adapter ->
-                           Semantic_ir.Constructor ("Some", Some adapter))
+                           match optional_payload argument.ty with
+                           | Some _ ->
+                               Semantic_ir.Match
+                                 ( argument.semantic_expr,
+                                   [
+                                     ( Semantic_ir.PConstructor
+                                         ("None", None),
+                                       Semantic_ir.Constructor
+                                         ("None", None) );
+                                     ( Semantic_ir.PConstructor
+                                         ("Some", Some Semantic_ir.PAny),
+                                       Semantic_ir.Constructor
+                                         ("Some", Some adapter) );
+                                   ] )
+                           | None ->
+                               Semantic_ir.Constructor
+                                 ("Some", Some adapter))
                             else Ok (Semantic_ir.Constructor ("None", None))
               in
               let packed_value =
@@ -3249,6 +3295,27 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                                     ] ))
                               (pack_dynamic_value env dynamic item)))
                 else
+                  match stored_value_ty with
+                  | TSeq stored_element -> (
+                      match Collection_capability.to_seq_expr env argument with
+                      | Ok (actual_element, sequence)
+                        when Types.assignable ~policy:Host_boundary
+                               ~expected:stored_element ~actual:actual_element ->
+                          Ok
+                            (match element_mapper with
+                            | None -> sequence
+                            | Some mapper ->
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident
+                                      "Lg_runtime.Runtime_seq.map",
+                                    [ mapper; sequence ] ))
+                      | Ok (actual_element, _) ->
+                          Error.error
+                            ("cannot store seqable element "
+                            ^ Types.source_name actual_element ^ " as "
+                            ^ Types.source_name stored_element)
+                      | Error _ as error -> error)
+                  | _ -> (
                   match Types.seqable_constraint_info argument.ty with
                   | Some _
                     when Type_solver.is_open stored_value_ty
@@ -3270,7 +3337,7 @@ and pack_constrained_value_with_plan ?row_type_name ?sequence_plan env expected
                               (constrained_argument_value argument)
                         | None -> argument
                       in
-                      pack_constrained_value env stored_value_ty stored_argument
+                      pack_constrained_value env stored_value_ty stored_argument)
               in
                         match
                           (adapter, packed_value)
@@ -4870,7 +4937,10 @@ let static_deftype_callable env ty arity =
   resolve false (Types.constraint_value_type ty)
 
 let rec compile_record_iequiv_pair scope env left right =
-  match (optional_payload left.ty, optional_payload right.ty) with
+  let optional_record_payload argument =
+    argument.ty |> resolve_named_record_application env |> optional_payload
+  in
+  match (optional_record_payload left, optional_record_payload right) with
   | Some (TNamed_record left_record), Some (TNamed_record right_record)
     when Type_id.equal left_record.type_id right_record.type_id ->
       let left_name = "__lg_optional_iequiv_left" in
@@ -5618,11 +5688,25 @@ let rec emit_argument_adaptation env adaptation argument =
   | Adaptation.Optional_unwrap adaptation -> (
       match optional_payload argument.ty with
       | Some payload_ty ->
+          let payload_expression =
+            match Compiler_environment.find_nil_value_adapter payload_ty env with
+            | None ->
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "Option.get", [ argument.semantic_expr ])
+            | Some factory ->
+                let item_name = "__lg_optional_nil_value" in
+                Semantic_ir.Match
+                  ( argument.semantic_expr,
+                    [
+                      ( Semantic_ir.PConstructor ("None", None),
+                        Semantic_ir.Apply (Semantic_ir.Ident factory, []) );
+                      ( Semantic_ir.PConstructor
+                          ("Some", Some (Semantic_ir.PVar item_name)),
+                        Semantic_ir.Ident item_name );
+                    ] )
+          in
           emit_argument_adaptation env adaptation
-            (typed_ir payload_ty
-               (Semantic_ir.Apply
-                  ( Semantic_ir.Ident "Option.get",
-                    [ argument.semantic_expr ] )))
+            (typed_ir payload_ty payload_expression)
       | None -> Error.error "internal optional unwrap source mismatch")
   | Adaptation.Protocol_storage_passthrough -> Ok argument.semantic_expr
   | Adaptation.Unit_after_effect ->
@@ -6329,7 +6413,8 @@ let rec emit_argument_adaptation env adaptation argument =
           ( Semantic_ir.Ident
               (match sequence.source with
               | Adaptation.List_source -> "Lg_runtime.Runtime_seq.of_list"
-              | Adaptation.Vector_source -> "Lg_runtime.Runtime_seq.of_vector"),
+              | Adaptation.Vector_source -> "Lg_runtime.Runtime_seq.of_vector"
+              | Adaptation.Sequence_source -> "Fun.id"),
             [ argument.semantic_expr ] )
       in
       Result.map
@@ -6343,6 +6428,32 @@ let rec emit_argument_adaptation env adaptation argument =
                     ([ Semantic_ir.PVar source_name ], adapted_item);
                   source_sequence;
                 ] ))
+        (emit_argument_adaptation env sequence.element_adaptation source_item)
+  | Adaptation.Vector_from_sequence sequence ->
+      let source_name = "__lg_vector_source_item" in
+      let source_item =
+        typed_ir sequence.actual_element (Semantic_ir.Ident source_name)
+      in
+      Result.map
+        (fun adapted_item ->
+          let sequence =
+            if is_identity_conversion source_name adapted_item then
+              argument.semantic_expr
+            else
+              Semantic_ir.Apply
+                ( Semantic_ir.Ident "Lg_runtime.Runtime_seq.map",
+                  [
+                    Semantic_ir.Fun
+                      ([ Semantic_ir.PVar source_name ], adapted_item);
+                    argument.semantic_expr;
+                  ] )
+          in
+          Semantic_ir.Apply
+            ( Semantic_ir.Ident "Rrbvec.of_list",
+              [
+                Semantic_ir.Apply
+                  (Semantic_ir.Ident "List.of_seq", [ sequence ]);
+              ] ))
         (emit_argument_adaptation env sequence.element_adaptation source_item)
   | Adaptation.Collection_representation collection ->
       let map_name =
@@ -7995,7 +8106,27 @@ let create ~compile_expr =
                                "Lg_runtime.Runtime_dynamic.conj_bang",
                              [ collection.semantic_expr; value ] )))
                     (pack_dynamic_value env dynamic value)
-              | Ok value -> (
+              | Ok value ->
+                  let adapt_static_element element_type =
+                    match
+                      inject_contextual_closed_sum env ~expected:element_type
+                        value
+                    with
+                    | Some result -> result
+                    | None -> Ok value
+                  in
+                  let value =
+                    match collection.ty with
+                    | TOcaml_app
+                        ( ("Lg_runtime.Runtime_transient.set"
+                          | "Lg_runtime.Runtime_transient.vector"),
+                          [ element_type ] )
+                      when not (Types.equal element_type TUnknown)
+                           && not (Types.is_dynamic element_type) ->
+                        adapt_static_element element_type
+                    | _ -> Ok value
+                  in
+                  Result.bind value (fun value ->
                   match collection.ty with
                   | TOcaml_app
                       ("Lg_runtime.Runtime_transient.set", [ element_type ])
@@ -8208,9 +8339,8 @@ let create ~compile_expr =
                               Types.is_dynamic expected
                               && not (Types.is_dynamic actual.ty)
                             then pack_dynamic_value env expected actual
-                            else if Types.same_shape expected actual.ty then
-                              Ok actual.semantic_expr
-                            else Error.error "incompatible transient map entry"
+                            else
+                              plan_and_emit_argument env ~expected actual
                           in
                           (match
                              (adapt key_type key, adapt value_type value)
@@ -8698,8 +8828,7 @@ let create ~compile_expr =
       &&
       match lookup_binding scope env name with
       | Ok binding ->
-          not binding.Types.forward_declared
-          && not (Types.equal binding.ty (Types.TOcaml "__declared_fn"))
+          not (Types.equal binding.ty (Types.TOcaml "__declared_fn"))
       | Error _ -> false
     in
     let name =
@@ -9261,6 +9390,45 @@ let create ~compile_expr =
                 in
                 let expression =
                   if
+                    Protocol_id.name protocol_id = "ISequential"
+                    &&
+                    match receiver.ty with
+                    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                        Option.is_some
+                          (Env.find_optional_sequential_adapter inner env)
+                    | _ -> false
+                  then
+                    let inner =
+                      match receiver.ty with
+                      | TNullable inner | TOcaml_app ("option", [ inner ]) ->
+                          inner
+                      | _ -> assert false
+                    in
+                    let _, adapter =
+                      Env.find_optional_sequential_adapter inner env
+                      |> Option.get
+                    in
+                    let value_name = "__lg_optional_sequential_payload" in
+                    Semantic_ir.Match
+                      ( receiver.semantic_expr,
+                        [
+                          ( Semantic_ir.PConstructor ("None", None),
+                            Semantic_ir.Bool false );
+                          ( Semantic_ir.PConstructor
+                              ("Some", Some (Semantic_ir.PVar value_name)),
+                            Semantic_ir.Match
+                              ( Semantic_ir.Apply
+                                  ( Semantic_ir.Ident adapter,
+                                    [ Semantic_ir.Ident value_name ] ),
+                                [
+                                  ( Semantic_ir.PConstructor ("None", None),
+                                    Semantic_ir.Bool false );
+                                  ( Semantic_ir.PConstructor
+                                      ("Some", Some Semantic_ir.PAny),
+                                    Semantic_ir.Bool true );
+                                ] ) );
+                        ] )
+                  else if
                     protocol_basename = "IMap"
                     && Option.is_some
                          (Env.find_optional_map_adapter
@@ -13107,6 +13275,30 @@ let create ~compile_expr =
                                   Semantic_ir.Bool
                                     (Type_id.equal record.type_id actual.type_id);
                                 ]))
+                    | value_ty
+                      when Env.predicate_variant_constructors value_ty env
+                           <> [] ->
+                        let constructors =
+                          closed_sum_unary_constructors env value_ty
+                            (TNamed_record record)
+                        in
+                        let true_cases =
+                          List.map
+                            (fun constructor ->
+                              ( Semantic_ir.PConstructor
+                                  (constructor, Some Semantic_ir.PAny),
+                                Semantic_ir.Bool true ))
+                            constructors
+                        in
+                        Ok
+                          (typed_ir TBool
+                             (Semantic_ir.Match
+                                ( value.semantic_expr,
+                                  true_cases
+                                  @ [
+                                      ( Semantic_ir.PAny,
+                                        Semantic_ir.Bool false );
+                                    ] )))
                     | _ ->
                         Error.error
                           "instance? requires a statically known record type; define a closed sum type and match a closed sum type over its constructors")
@@ -13651,6 +13843,265 @@ let create ~compile_expr =
                            value")))
         | Ok _ ->
             Error.error "internal nullable narrowing expects 1 argument")
+    | "__lg_fn-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when is_function_payload value.ty -> Ok value
+        | Ok [ value ] -> (
+            match closed_sum_unary_function_constructors env value.ty with
+            | [] -> Error.error "fn? guard does not contain a function payload"
+            | (first_constructor, payload_ty) :: rest ->
+                if
+                  List.for_all
+                    (fun (_, candidate_ty) ->
+                      Types.equal payload_ty candidate_ty)
+                    rest
+                then
+                  let payload_name = "__lg_fn_payload" in
+                  let cases =
+                    (first_constructor :: List.map fst rest)
+                    |> List.map (fun constructor ->
+                           ( Semantic_ir.PConstructor
+                               ( constructor,
+                                 Some (Semantic_ir.PVar payload_name) ),
+                             Semantic_ir.Ident payload_name ))
+                  in
+                  Ok
+                    (typed_ir payload_ty
+                       (Semantic_ir.Match
+                          ( value.semantic_expr,
+                            cases
+                            @ [
+                                ( Semantic_ir.PAny,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "invalid_arg",
+                                      [
+                                        Semantic_ir.String
+                                          "unreachable fn? true branch";
+                                      ] ) );
+                              ] )))
+                else
+                  Error.error
+                    "fn? guard matches incompatible function payload types")
+        | Ok _ -> Error.error "internal fn? narrowing expects 1 argument")
+    | "__lg_not-fn-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when is_function_payload value.ty ->
+            Error.error "fn? false branch cannot contain only functions"
+        | Ok [ value ] ->
+            let constructors = Env.predicate_variant_constructors value.ty env in
+            let remaining =
+              constructors
+              |> List.filter_map (fun (constructor, payload_types) ->
+                     match payload_types with
+                     | [ payload_ty ] when not (is_function_payload payload_ty) ->
+                         Some (constructor, payload_ty)
+                     | [] | [ _ ] | _ :: _ :: _ -> None)
+            in
+            (match (constructors, remaining) with
+            | [], _ -> Ok value
+            | _, [] ->
+                Error.error "fn? false branch has no non-function payload"
+            | _, (first_constructor, payload_ty) :: rest ->
+                if
+                  List.for_all
+                    (fun (_, candidate_ty) ->
+                      Types.equal payload_ty candidate_ty)
+                    rest
+                then
+                  let payload_name = "__lg_not_fn_payload" in
+                  let cases =
+                    (first_constructor :: List.map fst rest)
+                    |> List.map (fun constructor ->
+                           ( Semantic_ir.PConstructor
+                               ( constructor,
+                                 Some (Semantic_ir.PVar payload_name) ),
+                             Semantic_ir.Ident payload_name ))
+                  in
+                  Ok
+                    (typed_ir payload_ty
+                       (Semantic_ir.Match
+                          ( value.semantic_expr,
+                            cases
+                            @ [
+                                ( Semantic_ir.PAny,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "invalid_arg",
+                                      [
+                                        Semantic_ir.String
+                                          "unreachable fn? false branch";
+                                      ] ) );
+                              ] )))
+                else Ok value)
+        | Ok _ -> Error.error "internal fn? narrowing expects 1 argument")
+    | ( "__lg_not-keyword-value" | "__lg_not-string-value"
+      | "__lg_not-symbol-value" | "__lg_not-int-value" ) as helper -> (
+        let excluded_ty, kind =
+          match helper with
+          | "__lg_not-keyword-value" -> (TKeyword, "keyword?")
+          | "__lg_not-string-value" -> (TString, "string?")
+          | "__lg_not-symbol-value" -> (TSymbol, "symbol?")
+          | "__lg_not-int-value" -> (TInt, "int?")
+          | _ -> assert false
+        in
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when Types.equal value.ty excluded_ty -> Ok value
+        | Ok [ value ] ->
+            let constructors = Env.predicate_variant_constructors value.ty env in
+            let remaining =
+              constructors
+              |> List.filter_map (fun (constructor, payload_types) ->
+                     match payload_types with
+                     | [ payload_ty ] when not (Types.equal payload_ty excluded_ty) ->
+                         Some (constructor, payload_ty)
+                     | [] | [ _ ] | _ :: _ :: _ -> None)
+            in
+            (match (constructors, remaining) with
+            | [], _ -> Ok value
+            | _, [] -> Ok value
+            | _, (first_constructor, payload_ty) :: rest ->
+                if
+                  List.for_all
+                    (fun (_, candidate_ty) -> Types.equal payload_ty candidate_ty)
+                    rest
+                then
+                  let payload_name = "__lg_not_scalar_payload" in
+                  let cases =
+                    (first_constructor :: List.map fst rest)
+                    |> List.map (fun constructor ->
+                           ( Semantic_ir.PConstructor
+                               ( constructor,
+                                 Some (Semantic_ir.PVar payload_name) ),
+                             Semantic_ir.Ident payload_name ))
+                  in
+                  Ok
+                    (typed_ir payload_ty
+                       (Semantic_ir.Match
+                          ( value.semantic_expr,
+                            cases
+                            @ [
+                                ( Semantic_ir.PAny,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "invalid_arg",
+                                      [
+                                        Semantic_ir.String
+                                          ("unreachable " ^ kind
+                                         ^ " false branch");
+                                      ] ) );
+                              ] )))
+                else Ok value)
+        | Ok _ ->
+            Error.error "internal scalar predicate narrowing expects 1 argument")
+    | "__lg_instance-value" -> (
+        match arg_forms with
+        | [ FSymbol type_name; value_form ] -> (
+            match
+              ( Resolver.lookup_record_type scope env type_name,
+                compile_expr scope env value_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok record, Ok value ->
+                let record_ty = TNamed_record record in
+                let value_ty = Types.constraint_value_type value.ty in
+                (match value_ty with
+                | TNamed_record actual
+                  when Type_id.equal record.type_id actual.type_id ->
+                    Ok (typed_ir record_ty value.semantic_expr)
+                | sum_ty -> (
+                    match
+                      closed_sum_unary_constructors env sum_ty record_ty
+                    with
+                    | [] ->
+                        Ok
+                          (unreachable_narrowed_value record_ty "instance")
+                    | constructors ->
+                        let payload_name = "__lg_instance_payload" in
+                        let cases =
+                          List.map
+                            (fun constructor ->
+                              ( Semantic_ir.PConstructor
+                                  ( constructor,
+                                    Some (Semantic_ir.PVar payload_name) ),
+                                Semantic_ir.Ident payload_name ))
+                            constructors
+                        in
+                        Ok
+                          (typed_ir record_ty
+                             (Semantic_ir.Match
+                                ( value.semantic_expr,
+                                  cases
+                                  @ [
+                                      ( Semantic_ir.PAny,
+                                        Semantic_ir.Apply
+                                          ( Semantic_ir.Ident "invalid_arg",
+                                            [
+                                              Semantic_ir.String
+                                                "unreachable instance branch";
+                                            ] ) );
+                                    ] ))))))
+        | _ ->
+            Error.error
+              "internal instance narrowing expects a record type and value")
+    | "__lg_not-instance-value" -> (
+        match arg_forms with
+        | [ FSymbol type_name; value_form ] -> (
+            match
+              ( Resolver.lookup_record_type scope env type_name,
+                compile_expr scope env value_form )
+            with
+            | (Error _ as error), _ -> error
+            | _, (Error _ as error) -> error
+            | Ok excluded_record, Ok value ->
+                let excluded_ty = TNamed_record excluded_record in
+                let value_ty = Types.constraint_value_type value.ty in
+                (match value_ty with
+                | TNamed_record actual
+                  when not
+                         (Type_id.equal excluded_record.type_id actual.type_id)
+                  ->
+                    Ok (typed_ir value_ty value.semantic_expr)
+                | sum_ty ->
+                    let remaining =
+                      Env.predicate_variant_constructors sum_ty env
+                      |> List.filter_map (fun (constructor, payload_types) ->
+                             match payload_types with
+                             | [ payload_ty ] ->
+                                 let payload_ty =
+                                   resolve_closed_sum_payload env payload_ty
+                                 in
+                                 if not (Types.equal payload_ty excluded_ty) then
+                                   Some (constructor, payload_ty)
+                                 else None
+                             | [] | _ :: _ :: _ -> None)
+                    in
+                    (match remaining with
+                    | [ (constructor, payload_ty) ] ->
+                        let payload_name = "__lg_not_instance_payload" in
+                        Ok
+                          (typed_ir payload_ty
+                             (Semantic_ir.Match
+                                ( value.semantic_expr,
+                                  [
+                                    ( Semantic_ir.PConstructor
+                                        ( constructor,
+                                          Some
+                                            (Semantic_ir.PVar payload_name) ),
+                                      Semantic_ir.Ident payload_name );
+                                    ( Semantic_ir.PAny,
+                                      Semantic_ir.Apply
+                                        ( Semantic_ir.Ident "invalid_arg",
+                                          [
+                                            Semantic_ir.String
+                                              "unreachable negative instance branch";
+                                          ] ) );
+                                  ] )))
+                    | [] | _ :: _ :: _ -> Ok value)))
+        | _ ->
+            Error.error
+              "internal negative instance narrowing expects a record type and value")
     | "__lg_symbol-value" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -13714,6 +14165,89 @@ let create ~compile_expr =
         | Ok [ _ ] -> Ok (unreachable_narrowed_value TSymbol "symbol")
         | Ok _ ->
             Error.error "internal symbol narrowing expects 1 argument")
+    | "__lg_string-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ] when Types.equal value.ty TString -> Ok value
+        | Ok [ value ] -> (
+            match closed_sum_unary_constructors env value.ty TString with
+            | [] -> Ok (unreachable_narrowed_value TString "string")
+            | constructors ->
+                let payload_name = "__lg_string_payload" in
+                let cases =
+                  List.map
+                    (fun constructor ->
+                      ( Semantic_ir.PConstructor
+                          ( constructor,
+                            Some (Semantic_ir.PVar payload_name) ),
+                        Semantic_ir.Ident payload_name ))
+                    constructors
+                in
+                Ok
+                  (typed_ir TString
+                     (Semantic_ir.Match
+                        ( value.semantic_expr,
+                          cases
+                          @ [
+                              ( Semantic_ir.PAny,
+                                Semantic_ir.Apply
+                                  ( Semantic_ir.Ident "invalid_arg",
+                                    [
+                                      Semantic_ir.String
+                                        "unreachable string branch";
+                                    ] ) );
+                            ] ))))
+        | Ok _ -> Error.error "internal string narrowing expects 1 argument")
+    | "__lg_number-value" -> (
+        match compile_args () with
+        | Error _ as error -> error
+        | Ok [ value ]
+          when Types.equal value.ty TInt || Types.equal value.ty TFloat ->
+            Ok value
+        | Ok [ value ] ->
+            let numeric =
+              Env.predicate_variant_constructors value.ty env
+              |> List.filter_map (fun (constructor, payload_types) ->
+                     match payload_types with
+                     | [ (TInt | TFloat as payload_ty) ] ->
+                         Some (constructor, payload_ty)
+                     | [] | [ _ ] | _ :: _ :: _ -> None)
+            in
+            (match numeric with
+            | [] -> Ok (unreachable_narrowed_value TInt "number")
+            | (first_constructor, payload_ty) :: rest ->
+                if
+                  List.for_all
+                    (fun (_, candidate_ty) -> Types.equal payload_ty candidate_ty)
+                    rest
+                then
+                  let payload_name = "__lg_number_payload" in
+                  let cases =
+                    (first_constructor :: List.map fst rest)
+                    |> List.map (fun constructor ->
+                           ( Semantic_ir.PConstructor
+                               ( constructor,
+                                 Some (Semantic_ir.PVar payload_name) ),
+                             Semantic_ir.Ident payload_name ))
+                  in
+                  Ok
+                    (typed_ir payload_ty
+                       (Semantic_ir.Match
+                          ( value.semantic_expr,
+                            cases
+                            @ [
+                                ( Semantic_ir.PAny,
+                                  Semantic_ir.Apply
+                                    ( Semantic_ir.Ident "invalid_arg",
+                                      [
+                                        Semantic_ir.String
+                                          "unreachable number branch";
+                                      ] ) );
+                              ] )))
+                else
+                  Error.error
+                    "number? guard matches both int and float payloads; define a closed numeric representation")
+        | Ok _ -> Error.error "internal number narrowing expects 1 argument")
     | "__lg_keyword-value" -> (
         match compile_args () with
         | Error _ as error -> error
@@ -15234,18 +15768,40 @@ let create ~compile_expr =
     match compile_args_for scope env arg_forms with
     | Error _ as err -> err
     | Ok ([ argument ] as args) ->
-        let payload_ty =
+        let payload_tys =
           match name with
-          | "__lg_keyword-predicate" -> Some TKeyword
-          | "__lg_string-predicate" -> Some TString
-          | "__lg_symbol-predicate" -> Some TSymbol
-          | "__lg_int-predicate" -> Some TInt
+          | "__lg_keyword-predicate" -> Some [ TKeyword ]
+          | "__lg_string-predicate" -> Some [ TString ]
+          | "__lg_symbol-predicate" -> Some [ TSymbol ]
+          | "__lg_int-predicate" -> Some [ TInt ]
+          | "__lg_number-predicate" -> Some [ TInt; TFloat ]
           | _ -> None
         in
-        (match payload_ty with
-        | Some payload_ty -> (
+        (match (name, payload_tys) with
+        | "__lg_fn-predicate", None -> (
+            match closed_sum_unary_function_constructors env argument.ty with
+            | [] -> Core_boolean.compile ~target:(Env.target env) name args
+            | constructors ->
+                let true_cases =
+                  List.map
+                    (fun (constructor, _) ->
+                      ( Semantic_ir.PConstructor
+                          (constructor, Some Semantic_ir.PAny),
+                        Semantic_ir.Bool true ))
+                    constructors
+                in
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Match
+                        ( argument.semantic_expr,
+                          true_cases
+                          @ [ (Semantic_ir.PAny, Semantic_ir.Bool false) ] ))) )
+        | _, Some payload_tys -> (
             match
-              closed_sum_unary_constructors env argument.ty payload_ty
+              List.concat_map
+                (closed_sum_unary_constructors env argument.ty)
+                payload_tys
+              |> List.sort_uniq String.compare
             with
             | [] when String.equal name "__lg_symbol-predicate" ->
                 Core_predicate.compile ~target:(Env.target env) name args
@@ -15266,7 +15822,7 @@ let create ~compile_expr =
                         ( argument.semantic_expr,
                           true_cases
                           @ [ (Semantic_ir.PAny, Semantic_ir.Bool false) ] ))) )
-        | None -> Core_boolean.compile ~target:(Env.target env) name args)
+        | _, None -> Core_boolean.compile ~target:(Env.target env) name args)
     | Ok args -> Core_boolean.compile ~target:(Env.target env) name args
   and compile_collection_call scope env name arg_forms =
     let reify_has_protocol protocol_id = function
@@ -15366,15 +15922,20 @@ let create ~compile_expr =
                   match merge_branch_types left right with
                   | Some _ as merged -> merged
                   | None -> (
-                      match Type_solver.unify Type_solver.empty left right with
-                      | Error _ -> None
-                      | Ok substitutions ->
-                          Some
-                            (Type_inference_core.refine_type
-                               (Type_solver.apply substitutions left)
-                               (Type_solver.apply substitutions right))))
+                      match
+                        Env.closed_sum_candidates_for_payloads [ left; right ] env
+                      with
+                      | [ candidate ] -> Some candidate
+                      | [] | _ :: _ :: _ -> (
+                          match Type_solver.unify Type_solver.empty left right with
+                          | Error _ -> None
+                          | Ok substitutions ->
+                              Some
+                                (Type_inference_core.refine_type
+                                   (Type_solver.apply substitutions left)
+                                   (Type_solver.apply substitutions right)))))
             in
-            let common_type =
+            let inferred_common_type () =
               sequences
               |> List.tl
               |> List.fold_left
@@ -15382,6 +15943,12 @@ let create ~compile_expr =
                      Option.bind common (fun common ->
                          merge_element_types common ty))
                    (Some first_ty)
+            in
+            let common_type =
+              match Env.expected_type env with
+              | Some (TSeq expected) when not (contains_unresolved_type expected) ->
+                  Some expected
+              | Some _ | None -> inferred_common_type ()
             in
             match common_type with
             | Some common_type ->
@@ -20047,6 +20614,21 @@ let create ~compile_expr =
       match Protocol.lookup_marker scope env name with
       | None -> Error.error ("unknown function " ^ name)
       | Some marker
+        when (match (marker.protocol_id, arg_forms) with
+             | ( Some protocol_id,
+                 [ receiver_form; key_form; FSymbol "nil" ] )
+               when Protocol_id.equal protocol_id Core_protocols.lookup_id ->
+                 ignore receiver_form;
+                 ignore key_form;
+                 true
+             | _ -> false) ->
+          let receiver_form, key_form =
+            match arg_forms with
+            | [ receiver_form; key_form; _ ] -> (receiver_form, key_form)
+            | _ -> assert false
+          in
+          compile_protocol_call scope env name [ receiver_form; key_form ]
+      | Some marker
         when Option.is_none
                (select_binding_arity marker (List.length arg_forms)) ->
           Error.error
@@ -20569,10 +21151,177 @@ let create ~compile_expr =
                             Protocol.lookup_marker_impl env marker method_name
                               receiver.ty
                           with
-                          | None ->
-                              Error.error
-                                ("no protocol implementation for " ^ name
-                               ^ " and " ^ source_name receiver.ty)
+                          | None -> (
+                              let constructors =
+                                Env.predicate_variant_constructors receiver.ty
+                                  env
+                              in
+                              let return_ty =
+                                match marker.ty with
+                                | TFn (_, return_ty) ->
+                                    contextual_return_ty return_ty
+                                | _ -> TUnknown
+                              in
+                              let argument_names =
+                                List.mapi
+                                  (fun index _ ->
+                                    "__lg_protocol_argument_"
+                                    ^ string_of_int index)
+                                  args
+                              in
+                              let bound_arguments =
+                                List.map2
+                                  (fun argument name ->
+                                    {
+                                      argument with
+                                      semantic_expr = Semantic_ir.Ident name;
+                                    })
+                                  args argument_names
+                              in
+                              let prepare_argument expected argument =
+                                if has_capability_constraint expected then
+                                  pack_constrained_value env expected argument
+                                else if Types.is_dynamic expected then
+                                  pack_dynamic_value env expected argument
+                                else if
+                                  Types.is_dynamic argument.ty
+                                  && not (expects_dynamic_value expected)
+                                then
+                                  dynamic_unpack env expected
+                                    argument.semantic_expr
+                                else
+                                  plan_and_emit_protocol_storage_argument env
+                                    ~expected argument
+                              in
+                              let rec prepare_arguments prepared expected actual =
+                                match (expected, actual) with
+                                | [], [] -> Ok (List.rev prepared)
+                                | expected :: expected_rest,
+                                  argument :: argument_rest ->
+                                    Result.bind
+                                      (prepare_argument expected argument)
+                                      (fun expression ->
+                                        prepare_arguments
+                                          (expression :: prepared)
+                                          expected_rest argument_rest)
+                                | _ ->
+                                    Error.error
+                                      "protocol method argument count mismatch"
+                              in
+                              let compile_constructor = function
+                                | constructor, [ payload_ty ] ->
+                                    let payload_ty =
+                                      resolve_closed_sum_payload env payload_ty
+                                    in
+                                    let payload_name =
+                                      "__lg_protocol_receiver_payload"
+                                    in
+                                    let payload =
+                                      typed_ir payload_ty
+                                        (Semantic_ir.Ident payload_name)
+                                    in
+                                    let branch_arguments =
+                                      payload :: List.tl bound_arguments
+                                    in
+                                    let branch_expression =
+                                      match
+                                        Protocol.lookup_marker_impl env marker
+                                          method_name payload_ty
+                                      with
+                                      | None ->
+                                          Ok
+                                            (Semantic_ir.Apply
+                                               ( Semantic_ir.Ident "invalid_arg",
+                                                 [
+                                                   Semantic_ir.String
+                                                     ("missing protocol implementation for "
+                                                    ^ name);
+                                                 ] ))
+                                      | Some implementation -> (
+                                          let implementation =
+                                            select_binding_arity implementation
+                                              (List.length branch_arguments)
+                                            |> Option.value
+                                                 ~default:implementation
+                                          in
+                                          match implementation.ty with
+                                          | TFn (parameter_tys, _)
+                                            when List.length parameter_tys
+                                                 = List.length branch_arguments
+                                                 && List.for_all2
+                                                      (fun expected argument ->
+                                                        argument_compatible
+                                                          expected argument.ty)
+                                                      parameter_tys
+                                                      branch_arguments ->
+                                              Result.map
+                                                (fun arguments ->
+                                                  Semantic_ir.Apply
+                                                    ( Semantic_ir.Ident
+                                                        implementation.ocaml_name,
+                                                      arguments ))
+                                                (prepare_arguments []
+                                                   parameter_tys
+                                                   branch_arguments)
+                                          | TFn _ ->
+                                              Error.error
+                                                (name
+                                               ^ " called with incompatible arguments")
+                                          | _ ->
+                                              Error.error
+                                                (name ^ " is not callable"))
+                                    in
+                                    Result.map
+                                      (fun expression ->
+                                        ( Semantic_ir.PConstructor
+                                            ( constructor,
+                                              Some
+                                                (Semantic_ir.PVar payload_name) ),
+                                          expression ))
+                                      branch_expression
+                                | constructor, [] ->
+                                    Ok
+                                      ( Semantic_ir.PConstructor
+                                          (constructor, None),
+                                        Semantic_ir.Apply
+                                          ( Semantic_ir.Ident "invalid_arg",
+                                            [
+                                              Semantic_ir.String
+                                                ("missing protocol implementation for "
+                                               ^ name);
+                                            ] ) )
+                                | _, _ ->
+                                    Error.error
+                                      "protocol dispatch requires unary closed-sum constructors"
+                              in
+                              let rec compile_constructors compiled = function
+                                | [] -> Ok (List.rev compiled)
+                                | constructor :: rest ->
+                                    Result.bind
+                                      (compile_constructor constructor)
+                                      (fun branch ->
+                                        compile_constructors
+                                          (branch :: compiled) rest)
+                              in
+                              if constructors = [] then
+                                Error.error
+                                  ("no protocol implementation for " ^ name
+                                 ^ " and " ^ source_name receiver.ty)
+                              else
+                                Result.map
+                                  (fun branches ->
+                                    typed_ir return_ty
+                                      (Semantic_ir.Let
+                                         ( List.map2
+                                             (fun name argument ->
+                                               ( Semantic_ir.PVar name,
+                                                 argument.semantic_expr ))
+                                             argument_names args,
+                                           Semantic_ir.Match
+                                             ( Semantic_ir.Ident
+                                                 (List.hd argument_names),
+                                               branches ) )))
+                                  (compile_constructors [] constructors))
                           | Some impl -> (
                               let impl =
                                 select_binding_arity impl (List.length args)

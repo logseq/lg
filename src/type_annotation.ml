@@ -69,6 +69,8 @@ let validate_ocaml_type_application name args =
       Error.error "variadic-fn expects a rest type and return type"
   | "overload", _ :: _ -> Ok ()
   | "overload", _ -> Error.error "overload expects at least two function types"
+  | "reify", [ _; _ ] -> Ok ()
+  | "reify", _ -> Error.error "reify expects a protocol and method type"
   | _, [] -> Error.error "OCaml type application expects at least one argument"
   | _ -> Ok ()
 
@@ -307,6 +309,29 @@ let rec parse_ocaml_type source =
                               "overload arguments must all be function types"
                       in
                       arities [] args
+                    else if name = "reify" then
+                      match (arg_sources, args) with
+                      | [ protocol_name; _ ], [ _; methods_ty ] ->
+                          let protocol_name = String.trim protocol_name in
+                          if
+                            protocol_name = ""
+                            || String.contains protocol_name '<'
+                            || String.contains protocol_name '>'
+                          then
+                            Error.error
+                              "reify protocol must be a qualified protocol name"
+                          else
+                            let protocol_id =
+                              Protocol_id.of_string protocol_name
+                            in
+                            Ok
+                              (TOcaml_app
+                                 ( "Lg_runtime.Runtime_reify.t",
+                                   [
+                                     Types.reify_protocol_payload protocol_id
+                                       methods_ty TUnit;
+                                   ] ))
+                      | _ -> assert false
                     else
                       Ok
                         (TOcaml_app

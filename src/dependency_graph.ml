@@ -231,6 +231,7 @@ let dependency_symbols = function
     ->
       []
   | FList (FSymbol "exception-data-adapter" :: _) -> []
+  | FList (FSymbol "nil-value-adapter" :: _) -> []
   | FList (FSymbol "truthiness-adapter" :: _) -> []
   | FList (FSymbol "empty-map-default" :: _) -> []
   | FList (FSymbol "closed-sum-constructors" :: _) -> []
@@ -365,6 +366,15 @@ let dependency_symbols = function
         | form -> symbols form
       in
       symbols fields @ List.concat_map implementation_symbols implementations
+  | FList
+      (FSymbol "deftype-methods" :: type_name :: protocol
+      :: implementations) ->
+      let implementation_symbols = function
+        | FList (_method_name :: body) -> List.concat_map symbols body
+        | form -> symbols form
+      in
+      symbols type_name @ symbols protocol
+      @ List.concat_map implementation_symbols implementations
   | form -> value_symbols form
 
 let direct_method_names forms =

@@ -892,6 +892,63 @@ let prepare_function scope env name params body_forms =
                       ~materialize_open_equality:true scope env params
                       body_forms))
 
+let successful_call_refinement params body_forms =
+  let source_name_is expected actual =
+    String.equal expected actual
+    || String.ends_with ~suffix:("/" ^ expected) actual
+  in
+  let rec positive_refinements parameter_name = function
+    | FList [ FSymbol predicate; FSymbol argument ]
+      when String.equal parameter_name argument ->
+        if source_name_is "symbol?" predicate then [ TSymbol ]
+        else if source_name_is "keyword?" predicate then [ TKeyword ]
+        else if source_name_is "int?" predicate then [ TInt ]
+        else []
+    | FList (FSymbol conjunction :: conditions)
+      when source_name_is "and" conjunction
+           || source_name_is "__lg_logical-and" conjunction ->
+        List.concat_map (positive_refinements parameter_name) conditions
+    | _ -> []
+  in
+  let successful_condition = function
+    | FList (FSymbol when_name :: condition :: _)
+      when source_name_is "when" when_name ->
+        Some condition
+    | FList [ FSymbol if_name; condition; _; FSymbol nil_name ]
+      when source_name_is "if" if_name && source_name_is "nil" nil_name ->
+        Some condition
+    | _ -> None
+  in
+  match (params, List.rev body_forms) with
+  | FVector parameter_forms, final_form :: _ -> (
+      match successful_condition final_form with
+      | None -> None
+      | Some condition ->
+          parameter_forms
+          |> List.mapi (fun index form -> (index, form))
+          |> List.find_map (fun (index, form) ->
+                 match form with
+                 | FSymbol parameter_name -> (
+                     match
+                       positive_refinements parameter_name condition
+                       |> List.sort_uniq Stdlib.compare
+                     with
+                     | [ refined_ty ] -> Some (index, refined_ty)
+                     | [] | _ :: _ :: _ -> None)
+                 | _ -> None))
+  | _ -> None
+
+let add_defined_function env_key binding params body_forms env =
+  let env = Env.add env_key binding env in
+  let env =
+    Env.remove_successful_call_refinement binding.ocaml_name env
+  in
+  match successful_call_refinement params body_forms with
+  | Some (parameter_index, refined_ty) ->
+      Env.add_successful_call_refinement binding.ocaml_name parameter_index
+        refined_ty env
+  | None -> env
+
 let rec concrete_defrecord_field_type = function
   | TUnknown | TMeta _ | TVar _ | TRecord _ -> None
   | ty when Types.is_dynamic ty -> None
@@ -1265,10 +1322,18 @@ let infer_defrecord_field_types scope env record_name field_names interface_form
                   || form_has_nullable_return form
                 then nullable_constructor_fields.(index) <- true)
         in
+        let lookup_closed_sum_candidates payload_types =
+          Env.closed_sum_candidates_for_payloads payload_types env
+        in
+        let lookup_closed_sum_constructors ty =
+          Env.predicate_variant_constructors ty env
+        in
         match
           Type_inference.infer_params
             ?expected_return_ty:(method_return_type method_name)
             ~lookup_function_ty
+            ~lookup_closed_sum_candidates
+            ~lookup_closed_sum_constructors
             ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
             ~resolve_named_record ~observe_call params body_forms
         with
@@ -1486,7 +1551,9 @@ and compile_resolved scope env next_type form =
                 fields
                 |> List.find_opt (fun (field : Types.field) ->
                        field.keyword = ":" ^ field_name)
-                |> Option.map (fun (field : Types.field) -> field.ty))
+                |> Option.map (fun (field : Types.field) ->
+                       Function_elaborator.infer_named_record scope env
+                         field.ty))
           in
           let field_specs =
             List.map
@@ -3038,6 +3105,39 @@ and compile_resolved scope env next_type form =
       Error.error
         "optional-map-adapter expects storage, key, value types, and adapter"
   | FList
+      [ FSymbol "nil-value-adapter";
+        FKeyword value_annotation;
+        FSymbol adapter ] -> (
+      match Type_annotation.of_keyword value_annotation with
+      | Error _ as error -> error
+      | Ok value_ty ->
+          let value_ty =
+            Function_elaborator.infer_named_record scope env value_ty
+          in
+          let adapter_binding =
+            match Env.find_opt (Names.scoped_key scope adapter) env with
+            | Some binding -> Some (binding.ty, binding.ocaml_name)
+            | None ->
+                Signature_overlay.find_value adapter (Env.signatures env)
+                |> Option.map (fun ty -> (ty, adapter))
+          in
+          (match adapter_binding with
+          | Some (TFn ([], return_ty), ocaml_name)
+            when Types.equal return_ty value_ty ->
+              Ok
+                ( scope,
+                  Env.add_nil_value_adapter value_ty ocaml_name env,
+                  next_type,
+                  Comment ("nil value adapter " ^ Types.source_name value_ty)
+                )
+          | Some _ ->
+              Error.error
+                "nil-value-adapter must have the exact type () -> T"
+          | None ->
+              Error.error ("unknown nil-value-adapter function " ^ adapter)))
+  | FList (FSymbol "nil-value-adapter" :: _) ->
+      Error.error "nil-value-adapter expects value type and adapter"
+  | FList
       [ FSymbol "truthiness-adapter";
         FKeyword value_annotation;
         FSymbol adapter ] -> (
@@ -3998,7 +4098,7 @@ and compile_resolved scope env next_type form =
                   in
                   Ok
                     ( scope,
-                      Env.add env_key binding env,
+                      add_defined_function env_key binding params body_forms env,
                       next_type,
                       Group (type_items @ [ value_item ]) ))))
   | FList
@@ -4082,7 +4182,7 @@ and compile_resolved scope env next_type form =
               in
               Ok
                 ( scope,
-                  Env.add env_key binding env,
+                  add_defined_function env_key binding params body_forms env,
                   next_type,
                   Group (type_items @ [ value_item ]) )))
   | FList
@@ -4184,7 +4284,7 @@ and compile_resolved scope env next_type form =
                   in
                   Ok
                     ( scope,
-                      Env.add env_key binding env,
+                      add_defined_function env_key binding params body_forms env,
                       next_type,
                       Group (type_items @ [ value_item ]) )
           | _ -> Error.error "defn body did not compile to a function")))

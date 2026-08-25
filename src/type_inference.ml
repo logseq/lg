@@ -2,6 +2,14 @@ include Type_inference_core
 open Ast
 open Types
 
+let literal_truthiness = function
+  | FBool value -> Some value
+  | FSymbol "nil" -> Some false
+  | FInt _ | FFloat _ | FDecimal _ | FChar _ | FString _ | FRegex _
+  | FKeyword _ ->
+      Some true
+  | FSymbol _ | FCoreSymbol _ | FList _ | FVector _ | FMap _ -> None
+
 let rec stored_value_type ty =
   match Types.protocol_constraint_info ty with
   | Some (_, _, value_ty) -> stored_value_type value_ty
@@ -632,11 +640,15 @@ let rec inferred_form_type params = function
       match List.rev body_forms with
       | result :: _ -> inferred_form_type params result
       | [] -> TNil)
-  | FList [ FSymbol "if"; _condition; then_form; else_form ] ->
-      Expression_support.merge_branch_types
-        (inferred_form_type params then_form)
-        (inferred_form_type params else_form)
-      |> Option.value ~default:TUnknown
+  | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
+      match literal_truthiness condition with
+      | Some true -> inferred_form_type params then_form
+      | Some false -> inferred_form_type params else_form
+      | None ->
+          Expression_support.merge_branch_types
+            (inferred_form_type params then_form)
+            (inferred_form_type params else_form)
+          |> Option.value ~default:TUnknown)
   | FList [ FSymbol "if"; _condition; then_form ] ->
       Expression_support.merge_branch_types
         (inferred_form_type params then_form)
@@ -1055,14 +1067,18 @@ and returned_vector_type params = function
       match returned_vector_type params collection with
       | Some vector_ty -> Some vector_ty
       | None -> Some (TVector (Types.dynamic_constraint TUnknown)))
-  | FList [ FSymbol "if"; _condition; then_form; else_form ] -> (
-      match
-        ( returned_vector_type params then_form,
-          returned_vector_type params else_form )
-      with
-      | Some left, Some right -> Some (refine_type left right)
-      | Some vector_ty, None | None, Some vector_ty -> Some vector_ty
-      | None, None -> None)
+  | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
+      match literal_truthiness condition with
+      | Some true -> returned_vector_type params then_form
+      | Some false -> returned_vector_type params else_form
+      | None -> (
+          match
+            ( returned_vector_type params then_form,
+              returned_vector_type params else_form )
+          with
+          | Some left, Some right -> Some (refine_type left right)
+          | Some vector_ty, None | None, Some vector_ty -> Some vector_ty
+          | None, None -> None))
   | FList (FSymbol "loop" :: _bindings :: body_forms) -> (
       match List.rev body_forms with
       | result :: _ -> returned_vector_type params result
@@ -1180,7 +1196,10 @@ let rec inferred_call_return_type ~lookup_function_ty params = function
       in
       let callee_ty =
         match callee with
-        | FSymbol function_name -> lookup_function_ty function_name
+        | FSymbol function_name -> (
+            match string_assoc_opt function_name params with
+            | Some ty -> Ok ty
+            | None -> lookup_function_ty function_name)
         | FList _ as call ->
             Ok (inferred_call_return_type ~lookup_function_ty params call)
         | form -> Ok (inferred_form_type params form)
@@ -1335,7 +1354,10 @@ let restore_explicit_parameter_types ~resolve_named_record specs inferred =
     inferred
 
 let infer_params ?expected_return_ty ?(materialize_open_equality = false)
-    ?observe_call ~lookup_function_ty
+    ?observe_call ?(lookup_closed_sum_candidates = fun _ -> [])
+    ?(lookup_closed_sum_constructors = fun _ -> [])
+    ?(lookup_successful_call_refinement = fun _ -> None)
+    ~lookup_function_ty
     ~lookup_protocol_constraint ~lookup_dynamic_key_record_type
     ~resolve_named_record params body_forms =
   let lookup_loop_initializer_type =
@@ -1542,6 +1564,91 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
   let fresh_type_variable _prefix =
     Type_solver.fresh ()
   in
+  let instance_branch_params ~matching params = function
+    | FList
+        [
+          FSymbol "instance?";
+          FSymbol record_name;
+          FSymbol value_name;
+        ] -> (
+        match
+          ( resolve_named_record (TOcaml record_name),
+            string_assoc_opt value_name params )
+        with
+        | (TNamed_record _ as record_ty), Some value_ty ->
+            let stored_ty = Types.constraint_value_type value_ty in
+            let narrowed_ty =
+              if matching then Some record_ty
+              else
+                match stored_ty with
+                | TNamed_record actual ->
+                    let excluded =
+                      match record_ty with
+                      | TNamed_record record -> record
+                      | _ -> assert false
+                    in
+                    if Type_id.equal excluded.type_id actual.type_id then None
+                    else Some stored_ty
+                | sum_ty -> (
+                    match
+                      lookup_closed_sum_constructors sum_ty
+                      |> List.filter_map
+                           (fun (_constructor, payload_types) ->
+                             match payload_types with
+                             | [ payload_ty ]
+                               when not (Types.equal payload_ty record_ty) ->
+                                 Some payload_ty
+                             | [] | [ _ ] | _ :: _ :: _ -> None)
+                    with
+                    | [ payload_ty ] -> Some payload_ty
+                    | [] | _ :: _ :: _ -> None)
+            in
+            Option.fold ~none:params
+              ~some:(fun ty -> replace_param value_name ty params)
+              narrowed_ty
+        | _ -> params)
+    | _ -> params
+  in
+  let restore_instance_branch_param base inferred = function
+    | FList [ FSymbol "instance?"; _; FSymbol value_name ] -> (
+        match string_assoc_opt value_name base with
+        | Some original -> replace_param value_name original inferred
+        | None -> inferred)
+    | _ -> inferred
+  in
+  let rec successful_call_refined_symbols = function
+    | FList (FSymbol function_name :: arguments) -> (
+        match lookup_successful_call_refinement function_name with
+        | Some (parameter_index, refined_ty) -> (
+            match List.nth_opt arguments parameter_index with
+            | Some (FSymbol value_name) -> [ (value_name, refined_ty) ]
+            | Some _ | None -> [])
+        | None ->
+            if
+              function_name = "__lg_logical-and"
+              || String.ends_with ~suffix:"/__lg_logical-and" function_name
+            then List.concat_map successful_call_refined_symbols arguments
+            else [])
+    | _ -> []
+  in
+  let successful_call_branch_params params condition =
+    successful_call_refined_symbols condition
+    |> List.fold_left
+         (fun params (value_name, refined_ty) ->
+           match string_assoc_opt value_name params with
+           | Some _ -> replace_param value_name refined_ty params
+           | None -> params)
+         params
+  in
+  let restore_successful_call_branch_params base inferred condition =
+    successful_call_refined_symbols condition
+    |> List.fold_left
+         (fun inferred (value_name, _) ->
+           match string_assoc_opt value_name base with
+           | Some original -> replace_param value_name original inferred
+           | None -> inferred)
+         inferred
+  in
   let freshen_call_type name ty =
     let _ = name in
     let substitutions =
@@ -1689,35 +1796,66 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         | _ -> infer_all params body_forms)
     | FList [ FSymbol "if"; condition; then_form; else_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
-            let previous_hints = !branch_hint_symbols in
-            let then_expected =
-              branch_expected_type params expected_ty then_form else_form
-            in
-            Result.bind
-              (with_branch (fun () ->
-                   infer_expected then_expected params then_form))
-              (fun inferred ->
-                let else_expected =
-                  branch_expected_type inferred expected_ty else_form then_form
+            match literal_truthiness condition with
+            | Some true -> infer_expected expected_ty params then_form
+            | Some false -> infer_expected expected_ty params else_form
+            | None ->
+                let previous_hints = !branch_hint_symbols in
+                let then_params =
+                  instance_branch_params ~matching:true params condition
+                  |> fun params ->
+                  successful_call_branch_params params condition
                 in
-                Result.map
-                  (fun inferred ->
-                    restore_branch_evidence params inferred previous_hints
-                      condition)
+                let then_expected =
+                  branch_expected_type then_params expected_ty then_form
+                    else_form
+                in
+                Result.bind
                   (with_branch (fun () ->
-                       infer_expected else_expected inferred else_form))))
+                       infer_expected then_expected then_params then_form))
+                  (fun inferred ->
+                    let inferred =
+                      restore_instance_branch_param params inferred condition
+                      |> fun inferred ->
+                      restore_successful_call_branch_params params inferred
+                        condition
+                    in
+                    let else_params =
+                      instance_branch_params ~matching:false inferred condition
+                    in
+                    let else_expected =
+                      branch_expected_type else_params expected_ty else_form
+                        then_form
+                    in
+                    Result.map
+                      (fun inferred ->
+                        let inferred =
+                          restore_instance_branch_param params inferred condition
+                          |> fun inferred ->
+                          restore_successful_call_branch_params params inferred
+                            condition
+                        in
+                        restore_branch_evidence params inferred previous_hints
+                          condition)
+                      (with_branch (fun () ->
+                           infer_expected else_expected else_params else_form))))
     | FList [ FSymbol "if"; condition; then_form ] ->
         Result.bind (infer_truthy params condition) (fun params ->
             let previous_hints = !branch_hint_symbols in
+            let then_params =
+              successful_call_branch_params params condition
+            in
             let then_expected =
-              branch_expected_type params expected_ty then_form (FSymbol "nil")
+              branch_expected_type then_params expected_ty then_form
+                (FSymbol "nil")
             in
             Result.map
               (fun inferred ->
-                restore_branch_evidence params inferred previous_hints
-                  condition)
+                restore_successful_call_branch_params params inferred condition
+                |> fun inferred ->
+                restore_branch_evidence params inferred previous_hints condition)
               (with_branch (fun () ->
-                   infer_expected then_expected params then_form)))
+                   infer_expected then_expected then_params then_form)))
     | ( FList
           [
             FSymbol ("__lg_if-some" | "__lg_if-let");
@@ -4073,7 +4211,13 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "instance?"; FSymbol type_name; FSymbol value ] -> (
         match resolve_named_record (TOcaml type_name) with
         | TNamed_record _ as record_ty ->
-            constrain_symbol record_ty params value
+            let candidates = lookup_closed_sum_candidates [ record_ty ] in
+            let predicate_ty =
+              match candidates with
+              | [ sum_ty ] -> sum_ty
+              | [] | _ :: _ :: _ -> record_ty
+            in
+            constrain_symbol predicate_ty params value
         | _ -> Ok params)
     | FList [ FSymbol operation; FSymbol name ]
       when string_mem_assoc name params
@@ -4083,6 +4227,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
         let value_ty = fresh_type_variable "map_value" in
         constrain_symbol (Types.dynamic_map key_ty value_ty) params name
     | FList (FSymbol name :: arguments) when string_mem_assoc name params -> (
+        let return_ty = fresh_type_variable "call_result" in
         let parameter_tys =
           List.mapi
             (fun index argument ->
@@ -4110,7 +4255,7 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
           specialize_accumulating_hof_parameter_types name parameter_tys
           |> List.map resolve_named_record
         in
-        match constrain_symbol (TFn (parameter_tys, TUnknown)) params name with
+        match constrain_symbol (TFn (parameter_tys, return_ty)) params name with
         | Error _ as err -> err
         | Ok params ->
             List.fold_left2
@@ -5862,14 +6007,37 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
     | FList [ FSymbol "if"; condition; then_form; else_form ] -> (
         match infer_truthy params condition with
         | Error _ as err -> err
-        | Ok params ->
+        | Ok params -> (
+            match literal_truthiness condition with
+            | Some true -> infer_form params then_form
+            | Some false -> infer_form params else_form
+            | None ->
             let previous_hints = !branch_hint_symbols in
+            let then_params =
+              instance_branch_params ~matching:true params condition
+              |> fun params ->
+              successful_call_branch_params params condition
+            in
             (
-            match with_branch (fun () -> infer_form params then_form) with
+            match with_branch (fun () -> infer_form then_params then_form) with
             | Error _ as err -> err
             | Ok inferred ->
+                let inferred =
+                  restore_instance_branch_param params inferred condition
+                  |> fun inferred ->
+                  restore_successful_call_branch_params params inferred condition
+                in
+                let else_params =
+                  instance_branch_params ~matching:false inferred condition
+                in
                 Result.map
                   (fun inferred ->
+                    let inferred =
+                      restore_instance_branch_param params inferred condition
+                      |> fun inferred ->
+                      restore_successful_call_branch_params params inferred
+                        condition
+                    in
                     let inferred =
                       restore_branch_evidence params inferred previous_hints
                         condition
@@ -5889,17 +6057,21 @@ let infer_params ?expected_return_ty ?(materialize_open_equality = false)
                     refine_returned_seqable_vector params then_form else_ty
                     |> fun params ->
                     refine_returned_seqable_vector params else_form then_ty)
-                  (with_branch (fun () -> infer_form inferred else_form))))
+                  (with_branch (fun () -> infer_form else_params else_form)))))
     | FList [ FSymbol "if"; condition; then_form ] -> (
         match infer_truthy params condition with
         | Error _ as err -> err
         | Ok params ->
             let previous_hints = !branch_hint_symbols in
+            let then_params =
+              successful_call_branch_params params condition
+            in
             Result.map
               (fun inferred ->
-                restore_branch_evidence params inferred previous_hints
-                  condition)
-              (with_branch (fun () -> infer_form params then_form)))
+                restore_successful_call_branch_params params inferred condition
+                |> fun inferred ->
+                restore_branch_evidence params inferred previous_hints condition)
+              (with_branch (fun () -> infer_form then_params then_form)))
     | FList (FSymbol "try" :: forms) ->
         let is_catch = function
           | FList (FSymbol "catch" :: _) -> true

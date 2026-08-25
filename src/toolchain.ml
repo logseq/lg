@@ -662,6 +662,20 @@ module Lg_frontend : FRONTEND = struct
         else Ok (first :: rest)
 
   let split_deftype_methods located_ast =
+    let protocol_method_groups methods =
+      let add_current groups = function
+        | [] -> groups
+        | current -> List.rev current :: groups
+      in
+      let rec loop groups current = function
+        | [] -> List.rev (add_current groups current)
+        | (Ast.FSymbol _ as protocol) :: rest ->
+            loop (add_current groups current) [ protocol ] rest
+        | method_form :: rest ->
+            loop groups (method_form :: current) rest
+      in
+      loop [] [] methods
+    in
     let all_fields_have_type_hints = function
       | Ast.FVector fields ->
           let rec loop pending_hint = function
@@ -691,19 +705,21 @@ module Lg_frontend : FRONTEND = struct
                       | _ -> false)
                     methods
              ->
-               [
-                 {
-                   located with
-                   Ast.form =
-                     Ast.FList [ Ast.FSymbol definition; name; fields ];
-                 };
-                 {
-                   located with
-                   Ast.form =
-                     Ast.FList
-                       (Ast.FSymbol "deftype-methods" :: name :: methods);
-                 };
-               ]
+               {
+                 located with
+                 Ast.form =
+                   Ast.FList [ Ast.FSymbol definition; name; fields ];
+               }
+               :: List.map
+                    (fun method_group ->
+                      {
+                        located with
+                        Ast.form =
+                          Ast.FList
+                            (Ast.FSymbol "deftype-methods" :: name
+                           :: method_group);
+                      })
+                    (protocol_method_groups methods)
            | _ -> [ located ])
 
   let implementation_uncached ?(target = Target.default) ?reader_features

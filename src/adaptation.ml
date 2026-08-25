@@ -17,7 +17,10 @@ type sequence_witness = {
   row_type_name : string option;
 }
 
-type sequence_representation_source = List_source | Vector_source
+type sequence_representation_source =
+  | List_source
+  | Vector_source
+  | Sequence_source
 
 type t =
   | Identity
@@ -52,6 +55,7 @@ type t =
   | Overloaded_callback of overloaded_callback
   | Reduced_callback of reduced_callback
   | Sequence_representation of sequence_representation
+  | Vector_from_sequence of sequence_representation
   | Collection_representation of collection_representation
   | Map_representation of map_representation
   | Record_to_map of record_to_map
@@ -686,6 +690,31 @@ let rec plan ?row_type_name ~row_type_name_for ~protocol_satisfies
                 plan_collection ~row_type_name_for ~protocol_satisfies
                   ~sequence_satisfies Vector_collection expected_element
                   actual_element
+            | TVector expected_element, TSeq actual_element ->
+                Result.map
+                  (fun element_adaptation ->
+                    Vector_from_sequence
+                      {
+                        source = Sequence_source;
+                        expected_element;
+                        actual_element;
+                        element_adaptation;
+                      })
+                  (plan ~row_type_name_for ~protocol_satisfies
+                     ~sequence_satisfies expected_element actual_element)
+            | TVector expected_element, TOcaml_app (name, [ actual_element ])
+              when sequence_representation_type_name name ->
+                Result.map
+                  (fun element_adaptation ->
+                    Vector_from_sequence
+                      {
+                        source = Sequence_source;
+                        expected_element;
+                        actual_element;
+                        element_adaptation;
+                      })
+                  (plan ~row_type_name_for ~protocol_satisfies
+                     ~sequence_satisfies expected_element actual_element)
             | TSeq expected_element, TSeq actual_element ->
                 plan_collection ~row_type_name_for ~protocol_satisfies
                   ~sequence_satisfies Sequence_collection expected_element
