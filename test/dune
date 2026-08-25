@@ -88,6 +88,17 @@
  (action
   (run sh %{dep:no_unsafe_dynamic_casts_test.sh})))
 
+(rule
+ (alias runtest)
+ (deps
+  mobile_cli_test.sh
+  ../scripts/lg-mobile
+  ../scripts/mobile/bootstrap_ios_ocaml.sh
+  ../scripts/mobile/bootstrap_android_ocaml.sh
+  ../scripts/mobile/build_lg_dependencies.sh)
+ (action
+  (chdir %{workspace_root} (run bash test/mobile_cli_test.sh))))
+
 (test
  (name runtime_seq_tests)
  (modules runtime_seq_tests)

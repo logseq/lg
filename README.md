@@ -403,6 +403,38 @@ Run the tests:
 dune test
 ```
 
+## Mobile native objects
+
+LG can cross-compile the current directory directly to reusable iOS and
+Android complete objects. Toolchains are shared by every LG project under the
+opam root, so applications do not keep their own OCaml clones or cross-switch
+configuration.
+
+Set up the shared development toolchains once:
+
+```sh
+lg mobile setup --profile development
+```
+
+Then build both iOS Simulator and Android arm64 artifacts with one command:
+
+```sh
+lg mobile build
+```
+
+`--profile release` selects iOS device and Android release targets, while
+`--profile all` builds both iOS variants plus Android. Advanced projects can
+continue from a saved LG compiler state and add source directories without a
+mobile manifest:
+
+```sh
+lg mobile build --from path/to/runtime.state src native
+```
+
+The output under `_build/lg-mobile` is the platform-correct LG/OCaml object.
+Swift, Xcode, Gradle, or Flutter remains responsible for application metadata,
+signing, resources, and final packaging.
+
 ## Shared `.cljc` targets
 
 Ordinary forms are shared by every target. No reader annotation is needed for

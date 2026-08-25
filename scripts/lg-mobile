@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  lg mobile build [--profile development|release|all] [--from STATE] [PATH ...]
+  lg mobile setup [--profile development|release|all]
+
+Profiles:
+  development  iOS Simulator and Android arm64 (default)
+  release      iOS device and Android arm64
+  all          iOS Simulator, iOS device, and Android arm64
+
+Build options:
+  --output-dir DIR             Output root (default: _build/lg-mobile)
+  --dry-run                    Print resolved targets without building
+
+Environment:
+  LG_OCAML_TOOLCHAIN_ROOT      Shared toolchain root
+  LG_MOBILE_OCAML_VERSION      OCaml version (default: 5.5.0)
+  LG_IOS_DEPLOYMENT_TARGET     iOS deployment target (default: 17.0)
+  LG_ANDROID_API_LEVEL         Android API level (default: 21)
+  LG_ANDROID_ABI               Android ABI (default: arm64-v8a)
+EOF
+}
+
+[[ ${1:-} != --help && ${1:-} != -h ]] || {
+  usage
+  exit 0
+}
+
+command=${1:-}
+[[ $command == build || $command == setup ]] || {
+  usage >&2
+  exit 2
+}
+shift
+
+profile=development
+state_path=
+output_dir=_build/lg-mobile
+dry_run=0
+inputs=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      [[ $# -ge 2 ]] || die "--profile requires a value"
+      profile=$2
+      shift 2
+      ;;
+    --from)
+      [[ $command == build ]] || die "--from is valid only for build"
+      [[ $# -ge 2 ]] || die "--from requires a state path"
+      state_path=$2
+      shift 2
+      ;;
+    --output-dir)
+      [[ $command == build ]] || die "--output-dir is valid only for build"
+      [[ $# -ge 2 ]] || die "--output-dir requires a path"
+      output_dir=$2
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --*) die "unknown option: $1" ;;
+    *)
+      [[ $command == build ]] || die "setup does not accept source paths"
+      inputs+=("$1")
+      shift
+      ;;
+  esac
+done
+
+ocaml_version=${LG_MOBILE_OCAML_VERSION:-5.5.0}
+ios_deployment_target=${LG_IOS_DEPLOYMENT_TARGET:-17.0}
+android_api_level=${LG_ANDROID_API_LEVEL:-21}
+android_abi=${LG_ANDROID_ABI:-arm64-v8a}
+
+case "$android_abi" in
+  arm64-v8a) android_arch=aarch64 ;;
+  x86_64) android_arch=x86_64 ;;
+  *) die "unsupported Android ABI: $android_abi" ;;
+esac
+
+ios_simulator_triple="arm64-apple-ios${ios_deployment_target}-simulator"
+ios_device_triple="arm64-apple-ios${ios_deployment_target}"
+android_triple="${android_arch}-linux-android${android_api_level}"
+
+targets=()
+case "$profile" in
+  development) targets=(ios-simulator android) ;;
+  release) targets=(ios-device android) ;;
+  all) targets=(ios-simulator ios-device android) ;;
+  *) die "unsupported mobile profile: $profile" ;;
+esac
+
+print_plan() {
+  local target
+  for target in "${targets[@]}"; do
+    case "$target" in
+      ios-simulator) echo "ios-simulator $ios_simulator_triple" ;;
+      ios-device) echo "ios-device $ios_device_triple" ;;
+      android) echo "android $android_abi $android_triple" ;;
+    esac
+  done
+}
+
+if [[ $dry_run == 1 ]]; then
+  print_plan
+  exit 0
+fi
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+support_command() {
+  local source_name=$1
+  local installed_name=$2
+  if [[ -x $script_dir/mobile/$source_name ]]; then
+    echo "$script_dir/mobile/$source_name"
+  elif [[ -x $script_dir/$installed_name ]]; then
+    echo "$script_dir/$installed_name"
+  else
+    die "LG mobile support command is missing: $source_name"
+  fi
+}
+
+bootstrap_ios=$(support_command bootstrap_ios_ocaml.sh lg-mobile-bootstrap-ios)
+bootstrap_android=$(support_command bootstrap_android_ocaml.sh lg-mobile-bootstrap-android)
+build_dependencies=$(support_command build_lg_dependencies.sh lg-mobile-build-dependencies)
+
+if [[ $command == setup ]]; then
+  for target in "${targets[@]}"; do
+    case "$target" in
+      ios-simulator) "$bootstrap_ios" simulator ;;
+      ios-device) "$bootstrap_ios" device ;;
+      android) "$bootstrap_android" "$android_abi" ;;
+    esac
+  done
+  exit 0
+fi
+
+command -v lg >/dev/null 2>&1 || die "lg was not found"
+command -v opam >/dev/null 2>&1 || die "opam was not found"
+
+mkdir -p "$output_dir/generated"
+generated_ml="$output_dir/generated/mobile_app.ml"
+compile_args=(--target native)
+if [[ -n $state_path ]]; then
+  compile_args+=(--compile-files-from "$state_path")
+else
+  compile_args+=(--compile-files)
+fi
+compile_args+=("${inputs[@]}" -o "$generated_ml")
+lg "${compile_args[@]}"
+
+opam_root=$(opam var root --safe)
+toolchain_root=${LG_OCAML_TOOLCHAIN_ROOT:-$opam_root/lg-ocaml-toolchains}
+version_root="$toolchain_root/ocaml-$ocaml_version"
+
+build_object() {
+  local name=$1
+  local triple=$2
+  local runtime_variant=$3
+  local prefix="$version_root/targets/$triple"
+  local target_dir="$output_dir/$name"
+  local ocamlopt="$prefix/bin/ocamlopt.opt"
+
+  [[ -x $ocamlopt ]] || die "shared OCaml toolchain is missing: $prefix; run: lg mobile setup --profile $profile"
+  mkdir -p "$target_dir"
+  "$build_dependencies" "$prefix" "$target_dir/dependencies" >/dev/null
+
+  local include_args=()
+  while IFS= read -r directory; do
+    include_args+=(-I "$directory")
+  done <"$target_dir/dependencies/include-directories.txt"
+
+  "$ocamlopt" "${include_args[@]}" -c "$generated_ml" \
+    -o "$target_dir/mobile_app.cmx"
+
+  local dependency_objects=()
+  while IFS= read -r object; do
+    dependency_objects+=("$object")
+  done <"$target_dir/dependencies/link-objects.txt"
+
+  local link_args=(-output-complete-obj -linkall)
+  [[ $runtime_variant != pic ]] || link_args+=(-runtime-variant _pic)
+  "$ocamlopt" "${include_args[@]}" "${link_args[@]}" \
+    -o "$target_dir/mobile_app_complete.o" \
+    "${dependency_objects[@]}" "$target_dir/mobile_app.cmx"
+  echo "$target_dir/mobile_app_complete.o"
+}
+
+for target in "${targets[@]}"; do
+  case "$target" in
+    ios-simulator) build_object ios-simulator "$ios_simulator_triple" default ;;
+    ios-device) build_object ios-device "$ios_device_triple" default ;;
+    android) build_object "android/$android_abi" "$android_triple" pic ;;
+  esac
+done

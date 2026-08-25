@@ -1,0 +1,8 @@
+(install
+ (section bin)
+ (package lg)
+ (files
+  (lg-mobile as lg-mobile)
+  (mobile/bootstrap_ios_ocaml.sh as lg-mobile-bootstrap-ios)
+  (mobile/bootstrap_android_ocaml.sh as lg-mobile-bootstrap-android)
+  (mobile/build_lg_dependencies.sh as lg-mobile-build-dependencies)))

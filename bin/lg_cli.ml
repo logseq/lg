@@ -12,7 +12,8 @@ let usage () =
      output.ml] | \
      --run-from <state> <implementation.ml> <input.cljc> | \
      --run-files <input.cljc>... | \
-     --run-files-from <state> <implementation.ml> <input.cljc>... | --lsp. \
+     --run-files-from <state> <implementation.ml> <input.cljc>... | mobile \
+     build [options] [paths...] | --lsp. \
      Batch commands default to all .clj, .cljc, .cljs, and .lgi files in the \
      current directory.";
   exit 2
@@ -993,7 +994,32 @@ let run_lsp () =
   | Some executable -> Unix.execv executable [| executable |]
   | None -> Unix.execvp "lg-lsp" [| "lg-lsp" |]
 
+let run_mobile argv =
+  let executable_directory = Filename.dirname Sys.executable_name in
+  let repo_script =
+    find_repo_root_opt (Sys.getcwd ())
+    |> Option.map (fun root -> Filename.concat root "scripts/lg-mobile")
+  in
+  let candidates =
+    Filename.concat executable_directory "lg-mobile"
+    :: Option.to_list repo_script
+  in
+  let executable =
+    Option.value (List.find_opt Sys.file_exists candidates) ~default:"lg-mobile"
+  in
+  let arguments =
+    Array.to_list argv
+    |> function
+    | _program :: "mobile" :: rest -> Array.of_list (executable :: rest)
+    | _ -> assert false
+  in
+  if Filename.is_relative executable && not (String.contains executable '/')
+  then Unix.execvp executable arguments
+  else Unix.execv executable arguments
+
 let () =
+  if Array.length Sys.argv > 1 && Sys.argv.(1) = "mobile" then
+    run_mobile Sys.argv;
   let target, reader_target, mode = parse_args Sys.argv in
   (match mode with Lsp -> () | _ -> tune_compiler_gc ());
   match mode with
