@@ -925,3 +925,19 @@ key as `option<T>`, then the protocol call rejected it against `T`. Nominal map
 dissociation now evaluates the map and key once, returns the original map for
 `None`, and calls `IMap/-dissoc` with the payload for `Some`. Native and Melange
 regressions cover absent and present integer keys.
+
+FIXED: A direct generic wrapper around Clojure `next` adapted its special
+possibly-empty sequence result to `option<seq<T>>` through the ordinary nullable
+planner, which emitted `Some sequence` without checking whether the sequence was
+empty. DataScript's pull frame stack therefore never reached nil and the filtered
+database pull test consumed a CPU core indefinitely. Nullable argument adaptation
+now preserves `next` semantics by returning `None` for an exhausted sequence.
+Native and Melange regressions cover nil, one-element, and two-element inputs for
+both guarded and direct wrappers.
+
+OPEN: A `defrecord` field already declared with a concrete transient collection
+type in a sidecar `type-record` is rejected when the source retains upstream's
+generic `^:transient-vector` or `^:transient-map` hint. The source hint currently
+replaces the declared field type with an open transient element type instead of
+being checked against the concrete declaration. DataScript therefore still has to
+omit four upstream transient field hints from `pull_api.cljc`.

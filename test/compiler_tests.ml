@@ -22894,9 +22894,16 @@ let test_next_seq_adapts_empty_sequences_to_none () =
   (if (nil? xs)
     nil
     (next xs)))
+(signature direct-next-seq [value storage]
+  :fn<optional-seqable<value;storage>;option<seq<value>>>)
+(defn direct-next-seq [xs]
+  (next xs))
 (println (some? (next-seq nil)))
 (println (some? (next-seq (list 1))))
 (println (some? (next-seq (list 1 2))))
+(println (some? (direct-next-seq nil)))
+(println (some? (direct-next-seq (list 1))))
+(println (some? (direct-next-seq (list 1 2))))
 (signature optional-seq-truthy? :fn<option<seq<int>>;bool>)
 (defn optional-seq-truthy? [values] (if values true false))
 (println (optional-seq-truthy? (Some (take 0 (list 1)))))
@@ -22913,7 +22920,7 @@ let test_next_seq_adapts_empty_sequences_to_none () =
   if string_contains_substring native_source "Runtime_dynamic" then
     failwith "next sequence option adaptation must remain fully static";
   assert_ocaml_runs "next_seq_adapts_empty_sequences_to_none"
-    "false\nfalse\ntrue\ntrue\n0\n" native_source;
+    "false\nfalse\ntrue\nfalse\nfalse\ntrue\ntrue\n0\n" native_source;
   let melange_source =
     compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
   in

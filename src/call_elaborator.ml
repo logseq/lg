@@ -6858,6 +6858,17 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
 let plan_and_emit_argument_with_options env ?row_type_name
     ?(protocol_storage = false) ?(allow_optional_unwrap = false)
     ~expected argument =
+  let nullable_next_sequence =
+    match (expected, argument.ty) with
+    | ( (TNullable _ | TOcaml_app ("option", [ _ ])),
+        TOcaml_app (name, [ _ ]) )
+      when Types.is_next_seq_type_name name ->
+        Some
+          (Ok
+             (coerce_expression_to_type expected argument.ty
+                argument.semantic_expr))
+    | _ -> None
+  in
   let contextual_vector =
     match (expected, argument.ty) with
     | TVector expected_element, TVector actual_element
@@ -6885,6 +6896,9 @@ let plan_and_emit_argument_with_options env ?row_type_name
           (inject_contextual_closed_sum env ~expected:expected_element item)
     | _ -> None
   in
+  match nullable_next_sequence with
+  | Some result -> result
+  | None -> (
   match contextual_vector with
   | Some result -> result
   | None -> (
@@ -6917,7 +6931,7 @@ let plan_and_emit_argument_with_options env ?row_type_name
         { expected = failed_expected; actual = failed_actual }) ->
       Error.error
         ("cannot adapt " ^ Types.source_name failed_actual ^ " to "
-       ^ Types.source_name failed_expected))))
+       ^ Types.source_name failed_expected)))))
 
 let plan_and_emit_argument env ?row_type_name ~expected argument =
   plan_and_emit_argument_with_options env ?row_type_name ~expected argument
