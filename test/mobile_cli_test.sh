@@ -11,37 +11,30 @@ if grep -Fq 'ANDROID_NDK_HOME does not contain a complete NDK toolchain' "$andro
   exit 1
 fi
 
-development=$($mobile build --profile development --dry-run)
-grep -Fq 'ios-simulator arm64-apple-ios17.0-simulator' <<<"$development"
-grep -Fq 'android arm64-v8a aarch64-linux-android21' <<<"$development"
-if grep -Fq 'ios-device' <<<"$development"; then
-  echo "development unexpectedly includes an iOS device target" >&2
+ios_simulator=$($mobile build ios simulator --dry-run)
+[[ $ios_simulator == 'ios-simulator arm64-apple-ios17.0-simulator' ]]
+
+ios_device=$($mobile build ios device --dry-run)
+[[ $ios_device == 'ios-device arm64-apple-ios17.0' ]]
+
+android=$($mobile build android --dry-run)
+[[ $android == 'android arm64-v8a aarch64-linux-android21' ]]
+
+if $mobile build --dry-run >/dev/null 2>&1; then
+  echo "mobile build accepted a missing platform" >&2
   exit 1
 fi
 
-release=$($mobile build --profile release --dry-run)
-grep -Fq 'ios-device arm64-apple-ios17.0' <<<"$release"
-grep -Fq 'android arm64-v8a aarch64-linux-android21' <<<"$release"
-if grep -Fq 'ios-simulator' <<<"$release"; then
-  echo "release unexpectedly includes an iOS simulator target" >&2
+if $mobile build ios --dry-run >/dev/null 2>&1; then
+  echo "iOS build accepted a missing environment" >&2
   exit 1
 fi
-
-all_targets=$($mobile build --profile all --dry-run)
-grep -Fq 'ios-simulator arm64-apple-ios17.0-simulator' <<<"$all_targets"
-grep -Fq 'ios-device arm64-apple-ios17.0' <<<"$all_targets"
-grep -Fq 'android arm64-v8a aarch64-linux-android21' <<<"$all_targets"
-
-ios_only=$($mobile build --target ios-simulator --dry-run)
-[[ $ios_only == 'ios-simulator arm64-apple-ios17.0-simulator' ]]
-
-android_only=$($mobile build --target android --dry-run)
-[[ $android_only == 'android arm64-v8a aarch64-linux-android21' ]]
 
 help=$($mobile --help)
 grep -Fq 'lg mobile build' <<<"$help"
-grep -Fq 'development' <<<"$help"
-grep -Fq 'release' <<<"$help"
-grep -Fq 'all' <<<"$help"
+if grep -Eq -- '--profile|--target' <<<"$help"; then
+  echo "mobile help still exposes platform selection as profiles" >&2
+  exit 1
+fi
 
-echo "ok - LG mobile CLI exposes one profile-based build command"
+echo "ok - LG mobile CLI requires an explicit platform and iOS environment"

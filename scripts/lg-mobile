@@ -10,16 +10,14 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  lg mobile build [--profile development|release|all] [--from STATE] [PATH ...]
-  lg mobile setup [--profile development|release|all]
-
-Profiles:
-  development  iOS Simulator and Android arm64 (default)
-  release      iOS device and Android arm64
-  all          iOS Simulator, iOS device, and Android arm64
+  lg mobile build ios simulator [--from STATE] [PATH ...]
+  lg mobile build ios device [--from STATE] [PATH ...]
+  lg mobile build android [--from STATE] [PATH ...]
+  lg mobile setup ios simulator
+  lg mobile setup ios device
+  lg mobile setup android
 
 Build options:
-  --target TARGET              Build one resolved target; may be repeated
   --output-dir DIR             Output root (default: _build/lg-mobile)
   --dry-run                    Print resolved targets without building
 
@@ -44,20 +42,32 @@ command=${1:-}
 }
 shift
 
-profile=development
+platform=${1:-}
+case "$platform" in
+  ios)
+    ios_environment=${2:-}
+    case "$ios_environment" in
+      simulator) targets=(ios-simulator) ;;
+      device) targets=(ios-device) ;;
+      *) die "iOS requires an environment: simulator or device" ;;
+    esac
+    shift 2
+    ;;
+  android)
+    targets=(android)
+    shift
+    ;;
+  "") die "a mobile platform is required: ios or android" ;;
+  *) die "unsupported mobile platform: $platform" ;;
+esac
+
 state_path=
 output_dir=_build/lg-mobile
 dry_run=0
 inputs=()
-selected_targets=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --profile)
-      [[ $# -ge 2 ]] || die "--profile requires a value"
-      profile=$2
-      shift 2
-      ;;
     --from)
       [[ $command == build ]] || die "--from is valid only for build"
       [[ $# -ge 2 ]] || die "--from requires a state path"
@@ -68,14 +78,6 @@ while [[ $# -gt 0 ]]; do
       [[ $command == build ]] || die "--output-dir is valid only for build"
       [[ $# -ge 2 ]] || die "--output-dir requires a path"
       output_dir=$2
-      shift 2
-      ;;
-    --target)
-      [[ $# -ge 2 ]] || die "--target requires a value"
-      case "$2" in
-        ios-simulator|ios-device|android) selected_targets+=("$2") ;;
-        *) die "unsupported mobile target: $2" ;;
-      esac
       shift 2
       ;;
     --dry-run)
@@ -109,15 +111,6 @@ esac
 ios_simulator_triple="arm64-apple-ios${ios_deployment_target}-simulator"
 ios_device_triple="arm64-apple-ios${ios_deployment_target}"
 android_triple="${android_arch}-linux-android${android_api_level}"
-
-targets=()
-case "$profile" in
-  development) targets=(ios-simulator android) ;;
-  release) targets=(ios-device android) ;;
-  all) targets=(ios-simulator ios-device android) ;;
-  *) die "unsupported mobile profile: $profile" ;;
-esac
-[[ ${#selected_targets[@]} -eq 0 ]] || targets=("${selected_targets[@]}")
 
 print_plan() {
   local target
@@ -190,7 +183,7 @@ build_object() {
   local target_dir="$output_dir/$name"
   local ocamlopt="$prefix/bin/ocamlopt.opt"
 
-  [[ -x $ocamlopt ]] || die "shared OCaml toolchain is missing: $prefix; run: lg mobile setup --profile $profile"
+  [[ -x $ocamlopt ]] || die "shared OCaml toolchain is missing: $prefix; run the matching 'lg mobile setup' command"
   mkdir -p "$target_dir"
   "$build_dependencies" "$prefix" "$target_dir/dependencies" >/dev/null
 

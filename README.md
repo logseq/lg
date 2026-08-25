@@ -410,25 +410,28 @@ Android complete objects. Toolchains are shared by every LG project under the
 opam root, so applications do not keep their own OCaml clones or cross-switch
 configuration.
 
-Set up the shared development toolchains once:
+Set up each shared mobile toolchain once:
 
 ```sh
-lg mobile setup --profile development
+lg mobile setup ios simulator
+lg mobile setup ios device
+lg mobile setup android
 ```
 
-Then build both iOS Simulator and Android arm64 artifacts with one command:
+Every build names its platform explicitly. iOS also names its environment
+because Simulator and device use different platform ABIs:
 
 ```sh
-lg mobile build
+lg mobile build ios simulator
+lg mobile build ios device
+lg mobile build android
 ```
 
-`--profile release` selects iOS device and Android release targets, while
-`--profile all` builds both iOS variants plus Android. Advanced projects can
-continue from a saved LG compiler state and add source directories without a
-mobile manifest:
+Advanced projects can continue from a saved LG compiler state and add source
+directories without a mobile manifest:
 
 ```sh
-lg mobile build --from path/to/runtime.state src native
+lg mobile build ios simulator --from path/to/runtime.state src native
 ```
 
 The output under `_build/lg-mobile` is the platform-correct LG/OCaml object.
