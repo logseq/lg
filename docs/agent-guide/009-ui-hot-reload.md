@@ -1,6 +1,6 @@
 # ADR 009: Provide a Complete UI Hot Reload Experience
 
-- Status: Accepted; Phase 0 complete and Phase 1 runtime foundation implemented
+- Status: Accepted; Phase 0 complete and Phase 1 retained reconciliation implemented
 - Date: 2026-08-26
 - Decision owners: LG compiler and LUI maintainers
 - Related: `docs/design.md`, `docs/architecture.md`, and
@@ -305,16 +305,25 @@ persistent process. The production LUI runtime now provides:
   children, handlers, dynamic segments, identifiers, and pending operations
   after candidate failure;
 - reloadable reducer applications whose typed model survives view replacement
-  and whose new event handlers replace the old generation; and
-- repeated-reload tests that verify old nodes and event handlers do not grow.
+  and whose new event handlers replace the old generation;
+- repeated-reload tests that verify old nodes and event handlers do not grow;
+- transactional descendant reconciliation by node kind and structural position,
+  preserving compatible native node identities while replacing only
+  incompatible subtrees;
+- a closed `RemoveProp` patch across LG, SwiftUI, Flutter, and Web so a
+  disappearing property does not force node replacement;
+- stable component state scopes, separate from generation-owned handler and
+  subscription scopes, including nested component paths; and
+- retained-handler rebinding through typed node aliases, so compatible native
+  controls use the new generation's closures.
 
 This is not yet the completed developer experience. Production view reload
-currently replaces the view subtree below the stable root. Fine-grained
-reconciliation by type, explicit key, and position is still required before
-claiming preservation of matching view-local state, focus, selection, and
-scroll offsets. The LG file watcher, incremental candidate compiler, attached
-bytecode loader, resource dependency graph, typed migrations, and automatic
-target restart are also still pending.
+now preserves matching descendants by type and structural position. Explicit
+key reconciliation, host-level focus/selection/scroll acceptance tests, and
+state-scope pruning for removed component paths remain before the retention
+contract is complete. The LG file watcher, incremental candidate compiler,
+attached bytecode loader, resource dependency graph, typed migrations, and
+automatic target restart are also still pending.
 
 ## Prototype evidence
 
@@ -357,12 +366,16 @@ application transport.
 - Complete: replace the root child through one atomic `PatchBatch`, roll back
   invalid candidates, and reject stale or incompatible generations before view
   construction.
+- Complete: reconcile matching descendants by type and structural position,
+  remove stale properties, replace only incompatible subtrees, rebind event
+  handlers, and preserve nested component-local state scopes.
 - Remaining: watch the transitive View dependency closure and compile the
   replacement in the attached persistent bytecode process.
-- Remaining: reconcile matching descendants by type, key, and position rather
-  than replacing the complete subtree.
-- Remaining: preserve focus, selection, scroll, and keyed widget state; expose
-  the complete diagnostic overlay; and meet the documented latency target.
+- Remaining: add explicit-key reconciliation and prune state scopes for
+  component paths that are no longer mounted.
+- Remaining: prove focus, selection, scroll, and keyed widget state with host
+  acceptance tests; expose the complete diagnostic overlay; and meet the
+  documented latency target.
 
 ### Phase 2: UI code and resources
 
