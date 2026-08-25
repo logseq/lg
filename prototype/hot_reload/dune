@@ -1,0 +1,8 @@
+(library
+ (name hot_reload_prototype)
+ (modules hot_reload_prototype))
+
+(test
+ (name hot_reload_prototype_test)
+ (modules hot_reload_prototype_test)
+ (libraries hot_reload_prototype))
