@@ -941,3 +941,18 @@ generic `^:transient-vector` or `^:transient-map` hint. The source hint currentl
 replaces the declared field type with an open transient element type instead of
 being checked against the concrete declaration. DataScript therefore still has to
 omit four upstream transient field hints from `pull_api.cljc`.
+
+OPEN: Destructuring a generic `group-by` map entry preserves enough structural
+evidence for direct field access, but passing the destructured named-record key to
+a function with that exact nominal parameter attempts to unpack the record through
+a dynamic boundary. The key is already a statically known record and must flow
+directly. DataScript's upstream parser hits this in
+`for [[name branches] (group-by :name ...)]` when `name` is passed to
+`validate-arity`.
+
+FIXED: `satisfies?` inspected the payload types of a closed sum before checking
+whether the sum type itself had an `extend-type` implementation. A recursive
+constructor therefore appeared to satisfy the protocol through its payload while
+nullary and non-recursive constructors incorrectly returned false. Whole-sum
+protocol evidence now takes precedence, while constructor-specific protocol
+checks retain their existing per-payload match behavior.

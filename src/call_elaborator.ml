@@ -9506,7 +9506,13 @@ let create ~compile_expr =
                           (resolve_closed_sum_payload env payload_ty)
                     | [] | _ :: _ :: _ -> false
                   in
-                  if not (List.exists constructor_satisfies constructors) then
+                  if constructors <> [] && statically_satisfies ty then
+                    Some
+                      (Semantic_ir.Sequence
+                         [ expression; Semantic_ir.Bool true ])
+                  else if
+                    not (List.exists constructor_satisfies constructors)
+                  then
                     None
                   else
                       let cases =

@@ -17002,6 +17002,45 @@ let test_closed_sum_protocol_witness_supports_parser_style_recursion () =
   assert_ocaml_runs "closed_sum_protocol_witness_supports_parser_style_recursion"
     "leaf\n__\n" ocaml_source
 
+let test_satisfies_recognizes_protocol_on_entire_closed_sum () =
+  let source =
+    {|
+(type-variant binding
+  BindIgnore
+  (BindScalar :int)
+  (BindTuple :vector<binding>)
+  (BindCollection :binding))
+(defprotocol IBinding
+  (binding-size [value] :int))
+(extend-type binding
+  IBinding
+  (binding-size [value]
+    (match value
+      BindIgnore 0
+      (BindScalar _) 1
+      (BindTuple values) (count values)
+      (BindCollection _) 1)))
+(signature ignore-binding :fn<unit;binding>)
+(signature scalar-binding :fn<int;binding>)
+(signature tuple-binding :fn<vector<binding>;binding>)
+(signature collection-binding :fn<binding;binding>)
+(defn ignore-binding [] BindIgnore)
+(defn scalar-binding [value] (BindScalar value))
+(defn tuple-binding [values] (BindTuple values))
+(defn collection-binding [value] (BindCollection value))
+(println
+  (str (satisfies? IBinding (ignore-binding)) ":"
+       (satisfies? IBinding (scalar-binding 1)) ":"
+       (satisfies? IBinding (tuple-binding [(scalar-binding 1)])) ":"
+       (satisfies? IBinding (collection-binding (scalar-binding 1)))))
+|}
+  in
+  let native_source = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "satisfies_recognizes_protocol_on_entire_closed_sum"
+    "true:true:true:true\n" native_source;
+  ignore
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
 let test_closed_sum_protocol_witness_carries_callbacks_through_recursion () =
   let source =
     {|
@@ -27139,6 +27178,37 @@ let test_group_by_unpacks_generic_seqable_items () =
     native_source;
   ignore
     (compile_with_stdlib Lg.Target.Melange "test/group_by_capability.cljc" source)
+
+let test_group_by_map_entry_destructuring_preserves_named_record_keys () =
+  let source =
+    {|
+(signature GroupKey {:symbol :symbol})
+(defrecord GroupKey [symbol])
+(type-record ParsedRow
+  (name :GroupKey)
+  (value :int))
+(signature key-symbol :fn<GroupKey;symbol>)
+(defn key-symbol [key] (:symbol key))
+(def rows [(record ParsedRow (name (GroupKey. 'alpha)) (value 1))
+           (record ParsedRow (name (GroupKey. 'alpha)) (value 2))])
+(def labels
+  (for [[name branches] (group-by :name rows)]
+    (str (= (key-symbol name) 'alpha) ":" (count branches))))
+(println (first labels))
+|}
+  in
+  let native_source =
+    compile_with_stdlib Lg.Target.Native
+      "test/group_by_named_record_key.cljc" source
+  in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "group-by map entries must preserve named record key types";
+  assert_ocaml_runs
+    "group_by_map_entry_destructuring_preserves_named_record_keys"
+    "true:2\n" native_source;
+  ignore
+    (compile_with_stdlib Lg.Target.Melange
+       "test/group_by_named_record_key.cljc" source)
 
 let test_filterv_contextualizes_generic_seqable_items () =
   let source =
@@ -48142,6 +48212,8 @@ let tests =
       test_generic_protocol_witness_flows_through_sequence_callbacks );
     ( "closed-sum protocol witness supports parser-style recursion",
       test_closed_sum_protocol_witness_supports_parser_style_recursion );
+    ( "satisfies recognizes protocol on entire closed sum",
+      test_satisfies_recognizes_protocol_on_entire_closed_sum );
     ( "closed-sum protocol witness carries callbacks through recursion",
       test_closed_sum_protocol_witness_carries_callbacks_through_recursion );
     ( "recursive heterogeneous values require a closed sum",
@@ -48443,6 +48515,8 @@ let tests =
       test_group_by_infers_generic_seqable_collections );
     ( "group-by unpacks generic seqable items",
       test_group_by_unpacks_generic_seqable_items );
+    ( "group-by map entry destructuring preserves named record keys",
+      test_group_by_map_entry_destructuring_preserves_named_record_keys );
     ( "filterv contextualizes generic seqable items",
       test_filterv_contextualizes_generic_seqable_items );
     ( "filterv filters static vectors directly",
