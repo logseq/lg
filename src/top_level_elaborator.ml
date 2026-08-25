@@ -1487,11 +1487,14 @@ and compile_resolved scope env next_type form =
           ~type_name:emitted_name ~set_module_name:("Set_" ^ emitted_name) []
       in
       let env =
-        Env.add
-          (record_type_key scope name)
-          (Types.binding ~forward_declared:true emitted_name
-             provisional_record)
-          env
+        let key = record_type_key scope name in
+        match Env.find_opt key env with
+        | Some _ -> env
+        | None ->
+            Env.add key
+              (Types.binding ~forward_declared:true emitted_name
+                 provisional_record)
+              env
       in
       let resolve_field_hint hint =
         Result.bind (Type_annotation.of_param_annotation hint) (fun ty ->
@@ -1547,13 +1550,21 @@ and compile_resolved scope env next_type form =
               (Env.signatures env)
           in
           let signature_field_type field_name =
-            Option.bind signature_fields (fun fields ->
-                fields
-                |> List.find_opt (fun (field : Types.field) ->
-                       field.keyword = ":" ^ field_name)
-                |> Option.map (fun (field : Types.field) ->
-                       Function_elaborator.infer_named_record scope env
-                         field.ty))
+            let declared_fields =
+              match signature_fields with
+              | Some fields -> Some fields
+              | None -> (
+                  match Resolver.lookup_record_type scope env name with
+                  | Ok record when record.fields <> [] -> Some record.fields
+                  | Ok _ | Error _ -> None)
+            in
+            Option.bind declared_fields (fun fields ->
+              fields
+              |> List.find_opt (fun (field : Types.field) ->
+                     field.keyword = ":" ^ field_name)
+              |> Option.map (fun (field : Types.field) ->
+                     Function_elaborator.infer_named_record scope env
+                       field.ty))
           in
           let field_specs =
             List.map
@@ -1629,6 +1640,7 @@ and compile_resolved scope env next_type form =
               ?location:(Source_context.find name_form)
               ~allow_empty:true
               ~nominal:false
+              ~reuse_existing:true
               ~emitted_name
               scope env next_type name type_parameters record_fields
           with

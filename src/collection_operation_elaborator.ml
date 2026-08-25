@@ -2282,30 +2282,38 @@ let create ~compile_expr ~pack_dynamic_value ~dynamic_unpack =
               | [] -> Ok (List.rev adapted)
               | (keyword, value) :: rest -> (
                   match find_field keyword fields with
-                  | Some field
-                    when Types.is_dynamic field.ty
-                         && not (Types.is_dynamic value.ty) ->
-                      Result.bind (pack_dynamic_value env field.ty value)
-                        (fun expression ->
+                  | Some field -> (
+                      match
+                        inject_contextual_closed_sum env ~expected:field.ty value
+                      with
+                      | Some (Error _ as error) -> error
+                      | Some (Ok value) ->
+                          adapt ((keyword, value) :: adapted) rest
+                      | None
+                        when Types.is_dynamic field.ty
+                             && not (Types.is_dynamic value.ty) ->
+                          Result.bind (pack_dynamic_value env field.ty value)
+                            (fun expression ->
+                              adapt
+                                ((keyword, typed_ir field.ty expression)
+                                :: adapted)
+                                rest)
+                      | None
+                        when (match (field.ty, value.ty) with
+                             | TSeq _, (TList _ | TVector _ | TSeq _) -> true
+                             | TVector expected, (TList actual | TSeq actual) ->
+                                 Types.assignable ~policy:Host_boundary
+                                   ~expected ~actual
+                             | _ -> false) ->
+                          let expression =
+                            coerce_expression_to_type field.ty value.ty
+                              value.semantic_expr
+                          in
                           adapt
                             ((keyword, typed_ir field.ty expression) :: adapted)
-                            rest)
-                  | Some field
-                    when (match (field.ty, value.ty) with
-                         | TSeq _, (TList _ | TVector _ | TSeq _) -> true
-                         | TVector expected, (TList actual | TSeq actual) ->
-                             Types.assignable ~policy:Host_boundary
-                               ~expected ~actual
-                         | _ -> false) ->
-                      let expression =
-                        coerce_expression_to_type field.ty value.ty
-                          value.semantic_expr
-                      in
-                      adapt
-                        ((keyword, typed_ir field.ty expression) :: adapted)
-                        rest
-                  | Some _ | None ->
-                      adapt ((keyword, value) :: adapted) rest)
+                            rest
+                      | None -> adapt ((keyword, value) :: adapted) rest)
+                  | None -> adapt ((keyword, value) :: adapted) rest)
             in
             adapt [] pairs
           in

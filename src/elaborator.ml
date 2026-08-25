@@ -885,6 +885,37 @@ let resolve_anonymous_record_patterns env items =
   in
   List.map resolve_item items
 
+let predeclare_adjacent_defrecords scope env pending =
+  let rec declarations declared = function
+    | (_, Ast.FList (Ast.FSymbol "defrecord" :: Ast.FSymbol name :: _)) :: rest
+      ->
+        declarations (name :: declared) rest
+    | _ -> List.rev declared
+  in
+  match declarations [] pending with
+  | [] -> env
+  | names ->
+      List.fold_left
+        (fun env name ->
+          let key = Resolver.record_type_key scope name in
+          match Compiler_environment.find_opt key env with
+          | Some _ -> env
+          | None ->
+              let type_name = Names.ocaml_binding_name scope name in
+              let type_id =
+                Type_id.create
+                  ~owner:(if scope = "" then [] else [ scope ])
+                  ~name
+              in
+              let record_ty =
+                Types.named_record ~type_id ~nominal:false ~type_name
+                  ~set_module_name:("Set_" ^ type_name) []
+              in
+              Compiler_environment.add key
+                (Types.binding ~forward_declared:true type_name record_ty)
+                env)
+        env names
+
 let compile_forms_incremental (state : Compiler_state.t) forms =
   let report_timings = Sys.getenv_opt "LG_COMPILE_TIMINGS" = Some "1" in
   let finish scope env next_type items =
@@ -908,6 +939,9 @@ let compile_forms_incremental (state : Compiler_state.t) forms =
             | Some error -> Error error
             | None -> Error.error "declared forms made no compilation progress")
       | (index, form) :: rest -> (
+        let env =
+          predeclare_adjacent_defrecords scope env ((index, form) :: rest)
+        in
         let started_at = if report_timings then Sys.time () else 0.0 in
         let compiled = compile_top_level scope env next_type form in
         let elapsed = if report_timings then Sys.time () -. started_at else 0.0 in

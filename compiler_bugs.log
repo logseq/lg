@@ -694,3 +694,174 @@ or `datafy` is rejected as non-EDN. Restoring pinned DataScript `datafy.cljc`
 requires a closed, statically typed metadata representation for these callback
 slots without widening collection metadata or source values to
 `Runtime_dynamic.t`.
+
+FIXED: Adjacent mutually recursive `defrecord` declarations emitted an OCaml
+recursive type group but elaborated the first record before the later record
+identity existed. Its field therefore retained an invalid `__lg_record:`
+placeholder, and completing the later record refreshed only bindings still
+marked forward-declared. LG now predeclares every record identity in an
+adjacent `defrecord` group and refreshes all bindings by that precise identity
+when each layout is completed. Native and Melange regressions access fields in
+both directions and reject placeholder or dynamic output.
+
+FIXED: A record declared in an interface with `type-record` was rejected as a
+duplicate when the implementation later supplied the matching `defrecord`.
+LG now preserves an existing declared record while elaborating the
+implementation, verifies that its fields match, and emits only the protocol
+implementation instead of a second OCaml type declaration. This lets a
+sidecar define record payloads before a closed sum without forward placeholders;
+the cross-chunk regression typechecks both Native and Melange output.
+
+FIXED: `number?` refinement rejected a closed sum containing both `int` and
+`float` payloads because the guarded value could not be collapsed to one OCaml
+primitive type. LG now leaves that mixed sum intact and compiles `zero?`,
+`pos?`, and `neg?` as an exhaustive static constructor dispatch with the
+correct zero literal for each numeric payload. Native and Melange regressions
+cover positive and negative integer, float, and non-numeric branches without
+dynamic conversion.
+
+FIXED: An `if` condition inherited the enclosing expression's expected return
+type. When the return was an optional closed sum, a boolean condition was
+incorrectly injected into that sum. Conditions now typecheck without the
+result context (logical boolean forms retain their explicit boolean context),
+while only the two result branches receive the expected type.
+
+FIXED: Record `assoc` accepted a plain value for an optional field during LG
+typechecking but emitted the plain OCaml value instead of `Some value`.
+Contextual field adaptation now performs the static option injection before
+record replacement. A Native, Melange, and js_of_ocaml regression updates an
+`option<bool>` field from a plain boolean.
+
+FIXED: Loop initializer expressions inherited the enclosing function return
+context, so a frame stack inside a function returning `option<pulled_value>`
+was inferred as that unrelated return type. Loop initializers and recursive
+parameter inference now derive their types only from the initializer and
+`recur` arguments; the enclosing expected type still applies to the loop's
+final result. Native and Melange regressions cover a closed frame stack with a
+different optional closed-sum return type.
+
+FIXED: The loop recur prepass classified every unmatched vector, list, map,
+and core-symbol form as `Runtime_decimal.t`. An empty vector accumulator could
+therefore become a heterogeneous `decimal | symbol` vector after `conj`. The
+prepass now represents vector and list literals as their actual collection
+shapes and reserves the decimal type for decimal literals. Native and Melange
+regressions accumulate record symbol fields into an initially empty vector.
+
+FIXED: `name` compiled a closed sum of keyword and string payloads as an
+unconditional `invalid_arg`, even though every constructor had a statically
+supported identifier representation. LG now emits an exhaustive constructor
+match and applies the existing static keyword, string, or symbol coercion to
+each payload. Native and Melange regressions cover direct `name` calls on the
+closed sum without dynamic conversion or an unreachable fallback.
+
+FIXED: `nil?` always returned false for a closed sum whose nil value was
+declared through `nil-value-adapter`. When that declaration has one nullary
+constructor, LG now treats that constructor as the closed domain's nil value
+and emits a static match. Native and Melange regressions cover nil, numeric,
+and non-nil payloads without dynamic equality or function comparison.
+
+FIXED: `satisfies?` reduced an optional closed sum to a constant protocol
+result for the whole sum, so `map?` returned false even for a constructor whose
+payload was a statically typed map. LG now unwraps the option and dispatches
+over every closed-sum constructor, testing protocol support on each precise
+payload type. Native and Melange regressions cover map and non-map payloads as
+well as the absent option without dynamic protocol dispatch.
+
+FIXED: A successful protocol predicate guard replaced a closed tagged value
+with the adapter's normalized payload. In particular, `sequential?` converted
+a list constructor into a vector and later contextual injection rebuilt the
+wrong constructor, changing parser error text and observable data shape. LG
+now retains the original closed-sum value inside a guarded branch; registered
+adapters still provide safe collection operations after the runtime guard.
+Native and Melange regressions preserve distinct list and vector constructors.
+
+FIXED: Contextual injection of a collection literal was ambiguous when a
+closed sum contained both a direct collection constructor and a broader nested
+closed-domain constructor. A pull vector could therefore match both
+`Pull_form.Vector` and `Pull_form.Data`. After exact payload matches, LG now
+prefers candidates with the same vector, list, sequence, set, array, or map
+shape as the source before considering deeper wrappers. Native and Melange
+regressions verify that a vector remains the direct pull-form vector.
+
+FIXED: Call argument adaptation compared vector element types only through
+ordinary host assignability, so `vector<int>` could not satisfy a declared
+`vector<entity_ref>` even when `int -> EntityId` was the unique contextual
+closed-sum injection. LG now maps vector arguments through that static element
+injection before falling back to the general adaptation planner. Native and
+Melange regressions cover public API vectors of entity IDs without dynamic
+storage.
+
+FIXED: A vector literal whose expected type was a recursive closed sum lost
+that context before compiling its elements. Nested pull forms such as a vector
+containing keywords and a transform function were therefore rejected as an
+untyped heterogeneous vector, despite the closed sum defining exact keyword,
+function, and vector constructors. LG now derives a unique vector payload from
+the expected closed sum and propagates its element type recursively. Native
+and Melange regressions cover nested vectors and maps, including contextual
+injection of non-scalar map keys and values, without dynamic storage.
+
+FIXED: Contextual closed-sum injection recognized recursively compatible
+collection payloads but emitted only the outer constructor. A quoted pull form
+could therefore generate `Pull_form.List` around `list<EDN>` instead of mapping
+the elements to `list<Pull_form>`, producing invalid OCaml. Collection payload
+injection now recursively maps vectors, lists, and maps through their precise
+closed constructors. The regression covers quoted nested pull syntax on both
+Native and Melange.
+
+FIXED: Adapting Clojure `next` to `option<seq<T>>` treated its special
+nonempty-sequence result as an ordinary sequence and unconditionally emitted
+`Some sequence`. Exhausted lazy sequences therefore became `Some empty-seq`,
+causing upstream loops that terminate on nil to recur forever. Branch
+adaptation now checks the sequence and emits `None` when it is empty. Native
+and Melange regressions cover nil, one-element, and two-element inputs.
+
+FIXED: Truthiness for `option<seq<T>>` recursively tested whether a present
+sequence payload was empty. That made `Some empty-seq` false, although Clojure
+treats every non-nil collection, including an empty one, as truthy. Upstream
+`or` expressions could consequently choose a fallback and consume pull cursors
+twice. Optional sequence presence is now truthy; bare `next` sequences still
+use emptiness to represent nil. Native and Melange regressions cover direct
+conditions and `or` selection.
+
+FIXED: Source-call literal context propagation applied an unconstrained
+`vector<T>` parameter to vector arguments. The unknown parameter element then
+replaced the concrete literal element type, so downstream printing rendered
+ordinary integers as `<value>`. Literal context is now propagated only when
+the expected collection recursively contains a closed sum that requires
+constructor injection. The existing subvec regression and the nested closed
+pull-form regression cover both sides of the boundary.
+
+FIXED: Direct adaptation from a value to `option<T>` treated capability-bearing
+constraint payloads as ordinary assignable values. A nil-guarded polymorphic
+comparison therefore emitted `Some value` where `Some (nil_predicate, value)`
+was required. Direct option wrapping is now limited to concrete payload types;
+constraint payloads continue through their normal capability adapter. The
+nil-guarded polymorphic compare regression passes without dynamic storage.
+
+FIXED: A sidecar signature for a forward-declared `->Record` constructor made
+the call elaborator treat the declaration as an explicit user function. Since
+defrecord constructors are intrinsic and no separate function binding is
+emitted, the generated OCaml referenced an unbound value. Forward declarations
+now retain intrinsic record-constructor lowering; only a completed explicit
+function definition shadows it. Native and Melange regressions cover the same
+constructor with and without a sidecar.
+
+FIXED: Branch type merging deferred a closed EDN value and an EDN-packable
+static value to OCaml, selecting whichever type appeared on the left. Nested
+conditionals could therefore claim that an EDN vector was a record vector and
+emit invalid OCaml. The common type is now the closed EDN value type, and
+branch adaptation performs the existing validated packing conversion.
+
+FIXED: `conj` implementation selection precompiled every argument using the
+expected type of the complete `conj` expression. For an empty vector receiving
+a metadata-bearing vector, the inner vector was therefore assigned the outer
+`vector<vector<T>>` context and its keyword element was incorrectly required
+to be seqable. The implementation probe now compiles arguments without a
+result context; the real collection operation still performs element typing.
+
+FIXED: Optional record-field adaptation stopped wrapping a completed record
+value when its expected type came from an earlier forward declaration. The two
+record descriptors were not structurally assignable even though they emitted
+the same OCaml type. Direct `Some` wrapping now also accepts identical emitted
+type names, while different host-owned collection representations still go
+through explicit adaptation.

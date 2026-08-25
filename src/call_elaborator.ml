@@ -230,6 +230,54 @@ let closed_sum_unary_constructors env sum_ty payload_ty =
              Some constructor
          | _ -> None)
 
+let compile_closed_sum_scalar env ~target ~builtin ~result_ty ~operation
+    ~payload_name argument =
+  let branches =
+    [ TKeyword; TString; TSymbol ]
+    |> List.concat_map (fun payload_ty ->
+           closed_sum_unary_constructors env argument.ty payload_ty
+           |> List.map (fun constructor -> (constructor, payload_ty)))
+  in
+  match branches with
+  | [] -> None
+  | branches ->
+      let invalid_argument () =
+        Semantic_ir.Apply
+          ( Semantic_ir.Ident "invalid_arg",
+            [ Semantic_ir.String (operation ^ " expects keyword, string, or symbol") ] )
+      in
+      let covered =
+        branches |> List.map fst |> List.sort_uniq String.compare
+      in
+      let constructors =
+        Env.variant_constructors argument.ty env |> List.map fst
+        |> List.sort_uniq String.compare
+      in
+      let fallback =
+        if constructors <> [] && constructors = covered then []
+        else [ (Semantic_ir.PAny, invalid_argument ()) ]
+      in
+      let rec compile compiled = function
+        | [] ->
+            Ok
+              (typed_ir result_ty
+                 (Semantic_ir.Match
+                    (argument.semantic_expr, List.rev compiled @ fallback)))
+        | (constructor, payload_ty) :: rest ->
+            let payload =
+              typed_ir payload_ty (Semantic_ir.Ident payload_name)
+            in
+            Result.bind (Core_scalar.compile ~target builtin [ payload ])
+              (fun converted ->
+                compile
+                  (( Semantic_ir.PConstructor
+                       (constructor, Some (Semantic_ir.PVar payload_name)),
+                     converted.semantic_expr )
+                  :: compiled)
+                  rest)
+      in
+      Some (compile [] branches)
+
 let is_function_payload ty =
   match Types.constraint_value_type ty with
   | TFn _ | TOverloaded_fn _ -> true
@@ -6810,6 +6858,36 @@ let plan_argument_adaptation env ?row_type_name ?(protocol_storage = false)
 let plan_and_emit_argument_with_options env ?row_type_name
     ?(protocol_storage = false) ?(allow_optional_unwrap = false)
     ~expected argument =
+  let contextual_vector =
+    match (expected, argument.ty) with
+    | TVector expected_element, TVector actual_element
+      when not (Types.equal expected_element actual_element)
+           && Env.variant_constructors expected_element env <> [] ->
+        let item_name = "__lg_contextual_vector_item" in
+        let item = typed_ir actual_element (Semantic_ir.Ident item_name) in
+        Option.map
+          (Result.map (fun injected ->
+               let mapped =
+                 match Semantic_ir.unlocated injected.semantic_expr with
+                 | Semantic_ir.Ident name when String.equal name item_name ->
+                     argument.semantic_expr
+                 | _ ->
+                     Semantic_ir.Apply
+                       ( Semantic_ir.Ident "Rrbvec.map",
+                         [
+                           Semantic_ir.Fun
+                             ( [ Semantic_ir.PVar item_name ],
+                               injected.semantic_expr );
+                           argument.semantic_expr;
+                         ] )
+               in
+               mapped))
+          (inject_contextual_closed_sum env ~expected:expected_element item)
+    | _ -> None
+  in
+  match contextual_vector with
+  | Some result -> result
+  | None -> (
   match
     ( Env.find_empty_map_default expected env,
       empty_runtime_map_expression argument.semantic_expr )
@@ -6839,7 +6917,7 @@ let plan_and_emit_argument_with_options env ?row_type_name
         { expected = failed_expected; actual = failed_actual }) ->
       Error.error
         ("cannot adapt " ^ Types.source_name failed_actual ^ " to "
-       ^ Types.source_name failed_expected)))
+       ^ Types.source_name failed_expected))))
 
 let plan_and_emit_argument env ?row_type_name ~expected argument =
   plan_and_emit_argument_with_options env ?row_type_name ~expected argument
@@ -8828,7 +8906,8 @@ let create ~compile_expr =
       &&
       match lookup_binding scope env name with
       | Ok binding ->
-          not (Types.equal binding.ty (Types.TOcaml "__declared_fn"))
+          (not binding.forward_declared)
+          && not (Types.equal binding.ty (Types.TOcaml "__declared_fn"))
       | Error _ -> false
     in
     let name =
@@ -9307,6 +9386,22 @@ let create ~compile_expr =
             | _, (Error _ as error) -> error
             | Some protocol_id, Ok receiver -> (
                 let storage_ty = Types.constraint_value_type receiver.ty in
+                let protocol_constructor_is_guarded (_, payload_tys) =
+                  match payload_tys with
+                  | [ payload_ty ] ->
+                      let payload_ty =
+                        resolve_closed_sum_payload env payload_ty
+                      in
+                      has_protocol_constraint protocol_id payload_ty
+                      || Protocol.type_satisfies env protocol_id payload_ty
+                  | [] | _ :: _ :: _ -> false
+                in
+                if
+                  Env.predicate_variant_constructors storage_ty env
+                  |> List.exists protocol_constructor_is_guarded
+                then
+                  Ok receiver
+                else
                 match
                   ( Protocol_id.name protocol_id,
                     Env.find_optional_map_adapter storage_ty env,
@@ -9388,7 +9483,94 @@ let create ~compile_expr =
                     has_protocol_constraint protocol_id ty
                     || Protocol.type_satisfies env protocol_id ty
                 in
+                let closed_sum_protocol_expression ty expression =
+                  let constructors = Env.predicate_variant_constructors ty env in
+                  let constructor_satisfies (_, payload_tys) =
+                    match payload_tys with
+                    | [ payload_ty ] ->
+                        statically_satisfies
+                          (resolve_closed_sum_payload env payload_ty)
+                    | [] | _ :: _ :: _ -> false
+                  in
+                  if not (List.exists constructor_satisfies constructors) then
+                    None
+                  else
+                      let cases =
+                        constructors
+                        |> List.map (fun (constructor, payload_tys) ->
+                               match payload_tys with
+                               | [] ->
+                                   ( Semantic_ir.PConstructor
+                                       (constructor, None),
+                                     Semantic_ir.Bool false )
+                               | [ payload_ty ] ->
+                                   ( Semantic_ir.PConstructor
+                                       (constructor, Some Semantic_ir.PAny),
+                                     Semantic_ir.Bool
+                                       (statically_satisfies
+                                          (resolve_closed_sum_payload env
+                                             payload_ty)) )
+                               | _ :: _ :: _ ->
+                                   ( Semantic_ir.PConstructor
+                                       (constructor, Some Semantic_ir.PAny),
+                                     Semantic_ir.Bool false ))
+                      in
+                      let constructor_names =
+                        constructors |> List.map fst
+                        |> List.sort_uniq String.compare
+                      in
+                      let all_constructor_names =
+                        Env.variant_constructors ty env |> List.map fst
+                        |> List.sort_uniq String.compare
+                      in
+                      let fallback =
+                        if
+                          all_constructor_names <> []
+                          && all_constructor_names = constructor_names
+                        then []
+                        else [ (Semantic_ir.PAny, Semantic_ir.Bool false) ]
+                      in
+                      Some
+                        (Semantic_ir.Match
+                           (expression, cases @ fallback))
+                in
                 let expression =
+                  match receiver.ty with
+                  | TNullable inner | TOcaml_app ("option", [ inner ]) -> (
+                      let payload_name = "__lg_optional_protocol_sum" in
+                      match
+                        closed_sum_protocol_expression inner
+                          (Semantic_ir.Ident payload_name)
+                      with
+                      | Some payload_expression ->
+                          Semantic_ir.Match
+                            ( receiver.semantic_expr,
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  Semantic_ir.Bool false );
+                                ( Semantic_ir.PConstructor
+                                    ( "Some",
+                                      Some (Semantic_ir.PVar payload_name) ),
+                                  payload_expression );
+                              ] )
+                      | None ->
+                          Semantic_ir.Match
+                            ( receiver.semantic_expr,
+                              [
+                                ( Semantic_ir.PConstructor ("None", None),
+                                  Semantic_ir.Bool false );
+                                ( Semantic_ir.PConstructor
+                                    ("Some", Some Semantic_ir.PAny),
+                                  Semantic_ir.Bool
+                                    (statically_satisfies inner) );
+                              ] ))
+                  | receiver_ty -> (
+                      match
+                        closed_sum_protocol_expression receiver_ty
+                          receiver.semantic_expr
+                      with
+                      | Some expression -> expression
+                      | None ->
                   if
                     Protocol_id.name protocol_id = "ISequential"
                     &&
@@ -9570,16 +9752,6 @@ let create ~compile_expr =
                     | None -> Semantic_ir.Bool false
                   else
                     match receiver.ty with
-                    | TNullable inner | TOcaml_app ("option", [ inner ]) ->
-                        Semantic_ir.Match
-                          ( receiver.semantic_expr,
-                            [
-                              ( Semantic_ir.PConstructor ("None", None),
-                                Semantic_ir.Bool false );
-                              ( Semantic_ir.PConstructor
-                                  ("Some", Some Semantic_ir.PAny),
-                                Semantic_ir.Bool (statically_satisfies inner) );
-                            ] )
                     | TNil
                       when protocol_basename = "ISet" ->
                         Semantic_ir.Sequence
@@ -9595,7 +9767,7 @@ let create ~compile_expr =
                         | Semantic_ir.Ident _ -> result
                         | _ ->
                             Semantic_ir.Sequence
-                              [ receiver.semantic_expr; result ])
+                              [ receiver.semantic_expr; result ]))
                 in
                 Ok (typed_ir TBool expression))
         | _ -> Error.error "satisfies? expects a protocol and value")
@@ -13313,80 +13485,31 @@ let create ~compile_expr =
         match compile_args () with
         | Error _ as err -> err
         | Ok ([ argument ] as args) ->
-            let payload_types = [ TKeyword; TString; TSymbol ] in
-            let branches =
-              payload_types
-              |> List.concat_map (fun payload_ty ->
-                     closed_sum_unary_constructors env argument.ty payload_ty
-                     |> List.map (fun constructor -> (constructor, payload_ty)))
-            in
-            if branches = [] then
-              (match Types.constraint_value_type argument.ty with
-              | TKeyword | TString | TSymbol ->
-                  Core_scalar.compile ~target:(Env.target env)
-                    Builtin_id.Keyword args
-              | _ ->
-                  Ok
-                    (typed_ir TKeyword
-                       (Semantic_ir.Sequence
-                          [
-                            argument.semantic_expr;
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident "invalid_arg",
-                                [
-                                  Semantic_ir.String
-                                    "keyword expects keyword, string, or symbol";
-                                ] );
-                          ])))
-            else
-              let payload_name = "__lg_keyword_payload" in
-              let rec compile_branches compiled = function
-                | [] ->
-                    let branch_names =
-                      branches |> List.map fst |> List.sort_uniq String.compare
-                    in
-                    let all_constructor_names =
-                      Env.variant_constructors argument.ty env
-                      |> List.map fst |> List.sort_uniq String.compare
-                    in
-                    let fallback =
-                      if
-                        all_constructor_names <> []
-                        && all_constructor_names = branch_names
-                      then []
-                      else
-                        [
-                          ( Semantic_ir.PAny,
-                            Semantic_ir.Apply
-                              ( Semantic_ir.Ident "invalid_arg",
-                                [
-                                  Semantic_ir.String
-                                    "keyword expects keyword, string, or symbol";
-                                ] ) );
-                        ]
-                    in
+            (match
+               compile_closed_sum_scalar env ~target:(Env.target env)
+                 ~builtin:Builtin_id.Keyword ~result_ty:TKeyword
+                 ~operation:"keyword" ~payload_name:"__lg_keyword_payload"
+                 argument
+             with
+            | Some result -> result
+            | None -> (
+                match Types.constraint_value_type argument.ty with
+                | TKeyword | TString | TSymbol ->
+                    Core_scalar.compile ~target:(Env.target env)
+                      Builtin_id.Keyword args
+                | _ ->
                     Ok
                       (typed_ir TKeyword
-                         (Semantic_ir.Match
-                            ( argument.semantic_expr,
-                              List.rev compiled @ fallback )))
-                | (constructor, payload_ty) :: rest ->
-                    let payload =
-                      typed_ir payload_ty (Semantic_ir.Ident payload_name)
-                    in
-                    Result.bind
-                      (Core_scalar.compile ~target:(Env.target env)
-                         Builtin_id.Keyword [ payload ])
-                      (fun converted ->
-                        compile_branches
-                          (( Semantic_ir.PConstructor
-                               ( constructor,
-                                 Some (Semantic_ir.PVar payload_name) ),
-                             converted.semantic_expr )
-                          :: compiled)
-                          rest)
-              in
-              compile_branches [] branches
+                         (Semantic_ir.Sequence
+                            [
+                              argument.semantic_expr;
+                              Semantic_ir.Apply
+                                ( Semantic_ir.Ident "invalid_arg",
+                                  [
+                                    Semantic_ir.String
+                                      "keyword expects keyword, string, or symbol";
+                                  ] );
+                            ]))))
         | Ok args ->
             Core_scalar.compile ~target:(Env.target env) Builtin_id.Keyword args)
     | "__lg_builtin-symbol" -> (
@@ -13444,29 +13567,36 @@ let create ~compile_expr =
             match compile_args_for scope env arg_forms with
             | Error _ as error -> error
             | Ok [ arg ] -> (
-                match Types.constraint_value_type arg.ty with
-                | TUnknown | TMeta _ | TVar _ ->
-                    compile_protocol_call scope env
-                      "clojure.core/INameCoercion/-coerce-name" arg_forms
-                | _ -> (
-                    match
-                      Core_scalar.compile ~target:(Env.target env)
-                        Builtin_id.Name [ arg ]
-                    with
-                    | Ok _ as result -> result
-                    | Error _ ->
-                        Ok
-                          (typed_ir TString
-                             (Semantic_ir.Sequence
-                                [
-                                  arg.semantic_expr;
-                                  Semantic_ir.Apply
-                                    ( Semantic_ir.Ident "invalid_arg",
-                                      [
-                                        Semantic_ir.String
-                                          "name expects keyword, string, or symbol";
-                                      ] );
-                                ]))))
+                match
+                  compile_closed_sum_scalar env ~target:(Env.target env)
+                    ~builtin:Builtin_id.Name ~result_ty:TString
+                    ~operation:"name" ~payload_name:"__lg_name_payload" arg
+                with
+                | Some result -> result
+                | None -> (
+                    match Types.constraint_value_type arg.ty with
+                    | TUnknown | TMeta _ | TVar _ ->
+                        compile_protocol_call scope env
+                          "clojure.core/INameCoercion/-coerce-name" arg_forms
+                    | _ -> (
+                        match
+                          Core_scalar.compile ~target:(Env.target env)
+                            Builtin_id.Name [ arg ]
+                        with
+                        | Ok _ as result -> result
+                        | Error _ ->
+                            Ok
+                              (typed_ir TString
+                                 (Semantic_ir.Sequence
+                                    [
+                                      arg.semantic_expr;
+                                      Semantic_ir.Apply
+                                        ( Semantic_ir.Ident "invalid_arg",
+                                          [
+                                            Semantic_ir.String
+                                              "name expects keyword, string, or symbol";
+                                          ] );
+                                    ])))))
             | Ok _ -> Error.error "name expects 1 arguments")
         | _ -> Error.error "name expects 1 arguments")
     | "__lg_namespace" -> (
@@ -13526,6 +13656,45 @@ let create ~compile_expr =
                     Semantic_ir.Sequence
                       [ arg.semantic_expr; Semantic_ir.Bool false ]))
         | Ok [ arg ] ->
+            let numeric_constructors =
+              Env.predicate_variant_constructors
+                (Types.constraint_value_type arg.ty) env
+              |> List.filter_map (fun (constructor, payload_types) ->
+                     match payload_types with
+                     | [ (TInt | TFloat as payload_ty) ] ->
+                         Some (constructor, payload_ty)
+                     | [] | [ _ ] | _ :: _ :: _ -> None)
+            in
+            if numeric_constructors <> [] then
+              let operator =
+                match predicate with
+                | "__lg_zero-predicate" -> "="
+                | "__lg_pos-predicate" -> ">"
+                | "__lg_neg-predicate" -> "<"
+                | _ -> assert false
+              in
+              let cases =
+                List.map
+                  (fun (constructor, payload_ty) ->
+                    let payload_name = "__lg_numeric_payload" in
+                    let zero =
+                      match payload_ty with
+                      | TInt -> Semantic_ir.Int 0
+                      | TFloat -> Semantic_ir.Float "0.0"
+                      | _ -> assert false
+                    in
+                    ( Semantic_ir.PConstructor
+                        (constructor, Some (Semantic_ir.PVar payload_name)),
+                      Semantic_ir.Infix
+                        (operator, Semantic_ir.Ident payload_name, zero) ))
+                  numeric_constructors
+              in
+              Ok
+                (typed_ir TBool
+                   (Semantic_ir.Match
+                      (arg.semantic_expr,
+                       cases @ [ (Semantic_ir.PAny, Semantic_ir.Bool false) ])))
+            else
             let arg =
               match Types.truthy_constraint_info arg.ty with
               | Some (TNullable inner | TOcaml_app ("option", [ inner ])) ->
@@ -15778,6 +15947,28 @@ let create ~compile_expr =
           | _ -> None
         in
         (match (name, payload_tys) with
+        | "__lg_nil-predicate", None
+          when Option.is_some (Env.find_nil_value_adapter argument.ty env) -> (
+            match
+              Env.variant_constructors argument.ty env
+              |> List.filter_map (fun (constructor, payload_tys) ->
+                     match payload_tys with
+                     | [] -> Some constructor
+                     | _ :: _ -> None)
+            with
+            | [ nil_constructor ] ->
+                Ok
+                  (typed_ir TBool
+                     (Semantic_ir.Match
+                        ( argument.semantic_expr,
+                          [
+                            ( Semantic_ir.PConstructor
+                                (nil_constructor, None),
+                              Semantic_ir.Bool true );
+                            (Semantic_ir.PAny, Semantic_ir.Bool false);
+                          ] )))
+            | [] | _ :: _ :: _ ->
+                Core_boolean.compile ~target:(Env.target env) name args)
         | "__lg_fn-predicate", None -> (
             match closed_sum_unary_function_constructors env argument.ty with
             | [] -> Core_boolean.compile ~target:(Env.target env) name args
@@ -16825,7 +17016,9 @@ let create ~compile_expr =
     | Ok [ _; _ ] -> compile_static_cons scope env arg_forms
     | Ok _ -> Error.error "cons expects a value and seqable collection"
   and compile_conj scope env arg_forms =
-    match compile_args_for scope env arg_forms with
+    match
+      compile_args_for scope (Env.with_expected_type None env) arg_forms
+    with
     | Error _ as error -> error
     | Ok (_ :: _ :: _) -> compile_static_conj scope env arg_forms
     | Ok _ -> Error.error "conj expects collection and values"
@@ -17728,6 +17921,18 @@ let create ~compile_expr =
                 | TFn _ | TOverloaded_fn _ -> true
                 | _ -> false
               in
+              let rec needs_literal_context ty =
+                Env.variant_constructors ty env <> []
+                ||
+                match ty with
+                | TVector element | TList element | TSeq element ->
+                    needs_literal_context element
+                | ty -> (
+                    match Types.dynamic_map_types ty with
+                    | Some (key, value) ->
+                        needs_literal_context key || needs_literal_context value
+                    | None -> false)
+              in
               let compile_argument expected form =
                 let form = contextual_callback_form expected form in
                 let argument_env =
@@ -17737,6 +17942,9 @@ let create ~compile_expr =
                            (Env.find_empty_map_default expected env) ->
                       Env.with_expected_type (Some expected) env
                   | (TFn _ | TOverloaded_fn _), FList (FSymbol "fn" :: _) ->
+                      Env.with_expected_type (Some expected) env
+                  | _, (FVector _ | FMap _)
+                    when needs_literal_context expected ->
                       Env.with_expected_type (Some expected) env
                   | _ -> Env.with_expected_type None env
                 in

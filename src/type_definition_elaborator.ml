@@ -35,13 +35,39 @@ let compile_type_alias ?location scope env next_type name type_parameters
   | _ -> Error.error "type-alias expects a type keyword target"
 
 let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
-    ?(nominal = true) scope env next_type name type_parameters fields =
+    ?(nominal = true) ?(reuse_existing = false) scope env next_type name
+    type_parameters fields =
   if fields = [] && not allow_empty then
     Error.error "type-record expects at least one field"
   else
     let type_name =
       Option.value emitted_name ~default:(Names.sanitize_name name)
     in
+    let existing_record =
+      if reuse_existing then
+        match Resolver.lookup_type_declaration scope env name with
+        | Some { kind = Record; type_parameters = existing_parameters; _ }
+          when existing_parameters = type_parameters -> (
+            match Resolver.lookup_record_type scope env name with
+            | Ok record -> Some record
+            | Error _ -> None)
+        | Some _ | None -> None
+      else None
+    in
+    match existing_record with
+    | Some record ->
+        let compatible_fields =
+          List.length record.fields = List.length fields
+          && List.for_all2
+               (fun existing declared ->
+                 String.equal existing.keyword declared.keyword
+                 && Types.equal existing.ty declared.ty)
+               record.fields fields
+        in
+        if not compatible_fields then
+          Error.error ("defrecord does not match declared type " ^ name)
+        else Ok (scope, env, next_type, Group [])
+    | None ->
     match declare_type scope env name Record with
     | Error _ as err -> err
     | Ok (type_id, env) ->
@@ -60,14 +86,8 @@ let compile_type_record_fields ?location ?(allow_empty = false) ?emitted_name
           | TNamed_record record ->
               Env.fold
                 (fun key (binding : Types.binding) env ->
-                  if binding.forward_declared then
-                    Env.add key
-                      {
-                        binding with
-                        ty = Types.refresh_named_record record binding.ty;
-                      }
-                      env
-                  else env)
+                  let ty = Types.refresh_named_record record binding.ty in
+                  Env.add key { binding with ty } env)
                 env env
           | _ -> env
         in

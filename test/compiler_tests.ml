@@ -5667,13 +5667,62 @@ let test_closed_sum_sequence_binding_ignores_later_branch_payload_context () =
           (let [penultimate (Option.get (first-frame stack'))
                 stack'' (next-frames stack')]
             (recur (conj-frame stack'' (-merge penultimate last)))))))))
+(type-variant pulled-result
+  (PulledInt :int))
+(signature pull-like-loop :fn<option<pulled-result>>)
+(defn pull-like-loop []
+  (loop [stack (list (RunnableFrame (runnable-frame. 9)))]
+    (let [last (Option.get (first-frame stack))
+          stack' (next-frames stack)]
+      (if (not (instance? result-frame last))
+        (recur
+          (conj-frame stack'
+            (ResultFrame (result-frame. (-run last)))))
+        (Some (PulledInt (.-value ^result-frame last)))))))
+(type-record pull-result-frame (value :option<pulled-result>))
+(type-record pull-work-frame (value :int))
+(type-variant pull-frame
+  (PullResultFrame :pull-result-frame)
+  (PullWorkFrame :pull-work-frame))
+(defprotocol PullFrame
+  (-pull-run [frame] :vector<pull-frame>)
+  (-pull-merge [frame ^pull-result-frame result] :pull-frame))
+(extend-type pull-work-frame
+  PullFrame
+  (-pull-run [frame]
+    [(PullResultFrame
+       (pull-result-frame. (Some (PulledInt (:value frame)))))] )
+  (-pull-merge [_ result] (PullResultFrame result)))
+(signature pull-first [value storage]
+  :fn<optional-seqable<value;storage>;option<value>>)
+(defn pull-first [values] (if (nil? values) nil (first values)))
+(signature pull-next [value storage]
+  :fn<optional-seqable<value;storage>;option<seq<value>>>)
+(defn pull-next [values] (if (nil? values) nil (next values)))
+(signature pull-conj [value storage]
+  :fn<optional-seqable<value;storage>;value;seq<value>>)
+(defn pull-conj [values value]
+  (if (nil? values) (list value) (cons value values)))
+(signature full-pull-loop :fn<option<pulled-result>>)
+(defn full-pull-loop []
+  (loop [stack (list (PullWorkFrame (pull-work-frame. 10)))]
+    (let [^pull-frame last (Option.get (pull-first stack))
+          stack' (pull-next stack)]
+      (if (not (instance? pull-result-frame last))
+        (recur (reduce pull-conj (or stack' ()) (-pull-run last)))
+        (if (nil? stack')
+          (.-value ^pull-result-frame last)
+          (let [^pull-frame penultimate (Option.get (pull-first stack'))
+                stack'' (pull-next stack')]
+            (recur (pull-conj stack'' (-pull-merge penultimate last)))))))))
 (println
   (str
     (run-first (list (ResultFrame (result-frame. 1)))) ":"
     (run-first (list (RunnableFrame (runnable-frame. 2)))) ":"
     (run-first (list (OtherFrame (other-frame. 3)))) ":"
     (run-loop (list (RunnableFrame (runnable-frame. 5)))) ":"
-    (run-inferred-loop)))
+    (run-inferred-loop) ":"
+    (some? (pull-like-loop))))
 |}
   in
   let native = Lg.Compiler.compile_string source |> expect_ok in
@@ -5681,7 +5730,26 @@ let test_closed_sum_sequence_binding_ignores_later_branch_payload_context () =
     failwith "branch payload context must not erase a closed-sum sequence item";
   assert_ocaml_runs
     "closed_sum_sequence_binding_ignores_later_branch_payload_context"
-    "1:2:13:4:7\n" native;
+    "1:2:13:4:7:true\n" native;
+  ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_loop_empty_vector_initializer_uses_recur_element_type () =
+  let source =
+    {|
+(defrecord Variable [^:symbol symbol])
+(signature variable-symbols :fn<vector<Variable>;vector<symbol>>)
+(defn variable-symbols [variables]
+  (loop [remaining variables
+         symbols []]
+    (if-some [variable (first remaining)]
+      (recur (subvec remaining 1) (conj symbols (:symbol variable)))
+      symbols)))
+(println (count (variable-symbols [(Variable. 'a) (Variable. 'b)])))
+|}
+  in
+  let native = Lg.Compiler.compile_string source |> expect_ok in
+  assert_ocaml_runs "loop_empty_vector_initializer_uses_recur_element_type"
+    "2\n" native;
   ignore (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_module_protocols_preserve_typed_registry_state () =
@@ -13497,7 +13565,7 @@ let test_cross_chunk_closed_sum_resolves_forward_record_payload () =
   let provider =
     {|
 (ns app.frames)
-(signature app.frames/Item {:value :int})
+(type-record Item (value :int))
 (type-variant frame
   (ItemFrame :app.frames/Item))
 (contextual-closed-sum-constructors :frame
@@ -13514,16 +13582,22 @@ let test_cross_chunk_closed_sum_resolves_forward_record_payload () =
 |}
   in
   let compile target =
-    let state, _ =
+    let state, provider_compilation =
       Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-        ~check_ocaml:false ~filename:"app/frames.lgi" (stdlib_state target)
+        ~filename:"app/frames.lgi" (stdlib_state target)
         provider
       |> expect_ok
     in
-    ignore
+    let _, consumer_compilation =
       (Lg.Compiler.compile_chunk_with_filename_and_diagnostics ~target
-         ~check_ocaml:false ~filename:"app/frames.cljc" state consumer
+         ~filename:"app/frames.cljc" state consumer
       |> expect_ok)
+    in
+    let output =
+      provider_compilation.ocaml_source ^ "\n" ^ consumer_compilation.ocaml_source
+    in
+    if string_contains_substring output "__lg_record:" then
+      failwith "resolved cross-chunk record types must not leak placeholders"
   in
   compile Lg.Target.Native;
   compile Lg.Target.Melange
@@ -13791,6 +13865,36 @@ let test_optional_payload_injects_into_closed_sum_with_nil_adapter () =
   in
   if string_contains_substring melange "Runtime_dynamic" then
     failwith "Melange optional closed-sum injection must remain fully static"
+
+let test_nil_predicate_dispatches_over_closed_sum_nil_adapter () =
+  let source =
+    {|
+(type-variant pull-value
+  PullNil
+  (PullInt :int)
+  (PullString :string))
+(signature pull-nil :fn<pull-value>)
+(defn pull-nil [] PullNil)
+(nil-value-adapter :pull-value pull-nil)
+(signature valid-limit? :fn<pull-value;bool>)
+(defn valid-limit? [value]
+  (or (and (number? value) (pos? value))
+      (nil? value)))
+(println (str (valid-limit? PullNil) ":"
+              (valid-limit? (PullInt 3)) ":"
+              (valid-limit? (PullString "3"))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "closed-sum nil predicate must remain fully static";
+  assert_ocaml_runs "nil_predicate_dispatches_over_closed_sum_nil_adapter"
+    "true:true:false\n" native;
+  let melange =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange "Runtime_dynamic" then
+    failwith "Melange closed-sum nil predicate must remain fully static"
 
 let test_declared_external_closed_sum_injects_across_chunks () =
   let provider =
@@ -14708,6 +14812,26 @@ let test_adjacent_records_and_variants_support_mutual_recursion () =
     failwith "mutually recursive closed types must remain static";
   assert_ocaml_runs "adjacent_records_and_variants_support_mutual_recursion"
     "42\n" ocaml_source
+
+let test_adjacent_records_support_mutual_recursion () =
+  let source =
+    {|
+(defrecord First [^:option<Second> second])
+(defrecord Second [^:vector<First> firsts])
+(def leaf (First. None))
+(def root (Second. [leaf]))
+(def linked (First. (Some root)))
+(println (count (.-firsts (Option.get (.-second linked)))))
+|}
+  in
+  let native = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native "__lg_record:" then
+    failwith "mutually recursive records must resolve every forward identity";
+  if string_contains_substring native "Runtime_dynamic" then
+    failwith "mutually recursive records must remain fully static";
+  assert_ocaml_runs "adjacent_records_support_mutual_recursion" "1\n" native;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
 let test_mutually_recursive_deftypes_emit_methods_after_type_group () =
   let source =
@@ -21196,17 +21320,20 @@ let test_assoc_updates_optional_static_map_record_fields () =
   (inc value))
 (def ^:map<keyword;int> empty-schema {})
 (def answer-schema (assoc empty-schema :answer 42))
+(defrecord Flags [^:option<bool> enabled])
+(def enabled-flags (assoc (Flags. None) :enabled true))
 (println (nil? (:schema (with-schema (State. (Some empty-schema)) None))))
 (println
   (if-some [schema (:schema (with-schema (State. None) (Some answer-schema)))]
     (= 42 (get schema :answer))
     false))
 (println (next-value 41))
+(println (= (Some true) (:enabled enabled-flags)))
 |}
   in
   let ocaml_source = compile_string_with_stdlib source |> expect_ok in
   assert_ocaml_runs "assoc_updates_optional_static_map_record_fields"
-    "true\ntrue\n42\n"
+    "true\ntrue\n42\ntrue\n"
     ocaml_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok);
@@ -22527,6 +22654,240 @@ let test_map_predicate_uses_the_clojurescript_imap_protocol () =
   in
   if string_contains_substring melange_source "Runtime_dynamic" then
     failwith "Melange map? must use a static IMap protocol witness"
+
+let test_map_predicate_dispatches_over_optional_closed_sum () =
+  let source =
+    {|
+(ns source-optional-sum-map-predicate-app
+  (:require [cljs.core :refer [map?]]))
+
+(type-variant pull-form
+  (MapForm :map<string;int>)
+  (StringForm :string))
+(signature pull-map? :fn<option<pull-form>;bool>)
+(defn pull-map? [value]
+  (map? value))
+(println
+  (str (pull-map? (Some (MapForm {"answer" 42}))) ":"
+       (pull-map? (Some (StringForm "value"))) ":"
+       (pull-map? None)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "optional closed-sum map? dispatch must remain fully static";
+  assert_ocaml_runs "map_predicate_dispatches_over_optional_closed_sum"
+    "true:false:false\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange optional closed-sum map? dispatch must remain fully static"
+
+let test_protocol_guard_preserves_closed_sum_constructor () =
+  let source =
+    {|
+(type-variant seq-form
+  (ListForm :list<seq-form>)
+  (VectorForm :vector<seq-form>)
+  (TextForm :string)
+  (SymbolForm :symbol))
+(contextual-closed-sum-constructors :seq-form
+  (ListForm :list<seq-form>)
+  (VectorForm :vector<seq-form>)
+  (TextForm :string)
+  (SymbolForm :symbol))
+(closed-sum-constructors :seq-form
+  (ListForm :list<seq-form>)
+  (VectorForm :vector<seq-form>)
+  (TextForm :string)
+  (SymbolForm :symbol))
+(signature seq-items :fn<seq-form;option<vector<seq-form>>> )
+(defn seq-items [value]
+  (match value
+    (ListForm items) (Some (vec items))
+    (VectorForm items) (Some items)
+    (TextForm _) None
+    (SymbolForm _) None))
+(optional-sequential-adapter :seq-form :seq-form seq-items)
+(signature render-form :fn<seq-form;string>)
+(defn render-form [value]
+  (match value
+    (ListForm _) "list"
+    (VectorForm _) "vector"
+    (TextForm _) "text"
+    (SymbolForm symbol) (name symbol)))
+(signature guarded-render :fn<seq-form;string>)
+(defn guarded-render [value]
+  (if (sequential? value)
+    (render-form value)
+    "not-sequential"))
+(signature select-source :fn<seq-form;bool;seq-form>)
+(defn select-source [form long?]
+  (if (sequential? form)
+    (if long? (nth form 0) '$)
+    form))
+(println
+  (str (guarded-render (ListForm (list (SymbolForm 'one)))) ":"
+       (guarded-render (VectorForm [(SymbolForm 'one)])) ":"
+       (guarded-render (TextForm "one")) ":"
+       (render-form
+         (select-source (ListForm (list (SymbolForm 'one))) false))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "closed-sum protocol guard must remain fully static";
+  assert_ocaml_runs "protocol_guard_preserves_closed_sum_constructor"
+    "list:vector:not-sequential:$\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange closed-sum protocol guard must preserve the constructor"
+
+let test_closed_sum_injection_prefers_direct_collection_shape () =
+  let source =
+    {|
+(type-variant data-value
+  (DataKeyword :keyword)
+  (DataVector :vector<data-value>))
+(contextual-closed-sum-constructors :data-value
+  (DataKeyword :keyword)
+  (DataVector :vector<data-value>))
+(type-variant pull-form
+  (FormKeyword :keyword)
+  (FormVector :vector<pull-form>)
+  (FormData :data-value))
+(contextual-closed-sum-constructors :pull-form
+  (FormKeyword :keyword)
+  (FormVector :vector<pull-form>)
+  (FormData :data-value))
+(signature source-pattern :fn<pull-form>)
+(defn source-pattern [] [:name])
+(signature form-kind :fn<pull-form;string>)
+(defn form-kind [value]
+  (match value
+    (FormKeyword _) "keyword"
+    (FormVector _) "vector"
+    (FormData _) "data"))
+(println (form-kind (source-pattern)))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "direct collection closed-sum injection must remain static";
+  assert_ocaml_runs "closed_sum_injection_prefers_direct_collection_shape"
+    "vector\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange direct collection closed-sum injection must remain static"
+
+let test_vector_argument_injects_contextual_closed_sum_elements () =
+  let source =
+    {|
+(type-variant entity-ref
+  (EntityId :int)
+  (EntityIdent :keyword))
+(contextual-closed-sum-constructors :entity-ref
+  (EntityId :int)
+  (EntityIdent :keyword))
+(signature entity-count :fn<vector<entity-ref>;int>)
+(defn entity-count [entities] (count entities))
+(println (entity-count [1 2 3]))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "vector contextual element injection must remain fully static";
+  assert_ocaml_runs "vector_argument_injects_contextual_closed_sum_elements"
+    "3\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange vector contextual element injection must remain static"
+
+let test_nested_vector_literal_uses_recursive_closed_sum_context () =
+  let source =
+    {|
+(type-variant form
+  (FormInt :int)
+  (FormKeyword :keyword)
+  (FormSymbol :symbol)
+  (FormEdn :Lg_edn_backend.t)
+  (FormXform :fn<option<int>;option<int>>)
+  (FormList :list<form>)
+  (FormVector :vector<form>)
+  (FormMap :map<form;form>))
+(contextual-closed-sum-constructors :form
+  (FormInt :int)
+  (FormKeyword :keyword)
+  (FormSymbol :symbol)
+  (FormEdn :Lg_edn_backend.t)
+  (FormXform :fn<option<int>;option<int>>)
+  (FormList :list<form>)
+  (FormVector :vector<form>)
+  (FormMap :map<form;form>))
+(signature keep-option :fn<option<int>;option<int>>)
+(defn keep-option [value] value)
+(signature accepts-form :fn<form;bool>)
+(defn accepts-form [_] true)
+(println (accepts-form [[:name :xform keep-option]]))
+(println
+  (accepts-form
+    [{[:child :xform keep-option] [:name]}]))
+(println (accepts-form '[(limit :aka 500)]))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "recursive closed-sum vector context must remain fully static";
+  assert_ocaml_runs "nested_vector_literal_recursive_closed_sum_context"
+    "true\ntrue\ntrue\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith
+      "Melange recursive closed-sum vector context must remain fully static"
+
+let test_next_seq_adapts_empty_sequences_to_none () =
+  let source =
+    {|
+(signature next-seq [value storage]
+  :fn<optional-seqable<value;storage>;option<seq<value>>>)
+(defn next-seq [xs]
+  (if (nil? xs)
+    nil
+    (next xs)))
+(println (some? (next-seq nil)))
+(println (some? (next-seq (list 1))))
+(println (some? (next-seq (list 1 2))))
+(signature optional-seq-truthy? :fn<option<seq<int>>;bool>)
+(defn optional-seq-truthy? [values] (if values true false))
+(println (optional-seq-truthy? (Some (take 0 (list 1)))))
+(signature preferred-count
+  :fn<option<seq<int>>;option<seq<int>>;int>)
+(defn preferred-count [left right] (count (or left right)))
+(println
+  (preferred-count
+    (Some (take 0 (list 1)))
+    (Some (take 1 (list 1)))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "next sequence option adaptation must remain fully static";
+  assert_ocaml_runs "next_seq_adapts_empty_sequences_to_none"
+    "false\nfalse\ntrue\ntrue\n0\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange next sequence option adaptation must remain fully static"
 
 let test_defrecord_automatically_satisfies_the_clojurescript_imap_protocol () =
   let source =
@@ -33849,6 +34210,7 @@ let test_deferred_recursive_calls_bypass_the_holder_wrapper () =
 let test_declared_record_constructors_follow_record_dependencies () =
   let source =
     {|
+(ns app.frames)
 (declare ->LaterFrame)
 (defprotocol Frame
   (-run [frame]))
@@ -33867,7 +34229,34 @@ let test_declared_record_constructors_follow_record_dependencies () =
   assert_ocaml_runs "declared_record_constructors_follow_record_dependencies"
     "42\n" ocaml_source;
   ignore
-    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok)
+    (Lg.Compiler.compile_string ~target:Lg.Target.Melange source |> expect_ok);
+  let sidecar =
+    {|
+(ns app.frames)
+(type-record LaterFrame
+  (value :int))
+(signature app.frames/->LaterFrame :fn<int;app.frames/LaterFrame>)
+|}
+  in
+  let compile_with_sidecar target =
+    let stdlib = compiled_stdlib target in
+    let state, sidecar_source =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"app/frames.lgi" stdlib.state sidecar
+      |> expect_ok
+    in
+    let _, implementation_source =
+      Lg.Compiler.compile_chunk_with_filename ~target
+        ~filename:"app/frames.cljc" state source
+      |> expect_ok
+    in
+    String.concat "\n"
+      [ stdlib.ocaml_source; sidecar_source; implementation_source ]
+  in
+  assert_ocaml_runs
+    "declared_record_constructors_with_sidecars_follow_record_dependencies"
+    "42\n" (compile_with_sidecar Lg.Target.Native);
+  ignore (compile_with_sidecar Lg.Target.Melange)
 
 let test_dependency_graph_orders_declared_protocol_dependencies () =
   let open Lg.Ast in
@@ -35573,6 +35962,30 @@ let test_false_scalar_predicate_narrows_closed_sum_in_else_branch () =
   if string_contains_substring melange "Runtime_dynamic" then
     failwith "Melange closed-sum scalar refinement must remain fully static"
 
+let test_name_dispatches_over_identifier_closed_sum () =
+  let source =
+    {|
+(type-variant attr-name
+  (KeywordAttrName :keyword)
+  (StringAttrName :string))
+(signature attr-label :fn<attr-name;string>)
+(defn attr-label [attr]
+  (name attr))
+(println (str (attr-label (KeywordAttrName :user/name)) ":"
+              (attr-label (StringAttrName "plain"))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  assert_ocaml_runs "name_dispatches_over_identifier_closed_sum"
+    "name:plain\n" native_source;
+  let melange_source =
+    compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok
+  in
+  if string_contains_substring melange_source "Runtime_dynamic" then
+    failwith "Melange closed-sum name dispatch must remain fully static";
+  if string_contains_substring melange_source "name expects keyword" then
+    failwith "exhaustive Melange closed-sum name dispatch must not retain a fallback"
+
 let test_closed_sum_payloads_inject_into_another_closed_sum () =
   let source =
     {|
@@ -35631,6 +36044,43 @@ let test_number_predicate_narrows_optional_value_in_later_and_operand () =
   assert_ocaml_runs
     "number_predicate_narrows_optional_value_in_later_and_operand"
     "true:true:false:true:false\n" native_source;
+  ignore
+    (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
+
+let test_number_predicate_dispatches_over_mixed_numeric_closed_sum () =
+  let source =
+    {|
+(type-variant numeric-value
+  (IntegerValue :int)
+  (FloatValue :float)
+  (TextValue :string))
+(type-variant parsed-number
+  (ParsedInt :int)
+  (ParsedFloat :float))
+(contextual-closed-sum-constructors :parsed-number
+  (ParsedInt :int)
+  (ParsedFloat :float))
+(signature positive-number? :fn<numeric-value;bool>)
+(defn positive-number? [value]
+  (and (number? value) (pos? value)))
+(signature choose-number :fn<bool;option<parsed-number>>)
+(defn choose-number [selected]
+  (if selected (ParsedInt 1) nil))
+(println (str (positive-number? (IntegerValue 2)) ":"
+              (positive-number? (IntegerValue 0)) ":"
+              (positive-number? (FloatValue 1.5)) ":"
+              (positive-number? (FloatValue -0.5)) ":"
+              (positive-number? (TextValue "2")) ":"
+              (some? (choose-number true)) ":"
+              (nil? (choose-number false))))
+|}
+  in
+  let native_source = compile_string_with_stdlib source |> expect_ok in
+  if string_contains_substring native_source "Runtime_dynamic" then
+    failwith "mixed numeric closed-sum predicates must remain fully static";
+  assert_ocaml_runs
+    "number_predicate_dispatches_over_mixed_numeric_closed_sum"
+    "true:false:true:false:false:true:true\n" native_source;
   ignore
     (compile_string_with_stdlib ~target:Lg.Target.Melange source |> expect_ok)
 
@@ -46628,6 +47078,8 @@ let tests =
       test_partial_closed_sum_protocol_dispatch_preserves_runtime_semantics );
     ( "closed sum sequence binding ignores later branch payload context",
       test_closed_sum_sequence_binding_ignores_later_branch_payload_context );
+    ( "loop empty vector initializer uses recur element type",
+      test_loop_empty_vector_initializer_uses_recur_element_type );
     ( "module protocols preserve typed registry state",
       test_module_protocols_preserve_typed_registry_state );
     ( "module elaboration populates typed registry",
@@ -47385,6 +47837,8 @@ let tests =
       test_concat_injects_nested_collection_elements_into_recursive_sum );
     ( "optional payload injects into closed sum with nil adapter",
       test_optional_payload_injects_into_closed_sum_with_nil_adapter );
+    ( "nil predicate dispatches over closed sum nil adapter",
+      test_nil_predicate_dispatches_over_closed_sum_nil_adapter );
     ( "declared external closed sum injects across chunks",
       test_declared_external_closed_sum_injects_across_chunks );
     ( "declared external closed sum preserves optional match result",
@@ -47445,6 +47899,8 @@ let tests =
       test_recursive_variants_support_callback_results );
     ( "adjacent records and variants support mutual recursion",
       test_adjacent_records_and_variants_support_mutual_recursion );
+    ( "adjacent records support mutual recursion",
+      test_adjacent_records_support_mutual_recursion );
     ( "mutually recursive deftypes emit methods after type group",
       test_mutually_recursive_deftypes_emit_methods_after_type_group );
     ( "recursive functions use sidecar return types",
@@ -48160,6 +48616,18 @@ let tests =
       test_source_predicates_are_statically_first_class );
     ( "map predicate uses the ClojureScript IMap protocol",
       test_map_predicate_uses_the_clojurescript_imap_protocol );
+    ( "map predicate dispatches over optional closed sum",
+      test_map_predicate_dispatches_over_optional_closed_sum );
+    ( "protocol guard preserves closed sum constructor",
+      test_protocol_guard_preserves_closed_sum_constructor );
+    ( "closed sum injection prefers direct collection shape",
+      test_closed_sum_injection_prefers_direct_collection_shape );
+    ( "vector argument injects contextual closed sum elements",
+      test_vector_argument_injects_contextual_closed_sum_elements );
+    ( "nested vector literal uses recursive closed sum context",
+      test_nested_vector_literal_uses_recursive_closed_sum_context );
+    ( "next seq adapts empty sequences to none",
+      test_next_seq_adapts_empty_sequences_to_none );
     ( "defrecord automatically satisfies the ClojureScript IMap protocol",
       test_defrecord_automatically_satisfies_the_clojurescript_imap_protocol );
     ( "map predicate has no name-based compiler dispatch",
@@ -48944,10 +49412,14 @@ let tests =
       test_false_fn_predicate_narrows_closed_sum_in_later_or_operand );
     ( "false scalar predicate narrows closed sum in else branch",
       test_false_scalar_predicate_narrows_closed_sum_in_else_branch );
+    ( "name dispatches over identifier closed sum",
+      test_name_dispatches_over_identifier_closed_sum );
     ( "closed sum payloads inject into another closed sum",
       test_closed_sum_payloads_inject_into_another_closed_sum );
     ( "number predicate narrows optional value in later and operand",
       test_number_predicate_narrows_optional_value_in_later_and_operand );
+    ( "number predicate dispatches over mixed numeric closed sum",
+      test_number_predicate_dispatches_over_mixed_numeric_closed_sum );
     ( "literal truthy if ignores unreachable nil branch",
       test_literal_truthy_if_ignores_unreachable_nil_branch );
     ( "nested sequential destructuring preserves static values",

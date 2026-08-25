@@ -107,14 +107,36 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
                             ("Some", Some injected.semantic_expr) );
                       ] ))))
           (inject_contextual_closed_sum env ~expected:expected_inner payload)
+    | (TNullable _ | TOcaml_app ("option", [ _ ])), _
+      when Option.is_some (Types.next_seq_element argument.ty) ->
+        None
     | (TNullable expected_inner | TOcaml_app ("option", [ expected_inner ])), _
       when not (Types.equal argument.ty TNil) ->
-        Option.map
-          (Result.map (fun injected ->
-               typed_ir expected
-                 (Semantic_ir.Constructor
-                    ("Some", Some injected.semantic_expr))))
-          (inject_contextual_closed_sum env ~expected:expected_inner argument)
+        (match
+           inject_contextual_closed_sum env ~expected:expected_inner argument
+         with
+        | Some injected ->
+            Some
+              (Result.map
+                 (fun injected ->
+                   typed_ir expected
+                     (Semantic_ir.Constructor
+                        ("Some", Some injected.semantic_expr)))
+                 injected)
+        | None
+          when Types.equal expected_inner
+                 (Types.constraint_value_type expected_inner)
+               && (Types.assignable ~policy:Structural
+                     ~expected:expected_inner ~actual:argument.ty
+                  || String.equal (Types.ocaml_name expected_inner)
+                       (Types.ocaml_name argument.ty)) ->
+            Some
+              (Ok
+                 (typed_ir expected
+                    (Semantic_ir.Constructor
+                       ( "Some",
+                         Some argument.semantic_expr ))))
+        | None -> None)
     | _ -> None
   else if
     Types.is_dynamic argument.ty
@@ -175,27 +197,83 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
     let adapt_payload expected (argument : typed_expr) =
       if Types.equal expected argument.ty then Some (Ok argument)
       else
+        let adapt_item expected actual name =
+          let item = typed_ir actual (Semantic_ir.Ident name) in
+          if Types.equal expected actual then Some (Ok item)
+          else inject_contextual_closed_sum env ~expected item
+        in
+        let adapt_collection expected_item actual_item item_name mapper =
+          match adapt_item expected_item actual_item item_name with
+          | Some injected ->
+              Some
+                (Result.map
+                   (fun injected ->
+                     typed_ir expected
+                       (Semantic_ir.Apply
+                          ( Semantic_ir.Ident mapper,
+                            [
+                              Semantic_ir.Fun
+                                ( [ Semantic_ir.PVar item_name ],
+                                  injected.semantic_expr );
+                              argument.semantic_expr;
+                            ] )))
+                   injected)
+          | None -> directly_assignable expected argument
+        in
         match (expected, argument.ty) with
-        | TVector expected_item, TVector actual_item -> (
-            let item_name = "__lg_closed_sum_vector_item" in
-            let item = typed_ir actual_item (Semantic_ir.Ident item_name) in
-            match inject_contextual_closed_sum env ~expected:expected_item item with
-            | Some injected ->
-                Some
-                  (Result.map
-                     (fun injected ->
-                       typed_ir expected
-                         (Semantic_ir.Apply
-                            ( Semantic_ir.Ident "Rrbvec.map",
-                              [
-                                Semantic_ir.Fun
-                                  ( [ Semantic_ir.PVar item_name ],
-                                    injected.semantic_expr );
-                                argument.semantic_expr;
-                              ] )))
-                     injected)
-            | None -> directly_assignable expected argument)
-        | _ -> directly_assignable expected argument
+        | TVector expected_item, TVector actual_item ->
+            adapt_collection expected_item actual_item
+              "__lg_closed_sum_vector_item" "Rrbvec.map"
+        | TList expected_item, TList actual_item ->
+            adapt_collection expected_item actual_item
+              "__lg_closed_sum_list_item" "List.map"
+        | _ -> (
+            match
+              ( Types.dynamic_map_types expected,
+                Types.dynamic_map_types argument.ty )
+            with
+            | Some (expected_key, expected_value),
+              Some (actual_key, actual_value) ->
+                let key_name = "__lg_closed_sum_map_key" in
+                let value_name = "__lg_closed_sum_map_value" in
+                let key = adapt_item expected_key actual_key key_name in
+                let value = adapt_item expected_value actual_value value_name in
+                (match (key, value) with
+                | Some key, Some value ->
+                    Some
+                      (Result.bind key (fun key ->
+                           Result.map
+                             (fun value ->
+                               typed_ir expected
+                                 (Semantic_ir.Apply
+                                    ( Semantic_ir.Ident
+                                        "Lg_runtime.Runtime_map.of_list",
+                                      [
+                                        Semantic_ir.Apply
+                                          ( Semantic_ir.Ident "List.map",
+                                            [
+                                              Semantic_ir.Fun
+                                                ( [
+                                                    Semantic_ir.PTuple
+                                                      [
+                                                        Semantic_ir.PVar key_name;
+                                                        Semantic_ir.PVar value_name;
+                                                      ];
+                                                  ],
+                                                  Semantic_ir.Tuple
+                                                    [
+                                                      key.semantic_expr;
+                                                      value.semantic_expr;
+                                                    ] );
+                                              Semantic_ir.Apply
+                                                ( Semantic_ir.Ident
+                                                    "Lg_runtime.Runtime_map.to_list",
+                                                  [ argument.semantic_expr ] );
+                                            ] );
+                                      ] )))
+                             value))
+                | _ -> directly_assignable expected argument)
+            | _ -> directly_assignable expected argument)
     in
     let candidates =
       List.filter_map
@@ -216,8 +294,32 @@ let rec inject_contextual_closed_sum env ~expected (argument : typed_expr) =
           | [] | _ :: _ :: _ -> false)
         candidates
     in
+    let same_collection_shape expected actual =
+      match (expected, actual) with
+      | TVector _, TVector _
+      | TList _, TList _
+      | TSeq _, TSeq _
+      | TSet _, TSet _
+      | TArray _, TArray _ ->
+          true
+      | ( TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]),
+          TOcaml_app ("Lg_runtime.Runtime_map.t", [ _; _ ]) ) ->
+          true
+      | _ -> false
+    in
+    let shape_candidates =
+      List.filter
+        (fun ((_, payload_types), _) ->
+          match payload_types with
+          | [ payload_ty ] ->
+              same_collection_shape payload_ty argument.ty
+          | [] | _ :: _ :: _ -> false)
+        candidates
+    in
     let candidates =
-      if exact_candidates = [] then candidates else exact_candidates
+      if exact_candidates <> [] then exact_candidates
+      else if shape_candidates <> [] then shape_candidates
+      else candidates
     in
     (match candidates with
     | [ ((constructor, [ _ ]), payload) ] ->
@@ -299,13 +401,18 @@ let rec truthiness_expression ?(constrained_identifier = true) ?env ty
   | TNullable payload_ty ->
       let truthy_payload =
         let payload = Semantic_ir.Ident "truthy_value" in
+        match payload_ty with
+        | TSeq _ -> Semantic_ir.Bool true
+        | TOcaml_app (name, [ _ ]) when Types.is_next_seq_type_name name ->
+            Semantic_ir.Bool true
+        | _ -> (
         match Types.truthy_constraint_info payload_ty with
         | Some _ ->
             Semantic_ir.Apply
               ( Semantic_ir.Apply
                   (Semantic_ir.Ident "fst", [ payload ]),
                 [ Semantic_ir.Apply (Semantic_ir.Ident "snd", [ payload ]) ] )
-        | None -> truthiness_expression ?env payload_ty payload
+        | None -> truthiness_expression ?env payload_ty payload)
       in
       Semantic_ir.Match
         ( expression,
@@ -607,6 +714,12 @@ let rec merge_branch_types left right =
           | _ -> merge_branch_types left right
         in
         Option.map (fun inner -> TArray inner) merged_element
+    | (TOcaml "Lg_edn_backend.t" as edn), ty
+      when Edn_value_elaborator.is_packable ty ->
+        Some edn
+    | ty, (TOcaml "Lg_edn_backend.t" as edn)
+      when Edn_value_elaborator.is_packable ty ->
+        Some edn
     | TVar _, TVar _ -> Some left
     | TVar _, ty | ty, TVar _ -> Some ty
     | TMeta _, _ | _, TMeta _ -> (

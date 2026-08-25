@@ -314,7 +314,19 @@ let narrow_type_predicates scope env condition body =
                | Ok (binding : Types.binding) -> (
                    match Types.constraint_value_type binding.ty with
                    | TNullable _ | TOcaml_app ("option", [ _ ]) -> false
-                   | _ -> true)
+                   | ty ->
+                       let numeric_payloads =
+                         Env.predicate_variant_constructors ty env
+                         |> List.filter_map (fun (_, payloads) ->
+                                match payloads with
+                                | [ (TInt | TFloat as payload_ty) ] ->
+                                    Some payload_ty
+                                | [] | [ _ ] | _ :: _ :: _ -> None)
+                       in
+                       not
+                         (List.exists (Types.equal TInt) numeric_payloads
+                         && List.exists (Types.equal TFloat) numeric_payloads)
+                   )
                | Error _ -> true)
     in
     List.fold_right
@@ -748,6 +760,13 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
     | ( (TNullable _target_inner
         | TOcaml_app ("option", [ _target_inner ])),
         source_ty )
+      when Option.is_some (Types.next_seq_element source_ty) ->
+        Ok
+          (coerce_expression_to_type result_ty source_ty
+             branch.semantic_expr)
+    | ( (TNullable _target_inner
+        | TOcaml_app ("option", [ _target_inner ])),
+        source_ty )
       when (match source_ty with TUnknown | TMeta _ | TVar _ -> true | _ -> false)
            && (match Semantic_ir.unlocated branch.semantic_expr with
               | Semantic_ir.Apply _ | Semantic_ir.Uncurried_apply _ -> true
@@ -1028,10 +1047,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
         when (not (Types.is_dynamic element))
              && not (Types.equal element TUnknown) ->
           Some element
-      | Some _ | None -> None
+      | Some expected -> (
+          match
+            Env.variant_constructors expected env
+            |> List.filter_map (function
+                 | _, [ TVector element ] -> Some element
+                 | _ -> None)
+          with
+          | [ element ] -> Some element
+          | [] | _ :: _ :: _ -> None)
+      | None -> None
     in
     let compile_expected element =
-      let expression_env = Env.with_expected_type None env in
+      let expression_env = Env.with_expected_type (Some element) env in
       let rec compile values = function
         | [] ->
             Ok
@@ -1416,11 +1444,20 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       | Some _ as map_types -> map_types
       | None ->
           Option.bind (Env.expected_type env) (fun expected ->
-              Option.bind (Types.seqable_constraint_info expected)
-                (fun (_, entry_ty, _) ->
-                  Option.map
-                    (fun value_ty -> (value_ty, value_ty))
-                    (Types.seqable_constraint_element entry_ty)))
+              match
+                Env.variant_constructors expected env
+                |> List.filter_map (function
+                     | _, [ payload ] -> Types.dynamic_map_types payload
+                     | _ -> None)
+              with
+              | [ map_types ] -> Some map_types
+              | [] ->
+                  Option.bind (Types.seqable_constraint_info expected)
+                    (fun (_, entry_ty, _) ->
+                      Option.map
+                        (fun value_ty -> (value_ty, value_ty))
+                        (Types.seqable_constraint_element entry_ty))
+              | _ :: _ :: _ -> None)
     in
     match expected_map_types with
     | Some (key_ty, value_ty) ->
@@ -1430,17 +1467,15 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                (Env.with_expected_type (Some key_ty) env)
                key_form)
             (fun key ->
-              Result.map
-                (fun value ->
-                  Semantic_ir.Tuple
-                    [
-                      coerce_expression_to_type key_ty key.ty key.semantic_expr;
-                      coerce_expression_to_type value_ty value.ty
-                        value.semantic_expr;
-                    ])
-                (compile_expr scope
-                   (Env.with_expected_type (Some value_ty) env)
-                   value_form))
+              Result.bind (adapt_branch_expression env key_ty key) (fun key ->
+                  Result.bind
+                    (compile_expr scope
+                       (Env.with_expected_type (Some value_ty) env)
+                       value_form)
+                    (fun value ->
+                      Result.map
+                        (fun value -> Semantic_ir.Tuple [ key; value ])
+                        (adapt_branch_expression env value_ty value))))
         in
         let rec compile_entries entries = function
           | [] ->
@@ -1917,7 +1952,7 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       match condition with
       | FList (FSymbol ("__lg_logical-and" | "__lg_logical-or") :: _) ->
           Env.with_expected_type (Some TBool) env
-      | _ -> env
+      | _ -> Env.with_expected_type None env
     in
     let rec terminal_boolean_expression expression =
       match Semantic_ir.unlocated expression with
@@ -3188,7 +3223,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
       Error.error
         ("recur expects " ^ string_of_int (List.length param_tys) ^ " arguments")
     else
-      match compile_args_for scope env arg_forms with
+      let rec compile_recur_args compiled expected forms =
+        match (expected, forms) with
+        | [], [] -> Ok (List.rev compiled)
+        | expected_ty :: expected, form :: forms -> (
+            match
+              compile_expr scope
+                (Env.with_expected_type (Some expected_ty) env)
+                form
+            with
+            | Error _ as error -> error
+            | Ok expression ->
+                compile_recur_args (expression :: compiled) expected forms)
+        | _ -> Error.error "internal error: recur argument compilation"
+      in
+      match compile_recur_args [] param_tys arg_forms with
       | Error _ as err -> err
       | Ok args ->
           let rec validate index expected actual =
@@ -3562,7 +3611,10 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                 if name = "_" || List.mem name names then
                   Error.error "loop binding names must be unique symbols"
                 else
-                  match compile_expr scope env value_form with
+                  match
+                    compile_expr scope (Env.with_expected_type None env)
+                      value_form
+                  with
                   | Error _ as err -> err
                   | Ok value ->
                       let binding_ty =
@@ -3717,6 +3769,19 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                       | TSet inner -> TSet (merge inner)
                       | TSeq inner -> TSeq (merge inner)
                       | ty -> ty)
+                  | FList
+                      [
+                        FSymbol ("__lg_logical-or" | "or");
+                        optional_sequence;
+                        FList [];
+                      ] -> (
+                      match form_type aliases optional_sequence with
+                      | TNullable (TSeq inner)
+                      | TOcaml_app ("option", [ TSeq inner ])
+                      | TOcaml_app ("Lg_runtime.Runtime_seq.next", [ inner ])
+                        ->
+                          TSeq inner
+                      | ty -> ty)
                   | FList [ FSymbol name; array; _index ]
                     when name = "__lg_aget" || name = "unsafe-aget"
                          || String.ends_with ~suffix:"/__lg_aget" name
@@ -3750,7 +3815,21 @@ let create ~compile_expr ~dynamic_unpack ~pack_dynamic_value
                                 arity.return_ty
                           | None -> TUnknown)
                       | Ok _ | Error _ -> TUnknown)
-                  | FList _ | FVector _ | FMap _ | FCoreSymbol _
+                  | FVector [] -> TVector TUnknown
+                  | FVector (first :: rest) ->
+                      let element_ty = form_type aliases first in
+                      let element_ty =
+                        List.fold_left
+                          (fun current form ->
+                            let actual = form_type aliases form in
+                            match merge_branch_types current actual with
+                            | Some merged -> merged
+                            | None -> Types.dynamic_constraint TUnknown)
+                          element_ty rest
+                      in
+                      TVector element_ty
+                  | FList [] -> TList TUnknown
+                  | FList _ | FMap _ | FCoreSymbol _ -> TUnknown
                   | FDecimal _ -> TOcaml "Lg_runtime.Runtime_decimal.t"
                   | FKeyword _ | FString _ | FRegex _ | FInt _ | FFloat _
                   | FChar _ | FBool _ -> TUnknown
