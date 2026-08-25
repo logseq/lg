@@ -956,3 +956,13 @@ constructor therefore appeared to satisfy the protocol through its payload while
 nullary and non-recursive constructors incorrectly returned false. Whole-sum
 protocol evidence now takes precedence, while constructor-specific protocol
 checks retain their existing per-payload match behavior.
+
+OPEN: A map lookup remains `option<value>` when its key is produced by iterating
+`(keys same-map)`. The source relationship proves the key is present, but LG does
+not track that dependent collection evidence. This blocks DataScript's upstream
+`prod-rel` map-invocation lines from compiling unchanged.
+
+OPEN: Destructuring a statically typed `map<string;int>` entry inside `for` does
+not preserve the `int` type of the value in a following two-element vector. The
+vector is rejected as `int | param` even when both positions should be statically
+`int`. This blocks DataScript's upstream `sum-rel*` index-pair construction.
