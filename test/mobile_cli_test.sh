@@ -20,6 +20,9 @@ ios_device=$($mobile build ios device --dry-run)
 android=$($mobile build android --dry-run)
 [[ $android == 'android arm64-v8a aarch64-linux-android21' ]]
 
+macos=$($mobile build macos --target-prefix /tmp/ocaml-target --dry-run)
+[[ $macos == 'macos' ]]
+
 if $mobile build --dry-run >/dev/null 2>&1; then
   echo "mobile build accepted a missing platform" >&2
   exit 1
@@ -32,9 +35,24 @@ fi
 
 help=$($mobile --help)
 grep -Fq 'lg mobile build' <<<"$help"
-if grep -Eq -- '--profile|--target' <<<"$help"; then
+grep -Fq -- '--object-mode complete|partial' <<<"$help"
+grep -Fq -- '--target-prefix DIR' <<<"$help"
+grep -Fq -- '--ocaml-object PATH' <<<"$help"
+if grep -Eq -- '--profile|--target([[:space:]]|$)' <<<"$help"; then
   echo "mobile help still exposes platform selection as profiles" >&2
   exit 1
 fi
+
+if $mobile build android --object-mode invalid --dry-run >/dev/null 2>&1; then
+  echo "mobile build accepted an invalid object mode" >&2
+  exit 1
+fi
+
+if $mobile build android --target-prefix --dry-run >/dev/null 2>&1; then
+  echo "mobile build accepted a missing target prefix" >&2
+  exit 1
+fi
+
+grep -Fq -- '-output-obj' "$mobile"
 
 echo "ok - LG mobile CLI requires an explicit platform and iOS environment"

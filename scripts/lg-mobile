@@ -13,12 +13,17 @@ Usage:
   lg mobile build ios simulator [--from STATE] [PATH ...]
   lg mobile build ios device [--from STATE] [PATH ...]
   lg mobile build android [--from STATE] [PATH ...]
+  lg mobile build macos --target-prefix DIR [--from STATE] [PATH ...]
   lg mobile setup ios simulator
   lg mobile setup ios device
   lg mobile setup android
 
 Build options:
   --output-dir DIR             Output root (default: _build/lg-mobile)
+  --object-mode complete|partial
+                               Include the OCaml runtime or defer it to the host
+  --target-prefix DIR          Use an existing target OCaml compiler
+  --ocaml-object PATH          Link an additional host object (repeatable)
   --dry-run                    Print resolved targets without building
 
 Environment:
@@ -57,12 +62,20 @@ case "$platform" in
     targets=(android)
     shift
     ;;
+  macos)
+    [[ $command == build ]] || die "macOS is available only for build"
+    targets=(macos)
+    shift
+    ;;
   "") die "a mobile platform is required: ios or android" ;;
   *) die "unsupported mobile platform: $platform" ;;
 esac
 
 state_path=
 output_dir=_build/lg-mobile
+object_mode=complete
+target_prefix_override=
+host_objects=()
 dry_run=0
 inputs=()
 
@@ -78,6 +91,28 @@ while [[ $# -gt 0 ]]; do
       [[ $command == build ]] || die "--output-dir is valid only for build"
       [[ $# -ge 2 ]] || die "--output-dir requires a path"
       output_dir=$2
+      shift 2
+      ;;
+    --object-mode)
+      [[ $command == build ]] || die "--object-mode is valid only for build"
+      [[ $# -ge 2 ]] || die "--object-mode requires complete or partial"
+      object_mode=$2
+      case "$object_mode" in
+        complete|partial) ;;
+        *) die "unsupported object mode: $object_mode" ;;
+      esac
+      shift 2
+      ;;
+    --target-prefix)
+      [[ $command == build ]] || die "--target-prefix is valid only for build"
+      [[ $# -ge 2 && $2 != --* ]] || die "--target-prefix requires a directory"
+      target_prefix_override=$2
+      shift 2
+      ;;
+    --ocaml-object)
+      [[ $command == build ]] || die "--ocaml-object is valid only for build"
+      [[ $# -ge 2 && $2 != --* ]] || die "--ocaml-object requires a path"
+      host_objects+=("$2")
       shift 2
       ;;
     --dry-run)
@@ -96,6 +131,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ ${targets[0]} == macos && -z $target_prefix_override ]]; then
+  die "macOS requires --target-prefix"
+fi
 
 ocaml_version=${LG_MOBILE_OCAML_VERSION:-5.5.0}
 ios_deployment_target=${LG_IOS_DEPLOYMENT_TARGET:-17.0}
@@ -119,6 +158,7 @@ print_plan() {
       ios-simulator) echo "ios-simulator $ios_simulator_triple" ;;
       ios-device) echo "ios-device $ios_device_triple" ;;
       android) echo "android $android_abi $android_triple" ;;
+      macos) echo "macos" ;;
     esac
   done
 }
@@ -180,10 +220,17 @@ build_object() {
   local triple=$2
   local runtime_variant=$3
   local prefix="$version_root/targets/$triple"
+  if [[ -n $target_prefix_override ]]; then
+    prefix=$target_prefix_override
+  fi
   local target_dir="$output_dir/$name"
   local ocamlopt="$prefix/bin/ocamlopt.opt"
 
   [[ -x $ocamlopt ]] || die "shared OCaml toolchain is missing: $prefix; run the matching 'lg mobile setup' command"
+  local host_object
+  for host_object in "${host_objects[@]}"; do
+    [[ -f $host_object ]] || die "host OCaml object is missing: $host_object"
+  done
   mkdir -p "$target_dir"
   "$build_dependencies" "$prefix" "$target_dir/dependencies" >/dev/null
 
@@ -200,12 +247,19 @@ build_object() {
     dependency_objects+=("$object")
   done <"$target_dir/dependencies/link-objects.txt"
 
+  local output_name=mobile_app_complete.o
   local link_args=(-output-complete-obj -linkall)
+  if [[ $object_mode == partial ]]; then
+    output_name=mobile_app.o
+    link_args=(-output-obj -linkall)
+  fi
   [[ $runtime_variant != pic ]] || link_args+=(-runtime-variant _pic)
   "$ocamlopt" "${include_args[@]}" "${link_args[@]}" \
-    -o "$target_dir/mobile_app_complete.o" \
-    "${dependency_objects[@]}" "$target_dir/mobile_app.cmx"
-  echo "$target_dir/mobile_app_complete.o"
+    -o "$target_dir/$output_name" \
+    "${dependency_objects[@]}" \
+    "${host_objects[@]}" \
+    "$target_dir/mobile_app.cmx"
+  echo "$target_dir/$output_name"
 }
 
 for target in "${targets[@]}"; do
@@ -213,5 +267,6 @@ for target in "${targets[@]}"; do
     ios-simulator) build_object ios-simulator "$ios_simulator_triple" default ;;
     ios-device) build_object ios-device "$ios_device_triple" default ;;
     android) build_object "android/$android_abi" "$android_triple" pic ;;
+    macos) build_object macos macos default ;;
   esac
 done

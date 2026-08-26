@@ -438,6 +438,29 @@ The output under `_build/lg-mobile` is the platform-correct LG/OCaml object.
 Swift, Xcode, Gradle, or Flutter remains responsible for application metadata,
 signing, resources, and final packaging.
 
+By default the object contains the OCaml runtime and can be linked directly by
+a native host. Applications that already embed OCaml can request a partial
+object and include it in their existing final OCaml link:
+
+```sh
+lg mobile build ios simulator --object-mode partial
+```
+
+An application with an established cross compiler can ask LG to perform the
+single final link, including its existing OCaml modules:
+
+```sh
+lg mobile build ios simulator \
+  --target-prefix path/to/ocaml-target \
+  --ocaml-object path/to/application.cmx
+```
+
+The same host-owned toolchain path enables macOS builds:
+
+```sh
+lg mobile build macos --target-prefix path/to/ocaml-target
+```
+
 ## Shared `.cljc` targets
 
 Ordinary forms are shared by every target. No reader annotation is needed for
