@@ -1,6 +1,6 @@
 # ADR 009: Provide a Complete UI Hot Reload Experience
 
-- Status: Accepted; Phases 0 through 2 complete
+- Status: Accepted; Phases 0 through 3 complete
 - Date: 2026-08-26
 - Decision owners: LG compiler and LUI maintainers
 - Related: `docs/design.md`, `docs/architecture.md`, and
@@ -345,17 +345,34 @@ persistent process. The production LUI runtime now provides:
   adapters, retaining hashing, save-burst settling, monotonic generations, and
   structured failures; and
 - an attached save-to-resource end-to-end test plus repeated 100-generation
-  subscription and resource tests that prove bounded lifecycle behavior.
+  subscription and resource tests that prove bounded lifecycle behavior;
+- versioned typed model snapshots whose concrete payload codec, source version,
+  source fingerprint, migration function, target fingerprint, and validator are
+  all fixed statically for one application migration;
+- a soft-restart transaction that starts and activates the migrated candidate
+  before retiring the old app, and disposes a rejected candidate while leaving
+  the old app live;
+- generation-tagged typed message draining that accepts only the exact committed
+  generation and message fingerprint at a migration boundary;
+- a closed restart context for route, selected tabs, focus identity, text
+  selection ranges, scroll offsets, and window geometry without storing text
+  field contents or another universal snapshot value; and
+- an automatic capture, rebuild, launch, and restore coordinator with monotonic
+  generations, stale-work rejection, closed fallback reasons, stage-specific
+  failures, and direct routing from `ReloadRestartRequired`.
 
-Phases 1 and 2 complete the in-process View, UI logic, subscription, and
-resource loops, not the complete ADR. The watcher accepts the
+Phases 1 through 3 complete the in-process View, UI logic, subscription,
+resource, migration, and restart-control loops, not the complete ADR. The
+watcher accepts the
 transitive source closure from the development target and hashes every supplied
 path; automatic workspace closure discovery belongs in the developer tooling
 integration. Swift and Flutter retained-backend suites cover keyed moves,
 retained focus objects, draft/IME state, and atomic root replacement. A Web
 browser acceptance fixture for focus, selection, scroll, and window context is
-still part of Phase 4 tooling. Typed migrations, automatic target restart, and
-the in-application diagnostic overlay remain in later phases.
+still part of Phase 4 tooling. A concrete development-target launcher supplies
+the coordinator's rebuild and launch callbacks; editor integration, the
+in-application diagnostic overlay, performance dashboards, and rendering parity
+gates remain in Phase 4.
 
 ## Prototype evidence
 
@@ -383,7 +400,8 @@ compilation, attached bytecode evaluation, LUI reconciliation, file watching,
 same-signature View and helper replacement, and retained model/widget state.
 Phase 2 additionally proves attached asset replacement, same-signature update
 logic, subscription replacement, invalidation rollback, and bounded resource
-lifecycle behavior. Migration and restart fallback remain later-phase work.
+lifecycle behavior. Phase 3 proves typed snapshot migration, transactional soft
+restart, incompatible-message draining, and automatic explained fallback.
 
 ## Delivery phases
 
@@ -435,11 +453,21 @@ lifecycle behavior. Migration and restart fallback remain later-phase work.
 
 ### Phase 3: Migration and seamless fallback
 
-- Add typed versioned model migration and safe snapshot codecs.
-- Add automatic rebuild/restart with navigation-context restoration.
-- Explain every fallback decision in the client and overlay.
-- Exercise rapid edits, syntax errors, type changes, target disconnects, and
-  compiler crashes in end-to-end tests.
+- Complete: typed versioned model snapshots use a concrete payload codec and an
+  explicit old-fingerprint-to-new-model migration with candidate validation.
+- Complete: a migrated candidate activates before the old app retires; failed
+  activation disposes the candidate and preserves the running app.
+- Complete: queued messages are generation and fingerprint tagged and cannot be
+  cast across a changed message contract.
+- Complete: incompatible reload contracts, model types, package graphs, FFI,
+  compiler options, host ABI, compiler crashes, and target disconnects use one
+  closed automatic restart coordinator.
+- Complete: restart captures and restores non-sensitive navigation, focus,
+  selection-range, scroll, and window context through typed host callbacks.
+- Complete: stale fallback work, rebuild failure, context restoration,
+  migration rejection, invalid contracts, syntax errors, and rapid edit bursts
+  have acceptance coverage. Phase 4 presents these existing closed events in
+  editor and in-application UI.
 
 ### Phase 4: Tooling quality
 
